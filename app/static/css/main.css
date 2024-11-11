@@ -32,6 +32,9 @@ body {
 }
 
 .note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 1rem;
@@ -39,12 +42,13 @@ body {
 }
 
 .note-content {
-    min-height: 1.5em;
+    flex-grow: 1;
     padding: 0.5rem;
+    min-height: 2rem;
 }
 
 .note-content:empty::before {
-    content: 'Click to edit...';
+    content: "Click to edit";
     color: #999;
     font-style: italic;
 }
@@ -105,6 +109,7 @@ body {
     color: #999;
     padding: 0.5rem;
     user-select: none;
+    flex-shrink: 0;
 }
 
 .note.dragging {
