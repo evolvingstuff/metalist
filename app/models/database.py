@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -18,3 +18,4 @@ class DBTag(Base):
     id = Column(String, primary_key=True)
     note_id = Column(String, ForeignKey("notes.id"))
     name = Column(String)
+    position = Column(Integer)
