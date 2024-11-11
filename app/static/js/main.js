@@ -1,3 +1,5 @@
+import { setupKeyboardShortcuts } from './shortcuts.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     let currentEditingNote = null;
     let initialContent = null;
@@ -104,5 +106,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response.ok) {
             window.location.reload();
         }
+    });
+
+    function stopEditing() {
+        if (currentEditingNote) {
+            const contentDiv = currentEditingNote.querySelector('.note-content');
+            const finalContent = contentDiv.textContent;
+            
+            if (finalContent !== lastSavedContent) {
+                console.log('Saving note before exit');
+                saveNoteContent(currentEditingNote, finalContent);
+            }
+            
+            contentDiv.contentEditable = 'false';
+            currentEditingNote.classList.remove('editing');
+            currentEditingNote = null;
+            initialContent = null;
+            lastSavedContent = null;
+        }
+    }
+
+    // Setup keyboard shortcuts
+    setupKeyboardShortcuts({
+        stopEditing: stopEditing
+        // Ready for more handlers
     });
 }); 
