@@ -12,16 +12,22 @@ router = APIRouter()
 @router.post("/new")
 async def create_note(db: Session = Depends(get_db)):
     note_id = str(uuid.uuid4())
+    print(f"Creating new note with id: {note_id}")
+    
     db_note = DBNote(id=note_id, content="")
     db.add(db_note)
+    
+    # Find the current head (note with no prev_id)
+    head = db.query(DBNote).filter(DBNote.prev_id == None).first()
+    print(f"Current head: {head.id if head else None}")
+    
+    if head and head.id != note_id:
+        print(f"Linking new note as new head")
+        head.prev_id = note_id
+        db_note.next_id = head.id
+    
     db.commit()
-    
-    tail = db.query(DBNote).filter(DBNote.next_id == None).first()
-    if tail and tail.id != note_id:
-        tail.next_id = note_id
-        db_note.prev_id = tail.id
-        db.commit()
-    
+    print(f"Note created successfully")
     return {"id": note_id}
 
 @router.put("/{note_id}")
@@ -43,3 +49,14 @@ async def move_note(note_id: str, command: MoveNote, db: Session = Depends(get_d
 async def get_notes(db: Session = Depends(get_db)):
     notes = LinkedListManager.get_ordered_list(db, DBNote)
     return [Note.from_orm(note) for note in notes]
+
+@router.get("/debug")
+async def debug_notes(db: Session = Depends(get_db)):
+    notes = db.query(DBNote).all()
+    return [{
+        'id': note.id,
+        'content': note.content,
+        'prev_id': note.prev_id,
+        'next_id': note.next_id,
+        'created_at': note.created_at.isoformat()
+    } for note in notes]

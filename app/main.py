@@ -9,6 +9,7 @@ from .core.config import VERSION
 from .models.database import Base, DBNote
 from .core.database import engine
 from .api.dependencies import get_db
+from .models.linked_list import LinkedListManager
 
 app = FastAPI()
 
@@ -27,7 +28,7 @@ app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
     template = templates.get_template("index.html")
-    db_notes = db.query(DBNote).order_by(DBNote.created_at.desc()).all()
+    db_notes = LinkedListManager.get_ordered_list(db, DBNote)
     
     notes = [{
         'id': note.id,
