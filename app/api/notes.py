@@ -1,31 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from ..models.database import DBNote
 from ..models.entities import Note
-from ..models.commands import UpdateNoteContent
-from ..models.database import DBNote, DBTag
+from ..models.commands import UpdateNoteContent, MoveNote
+from ..models.linked_list import LinkedListManager
 from .dependencies import get_db
 import uuid
 
 router = APIRouter()
 
-@router.get("/")
-async def get_notes(db: Session = Depends(get_db)):
-    notes = db.query(DBNote).order_by(DBNote.created_at.desc()).all()
-    return [{
-        "id": note.id,
-        "content": note.content,
-        "updated_at": note.updated_at.isoformat()
-    } for note in notes]
-
 @router.post("/new")
 async def create_note(db: Session = Depends(get_db)):
-    db_note = DBNote(
-        id=str(uuid.uuid4()),
-        content=""
-    )
+    note_id = str(uuid.uuid4())
+    db_note = DBNote(id=note_id, content="")
     db.add(db_note)
     db.commit()
-    return {"id": db_note.id}
+    
+    tail = db.query(DBNote).filter(DBNote.next_id == None).first()
+    if tail and tail.id != note_id:
+        tail.next_id = note_id
+        db_note.prev_id = tail.id
+        db.commit()
+    
+    return {"id": note_id}
 
 @router.put("/{note_id}")
 async def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
@@ -33,14 +30,16 @@ async def update_note(note_id: str, command: UpdateNoteContent, db: Session = De
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    if command.content is not None:
-        db_note.content = command.content
-    
+    db_note.content = command.content
     db.commit()
-    db.refresh(db_note)
-    
-    return {
-        "id": db_note.id,
-        "content": db_note.content,
-        "updated_at": db_note.updated_at.isoformat()
-    }
+    return Note.from_orm(db_note)
+
+@router.post("/{note_id}/move")
+async def move_note(note_id: str, command: MoveNote, db: Session = Depends(get_db)):
+    LinkedListManager.insert_after(db, DBNote, note_id, command.target_id)
+    return {"status": "success"}
+
+@router.get("/")
+async def get_notes(db: Session = Depends(get_db)):
+    notes = LinkedListManager.get_ordered_list(db, DBNote)
+    return [Note.from_orm(note) for note in notes]
