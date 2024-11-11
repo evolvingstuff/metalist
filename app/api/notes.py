@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from ..models.schemas import Note, NoteCreate, NoteUpdate
+from ..models.entities import Note
+from ..models.commands import UpdateNoteContent
 from ..models.database import DBNote, DBTag
 from .dependencies import get_db
-from mako.lookup import TemplateLookup
 import uuid
 
 router = APIRouter()
@@ -28,13 +28,13 @@ async def create_note(db: Session = Depends(get_db)):
     return {"id": db_note.id}
 
 @router.put("/{note_id}")
-async def update_note(note_id: str, note_update: NoteUpdate, db: Session = Depends(get_db)):
+async def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
     db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    if note_update.content is not None:
-        db_note.content = note_update.content
+    if command.content is not None:
+        db_note.content = command.content
     
     db.commit()
     db.refresh(db_note)
