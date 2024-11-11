@@ -1,5 +1,6 @@
 % for note in notes:
     <div class="note" data-id="${note['id']}">
+        <div class="drag-handle" draggable="true">⋮⋮</div>
         <div class="note-content" contenteditable="true">
             ${note['content'] | h}
         </div>

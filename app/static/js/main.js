@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentEditingNote = null;
     let initialContent = null;
     let lastSavedContent = null;
+    let draggedNoteId = null;
 
     // Set initial state of all notes to non-editable
     document.querySelectorAll('.note-content').forEach(content => {
@@ -46,7 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
             currentEditingNote.classList.remove('editing');
         }
 
-        // Start editing new note
         contentDiv.contentEditable = 'true';
         noteElement.classList.add('editing');
         contentDiv.focus();
@@ -82,6 +82,82 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Drag and Drop functionality
+    document.querySelectorAll('.drag-handle').forEach(handle => {
+        handle.addEventListener('dragstart', (e) => {
+            const noteElement = e.target.closest('.note');
+            draggedNoteId = noteElement.dataset.id;
+            noteElement.classList.add('dragging');
+            e.dataTransfer.setData('text/plain', '');
+        });
+
+        handle.addEventListener('dragend', (e) => {
+            const noteElement = e.target.closest('.note');
+            if (noteElement) {
+                noteElement.classList.remove('dragging');
+            }
+            draggedNoteId = null;
+        });
+    });
+
+    document.querySelectorAll('.note').forEach(note => {
+        note.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!draggedNoteId) return;
+            const note = e.target.closest('.note');
+            if (!note || note.dataset.id === draggedNoteId) return;
+            note.classList.add('drag-over');
+        });
+
+        note.addEventListener('dragleave', (e) => {
+            const note = e.target.closest('.note');
+            if (note) {
+                note.classList.remove('drag-over');
+            }
+        });
+
+        note.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const targetNote = e.target.closest('.note');
+            if (!draggedNoteId || !targetNote || targetNote.dataset.id === draggedNoteId) {
+                return;
+            }
+
+            // Get the bounding rectangles of both elements
+            const draggedNote = document.querySelector(`.note[data-id="${draggedNoteId}"]`);
+            const draggedRect = draggedNote.getBoundingClientRect();
+            const targetRect = targetNote.getBoundingClientRect();
+
+            // If the dragged note's center is above the target's center, insert before
+            const isDraggingUpward = draggedRect.top > targetRect.top;
+            
+            // alert(`Dragging ${isDraggingUpward ? 'upward' : 'downward'}\n` +
+            //       `Moving: ${draggedNoteId}\n` +
+            //       `${isDraggingUpward ? 'Before' : 'After'}: ${targetNote.dataset.id}`);
+
+            try {
+                const response = await fetch(`/api/notes/${draggedNoteId}/move`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        target_id: targetNote.dataset.id,
+                        insert_before: isDraggingUpward
+                    })
+                });
+
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Move failed: ' + await response.text());
+                }
+            } catch (error) {
+                alert('Error moving note: ' + error);
+            }
+        });
+    });
+
     // Polling for changes while editing
     setInterval(() => {
         if (currentEditingNote) {
@@ -93,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 2000);
 
-    // Add note button handler
     document.getElementById('add-note-btn').addEventListener('click', async () => {
         const response = await fetch('/api/notes/new', {
             method: 'POST',
@@ -128,7 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Setup keyboard shortcuts
     setupKeyboardShortcuts({
-        stopEditing: stopEditing
-        // Ready for more handlers
+        stopEditing
     });
 }); 

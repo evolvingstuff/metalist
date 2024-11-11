@@ -42,7 +42,15 @@ async def update_note(note_id: str, command: UpdateNoteContent, db: Session = De
 
 @router.post("/{note_id}/move")
 async def move_note(note_id: str, command: MoveNote, db: Session = Depends(get_db)):
-    LinkedListManager.insert_after(db, DBNote, note_id, command.target_id)
+    if command.insert_before:
+        LinkedListManager.insert_before(db, DBNote, note_id, command.target_id)
+    else:
+        LinkedListManager.insert_after(db, DBNote, note_id, command.target_id)
+    return {"status": "success"}
+
+@router.post("/{note_id}/move-before")
+async def move_note_before(note_id: str, command: MoveNote, db: Session = Depends(get_db)):
+    LinkedListManager.insert_before(db, DBNote, note_id, command.target_id)
     return {"status": "success"}
 
 @router.get("/")

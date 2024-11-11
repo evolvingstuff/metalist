@@ -99,3 +99,18 @@ body {
 .note.editing {
     background-color: var(--editing-bg);
 }
+
+.drag-handle {
+    cursor: grab;
+    color: #999;
+    padding: 0.5rem;
+    user-select: none;
+}
+
+.note.dragging {
+    opacity: 0.5;
+}
+
+.note.drag-over {
+    border-top: 2px solid var(--primary-color);
+}
