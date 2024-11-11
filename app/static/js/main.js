@@ -1,33 +1,62 @@
 document.addEventListener('DOMContentLoaded', () => {
     let currentEditingNote = null;
+    let initialContent = null;
+    let lastSavedContent = null;
 
     // Set initial state of all notes to non-editable
     document.querySelectorAll('.note-content').forEach(content => {
         content.contentEditable = 'false';
     });
 
-    // Function to make a note editable
-    function makeNoteEditable(noteElement) {
-        console.log('Making note editable:', noteElement); // Debug log
+    async function saveNoteContent(noteElement, content) {
+        const noteId = noteElement.closest('.note').dataset.id;
+        console.log('Saving note:', noteId, content);
         
-        // If there's already a note being edited, make it non-editable
+        try {
+            const response = await fetch(`/api/notes/${noteId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content })
+            });
+            
+            if (response.ok) {
+                lastSavedContent = content;
+                console.log('Save successful');
+            }
+        } catch (error) {
+            console.error('Error saving note:', error);
+        }
+    }
+
+    function makeNoteEditable(noteElement) {
+        const contentDiv = noteElement.querySelector('.note-content');
+        
+        // If switching notes, save the current one first
         if (currentEditingNote && currentEditingNote !== noteElement) {
+            const currentContent = currentEditingNote.querySelector('.note-content').textContent;
+            if (currentContent !== lastSavedContent) {
+                console.log('Saving previous note before switching');
+                saveNoteContent(currentEditingNote, currentContent);
+            }
             currentEditingNote.querySelector('.note-content').contentEditable = 'false';
             currentEditingNote.classList.remove('editing');
         }
 
-        // Make the clicked note editable
-        const contentDiv = noteElement.querySelector('.note-content');
+        // Start editing new note
         contentDiv.contentEditable = 'true';
         noteElement.classList.add('editing');
         contentDiv.focus();
         currentEditingNote = noteElement;
+        initialContent = contentDiv.textContent;
+        lastSavedContent = initialContent;
+        console.log('Started editing note, initial content:', initialContent);
     }
 
     // Handle clicking on notes
     document.addEventListener('click', (e) => {
         const noteElement = e.target.closest('.note');
-        console.log('Click event:', e.target, noteElement); // Debug log
         
         // If clicking inside a note's content
         if (noteElement && e.target.classList.contains('note-content')) {
@@ -35,11 +64,32 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
         // If clicking outside any note
         else if (!noteElement && currentEditingNote) {
-            currentEditingNote.querySelector('.note-content').contentEditable = 'false';
+            const contentDiv = currentEditingNote.querySelector('.note-content');
+            const finalContent = contentDiv.textContent;
+            
+            if (finalContent !== lastSavedContent) {
+                console.log('Saving note before exit');
+                saveNoteContent(currentEditingNote, finalContent);
+            }
+            
+            contentDiv.contentEditable = 'false';
             currentEditingNote.classList.remove('editing');
             currentEditingNote = null;
+            initialContent = null;
+            lastSavedContent = null;
         }
     });
+
+    // Polling for changes while editing
+    setInterval(() => {
+        if (currentEditingNote) {
+            const currentContent = currentEditingNote.querySelector('.note-content').textContent;
+            if (currentContent !== lastSavedContent) {
+                console.log('Poll detected change, saving');
+                saveNoteContent(currentEditingNote, currentContent);
+            }
+        }
+    }, 2000);
 
     // Add note button handler
     document.getElementById('add-note-btn').addEventListener('click', async () => {
@@ -52,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         if (response.ok) {
-            window.location.reload();  // Refresh to show new note
+            window.location.reload();
         }
     });
 }); 
