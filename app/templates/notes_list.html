@@ -1,0 +1,12 @@
+% for note in notes:
+    <div class="note" data-id="${note['id']}">
+        <div class="note-content" contenteditable="true">
+            ${note['content'] | h}
+        </div>
+        % if note['tags']:
+        <div class="note-tags">
+            ${', '.join(note['tags'])}
+        </div>
+        % endif
+    </div>
+% endfor

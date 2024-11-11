@@ -1,0 +1,14 @@
+<%inherit file="base.html"/>
+
+<%block name="title">Notes v${version}</%block>
+
+<%block name="content">
+    <div class="header">
+        <h1>My Notes <span class="version-badge">v${version}</span></h1>
+        <button id="add-note-btn" class="add-button">+</button>
+    </div>
+
+    <div id="notes-list">
+        <%include file="notes_list.html"/>
+    </div>
+</%block>

@@ -1,0 +1,101 @@
+:root {
+    --primary-color: #0066cc;
+    --bg-color: #ffffff;
+    --text-color: #333333;
+    --border-color: #dddddd;
+}
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.5;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1rem;
+    color: var(--text-color);
+    background: var(--bg-color);
+}
+
+.container {
+    padding: 1rem;
+}
+
+.header {
+    margin-bottom: 2rem;
+}
+
+.version-badge {
+    font-size: 0.8rem;
+    background: var(--primary-color);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.note {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.note-content {
+    min-height: 3em;
+    padding: 0.5rem;
+}
+
+.note-content:empty::before {
+    content: 'Click to edit...';
+    color: #999;
+    font-style: italic;
+}
+
+.note-tags {
+    margin-bottom: 0.5rem;
+}
+
+.tag {
+    background: #eee;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin-right: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.note-meta {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.new-note-form {
+    margin-top: 2rem;
+}
+
+.new-note-form textarea {
+    width: 100%;
+    min-height: 100px;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.new-note-form input {
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.new-note-form button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.note.editing {
+    background-color: var(--editing-bg);
+}
