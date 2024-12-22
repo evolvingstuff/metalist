@@ -4,10 +4,5 @@
         <div class="note-content" contenteditable="true">
             ${note['content'] | n}
         </div>
-        % if note['tags']:
-        <div class="note-tags">
-            ${', '.join(note['tags'])}
-        </div>
-        % endif
     </div>
 % endfor

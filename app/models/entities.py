@@ -12,9 +12,3 @@ class Note(BaseModel):
 
     class Config:
         from_attributes = True
-
-class Tag(BaseModel):
-    id: str
-    name: str
-    next_id: Optional[str] = None
-    prev_id: Optional[str] = None

@@ -32,8 +32,7 @@ async def home(request: Request, db: Session = Depends(get_db)):
     
     notes = [{
         'id': note.id,
-        'content': note.content,
-        'tags': set()
+        'content': note.content
     } for note in db_notes]
     
     return template.render(request=request, notes=notes, version=VERSION)
