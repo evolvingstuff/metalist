@@ -1,5 +1,36 @@
 import { setupKeyboardShortcuts } from './shortcuts.js';
 
+async function handleImagePaste(e, noteElement) {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    
+    for (const item of items) {
+        if (item.type.indexOf('image') === 0) {
+            e.preventDefault();
+            
+            const blob = item.getAsFile();
+            const reader = new FileReader();
+            
+            reader.onload = async function(event) {
+                const img = document.createElement('img');
+                img.src = event.target.result;
+                img.style.maxWidth = '100%';
+                
+                // Insert the image at cursor position
+                const selection = window.getSelection();
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(img);
+                
+                // Save the updated content
+                const contentDiv = noteElement.querySelector('.note-content');
+                await saveNoteContent(noteElement, contentDiv.innerHTML);
+            };
+            
+            reader.readAsDataURL(blob);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     let currentEditingNote = null;
     let initialContent = null;
@@ -13,7 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function saveNoteContent(noteElement, content) {
         const noteId = noteElement.closest('.note').dataset.id;
-        console.log('Saving note:', noteId, content);
+        const contentToSave = noteElement.querySelector('.note-content').innerHTML;
+        
+        console.log('Saving note content:', contentToSave.substring(0, 100), '...');  // Log first 100 chars
+        console.log('Content includes image?', contentToSave.includes('data:image'));
         
         try {
             const response = await fetch(`/api/notes/${noteId}`, {
@@ -21,11 +55,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ content })
+                body: JSON.stringify({ 
+                    content: contentToSave
+                })
             });
             
             if (response.ok) {
-                lastSavedContent = content;
+                lastSavedContent = contentToSave;
                 console.log('Save successful');
             }
         } catch (error) {
@@ -38,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // If switching notes, save the current one first
         if (currentEditingNote && currentEditingNote !== noteElement) {
-            const currentContent = currentEditingNote.querySelector('.note-content').textContent;
+            const currentContent = currentEditingNote.querySelector('.note-content').innerHTML;
             if (currentContent !== lastSavedContent) {
                 console.log('Saving previous note before switching');
                 saveNoteContent(currentEditingNote, currentContent);
@@ -51,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
         noteElement.classList.add('editing');
         contentDiv.focus();
         currentEditingNote = noteElement;
-        initialContent = contentDiv.textContent;
+        initialContent = contentDiv.innerHTML;
         lastSavedContent = initialContent;
         console.log('Started editing note, initial content:', initialContent);
     }
@@ -67,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // If clicking outside any note
         else if (!noteElement && currentEditingNote) {
             const contentDiv = currentEditingNote.querySelector('.note-content');
-            const finalContent = contentDiv.textContent;
+            const finalContent = contentDiv.innerHTML;
             
             if (finalContent !== lastSavedContent) {
                 console.log('Saving note before exit');
@@ -161,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Polling for changes while editing
     setInterval(() => {
         if (currentEditingNote) {
-            const currentContent = currentEditingNote.querySelector('.note-content').textContent;
+            const currentContent = currentEditingNote.querySelector('.note-content').innerHTML;
             if (currentContent !== lastSavedContent) {
                 console.log('Poll detected change, saving');
                 saveNoteContent(currentEditingNote, currentContent);
@@ -186,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function stopEditing() {
         if (currentEditingNote) {
             const contentDiv = currentEditingNote.querySelector('.note-content');
-            const finalContent = contentDiv.textContent;
+            const finalContent = contentDiv.innerHTML;
             
             if (finalContent !== lastSavedContent) {
                 console.log('Saving note before exit');
@@ -204,5 +240,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup keyboard shortcuts
     setupKeyboardShortcuts({
         stopEditing
+    });
+
+    document.addEventListener('paste', (e) => {
+        const noteElement = e.target.closest('.note');
+        if (noteElement && e.target.classList.contains('note-content')) {
+            handleImagePaste(e, noteElement);
+        }
     });
 }); 

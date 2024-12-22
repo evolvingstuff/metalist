@@ -2,7 +2,7 @@
     <div class="note" data-id="${note['id']}">
         <div class="drag-handle" draggable="true">⋮⋮</div>
         <div class="note-content" contenteditable="true">
-            ${note['content'] | h}
+            ${note['content'] | n}
         </div>
         % if note['tags']:
         <div class="note-tags">

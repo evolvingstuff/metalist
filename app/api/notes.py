@@ -36,8 +36,13 @@ async def update_note(note_id: str, command: UpdateNoteContent, db: Session = De
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
+    print("Saving content:", command.content[:100], "...")  # Print first 100 chars to see what we're getting
     db_note.content = command.content
     db.commit()
+    
+    # Verify what was saved
+    db.refresh(db_note)
+    print("Saved content:", db_note.content[:100], "...")
     return Note.from_orm(db_note)
 
 @router.post("/{note_id}/move")
