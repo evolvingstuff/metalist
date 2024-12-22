@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const noteElement = e.target.closest('.note');
         
         // If clicking inside a note's content
-        if (noteElement && e.target.classList.contains('note-content')) {
+        if (noteElement && e.target.closest('.note-content')) {
             makeNoteEditable(noteElement);
         } 
         // If clicking outside any note
