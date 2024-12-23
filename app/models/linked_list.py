@@ -34,14 +34,28 @@ class LinkedListManager:
         seen = {head.id}
         current = head
 
+        # Verify head's parent
+        if head.parent_id != parent_id:
+            return False
+
         while current.next_id:
             next_note = next((note for note in notes if note.id == current.next_id), None)
-            if not next_note or next_note.id in seen or next_note.prev_id != current.id:
-                return False
+            # Explicit checks for each condition
+            if not next_note:
+                return False  # Next note doesn't exist
+            if next_note.id in seen:
+                return False  # Circular reference
+            if next_note.prev_id != current.id:
+                return False  # Broken bidirectional link
+            if next_note.parent_id != parent_id:
+                return False  # Wrong parent
             seen.add(next_note.id)
             current = next_note
 
-        return len(seen) == len(notes)
+        # Verify we found all notes and the tail is correct
+        return (len(seen) == len(notes) and 
+                current.next_id is None and  # Explicit tail check
+                current.parent_id == parent_id)  # Tail has correct parent
 
     @staticmethod
     def get_ordered_child_list(db: Session, model_class, parent_id: Optional[str] = None) -> List[Any]:
