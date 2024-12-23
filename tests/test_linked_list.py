@@ -917,9 +917,11 @@ def test_fuzz_linked_list_with_mutations(db):
 
     next_id = NODES  # For creating new notes
     active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+    active_note_ids = sorted(list(active_note_ids))
 
     # Perform random operations
     for i in range(STEPS):
+        db.expire_all()  # TODO useful?
         if i % VISUALIZE_INTERVAL == 0 and i > 0:
             print(f"\n=== State after {i} operations ===")
             visualize_tree()
@@ -928,12 +930,13 @@ def test_fuzz_linked_list_with_mutations(db):
 
         if operation < 0.2 and len(active_note_ids) > 2:  # 20% chance to delete if we have enough notes
             # Pick a random note to delete
-            note_id = random.choice(list(active_note_ids))
+            note_id = random.choice(active_note_ids)
             print(f"Deleting note {note_id}")
             note = db.query(DBNote).get(note_id)
             LinkedListManager.delete_note(db, note_id)
             # Recalculate active notes after deletion
             active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+            active_note_ids = sorted(list(active_note_ids))
             print("Delete successful!")
 
         elif operation < 0.4:  # 20% chance to add new note
@@ -944,7 +947,7 @@ def test_fuzz_linked_list_with_mutations(db):
             # Maybe make it a child of an existing note
             parent_id = None
             if active_note_ids and random.random() < 0.5:
-                parent_id = random.choice(list(active_note_ids))
+                parent_id = random.choice(active_note_ids)
                 print(f"Making it a child of {parent_id}")
             
             # Use LinkedListManager to create note
@@ -958,7 +961,8 @@ def test_fuzz_linked_list_with_mutations(db):
                     new_parent_id=parent_id
                 )
             
-            active_note_ids.add(new_id)
+            active_note_ids.append(new_id)
+            active_note_ids.sort()
             print("Add successful!")
 
         else:  # 60% chance for original move operation
@@ -966,11 +970,11 @@ def test_fuzz_linked_list_with_mutations(db):
                 continue
 
             # Pick a random note to move
-            note_id = random.choice(list(active_note_ids))
+            note_id = random.choice(active_note_ids)
             note = db.query(DBNote).get(note_id)
 
             # Pick a random target parent from active notes
-            possible_parents = list(active_note_ids)
+            possible_parents = active_note_ids
             new_parent_id = random.choice(possible_parents + [None])
             
             # Initialize sibling_id and position

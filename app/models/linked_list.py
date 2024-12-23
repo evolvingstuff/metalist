@@ -9,9 +9,18 @@ class LinkedListManager:
     @staticmethod
     def validate_list(db: Session, parent_id: Optional[str] = None) -> bool:
         """Validate the linked list structure"""
+        db.expire_all()  # TODO useful?
         notes = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
+        
+        # Add these debug lines
+        print(f"\nValidating list under parent {parent_id}")
+        print(f"Notes found: {[(n.id, n.prev_id, n.next_id) for n in notes]}")
+        
         if not notes:
             return True
+
+        for note in notes:
+            db.refresh(note)
 
         # Single note case
         if len(notes) == 1:
@@ -128,18 +137,25 @@ class LinkedListManager:
         try:
             # Create new note
             db_note = DBNote(id=note_id, content="", parent_id=parent_id)
+            print(f"DEBUG: Created note {note_id} with links: prev={db_note.prev_id}, next={db_note.next_id}")
             db.add(db_note)
 
-            # TODO: why ever pass in a parent?
-            # Find the current head (note with no prev_id)
-            current_head = db.query(DBNote).filter(DBNote.prev_id == None, DBNote.parent_id == parent_id).first()
+            # Find the current head
+            current_head = db.query(DBNote).filter(
+                DBNote.prev_id == None, 
+                DBNote.parent_id == parent_id
+            ).first()
+            print(f"DEBUG: Found current head: {current_head.id if current_head else None}")
 
             if current_head:
                 # Make new note the head
                 current_head.prev_id = note_id
                 db_note.next_id = current_head.id
+                print(f"DEBUG: Updated links - new note: prev={db_note.prev_id}, next={db_note.next_id}")
+                print(f"DEBUG: Updated links - old head: prev={current_head.prev_id}, next={current_head.next_id}")
 
             db.commit()
+            print(f"DEBUG: After commit - note links: prev={db_note.prev_id}, next={db_note.next_id}")
         except Exception as e:
             db.rollback()
             raise
