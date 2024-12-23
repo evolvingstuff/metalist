@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('dragover', (e) => {
         e.preventDefault();
         const noteElement = e.target.closest('.note');
+        const trashCan = e.target.closest('#trash-can');
         
         // Always remove existing highlights first
         if (dragTarget) {
@@ -106,7 +107,10 @@ document.addEventListener('DOMContentLoaded', () => {
             dragTarget.classList.remove('drag-inside');
         }
         
-        if (noteElement && noteElement.dataset.id !== draggedNoteId) {
+        if (trashCan) {
+            dragTarget = trashCan;
+            dragTarget.classList.add('drag-over');
+        } else if (noteElement && noteElement.dataset.id !== draggedNoteId) {
             // Get dimensions for position detection
             const rect = noteElement.getBoundingClientRect();
             const edgeSize = rect.width * 0.25; // 25% from left edge for nesting
@@ -146,7 +150,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.addEventListener('drop', async (e) => {
         e.preventDefault();
-        if (draggedNoteId && dragTarget) {
+        const trashCan = e.target.closest('#trash-can');
+        
+        if (trashCan && draggedNoteId) {
+            await fetch(`/api/notes/${draggedNoteId}`, {
+                method: 'DELETE'
+            });
+            window.location.reload();
+        }
+        else if (draggedNoteId && dragTarget) {
             const targetId = dragTarget.dataset.id;
             const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
                            dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
@@ -166,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Add new note button handler
-    document.getElementById('add-note-btn').addEventListener('click', async () => {
+    document.querySelector('.add-note').addEventListener('click', async () => {
         const parentId = null;  // Add at root level by default
         const response = await fetch('/api/notes/new', {
             method: 'POST',
@@ -218,6 +230,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const noteElement = e.target.closest('.note');
         if (noteElement && e.target.classList.contains('note-content')) {
             handleImagePaste(e, noteElement);
+        }
+    });
+
+    const trashCan = document.getElementById('trash-can');
+    if (!trashCan) {
+        alert('Trash can not found!');
+    }
+
+    trashCan.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        trashCan.classList.add('drag-over');
+    });
+
+    trashCan.addEventListener('dragover', (e) => {
+        e.preventDefault();  // Keep this without alert as it fires constantly
+    });
+
+    trashCan.addEventListener('dragleave', () => {
+        trashCan.classList.remove('drag-over');
+    });
+
+    trashCan.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        trashCan.classList.remove('drag-over');
+        
+        if (draggedNoteId) {
+            await fetch(`/api/notes/${draggedNoteId}`, {
+                method: 'DELETE'
+            });
+            window.location.reload();
         }
     });
 });
