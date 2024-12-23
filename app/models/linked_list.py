@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from sqlalchemy.orm import Session
 
 class LinkedListManager:
@@ -31,22 +31,34 @@ class LinkedListManager:
         return True
 
     @staticmethod
-    def get_ordered_list(db: Session, model_class, parent_id: Optional[str] = None) -> List:
-        """Get all notes in linked list order for a specific parent"""
-        items = []
-        current = db.query(model_class).filter(
-            model_class.prev_id == None,
-            model_class.parent_id == parent_id
-        ).first()
+    def get_ordered_list(db: Session, model_class, parent_id: Optional[str] = None) -> List[Any]:
+        """Get an ordered list of notes, optionally filtered by parent_id"""
+        # Get all notes with the specified parent_id
+        query = db.query(model_class).filter(model_class.parent_id == parent_id)
+        notes = query.all()
         
-        while current:
-            items.append(current)
-            current = db.query(model_class).filter(
-                model_class.id == current.next_id,
-                model_class.parent_id == parent_id
-            ).first()
-            
-        return items
+        if not notes:
+            return []
+        
+        # Find the first note (no prev_id)
+        first = next((note for note in notes if note.prev_id is None), None)
+        if not first:
+            raise ValueError("Corrupted list: No note found with prev_id=None")
+        
+        # Build ordered list
+        ordered = [first]
+        current = first
+        seen = {first.id}
+        
+        while current.next_id and current.next_id not in seen:
+            next_note = db.query(model_class).get(current.next_id)
+            if not next_note or next_note.parent_id != parent_id:
+                raise ValueError(f"Corrupted list: Invalid next_id {current.next_id}")
+            ordered.append(next_note)
+            seen.add(next_note.id)
+            current = next_note
+        
+        return ordered
 
     @staticmethod
     def insert_after(db: Session, model_class, note_id: str, target_id: str):
@@ -204,71 +216,76 @@ class LinkedListManager:
         if not note or not target or note_id == target_id:
             return
             
-        print(f"\nBefore move:")
-        print(f"Note {note_id}: prev={note.prev_id}, next={note.next_id}, parent={note.parent_id}")
-        print(f"Target {target_id}: prev={target.prev_id}, next={target.next_id}, parent={target.parent_id}")
+        # Prevent circular parent-child relationships
+        if new_parent_id:
+            current = new_parent_id
+            while current:
+                parent = db.query(model_class).get(current)
+                if parent and parent.id == note_id:  # Would create a cycle
+                    return
+                current = parent.parent_id if parent else None
             
         # Store original next/prev before unlinking
         original_prev_id = note.prev_id
         original_next_id = note.next_id
         old_parent_id = note.parent_id
             
-        print(f"\nUnlinking from original position:")
-        print(f"Original prev_id={original_prev_id}, next_id={original_next_id}")
-            
         # First, remove note from its current position
         if original_prev_id:
             prev = db.query(model_class).get(original_prev_id)
             if prev:
                 prev.next_id = original_next_id
-                print(f"Updated prev note {prev.id}: next_id -> {prev.next_id}")
         if original_next_id:
-            next = db.query(model_class).get(original_next_id)
-            if next:
-                next.prev_id = original_prev_id
-                print(f"Updated next note {next.id}: prev_id -> {next.prev_id}")
+            next_note = db.query(model_class).get(original_next_id)
+            if next_note:
+                next_note.prev_id = original_prev_id
                 
-        # Update parent if needed
-        if new_parent_id != old_parent_id:
-            print(f"\nChanging parent: {old_parent_id} -> {new_parent_id}")
-            note.parent_id = new_parent_id
-            
-            # When moving to a new parent, reset links
-            note.prev_id = None
-            note.next_id = None
-            
-            # If the target is the new parent, we're done
-            if target_id == new_parent_id:
-                db.commit()
-                return
-                
-        # Handle reordering
-        print(f"\nReordering within new parent {new_parent_id}:")
-        if insert_before:
-            original_target_prev_id = target.prev_id
-            note.prev_id = original_target_prev_id
-            note.next_id = target_id
-            target.prev_id = note_id
-            if original_target_prev_id:
-                prev = db.query(model_class).get(original_target_prev_id)
-                if prev:
-                    prev.next_id = note_id
-                    print(f"Updated prev note {prev.id}: next_id -> {note_id}")
-            print(f"Updated target {target_id}: prev_id -> {note_id}")
+        # Clear note's links and update parent
+        note.prev_id = None
+        note.next_id = None
+        note.parent_id = new_parent_id
+
+        # If target is in the new parent, insert relative to it
+        if target.parent_id == new_parent_id:
+            if insert_before:
+                original_target_prev_id = target.prev_id
+                note.prev_id = original_target_prev_id
+                note.next_id = target_id
+                target.prev_id = note_id
+                if original_target_prev_id:
+                    prev = db.query(model_class).get(original_target_prev_id)
+                    if prev:
+                        prev.next_id = note_id
+            else:
+                original_target_next_id = target.next_id
+                note.next_id = original_target_next_id
+                note.prev_id = target_id
+                target.next_id = note_id
+                if original_target_next_id:
+                    next_note = db.query(model_class).get(original_target_next_id)
+                    if next_note:
+                        next_note.prev_id = note_id
         else:
-            original_target_next_id = target.next_id
-            note.next_id = original_target_next_id
-            note.prev_id = target_id
-            target.next_id = note_id
-            if original_target_next_id:
-                next = db.query(model_class).get(original_target_next_id)
-                if next:
-                    next.prev_id = note_id
-                    print(f"Updated next note {next.id}: prev_id -> {note_id}")
-            print(f"Updated target {target_id}: next_id -> {note_id}")
-        
-        print(f"\nAfter move:")
-        print(f"Note {note_id}: prev={note.prev_id}, next={note.next_id}, parent={note.parent_id}")
-        print(f"Target {target_id}: prev={target.prev_id}, next={target.next_id}, parent={target.parent_id}")
-        
+            # Target is not in new parent, append to end of siblings
+            siblings = db.query(model_class).filter(
+                model_class.parent_id == new_parent_id
+            ).all()
+            
+            if siblings:
+                # Find the last sibling
+                last_sibling = None
+                for sibling in siblings:
+                    if sibling.id != note_id and not sibling.next_id:
+                        last_sibling = sibling
+                        break
+                        
+                if last_sibling:
+                    last_sibling.next_id = note_id
+                    note.prev_id = last_sibling.id
+                    note.next_id = None
+            else:
+                # First child
+                note.prev_id = None
+                note.next_id = None
+                
         db.commit()
