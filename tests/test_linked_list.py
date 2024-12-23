@@ -878,5 +878,21 @@ def test_fuzz_linked_list(db):
             print(f"Move failed: {str(e)}")
             continue
 
+        # Validate after each move
+        if not LinkedListManager.validate_list(db, TestNote, new_parent_id):
+            raise ValueError(f"Invalid list structure after moving note {note_id} to parent {new_parent_id}")
+        
+        # Also validate the old parent's list if it changed
+        old_parent_id = note.parent_id
+        if old_parent_id != new_parent_id and not LinkedListManager.validate_list(db, TestNote, old_parent_id):
+            raise ValueError(f"Invalid list structure in old parent {old_parent_id} after moving note {note_id}")
+        
+        # Validate root level if either parent was None
+        if old_parent_id is None or new_parent_id is None:
+            if not LinkedListManager.validate_list(db, TestNote, None):
+                raise ValueError("Invalid root level list structure")
+
+        print("Validation successful!")
+
     print("\n=== Final State ===")
     visualize_tree()
