@@ -1,22 +1,3 @@
-<%def name="render_note(note)">
-    <div class="note" 
-         data-id="${note['id']}" 
-         data-parent-id="${note.get('parent_id', '')}" 
-         draggable="true">
-        <div class="drag-handle">⋮⋮</div>
-        <div class="note-content" contenteditable="false">
-            ${note['content'] | h}
-        </div>
-        % if note.get('children'):
-        <div class="note-children">
-            % for child in note['children']:
-                ${render_note(child)}
-            % endfor
-        </div>
-        % endif
-    </div>
-</%def>
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -28,9 +9,7 @@
         <h1>MetaList <span class="version">v0.3.0</span></h1>
         <button id="add-note-btn">+</button>
         <div id="notes-container">
-            % for note in notes:
-                ${render_note(note)}
-            % endfor
+            <%include file="notes_list.html"/>
         </div>
     </div>
     <script type="module" src="/static/js/main.js"></script>
