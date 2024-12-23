@@ -916,7 +916,7 @@ def test_fuzz_linked_list_with_mutations(db):
     visualize_tree()
 
     next_id = NODES  # For creating new notes
-    active_note_ids = set(str(i) for i in range(NODES))
+    active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
 
     # Perform random operations
     for i in range(STEPS):
@@ -932,7 +932,8 @@ def test_fuzz_linked_list_with_mutations(db):
             print(f"Deleting note {note_id}")
             note = db.query(DBNote).get(note_id)
             LinkedListManager.delete_note(db, note_id)
-            active_note_ids.remove(note_id)
+            # Recalculate active notes after deletion
+            active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
             print("Delete successful!")
 
         elif operation < 0.4:  # 20% chance to add new note
