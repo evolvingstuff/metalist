@@ -83,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 dragTarget.classList.remove('drag-over');
                 dragTarget.classList.remove('drag-before');
                 dragTarget.classList.remove('drag-after');
+                dragTarget.classList.remove('drag-inside');
             }
         }
     });
@@ -96,28 +97,44 @@ document.addEventListener('DOMContentLoaded', () => {
             dragTarget.classList.remove('drag-over');
             dragTarget.classList.remove('drag-before');
             dragTarget.classList.remove('drag-after');
+            dragTarget.classList.remove('drag-inside');
         }
         
         if (noteElement && noteElement.dataset.id !== draggedNoteId) {
-            // Determine if we're in the top or bottom half
+            // Get dimensions for position detection
             const rect = noteElement.getBoundingClientRect();
+            const edgeSize = rect.width * 0.25; // 25% from left edge for nesting
             const midPoint = rect.top + rect.height / 2;
-            const insertBefore = e.clientY < midPoint;
+            
+            // Determine drop type based on position
+            let dropType;
+            if (e.clientX < rect.left + edgeSize) {
+                // Near the left edge - insert as sibling
+                dropType = e.clientY < midPoint ? 'before' : 'after';
+            } else {
+                // Away from left edge - insert as child
+                dropType = 'inside';
+            }
             
             // Check if move would be meaningful
             const draggedElement = document.querySelector(`[data-id="${draggedNoteId}"]`);
-            const wouldMove = isMoveMeaningful(draggedElement, noteElement, insertBefore);
+            const wouldMove = isMoveMeaningful(draggedElement, noteElement, dropType);
             
             if (wouldMove) {
                 dragTarget = noteElement;
                 dragTarget.classList.add('drag-over');
-                dragTarget.classList.toggle('drag-before', insertBefore);
-                dragTarget.classList.toggle('drag-after', !insertBefore);
+                if (dropType === 'before') {
+                    dragTarget.classList.add('drag-before');
+                } else if (dropType === 'after') {
+                    dragTarget.classList.add('drag-after');
+                } else {
+                    dragTarget.classList.add('drag-inside');
+                }
             } else {
-                dragTarget = null;  // Clear dragTarget if move wouldn't be meaningful
+                dragTarget = null;
             }
         } else {
-            dragTarget = null;  // Clear dragTarget if not over a valid note
+            dragTarget = null;
         }
     });
 
@@ -125,7 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         if (draggedNoteId && dragTarget) {
             const targetId = dragTarget.dataset.id;
-            const insertBefore = dragTarget.classList.contains('drag-before');
+            const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
+                           dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
             
             try {
                 const response = await fetch(`/api/notes/${draggedNoteId}/move`, {
@@ -135,8 +153,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                     body: JSON.stringify({
                         target_id: targetId,
-                        insert_before: insertBefore,
-                        new_parent_id: dragTarget.dataset.parentId || null
+                        insert_before: dropType === 'before',
+                        new_parent_id: dropType === 'inside' ? targetId : dragTarget.dataset.parentId || null
                     })
                 });
                 
@@ -153,19 +171,30 @@ document.addEventListener('DOMContentLoaded', () => {
             dragTarget.classList.remove('drag-over');
             dragTarget.classList.remove('drag-before');
             dragTarget.classList.remove('drag-after');
+            dragTarget.classList.remove('drag-inside');
         }
         dragTarget = null;
         draggedNoteId = null;
     });
 
-    function isMoveMeaningful(draggedElement, targetElement, insertBefore) {
+    function isMoveMeaningful(draggedElement, targetElement, dropType) {
+        // Don't allow dropping into own children
+        if (dropType === 'inside' && targetElement.closest(`[data-id="${draggedElement.dataset.id}"]`)) {
+            return false;
+        }
+        
         // If trying to insert before immediate next sibling
-        if (insertBefore && draggedElement.nextElementSibling === targetElement) {
+        if (dropType === 'before' && draggedElement.nextElementSibling === targetElement) {
             return false;
         }
         
         // If trying to insert after immediate previous sibling
-        if (!insertBefore && draggedElement.previousElementSibling === targetElement) {
+        if (dropType === 'after' && draggedElement.previousElementSibling === targetElement) {
+            return false;
+        }
+        
+        // If trying to move into current parent
+        if (dropType === 'inside' && targetElement.dataset.id === draggedElement.dataset.parentId) {
             return false;
         }
         

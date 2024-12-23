@@ -43,7 +43,7 @@ async def update_note(note_id: str, command: UpdateNoteContent, db: Session = De
 
 @router.post("/{note_id}/move")
 async def move_note(note_id: str, command: MoveNote, db: Session = Depends(get_db)):
-    print(f"Moving note {note_id} relative to {command.target_id}, insert_before: {command.insert_before}")
+    print(f"Moving note {note_id} relative to {command.target_id}, insert_before: {command.insert_before}, new_parent: {command.new_parent_id}")
     
     # Get both notes
     note = db.query(DBNote).get(note_id)
@@ -52,18 +52,23 @@ async def move_note(note_id: str, command: MoveNote, db: Session = Depends(get_d
     if not note or not target:
         raise HTTPException(status_code=404, detail="Note or target not found")
     
-    print(f"Before move - Note: prev={note.prev_id}, next={note.next_id}")
-    print(f"Before move - Target: prev={target.prev_id}, next={target.next_id}")
+    # Prevent invalid moves
+    if command.new_parent_id:
+        # Check if target would be moved into its own descendant
+        current = db.query(DBNote).get(command.new_parent_id)
+        while current:
+            if current.id == note_id:
+                raise HTTPException(status_code=400, detail="Cannot move a note into its own descendant")
+            current = db.query(DBNote).get(current.parent_id)
     
-    if command.insert_before:
-        LinkedListManager.insert_before(db, DBNote, note_id, command.target_id)
-    else:
-        LinkedListManager.insert_after(db, DBNote, note_id, command.target_id)
-    
-    db.refresh(note)
-    db.refresh(target)
-    print(f"After move - Note: prev={note.prev_id}, next={note.next_id}")
-    print(f"After move - Target: prev={target.prev_id}, next={target.next_id}")
+    LinkedListManager.move_note(
+        db, 
+        DBNote, 
+        note_id, 
+        command.target_id, 
+        command.insert_before,
+        command.new_parent_id
+    )
     
     return {"status": "success"}
 

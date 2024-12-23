@@ -135,3 +135,12 @@ body {
     padding: 0.2rem;
     color: var(--text-muted);
 }
+
+.note.drag-inside {
+    background-color: rgba(0, 123, 255, 0.1);
+    border: 2px dashed #007bff;
+}
+
+.note[data-parent-id] {
+    margin-left: 2rem;
+}
