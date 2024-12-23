@@ -151,6 +151,9 @@ class LinkedListManager:
         if new_parent_id and is_descendant(note_id, new_parent_id):
             raise ValueError("Cannot create circular parent-child relationship")
 
+        if new_parent_id == note_id:
+            raise ValueError("Cannot make a note its own parent")
+
         try:
             # Step 1: Unlink note from current position
             if old_prev_id:

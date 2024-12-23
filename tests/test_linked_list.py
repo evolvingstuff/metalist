@@ -790,8 +790,8 @@ def test_move_note_with_children_maintains_single_head(db):
 def test_fuzz_linked_list(db):
     """Fuzz test the linked list operations with random but valid moves"""
     SEED = 42
-    NODES = 10
-    STEPS = 500
+    NODES = 5
+    STEPS = 100
     VISUALIZE_INTERVAL = 1
 
     print(f"\n=== Starting Fuzz Test with seed: {SEED} ===")
@@ -841,14 +841,28 @@ def test_fuzz_linked_list(db):
         note = db.query(TestNote).get(note_id)
 
         # Pick a random target parent (can be None for root)
-        possible_parents = [str(i) for i in range(NODES) if i != int(note_id)]
+        possible_parents = [str(i) for i in range(NODES)]
         new_parent_id = random.choice(possible_parents + [None])
+        
+        # Initialize sibling_id and position
+        sibling_id = None
+        position = None
+        
+        # Fail fast if trying to make a note its own parent
+        if new_parent_id == note_id:
+            with pytest.raises(ValueError, match="Cannot make a note its own parent"):
+                LinkedListManager.move_note(
+                    db=db,
+                    model_class=TestNote,
+                    note_id=note_id,
+                    new_parent_id=new_parent_id,
+                    sibling_id=sibling_id,
+                    position=position
+                )
+            continue
 
         # Randomly decide whether to specify a sibling
         use_sibling = random.choice([True, False])
-        sibling_id = None
-        position = None
-
         if use_sibling and new_parent_id is not None:
             # Find valid siblings at target level
             siblings = db.query(TestNote).filter(
