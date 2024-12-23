@@ -38,6 +38,7 @@ body {
     border: 1px solid #ccc;
     border-radius: 4px;
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: 8px;
 }
@@ -56,8 +57,9 @@ body {
 }
 
 .note-children {
+    flex-basis: 100%;
     margin-left: 2rem;
-    width: 100%;
+    width: calc(100% - 2rem);
 }
 
 .note.drag-over {
