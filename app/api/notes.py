@@ -122,21 +122,7 @@ async def delete_note(note_id: str, db: Session = Depends(get_db)):
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    # Update links
-    if note.prev_id:
-        prev_note = db.query(DBNote).get(note.prev_id)
-        prev_note.next_id = note.next_id
-    if note.next_id:
-        next_note = db.query(DBNote).get(note.next_id)
-        next_note.prev_id = note.prev_id
-        
-    # Recursively delete children
-    children = db.query(DBNote).filter(DBNote.parent_id == note_id).all()
-    for child in children:
-        await delete_note(child.id, db)
-    
-    db.delete(note)
-    db.commit()
+    LinkedListManager.delete_note(db, DBNote, note_id)
     return {"status": "success"}
 
 @router.get("/")

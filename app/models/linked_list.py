@@ -140,10 +140,6 @@ class LinkedListManager:
         if position and not sibling_id:
             raise ValueError("Position cannot be specified without a sibling_id")
             
-        # Get all notes at the target level
-        target_notes = db.query(model_class).filter(model_class.parent_id == new_parent_id).all()
-        print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
-            
         # Prevent moving a note to itself as a sibling
         if sibling_id == note_id:
             raise ValueError("Cannot move note relative to itself")
@@ -171,6 +167,10 @@ class LinkedListManager:
 
         if new_parent_id == note_id:
             raise ValueError("Cannot make a note its own parent")
+
+        # Get all notes at the target level
+        target_notes = db.query(model_class).filter(model_class.parent_id == new_parent_id).all()
+        print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
 
         try:
             # Step 1: Unlink note from current position
@@ -232,3 +232,35 @@ class LinkedListManager:
         except Exception as e:
             db.rollback()
             raise
+
+    @staticmethod
+    def delete_note(db: Session, model_class, note_id: str):
+        """Delete a note and its children, maintaining list integrity"""
+        note = db.query(model_class).get(note_id)
+        if not note:
+            return
+        
+        # Get children before deleting
+        children = db.query(model_class).filter(model_class.parent_id == note_id).all()
+        
+        # Update sibling links
+        if note.prev_id:
+            prev_note = db.query(model_class).get(note.prev_id)
+            prev_note.next_id = note.next_id
+        if note.next_id:
+            next_note = db.query(model_class).get(note.next_id)
+            next_note.prev_id = note.prev_id
+        
+        # Move children to root level and link them together
+        for child in children:
+            LinkedListManager.move_note(
+                db=db,
+                model_class=model_class,
+                note_id=child.id,
+                new_parent_id=None,  # Move to root
+                sibling_id=note.next_id if note.next_id else None,
+                position=Position.BEFORE if note.next_id else None
+            )
+        
+        db.delete(note)
+        db.commit()

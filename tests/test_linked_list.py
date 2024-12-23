@@ -910,3 +910,160 @@ def test_fuzz_linked_list(db):
 
     print("\n=== Final State ===")
     visualize_tree()
+
+def test_fuzz_linked_list_with_mutations(db):
+    """Like test_fuzz_linked_list but also randomly adds and deletes notes"""
+    SEED = 42
+    NODES = 5
+    STEPS = 100
+    VISUALIZE_INTERVAL = 1
+
+    print(f"\n=== Starting Mutation Fuzz Test with seed: {SEED} ===")
+    random.seed(SEED)
+
+    # Create initial notes in a valid linked list structure
+    notes = []
+    for i in range(NODES):
+        note = TestNote(id=str(i), content=f"Note {i}")
+        if i > 0:
+            note.prev_id = str(i-1)
+            notes[i-1].next_id = str(i)
+        notes.append(note)
+
+    db.add_all(notes)
+    db.commit()
+
+    def visualize_tree():
+        def get_tree_string(parent_id=None, depth=0):
+            nodes = LinkedListManager.get_ordered_child_list(db, TestNote, parent_id)
+            if not nodes:
+                return ""
+            
+            result = ""
+            for node in nodes:
+                prefix = "  " * depth
+                links = f"[prev={node.prev_id}, next={node.next_id}]"
+                result += f"{prefix}└─ {node.id} {links}\n"
+                result += get_tree_string(node.id, depth + 1)
+            return result
+
+        print("\nTree structure with links:")
+        print(get_tree_string())
+        print("─" * 40)
+
+    print("\n=== Initial State ===")
+    visualize_tree()
+
+    next_id = NODES  # For creating new notes
+    active_note_ids = set(str(i) for i in range(NODES))
+
+    # Perform random operations
+    for i in range(STEPS):
+        if i % VISUALIZE_INTERVAL == 0 and i > 0:
+            print(f"\n=== State after {i} operations ===")
+            visualize_tree()
+
+        operation = random.random()
+
+        if operation < 0.2 and len(active_note_ids) > 2:  # 20% chance to delete if we have enough notes
+            # Pick a random note to delete
+            note_id = random.choice(list(active_note_ids))
+            print(f"Deleting note {note_id}")
+            note = db.query(TestNote).get(note_id)
+            LinkedListManager.delete_note(db, TestNote, note_id)
+            active_note_ids.remove(note_id)
+            print("Delete successful!")
+
+        elif operation < 0.4:  # 20% chance to add new note
+            new_id = str(next_id)
+            next_id += 1
+            print(f"Adding new note {new_id}")
+            
+            new_note = TestNote(id=new_id, content=f"Note {new_id}")
+            
+            # Maybe make it a child of an existing note
+            if active_note_ids and random.random() < 0.5:
+                parent_id = random.choice(list(active_note_ids))
+                new_note.parent_id = parent_id
+                print(f"Making it a child of {parent_id}")
+            
+            db.add(new_note)
+            db.commit()
+            active_note_ids.add(new_id)
+            print("Add successful!")
+
+        else:  # 60% chance for original move operation
+            if len(active_note_ids) < 2:
+                continue
+
+            # Pick a random note to move
+            note_id = random.choice(list(active_note_ids))
+            note = db.query(TestNote).get(note_id)
+
+            # Pick a random target parent from active notes
+            possible_parents = list(active_note_ids)
+            new_parent_id = random.choice(possible_parents + [None])
+            
+            # Initialize sibling_id and position
+            sibling_id = None
+            position = None
+            
+            # Fail fast if trying to make a note its own parent
+            if new_parent_id == note_id:
+                with pytest.raises(ValueError, match="Cannot make a note its own parent"):
+                    LinkedListManager.move_note(
+                        db=db,
+                        model_class=TestNote,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
+                continue
+
+            print(f"Moving note {note_id} (currently under {note.parent_id})")
+            print(f"To parent {new_parent_id}")
+
+            # Randomly decide whether to specify a sibling
+            use_sibling = random.choice([True, False])
+            if use_sibling and new_parent_id is not None:
+                # Find valid siblings at target level
+                siblings = db.query(TestNote).filter(
+                    TestNote.parent_id == new_parent_id,
+                    TestNote.id != note_id
+                ).all()
+                if siblings:
+                    sibling_id = random.choice([s.id for s in siblings])
+                    position = random.choice([Position.BEFORE, Position.AFTER])
+                    print(f"Relative to sibling {sibling_id} ({position})")
+
+            try:
+                LinkedListManager.move_note(
+                    db=db,
+                    model_class=TestNote,
+                    note_id=note_id,
+                    new_parent_id=new_parent_id,
+                    sibling_id=sibling_id,
+                    position=position
+                )
+                print("Move successful!")
+            except ValueError as e:
+                print(f"Move failed: {str(e)}")
+                continue
+
+        # Validate after each operation
+        # First validate root level
+        if not LinkedListManager.validate_list(db, TestNote, None):
+            raise ValueError(f"Invalid list structure under parent None")
+
+        # Then validate under each existing note that has children
+        existing_parents = db.query(TestNote.id).filter(
+            TestNote.id.in_(
+                db.query(TestNote.parent_id).filter(TestNote.parent_id.isnot(None))
+            )
+        ).all()
+
+        for (parent_id,) in existing_parents:
+            if not LinkedListManager.validate_list(db, TestNote, parent_id):
+                raise ValueError(f"Invalid list structure under parent {parent_id}")
+        print("Validation successful!")
