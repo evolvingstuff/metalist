@@ -754,7 +754,7 @@ def test_fuzz_linked_list(db):
     """Fuzz test the linked list operations with random but valid moves"""
     SEED = 42
     NODES = 5
-    STEPS = 100
+    STEPS = 250
     VISUALIZE_INTERVAL = 1
 
     print(f"\n=== Starting Fuzz Test with seed: {SEED} ===")
@@ -876,7 +876,7 @@ def test_fuzz_linked_list_with_mutations(db):
     """Like test_fuzz_linked_list but also randomly adds and deletes notes"""
     SEED = 42
     NODES = 5
-    STEPS = 100
+    STEPS = 250
     VISUALIZE_INTERVAL = 1
 
     print(f"\n=== Starting Mutation Fuzz Test with seed: {SEED} ===")

@@ -132,10 +132,9 @@ class LinkedListManager:
 
     @staticmethod
     def create_note(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
-        """Create a new note and insert it after the head of the linked list"""
-        # db.begin()
+        """Create a new note and insert it as the new head of the linked list"""
         try:
-            # Create new note
+            # Create new note with no links initially
             db_note = DBNote(id=note_id, content="", parent_id=parent_id)
             print(f"DEBUG: Created note {note_id} with links: prev={db_note.prev_id}, next={db_note.next_id}")
             db.add(db_note)
@@ -147,13 +146,13 @@ class LinkedListManager:
             ).first()
             print(f"DEBUG: Found current head: {current_head.id if current_head else None}")
 
-            if current_head:
-                # Make new note the head
+            if current_head and current_head.id != note_id:  # Make sure we're not looking at ourselves
+                # Make new note the head by linking it to current head
                 current_head.prev_id = note_id
                 db_note.next_id = current_head.id
                 print(f"DEBUG: Updated links - new note: prev={db_note.prev_id}, next={db_note.next_id}")
                 print(f"DEBUG: Updated links - old head: prev={current_head.prev_id}, next={current_head.next_id}")
-
+            
             db.commit()
             print(f"DEBUG: After commit - note links: prev={db_note.prev_id}, next={db_note.next_id}")
         except Exception as e:
