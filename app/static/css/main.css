@@ -32,19 +32,44 @@ body {
 }
 
 .note {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    border: 1px solid var(--border-color);
+    position: relative;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid #ccc;
     border-radius: 4px;
-    padding: 1rem;
-    margin-bottom: 1rem;
+}
+
+.note.drag-over {
+    background-color: #f8f9fa;
+}
+
+.note.drag-before::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -2px;
+    height: 4px;
+    background-color: #007bff;
+}
+
+.note.drag-after::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2px;
+    height: 4px;
+    background-color: #007bff;
+}
+
+.note.dragging {
+    opacity: 0.5;
 }
 
 .note-content {
-    flex-grow: 1;
-    padding: 0.5rem;
-    min-height: 2rem;
+    min-height: 1.2em;
+    padding: 0.2rem;
 }
 
 .note-content:empty::before {
@@ -105,17 +130,8 @@ body {
 }
 
 .drag-handle {
-    cursor: grab;
-    color: #999;
-    padding: 0.5rem;
+    cursor: move;
     user-select: none;
-    flex-shrink: 0;
-}
-
-.note.dragging {
-    opacity: 0.5;
-}
-
-.note.drag-over {
-    border-top: 2px solid var(--primary-color);
+    padding: 0.2rem;
+    color: var(--text-muted);
 }

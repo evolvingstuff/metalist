@@ -5,8 +5,9 @@ from typing import Optional
 class Note(BaseModel):
     id: str
     content: str
-    next_id: Optional[str] = None
+    parent_id: Optional[str] = None
     prev_id: Optional[str] = None
+    next_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

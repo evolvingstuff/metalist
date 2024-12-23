@@ -1,8 +1,19 @@
-% for note in notes:
-    <div class="note" data-id="${note['id']}">
+<%def name="render_note(note)">
+    <div class="note" data-id="${note['id']}" data-parent-id="${note.get('parent_id', '')}">
         <div class="drag-handle" draggable="true">⋮⋮</div>
         <div class="note-content" contenteditable="true">
             ${note['content'] | n}
         </div>
     </div>
-% endfor
+</%def>
+
+<%def name="render_level(notes, parent_id=None)">
+    % for note in notes:
+        % if note.get('parent_id') == parent_id:
+            ${render_note(note)}
+            ${render_level(notes, note['id'])}
+        % endif
+    % endfor
+</%def>
+
+${render_level(notes)}

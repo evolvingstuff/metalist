@@ -28,11 +28,21 @@ app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
     template = templates.get_template("index.html")
-    db_notes = LinkedListManager.get_ordered_list(db, DBNote)
     
+    # Get all notes in correct order
+    all_notes = LinkedListManager.get_ordered_list(db, DBNote)
+    
+    # Convert to dict for template
     notes = [{
         'id': note.id,
-        'content': note.content
-    } for note in db_notes]
+        'content': note.content,
+        'parent_id': note.parent_id,
+        'prev_id': note.prev_id,
+        'next_id': note.next_id
+    } for note in all_notes]
+    
+    print("\nDisplaying notes in order:")
+    for note in notes:
+        print(f"Note {note['id']}: prev={note['prev_id']}, next={note['next_id']}")
     
     return template.render(request=request, notes=notes, version=VERSION)
