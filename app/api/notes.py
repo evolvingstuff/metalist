@@ -45,7 +45,7 @@ async def move_note(
     print(f"Raw command data:", command.model_dump())
     
     def print_tree(parent_id=None, level=0):
-        notes = LinkedListManager.get_ordered_child_list(db, DBNote, parent_id)
+        notes = LinkedListManager.get_ordered_child_list(db, parent_id)
         result = ""
         for note in notes:
             result += "    " * level + f"{note.content}\n"
@@ -86,7 +86,6 @@ async def move_note(
     try:
         LinkedListManager.move_note(
             db=db,
-            model_class=DBNote,
             note_id=note_id,
             new_parent_id=command.new_parent_id,
             sibling_id=command.sibling_id,
@@ -106,12 +105,12 @@ async def delete_note(note_id: str, db: Session = Depends(get_db)):
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    LinkedListManager.delete_note(db, DBNote, note_id)
+    LinkedListManager.delete_note(db, note_id)
     return {"status": "success"}
 
 @router.get("/")
 async def get_notes(db: Session = Depends(get_db)):
-    notes = LinkedListManager.get_ordered_child_list(db, DBNote)
+    notes = LinkedListManager.get_ordered_child_list(db)
     return [Note.from_orm(note) for note in notes]
 
 @router.get("/debug")

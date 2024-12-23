@@ -30,7 +30,7 @@ async def home(request: Request, db: Session = Depends(get_db)):
     template = templates.get_template("index.html")
     
     def build_tree(parent_id=None):
-        notes = LinkedListManager.get_ordered_child_list(db, DBNote, parent_id)
+        notes = LinkedListManager.get_ordered_child_list(db, parent_id)
         return [{
             'id': note.id,
             'content': note.content,
