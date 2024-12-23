@@ -234,33 +234,35 @@ class LinkedListManager:
             raise
 
     @staticmethod
-    def delete_note(db: Session, model_class, note_id: str):
-        """Delete a note and its children, maintaining list integrity"""
+    def delete_note(db: Session, model_class, note_id: str) -> None:
+        """Delete a note and ALL its descendants, updating surrounding links"""
         note = db.query(model_class).get(note_id)
         if not note:
-            return
-        
-        # Get children before deleting
-        children = db.query(model_class).filter(model_class.parent_id == note_id).all()
-        
-        # Update sibling links
+            raise ValueError(f"Note {note_id} not found")
+
+        def get_all_descendant_ids(parent_id: str) -> set[str]:
+            """Recursively get IDs of all descendants"""
+            descendants = set()
+            children = db.query(model_class).filter(model_class.parent_id == parent_id).all()
+            for child in children:
+                descendants.add(child.id)
+                descendants.update(get_all_descendant_ids(child.id))
+            return descendants
+
+        # Delete all descendants first
+        descendant_ids = get_all_descendant_ids(note_id)
+        for descendant_id in descendant_ids:
+            descendant = db.query(model_class).get(descendant_id)
+            db.delete(descendant)
+
+        # Update links of surrounding notes at the original note's level
         if note.prev_id:
             prev_note = db.query(model_class).get(note.prev_id)
             prev_note.next_id = note.next_id
         if note.next_id:
             next_note = db.query(model_class).get(note.next_id)
             next_note.prev_id = note.prev_id
-        
-        # Move children to root level and link them together
-        for child in children:
-            LinkedListManager.move_note(
-                db=db,
-                model_class=model_class,
-                note_id=child.id,
-                new_parent_id=None,  # Move to root
-                sibling_id=note.next_id if note.next_id else None,
-                position=Position.BEFORE if note.next_id else None
-            )
-        
+
+        # Delete the original note
         db.delete(note)
         db.commit()
