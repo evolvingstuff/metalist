@@ -979,16 +979,24 @@ def test_fuzz_linked_list_with_mutations(db):
             next_id += 1
             print(f"Adding new note {new_id}")
             
-            new_note = TestNote(id=new_id, content=f"Note {new_id}")
-            
             # Maybe make it a child of an existing note
+            parent_id = None
             if active_note_ids and random.random() < 0.5:
                 parent_id = random.choice(list(active_note_ids))
-                new_note.parent_id = parent_id
                 print(f"Making it a child of {parent_id}")
             
-            db.add(new_note)
-            db.commit()
+            # Use LinkedListManager to create note
+            LinkedListManager.create_note(db, TestNote, new_id)
+            
+            # If we want it under a parent, move it there
+            if parent_id:
+                LinkedListManager.move_note(
+                    db=db,
+                    model_class=TestNote,
+                    note_id=new_id,
+                    new_parent_id=parent_id
+                )
+            
             active_note_ids.add(new_id)
             print("Add successful!")
 

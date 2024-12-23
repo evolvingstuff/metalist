@@ -4,8 +4,6 @@ from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime
 from typing import Optional
 
-from .linked_list import LinkedListManager
-
 class SafeSession(Session):
     def commit(self):
         """Override commit to check for corruption in dev mode"""

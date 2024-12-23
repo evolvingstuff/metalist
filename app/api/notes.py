@@ -15,23 +15,7 @@ router = APIRouter()
 @router.post("/new")
 async def create_note(db: Session = Depends(get_db), parent_id: str = None):
     note_id = str(uuid.uuid4())
-    
-    # Create new note
-    db_note = DBNote(id=note_id, content="", parent_id=parent_id)
-    db.add(db_note)
-    
-    # Find the current head (note with no prev_id)
-    current_head = db.query(DBNote).filter(
-        DBNote.prev_id == None,
-        DBNote.parent_id == parent_id
-    ).first()
-    
-    if current_head:
-        # Make new note the head
-        current_head.prev_id = note_id
-        db_note.next_id = current_head.id
-    
-    db.commit()
+    LinkedListManager.create_note(db, note_id, parent_id)
     return {"id": note_id}
 
 @router.put("/{note_id}")

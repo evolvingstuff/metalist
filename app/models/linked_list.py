@@ -1,10 +1,7 @@
 from typing import List, Optional, Any
 from sqlalchemy.orm import Session
-from enum import Enum
-
-class Position(Enum):
-    BEFORE = "before"
-    AFTER = "after"
+from .enums import Position
+from .database import DBNote
 
 class LinkedListManager:
     @staticmethod
@@ -121,6 +118,24 @@ class LinkedListManager:
                 break
             current = parent.parent_id
         return False
+
+    @staticmethod
+    def create_note(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
+        """Create a new note and insert it after the head of the linked list"""
+        # Create new note
+        db_note = DBNote(id=note_id, content="", parent_id=parent_id)
+        db.add(db_note)
+
+        # TODO: why ever pass in a parent?
+        # Find the current head (note with no prev_id)
+        current_head = db.query(DBNote).filter(DBNote.prev_id == None, DBNote.parent_id == parent_id).first()
+
+        if current_head:
+            # Make new note the head
+            current_head.prev_id = note_id
+            db_note.next_id = current_head.id
+
+        db.commit()
 
     @staticmethod
     def move_note(db: Session, model_class, note_id: str, new_parent_id: Optional[str] = None,
