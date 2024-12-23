@@ -124,20 +124,25 @@ class LinkedListManager:
     @staticmethod
     def create_note(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
         """Create a new note and insert it after the head of the linked list"""
-        # Create new note
-        db_note = DBNote(id=note_id, content="", parent_id=parent_id)
-        db.add(db_note)
+        # db.begin()
+        try:
+            # Create new note
+            db_note = DBNote(id=note_id, content="", parent_id=parent_id)
+            db.add(db_note)
 
-        # TODO: why ever pass in a parent?
-        # Find the current head (note with no prev_id)
-        current_head = db.query(DBNote).filter(DBNote.prev_id == None, DBNote.parent_id == parent_id).first()
+            # TODO: why ever pass in a parent?
+            # Find the current head (note with no prev_id)
+            current_head = db.query(DBNote).filter(DBNote.prev_id == None, DBNote.parent_id == parent_id).first()
 
-        if current_head:
-            # Make new note the head
-            current_head.prev_id = note_id
-            db_note.next_id = current_head.id
+            if current_head:
+                # Make new note the head
+                current_head.prev_id = note_id
+                db_note.next_id = current_head.id
 
-        db.commit()
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise
 
     @staticmethod
     def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
@@ -145,51 +150,52 @@ class LinkedListManager:
         """Move a note to a new position"""
         print(f"\nDEBUG: Moving note {note_id}")
         print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
-        
-        # Get the note to move
-        note = db.query(DBNote).get(note_id)
-        if not note:
-            raise ValueError(f"Note {note_id} not found")
-            
-        # Validate position parameters
-        if sibling_id and position is None:
-            raise ValueError("Position must be specified when sibling_id is provided")
-        if position and not sibling_id:
-            raise ValueError("Position cannot be specified without a sibling_id")
-            
-        # Prevent moving a note to itself as a sibling
-        if sibling_id == note_id:
-            raise ValueError("Cannot move note relative to itself")
-            
-        # Prevent moving a note to its current position
-        if new_parent_id == note.parent_id and sibling_id is None:
-            raise ValueError("Note is already at this position")
 
-        # Store original state for rollback
-        old_prev_id = note.prev_id
-        old_next_id = note.next_id
-        old_parent_id = note.parent_id  # TODO: not used?
-
-        def is_descendant(parent_id: str, potential_child_id: str) -> bool:
-            """Check if potential_child_id is a descendant of parent_id"""
-            current = db.query(DBNote).get(potential_child_id)
-            while current and current.parent_id:
-                if current.parent_id == parent_id:
-                    return True
-                current = db.query(DBNote).get(current.parent_id)
-            return False
-
-        if new_parent_id and is_descendant(note_id, new_parent_id):
-            raise ValueError("Cannot create circular parent-child relationship")
-
-        if new_parent_id == note_id:
-            raise ValueError("Cannot make a note its own parent")
-
-        # Get all notes at the target level
-        target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
-        print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
-
+        # db.begin()
         try:
+            # Get the note to move
+            note = db.query(DBNote).get(note_id)
+            if not note:
+                raise ValueError(f"Note {note_id} not found")
+
+            # Validate position parameters
+            if sibling_id and position is None:
+                raise ValueError("Position must be specified when sibling_id is provided")
+            if position and not sibling_id:
+                raise ValueError("Position cannot be specified without a sibling_id")
+
+            # Prevent moving a note to itself as a sibling
+            if sibling_id == note_id:
+                raise ValueError("Cannot move note relative to itself")
+
+            # Prevent moving a note to its current position
+            if new_parent_id == note.parent_id and sibling_id is None:
+                raise ValueError("Note is already at this position")
+
+            # Store original state for rollback
+            old_prev_id = note.prev_id
+            old_next_id = note.next_id
+            old_parent_id = note.parent_id  # TODO: not used?
+
+            def is_descendant(parent_id: str, potential_child_id: str) -> bool:
+                """Check if potential_child_id is a descendant of parent_id"""
+                current = db.query(DBNote).get(potential_child_id)
+                while current and current.parent_id:
+                    if current.parent_id == parent_id:
+                        return True
+                    current = db.query(DBNote).get(current.parent_id)
+                return False
+
+            if new_parent_id and is_descendant(note_id, new_parent_id):
+                raise ValueError("Cannot create circular parent-child relationship")
+
+            if new_parent_id == note_id:
+                raise ValueError("Cannot make a note its own parent")
+
+            # Get all notes at the target level
+            target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
+            print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
+
             # Step 1: Unlink note from current position
             if old_prev_id:
                 prev_note = db.query(DBNote).get(old_prev_id)
@@ -253,33 +259,38 @@ class LinkedListManager:
     @staticmethod
     def delete_note(db: Session, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
-        note = db.query(DBNote).get(note_id)
-        if not note:
-            raise ValueError(f"Note {note_id} not found")
+        # db.begin()
+        try:
+            note = db.query(DBNote).get(note_id)
+            if not note:
+                raise ValueError(f"Note {note_id} not found")
 
-        def get_all_descendant_ids(parent_id: str) -> set[str]:
-            """Recursively get IDs of all descendants"""
-            descendants = set()
-            children = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
-            for child in children:
-                descendants.add(child.id)
-                descendants.update(get_all_descendant_ids(child.id))
-            return descendants
+            def get_all_descendant_ids(parent_id: str) -> set[str]:
+                """Recursively get IDs of all descendants"""
+                descendants = set()
+                children = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
+                for child in children:
+                    descendants.add(child.id)
+                    descendants.update(get_all_descendant_ids(child.id))
+                return descendants
 
-        # Delete all descendants first
-        descendant_ids = get_all_descendant_ids(note_id)
-        for descendant_id in descendant_ids:
-            descendant = db.query(DBNote).get(descendant_id)
-            db.delete(descendant)
+            # Delete all descendants first
+            descendant_ids = get_all_descendant_ids(note_id)
+            for descendant_id in descendant_ids:
+                descendant = db.query(DBNote).get(descendant_id)
+                db.delete(descendant)
 
-        # Update links of surrounding notes at the original note's level
-        if note.prev_id:
-            prev_note = db.query(DBNote).get(note.prev_id)
-            prev_note.next_id = note.next_id
-        if note.next_id:
-            next_note = db.query(DBNote).get(note.next_id)
-            next_note.prev_id = note.prev_id
+            # Update links of surrounding notes at the original note's level
+            if note.prev_id:
+                prev_note = db.query(DBNote).get(note.prev_id)
+                prev_note.next_id = note.next_id
+            if note.next_id:
+                next_note = db.query(DBNote).get(note.next_id)
+                next_note.prev_id = note.prev_id
 
-        # Delete the original note
-        db.delete(note)
-        db.commit()
+            # Delete the original note
+            db.delete(note)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise
