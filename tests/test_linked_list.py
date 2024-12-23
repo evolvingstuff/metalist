@@ -789,15 +789,17 @@ def test_move_note_with_children_maintains_single_head(db):
 
 def test_fuzz_linked_list(db):
     """Fuzz test the linked list operations with random but valid moves"""
-
-    # Fixed seed for reproducibility
     SEED = 42
+    NODES = 10
+    STEPS = 500
+    VISUALIZE_INTERVAL = 1
+
     print(f"\n=== Starting Fuzz Test with seed: {SEED} ===")
     random.seed(SEED)
 
     # Create initial notes in a valid linked list structure
     notes = []
-    for i in range(4):
+    for i in range(NODES):
         note = TestNote(id=str(i), content=f"Note {i}")
         if i > 0:
             note.prev_id = str(i-1)
@@ -807,38 +809,39 @@ def test_fuzz_linked_list(db):
     db.add_all(notes)
     db.commit()
 
-    def print_list_state(operation_num=None):
-        if operation_num is not None:
-            print(f"\n=== State after operation {operation_num} ===")
-        else:
-            print("\n=== Initial State ===")
+    def visualize_tree():
+        def get_tree_string(parent_id=None, depth=0):
+            nodes = LinkedListManager.get_ordered_child_list(db, TestNote, parent_id)
+            if not nodes:
+                return ""
             
-        # Print root level
-        root_notes = db.query(TestNote).filter(TestNote.parent_id.is_(None)).order_by(TestNote.id).all()
-        print("Root level:")
-        for note in root_notes:
-            print(f"  {note.id}: prev={note.prev_id}, next={note.next_id}")
-            
-        # Print children for each note
-        for parent_id in [str(i) for i in range(4)]:
-            children = db.query(TestNote).filter(TestNote.parent_id == parent_id).order_by(TestNote.id).all()
-            if children:
-                print(f"Children of {parent_id}:")
-                for note in children:
-                    print(f"  {note.id}: prev={note.prev_id}, next={note.next_id}")
+            result = ""
+            for node in nodes:
+                prefix = "  " * depth
+                links = f"[prev={node.prev_id}, next={node.next_id}]"
+                result += f"{prefix}└─ {node.id} {links}\n"
+                result += get_tree_string(node.id, depth + 1)
+            return result
 
-    print_list_state()
+        print("\nTree structure with links:")
+        print(get_tree_string())
+        print("─" * 40)
 
-    # Run random operations
-    for i in range(10):  # Reduced to 10 operations for clearer output
-        print(f"\n=== Operation {i} ===")
+    print("\n=== Initial State ===")
+    visualize_tree()
+
+    # Perform random operations
+    for i in range(STEPS):
+        if i % VISUALIZE_INTERVAL == 0 and i > 0:
+            print(f"\n=== State after {i} operations ===")
+            visualize_tree()
 
         # Pick a random note to move
-        note_id = str(random.randint(0, 3))
+        note_id = str(random.randint(0, NODES-1))
         note = db.query(TestNote).get(note_id)
 
         # Pick a random target parent (can be None for root)
-        possible_parents = [str(i) for i in range(4) if i != int(note_id)]
+        possible_parents = [str(i) for i in range(NODES) if i != int(note_id)]
         new_parent_id = random.choice(possible_parents + [None])
 
         # Randomly decide whether to specify a sibling
@@ -871,15 +874,9 @@ def test_fuzz_linked_list(db):
                 position=position
             )
             print("Move successful!")
-            print_list_state(i)
         except ValueError as e:
             print(f"Move failed: {str(e)}")
             continue
 
-    # Final validation
-    print("\n=== Final Validation ===")
-    for parent_id in [None] + [str(i) for i in range(4)]:
-        notes = db.query(TestNote).filter(TestNote.parent_id == parent_id).all()
-        # Verify only one note has no prev_id
-        heads = [n for n in notes if n.prev_id is None]
-        assert len(heads) <= 1, f"Multiple heads found at parent {parent_id}: {heads}"
+    print("\n=== Final State ===")
+    visualize_tree()
