@@ -1,14 +1,38 @@
-<%inherit file="base.html"/>
-
-<%block name="title">MetaList <span class="version-badge">v${version}</span></%block>
-
-<%block name="content">
-    <div class="header">
-        <h1>MetaList <span class="version-badge">v${version}</span></h1>
-        <button id="add-note-btn" class="add-button">+</button>
+<%def name="render_note(note)">
+    <div class="note" 
+         data-id="${note['id']}" 
+         data-parent-id="${note.get('parent_id', '')}" 
+         draggable="true">
+        <div class="drag-handle">⋮⋮</div>
+        <div class="note-content" contenteditable="false">
+            ${note['content'] | h}
+        </div>
+        % if note.get('children'):
+        <div class="note-children">
+            % for child in note['children']:
+                ${render_note(child)}
+            % endfor
+        </div>
+        % endif
     </div>
+</%def>
 
-    <div id="notes-list">
-        <%include file="notes_list.html"/>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MetaList</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <div id="app">
+        <h1>MetaList <span class="version">v0.3.0</span></h1>
+        <button id="add-note-btn">+</button>
+        <div id="notes-container">
+            % for note in notes:
+                ${render_note(note)}
+            % endfor
+        </div>
     </div>
-</%block>
+    <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

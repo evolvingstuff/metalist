@@ -3,9 +3,12 @@ from sqlalchemy.orm import Session
 from ..models.database import DBNote
 from ..models.entities import Note
 from ..models.commands import UpdateNoteContent, MoveNote
-from ..models.linked_list import LinkedListManager
+from ..models.linked_list import LinkedListManager, Position
 from .dependencies import get_db
 import uuid
+from enum import Enum
+from pydantic import BaseModel, Field
+from typing import Optional
 
 router = APIRouter()
 
@@ -41,34 +44,61 @@ async def update_note(note_id: str, command: UpdateNoteContent, db: Session = De
     db.commit()
     return Note.from_orm(db_note)
 
+class MoveNoteCommand(BaseModel):
+    new_parent_id: Optional[str] = Field(default=None)
+    sibling_id: Optional[str] = None
+    position: Optional[str] = None  # "BEFORE" or "AFTER"
+
 @router.post("/{note_id}/move")
-async def move_note(note_id: str, command: MoveNote, db: Session = Depends(get_db)):
-    print(f"Moving note {note_id} relative to {command.target_id}, insert_before: {command.insert_before}, new_parent: {command.new_parent_id}")
+async def move_note(
+    note_id: str, 
+    command: MoveNoteCommand, 
+    db: Session = Depends(get_db)
+):
+    """Move a note to a new position"""
+    print("\nMove note request:")
+    print(f"note_id: {note_id}")
+    print(f"Raw command data:", command.model_dump())
     
-    # Get both notes
+    # Validate notes exist
     note = db.query(DBNote).get(note_id)
-    target = db.query(DBNote).get(command.target_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
     
-    if not note or not target:
-        raise HTTPException(status_code=404, detail="Note or target not found")
+    if command.sibling_id:
+        sibling = db.query(DBNote).get(command.sibling_id)
+        if not sibling:
+            raise HTTPException(status_code=404, detail="Sibling note not found")
+        
+        print(f"\nNote parent_id: {note.parent_id}")
+        print(f"Sibling parent_id: {sibling.parent_id}")
+        print(f"New parent_id: {command.new_parent_id}")
+        print(f"Types - Sibling parent_id: {type(sibling.parent_id)}, New parent_id: {type(command.new_parent_id)}")
+        print(f"Raw values - Sibling: {repr(sibling.parent_id)}, New: {repr(command.new_parent_id)}")
+        
+        # Check if both notes will be at the same level (both root or both under same parent)
+        if command.new_parent_id != sibling.parent_id:
+            raise HTTPException(status_code=400, detail="Sibling must be at the same level")
     
-    # Prevent invalid moves
-    if command.new_parent_id:
-        # Check if target would be moved into its own descendant
-        current = db.query(DBNote).get(command.new_parent_id)
-        while current:
-            if current.id == note_id:
-                raise HTTPException(status_code=400, detail="Cannot move a note into its own descendant")
-            current = db.query(DBNote).get(current.parent_id)
-    
-    LinkedListManager.move_note(
-        db, 
-        DBNote, 
-        note_id, 
-        command.target_id, 
-        command.insert_before,
-        command.new_parent_id
-    )
+    # Convert string position to enum
+    position = None
+    if command.position:
+        try:
+            position = Position[command.position.upper()]
+        except KeyError:
+            raise HTTPException(status_code=400, detail="Invalid position value")
+
+    try:
+        LinkedListManager.move_note(
+            db=db,
+            model_class=DBNote,
+            note_id=note_id,
+            new_parent_id=command.new_parent_id,
+            sibling_id=command.sibling_id,
+            position=position
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     return {"status": "success"}
 

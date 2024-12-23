@@ -7,6 +7,12 @@ let lastSavedContent = null;
 let draggedNoteId = null;
 let dragTarget = null;
 
+// Add Position enum to match backend
+const Position = {
+    BEFORE: 'BEFORE',
+    AFTER: 'AFTER'
+};
+
 async function handleImagePaste(e, noteElement) {
     const items = (e.clipboardData || e.originalEvent.clipboardData).items;
     
@@ -145,25 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
                            dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
             
-            try {
-                const response = await fetch(`/api/notes/${draggedNoteId}/move`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        target_id: targetId,
-                        insert_before: dropType === 'before',
-                        new_parent_id: dropType === 'inside' ? targetId : dragTarget.dataset.parentId || null
-                    })
-                });
-                
-                if (response.ok) {
-                    window.location.reload();
-                }
-            } catch (error) {
-                console.error('Error moving note:', error);
-            }
+            await moveNote(draggedNoteId, targetId, dropType);
         }
         
         // Clean up
@@ -176,30 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dragTarget = null;
         draggedNoteId = null;
     });
-
-    function isMoveMeaningful(draggedElement, targetElement, dropType) {
-        // Don't allow dropping into own children
-        if (dropType === 'inside' && targetElement.closest(`[data-id="${draggedElement.dataset.id}"]`)) {
-            return false;
-        }
-        
-        // If trying to insert before immediate next sibling
-        if (dropType === 'before' && draggedElement.nextElementSibling === targetElement) {
-            return false;
-        }
-        
-        // If trying to insert after immediate previous sibling
-        if (dropType === 'after' && draggedElement.previousElementSibling === targetElement) {
-            return false;
-        }
-        
-        // If trying to move into current parent
-        if (dropType === 'inside' && targetElement.dataset.id === draggedElement.dataset.parentId) {
-            return false;
-        }
-        
-        return true;
-    }
 
     // Add new note button handler
     document.getElementById('add-note-btn').addEventListener('click', async () => {
@@ -298,4 +262,74 @@ function makeNoteEditable(noteElement) {
     initialContent = contentDiv.innerHTML;
     lastSavedContent = initialContent;
     console.log('Started editing note, initial content:', initialContent);
+}
+
+function isMoveMeaningful(draggedElement, targetElement, dropType) {
+    // Don't allow dropping into own children
+    if (dropType === 'inside' && targetElement.closest(`[data-id="${draggedElement.dataset.id}"]`)) {
+        return false;
+    }
+    
+    // If trying to insert before immediate next sibling
+    if (dropType === 'before' && draggedElement.nextElementSibling === targetElement) {
+        return false;
+    }
+    
+    // If trying to insert after immediate previous sibling
+    if (dropType === 'after' && draggedElement.previousElementSibling === targetElement) {
+        return false;
+    }
+    
+    // If trying to move into current parent
+    if (dropType === 'inside' && targetElement.dataset.id === draggedElement.dataset.parentId) {
+        return false;
+    }
+    
+    return true;
+}
+
+async function moveNote(noteId, targetId, dropType) {
+    // Convert UI drop type to API parameters
+    let params;
+    
+    if (dropType === 'inside') {
+        // Moving to become child of target
+        params = {
+            new_parent_id: targetId,
+            sibling_id: null,
+            position: null
+        };
+    } else {
+        const targetElement = document.querySelector(`[data-id="${targetId}"]`);
+        const parentId = targetElement.dataset.parentId;
+        // Moving relative to a sibling - use null for root level
+        params = {
+            new_parent_id: parentId === "" || parentId === undefined || parentId === "None" ? null : parentId,
+            sibling_id: targetId,
+            position: dropType === 'before' ? Position.BEFORE : Position.AFTER
+        };
+    }
+
+    console.log('Sending move request with params:', params);  // Debug log
+
+    try {
+        const response = await fetch(`/api/notes/${noteId}/move`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(params)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to move note');
+        }
+
+        // Refresh the page to show new structure
+        window.location.reload();
+    } catch (error) {
+        console.error('Error moving note:', error);
+        alert(error.message);
+    }
 } 
