@@ -549,3 +549,125 @@ def test_prevent_circular_nesting(db):
     # Verify structure hasn't changed
     assert note2.parent_id == "1"
     assert note3.parent_id == "2"
+
+
+def test_drag_first_note_to_middle(db):
+    """
+    Test the specific UI scenario where dragging the first note to the middle
+    position causes it to disappear:
+    Initial: a -> b -> c
+    Action: Drag 'a' between 'b' and 'c'
+    Expected: b -> a -> c
+    """
+    # Create initial structure: a -> b -> c
+    note_a = TestNote(id="a", content="a", next_id="b")
+    note_b = TestNote(id="b", content="b", prev_id="a", next_id="c")
+    note_c = TestNote(id="c", content="c", prev_id="b")
+
+    db.add_all([note_a, note_b, note_c])
+    db.commit()
+
+    # Verify initial state
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["a", "b", "c"]
+
+    # Move note 'a' to be after 'b'
+    LinkedListManager.move_note(db, TestNote, "a", "b", False, None)
+
+    # Verify new order
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["b", "a", "c"]
+
+    # Verify all bidirectional links are correct
+    note_a = db.query(TestNote).get("a")
+    note_b = db.query(TestNote).get("b")
+    note_c = db.query(TestNote).get("c")
+
+    # Verify b's links
+    assert note_b.prev_id is None, "b should be the first note"
+    assert note_b.next_id == "a", "b should point to a"
+
+    # Verify a's links
+    assert note_a.prev_id == "b", "a should point back to b"
+    assert note_a.next_id == "c", "a should point forward to c"
+
+    # Verify c's links
+    assert note_c.prev_id == "a", "c should point back to a"
+    assert note_c.next_id is None, "c should be the last note"
+
+    # Additional verification that no notes were lost
+    all_notes = db.query(TestNote).all()
+    assert len(all_notes) == 3, "Should still have exactly 3 notes"
+
+
+def test_drag_first_note_to_middle_both_methods(db):
+    """
+    Test both possible ways the UI might handle dragging a note to the middle:
+    1. Inserting after the previous note (b)
+    2. Inserting before the next note (c)
+
+    Initial: a -> b -> c
+    Action: Drag 'a' between 'b' and 'c'
+    Expected: b -> a -> c
+    """
+    # Test inserting after b
+    note_a = TestNote(id="a", content="a", next_id="b")
+    note_b = TestNote(id="b", content="b", prev_id="a", next_id="c")
+    note_c = TestNote(id="c", content="c", prev_id="b")
+
+    db.add_all([note_a, note_b, note_c])
+    db.commit()
+
+    # Verify initial state
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["a", "b", "c"]
+
+    # Method 1: Move note 'a' to be after 'b'
+    LinkedListManager.move_note(db, TestNote, "a", "b", False, None)
+
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["b", "a", "c"]
+
+    # Clean up
+    db.query(TestNote).delete()
+    db.commit()
+
+    # Test inserting before c
+    note_a = TestNote(id="a", content="a", next_id="b")
+    note_b = TestNote(id="b", content="b", prev_id="a", next_id="c")
+    note_c = TestNote(id="c", content="c", prev_id="b")
+
+    db.add_all([note_a, note_b, note_c])
+    db.commit()
+
+    # Verify initial state
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["a", "b", "c"]
+
+    # Method 2: Move note 'a' to be before 'c'
+    LinkedListManager.move_note(db, TestNote, "a", "c", True, None)
+
+    # Verify final state
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["b", "a", "c"]
+
+    # Verify all bidirectional links in detail
+    note_a = db.query(TestNote).get("a")
+    note_b = db.query(TestNote).get("b")
+    note_c = db.query(TestNote).get("c")
+
+    # Verify b's links
+    assert note_b.prev_id is None, "b should be the first note"
+    assert note_b.next_id == "a", "b should point to a"
+
+    # Verify a's links
+    assert note_a.prev_id == "b", "a should point back to b"
+    assert note_a.next_id == "c", "a should point forward to c"
+
+    # Verify c's links
+    assert note_c.prev_id == "a", "c should point back to a"
+    assert note_c.next_id is None, "c should be the last note"
+
+    # Additional verification that no notes were lost
+    all_notes = db.query(TestNote).all()
+    assert len(all_notes) == 3, "Should still have exactly 3 notes"
