@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy import Column, String
 from app.models.linked_list import LinkedListManager, Position
+import random
 
 Base = declarative_base()
 
@@ -785,3 +786,100 @@ def test_move_note_with_children_maintains_single_head(db):
         TestNote.parent_id == "child1"
     ).all()
     assert len(notes_without_prev) == 1
+
+def test_fuzz_linked_list(db):
+    """Fuzz test the linked list operations with random but valid moves"""
+
+    # Fixed seed for reproducibility
+    SEED = 42
+    print(f"\n=== Starting Fuzz Test with seed: {SEED} ===")
+    random.seed(SEED)
+
+    # Create initial notes in a valid linked list structure
+    notes = []
+    for i in range(4):
+        note = TestNote(id=str(i), content=f"Note {i}")
+        if i > 0:
+            note.prev_id = str(i-1)
+            notes[i-1].next_id = str(i)
+        notes.append(note)
+
+    db.add_all(notes)
+    db.commit()
+
+    def print_list_state(operation_num=None):
+        if operation_num is not None:
+            print(f"\n=== State after operation {operation_num} ===")
+        else:
+            print("\n=== Initial State ===")
+            
+        # Print root level
+        root_notes = db.query(TestNote).filter(TestNote.parent_id.is_(None)).order_by(TestNote.id).all()
+        print("Root level:")
+        for note in root_notes:
+            print(f"  {note.id}: prev={note.prev_id}, next={note.next_id}")
+            
+        # Print children for each note
+        for parent_id in [str(i) for i in range(4)]:
+            children = db.query(TestNote).filter(TestNote.parent_id == parent_id).order_by(TestNote.id).all()
+            if children:
+                print(f"Children of {parent_id}:")
+                for note in children:
+                    print(f"  {note.id}: prev={note.prev_id}, next={note.next_id}")
+
+    print_list_state()
+
+    # Run random operations
+    for i in range(10):  # Reduced to 10 operations for clearer output
+        print(f"\n=== Operation {i} ===")
+
+        # Pick a random note to move
+        note_id = str(random.randint(0, 3))
+        note = db.query(TestNote).get(note_id)
+
+        # Pick a random target parent (can be None for root)
+        possible_parents = [str(i) for i in range(4) if i != int(note_id)]
+        new_parent_id = random.choice(possible_parents + [None])
+
+        # Randomly decide whether to specify a sibling
+        use_sibling = random.choice([True, False])
+        sibling_id = None
+        position = None
+
+        if use_sibling and new_parent_id is not None:
+            # Find valid siblings at target level
+            siblings = db.query(TestNote).filter(
+                TestNote.parent_id == new_parent_id,
+                TestNote.id != note_id
+            ).all()
+            if siblings:
+                sibling_id = random.choice([s.id for s in siblings])
+                position = random.choice([Position.BEFORE, Position.AFTER])
+
+        print(f"Moving note {note_id} (currently under {note.parent_id})")
+        print(f"To parent {new_parent_id}")
+        if sibling_id:
+            print(f"Relative to sibling {sibling_id} ({position})")
+
+        try:
+            LinkedListManager.move_note(
+                db=db,
+                model_class=TestNote,
+                note_id=note_id,
+                new_parent_id=new_parent_id,
+                sibling_id=sibling_id,
+                position=position
+            )
+            print("Move successful!")
+            print_list_state(i)
+        except ValueError as e:
+            print(f"Move failed: {str(e)}")
+            continue
+
+    # Final validation
+    print("\n=== Final Validation ===")
+    for parent_id in [None] + [str(i) for i in range(4)]:
+        notes = db.query(TestNote).filter(TestNote.parent_id == parent_id).all()
+        # Verify only one note has no prev_id
+        heads = [n for n in notes if n.prev_id is None]
+        assert len(heads) <= 1, f"Multiple heads found at parent {parent_id}: {heads}"

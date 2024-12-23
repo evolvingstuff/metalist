@@ -105,44 +105,34 @@ class LinkedListManager:
         return False
 
     @staticmethod
-    def move_note(
-        db: Session,
-        model_class,
-        note_id: str,
-        new_parent_id: str,
-        sibling_id: Optional[str] = None,
-        position: Optional[Position] = None
-    ):
-        """Move a note to a new parent, optionally positioning it relative to a sibling"""
+    def move_note(db: Session, model_class, note_id: str, new_parent_id: Optional[str] = None,
+                  sibling_id: Optional[str] = None, position: Optional[Position] = None):
+        """Move a note to a new position"""
         print(f"\nDEBUG: Moving note {note_id}")
         print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
-
-        # Get current state
+        
+        # Get the note to move
         note = db.query(model_class).get(note_id)
         if not note:
             raise ValueError(f"Note {note_id} not found")
-        
-        print(f"DEBUG: Note current state: parent={note.parent_id}, prev={note.prev_id}, next={note.next_id}")
-
-        # Get target level state
+            
+        # Validate position parameters
+        if sibling_id and position is None:
+            raise ValueError("Position must be specified when sibling_id is provided")
+        if position and not sibling_id:
+            raise ValueError("Position cannot be specified without a sibling_id")
+            
+        # Get all notes at the target level
         target_notes = db.query(model_class).filter(model_class.parent_id == new_parent_id).all()
         print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
-
+            
+        # Prevent moving a note to itself as a sibling
         if sibling_id == note_id:
             raise ValueError("Cannot move note relative to itself")
-        
-        if new_parent_id == note_id:
-            raise ValueError("Cannot make note a child of itself")
-        
-        if sibling_id is not None and position is None:
-            raise ValueError("Position must be specified when sibling_id is provided")
-        
-        if sibling_id is None and position is not None:
-            raise ValueError("Position cannot be specified without a sibling_id")
-
-        note = db.query(model_class).get(note_id)
-        if not note:
-            raise ValueError(f"Note {note_id} not found")
+            
+        # Prevent moving a note to its current position
+        if new_parent_id == note.parent_id and sibling_id is None:
+            raise ValueError("Note is already at this position")
 
         # Store original state for rollback
         old_prev_id = note.prev_id
