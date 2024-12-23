@@ -677,3 +677,53 @@ def test_invalid_position_parameters(db):
             sibling_id=None,
             position=Position.AFTER
         )
+
+def test_move_note_inside_parent(db: Session):
+    # Setup: Create three notes in a sequence at root level
+    note1 = TestNote(id="1", content="First")
+    note2 = TestNote(id="2", content="Second")
+    note3 = TestNote(id="3", content="Third")
+    
+    # Link them together at root level
+    note1.next_id = note2.id
+    note2.prev_id = note1.id
+    note2.next_id = note3.id
+    note3.prev_id = note2.id
+    
+    db.add_all([note1, note2, note3])
+    db.commit()
+    
+    # Verify initial structure
+    root_notes = LinkedListManager.get_ordered_child_list(db, TestNote)
+    assert [note.id for note in root_notes] == ["1", "2", "3"]
+    
+    # Act: Move note2 to become a child of note1
+    LinkedListManager.move_note(
+        db=db,
+        model_class=TestNote,
+        note_id=note2.id,
+        new_parent_id=note1.id,
+        sibling_id=None,
+        position=None
+    )
+    
+    # Refresh notes from database
+    note1 = db.query(TestNote).get("1")
+    note2 = db.query(TestNote).get("2")
+    note3 = db.query(TestNote).get("3")
+    
+    # Assert:
+    # 1. Verify root level notes
+    root_notes = LinkedListManager.get_ordered_child_list(db, TestNote)
+    assert [note.id for note in root_notes] == ["1", "3"]
+    
+    # 2. Verify note1's children
+    children = LinkedListManager.get_ordered_child_list(db, TestNote, parent_id=note1.id)
+    assert [note.id for note in children] == ["2"]
+    
+    # 3. Verify all links are maintained correctly
+    assert note1.next_id == note3.id, "Note1 should link to Note3"
+    assert note3.prev_id == note1.id, "Note3 should link back to Note1"
+    assert note2.parent_id == note1.id, "Note2 should be child of Note1"
+    assert note2.prev_id is None, "Note2 should have no prev as first child"
+    assert note2.next_id is None, "Note2 should have no next as only child"

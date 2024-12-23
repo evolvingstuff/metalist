@@ -310,7 +310,7 @@ async function moveNote(noteId, targetId, dropType) {
         };
     }
 
-    console.log('Sending move request with params:', params);  // Debug log
+    console.log('Sending move request with params:', JSON.stringify(params, null, 2));  // More detailed debug log
 
     try {
         const response = await fetch(`/api/notes/${noteId}/move`, {

@@ -56,9 +56,16 @@ async def move_note(
     db: Session = Depends(get_db)
 ):
     """Move a note to a new position"""
-    print("\nMove note request:")
-    print(f"note_id: {note_id}")
-    print(f"Raw command data:", command.model_dump())
+    def print_tree(parent_id=None, level=0):
+        notes = LinkedListManager.get_ordered_child_list(db, DBNote, parent_id)
+        result = ""
+        for note in notes:
+            result += "    " * level + f"{note.content}\n"
+            result += print_tree(note.id, level + 1)
+        return result
+
+    print("\nBEFORE MOVE:")
+    print(print_tree())
     
     # Validate notes exist
     note = db.query(DBNote).get(note_id)
@@ -95,10 +102,13 @@ async def move_note(
             note_id=note_id,
             new_parent_id=command.new_parent_id,
             sibling_id=command.sibling_id,
-            position=position
+            position=Position[command.position] if command.position else None
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+    print("\nAFTER MOVE:")
+    print(print_tree())
     
     return {"status": "success"}
 
