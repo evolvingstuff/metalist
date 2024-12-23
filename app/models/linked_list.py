@@ -16,7 +16,11 @@ class LinkedListManager:
 
         # Single note case
         if len(notes) == 1:
-            return True  # Any link state is valid for a single note
+            note = notes[0]
+            # Must be both head and tail, with correct parent
+            return (note.prev_id is None and 
+                   note.next_id is None and 
+                   note.parent_id == parent_id)
 
         # Multiple notes - should have exactly one head and one tail
         heads = [note for note in notes if note.prev_id is None]
