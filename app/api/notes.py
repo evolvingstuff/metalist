@@ -97,7 +97,7 @@ async def delete_note(note_id: str, db: Session = Depends(get_db)):
 
 @router.get("/")
 async def get_notes(db: Session = Depends(get_db)):
-    notes = LinkedListManager.get_ordered_list(db, DBNote)
+    notes = LinkedListManager.get_ordered_child_list(db, DBNote)
     return [Note.from_orm(note) for note in notes]
 
 @router.get("/debug")

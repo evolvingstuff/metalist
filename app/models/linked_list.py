@@ -1,6 +1,10 @@
 from typing import List, Optional, Any
 from sqlalchemy.orm import Session
+from enum import Enum
 
+class Position(Enum):
+    BEFORE = "before"
+    AFTER = "after"
 
 class LinkedListManager:
     @staticmethod
@@ -12,24 +16,23 @@ class LinkedListManager:
 
         # Single note case
         if len(notes) == 1:
-            note = notes[0]
-            return note.prev_id is None and note.next_id is None
+            return True  # Any link state is valid for a single note
 
-        # Find head
-        head = next((note for note in notes if note.prev_id is None), None)
-        if not head:
+        # Multiple notes - should have exactly one head and one tail
+        heads = [note for note in notes if note.prev_id is None]
+        tails = [note for note in notes if note.next_id is None]
+
+        if len(heads) != 1 or len(tails) != 1:
             return False
 
-        # Traverse list and collect seen nodes
+        # Traverse from head and verify links
+        head = heads[0]
         seen = {head.id}
         current = head
+
         while current.next_id:
             next_note = next((note for note in notes if note.id == current.next_id), None)
-            if not next_note:
-                return False
-            if next_note.id in seen:
-                return False
-            if next_note.prev_id != current.id:
+            if not next_note or next_note.id in seen or next_note.prev_id != current.id:
                 return False
             seen.add(next_note.id)
             current = next_note
@@ -37,41 +40,50 @@ class LinkedListManager:
         return len(seen) == len(notes)
 
     @staticmethod
-    def get_ordered_list(db: Session, model_class, parent_id: Optional[str] = None) -> List[Any]:
-        """Get an ordered list of notes"""
-        notes = db.query(model_class).filter(model_class.parent_id == parent_id).all()
-        if not notes:
+    def get_ordered_child_list(db: Session, model_class, parent_id: Optional[str] = None) -> List[Any]:
+        """Get an ordered list of child notes for the given parent_id"""
+        query = db.query(model_class)
+        if parent_id is None:
+            # When getting root notes, we need ALL notes that have no parent
+            query = query.filter(model_class.parent_id.is_(None))
+        else:
+            query = query.filter(model_class.parent_id == parent_id)
+        
+        # Get all notes for this level
+        all_notes = query.all()
+        if not all_notes:
             return []
-
-        # Single note case
-        if len(notes) == 1:
-            return notes
-
-        # Find head
-        head = next((note for note in notes if note.prev_id is None), None)
-        if not head:
-            return notes  # Return all notes if no clear head found
-
+        
+        # Find notes with no prev_id
+        first_notes = [note for note in all_notes if note.prev_id is None]
+        if len(first_notes) > 1:
+            raise ValueError(f"Invalid state: Multiple notes without prev_id found at same level: {[n.id for n in first_notes]}")
+        elif len(first_notes) == 0:
+            raise ValueError(f"Invalid state: No note without prev_id found at this level")
+        
+        first = first_notes[0]
+        
         # Build ordered list
-        ordered = [head]
-        current = head
-        seen = {head.id}
-        note_dict = {note.id: note for note in notes}
-
+        ordered = [first]
+        current = first
+        seen = {first.id}
+        
+        # Follow next_id chain
         while current.next_id:
-            if current.next_id not in note_dict:
-                break
-            next_note = note_dict[current.next_id]
+            next_note = next((note for note in all_notes if note.id == current.next_id), None)
+            if not next_note:
+                raise ValueError(f"Invalid state: Note {current.id} points to non-existent next_id {current.next_id}")
             if next_note.id in seen:
-                break
+                raise ValueError(f"Invalid state: Circular reference detected at note {current.id}")
             ordered.append(next_note)
             seen.add(next_note.id)
             current = next_note
-
-        # Add any remaining notes that weren't visited
-        remaining = [note for note in notes if note.id not in seen]
-        ordered.extend(remaining)
-
+        
+        # Verify we found all notes
+        if len(ordered) != len(all_notes):
+            missing = set(note.id for note in all_notes) - seen
+            raise ValueError(f"Invalid state: Notes not in chain: {missing}")
+        
         return ordered
 
     @staticmethod
@@ -87,82 +99,103 @@ class LinkedListManager:
                 return True
             seen.add(current)
             parent = db.query(model_class).get(current)
-            current = parent.parent_id if parent else None
+            if not parent:
+                break
+            current = parent.parent_id
         return False
 
     @staticmethod
-    def move_note(db: Session, model_class, note_id: str, target_id: str, insert_before: bool,
-                  new_parent_id: Optional[str] = None):
-        """Move a note within a list"""
+    def move_note(
+        db: Session,
+        model_class,
+        note_id: str,
+        new_parent_id: str,
+        sibling_id: Optional[str] = None,
+        position: Optional[Position] = None
+    ):
+        """Move a note to a new parent, optionally positioning it relative to a sibling"""
+        if sibling_id == note_id:
+            raise ValueError("Cannot move note relative to itself")
+        
+        if new_parent_id == note_id:
+            raise ValueError("Cannot make note a child of itself")
+        
+        if sibling_id is not None and position is None:
+            raise ValueError("Position must be specified when sibling_id is provided")
+        
+        if sibling_id is None and position is not None:
+            raise ValueError("Position cannot be specified without a sibling_id")
+
         note = db.query(model_class).get(note_id)
-        target = db.query(model_class).get(target_id)
+        if not note:
+            raise ValueError(f"Note {note_id} not found")
 
-        if not note or not target or note_id == target_id:
-            return
-
-        # Check for cycles
-        if LinkedListManager._would_create_cycle(db, model_class, note_id, new_parent_id):
-            return
-
-        # Save old state for potential rollback
+        # Store original state for rollback
         old_prev_id = note.prev_id
         old_next_id = note.next_id
         old_parent_id = note.parent_id
 
+        def is_descendant(parent_id: str, potential_child_id: str) -> bool:
+            """Check if potential_child_id is a descendant of parent_id"""
+            current = db.query(model_class).get(potential_child_id)
+            while current and current.parent_id:
+                if current.parent_id == parent_id:
+                    return True
+                current = db.query(model_class).get(current.parent_id)
+            return False
+
+        if new_parent_id and is_descendant(note_id, new_parent_id):
+            raise ValueError("Cannot create circular parent-child relationship")
+
         try:
-            # Step 1: Remove note from its current position
+            # Step 1: Unlink note from current position
             if old_prev_id:
                 prev_note = db.query(model_class).get(old_prev_id)
                 if prev_note:
                     prev_note.next_id = old_next_id
-
             if old_next_id:
                 next_note = db.query(model_class).get(old_next_id)
                 if next_note:
                     next_note.prev_id = old_prev_id
 
-            # Step 2: Handle parent changes
-            if new_parent_id:
-                # Moving to become a child
-                note.parent_id = new_parent_id
-                if target_id == new_parent_id:
-                    # Moving to empty parent - make it the only child
-                    note.prev_id = None
-                    note.next_id = None
-                    db.commit()
-                    return
+            # Step 2: Clear note's links
+            note.prev_id = None
+            note.next_id = None
+            note.parent_id = new_parent_id
 
-            # Step 3: Set up new links
-            target_parent = new_parent_id if new_parent_id is not None else target.parent_id
-            note.parent_id = target_parent
+            if sibling_id is None:
+                # Case 1: Becoming the only/first child
+                db.commit()
+                return
 
-            if not insert_before:
-                # Insert after target
-                next_id = target.next_id
-                target.next_id = note_id
-                note.prev_id = target_id
-                note.next_id = next_id
+            # Case 2: Positioning relative to a sibling
+            sibling = db.query(model_class).get(sibling_id)
+            if not sibling:
+                raise ValueError(f"Sibling note {sibling_id} not found")
 
-                if next_id:
-                    next_note = db.query(model_class).get(next_id)
-                    if next_note:
-                        next_note.prev_id = note_id
-            else:
-                # Insert before target
-                prev_id = target.prev_id
-                target.prev_id = note_id
-                note.next_id = target_id
-                note.prev_id = prev_id
+            if sibling.parent_id != new_parent_id:
+                raise ValueError("Sibling must have the same parent")
 
-                if prev_id:
-                    prev_note = db.query(model_class).get(prev_id)
+            if position == Position.BEFORE:
+                note.next_id = sibling_id
+                note.prev_id = sibling.prev_id
+                sibling.prev_id = note_id
+                if note.prev_id:
+                    prev_note = db.query(model_class).get(note.prev_id)
                     if prev_note:
                         prev_note.next_id = note_id
+            else:  # Position.AFTER
+                note.prev_id = sibling_id
+                note.next_id = sibling.next_id
+                sibling.next_id = note_id
+                if note.next_id:
+                    next_note = db.query(model_class).get(note.next_id)
+                    if next_note:
+                        next_note.prev_id = note_id
 
             db.commit()
 
         except Exception as e:
-            # Restore original state
             db.rollback()
             note.prev_id = old_prev_id
             note.next_id = old_next_id

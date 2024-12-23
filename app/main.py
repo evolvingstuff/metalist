@@ -30,7 +30,7 @@ async def home(request: Request, db: Session = Depends(get_db)):
     template = templates.get_template("index.html")
     
     # Get all notes in correct order
-    all_notes = LinkedListManager.get_ordered_list(db, DBNote)
+    all_notes = LinkedListManager.get_ordered_child_list(db, DBNote)
     
     # Convert to dict for template
     notes = [{
