@@ -114,6 +114,20 @@ class LinkedListManager:
         position: Optional[Position] = None
     ):
         """Move a note to a new parent, optionally positioning it relative to a sibling"""
+        print(f"\nDEBUG: Moving note {note_id}")
+        print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
+
+        # Get current state
+        note = db.query(model_class).get(note_id)
+        if not note:
+            raise ValueError(f"Note {note_id} not found")
+        
+        print(f"DEBUG: Note current state: parent={note.parent_id}, prev={note.prev_id}, next={note.next_id}")
+
+        # Get target level state
+        target_notes = db.query(model_class).filter(model_class.parent_id == new_parent_id).all()
+        print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
+
         if sibling_id == note_id:
             raise ValueError("Cannot move note relative to itself")
         
@@ -164,7 +178,12 @@ class LinkedListManager:
             note.parent_id = new_parent_id
 
             if sibling_id is None:
-                # Case 1: Becoming the only/first child
+                # Case 1: Find existing head at this level
+                existing_head = next((n for n in target_notes if n.prev_id is None), None)
+                if existing_head:
+                    # Make existing head point to our note
+                    existing_head.prev_id = note_id
+                    note.next_id = existing_head.id
                 db.commit()
                 return
 
@@ -194,11 +213,11 @@ class LinkedListManager:
                         next_note.prev_id = note_id
 
             db.commit()
+            print(f"DEBUG: Note final state: parent={note.parent_id}, prev={note.prev_id}, next={note.next_id}")
+            target_notes = db.query(model_class).filter(model_class.parent_id == new_parent_id).all()
+            print(f"DEBUG: Notes at target level AFTER: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
+            print(f"DEBUG: Notes without prev_id: {[n.id for n in target_notes if n.prev_id is None]}")
 
         except Exception as e:
             db.rollback()
-            note.prev_id = old_prev_id
-            note.next_id = old_next_id
-            note.parent_id = old_parent_id
-            db.commit()
             raise
