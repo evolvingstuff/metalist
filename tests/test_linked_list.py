@@ -425,3 +425,127 @@ def test_bulk_operations(db):
     for i in range(len(notes)-1):
         assert notes[i].next_id == notes[i+1].id
         assert notes[i+1].prev_id == notes[i].id
+
+def test_move_to_start_of_list(db):
+    """Test moving a note to the start of a list"""
+    # Create structure: 1 -> 2 -> 3 -> 4
+    note1 = TestNote(id="1", content="1", next_id="2")
+    note2 = TestNote(id="2", content="2", prev_id="1", next_id="3")
+    note3 = TestNote(id="3", content="3", prev_id="2", next_id="4")
+    note4 = TestNote(id="4", content="4", prev_id="3")
+    
+    db.add_all([note1, note2, note3, note4])
+    db.commit()
+    
+    # Move note4 to start by inserting before note1
+    LinkedListManager.move_note(db, TestNote, "4", "1", True, None)
+    
+    # Verify new order: 4 -> 1 -> 2 -> 3
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["4", "1", "2", "3"]
+
+def test_move_to_end_of_list(db):
+    """Test moving a note to the end of a list"""
+    # Create structure: 1 -> 2 -> 3 -> 4
+    note1 = TestNote(id="1", content="1", next_id="2")
+    note2 = TestNote(id="2", content="2", prev_id="1", next_id="3")
+    note3 = TestNote(id="3", content="3", prev_id="2", next_id="4")
+    note4 = TestNote(id="4", content="4", prev_id="3")
+    
+    db.add_all([note1, note2, note3, note4])
+    db.commit()
+    
+    # Move note1 to end by inserting after note4
+    LinkedListManager.move_note(db, TestNote, "1", "4", False, None)
+    
+    # Verify new order: 2 -> 3 -> 4 -> 1
+    notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in notes] == ["2", "3", "4", "1"]
+
+def test_move_between_nested_lists(db):
+    """Test moving notes between lists at different nesting levels"""
+    # Create structure:
+    # 1
+    #  └─ 2
+    #      └─ 3
+    # 4
+    #  └─ 5
+    #      └─ 6
+    note1 = TestNote(id="1", content="1")
+    note2 = TestNote(id="2", content="2", parent_id="1")
+    note3 = TestNote(id="3", content="3", parent_id="2")
+    note4 = TestNote(id="4", content="4")
+    note5 = TestNote(id="5", content="5", parent_id="4")
+    note6 = TestNote(id="6", content="6", parent_id="5")
+    
+    db.add_all([note1, note2, note3, note4, note5, note6])
+    db.commit()
+    
+    # Move note3 to be under note4, before note5
+    LinkedListManager.move_note(db, TestNote, "3", "5", True, "4")
+    
+    # Verify note3 is now under note4, before note5
+    children = LinkedListManager.get_ordered_list(db, TestNote, "4")
+    assert [note.id for note in children] == ["3", "5"]
+    
+    # Move note5 (with its child note6) to be under note1
+    LinkedListManager.move_note(db, TestNote, "5", "2", False, "1")
+    
+    # Verify note5 is now under note1, after note2
+    children = LinkedListManager.get_ordered_list(db, TestNote, "1")
+    assert [note.id for note in children] == ["2", "5"]
+    
+    # Verify note6 maintained its relationship with note5
+    assert note6.parent_id == "5"
+
+def test_move_to_empty_list(db):
+    """Test moving a note to an empty list"""
+    # Create structure:
+    # 1 -> 2 -> 3
+    # 4 (empty)
+    note1 = TestNote(id="1", content="1", next_id="2")
+    note2 = TestNote(id="2", content="2", prev_id="1", next_id="3")
+    note3 = TestNote(id="3", content="3", prev_id="2")
+    note4 = TestNote(id="4", content="4")  # No children
+    
+    db.add_all([note1, note2, note3, note4])
+    db.commit()
+    
+    # Move note2 to be first child of note4
+    LinkedListManager.move_note(db, TestNote, "2", "4", False, "4")
+    
+    # Verify root level is now 1 -> 3
+    root_notes = LinkedListManager.get_ordered_list(db, TestNote)
+    assert [note.id for note in root_notes] == ["1", "3"]
+    
+    # Verify note2 is now the only child of note4
+    children = LinkedListManager.get_ordered_list(db, TestNote, "4")
+    assert [note.id for note in children] == ["2"]
+
+def test_prevent_circular_nesting(db):
+    """Test prevention of circular parent-child relationships"""
+    # Create structure:
+    # 1
+    #  └─ 2
+    #      └─ 3
+    note1 = TestNote(id="1", content="1")
+    note2 = TestNote(id="2", content="2", parent_id="1")
+    note3 = TestNote(id="3", content="3", parent_id="2")
+    
+    db.add_all([note1, note2, note3])
+    db.commit()
+    
+    # Try to move note1 under note3 (should fail silently)
+    LinkedListManager.move_note(db, TestNote, "1", "3", False, "3")
+    
+    # Verify structure hasn't changed
+    assert note1.parent_id is None
+    assert note2.parent_id == "1"
+    assert note3.parent_id == "2"
+    
+    # Try to move note2 under note3 (should fail silently)
+    LinkedListManager.move_note(db, TestNote, "2", "3", False, "3")
+    
+    # Verify structure hasn't changed
+    assert note2.parent_id == "1"
+    assert note3.parent_id == "2"
