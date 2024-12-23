@@ -727,3 +727,61 @@ def test_move_note_inside_parent(db: Session):
     assert note2.parent_id == note1.id, "Note2 should be child of Note1"
     assert note2.prev_id is None, "Note2 should have no prev as first child"
     assert note2.next_id is None, "Note2 should have no next as only child"
+
+def test_move_note_maintains_single_head(db):
+    # Create two root-level notes
+    note1 = TestNote(id="note1", content="First")
+    note2 = TestNote(id="note2", content="Second")
+    db.add_all([note1, note2])
+    db.commit()
+    
+    # Move note2 under note1
+    LinkedListManager.move_note(
+        db=db,
+        model_class=TestNote,
+        note_id=note2.id,
+        new_parent_id=note1.id,
+        sibling_id=None,
+        position=None
+    )
+    
+    # Verify only one note has prev_id=None under note1
+    notes_without_prev = db.query(TestNote).filter(
+        TestNote.prev_id == None,
+        TestNote.parent_id == note1.id
+    ).all()
+    assert len(notes_without_prev) == 1
+
+def test_move_note_with_children_maintains_single_head(db):
+    # Create initial structure:
+    # Root
+    #   blah
+    # child 1
+    #   child 2
+    #   test
+    root = TestNote(id="root", content="Root")
+    blah = TestNote(id="blah", content="blah", parent_id="root")
+    child1 = TestNote(id="child1", content="child 1")
+    child2 = TestNote(id="child2", content="child 2", parent_id="child1")
+    test = TestNote(id="test", content="test", parent_id="child1", prev_id="child2")
+    child2.next_id = "test"
+    
+    db.add_all([root, blah, child1, child2, test])
+    db.commit()
+    
+    # Try to move Root under child1
+    LinkedListManager.move_note(
+        db=db,
+        model_class=TestNote,
+        note_id="root",
+        new_parent_id="child1",
+        sibling_id=None,
+        position=None
+    )
+    
+    # Verify only one note has prev_id=None under child1
+    notes_without_prev = db.query(TestNote).filter(
+        TestNote.prev_id == None,
+        TestNote.parent_id == "child1"
+    ).all()
+    assert len(notes_without_prev) == 1

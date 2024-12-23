@@ -56,6 +56,10 @@ async def move_note(
     db: Session = Depends(get_db)
 ):
     """Move a note to a new position"""
+    print("\nMove note request:")
+    print(f"note_id: {note_id}")
+    print(f"Raw command data:", command.model_dump())
+    
     def print_tree(parent_id=None, level=0):
         notes = LinkedListManager.get_ordered_child_list(db, DBNote, parent_id)
         result = ""

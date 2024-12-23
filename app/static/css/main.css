@@ -33,14 +33,14 @@ body {
 
 .note {
     position: relative;
-    margin: 10px 0;
-    padding: 10px;
+    margin: 4px 0;
+    padding: 6px;
     border: 1px solid #ccc;
     border-radius: 4px;
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
-    gap: 8px;
+    gap: 4px;
 }
 
 .drag-handle {
@@ -60,6 +60,8 @@ body {
     flex-basis: 100%;
     margin-left: 2rem;
     width: calc(100% - 2rem);
+    margin-top: 0;
+    margin-bottom: 0;
 }
 
 .note.drag-over {
