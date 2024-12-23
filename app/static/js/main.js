@@ -91,22 +91,33 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const noteElement = e.target.closest('.note');
         
+        // Always remove existing highlights first
+        if (dragTarget) {
+            dragTarget.classList.remove('drag-over');
+            dragTarget.classList.remove('drag-before');
+            dragTarget.classList.remove('drag-after');
+        }
+        
         if (noteElement && noteElement.dataset.id !== draggedNoteId) {
-            if (dragTarget && dragTarget !== noteElement) {
-                dragTarget.classList.remove('drag-over');
-                dragTarget.classList.remove('drag-before');
-                dragTarget.classList.remove('drag-after');
-            }
-            dragTarget = noteElement;
-            dragTarget.classList.add('drag-over');
-            
             // Determine if we're in the top or bottom half
             const rect = noteElement.getBoundingClientRect();
             const midPoint = rect.top + rect.height / 2;
             const insertBefore = e.clientY < midPoint;
             
-            dragTarget.classList.toggle('drag-before', insertBefore);
-            dragTarget.classList.toggle('drag-after', !insertBefore);
+            // Check if move would be meaningful
+            const draggedElement = document.querySelector(`[data-id="${draggedNoteId}"]`);
+            const wouldMove = isMoveMeaningful(draggedElement, noteElement, insertBefore);
+            
+            if (wouldMove) {
+                dragTarget = noteElement;
+                dragTarget.classList.add('drag-over');
+                dragTarget.classList.toggle('drag-before', insertBefore);
+                dragTarget.classList.toggle('drag-after', !insertBefore);
+            } else {
+                dragTarget = null;  // Clear dragTarget if move wouldn't be meaningful
+            }
+        } else {
+            dragTarget = null;  // Clear dragTarget if not over a valid note
         }
     });
 
@@ -135,12 +146,31 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 console.error('Error moving note:', error);
             }
-            
-            dragTarget.classList.remove('drag-over');
-            dragTarget = null;
-            draggedNoteId = null;
         }
+        
+        // Clean up
+        if (dragTarget) {
+            dragTarget.classList.remove('drag-over');
+            dragTarget.classList.remove('drag-before');
+            dragTarget.classList.remove('drag-after');
+        }
+        dragTarget = null;
+        draggedNoteId = null;
     });
+
+    function isMoveMeaningful(draggedElement, targetElement, insertBefore) {
+        // If trying to insert before immediate next sibling
+        if (insertBefore && draggedElement.nextElementSibling === targetElement) {
+            return false;
+        }
+        
+        // If trying to insert after immediate previous sibling
+        if (!insertBefore && draggedElement.previousElementSibling === targetElement) {
+            return false;
+        }
+        
+        return true;
+    }
 
     // Add new note button handler
     document.getElementById('add-note-btn').addEventListener('click', async () => {
