@@ -8,12 +8,20 @@ Core Architecture:
 - Mako for server-side templating
 
 Data Model & Storage:
-- Notes stored in an ordered linked list structure
+- Everything is a note (no separate concept of subnotes)
+- Notes can reference other notes and be hierarchically nested
+- References in content allow for both embedding and copying
+- Each note has:
+  - uuid: str
+  - content: str
+  - parent: Optional[str]
+  - prev: Optional[str]    # For efficient sibling ordering
+  - next: Optional[str]    # For efficient sibling ordering
+- Must handle large numbers of notes efficiently (15,000+)
 - Per-note encryption at rest
 - Server-side encryption/decryption
-- Searchable by tags and text content
+- Searchable by content
 - Encrypted search indexes persistent across server restarts
-- Must handle large numbers of notes efficiently
 
 Client-Server Communication:
 - TLS for non-localhost connections
@@ -25,10 +33,10 @@ Client-Server Communication:
 Operations & Sync:
 Two categories of operations:
 1. Immediate operations (sent instantly):
-   - Add note/subnote
-   - Paste note/subnote
-   - Delete note/subnote
-   - Move note/subnote
+   - Add note
+   - Delete note
+   - Move note
+   - Change note parent
 
 2. Polled operations (batched, sent every X ms):
    - Search updates
@@ -51,6 +59,7 @@ The application should optimize for:
 - Minimal network traffic
 - Clean separation of concerns
 - Simple, efficient client implementation
+- Single source of truth for all relationships
 
 Please help me implement this system, starting with setting up a FastAPI app to serve a basic webpage, using Mako as a template lib.
 
