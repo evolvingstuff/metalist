@@ -265,6 +265,11 @@ function makeNoteEditable(noteElement) {
 }
 
 function isMoveMeaningful(draggedElement, targetElement, dropType) {
+    // Don't allow a note to become its own parent
+    if (dropType === 'inside' && targetElement.dataset.id === draggedElement.dataset.id) {
+        return false;
+    }
+
     // Don't allow dropping into own children
     if (dropType === 'inside' && targetElement.closest(`[data-id="${draggedElement.dataset.id}"]`)) {
         return false;
