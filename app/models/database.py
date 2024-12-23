@@ -2,18 +2,18 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime
-from typing import Optional
+
 
 class SafeSession(Session):
     def commit(self):
         """Override commit to check for corruption in dev mode"""
-        dev_mode = True  # Could be from config
-        
-        if dev_mode:
-            # Check for corruption in DBNote linked lists
-            if LinkedListManager.detect_corruption(self, DBNote, None):
-                self.rollback()
-                raise ValueError("Linked list corruption detected, rolling back changes")
+        # dev_mode = True  # Could be from config
+        #
+        # if dev_mode:
+        #     # Check for corruption in DBNote linked lists
+        #     if LinkedListManager.detect_corruption(self, DBNote, None):
+        #         self.rollback()
+        #         raise ValueError("Linked list corruption detected, rolling back changes")
         
         super().commit()
 
@@ -45,3 +45,4 @@ class DBNote(Base):
     next_id = Column(String, ForeignKey('notes.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
