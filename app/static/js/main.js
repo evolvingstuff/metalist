@@ -145,6 +145,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!trashCan) {
         alert('Trash can not found!');
     }
+
+    const state = JSON.parse(localStorage.getItem('editingState'));
+    if (state) {
+        const noteElement = document.querySelector(`[data-id="${state.noteId}"]`);
+        if (noteElement) {
+            makeNoteEditable(noteElement);
+            restoreCursorPosition(noteElement, state.cursorPosition);
+        }
+    }
 });
 
 async function saveNoteContent(noteElement, content) {
@@ -454,4 +463,78 @@ document.addEventListener('keydown', (e) => {
             }).then(() => window.location.reload());
         }
     }
+
+    if (e.metaKey && currentEditingNote) {
+        const noteId = currentEditingNote.dataset.id;
+        const parentId = currentEditingNote.dataset.parentId || null;
+
+        const saveCursorPosition = () => {
+            const selection = window.getSelection();
+            const range = selection.getRangeAt(0);
+            const preCaretRange = range.cloneRange();
+            preCaretRange.selectNodeContents(currentEditingNote.querySelector('.note-content'));
+            preCaretRange.setEnd(range.endContainer, range.endOffset);
+            const cursorPosition = preCaretRange.toString().length;
+            localStorage.setItem('editingState', JSON.stringify({ noteId, cursorPosition }));
+        };
+
+        const restoreCursorPosition = (noteElement, position) => {
+            const contentDiv = noteElement.querySelector('.note-content');
+            const range = document.createRange();
+            const selection = window.getSelection();
+            range.setStart(contentDiv.firstChild, position);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        };
+
+        if (e.key === 'ArrowUp') {
+            const prevSibling = currentEditingNote.previousElementSibling;
+            if (prevSibling) {
+                saveCursorPosition();
+                const siblingId = prevSibling.dataset.id;
+                moveNote(noteId, siblingId, 'before').then(() => {
+                    const state = JSON.parse(localStorage.getItem('editingState'));
+                    const newNote = document.querySelector(`[data-id="${state.noteId}"]`);
+                    makeNoteEditable(newNote);
+                    restoreCursorPosition(newNote, state.cursorPosition);
+                });
+            }
+        }
+
+        if (e.key === 'ArrowDown') {
+            const nextSibling = currentEditingNote.nextElementSibling;
+            if (nextSibling) {
+                saveCursorPosition();
+                const siblingId = nextSibling.dataset.id;
+                moveNote(noteId, siblingId, 'after').then(() => {
+                    const state = JSON.parse(localStorage.getItem('editingState'));
+                    const newNote = document.querySelector(`[data-id="${state.noteId}"]`);
+                    makeNoteEditable(newNote);
+                    restoreCursorPosition(newNote, state.cursorPosition);
+                });
+            }
+        }
+    }
 }); 
+
+function exitEditingMode() {
+    if (currentEditingNote) {
+        const contentDiv = currentEditingNote.querySelector('.note-content');
+        const finalContent = contentDiv.innerHTML;
+        
+        if (finalContent !== lastSavedContent) {
+            console.log('Saving note before exit');
+            saveNoteContent(currentEditingNote, finalContent);
+        }
+        
+        contentDiv.contentEditable = 'false';
+        currentEditingNote.classList.remove('editing');
+        currentEditingNote = null;
+        initialContent = null;
+        lastSavedContent = null;
+        
+        // Clear local storage
+        localStorage.removeItem('editingState');
+    }
+} 
