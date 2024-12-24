@@ -6,6 +6,7 @@ let initialContent = null;
 let lastSavedContent = null;
 let draggedNoteId = null;
 let dragTarget = null;
+let isDraggingAddButton = false;
 
 // Add Position enum to match backend
 const Position = {
@@ -260,6 +261,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'DELETE'
             });
             window.location.reload();
+        }
+    });
+
+    // Add to DOMContentLoaded event listener
+    document.addEventListener('dragstart', (e) => {
+        const addButton = e.target.closest('.add-note');
+        if (addButton) {
+            isDraggingAddButton = true;
+            
+            // Create ghost image for drag
+            const ghost = document.createElement('div');
+            ghost.className = 'note';
+            ghost.innerHTML = '<div class="note-content">New note</div>';
+            document.body.appendChild(ghost);
+            e.dataTransfer.setDragImage(ghost, 0, 0);
+            setTimeout(() => document.body.removeChild(ghost), 0);
+        }
+    });
+
+    document.addEventListener('dragend', (e) => {
+        if (isDraggingAddButton) {
+            isDraggingAddButton = false;
         }
     });
 });

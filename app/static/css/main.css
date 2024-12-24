@@ -196,3 +196,11 @@ body {
     transform: scale(1.1);      /* Slightly enlarge */
     transition: all 0.2s ease;  /* Smooth transition */
 }
+
+.add-note {
+    cursor: grab;
+}
+
+.add-note:active {
+    cursor: grabbing;
+}
