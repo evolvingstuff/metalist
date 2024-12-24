@@ -14,13 +14,7 @@ const Position = {
     AFTER: 'AFTER'
 };
 
-// Remove debug div creation code and just get reference
-const debugDiv = document.getElementById('dragDebug');
-if (!debugDiv) {
-    alert('Debug div not found!');  // This will tell us if we can't find it
-} else {
-    debugDiv.innerHTML = 'Debug div found and working!';  // This will show if we can access it
-}
+
 
 async function handleImagePaste(e, noteElement) {
     const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -330,13 +324,6 @@ document.addEventListener('dragstart', (e) => {
     const dragHandle = e.target.closest('.drag-handle');
     const noteElement = e.target.closest('.note');
     
-    debugDiv.innerHTML = `
-        Dragging: ${e.target.tagName} (${e.target.className})<br>
-        Add Button: ${!!addButton}<br>
-        Drag Handle: ${!!dragHandle}<br>
-        Note: ${!!noteElement}${noteElement ? ` (${noteElement.dataset.id})` : ''}<br>
-    `;
-    
     if (addButton) {
         isDraggingAddButton = true;
         // Create ghost image for drag
@@ -350,12 +337,6 @@ document.addEventListener('dragstart', (e) => {
         draggedNoteId = noteElement.dataset.id;
         noteElement.classList.add('dragging');
     }
-    
-    debugDiv.innerHTML += `
-        Final state:<br>
-        isDraggingAddButton: ${isDraggingAddButton}<br>
-        draggedNoteId: ${draggedNoteId}
-    `;
 });
 
 document.addEventListener('dragover', (e) => {
