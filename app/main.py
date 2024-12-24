@@ -41,8 +41,8 @@ async def home(request: Request, db: Session = Depends(get_db)):
     # Get root level notes with their children
     notes = build_tree(None)
     
-    print("\nDisplaying notes in order:")
-    for note in notes:
-        print(f"Note {note['id']}: content={note['content']}, children={len(note.get('children', []))}")
+    # print("\nDisplaying notes in order:")
+    # for note in notes:
+    #     print(f"Note {note['id']}: content={note['content']}, children={len(note.get('children', []))}")
     
     return template.render(request=request, notes=notes, version=VERSION)

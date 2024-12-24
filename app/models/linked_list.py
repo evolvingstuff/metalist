@@ -136,7 +136,7 @@ class LinkedListManager:
         try:
             # Create new note with no links initially
             db_note = DBNote(id=note_id, content="", parent_id=parent_id)
-            print(f"DEBUG: Created note {note_id} with links: prev={db_note.prev_id}, next={db_note.next_id}")
+            # print(f"DEBUG: Created note {note_id} with links: prev={db_note.prev_id}, next={db_note.next_id}")
             db.add(db_note)
 
             # Find the current head
@@ -144,17 +144,17 @@ class LinkedListManager:
                 DBNote.prev_id == None, 
                 DBNote.parent_id == parent_id
             ).first()
-            print(f"DEBUG: Found current head: {current_head.id if current_head else None}")
+            # print(f"DEBUG: Found current head: {current_head.id if current_head else None}")
 
             if current_head and current_head.id != note_id:  # Make sure we're not looking at ourselves
                 # Make new note the head by linking it to current head
                 current_head.prev_id = note_id
                 db_note.next_id = current_head.id
-                print(f"DEBUG: Updated links - new note: prev={db_note.prev_id}, next={db_note.next_id}")
-                print(f"DEBUG: Updated links - old head: prev={current_head.prev_id}, next={current_head.next_id}")
+                # print(f"DEBUG: Updated links - new note: prev={db_note.prev_id}, next={db_note.next_id}")
+                # print(f"DEBUG: Updated links - old head: prev={current_head.prev_id}, next={current_head.next_id}")
             
             db.commit()
-            print(f"DEBUG: After commit - note links: prev={db_note.prev_id}, next={db_note.next_id}")
+            # print(f"DEBUG: After commit - note links: prev={db_note.prev_id}, next={db_note.next_id}")
         except Exception as e:
             db.rollback()
             raise
@@ -163,8 +163,8 @@ class LinkedListManager:
     def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
                   sibling_id: Optional[str] = None, position: Optional[Position] = None):
         """Move a note to a new position"""
-        print(f"\nDEBUG: Moving note {note_id}")
-        print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
+        # print(f"\nDEBUG: Moving note {note_id}")
+        # print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
 
         # db.begin()
         try:
@@ -209,7 +209,7 @@ class LinkedListManager:
 
             # Get all notes at the target level
             target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
-            print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
+            # print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
 
             # Step 1: Unlink note from current position
             if old_prev_id:
@@ -262,10 +262,10 @@ class LinkedListManager:
                         next_note.prev_id = note_id
 
             db.commit()
-            print(f"DEBUG: Note final state: parent={note.parent_id}, prev={note.prev_id}, next={note.next_id}")
-            target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
-            print(f"DEBUG: Notes at target level AFTER: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
-            print(f"DEBUG: Notes without prev_id: {[n.id for n in target_notes if n.prev_id is None]}")
+            # print(f"DEBUG: Note final state: parent={note.parent_id}, prev={note.prev_id}, next={note.next_id}")
+            # target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
+            # print(f"DEBUG: Notes at target level AFTER: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
+            # print(f"DEBUG: Notes without prev_id: {[n.id for n in target_notes if n.prev_id is None]}")
 
         except Exception as e:
             db.rollback()
