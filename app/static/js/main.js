@@ -466,29 +466,21 @@ document.addEventListener('keydown', (e) => {
 
     if (e.metaKey && currentEditingNote) {
         const noteId = currentEditingNote.dataset.id;
-        const parentId = currentEditingNote.dataset.parentId || null;
 
         const saveCursorPosition = () => {
             const selection = window.getSelection();
-            const range = selection.getRangeAt(0);
-            const preCaretRange = range.cloneRange();
-            preCaretRange.selectNodeContents(currentEditingNote.querySelector('.note-content'));
-            preCaretRange.setEnd(range.endContainer, range.endOffset);
-            const cursorPosition = preCaretRange.toString().length;
-            localStorage.setItem('editingState', JSON.stringify({ noteId, cursorPosition }));
-        };
-
-        const restoreCursorPosition = (noteElement, position) => {
-            const contentDiv = noteElement.querySelector('.note-content');
-            const range = document.createRange();
-            const selection = window.getSelection();
-            range.setStart(contentDiv.firstChild, position);
-            range.collapse(true);
-            selection.removeAllRanges();
-            selection.addRange(range);
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                const preCaretRange = range.cloneRange();
+                preCaretRange.selectNodeContents(currentEditingNote.querySelector('.note-content'));
+                preCaretRange.setEnd(range.endContainer, range.endOffset);
+                const cursorPosition = preCaretRange.toString().length;
+                localStorage.setItem('editingState', JSON.stringify({ noteId, cursorPosition }));
+            }
         };
 
         if (e.key === 'ArrowUp') {
+            e.preventDefault();
             const prevSibling = currentEditingNote.previousElementSibling;
             if (prevSibling) {
                 saveCursorPosition();
@@ -503,6 +495,7 @@ document.addEventListener('keydown', (e) => {
         }
 
         if (e.key === 'ArrowDown') {
+            e.preventDefault();
             const nextSibling = currentEditingNote.nextElementSibling;
             if (nextSibling) {
                 saveCursorPosition();
@@ -537,4 +530,14 @@ function exitEditingMode() {
         // Clear local storage
         localStorage.removeItem('editingState');
     }
+} 
+
+function restoreCursorPosition(noteElement, position) {
+    const contentDiv = noteElement.querySelector('.note-content');
+    const range = document.createRange();
+    const selection = window.getSelection();
+    range.setStart(contentDiv.firstChild, position);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
 } 
