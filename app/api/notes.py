@@ -40,9 +40,9 @@ async def move_note(
     db: Session = Depends(get_db)
 ):
     """Move a note to a new position"""
-    print("\nMove note request:")
-    print(f"note_id: {note_id}")
-    print(f"Raw command data:", command.model_dump())
+    # print("\nMove note request:")
+    # print(f"note_id: {note_id}")
+    # print(f"Raw command data:", command.model_dump())
     
     def print_tree(parent_id=None, level=0):
         notes = LinkedListManager.get_ordered_child_list(db, parent_id)
@@ -52,8 +52,8 @@ async def move_note(
             result += print_tree(note.id, level + 1)
         return result
 
-    print("\nBEFORE MOVE:")
-    print(print_tree())
+    # print("\nBEFORE MOVE:")
+    # print(print_tree())
     
     # Validate notes exist
     note = db.query(DBNote).get(note_id)
@@ -65,12 +65,12 @@ async def move_note(
         if not sibling:
             raise HTTPException(status_code=404, detail="Sibling note not found")
         
-        print(f"\nNote parent_id: {note.parent_id}")
-        print(f"Sibling parent_id: {sibling.parent_id}")
-        print(f"New parent_id: {command.new_parent_id}")
-        print(f"Types - Sibling parent_id: {type(sibling.parent_id)}, New parent_id: {type(command.new_parent_id)}")
-        print(f"Raw values - Sibling: {repr(sibling.parent_id)}, New: {repr(command.new_parent_id)}")
-        
+        # print(f"\nNote parent_id: {note.parent_id}")
+        # print(f"Sibling parent_id: {sibling.parent_id}")
+        # print(f"New parent_id: {command.new_parent_id}")
+        # print(f"Types - Sibling parent_id: {type(sibling.parent_id)}, New parent_id: {type(command.new_parent_id)}")
+        # print(f"Raw values - Sibling: {repr(sibling.parent_id)}, New: {repr(command.new_parent_id)}")
+
         # Check if both notes will be at the same level (both root or both under same parent)
         if command.new_parent_id != sibling.parent_id:
             raise HTTPException(status_code=400, detail="Sibling must be at the same level")
@@ -94,8 +94,8 @@ async def move_note(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    print("\nAFTER MOVE:")
-    print(print_tree())
+    # print("\nAFTER MOVE:")
+    # print(print_tree())
     
     return {"status": "success"}
 
@@ -129,10 +129,10 @@ async def create_note_with_position(
     command: MoveNoteCommand,
     db: Session = Depends(get_db)
 ):
-    print("\nNew note drop request:")
-    print(f"new_parent_id: {command.new_parent_id}")
-    print(f"sibling_id: {command.sibling_id}")
-    print(f"position: {command.position}")
+    # print("\nNew note drop request:")
+    # print(f"new_parent_id: {command.new_parent_id}")
+    # print(f"sibling_id: {command.sibling_id}")
+    # print(f"position: {command.position}")
     
     note_id = str(uuid.uuid4())
     LinkedListManager.create_note_drop(
