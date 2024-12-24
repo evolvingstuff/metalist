@@ -381,8 +381,9 @@ document.addEventListener('drop', (e) => {
             moveNote(draggedNoteId, targetId, dropType);
         } else if (isDraggingAddButton) {
             // Create new note with position
+            const parentId = dropType === 'inside' ? targetId : hoverNote.dataset.parentId;
             const payload = {
-                new_parent_id: dropType === 'inside' ? targetId : hoverNote.dataset.parentId,
+                new_parent_id: parentId === "None" || parentId === "" || parentId === undefined ? null : parentId,
             };
             
             // Only add sibling and position for before/after drops

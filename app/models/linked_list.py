@@ -314,6 +314,8 @@ class LinkedListManager:
     def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: Position = None):
         # First create the note at root level
         LinkedListManager.create_note(db, note_id)
+
+        # TODO: possible to fail at next step but original update still made...
         
         # Then move it to the desired location (either under a parent or relative to siblings)
         LinkedListManager.move_note(

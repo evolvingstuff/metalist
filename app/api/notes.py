@@ -129,6 +129,11 @@ async def create_note_with_position(
     command: MoveNoteCommand,
     db: Session = Depends(get_db)
 ):
+    print("\nNew note drop request:")
+    print(f"new_parent_id: {command.new_parent_id}")
+    print(f"sibling_id: {command.sibling_id}")
+    print(f"position: {command.position}")
+    
     note_id = str(uuid.uuid4())
     LinkedListManager.create_note_drop(
         db, 
