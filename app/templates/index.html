@@ -1,21 +1,16 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>MetaList</title>
-    <link rel="stylesheet" href="/static/css/main.css">
-</head>
-<body>
-    <div id="app">
-        <div class="container">
-            <div class="controls">
-                <button class="add-note" draggable="true">+</button>
-                <button id="trash-can" class="trash-can" draggable="false">🗑️</button>
-            </div>
-            <div id="notes-container">
-                <%include file="notes_list.html"/>
-            </div>
+<%inherit file="base.html"/>
+
+<div id="app">
+    <div class="container">
+        <div class="controls">
+            <button class="add-note" draggable="true">+</button>
+            <button id="trash-can" class="trash-can" draggable="false">🗑️</button>
+        </div>
+        <div id="notes-container">
+            <%include file="notes_list.html"/>
         </div>
     </div>
-    <script type="module" src="/static/js/main.js"></script>
-</body>
-</html>
+    <div id="dragDebug" style="position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background-color: black; color: white; padding: 10px; z-index: 9999;">
+        Debug Panel Ready
+    </div>
+</div>

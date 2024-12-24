@@ -14,6 +14,14 @@ const Position = {
     AFTER: 'AFTER'
 };
 
+// Remove debug div creation code and just get reference
+const debugDiv = document.getElementById('dragDebug');
+if (!debugDiv) {
+    alert('Debug div not found!');  // This will tell us if we can't find it
+} else {
+    debugDiv.innerHTML = 'Debug div found and working!';  // This will show if we can access it
+}
+
 async function handleImagePaste(e, noteElement) {
     const items = (e.clipboardData || e.originalEvent.clipboardData).items;
     
@@ -73,111 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Handle drag and drop
-    document.addEventListener('dragstart', (e) => {
-        const noteElement = e.target.closest('.note');
-        if (noteElement) {
-            draggedNoteId = noteElement.dataset.id;
-            noteElement.classList.add('dragging');
-        }
-    });
-
-    document.addEventListener('dragend', (e) => {
-        const noteElement = e.target.closest('.note');
-        if (noteElement) {
-            noteElement.classList.remove('dragging');
-            if (dragTarget) {
-                dragTarget.classList.remove('drag-over');
-                dragTarget.classList.remove('drag-before');
-                dragTarget.classList.remove('drag-after');
-                dragTarget.classList.remove('drag-inside');
-            }
-        }
-    });
-
-    document.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        const noteElement = e.target.closest('.note');
-        const trashCan = e.target.closest('#trash-can');
-        
-        // Always remove existing highlights first
-        if (dragTarget) {
-            dragTarget.classList.remove('drag-over');
-            dragTarget.classList.remove('drag-before');
-            dragTarget.classList.remove('drag-after');
-            dragTarget.classList.remove('drag-inside');
-        }
-        
-        if (trashCan) {
-            dragTarget = trashCan;
-            dragTarget.classList.add('drag-over');
-        } else if (noteElement && noteElement.dataset.id !== draggedNoteId) {
-            // Get dimensions for position detection
-            const rect = noteElement.getBoundingClientRect();
-            const edgeSize = rect.width * 0.25; // 25% from left edge for nesting
-            const midPoint = rect.top + rect.height / 2;
-            
-            // Determine drop type based on position
-            let dropType;
-            if (e.clientX < rect.left + edgeSize) {
-                // Near the left edge - insert as sibling
-                dropType = e.clientY < midPoint ? 'before' : 'after';
-            } else {
-                // Away from left edge - insert as child
-                dropType = 'inside';
-            }
-            
-            // Check if move would be meaningful
-            const draggedElement = document.querySelector(`[data-id="${draggedNoteId}"]`);
-            const wouldMove = isMoveMeaningful(draggedElement, noteElement, dropType);
-            
-            if (wouldMove) {
-                dragTarget = noteElement;
-                dragTarget.classList.add('drag-over');
-                if (dropType === 'before') {
-                    dragTarget.classList.add('drag-before');
-                } else if (dropType === 'after') {
-                    dragTarget.classList.add('drag-after');
-                } else {
-                    dragTarget.classList.add('drag-inside');
-                }
-            } else {
-                dragTarget = null;
-            }
-        } else {
-            dragTarget = null;
-        }
-    });
-
-    document.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        const trashCan = e.target.closest('#trash-can');
-        
-        if (trashCan && draggedNoteId) {
-            await fetch(`/api/notes/${draggedNoteId}`, {
-                method: 'DELETE'
-            });
-            window.location.reload();
-        }
-        else if (draggedNoteId && dragTarget) {
-            const targetId = dragTarget.dataset.id;
-            const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
-                           dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
-            
-            await moveNote(draggedNoteId, targetId, dropType);
-        }
-        
-        // Clean up
-        if (dragTarget) {
-            dragTarget.classList.remove('drag-over');
-            dragTarget.classList.remove('drag-before');
-            dragTarget.classList.remove('drag-after');
-            dragTarget.classList.remove('drag-inside');
-        }
-        dragTarget = null;
-        draggedNoteId = null;
-    });
-
     // Add new note button handler
     document.querySelector('.add-note').addEventListener('click', async () => {
         const parentId = null;  // Add at root level by default
@@ -234,57 +137,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Verify trash can exists
     const trashCan = document.getElementById('trash-can');
     if (!trashCan) {
         alert('Trash can not found!');
     }
-
-    trashCan.addEventListener('dragenter', (e) => {
-        e.preventDefault();
-        trashCan.classList.add('drag-over');
-    });
-
-    trashCan.addEventListener('dragover', (e) => {
-        e.preventDefault();  // Keep this without alert as it fires constantly
-    });
-
-    trashCan.addEventListener('dragleave', () => {
-        trashCan.classList.remove('drag-over');
-    });
-
-    trashCan.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        trashCan.classList.remove('drag-over');
-        
-        if (draggedNoteId) {
-            await fetch(`/api/notes/${draggedNoteId}`, {
-                method: 'DELETE'
-            });
-            window.location.reload();
-        }
-    });
-
-    // Add to DOMContentLoaded event listener
-    document.addEventListener('dragstart', (e) => {
-        const addButton = e.target.closest('.add-note');
-        if (addButton) {
-            isDraggingAddButton = true;
-            
-            // Create ghost image for drag
-            const ghost = document.createElement('div');
-            ghost.className = 'note';
-            ghost.innerHTML = '<div class="note-content">New note</div>';
-            document.body.appendChild(ghost);
-            e.dataTransfer.setDragImage(ghost, 0, 0);
-            setTimeout(() => document.body.removeChild(ghost), 0);
-        }
-    });
-
-    document.addEventListener('dragend', (e) => {
-        if (isDraggingAddButton) {
-            isDraggingAddButton = false;
-        }
-    });
 });
 
 async function saveNoteContent(noteElement, content) {
@@ -330,6 +187,7 @@ function makeNoteEditable(noteElement) {
 }
 
 function isMoveMeaningful(draggedElement, targetElement, dropType) {
+    console.log('isMeaningfulMove()')
     // Don't allow a note to become its own parent
     if (dropType === 'inside' && targetElement.dataset.id === draggedElement.dataset.id) {
         return false;
@@ -402,4 +260,160 @@ async function moveNote(noteId, targetId, dropType) {
         console.error('Error moving note:', error);
         alert(error.message);
     }
-} 
+}
+
+function handleAddButtonDragOver(e, noteElement) {
+    console.log('Add button drag over:', noteElement.dataset.id)
+    const rect = noteElement.getBoundingClientRect();
+    const edgeSize = rect.width * 0.25;
+    const midPoint = rect.top + rect.height / 2;
+    
+    dragTarget = noteElement;
+    dragTarget.classList.add('drag-over');
+    
+    if (e.clientX < rect.left + edgeSize) {
+        if (e.clientY < midPoint) {
+            dragTarget.classList.add('drag-before');
+        } else {
+            dragTarget.classList.add('drag-after');
+        }
+    } else {
+        dragTarget.classList.add('drag-inside');
+    }
+}
+
+function handleNoteDragOver(e, noteElement) {
+    console.log('Note drag over:', noteElement.dataset.id, draggedNoteId)
+    if (noteElement.dataset.id === draggedNoteId) return;
+    
+    const rect = noteElement.getBoundingClientRect();
+    const edgeSize = rect.width * 0.25;
+    const midPoint = rect.top + rect.height / 2;
+    
+    let dropType;
+    if (e.clientX < rect.left + edgeSize) {
+        dropType = e.clientY < midPoint ? 'before' : 'after';
+    } else {
+        dropType = 'inside';
+    }
+    
+    const draggedElement = document.querySelector(`[data-id="${draggedNoteId}"]`);
+    if (draggedElement && isMoveMeaningful(draggedElement, noteElement, dropType)) {
+        dragTarget = noteElement;
+        dragTarget.classList.add('drag-over');
+        if (dropType === 'before') {
+            dragTarget.classList.add('drag-before');
+        } else if (dropType === 'after') {
+            dragTarget.classList.add('drag-after');
+        } else {
+            dragTarget.classList.add('drag-inside');
+        }
+    }
+}
+
+// Update our dragstart handler to use existing div
+document.addEventListener('dragstart', (e) => {
+    // Reset all drag state
+    draggedNoteId = null;
+    isDraggingAddButton = false;
+    
+    const addButton = e.target.closest('.add-note');
+    const dragHandle = e.target.closest('.drag-handle');
+    const noteElement = e.target.closest('.note');
+    
+    debugDiv.innerHTML = `
+        Dragging: ${e.target.tagName} (${e.target.className})<br>
+        Add Button: ${!!addButton}<br>
+        Drag Handle: ${!!dragHandle}<br>
+        Note: ${!!noteElement}${noteElement ? ` (${noteElement.dataset.id})` : ''}<br>
+    `;
+    
+    if (addButton) {
+        isDraggingAddButton = true;
+        // Create ghost image for drag
+        const ghost = document.createElement('div');
+        ghost.className = 'note';
+        ghost.innerHTML = '<div class="note-content">New note</div>';
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, 0, 0);
+        setTimeout(() => document.body.removeChild(ghost), 0);
+    } else if (dragHandle && noteElement) {
+        draggedNoteId = noteElement.dataset.id;
+        noteElement.classList.add('dragging');
+    }
+    
+    debugDiv.innerHTML += `
+        Final state:<br>
+        isDraggingAddButton: ${isDraggingAddButton}<br>
+        draggedNoteId: ${draggedNoteId}
+    `;
+});
+
+document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const hoverNote = e.target.closest('.note');
+    const trashCan = e.target.closest('#trash-can');
+    
+    // Clear existing highlights
+    if (dragTarget) {
+        dragTarget.classList.remove('drag-over', 'drag-before', 'drag-after', 'drag-inside');
+    }
+    
+    if (trashCan) {
+        dragTarget = trashCan;
+        dragTarget.classList.add('drag-over');
+    } else if (hoverNote) {
+        if (isDraggingAddButton) {
+            handleAddButtonDragOver(e, hoverNote);
+        } else if (draggedNoteId) {
+            handleNoteDragOver(e, hoverNote);
+        }
+    } else {
+        dragTarget = null;
+    }
+});
+
+document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const trashCan = e.target.closest('#trash-can');
+    const hoverNote = e.target.closest('.note');
+    
+    if (trashCan && draggedNoteId) {
+        fetch(`/api/notes/${draggedNoteId}`, {
+            method: 'DELETE'
+        }).then(() => window.location.reload());
+    } else if (hoverNote && dragTarget) {
+        if (draggedNoteId) {
+            const targetId = dragTarget.dataset.id;
+            const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
+                           dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
+            moveNote(draggedNoteId, targetId, dropType);
+        }
+        // TODO: Handle add button drop here
+    }
+    
+    // Clean up
+    if (dragTarget) {
+        dragTarget.classList.remove('drag-over', 'drag-before', 'drag-after', 'drag-inside');
+    }
+    dragTarget = null;
+    draggedNoteId = null;
+    isDraggingAddButton = false;
+});
+
+document.addEventListener('dragend', (e) => {
+    // Clean up any drag state
+    if (dragTarget) {
+        dragTarget.classList.remove('drag-over', 'drag-before', 'drag-after', 'drag-inside');
+    }
+    
+    const noteElement = e.target.closest('.note');
+    if (noteElement) {
+        noteElement.classList.remove('dragging');
+    }
+    
+    // Reset all drag state
+    dragTarget = null;
+    draggedNoteId = null;
+    isDraggingAddButton = false;
+}); 
