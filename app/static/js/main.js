@@ -81,21 +81,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Add new note button handler
-    document.querySelector('.add-note').addEventListener('click', async () => {
-        const parentId = null;  // Add at root level by default
-        const response = await fetch('/api/notes/new', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ parent_id: parentId })
-        });
+    // Add new note button handler with drag check
+    const addButton = document.querySelector('.add-note');
+    if (addButton) {
+        // Check if there are any existing notes
+        const hasNotes = document.querySelector('.note') !== null;
         
-        if (response.ok) {
-            window.location.reload();
-        }
-    });
+        // Only allow dragging if there are notes
+        addButton.draggable = hasNotes;
+        
+        addButton.addEventListener('click', async () => {
+            const parentId = null;  // Add at root level by default
+            const response = await fetch('/api/notes/new', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ parent_id: parentId })
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            }
+        });
+    }
 
     // Polling for changes while editing
     setInterval(() => {
