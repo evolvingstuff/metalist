@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..models.database import DBNote
 from ..models.entities import Note
-from ..models.commands import UpdateNoteContent, MoveNote
-from ..models.linked_list import LinkedListManager, Position
+from ..models.commands import UpdateNoteContent
+from ..models.linked_list import LinkedListManager, MovePosition
 from .dependencies import get_db
 import uuid
 from pydantic import BaseModel, Field
@@ -22,7 +22,6 @@ def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(
     db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
-    
     db_note.content = command.content
     db.commit()
     return Note.from_orm(db_note)
@@ -78,7 +77,7 @@ def move_note(
     position = None
     if command.position:
         try:
-            position = Position[command.position.upper()]
+            position = MovePosition[command.position.upper()]
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
 
@@ -88,7 +87,7 @@ def move_note(
             note_id=note_id,
             new_parent_id=command.new_parent_id,
             sibling_id=command.sibling_id,
-            position=Position[command.position] if command.position else None
+            position=MovePosition[command.position] if command.position else None
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -139,6 +138,6 @@ def create_note_with_position(
         note_id, 
         command.new_parent_id,
         sibling_id=command.sibling_id,
-        position=Position[command.position] if command.position else None
+        position=MovePosition[command.position] if command.position else None
     )
     return {"id": note_id}

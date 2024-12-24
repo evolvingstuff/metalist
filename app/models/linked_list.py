@@ -1,6 +1,6 @@
 from typing import List, Optional, Any
 from sqlalchemy.orm import Session
-from .enums import Position
+from .enums import MovePosition
 from .database import DBNote
 
 class LinkedListManager:
@@ -161,7 +161,7 @@ class LinkedListManager:
 
     @staticmethod
     def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
-                  sibling_id: Optional[str] = None, position: Optional[Position] = None):
+                  sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
         """Move a note to a new position"""
         # print(f"\nDEBUG: Moving note {note_id}")
         # print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
@@ -244,7 +244,7 @@ class LinkedListManager:
             if sibling.parent_id != new_parent_id:
                 raise ValueError("Sibling must have the same parent")
 
-            if position == Position.BEFORE:
+            if position == MovePosition.BEFORE:
                 note.next_id = sibling_id
                 note.prev_id = sibling.prev_id
                 sibling.prev_id = note_id
@@ -311,7 +311,7 @@ class LinkedListManager:
             raise
 
     @staticmethod
-    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: Position = None):
+    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
         # First create the note at root level
         LinkedListManager.create_note_top(db, note_id)
 

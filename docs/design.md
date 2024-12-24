@@ -1,16 +1,16 @@
 """
 Core Architecture:
+- MIT licensed components only
 - Python-based (pip installable or executable)
 - Single user per instance (containerization planned for multi-user future)
 - FastAPI backend with Pydantic models
 - SQLite3 database / SQLAlchemy ORM
-- MIT licensed components only
 - Mako for server-side templating
 
 Data Model & Storage:
 - Everything is a note (no separate concept of subnotes)
-- Notes can reference other notes and be hierarchically nested
-- References in content allow for both embedding and copying (future)
+- Notes can be hierarchically nested
+- Notes can be embedded, copied, or linked (future)
 - Each note has:
   - uuid: str
   - content: str
@@ -20,7 +20,8 @@ Data Model & Storage:
 - Must handle large numbers of notes efficiently (15,000+)
 - Per-note encryption at rest
 - Server-side encryption/decryption
-- Searchable by content
+- Searchable by content or tags or a combo of both
+- Tags and other metadata parsed from note content
 - Encrypted search indexes persistent across server restarts
 
 Client-Server Communication:
@@ -39,8 +40,9 @@ Two categories of operations:
    - Change note parent
 
 2. Polled operations (batched, sent every X ms):
-   - Search updates
-   - Content edits
+   - Search updates / tag suggestions
+   - Content edits (push on diff)
+   - Cross-device sync
 
 Undo/Redo:
 - Server-side implementation

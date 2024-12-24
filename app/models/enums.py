@@ -1,5 +1,5 @@
 from enum import Enum
 
-class Position(Enum):
+class MovePosition(Enum):
     BEFORE = "before"
     AFTER = "after" 

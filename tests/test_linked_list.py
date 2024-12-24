@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy import Column, String
 
 from app.models.database import Base, DBNote
-from app.models.linked_list import LinkedListManager, Position
+from app.models.linked_list import LinkedListManager, MovePosition
 import random
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def test_move_note_after(db):
         note_id="3",
         new_parent_id=None,
         sibling_id="2",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify the new order
@@ -68,7 +68,7 @@ def test_move_note_before(db):
         note_id="3",
         new_parent_id=None,
         sibling_id="1",
-        position=Position.BEFORE
+        position=MovePosition.BEFORE
     )
     
     # Verify the new order
@@ -145,7 +145,7 @@ def test_move_note_from_child_to_root(db):
         note_id="3",
         new_parent_id=None,
         sibling_id="1",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify root level order
@@ -189,7 +189,7 @@ def test_move_note_between_different_parents(db):
         note_id="3",
         new_parent_id="1",
         sibling_id="4",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify root level unchanged
@@ -248,7 +248,7 @@ def test_move_note_chain(db):
         note_id="2",
         new_parent_id=None,
         sibling_id="3",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify new order: 1 -> 3 -> 2
@@ -286,7 +286,7 @@ def test_move_note_to_parent_with_children(db):
         note_id="3",
         new_parent_id="2",
         sibling_id="4",
-        position=Position.BEFORE
+        position=MovePosition.BEFORE
     )
     
     # Verify root level unchanged
@@ -328,7 +328,7 @@ def test_move_multiple_notes_sequence(db):
         note_id="2",
         new_parent_id=None,
         sibling_id="4",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Move 3 after 4: 1 -> 4 -> 3 -> 2 -> 5
@@ -337,7 +337,7 @@ def test_move_multiple_notes_sequence(db):
         note_id="3",
         new_parent_id=None,
         sibling_id="4",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Move 1 before 3: 4 -> 1 -> 3 -> 2 -> 5
@@ -346,7 +346,7 @@ def test_move_multiple_notes_sequence(db):
         note_id="1",
         new_parent_id=None,
         sibling_id="3",
-        position=Position.BEFORE
+        position=MovePosition.BEFORE
     )
     
     notes = LinkedListManager.get_ordered_child_list(db)
@@ -373,7 +373,7 @@ def test_deep_nesting_moves(db):
         note_id="4",
         new_parent_id="1",
         sibling_id="2",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify 4 is now direct child of 1
@@ -386,7 +386,7 @@ def test_deep_nesting_moves(db):
         note_id="3",
         new_parent_id=None,
         sibling_id="1",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     root_notes = LinkedListManager.get_ordered_child_list(db)
@@ -413,7 +413,7 @@ def test_long_chain_operations(db):
         note_id="1",
         new_parent_id=None,
         sibling_id="20",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Move last note (20) to start
@@ -422,7 +422,7 @@ def test_long_chain_operations(db):
         note_id="20",
         new_parent_id=None,
         sibling_id="2",
-        position=Position.BEFORE
+        position=MovePosition.BEFORE
     )
     
     notes = LinkedListManager.get_ordered_child_list(db)
@@ -444,7 +444,7 @@ def test_invalid_moves(db):
             note_id="1",
             new_parent_id=None,
             sibling_id="1",
-            position=Position.AFTER
+            position=MovePosition.AFTER
         )
     
     # Try to move note to its child
@@ -506,7 +506,7 @@ def test_bulk_operations(db):
             note_id=str(i),
             new_parent_id=None,
             sibling_id=str(i+2),  # Move after i+2 instead of i
-            position=Position.AFTER
+            position=MovePosition.AFTER
         )
 
 def test_move_to_start_of_list(db):
@@ -526,7 +526,7 @@ def test_move_to_start_of_list(db):
         note_id="4",
         new_parent_id=None,
         sibling_id="1",
-        position=Position.BEFORE
+        position=MovePosition.BEFORE
     )
     
     # Verify new order: 4 -> 1 -> 2 -> 3
@@ -550,7 +550,7 @@ def test_move_to_end_of_list(db):
         note_id="1",
         new_parent_id=None,
         sibling_id="4",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify new order: 2 -> 3 -> 4 -> 1
@@ -579,7 +579,7 @@ def test_move_between_nested_lists(db):
         note_id="3",
         new_parent_id="1",
         sibling_id="2",
-        position=Position.AFTER
+        position=MovePosition.AFTER
     )
     
     # Verify the moves
@@ -642,7 +642,7 @@ def test_invalid_position_parameters(db):
             note_id="2",
             new_parent_id="1",
             sibling_id=None,
-            position=Position.AFTER
+            position=MovePosition.AFTER
         )
 
 def test_move_note_inside_parent(db: Session):
@@ -833,7 +833,7 @@ def test_fuzz_linked_list(db):
             ).all()
             if siblings:
                 sibling_id = random.choice([s.id for s in siblings])
-                position = random.choice([Position.BEFORE, Position.AFTER])
+                position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
 
         print(f"Moving note {note_id} (currently under {note.parent_id})")
         print(f"To parent {new_parent_id}")
@@ -969,7 +969,7 @@ def test_fuzz_linked_list_with_mutations(db):
                         new_id,
                         new_parent_id=target.parent_id,
                         sibling_id=target_id,
-                        position=Position.BEFORE if drop_type == 'before' else Position.AFTER
+                        position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
                     )
             else:  # Regular click creation
                 LinkedListManager.create_note_top(db, new_id)
@@ -1019,7 +1019,7 @@ def test_fuzz_linked_list_with_mutations(db):
                 ).all()
                 if siblings:
                     sibling_id = random.choice([s.id for s in siblings])
-                    position = random.choice([Position.BEFORE, Position.AFTER])
+                    position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
                     print(f"Relative to sibling {sibling_id} ({position})")
 
             try:
@@ -1147,7 +1147,7 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
                         new_id,
                         new_parent_id=target.parent_id,
                         sibling_id=target_id,
-                        position=Position.BEFORE if drop_type == 'before' else Position.AFTER
+                        position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
                     )
             else:  # Regular click creation
                 LinkedListManager.create_note_top(db, new_id)
@@ -1190,7 +1190,7 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
                 ).all()
                 if siblings:
                     sibling_id = random.choice([s.id for s in siblings])
-                    position = random.choice([Position.BEFORE, Position.AFTER])
+                    position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
                     print(f"Relative to sibling {sibling_id} ({position})")
 
             try:
