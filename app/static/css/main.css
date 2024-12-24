@@ -204,3 +204,7 @@ body {
 .add-note:active {
     cursor: grabbing;
 }
+
+.note.drag-trash {
+    border: 2px solid red;
+}

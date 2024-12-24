@@ -349,9 +349,19 @@ document.addEventListener('dragover', (e) => {
         dragTarget.classList.remove('drag-over', 'drag-before', 'drag-after', 'drag-inside');
     }
     
+    const draggedElement = document.querySelector(`[data-id="${draggedNoteId}"]`);
+    if (draggedElement) {
+        draggedElement.classList.remove('drag-trash');
+    }
+    
     if (trashCan) {
         dragTarget = trashCan;
         dragTarget.classList.add('drag-over');
+        
+        // Add red border to the dragged note
+        if (draggedElement) {
+            draggedElement.classList.add('drag-trash');
+        }
     } else if (hoverNote) {
         if (isDraggingAddButton) {
             handleAddButtonDragOver(e, hoverNote);
@@ -414,12 +424,12 @@ document.addEventListener('drop', (e) => {
 document.addEventListener('dragend', (e) => {
     // Clean up any drag state
     if (dragTarget) {
-        dragTarget.classList.remove('drag-over', 'drag-before', 'drag-after', 'drag-inside');
+        dragTarget.classList.remove('drag-over', 'drag-before', 'drag-after', 'drag-inside', 'drag-trash');
     }
     
     const noteElement = e.target.closest('.note');
     if (noteElement) {
-        noteElement.classList.remove('dragging');
+        noteElement.classList.remove('dragging', 'drag-trash');
     }
     
     // Reset all drag state
