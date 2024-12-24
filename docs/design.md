@@ -3,14 +3,14 @@ Core Architecture:
 - Python-based (pip installable or executable)
 - Single user per instance (containerization planned for multi-user future)
 - FastAPI backend with Pydantic models
-- SQLite3 database
+- SQLite3 database / SQLAlchemy ORM
 - MIT licensed components only
 - Mako for server-side templating
 
 Data Model & Storage:
 - Everything is a note (no separate concept of subnotes)
 - Notes can reference other notes and be hierarchically nested
-- References in content allow for both embedding and copying
+- References in content allow for both embedding and copying (future)
 - Each note has:
   - uuid: str
   - content: str
@@ -60,7 +60,5 @@ The application should optimize for:
 - Clean separation of concerns
 - Simple, efficient client implementation
 - Single source of truth for all relationships
-
-Please help me implement this system, starting with setting up a FastAPI app to serve a basic webpage, using Mako as a template lib.
 
 """
