@@ -939,27 +939,40 @@ def test_fuzz_linked_list_with_mutations(db):
             active_note_ids = sorted(list(active_note_ids))
             print("Delete successful!")
 
-        elif operation < 0.4:  # 20% chance to add new note
+        elif operation < 0.4:  # 20% chance to add new note (split between click and drag)
             new_id = str(next_id)
             next_id += 1
-            print(f"Adding new note {new_id}")
             
-            # Maybe make it a child of an existing note
-            parent_id = None
-            if active_note_ids and random.random() < 0.5:
-                parent_id = random.choice(active_note_ids)
-                print(f"Making it a child of {parent_id}")
-            
-            # Use LinkedListManager to create note
-            LinkedListManager.create_note(db, new_id)
-            
-            # If we want it under a parent, move it there
-            if parent_id:
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=new_id,
-                    new_parent_id=parent_id
-                )
+            # Only attempt drag add if we have existing notes
+            is_drag_add = active_note_ids and random.random() < 0.5
+            print(f"Adding new note {new_id} via {'drag' if is_drag_add else 'click'}")
+
+            if is_drag_add:  # Drag and drop creation
+                target_id = random.choice(active_note_ids)
+                target = db.query(DBNote).get(target_id)
+                
+                # Randomly choose drop type
+                drop_type = random.choice(['inside', 'before', 'after'])
+                print(f"Dragging to {target_id} ({drop_type})")
+
+                if drop_type == 'inside':
+                    # Create note and move it under target
+                    LinkedListManager.create_note_drop(
+                        db,
+                        new_id,
+                        new_parent_id=target_id
+                    )
+                else:
+                    # Create note and position it relative to target
+                    LinkedListManager.create_note_drop(
+                        db,
+                        new_id,
+                        new_parent_id=target.parent_id,
+                        sibling_id=target_id,
+                        position=Position.BEFORE if drop_type == 'before' else Position.AFTER
+                    )
+            else:  # Regular click creation
+                LinkedListManager.create_note(db, new_id)
             
             active_note_ids.append(new_id)
             active_note_ids.sort()
@@ -1028,6 +1041,175 @@ def test_fuzz_linked_list_with_mutations(db):
             raise ValueError(f"Invalid list structure under parent None")
 
         # Then validate under each existing note that has children
+        existing_parents = db.query(DBNote.id).filter(
+            DBNote.id.in_(
+                db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
+            )
+        ).all()
+
+        for (parent_id,) in existing_parents:
+            if not LinkedListManager.validate_list(db, parent_id):
+                raise ValueError(f"Invalid list structure under parent {parent_id}")
+        print("Validation successful!")
+
+def test_fuzz_linked_list_with_mutations_and_drag_add(db):
+    """Like test_fuzz_linked_list_with_mutations but includes drag-and-drop creation"""
+    SEED = 42
+    NODES = 5
+    STEPS = 250
+    VISUALIZE_INTERVAL = 1
+
+    print(f"\n=== Starting Mutation+Drag Fuzz Test with seed: {SEED} ===")
+    random.seed(SEED)
+
+    # Create initial notes in a valid linked list structure
+    notes = []
+    for i in range(NODES):
+        note = DBNote(id=str(i), content=f"Note {i}")
+        if i > 0:
+            note.prev_id = str(i-1)
+            notes[i-1].next_id = str(i)
+        notes.append(note)
+
+    db.add_all(notes)
+    db.commit()
+
+    def visualize_tree():
+        def get_tree_string(parent_id=None, depth=0):
+            nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
+            if not nodes:
+                return ""
+            
+            result = ""
+            for node in nodes:
+                prefix = "  " * depth
+                links = f"[prev={node.prev_id}, next={node.next_id}]"
+                result += f"{prefix}└─ {node.id} {links}\n"
+                result += get_tree_string(node.id, depth + 1)
+            return result
+
+        print("\nTree structure with links:")
+        print(get_tree_string())
+        print("─" * 40)
+
+    print("\n=== Initial State ===")
+    visualize_tree()
+
+    next_id = NODES  # For creating new notes
+    active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+    active_note_ids = sorted(list(active_note_ids))
+
+    # Perform random operations
+    for i in range(STEPS):
+        db.expire_all()
+        if i % VISUALIZE_INTERVAL == 0 and i > 0:
+            print(f"\n=== State after {i} operations ===")
+            visualize_tree()
+
+        operation = random.random()
+
+        if operation < 0.2 and len(active_note_ids) > 2:  # 20% chance to delete
+            # Delete operation (same as original)
+            note_id = random.choice(active_note_ids)
+            print(f"Deleting note {note_id}")
+            LinkedListManager.delete_note(db, note_id)
+            active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+            active_note_ids = sorted(list(active_note_ids))
+            print("Delete successful!")
+
+        elif operation < 0.4:  # 20% chance to add new note (split between click and drag)
+            new_id = str(next_id)
+            next_id += 1
+            
+            # Only attempt drag add if we have existing notes
+            is_drag_add = active_note_ids and random.random() < 0.5
+            print(f"Adding new note {new_id} via {'drag' if is_drag_add else 'click'}")
+
+            if is_drag_add:  # Drag and drop creation
+                target_id = random.choice(active_note_ids)
+                target = db.query(DBNote).get(target_id)
+                
+                # Randomly choose drop type
+                drop_type = random.choice(['inside', 'before', 'after'])
+                print(f"Dragging to {target_id} ({drop_type})")
+
+                if drop_type == 'inside':
+                    # Create note and move it under target
+                    LinkedListManager.create_note_drop(
+                        db,
+                        new_id,
+                        new_parent_id=target_id
+                    )
+                else:
+                    # Create note and position it relative to target
+                    LinkedListManager.create_note_drop(
+                        db,
+                        new_id,
+                        new_parent_id=target.parent_id,
+                        sibling_id=target_id,
+                        position=Position.BEFORE if drop_type == 'before' else Position.AFTER
+                    )
+            else:  # Regular click creation
+                LinkedListManager.create_note(db, new_id)
+            
+            active_note_ids.append(new_id)
+            active_note_ids.sort()
+            print("Add successful!")
+
+        else:  # 60% chance for move operation (same as original)
+            if len(active_note_ids) < 2:
+                continue
+
+            # Move operation (same as original)
+            note_id = random.choice(active_note_ids)
+            note = db.query(DBNote).get(note_id)
+            possible_parents = active_note_ids
+            new_parent_id = random.choice(possible_parents + [None])
+            sibling_id = None
+            position = None
+
+            if new_parent_id == note_id:
+                with pytest.raises(ValueError, match="Cannot make a note its own parent"):
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
+                continue
+
+            print(f"Moving note {note_id} (currently under {note.parent_id})")
+            print(f"To parent {new_parent_id}")
+
+            use_sibling = random.choice([True, False])
+            if use_sibling and new_parent_id is not None:
+                siblings = db.query(DBNote).filter(
+                    DBNote.parent_id == new_parent_id,
+                    DBNote.id != note_id
+                ).all()
+                if siblings:
+                    sibling_id = random.choice([s.id for s in siblings])
+                    position = random.choice([Position.BEFORE, Position.AFTER])
+                    print(f"Relative to sibling {sibling_id} ({position})")
+
+            try:
+                LinkedListManager.move_note(
+                    db=db,
+                    note_id=note_id,
+                    new_parent_id=new_parent_id,
+                    sibling_id=sibling_id,
+                    position=position
+                )
+                print("Move successful!")
+            except ValueError as e:
+                print(f"Move failed: {str(e)}")
+                continue
+
+        # Validate after each operation
+        if not LinkedListManager.validate_list(db, None):
+            raise ValueError(f"Invalid list structure under parent None")
+
         existing_parents = db.query(DBNote.id).filter(
             DBNote.id.in_(
                 db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))

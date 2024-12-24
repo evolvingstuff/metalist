@@ -323,5 +323,3 @@ class LinkedListManager:
             sibling_id=sibling_id,
             position=position
         )
-        
-        return db.query(DBNote).get(note_id)
