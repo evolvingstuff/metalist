@@ -309,3 +309,19 @@ class LinkedListManager:
         except Exception as e:
             db.rollback()
             raise
+
+    @staticmethod
+    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: Position = None):
+        # First create the note at root level
+        LinkedListManager.create_note(db, note_id)
+        
+        # Then move it to the desired location (either under a parent or relative to siblings)
+        LinkedListManager.move_note(
+            db=db,
+            note_id=note_id,
+            new_parent_id=new_parent_id,
+            sibling_id=sibling_id,
+            position=position
+        )
+        
+        return db.query(DBNote).get(note_id)

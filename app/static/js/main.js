@@ -390,8 +390,24 @@ document.addEventListener('drop', (e) => {
         if (draggedNoteId) {
             moveNote(draggedNoteId, targetId, dropType);
         } else if (isDraggingAddButton) {
-            // Debug alert for add button drop
-            alert(`Dropping new note ${dropType} note ${targetId}`);
+            // Create new note with position
+            const payload = {
+                new_parent_id: dropType === 'inside' ? targetId : hoverNote.dataset.parentId,
+            };
+            
+            // Only add sibling and position for before/after drops
+            if (dropType !== 'inside') {
+                payload.sibling_id = targetId;
+                payload.position = dropType === 'before' ? Position.BEFORE : Position.AFTER;
+            }
+
+            fetch('/api/notes/new-drop', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            }).then(() => window.location.reload());
         }
     }
     

@@ -123,3 +123,18 @@ async def debug_notes(db: Session = Depends(get_db)):
         'next_id': note.next_id,
         'created_at': note.created_at.isoformat()
     } for note in notes]
+
+@router.post("/new-drop")
+async def create_note_with_position(
+    command: MoveNoteCommand,
+    db: Session = Depends(get_db)
+):
+    note_id = str(uuid.uuid4())
+    LinkedListManager.create_note_drop(
+        db, 
+        note_id, 
+        command.new_parent_id,
+        sibling_id=command.sibling_id,
+        position=Position[command.position] if command.position else None
+    )
+    return {"id": note_id}
