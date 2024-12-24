@@ -383,13 +383,16 @@ document.addEventListener('drop', (e) => {
             method: 'DELETE'
         }).then(() => window.location.reload());
     } else if (hoverNote && dragTarget) {
+        const targetId = dragTarget.dataset.id;
+        const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
+                       dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
+
         if (draggedNoteId) {
-            const targetId = dragTarget.dataset.id;
-            const dropType = dragTarget.classList.contains('drag-before') ? 'before' :
-                           dragTarget.classList.contains('drag-after') ? 'after' : 'inside';
             moveNote(draggedNoteId, targetId, dropType);
+        } else if (isDraggingAddButton) {
+            // Debug alert for add button drop
+            alert(`Dropping new note ${dropType} note ${targetId}`);
         }
-        // TODO: Handle add button drop here
     }
     
     // Clean up
