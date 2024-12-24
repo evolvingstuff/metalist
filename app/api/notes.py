@@ -13,9 +13,9 @@ from typing import Optional
 router = APIRouter()
 
 @router.post("/new")
-async def create_note(db: Session = Depends(get_db), parent_id: str = None):
+async def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     note_id = str(uuid.uuid4())
-    LinkedListManager.create_note(db, note_id, parent_id)
+    LinkedListManager.create_note_top(db, note_id, parent_id)
     return {"id": note_id}
 
 @router.put("/{note_id}")

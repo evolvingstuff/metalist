@@ -131,7 +131,7 @@ class LinkedListManager:
         return False
 
     @staticmethod
-    def create_note(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
+    def create_note_top(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
         """Create a new note and insert it as the new head of the linked list"""
         try:
             # Create new note with no links initially
@@ -313,7 +313,7 @@ class LinkedListManager:
     @staticmethod
     def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: Position = None):
         # First create the note at root level
-        LinkedListManager.create_note(db, note_id)
+        LinkedListManager.create_note_top(db, note_id)
 
         # TODO: possible to fail at next step but original update still made...
         

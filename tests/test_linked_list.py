@@ -972,7 +972,7 @@ def test_fuzz_linked_list_with_mutations(db):
                         position=Position.BEFORE if drop_type == 'before' else Position.AFTER
                     )
             else:  # Regular click creation
-                LinkedListManager.create_note(db, new_id)
+                LinkedListManager.create_note_top(db, new_id)
             
             active_note_ids.append(new_id)
             active_note_ids.sort()
@@ -1150,7 +1150,7 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
                         position=Position.BEFORE if drop_type == 'before' else Position.AFTER
                     )
             else:  # Regular click creation
-                LinkedListManager.create_note(db, new_id)
+                LinkedListManager.create_note_top(db, new_id)
             
             active_note_ids.append(new_id)
             active_note_ids.sort()
