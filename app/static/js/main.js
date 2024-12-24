@@ -436,4 +436,22 @@ document.addEventListener('dragend', (e) => {
     dragTarget = null;
     draggedNoteId = null;
     isDraggingAddButton = false;
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !isDraggingAddButton && !currentEditingNote) {
+        const addButton = document.querySelector('.add-note');
+        if (addButton) {
+            addButton.click();
+        }
+    }
+
+    if (e.key === 'Backspace' && e.metaKey && currentEditingNote) {
+        const noteId = currentEditingNote.dataset.id;
+        if (noteId) {
+            fetch(`/api/notes/${noteId}`, {
+                method: 'DELETE'
+            }).then(() => window.location.reload());
+        }
+    }
 }); 
