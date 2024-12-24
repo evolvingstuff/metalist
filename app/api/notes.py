@@ -6,20 +6,19 @@ from ..models.commands import UpdateNoteContent, MoveNote
 from ..models.linked_list import LinkedListManager, Position
 from .dependencies import get_db
 import uuid
-from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Optional
 
 router = APIRouter()
 
 @router.post("/new")
-async def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
+def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     note_id = str(uuid.uuid4())
     LinkedListManager.create_note_top(db, note_id, parent_id)
     return {"id": note_id}
 
 @router.put("/{note_id}")
-async def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
+def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
     db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -34,7 +33,7 @@ class MoveNoteCommand(BaseModel):
     position: Optional[str] = None  # "BEFORE" or "AFTER"
 
 @router.post("/{note_id}/move")
-async def move_note(
+def move_note(
     note_id: str, 
     command: MoveNoteCommand, 
     db: Session = Depends(get_db)
@@ -100,7 +99,7 @@ async def move_note(
     return {"status": "success"}
 
 @router.delete("/{note_id}")
-async def delete_note(note_id: str, db: Session = Depends(get_db)):
+def delete_note(note_id: str, db: Session = Depends(get_db)):
     note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -109,12 +108,12 @@ async def delete_note(note_id: str, db: Session = Depends(get_db)):
     return {"status": "success"}
 
 @router.get("/")
-async def get_notes(db: Session = Depends(get_db)):
+def get_notes(db: Session = Depends(get_db)):
     notes = LinkedListManager.get_ordered_child_list(db)
     return [Note.from_orm(note) for note in notes]
 
 @router.get("/debug")
-async def debug_notes(db: Session = Depends(get_db)):
+def debug_notes(db: Session = Depends(get_db)):
     notes = db.query(DBNote).all()
     return [{
         'id': note.id,
@@ -125,7 +124,7 @@ async def debug_notes(db: Session = Depends(get_db)):
     } for note in notes]
 
 @router.post("/new-drop")
-async def create_note_with_position(
+def create_note_with_position(
     command: MoveNoteCommand,
     db: Session = Depends(get_db)
 ):
