@@ -633,14 +633,14 @@ document.addEventListener('keydown', (e) => {
     // Add event handlers for undo (cmd-z) and redo (cmd-y)
     if (e.metaKey && e.key === 'z') {
         e.preventDefault();
-        alert('Undo action triggered');
+        handleUndo();
     }
 
     if (e.metaKey && e.key === 'y') {
         e.preventDefault();
-        alert('Redo action triggered');
+        handleRedo();
     }
-}); 
+});
 
 function exitEditingMode() {
     if (currentEditingNote) {
@@ -671,4 +671,44 @@ function restoreCursorPosition(noteElement, position) {
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
+} 
+
+function handleUndo() {
+    fetch('/api/notes/undo', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === "noop") {
+            console.log(data.message);
+            // Optionally, update the UI to indicate no action was taken
+        } else {
+            console.log(data.message);
+            // Update the UI accordingly
+            window.location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error.message);
+    });
+}
+
+function handleRedo() {
+    fetch('/api/notes/redo', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === "noop") {
+            console.log(data.message);
+            // Optionally, update the UI to indicate no action was taken
+        } else {
+            console.log(data.message);
+            // Update the UI accordingly
+            window.location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error.message);
+    });
 } 

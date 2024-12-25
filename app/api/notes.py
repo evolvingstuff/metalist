@@ -9,6 +9,7 @@ import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
 from ..decorators import api_transaction_decorator
+from ..global_state import global_state
 
 router = APIRouter()
 
@@ -35,7 +36,23 @@ def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(
     db.commit()
     return Note.from_orm(db_note)
 
+@router.post("/undo")
+def undo(db: Session = Depends(get_db)):
+    command_stack = global_state["command_stack"]
+    if command_stack.current_index >= 0:
+        command_stack.undo(db)
+        return {"status": "success", "message": "Undo successful"}
+    else:
+        return {"status": "noop", "message": "No actions to undo"}
 
+@router.post("/redo")
+def redo(db: Session = Depends(get_db)):
+    command_stack = global_state["command_stack"]
+    if command_stack.current_index < len(command_stack.stack) - 1:
+        command_stack.redo(db)
+        return {"status": "success", "message": "Redo successful"}
+    else:
+        return {"status": "noop", "message": "No actions to redo"}
 
 @router.post("/{note_id}/move")
 @api_transaction_decorator

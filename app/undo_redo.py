@@ -76,19 +76,19 @@ class CommandStack:
         self.stack.append(command)
         self.current_index += 1
 
-    def undo(self):
+    def undo(self, db_session: Session):
         if self.current_index >= 0:
             command = self.stack[self.current_index]
-            command.undo()
+            command.undo(db_session)
             self.current_index -= 1
         else:
             print("No command to undo")
 
-    def redo(self):
+    def redo(self, db_session: Session):
         if self.current_index < len(self.stack) - 1:
             self.current_index += 1
             command = self.stack[self.current_index]
-            command.redo()
+            command.redo(db_session)
         else:
             print("No command to redo")
 
