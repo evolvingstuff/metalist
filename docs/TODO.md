@@ -33,3 +33,7 @@
 * dark theme / colored notes or backgrounds?
 * LLM integration
 * select multiple notes? group ops?
+* allow users to define their own key bindings?
+* vim support?
+* mobile support?
+* allow users to define their own syntax or grammar for tags / implications?
