@@ -19,25 +19,6 @@ class MoveNoteCommand(BaseModel):
     sibling_id: Optional[str] = None
     position: Optional[str] = None  # "BEFORE" or "AFTER"
 
-@router.post("/new")
-@db_transaction_decorator
-@api_transaction_decorator
-def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
-    note_id = str(uuid.uuid4())
-    LinkedListManager.create_note_top(db, note_id, parent_id)
-    return {"id": note_id}
-
-@router.put("/{note_id}")
-@db_transaction_decorator
-@api_transaction_decorator
-def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
-    # TODO refactor this into
-    #  LinkedListManager.update_note(db, note_id)
-    db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
-    if not db_note:
-        raise HTTPException(status_code=404, detail="Note not found")
-    db_note.content = command.content
-    return Note.from_orm(db_note)
 
 @router.post("/undo")
 @db_transaction_decorator
@@ -58,6 +39,29 @@ def redo(db: Session = Depends(get_db)):
         return {"status": "success", "message": "Redo successful"}
     else:
         return {"status": "noop", "message": "No actions to redo"}
+
+
+@router.post("/new")
+@db_transaction_decorator
+@api_transaction_decorator
+def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
+    note_id = str(uuid.uuid4())
+    LinkedListManager.create_note_top(db, note_id, parent_id)
+    return {"id": note_id}
+
+@router.put("/{note_id}")
+@db_transaction_decorator
+@api_transaction_decorator
+def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
+    # TODO refactor this into
+    #  LinkedListManager.update_note(db, note_id)
+    db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
+    if not db_note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db_note.content = command.content
+    return Note.from_orm(db_note)
+
+
 
 @router.post("/{note_id}/move")
 @db_transaction_decorator
@@ -122,12 +126,6 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
     
     LinkedListManager.delete_note(db, note_id)
     return {"status": "success"}
-
-@router.get("/")
-@db_transaction_decorator
-def get_notes(db: Session = Depends(get_db)):
-    notes = LinkedListManager.get_ordered_child_list(db)
-    return [Note.from_orm(note) for note in notes]
 
 
 @router.post("/new-drop")

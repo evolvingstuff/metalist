@@ -47,7 +47,7 @@ class Command:
             updated_at=note.updated_at
         )
         db_session.add(new_note)
-        db_session.commit()
+        # db_session.commit()
 
     def _update_note_in_db(self, note, db_session: Session):
         existing_note = db_session.query(DBNote).get(note.id)
@@ -57,13 +57,13 @@ class Command:
             existing_note.prev_id = note.prev_id
             existing_note.next_id = note.next_id
             existing_note.updated_at = note.updated_at
-            db_session.commit()
+            # db_session.commit()
 
     def _delete_note_from_db(self, note, db_session: Session):
         existing_note = db_session.query(DBNote).get(note.id)
         if existing_note:
             db_session.delete(existing_note)
-            db_session.commit()
+            # db_session.commit()
 
 class CommandStack:
     def __init__(self):
@@ -92,12 +92,10 @@ class CommandStack:
         else:
             print("No command to redo")
 
-    # TODO apply to api
     def clear_all(self):
         self.stack = []
         self.current_index = -1
 
-    # TODO apply to api
     def clear_after_current(self):
         """Clear commands after the current pointer."""
         if self.current_index < len(self.stack) - 1:

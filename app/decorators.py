@@ -27,19 +27,18 @@ def api_transaction_decorator(func):
             print(f"Undo/redo is disabled, skipping transaction for function: {func.__name__}")
             return func(*args, **kwargs)
 
-        # Start a new transaction
+        # # Start a new transaction
         if global_state["current_transaction"] is not None:
             raise Exception("Transaction already in progress")
         global_state["current_transaction"] = ApiTransaction()
         print(f"@ Starting transaction for function: {func.__name__}")
         try:
+            #####################################################
             # Execute the wrapped function
             result = func(*args, **kwargs)
             print(f"@ Function {func.__name__} executed successfully")
-        except Exception as e:
-            print(f"Exception occurred in function {func.__name__}: {e}")
-            raise
-        finally:
+            #####################################################
+
             print('@@@ notes before updated:')
             for k in global_state["current_transaction"].state_before_updated.keys():
                 print(f'\t{k[:8]}')
@@ -52,13 +51,19 @@ def api_transaction_decorator(func):
             print('@@@ notes deleted:')
             for k in global_state["current_transaction"].state_deleted.keys():
                 print(f'\t{k[:8]}')
-            # Finalize the transaction
-            global_state["current_transaction"].finalize_transaction()
-            # Clear the transaction after use
+
+            # # Finalize the transaction
+            # # TODO asdfasdf is this source of problem?
+            # # global_state["current_transaction"].finalize_transaction()
+            # # # Clear the transaction after use
             global_state["current_transaction"] = None
-            # this is an action so gets rid of prior redos
-            command_stack = global_state["command_stack"]
-            command_stack.clear_after_current()
-            print(f"@ Transaction ended for function: {func.__name__}")
-        return result
+            # # # this is an action so gets rid of prior redos
+            # # command_stack = global_state["command_stack"]
+            # # command_stack.clear_after_current()
+            # print(f"@ Transaction ended for function: {func.__name__}")
+            return result
+        except Exception as e:
+            print(f"Exception occurred in function {func.__name__}: {e}")
+            raise e
+
     return wrapper

@@ -6,8 +6,9 @@ from ..global_state import global_state
 from ..undo_redo import Command, CommandStack
 from functools import wraps
 from threading import Lock
+from ..core.config import ENABLE_EVENT_LISTENERS
 
-transaction_lock = Lock()
+# transaction_lock = Lock()
 
 class ApiTransaction:
     def __init__(self):
@@ -59,9 +60,22 @@ class ApiTransaction:
 
     def log_attribute_change(self, target, value, oldvalue, initiator):
         if isinstance(target, DBNote):
+            # Define the attributes you want to track
+            tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
+
+            # Check if the changed attribute is one of the tracked attributes
+            if initiator.key not in tracked_attributes:
+                return  # Ignore changes to untracked attributes
+
+            # TODO asdfasdf
+            # Filter out changes where oldvalue or value is not a string
+            if not isinstance(oldvalue, str) or not isinstance(value, str):
+                return  # Ignore these changes
+
             note_id = target.id
-            oldvalue_str = str(oldvalue)[:8] + '...' if oldvalue is not None else 'None'
-            value_str = str(value)[:8] + '...' if value is not None else 'None'
+            oldvalue_str = str(oldvalue)[:20] + '...' if oldvalue is not None else 'None'
+            assert oldvalue_str != 'LoaderCallableStatus...', 'uh oh'
+            value_str = str(value)[:20] + '...' if value is not None else 'None'
             print(f"$$$- Attribute change detected on note {note_id[:8]}: {initiator.key} changed from '{oldvalue_str}' to '{value_str}'")
             if note_id not in self.state_before_updated:
                 print(f'\t\tadding {note_id[:8]} to state_before_updated')
@@ -71,6 +85,7 @@ class ApiTransaction:
 
     def log_note_creation(self, mapper, connection, target):
         if isinstance(target, DBNote):
+            assert target.id is not None, 'Target id is None'
             note_id = target.id
             print(f"+++ Note created with ID: {note_id[:8]}...")
             print(f'\t\tadding {note_id[:8]} to state_added')
@@ -83,6 +98,7 @@ class ApiTransaction:
 
     def log_note_deletion(self, mapper, connection, target):
         if isinstance(target, DBNote):
+            assert target.id is not None, 'Target id is None'
             note_id = target.id
             print(f"--- Note deleted with ID: {note_id[:8]}...")
             print(f'\t\tadding {note_id[:8]} to state_deleted')
@@ -113,50 +129,10 @@ def log_note_deletion(mapper, connection, target):
         transaction.log_note_deletion(mapper, connection, target)
 
 # Register event listeners
-event.listen(DBNote.content, 'set', log_attribute_change, retval=False)
-event.listen(DBNote.parent_id, 'set', log_attribute_change, retval=False)
-event.listen(DBNote.prev_id, 'set', log_attribute_change, retval=False)
-event.listen(DBNote.next_id, 'set', log_attribute_change, retval=False)
-event.listen(DBNote, 'before_insert', log_note_creation)
-event.listen(DBNote, 'before_delete', log_note_deletion)
-
-def api_transaction_decorator(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        if not transaction_lock.acquire(blocking=False):
-            raise Exception("Transaction already in progress")
-        
-        try:
-            if global_state["current_transaction"] is not None:
-                raise Exception("Transaction already in progress")
-            global_state["current_transaction"] = ApiTransaction()
-            print(f"@ Starting transaction for function: {func.__name__}")
-            
-            result = func(*args, **kwargs)
-            print(f"@ Function {func.__name__} executed successfully")
-            
-            return result
-        except Exception as e:
-            print(f"Exception occurred in function {func.__name__}: {e}")
-            raise
-        finally:
-            if global_state["current_transaction"] is not None:
-                print('@@@ notes before updated:')
-                for k in global_state["current_transaction"].state_before_updated.keys():
-                    print(f'\t{k[:8]}')
-                print('@@@ notes current updated:')
-                for k in global_state["current_transaction"].state_current_updated.keys():
-                    print(f'\t{k[:8]}')
-                print('@@@ notes added:')
-                for k in global_state["current_transaction"].state_added.keys():
-                    print(f'\t{k[:8]}')
-                print('@@@ notes deleted:')
-                for k in global_state["current_transaction"].state_deleted.keys():
-                    print(f'\t{k[:8]}')
-                global_state["current_transaction"].finalize_transaction()
-                global_state["current_transaction"] = None
-                command_stack = global_state["command_stack"]
-                command_stack.clear_after_current()
-                print(f"@ Transaction ended for function: {func.__name__}")
-            transaction_lock.release()
-    return wrapper
+if ENABLE_EVENT_LISTENERS:
+    event.listen(DBNote.content, 'set', log_attribute_change, retval=False)
+    event.listen(DBNote.parent_id, 'set', log_attribute_change, retval=False)
+    event.listen(DBNote.prev_id, 'set', log_attribute_change, retval=False)
+    event.listen(DBNote.next_id, 'set', log_attribute_change, retval=False)
+    event.listen(DBNote, 'before_insert', log_note_creation)
+    event.listen(DBNote, 'before_delete', log_note_deletion)
