@@ -7,6 +7,8 @@ let lastSavedContent = null;
 let draggedNoteId = null;
 let dragTarget = null;
 let isDraggingAddButton = false;
+let inactivityTimeout;
+let lastSentContent = null;
 
 // Add Position enum to match backend
 const Position = {
@@ -100,16 +102,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Polling for changes while editing
-    setInterval(() => {
+    // Function to save note content after inactivity
+    function saveAfterInactivity() {
         if (currentEditingNote) {
             const currentContent = currentEditingNote.querySelector('.note-content').innerHTML;
-            if (currentContent !== lastSavedContent) {
-                console.log('Poll detected change, saving');
+            if (currentContent !== lastSentContent) {
+                console.log('Inactivity detected, saving');
                 saveNoteContent(currentEditingNote, currentContent);
+                lastSentContent = currentContent; // Update last sent content
             }
         }
-    }, 2000);
+    }
+
+    // Reset inactivity timer on user input
+    document.addEventListener('input', (event) => {
+        if (event.target.closest('.note-content')) {
+            clearTimeout(inactivityTimeout);
+            inactivityTimeout = setTimeout(saveAfterInactivity, 10000); // 10 seconds
+        }
+    });
+
+    // Function to handle note switching or exiting edit mode
+    function switchNoteOrExitEditMode() {
+        clearTimeout(inactivityTimeout);
+        lastSentContent = null; // Reset last sent content
+        currentEditingNote = null; // Reset current editing note
+    }
+
+    // Example event listeners for switching notes or exiting edit mode
+    document.querySelectorAll('.note').forEach(note => {
+        note.addEventListener('click', () => {
+            switchNoteOrExitEditMode();
+            currentEditingNote = note;
+            lastSentContent = note.querySelector('.note-content').innerHTML; // Initialize with current content
+        });
+    });
+
+    // Initial setup for inactivity detection
+    inactivityTimeout = setTimeout(saveAfterInactivity, 10000);
 
     // Setup keyboard shortcuts
     setupKeyboardShortcuts({
@@ -198,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const tooltip = document.createElement('div');
                 tooltip.className = 'tooltip';
-                tooltip.textContent = `UUID: ${noteElement.dataset.uuid}`;
+                tooltip.textContent = `UUID: ${noteElement.dataset.id}`;
                 document.body.appendChild(tooltip); // Append to body
 
                 // Position the tooltip above the note
@@ -221,23 +251,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-async function saveNoteContent(noteElement, content) {
+// Function to send note content to the server
+function saveNoteContent(noteElement, content) {
     const noteId = noteElement.dataset.id;
-    try {
-        const response = await fetch(`/api/notes/${noteId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ content })
-        });
-        
-        if (response.ok) {
-            lastSavedContent = content;
-        }
-    } catch (error) {
+    fetch(`/api/notes/${noteId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content }),
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Note saved:', data);
+    })
+    .catch(error => {
         console.error('Error saving note:', error);
-    }
+    });
 }
 
 function makeNoteEditable(noteElement) {
