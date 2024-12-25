@@ -173,6 +173,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    const newNoteId = localStorage.getItem('newNoteId');
+    if (newNoteId) {
+        const newNoteElement = document.querySelector(`[data-id="${newNoteId}"]`);
+        if (newNoteElement) {
+            makeNoteEditable(newNoteElement);
+            localStorage.removeItem('newNoteId');
+        }
+    }
 });
 
 async function saveNoteContent(noteElement, content) {
@@ -550,6 +559,7 @@ document.addEventListener('keydown', (e) => {
                 })
                 .then(data => {
                     console.log('New child note created with ID:', data.id);
+                    localStorage.setItem('newNoteId', data.id);
                     window.location.reload();
                 })
                 .catch(error => {
@@ -572,6 +582,7 @@ document.addEventListener('keydown', (e) => {
                 })
                 .then(data => {
                     console.log('New sibling note created with ID:', data.id);
+                    localStorage.setItem('newNoteId', data.id);
                     window.location.reload();
                 })
                 .catch(error => {
