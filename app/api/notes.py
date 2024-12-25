@@ -141,3 +141,46 @@ def create_note_with_position(
         position=MovePosition[command.position] if command.position else None
     )
     return {"id": note_id}
+
+@router.post("/new-sibling/{note_id}")
+def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
+    # Generate a new note ID
+    new_note_id = str(uuid.uuid4())
+    
+    # Create the new note at the top level
+    LinkedListManager.create_note_top(db, new_note_id)
+    
+    # Find the parent of the specified note
+    note = db.query(DBNote).filter(DBNote.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    
+    # Move the new note to be a sibling of the specified note
+    LinkedListManager.move_note(
+        db=db,
+        note_id=new_note_id,
+        new_parent_id=note.parent_id,  # Use the same parent as the sibling
+        sibling_id=note_id,
+        position=MovePosition.AFTER
+    )
+    
+    return {"id": new_note_id}
+
+@router.post("/new-child/{note_id}")
+def create_new_child(note_id: str, db: Session = Depends(get_db)):
+    # Generate a new note ID
+    new_note_id = str(uuid.uuid4())
+    
+    # Create the new note at the top level
+    LinkedListManager.create_note_top(db, new_note_id)
+    
+    # Move the new note to be a child of the specified note
+    LinkedListManager.move_note(
+        db=db,
+        note_id=new_note_id,
+        new_parent_id=note_id,
+        sibling_id=None,
+        position=None
+    )
+    
+    return {"id": new_note_id}

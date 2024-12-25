@@ -528,6 +528,59 @@ document.addEventListener('keydown', (e) => {
             }
         }
     }
+
+    if (e.metaKey && currentEditingNote) {
+        const noteId = currentEditingNote.dataset.id;
+
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (e.shiftKey) {
+                // Create new child
+                fetch(`/api/notes/new-child/${noteId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to create new child note');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('New child note created with ID:', data.id);
+                    window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error creating new child note:', error);
+                    alert(error.message);
+                });
+            } else {
+                // Create new sibling
+                fetch(`/api/notes/new-sibling/${noteId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to create new sibling note');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('New sibling note created with ID:', data.id);
+                    window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error creating new sibling note:', error);
+                    alert(error.message);
+                });
+            }
+        }
+    }
 }); 
 
 function exitEditingMode() {
