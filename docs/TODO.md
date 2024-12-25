@@ -32,3 +32,4 @@
 * different sort orders (e.g. last edited)
 * dark theme / colored notes or backgrounds?
 * LLM integration
+* select multiple notes? group ops?

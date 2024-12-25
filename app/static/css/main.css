@@ -208,3 +208,11 @@ body {
 .note.drag-trash {
     border: 2px solid red;
 }
+
+.note .drag-handle {
+    visibility: hidden;
+}
+
+.note:hover > .drag-handle {
+    visibility: visible;
+}

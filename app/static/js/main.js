@@ -154,6 +154,25 @@ document.addEventListener('DOMContentLoaded', () => {
             restoreCursorPosition(noteElement, state.cursorPosition);
         }
     }
+
+    document.querySelectorAll('.note').forEach(note => {
+        note.addEventListener('mouseenter', () => {
+            document.querySelectorAll('.drag-handle').forEach(handle => {
+                handle.style.visibility = 'hidden';
+            });
+            const dragHandle = note.querySelector('.drag-handle');
+            if (dragHandle) {
+                dragHandle.style.visibility = 'visible';
+            }
+        });
+
+        note.addEventListener('mouseleave', () => {
+            const dragHandle = note.querySelector('.drag-handle');
+            if (dragHandle) {
+                dragHandle.style.visibility = 'hidden';
+            }
+        });
+    });
 });
 
 async function saveNoteContent(noteElement, content) {
