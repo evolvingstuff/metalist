@@ -592,6 +592,17 @@ document.addEventListener('keydown', (e) => {
             }
         }
     }
+
+    // Add event handlers for undo (cmd-z) and redo (cmd-y)
+    if (e.metaKey && e.key === 'z') {
+        e.preventDefault();
+        alert('Undo action triggered');
+    }
+
+    if (e.metaKey && e.key === 'y') {
+        e.preventDefault();
+        alert('Redo action triggered');
+    }
 }); 
 
 function exitEditingMode() {
