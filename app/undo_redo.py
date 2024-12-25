@@ -92,10 +92,12 @@ class CommandStack:
         else:
             print("No command to redo")
 
+    # TODO apply to api
     def clear_all(self):
         self.stack = []
         self.current_index = -1
 
+    # TODO apply to api
     def clear_after_current(self):
         """Clear commands after the current pointer."""
         if self.current_index < len(self.stack) - 1:

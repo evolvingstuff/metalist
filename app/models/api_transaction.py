@@ -4,6 +4,10 @@ from sqlalchemy import event
 from .database import DBNote
 from ..global_state import global_state
 from ..undo_redo import Command, CommandStack
+from functools import wraps
+from threading import Lock
+
+transaction_lock = Lock()
 
 class ApiTransaction:
     def __init__(self):
@@ -15,6 +19,7 @@ class ApiTransaction:
         print(f'@ New transaction created with ID: {self.uuid}')
 
     def calculate_states(self):
+        # TODO asdfasdf
         state_before = {}
         state_after = {}
 
@@ -34,12 +39,12 @@ class ApiTransaction:
         for note_id, note in self.state_before_updated.items():
             if note_id not in self.state_added:
                 # Note existed before and was not newly added
-                state_before[note_id] = note
+                state_before[note_id] = self.state_before_updated[note_id]
 
         for note_id, note in self.state_current_updated.items():
             if note_id not in self.state_deleted:
                 # Note still exists and was not deleted
-                state_after[note_id] = note
+                state_after[note_id] = self.state_current_updated[note_id]
 
         return state_before, state_after
 
@@ -84,6 +89,9 @@ class ApiTransaction:
             if note_id not in self.state_deleted:
                 print(f'\t\tadding {note_id[:8]} to state_deleted')
                 self.state_deleted[note_id] = copy.deepcopy(target)
+            if note_id not in self.state_before_updated:
+                print(f'\t\tadding {note_id[:8]} to state_before_updated')
+                self.state_before_updated[note_id] = copy.deepcopy(target)
             print(f'\t\tadding {note_id[:8]} to state_current_updated')
             self.state_current_updated[note_id] = copy.deepcopy(target)
         
@@ -111,3 +119,44 @@ event.listen(DBNote.prev_id, 'set', log_attribute_change, retval=False)
 event.listen(DBNote.next_id, 'set', log_attribute_change, retval=False)
 event.listen(DBNote, 'before_insert', log_note_creation)
 event.listen(DBNote, 'before_delete', log_note_deletion)
+
+def api_transaction_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not transaction_lock.acquire(blocking=False):
+            raise Exception("Transaction already in progress")
+        
+        try:
+            if global_state["current_transaction"] is not None:
+                raise Exception("Transaction already in progress")
+            global_state["current_transaction"] = ApiTransaction()
+            print(f"@ Starting transaction for function: {func.__name__}")
+            
+            result = func(*args, **kwargs)
+            print(f"@ Function {func.__name__} executed successfully")
+            
+            return result
+        except Exception as e:
+            print(f"Exception occurred in function {func.__name__}: {e}")
+            raise
+        finally:
+            if global_state["current_transaction"] is not None:
+                print('@@@ notes before updated:')
+                for k in global_state["current_transaction"].state_before_updated.keys():
+                    print(f'\t{k[:8]}')
+                print('@@@ notes current updated:')
+                for k in global_state["current_transaction"].state_current_updated.keys():
+                    print(f'\t{k[:8]}')
+                print('@@@ notes added:')
+                for k in global_state["current_transaction"].state_added.keys():
+                    print(f'\t{k[:8]}')
+                print('@@@ notes deleted:')
+                for k in global_state["current_transaction"].state_deleted.keys():
+                    print(f'\t{k[:8]}')
+                global_state["current_transaction"].finalize_transaction()
+                global_state["current_transaction"] = None
+                command_stack = global_state["command_stack"]
+                command_stack.clear_after_current()
+                print(f"@ Transaction ended for function: {func.__name__}")
+            transaction_lock.release()
+    return wrapper

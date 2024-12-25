@@ -28,6 +28,12 @@ app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
+
+    # TODO: remove eventually?
+    valid = LinkedListManager.validate_list(db, None)
+    if not valid:
+        raise Exception("List is invalid")
+
     template = templates.get_template("index.html")
     
     def build_tree(parent_id=None):
