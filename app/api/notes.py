@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from ..decorators import api_transaction_decorator, db_transaction_decorator
 from ..global_state import global_state
+from ..core.config import ENABLE_UNDO_REDO
 
 router = APIRouter()
 
@@ -23,6 +24,8 @@ class MoveNoteCommand(BaseModel):
 @router.post("/undo")
 @db_transaction_decorator
 def undo(db: Session = Depends(get_db)):
+    if not ENABLE_UNDO_REDO:
+        return {"status": "noop", "message": "Undo and redo are turned off"}
     command_stack = global_state["command_stack"]
     if command_stack.current_index >= 0:
         command_stack.undo(db)
@@ -33,6 +36,8 @@ def undo(db: Session = Depends(get_db)):
 @router.post("/redo")
 @db_transaction_decorator
 def redo(db: Session = Depends(get_db)):
+    if not ENABLE_UNDO_REDO:
+        return {"status": "noop", "message": "Undo and redo are turned off"}
     command_stack = global_state["command_stack"]
     if command_stack.current_index < len(command_stack.stack) - 1:
         command_stack.redo(db)
@@ -119,6 +124,7 @@ def move_note(
 @router.delete("/{note_id}")
 @db_transaction_decorator
 @api_transaction_decorator
+# @api_transaction_decorator
 def delete_note(note_id: str, db: Session = Depends(get_db)):
     note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not note:
@@ -131,6 +137,7 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
 @router.post("/new-drop")
 @db_transaction_decorator
 @api_transaction_decorator
+# @api_transaction_decorator
 def create_note_with_position(
     command: MoveNoteCommand,
     db: Session = Depends(get_db)
@@ -148,6 +155,7 @@ def create_note_with_position(
 @router.post("/new-sibling/{note_id}")
 @db_transaction_decorator
 @api_transaction_decorator
+# @api_transaction_decorator
 def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     # Generate a new note ID
     new_note_id = str(uuid.uuid4())
