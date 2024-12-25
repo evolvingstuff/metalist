@@ -3,7 +3,7 @@ import copy
 from sqlalchemy import event
 from .database import DBNote
 from ..global_state import global_state
-
+from ..undo_redo import Command, CommandStack
 
 class ApiTransaction:
     def __init__(self):
@@ -13,6 +13,44 @@ class ApiTransaction:
         self.state_added = {}
         self.state_deleted = {}
         print(f'@ New transaction created with ID: {self.uuid}')
+
+    def calculate_states(self):
+        state_before = {}
+        state_after = {}
+
+        # Handle deleted notes
+        for note_id, note in self.state_deleted.items():
+            if note_id in self.state_before_updated:
+                # Note was deleted and existed at the start
+                state_before[note_id] = self.state_before_updated[note_id]
+
+        # Handle added notes
+        for note_id, note in self.state_added.items():
+            if note_id in self.state_current_updated:
+                # Note was added and exists in the current state
+                state_after[note_id] = self.state_current_updated[note_id]
+
+        # Handle updated notes
+        for note_id, note in self.state_before_updated.items():
+            if note_id not in self.state_added:
+                # Note existed before and was not newly added
+                state_before[note_id] = note
+
+        for note_id, note in self.state_current_updated.items():
+            if note_id not in self.state_deleted:
+                # Note still exists and was not deleted
+                state_after[note_id] = note
+
+        return state_before, state_after
+
+    def finalize_transaction(self):
+        print(f'@ Finalizing transaction with ID: {self.uuid}')
+        state_before, state_after = self.calculate_states()
+        # Create a command with before and after states
+        command = Command(state_before, state_after)
+        # Add the command to the transaction stack
+        global_state["command_stack"].push(command)
+        print(f"Transaction added to (global) command stack (size = {len(global_state['command_stack'].stack)})")
 
     def log_attribute_change(self, target, value, oldvalue, initiator):
         if isinstance(target, DBNote):

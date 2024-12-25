@@ -30,8 +30,8 @@ def api_transaction_decorator(func):
             for k in global_state["current_transaction"].state_deleted.keys():
                 print(f'\t{k[:8]}')
             print('\tTODO... infer before / after')
-            # TODO: add transaction to stack
-            print('TODO add transaction to stack')
+            # Finalize the transaction
+            global_state["current_transaction"].finalize_transaction()
             # Clear the transaction after use
             global_state["current_transaction"] = None
             print(f"@ Transaction ended for function: {func.__name__}")
