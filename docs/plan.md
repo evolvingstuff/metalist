@@ -4,8 +4,8 @@
 - [x] Add event handlers in the UI for `cmd-z` (undo) and `cmd-y` (redo) that trigger alerts for now.
 
 ## Command Pattern Setup
-- [ ] Define a `Command` class to encapsulate undoable operations, storing both pre and post states.
-- [ ] Implement methods for `execute`, `undo`, and `redo` within the `Command` class.
+- [x] Define a `Command` class to encapsulate undoable operations, storing both pre and post states.
+- [x] Implement methods for `execute`, `undo`, and `redo` within the `Command` class.
 
 ## State Management
 - [ ] Wrap SQLAlchemy updates to capture note states before any changes.
