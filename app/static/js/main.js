@@ -182,6 +182,43 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.removeItem('newNoteId');
         }
     }
+
+    let activeTooltip = null; // Track the currently active tooltip
+
+    document.querySelectorAll('.note').forEach(noteElement => {
+        let tooltipTimeout;
+
+        noteElement.addEventListener('mouseenter', (e) => {
+            e.stopPropagation(); // Prevent event from bubbling up to parent notes
+            tooltipTimeout = setTimeout(() => {
+                // Remove any existing tooltip
+                if (activeTooltip) {
+                    activeTooltip.remove();
+                }
+
+                const tooltip = document.createElement('div');
+                tooltip.className = 'tooltip';
+                tooltip.textContent = `UUID: ${noteElement.dataset.uuid}`;
+                document.body.appendChild(tooltip); // Append to body
+
+                // Position the tooltip above the note
+                const rect = noteElement.getBoundingClientRect();
+                tooltip.style.left = `${rect.left}px`;
+                tooltip.style.top = `${rect.top - tooltip.offsetHeight}px`;
+
+                activeTooltip = tooltip; // Set the current tooltip as active
+            }, 2000); // 2 seconds delay
+        });
+
+        noteElement.addEventListener('mouseleave', (e) => {
+            e.stopPropagation(); // Prevent event from bubbling up to parent notes
+            clearTimeout(tooltipTimeout);
+            if (activeTooltip) {
+                activeTooltip.remove();
+                activeTooltip = null; // Clear the active tooltip
+            }
+        });
+    });
 });
 
 async function saveNoteContent(noteElement, content) {

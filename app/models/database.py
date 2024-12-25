@@ -53,18 +53,20 @@ def log_attribute_change(target, value, oldvalue, initiator):
         # Ignore changes from NO_VALUE to a real value
         if oldvalue is NO_VALUE:
             return
-        
-        print(f"$$$ Attribute change detected on note {target.id}: {initiator.key} changed from '{oldvalue}' to '{value}'")
 
+        oldvalue_str = oldvalue[:8] + '...' if oldvalue is not None else 'None'
+        value_str = value[:8] + '...' if value is not None else 'None'
+
+        print(f"$$$ Attribute change detected on note {target.id[:8]}: {initiator.key} changed from '{oldvalue_str}' to '{value_str}'")
 def log_note_creation(mapper, connection, target):
     """Log when a note is created."""
     if isinstance(target, DBNote):
-        print(f"+++ Note created with ID: {target.id}, content: '{target.content}'")
+        print(f"+++ Note created with ID: {target.id[:8]}..., content: '{target.content[:8]}...'")
 
 def log_note_deletion(mapper, connection, target):
     """Log when a note is deleted."""
     if isinstance(target, DBNote):
-        print(f"--- Note deleted with ID: {target.id}, content: '{target.content}'")
+        print(f"--- Note deleted with ID: {target.id[:8]}..., content: '{target.content[:8]}...'")
 
 # Register attribute change listeners for each attribute of interest
 event.listen(DBNote.content, 'set', log_attribute_change, retval=False)
