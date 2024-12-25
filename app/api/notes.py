@@ -8,7 +8,7 @@ from .dependencies import get_db
 import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
-from ..decorators import api_transaction_decorator
+from ..decorators import api_transaction_decorator, db_transaction_decorator
 from ..global_state import global_state
 
 router = APIRouter()
@@ -20,6 +20,7 @@ class MoveNoteCommand(BaseModel):
     position: Optional[str] = None  # "BEFORE" or "AFTER"
 
 @router.post("/new")
+@db_transaction_decorator
 @api_transaction_decorator
 def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     note_id = str(uuid.uuid4())
@@ -27,16 +28,19 @@ def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     return {"id": note_id}
 
 @router.put("/{note_id}")
+@db_transaction_decorator
 @api_transaction_decorator
 def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
+    # TODO refactor this into
+    #  LinkedListManager.update_note(db, note_id)
     db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     db_note.content = command.content
-    db.commit()
     return Note.from_orm(db_note)
 
 @router.post("/undo")
+@db_transaction_decorator
 def undo(db: Session = Depends(get_db)):
     command_stack = global_state["command_stack"]
     if command_stack.current_index >= 0:
@@ -46,6 +50,7 @@ def undo(db: Session = Depends(get_db)):
         return {"status": "noop", "message": "No actions to undo"}
 
 @router.post("/redo")
+@db_transaction_decorator
 def redo(db: Session = Depends(get_db)):
     command_stack = global_state["command_stack"]
     if command_stack.current_index < len(command_stack.stack) - 1:
@@ -55,6 +60,7 @@ def redo(db: Session = Depends(get_db)):
         return {"status": "noop", "message": "No actions to redo"}
 
 @router.post("/{note_id}/move")
+@db_transaction_decorator
 @api_transaction_decorator
 def move_note(
     note_id: str, 
@@ -107,6 +113,7 @@ def move_note(
     return {"status": "success"}
 
 @router.delete("/{note_id}")
+@db_transaction_decorator
 @api_transaction_decorator
 def delete_note(note_id: str, db: Session = Depends(get_db)):
     note = db.query(DBNote).filter(DBNote.id == note_id).first()
@@ -117,12 +124,14 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
     return {"status": "success"}
 
 @router.get("/")
+@db_transaction_decorator
 def get_notes(db: Session = Depends(get_db)):
     notes = LinkedListManager.get_ordered_child_list(db)
     return [Note.from_orm(note) for note in notes]
 
 
 @router.post("/new-drop")
+@db_transaction_decorator
 @api_transaction_decorator
 def create_note_with_position(
     command: MoveNoteCommand,
@@ -139,6 +148,7 @@ def create_note_with_position(
     return {"id": note_id}
 
 @router.post("/new-sibling/{note_id}")
+@db_transaction_decorator
 @api_transaction_decorator
 def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     # Generate a new note ID
@@ -164,6 +174,7 @@ def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     return {"id": new_note_id}
 
 @router.post("/new-child/{note_id}")
+@db_transaction_decorator
 @api_transaction_decorator
 def create_new_child(note_id: str, db: Session = Depends(get_db)):
     # Generate a new note ID

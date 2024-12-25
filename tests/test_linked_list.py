@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, declarative_base
@@ -14,7 +16,18 @@ def db():
     session = Session(engine)
     yield session
     session.close()
-    
+
+
+@contextmanager
+def transaction_scope(db_session):
+    try:
+        yield
+        db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        raise e
+
+
 def test_move_note_after(db):
     # Create test notes: 3 -> 2 -> 1
     note1 = DBNote(id="1", content="1")
@@ -51,6 +64,7 @@ def test_move_note_after(db):
     assert note1.prev_id == "3"
     assert note1.next_id is None
 
+
 def test_move_note_before(db):
     # Create test notes: 3 -> 2 -> 1
     note1 = DBNote(id="1", content="1")
@@ -86,6 +100,7 @@ def test_move_note_before(db):
     assert note3.next_id == "1"
     assert note1.prev_id == "3"
     assert note1.next_id is None
+
 
 def test_move_note_as_child(db):
     # Create test notes: 3 -> 2 -> 1
@@ -126,6 +141,7 @@ def test_move_note_as_child(db):
     assert note3.next_id is None
     assert note1.prev_id == "2"
     assert note1.next_id is None 
+
 
 def test_move_note_from_child_to_root(db):
     # Create initial structure:
@@ -169,6 +185,7 @@ def test_move_note_from_child_to_root(db):
     assert note1.prev_id == "2"
     assert note1.next_id == "3"
 
+
 def test_move_note_between_different_parents(db):
     # Create initial structure:
     # Root level: 2 -> 1
@@ -204,6 +221,7 @@ def test_move_note_between_different_parents(db):
     child_notes = LinkedListManager.get_ordered_child_list(db, "2")
     assert len(child_notes) == 0 
 
+
 def test_move_note_to_empty_parent(db):
     # Create initial structure:
     # Root level: 2 -> 1
@@ -231,6 +249,7 @@ def test_move_note_to_empty_parent(db):
     # Verify note 3 is now under note 1
     child_notes = LinkedListManager.get_ordered_child_list(db, "1")
     assert [note.id for note in child_notes] == ["3"]
+
 
 def test_move_note_chain(db):
     # Create initial structure:
@@ -266,6 +285,7 @@ def test_move_note_chain(db):
     assert note2.next_id is None
     assert note3.prev_id == "1"
     assert note3.next_id == "2"
+
 
 def test_move_note_to_parent_with_children(db):
     # Create initial structure:
@@ -306,6 +326,7 @@ def test_move_note_to_parent_with_children(db):
     assert note3.next_id == "4"
     assert note4.prev_id == "3"
     assert note4.next_id is None
+
 
 def test_move_multiple_notes_sequence(db):
     """Test moving multiple notes in sequence to ensure stability"""
@@ -352,6 +373,7 @@ def test_move_multiple_notes_sequence(db):
     notes = LinkedListManager.get_ordered_child_list(db)
     assert [note.id for note in notes] == ["4", "1", "3", "2", "5"]
 
+
 def test_deep_nesting_moves(db):
     """Test moving notes between different levels of nesting"""
     # Create structure:
@@ -392,6 +414,7 @@ def test_deep_nesting_moves(db):
     root_notes = LinkedListManager.get_ordered_child_list(db)
     assert [note.id for note in root_notes] == ["1", "3"]
 
+
 def test_long_chain_operations(db):
     """Test operations on a very long chain"""
     # Create a chain of 20 notes
@@ -429,6 +452,7 @@ def test_long_chain_operations(db):
     assert notes[0].id == "20"
     assert notes[-1].id == "1"
 
+
 def test_invalid_moves(db):
     """Test handling of invalid move operations"""
     note1 = DBNote(id="1", content="1")
@@ -463,6 +487,7 @@ def test_invalid_moves(db):
     children = LinkedListManager.get_ordered_child_list(db, "1")
     assert [note.id for note in children] == ["2"]
 
+
 def test_circular_reference_prevention(db):
     """Test prevention of circular parent-child relationships"""
     # Create structure:
@@ -483,6 +508,7 @@ def test_circular_reference_prevention(db):
             note_id="1",
             new_parent_id="3"
         )
+
 
 def test_bulk_operations(db):
     """Test performance with bulk operations"""
@@ -509,6 +535,7 @@ def test_bulk_operations(db):
             position=MovePosition.AFTER
         )
 
+
 def test_move_to_start_of_list(db):
     """Test moving a note to the start of a list"""
     # Create structure: 1 -> 2 -> 3 -> 4
@@ -533,6 +560,7 @@ def test_move_to_start_of_list(db):
     notes = LinkedListManager.get_ordered_child_list(db)
     assert [note.id for note in notes] == ["4", "1", "2", "3"]
 
+
 def test_move_to_end_of_list(db):
     """Test moving a note to the end of a list"""
     # Create structure: 1 -> 2 -> 3 -> 4
@@ -556,6 +584,7 @@ def test_move_to_end_of_list(db):
     # Verify new order: 2 -> 3 -> 4 -> 1
     notes = LinkedListManager.get_ordered_child_list(db)
     assert [note.id for note in notes] == ["2", "3", "4", "1"]
+
 
 def test_move_between_nested_lists(db):
     """Test moving notes between different nested lists"""
@@ -589,6 +618,7 @@ def test_move_between_nested_lists(db):
     children = LinkedListManager.get_ordered_child_list(db, "4")
     assert [note.id for note in children] == ["5"]
 
+
 def test_move_to_empty_list(db):
     """Test moving a note to an empty list"""
     # Create structure:
@@ -617,6 +647,7 @@ def test_move_to_empty_list(db):
     children = LinkedListManager.get_ordered_child_list(db, "4")
     assert [note.id for note in children] == ["2"]
 
+
 def test_invalid_position_parameters(db):
     """Test validation of position parameters"""
     note1 = DBNote(id="1", content="1")
@@ -644,6 +675,7 @@ def test_invalid_position_parameters(db):
             sibling_id=None,
             position=MovePosition.AFTER
         )
+
 
 def test_move_note_inside_parent(db: Session):
     # Setup: Create three notes in a sequence at root level
@@ -694,6 +726,7 @@ def test_move_note_inside_parent(db: Session):
     assert note2.prev_id is None, "Note2 should have no prev as first child"
     assert note2.next_id is None, "Note2 should have no next as only child"
 
+
 def test_move_note_maintains_single_head(db):
     # Create two root-level notes
     note1 = DBNote(id="note1", content="First")
@@ -716,6 +749,7 @@ def test_move_note_maintains_single_head(db):
         DBNote.parent_id == note1.id
     ).all()
     assert len(notes_without_prev) == 1
+
 
 def test_move_note_with_children_maintains_single_head(db):
     # Create initial structure:
@@ -750,6 +784,7 @@ def test_move_note_with_children_maintains_single_head(db):
     ).all()
     assert len(notes_without_prev) == 1
 
+
 def test_fuzz_linked_list(db):
     """Fuzz test the linked list operations with random but valid moves"""
     SEED = 42
@@ -761,16 +796,17 @@ def test_fuzz_linked_list(db):
     random.seed(SEED)
 
     # Create initial notes in a valid linked list structure
-    notes = []
-    for i in range(NODES):
-        note = DBNote(id=str(i), content=f"Note {i}")
-        if i > 0:
-            note.prev_id = str(i-1)
-            notes[i-1].next_id = str(i)
-        notes.append(note)
+    with transaction_scope(db):
+        notes = []
+        for i in range(NODES):
+            note = DBNote(id=str(i), content=f"Note {i}")
+            if i > 0:
+                note.prev_id = str(i-1)
+                notes[i-1].next_id = str(i)
+            notes.append(note)
 
-    db.add_all(notes)
-    db.commit()
+        db.add_all(notes)
+
 
     def visualize_tree():
         def get_tree_string(parent_id=None, depth=0):
@@ -814,13 +850,14 @@ def test_fuzz_linked_list(db):
         # Fail fast if trying to make a note its own parent
         if new_parent_id == note_id:
             with pytest.raises(ValueError, match="Cannot make a note its own parent"):
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=note_id,
-                    new_parent_id=new_parent_id,
-                    sibling_id=sibling_id,
-                    position=position
-                )
+                with transaction_scope(db):
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
             continue
 
         # Randomly decide whether to specify a sibling
@@ -841,31 +878,35 @@ def test_fuzz_linked_list(db):
             print(f"Relative to sibling {sibling_id} ({position})")
 
         try:
-            LinkedListManager.move_note(
-                db=db,
-                note_id=note_id,
-                new_parent_id=new_parent_id,
-                sibling_id=sibling_id,
-                position=position
-            )
-            print("Move successful!")
+            with transaction_scope(db):
+                LinkedListManager.move_note(
+                    db=db,
+                    note_id=note_id,
+                    new_parent_id=new_parent_id,
+                    sibling_id=sibling_id,
+                    position=position
+                )
+                print("Move successful!")
         except ValueError as e:
             print(f"Move failed: {str(e)}")
             continue
 
         # Validate after each move
-        if not LinkedListManager.validate_list(db, new_parent_id):
-            raise ValueError(f"Invalid list structure after moving note {note_id} to parent {new_parent_id}")
+        with transaction_scope(db):
+            if not LinkedListManager.validate_list(db, new_parent_id):
+                raise ValueError(f"Invalid list structure after moving note {note_id} to parent {new_parent_id}")
         
         # Also validate the old parent's list if it changed
         old_parent_id = note.parent_id
-        if old_parent_id != new_parent_id and not LinkedListManager.validate_list(db, old_parent_id):
-            raise ValueError(f"Invalid list structure in old parent {old_parent_id} after moving note {note_id}")
+        with transaction_scope(db):
+            if old_parent_id != new_parent_id and not LinkedListManager.validate_list(db, old_parent_id):
+                raise ValueError(f"Invalid list structure in old parent {old_parent_id} after moving note {note_id}")
         
         # Validate root level if either parent was None
         if old_parent_id is None or new_parent_id is None:
-            if not LinkedListManager.validate_list(db, None):
-                raise ValueError("Invalid root level list structure")
+            with transaction_scope(db):
+                if not LinkedListManager.validate_list(db, None):
+                    raise ValueError("Invalid root level list structure")
 
         print("Validation successful!")
 
@@ -883,20 +924,21 @@ def test_fuzz_linked_list_with_mutations(db):
     random.seed(SEED)
 
     # Create initial notes in a valid linked list structure
-    notes = []
-    for i in range(NODES):
-        note = DBNote(id=str(i), content=f"Note {i}")
-        if i > 0:
-            note.prev_id = str(i-1)
-            notes[i-1].next_id = str(i)
-        notes.append(note)
+    with transaction_scope(db):
+        notes = []
+        for i in range(NODES):
+            note = DBNote(id=str(i), content=f"Note {i}")
+            if i > 0:
+                note.prev_id = str(i-1)
+                notes[i-1].next_id = str(i)
+            notes.append(note)
 
-    db.add_all(notes)
-    db.commit()
+        db.add_all(notes)
 
     def visualize_tree():
         def get_tree_string(parent_id=None, depth=0):
-            nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
+            with transaction_scope(db):
+                nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
             if not nodes:
                 return ""
             
@@ -916,7 +958,8 @@ def test_fuzz_linked_list_with_mutations(db):
     visualize_tree()
 
     next_id = NODES  # For creating new notes
-    active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+    with transaction_scope(db):
+        active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
     active_note_ids = sorted(list(active_note_ids))
 
     # Perform random operations
@@ -933,11 +976,12 @@ def test_fuzz_linked_list_with_mutations(db):
             note_id = random.choice(active_note_ids)
             print(f"Deleting note {note_id}")
             note = db.query(DBNote).get(note_id)
-            LinkedListManager.delete_note(db, note_id)
-            # Recalculate active notes after deletion
-            active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
-            active_note_ids = sorted(list(active_note_ids))
-            print("Delete successful!")
+            with transaction_scope(db):
+                LinkedListManager.delete_note(db, note_id)
+                # Recalculate active notes after deletion
+                active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+                active_note_ids = sorted(list(active_note_ids))
+                print("Delete successful!")
 
         elif operation < 0.4:  # 20% chance to add new note (split between click and drag)
             new_id = str(next_id)
@@ -949,7 +993,8 @@ def test_fuzz_linked_list_with_mutations(db):
 
             if is_drag_add:  # Drag and drop creation
                 target_id = random.choice(active_note_ids)
-                target = db.query(DBNote).get(target_id)
+                with transaction_scope(db):
+                    target = db.query(DBNote).get(target_id)
                 
                 # Randomly choose drop type
                 drop_type = random.choice(['inside', 'before', 'after'])
@@ -957,22 +1002,25 @@ def test_fuzz_linked_list_with_mutations(db):
 
                 if drop_type == 'inside':
                     # Create note and move it under target
-                    LinkedListManager.create_note_drop(
-                        db,
-                        new_id,
-                        new_parent_id=target_id
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.create_note_drop(
+                            db,
+                            new_id,
+                            new_parent_id=target_id
+                        )
                 else:
                     # Create note and position it relative to target
-                    LinkedListManager.create_note_drop(
-                        db,
-                        new_id,
-                        new_parent_id=target.parent_id,
-                        sibling_id=target_id,
-                        position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.create_note_drop(
+                            db,
+                            new_id,
+                            new_parent_id=target.parent_id,
+                            sibling_id=target_id,
+                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                        )
             else:  # Regular click creation
-                LinkedListManager.create_note_top(db, new_id)
+                with transaction_scope(db):
+                    LinkedListManager.create_note_top(db, new_id)
             
             active_note_ids.append(new_id)
             active_note_ids.sort()
@@ -984,7 +1032,8 @@ def test_fuzz_linked_list_with_mutations(db):
 
             # Pick a random note to move
             note_id = random.choice(active_note_ids)
-            note = db.query(DBNote).get(note_id)
+            with transaction_scope(db):
+                note = db.query(DBNote).get(note_id)
 
             # Pick a random target parent from active notes
             possible_parents = active_note_ids
@@ -997,13 +1046,14 @@ def test_fuzz_linked_list_with_mutations(db):
             # Fail fast if trying to make a note its own parent
             if new_parent_id == note_id:
                 with pytest.raises(ValueError, match="Cannot make a note its own parent"):
-                    LinkedListManager.move_note(
-                        db=db,
-                        note_id=note_id,
-                        new_parent_id=new_parent_id,
-                        sibling_id=sibling_id,
-                        position=position
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=note_id,
+                            new_parent_id=new_parent_id,
+                            sibling_id=sibling_id,
+                            position=position
+                        )
                 continue
 
             print(f"Moving note {note_id} (currently under {note.parent_id})")
@@ -1013,43 +1063,49 @@ def test_fuzz_linked_list_with_mutations(db):
             use_sibling = random.choice([True, False])
             if use_sibling and new_parent_id is not None:
                 # Find valid siblings at target level
-                siblings = db.query(DBNote).filter(
-                    DBNote.parent_id == new_parent_id,
-                    DBNote.id != note_id
-                ).all()
+                with transaction_scope(db):
+                    siblings = db.query(DBNote).filter(
+                        DBNote.parent_id == new_parent_id,
+                        DBNote.id != note_id
+                    ).all()
                 if siblings:
                     sibling_id = random.choice([s.id for s in siblings])
                     position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
                     print(f"Relative to sibling {sibling_id} ({position})")
 
             try:
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=note_id,
-                    new_parent_id=new_parent_id,
-                    sibling_id=sibling_id,
-                    position=position
-                )
+                with transaction_scope(db):
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
                 print("Move successful!")
             except ValueError as e:
+                # TODO
                 print(f"Move failed: {str(e)}")
                 continue
 
         # Validate after each operation
         # First validate root level
-        if not LinkedListManager.validate_list(db,None):
-            raise ValueError(f"Invalid list structure under parent None")
+        with transaction_scope(db):
+            if not LinkedListManager.validate_list(db,None):
+                raise ValueError(f"Invalid list structure under parent None")
 
         # Then validate under each existing note that has children
-        existing_parents = db.query(DBNote.id).filter(
-            DBNote.id.in_(
-                db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
-            )
-        ).all()
+        with transaction_scope(db):
+            existing_parents = db.query(DBNote.id).filter(
+                DBNote.id.in_(
+                    db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
+                )
+            ).all()
 
         for (parent_id,) in existing_parents:
-            if not LinkedListManager.validate_list(db, parent_id):
-                raise ValueError(f"Invalid list structure under parent {parent_id}")
+            with transaction_scope(db):
+                if not LinkedListManager.validate_list(db, parent_id):
+                    raise ValueError(f"Invalid list structure under parent {parent_id}")
         print("Validation successful!")
 
 def test_fuzz_linked_list_with_mutations_and_drag_add(db):
@@ -1063,20 +1119,21 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
     random.seed(SEED)
 
     # Create initial notes in a valid linked list structure
-    notes = []
-    for i in range(NODES):
-        note = DBNote(id=str(i), content=f"Note {i}")
-        if i > 0:
-            note.prev_id = str(i-1)
-            notes[i-1].next_id = str(i)
-        notes.append(note)
+    with transaction_scope(db):
+        notes = []
+        for i in range(NODES):
+            note = DBNote(id=str(i), content=f"Note {i}")
+            if i > 0:
+                note.prev_id = str(i-1)
+                notes[i-1].next_id = str(i)
+            notes.append(note)
 
-    db.add_all(notes)
-    db.commit()
+        db.add_all(notes)
 
     def visualize_tree():
         def get_tree_string(parent_id=None, depth=0):
-            nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
+            with transaction_scope(db):
+                nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
             if not nodes:
                 return ""
             
@@ -1096,7 +1153,8 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
     visualize_tree()
 
     next_id = NODES  # For creating new notes
-    active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+    with transaction_scope(db):
+        active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
     active_note_ids = sorted(list(active_note_ids))
 
     # Perform random operations
@@ -1112,7 +1170,8 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
             # Delete operation (same as original)
             note_id = random.choice(active_note_ids)
             print(f"Deleting note {note_id}")
-            LinkedListManager.delete_note(db, note_id)
+            with transaction_scope(db):
+                LinkedListManager.delete_note(db, note_id)
             active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
             active_note_ids = sorted(list(active_note_ids))
             print("Delete successful!")
@@ -1135,22 +1194,25 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
 
                 if drop_type == 'inside':
                     # Create note and move it under target
-                    LinkedListManager.create_note_drop(
-                        db,
-                        new_id,
-                        new_parent_id=target_id
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.create_note_drop(
+                            db,
+                            new_id,
+                            new_parent_id=target_id
+                        )
                 else:
                     # Create note and position it relative to target
-                    LinkedListManager.create_note_drop(
-                        db,
-                        new_id,
-                        new_parent_id=target.parent_id,
-                        sibling_id=target_id,
-                        position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.create_note_drop(
+                            db,
+                            new_id,
+                            new_parent_id=target.parent_id,
+                            sibling_id=target_id,
+                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                        )
             else:  # Regular click creation
-                LinkedListManager.create_note_top(db, new_id)
+                with transaction_scope(db):
+                    LinkedListManager.create_note_top(db, new_id)
             
             active_note_ids.append(new_id)
             active_note_ids.sort()
@@ -1162,7 +1224,8 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
 
             # Move operation (same as original)
             note_id = random.choice(active_note_ids)
-            note = db.query(DBNote).get(note_id)
+            with transaction_scope(db):
+                note = db.query(DBNote).get(note_id)
             possible_parents = active_note_ids
             new_parent_id = random.choice(possible_parents + [None])
             sibling_id = None
@@ -1170,13 +1233,14 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
 
             if new_parent_id == note_id:
                 with pytest.raises(ValueError, match="Cannot make a note its own parent"):
-                    LinkedListManager.move_note(
-                        db=db,
-                        note_id=note_id,
-                        new_parent_id=new_parent_id,
-                        sibling_id=sibling_id,
-                        position=position
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=note_id,
+                            new_parent_id=new_parent_id,
+                            sibling_id=sibling_id,
+                            position=position
+                        )
                 continue
 
             print(f"Moving note {note_id} (currently under {note.parent_id})")
@@ -1184,41 +1248,46 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
 
             use_sibling = random.choice([True, False])
             if use_sibling and new_parent_id is not None:
-                siblings = db.query(DBNote).filter(
-                    DBNote.parent_id == new_parent_id,
-                    DBNote.id != note_id
-                ).all()
+                with transaction_scope(db):
+                    siblings = db.query(DBNote).filter(
+                        DBNote.parent_id == new_parent_id,
+                        DBNote.id != note_id
+                    ).all()
                 if siblings:
                     sibling_id = random.choice([s.id for s in siblings])
                     position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
                     print(f"Relative to sibling {sibling_id} ({position})")
 
             try:
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=note_id,
-                    new_parent_id=new_parent_id,
-                    sibling_id=sibling_id,
-                    position=position
-                )
+                with transaction_scope(db):
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
                 print("Move successful!")
             except ValueError as e:
                 print(f"Move failed: {str(e)}")
                 continue
 
         # Validate after each operation
-        if not LinkedListManager.validate_list(db, None):
-            raise ValueError(f"Invalid list structure under parent None")
+        with transaction_scope(db):
+            if not LinkedListManager.validate_list(db, None):
+                raise ValueError(f"Invalid list structure under parent None")
 
-        existing_parents = db.query(DBNote.id).filter(
-            DBNote.id.in_(
-                db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
-            )
-        ).all()
+        with transaction_scope(db):
+            existing_parents = db.query(DBNote.id).filter(
+                DBNote.id.in_(
+                    db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
+                )
+            ).all()
 
         for (parent_id,) in existing_parents:
-            if not LinkedListManager.validate_list(db, parent_id):
-                raise ValueError(f"Invalid list structure under parent {parent_id}")
+            with transaction_scope(db):
+                if not LinkedListManager.validate_list(db, parent_id):
+                    raise ValueError(f"Invalid list structure under parent {parent_id}")
         print("Validation successful!")
 
 
@@ -1233,20 +1302,21 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
     random.seed(SEED)
 
     # Create initial notes in a valid linked list structure
-    notes = []
-    for i in range(NODES):
-        note = DBNote(id=str(i), content=f"Note {i}")
-        if i > 0:
-            note.prev_id = str(i - 1)
-            notes[i - 1].next_id = str(i)
-        notes.append(note)
+    with transaction_scope(db):
+        notes = []
+        for i in range(NODES):
+            note = DBNote(id=str(i), content=f"Note {i}")
+            if i > 0:
+                note.prev_id = str(i - 1)
+                notes[i - 1].next_id = str(i)
+            notes.append(note)
 
-    db.add_all(notes)
-    db.commit()
+        db.add_all(notes)
 
     def visualize_tree():
         def get_tree_string(parent_id=None, depth=0):
-            nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
+            with transaction_scope(db):
+                nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
             if not nodes:
                 return ""
 
@@ -1266,7 +1336,8 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
     visualize_tree()
 
     next_id = NODES  # For creating new notes
-    active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+    with transaction_scope(db):
+        active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
     active_note_ids = sorted(list(active_note_ids))
 
     # Operation counters
@@ -1292,7 +1363,8 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
             # Delete operation
             note_id = random.choice(active_note_ids)
             print(f"Deleting note {note_id}")
-            LinkedListManager.delete_note(db, note_id)
+            with transaction_scope(db):
+                LinkedListManager.delete_note(db, note_id)
             active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
             active_note_ids = sorted(list(active_note_ids))
             operation_counts['delete'] += 1
@@ -1307,50 +1379,58 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
 
             if add_type == 'drag' and active_note_ids:
                 target_id = random.choice(active_note_ids)
-                target = db.query(DBNote).get(target_id)
+                with transaction_scope(db):
+                    target = db.query(DBNote).get(target_id)
 
                 drop_type = random.choice(['inside', 'before', 'after'])
                 print(f"Dragging to {target_id} ({drop_type})")
 
                 if drop_type == 'inside':
-                    LinkedListManager.create_note_drop(
-                        db,
-                        new_id,
-                        new_parent_id=target_id
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.create_note_drop(
+                            db,
+                            new_id,
+                            new_parent_id=target_id
+                        )
                 else:
-                    LinkedListManager.create_note_drop(
-                        db,
-                        new_id,
-                        new_parent_id=target.parent_id,
-                        sibling_id=target_id,
-                        position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.create_note_drop(
+                            db,
+                            new_id,
+                            new_parent_id=target.parent_id,
+                            sibling_id=target_id,
+                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                        )
                 operation_counts['add_drag'] += 1
             elif add_type == 'sibling' and active_note_ids:
                 target_id = random.choice(active_note_ids)
-                LinkedListManager.create_note_top(db, new_id)
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=new_id,
-                    new_parent_id=db.query(DBNote).get(target_id).parent_id,
-                    sibling_id=target_id,
-                    position=MovePosition.AFTER
-                )
+                with transaction_scope(db):
+                    # TODO call actual op
+                    LinkedListManager.create_note_top(db, new_id)
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=new_id,
+                        new_parent_id=db.query(DBNote).get(target_id).parent_id,
+                        sibling_id=target_id,
+                        position=MovePosition.AFTER
+                    )
                 operation_counts['add_sibling'] += 1
             elif add_type == 'child' and active_note_ids:
                 target_id = random.choice(active_note_ids)
-                LinkedListManager.create_note_top(db, new_id)
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=new_id,
-                    new_parent_id=target_id,
-                    sibling_id=None,
-                    position=None
-                )
+                with transaction_scope(db):
+                    # TODO call actual op
+                    LinkedListManager.create_note_top(db, new_id)
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=new_id,
+                        new_parent_id=target_id,
+                        sibling_id=None,
+                        position=None
+                    )
                 operation_counts['add_child'] += 1
             else:  # Regular click creation
-                LinkedListManager.create_note_top(db, new_id)
+                with transaction_scope(db):
+                    LinkedListManager.create_note_top(db, new_id)
                 operation_counts['add_click'] += 1
 
             active_note_ids.append(new_id)
@@ -1362,7 +1442,8 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
                 continue
 
             note_id = random.choice(active_note_ids)
-            note = db.query(DBNote).get(note_id)
+            with transaction_scope(db):
+                note = db.query(DBNote).get(note_id)
             possible_parents = active_note_ids
             new_parent_id = random.choice(possible_parents + [None])
             sibling_id = None
@@ -1370,13 +1451,14 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
 
             if new_parent_id == note_id:
                 with pytest.raises(ValueError, match="Cannot make a note its own parent"):
-                    LinkedListManager.move_note(
-                        db=db,
-                        note_id=note_id,
-                        new_parent_id=new_parent_id,
-                        sibling_id=sibling_id,
-                        position=position
-                    )
+                    with transaction_scope(db):
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=note_id,
+                            new_parent_id=new_parent_id,
+                            sibling_id=sibling_id,
+                            position=position
+                        )
                 continue
 
             print(f"Moving note {note_id} (currently under {note.parent_id})")
@@ -1384,23 +1466,25 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
 
             use_sibling = random.choice([True, False])
             if use_sibling and new_parent_id is not None:
-                siblings = db.query(DBNote).filter(
-                    DBNote.parent_id == new_parent_id,
-                    DBNote.id != note_id
-                ).all()
+                with transaction_scope(db):
+                    siblings = db.query(DBNote).filter(
+                        DBNote.parent_id == new_parent_id,
+                        DBNote.id != note_id
+                    ).all()
                 if siblings:
                     sibling_id = random.choice([s.id for s in siblings])
                     position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
                     print(f"Relative to sibling {sibling_id} ({position})")
 
             try:
-                LinkedListManager.move_note(
-                    db=db,
-                    note_id=note_id,
-                    new_parent_id=new_parent_id,
-                    sibling_id=sibling_id,
-                    position=position
-                )
+                with transaction_scope(db):
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
                 operation_counts['move'] += 1
                 print("Move successful!")
             except ValueError as e:
@@ -1408,18 +1492,21 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
                 continue
 
         # Validate after each operation
-        if not LinkedListManager.validate_list(db, None):
-            raise ValueError(f"Invalid list structure under parent None")
+        with transaction_scope(db):
+            if not LinkedListManager.validate_list(db, None):
+                raise ValueError(f"Invalid list structure under parent None")
 
-        existing_parents = db.query(DBNote.id).filter(
-            DBNote.id.in_(
-                db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
-            )
-        ).all()
+        with transaction_scope(db):
+            existing_parents = db.query(DBNote.id).filter(
+                DBNote.id.in_(
+                    db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
+                )
+            ).all()
 
         for (parent_id,) in existing_parents:
-            if not LinkedListManager.validate_list(db, parent_id):
-                raise ValueError(f"Invalid list structure under parent {parent_id}")
+            with transaction_scope(db):
+                if not LinkedListManager.validate_list(db, parent_id):
+                    raise ValueError(f"Invalid list structure under parent {parent_id}")
         print("Validation successful!")
 
     # Check that all operations were performed at least once

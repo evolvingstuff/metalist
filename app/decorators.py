@@ -2,6 +2,22 @@ from functools import wraps
 from .global_state import global_state
 from .models.api_transaction import ApiTransaction
 from .core.config import ENABLE_UNDO_REDO
+from functools import wraps
+from sqlalchemy.orm import Session
+
+
+def db_transaction_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        db: Session = kwargs.get('db')
+        try:
+            result = func(*args, **kwargs)
+            db.commit()  # Commit the transaction
+            return result
+        except Exception as e:
+            db.rollback()  # Rollback in case of error
+            raise e
+    return wrapper
 
 
 def api_transaction_decorator(func):

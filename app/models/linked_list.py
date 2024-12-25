@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from .enums import MovePosition
 from .database import DBNote
 
+
 class LinkedListManager:
 
     # TODO is this recursive beyond one level of sub note?
@@ -11,10 +12,6 @@ class LinkedListManager:
         """Validate the linked list structure"""
         db.expire_all()  # TODO useful?
         notes = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
-        
-        # Add these debug lines
-        print(f"\nValidating list under parent {parent_id}")
-        print(f"Notes found: {[(n.id, n.prev_id, n.next_id) for n in notes]}")
         
         if not notes:
             return True
@@ -136,7 +133,6 @@ class LinkedListManager:
         try:
             # Create new note with no links initially
             db_note = DBNote(id=note_id, content="", parent_id=parent_id)
-            # print(f"DEBUG: Created note {note_id} with links: prev={db_note.prev_id}, next={db_note.next_id}")
             db.add(db_note)
 
             # Find the current head
@@ -144,29 +140,19 @@ class LinkedListManager:
                 DBNote.prev_id == None, 
                 DBNote.parent_id == parent_id
             ).first()
-            # print(f"DEBUG: Found current head: {current_head.id if current_head else None}")
 
             if current_head and current_head.id != note_id:  # Make sure we're not looking at ourselves
                 # Make new note the head by linking it to current head
                 current_head.prev_id = note_id
                 db_note.next_id = current_head.id
-                # print(f"DEBUG: Updated links - new note: prev={db_note.prev_id}, next={db_note.next_id}")
-                # print(f"DEBUG: Updated links - old head: prev={current_head.prev_id}, next={current_head.next_id}")
-            
-            db.commit()
-            # print(f"DEBUG: After commit - note links: prev={db_note.prev_id}, next={db_note.next_id}")
         except Exception as e:
-            db.rollback()
+            print(e)
             raise
 
     @staticmethod
     def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
         """Move a note to a new position"""
-        # print(f"\nDEBUG: Moving note {note_id}")
-        # print(f"DEBUG: Target parent={new_parent_id}, sibling={sibling_id}, position={position}")
-
-        # db.begin()
         try:
             # Get the note to move
             note = db.query(DBNote).get(note_id)
@@ -187,10 +173,8 @@ class LinkedListManager:
             if new_parent_id == note.parent_id and sibling_id is None:
                 raise ValueError("Note is already at this position")
 
-            # Store original state for rollback
             old_prev_id = note.prev_id
             old_next_id = note.next_id
-            old_parent_id = note.parent_id  # TODO: not used?
 
             def is_descendant(parent_id: str, potential_child_id: str) -> bool:
                 """Check if potential_child_id is a descendant of parent_id"""
@@ -209,7 +193,6 @@ class LinkedListManager:
 
             # Get all notes at the target level
             target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
-            # print(f"DEBUG: Notes at target level BEFORE: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
 
             # Step 1: Unlink note from current position
             if old_prev_id:
@@ -233,7 +216,6 @@ class LinkedListManager:
                     # Make existing head point to our note
                     existing_head.prev_id = note_id
                     note.next_id = existing_head.id
-                db.commit()
                 return
 
             # Case 2: Positioning relative to a sibling
@@ -260,21 +242,13 @@ class LinkedListManager:
                     next_note = db.query(DBNote).get(note.next_id)
                     if next_note:
                         next_note.prev_id = note_id
-
-            db.commit()
-            # print(f"DEBUG: Note final state: parent={note.parent_id}, prev={note.prev_id}, next={note.next_id}")
-            # target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
-            # print(f"DEBUG: Notes at target level AFTER: {[(n.id, n.prev_id, n.next_id) for n in target_notes]}")
-            # print(f"DEBUG: Notes without prev_id: {[n.id for n in target_notes if n.prev_id is None]}")
-
         except Exception as e:
-            db.rollback()
+            print(e)
             raise
 
     @staticmethod
     def delete_note(db: Session, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
-        # db.begin()
         try:
             note = db.query(DBNote).get(note_id)
             if not note:
@@ -305,10 +279,10 @@ class LinkedListManager:
 
             # Delete the original note
             db.delete(note)
-            db.commit()
         except Exception as e:
-            db.rollback()
+            print(e)
             raise
+
 
     @staticmethod
     def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
