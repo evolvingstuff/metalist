@@ -27,7 +27,7 @@ def api_transaction_decorator(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if not ENABLE_UNDO_REDO:
-            print(f"Undo/redo is disabled, skipping transaction for function: {func.__name__}")
+            # print(f"Undo/redo is disabled, skipping transaction for function: {func.__name__}")
             return func(*args, **kwargs)
 
         with transaction_lock:

@@ -16,6 +16,8 @@ const Position = {
     AFTER: 'AFTER'
 };
 
+const INACTIVITY = 5000000;
+// console.log('INACTIVITY:', INACTIVITY);
 
 
 async function handleImagePaste(e, noteElement) {
@@ -55,7 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle clicking on notes
     document.addEventListener('click', (e) => {
+        console.log('>>> Click event:', e.target)
         const noteElement = e.target.closest('.note');
+
+        console.log('Note element:', noteElement);
         
         if (noteElement && e.target.closest('.note-content')) {
             makeNoteEditable(noteElement);
@@ -118,7 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('input', (event) => {
         if (event.target.closest('.note-content')) {
             clearTimeout(inactivityTimeout);
-            inactivityTimeout = setTimeout(saveAfterInactivity, 10000); // 10 seconds
+            inactivityTimeout = setTimeout(saveAfterInactivity, INACTIVITY); // 10 seconds  TODO why 2 places?
         }
     });
 
@@ -139,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial setup for inactivity detection
-    inactivityTimeout = setTimeout(saveAfterInactivity, 10000);
+    inactivityTimeout = setTimeout(saveAfterInactivity, INACTIVITY);  //TODO why 2 places?
 
     // Setup keyboard shortcuts
     setupKeyboardShortcuts({
@@ -741,4 +746,162 @@ function handleRedo() {
     .catch(error => {
         console.error('Error:', error.message);
     });
-} 
+}
+
+////////////////////////////////////////////////
+// TESTING
+////////////////////////////////////////////////
+// TESTING
+
+const K = 10;
+const DELAY = 500; // Ensure DELAY is defined
+const FIX_WITH_ESC = false; // Ensure FIX_WITH_ESC is defined
+
+/*
+Hitting escape, OR just clicking outside of the content div, will trigger a blur event, and info will be saved
+Currently, clicking on add is a bit smarter in that it ensures the note is added before proceeding
+But we are missing certain transitions, so notes are not always being saved
+*/
+
+function delay(ms, callback) {
+    console.log(`Delaying for ${ms}ms`);
+    setTimeout(callback, ms);
+}
+
+function add(callback) {
+    console.log('add()');
+    const addButton = document.querySelector('.add-note');
+    if (addButton) {
+        delay(DELAY, () => { // Delay before action
+            console.log('Clicking add button');
+            addButton.click();
+            callback();
+        });
+    } else {
+        console.error('Add button not found');
+    }
+}
+
+function select(index) {
+    console.log('select()');
+    const noteElements = document.querySelectorAll('.note');
+    const note = noteElements[index] || null;
+    if (note) {
+        localStorage.setItem('lastSelectedNoteIndex', index);
+    } else {
+        console.error(`Note at index ${index} not found`);
+    }
+    return note;
+}
+
+function edit(noteElement, text, callback) {
+    console.log('edit()');
+    if (noteElement) {
+        const contentDiv = noteElement.querySelector('.note-content');
+        if (contentDiv) {
+            delay(DELAY, () => { // Delay before action
+                console.log(`Editing note with text: ${text}`);
+
+                // Trigger a click event to enter edit mode
+                noteElement.click();
+
+                contentDiv.focus();
+
+                // Clear existing content
+                contentDiv.textContent = '';
+
+                // Insert text directly
+                contentDiv.textContent = text;
+
+                // Trigger input event if needed
+                contentDiv.dispatchEvent(new Event('input', { bubbles: true }));
+
+                console.log('Text inserted:', contentDiv.textContent);
+
+                if (FIX_WITH_ESC) {
+                    contentDiv.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'Escape',
+                        keyCode: 27,
+                        code: 'Escape',
+                        which: 27,
+                        bubbles: true
+                    }));
+                }
+
+                callback();
+            });
+        } else {
+            console.error('Content div not found');
+        }
+    } else {
+        console.error('Note element not found');
+    }
+}
+
+function automateSequence() {
+    const step = parseInt(localStorage.getItem('currentStep') || '0', 10);
+
+    console.log('>> automateSequence() Current step:', step);
+
+    let loc = 0;
+    for (let i = 0; i < K; i++) {
+        console.log('loc:', loc);
+        if (loc === step) {
+            add(() => {
+                localStorage.setItem('currentStep', loc+1);
+                automateSequence();
+            });
+            return;
+        }
+        loc += 1;
+    }
+    for (let i = 0; i < K; i++) {
+        console.log('loc:', loc);
+        if (loc === step) {
+            let note = select(i);
+            edit(note, i, () => {
+                localStorage.setItem('currentStep', loc+1);
+                automateSequence();
+            });
+            return;
+        }
+        loc += 1;
+    }
+    add(() => {
+        localStorage.removeItem('currentStep');
+    });
+    loc +=1;
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if there's a current step stored and resume automation
+    const step = localStorage.getItem('currentStep');
+    if (step) {
+        console.log('Resuming automation from step:', step);
+        automateSequence();
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.metaKey && e.key.toLowerCase() === 'a') { // Cmd + A as the shortcut
+        console.log('automate!');
+        localStorage.removeItem('currentStep');
+        e.preventDefault();
+        automateSequence();
+    }
+});
+
+
+/////////////
+
+// document.addEventListener('DOMContentLoaded', () => {
+//     const noteElements = document.querySelectorAll('.note-content');
+//
+//     noteElements.forEach(note => {
+//         note.addEventListener('blur', () => {
+//             console.log('DEBUG: Note lost focus:', note.textContent);
+//             // Add any additional logic here if needed
+//         });
+//     });
+// });

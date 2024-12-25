@@ -58,6 +58,7 @@ def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
 @db_transaction_decorator
 @api_transaction_decorator
 def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
+    print(f"DEBUG: Updating note {note_id} with content: {command.content}")
     # TODO refactor this into
     #  LinkedListManager.update_note(db, note_id)
     db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
