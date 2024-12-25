@@ -6,10 +6,11 @@ from mako.lookup import TemplateLookup
 from sqlalchemy.orm import Session
 from .api import notes
 from .core.config import VERSION
-from .models.database import Base, DBNote
+from .models.database import Base
 from .core.database import engine
 from .api.dependencies import get_db
 from .models.linked_list import LinkedListManager
+
 
 app = FastAPI()
 
