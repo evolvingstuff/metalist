@@ -23,3 +23,4 @@ notes.db
 .pytest_cache/
 .coverage
 .idea/
+app/sql_app.db
