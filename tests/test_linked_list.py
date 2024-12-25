@@ -1220,3 +1220,209 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
             if not LinkedListManager.validate_list(db, parent_id):
                 raise ValueError(f"Invalid list structure under parent {parent_id}")
         print("Validation successful!")
+
+
+def test_fuzz_linked_list_with_sibling_and_child_creation(db):
+    """Like test_fuzz_linked_list_with_mutations but includes drag-and-drop creation"""
+    SEED = 42
+    NODES = 5
+    STEPS = 250
+    VISUALIZE_INTERVAL = 1
+
+    print(f"\n=== Starting Mutation+Drag Fuzz Test with seed: {SEED} ===")
+    random.seed(SEED)
+
+    # Create initial notes in a valid linked list structure
+    notes = []
+    for i in range(NODES):
+        note = DBNote(id=str(i), content=f"Note {i}")
+        if i > 0:
+            note.prev_id = str(i - 1)
+            notes[i - 1].next_id = str(i)
+        notes.append(note)
+
+    db.add_all(notes)
+    db.commit()
+
+    def visualize_tree():
+        def get_tree_string(parent_id=None, depth=0):
+            nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
+            if not nodes:
+                return ""
+
+            result = ""
+            for node in nodes:
+                prefix = "  " * depth
+                links = f"[prev={node.prev_id}, next={node.next_id}]"
+                result += f"{prefix}└─ {node.id} {links}\n"
+                result += get_tree_string(node.id, depth + 1)
+            return result
+
+        print("\nTree structure with links:")
+        print(get_tree_string())
+        print("─" * 40)
+
+    print("\n=== Initial State ===")
+    visualize_tree()
+
+    next_id = NODES  # For creating new notes
+    active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+    active_note_ids = sorted(list(active_note_ids))
+
+    # Operation counters
+    operation_counts = {
+        'delete': 0,
+        'add_click': 0,
+        'add_drag': 0,
+        'add_sibling': 0,
+        'add_child': 0,
+        'move': 0
+    }
+
+    # Perform random operations
+    for i in range(STEPS):
+        db.expire_all()
+        if i % VISUALIZE_INTERVAL == 0 and i > 0:
+            print(f"\n=== State after {i} operations ===")
+            visualize_tree()
+
+        operation = random.random()
+
+        if operation < 0.2 and len(active_note_ids) > 2:  # 20% chance to delete
+            # Delete operation
+            note_id = random.choice(active_note_ids)
+            print(f"Deleting note {note_id}")
+            LinkedListManager.delete_note(db, note_id)
+            active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
+            active_note_ids = sorted(list(active_note_ids))
+            operation_counts['delete'] += 1
+            print("Delete successful!")
+
+        elif operation < 0.4:  # 20% chance to add new note
+            new_id = str(next_id)
+            next_id += 1
+
+            add_type = random.choice(['click', 'drag', 'sibling', 'child'])
+            print(f"Adding new note {new_id} via {add_type}")
+
+            if add_type == 'drag' and active_note_ids:
+                target_id = random.choice(active_note_ids)
+                target = db.query(DBNote).get(target_id)
+
+                drop_type = random.choice(['inside', 'before', 'after'])
+                print(f"Dragging to {target_id} ({drop_type})")
+
+                if drop_type == 'inside':
+                    LinkedListManager.create_note_drop(
+                        db,
+                        new_id,
+                        new_parent_id=target_id
+                    )
+                else:
+                    LinkedListManager.create_note_drop(
+                        db,
+                        new_id,
+                        new_parent_id=target.parent_id,
+                        sibling_id=target_id,
+                        position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                    )
+                operation_counts['add_drag'] += 1
+            elif add_type == 'sibling' and active_note_ids:
+                target_id = random.choice(active_note_ids)
+                LinkedListManager.create_note_top(db, new_id)
+                LinkedListManager.move_note(
+                    db=db,
+                    note_id=new_id,
+                    new_parent_id=db.query(DBNote).get(target_id).parent_id,
+                    sibling_id=target_id,
+                    position=MovePosition.AFTER
+                )
+                operation_counts['add_sibling'] += 1
+            elif add_type == 'child' and active_note_ids:
+                target_id = random.choice(active_note_ids)
+                LinkedListManager.create_note_top(db, new_id)
+                LinkedListManager.move_note(
+                    db=db,
+                    note_id=new_id,
+                    new_parent_id=target_id,
+                    sibling_id=None,
+                    position=None
+                )
+                operation_counts['add_child'] += 1
+            else:  # Regular click creation
+                LinkedListManager.create_note_top(db, new_id)
+                operation_counts['add_click'] += 1
+
+            active_note_ids.append(new_id)
+            active_note_ids.sort()
+            print("Add successful!")
+
+        else:  # 60% chance for move operation
+            if len(active_note_ids) < 2:
+                continue
+
+            note_id = random.choice(active_note_ids)
+            note = db.query(DBNote).get(note_id)
+            possible_parents = active_note_ids
+            new_parent_id = random.choice(possible_parents + [None])
+            sibling_id = None
+            position = None
+
+            if new_parent_id == note_id:
+                with pytest.raises(ValueError, match="Cannot make a note its own parent"):
+                    LinkedListManager.move_note(
+                        db=db,
+                        note_id=note_id,
+                        new_parent_id=new_parent_id,
+                        sibling_id=sibling_id,
+                        position=position
+                    )
+                continue
+
+            print(f"Moving note {note_id} (currently under {note.parent_id})")
+            print(f"To parent {new_parent_id}")
+
+            use_sibling = random.choice([True, False])
+            if use_sibling and new_parent_id is not None:
+                siblings = db.query(DBNote).filter(
+                    DBNote.parent_id == new_parent_id,
+                    DBNote.id != note_id
+                ).all()
+                if siblings:
+                    sibling_id = random.choice([s.id for s in siblings])
+                    position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
+                    print(f"Relative to sibling {sibling_id} ({position})")
+
+            try:
+                LinkedListManager.move_note(
+                    db=db,
+                    note_id=note_id,
+                    new_parent_id=new_parent_id,
+                    sibling_id=sibling_id,
+                    position=position
+                )
+                operation_counts['move'] += 1
+                print("Move successful!")
+            except ValueError as e:
+                print(f"Move failed: {str(e)}")
+                continue
+
+        # Validate after each operation
+        if not LinkedListManager.validate_list(db, None):
+            raise ValueError(f"Invalid list structure under parent None")
+
+        existing_parents = db.query(DBNote.id).filter(
+            DBNote.id.in_(
+                db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
+            )
+        ).all()
+
+        for (parent_id,) in existing_parents:
+            if not LinkedListManager.validate_list(db, parent_id):
+                raise ValueError(f"Invalid list structure under parent {parent_id}")
+        print("Validation successful!")
+
+    # Check that all operations were performed at least once
+    for op, count in operation_counts.items():
+        if count == 0:
+            raise AssertionError(f"Operation '{op}' was never performed.")
