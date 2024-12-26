@@ -1,38 +1,9 @@
-from contextlib import contextmanager
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-from app.models.database import Base, DBNote
-from app.models.linked_list import LinkedListManager, MovePosition
-import random
-
+from tests.common import *
 
 UNDO_REDO_INTERVAL = 4
 
 
-@pytest.fixture
-def db():
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    session = Session(engine)
-    yield session
-    session.close()
-
-
-@contextmanager
-def transaction_scope(db_session):
-    try:
-        yield
-        db_session.commit()
-    except Exception as e:
-        db_session.rollback()
-        raise e
-
-
 def test_fuzz_undo_redo(db):
-
-    # assert ENABLE_UNDO_REDO, "Undo/redo is not enabled"
-    # assert ENABLE_EVENT_LISTENERS, "Event listeners are not enabled"
 
     """Like test_fuzz_linked_list_with_mutations but includes drag-and-drop creation"""
     SEED = 42

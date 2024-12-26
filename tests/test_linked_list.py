@@ -1,31 +1,4 @@
-from contextlib import contextmanager
-
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base
-from sqlalchemy import Column, String
-
-from app.models.database import Base, DBNote
-from app.models.linked_list import LinkedListManager, MovePosition
-import random
-
-@pytest.fixture
-def db():
-    engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
-    session = Session(engine)
-    yield session
-    session.close()
-
-
-@contextmanager
-def transaction_scope(db_session):
-    try:
-        yield
-        db_session.commit()
-    except Exception as e:
-        db_session.rollback()
-        raise e
+from tests.common import *
 
 
 def test_move_note_after(db):

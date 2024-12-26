@@ -1,7 +1,6 @@
 # TODO
 
-* Move commits to api level
-  * need to update how many of our tests are done, right? 
+* Tests for undo/redo
 * Lorem Ipsum stress test
 * expand/collapse
   * need differential updates and properties first
