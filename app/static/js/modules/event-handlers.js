@@ -395,15 +395,37 @@ export const EventHandlers = {
     async handleNoteDrop(hoverNote) {
         const targetId = DOMUtils.getNoteId(this.dragTarget);
         const isInsideDrop = this.dragTarget.classList.contains('drag-inside');
-
+        
+        console.log('Drop params:', {
+            targetId,
+            isInsideDrop,
+            draggedNoteId: this.draggedNoteId,
+            hoverNoteParentId: hoverNote.dataset.parentId,
+            hoverNoteDataset: hoverNote.dataset,
+            targetClasses: this.dragTarget.classList.toString()
+        });
+        
         if (this.draggedNoteId) {
             if (isInsideDrop) {
-                // When dropping inside, only send the new parent
+                // When dropping inside, make target the new parent
                 await NotesAPI.moveNote(this.draggedNoteId, null, null, targetId);
             } else {
-                // When dropping before/after a sibling, send sibling and position
+                // When dropping before/after, only pass parentId if it exists and isn't "None"
                 const dropType = this.dragTarget.classList.contains('drag-before') ? 'BEFORE' : 'AFTER';
-                await NotesAPI.moveNote(this.draggedNoteId, targetId, dropType);
+                const parentId = hoverNote.dataset.parentId;
+                
+                console.log('Move params:', {
+                    draggedNoteId: this.draggedNoteId,
+                    targetId,
+                    dropType,
+                    parentId
+                });
+                
+                if (parentId && parentId !== "None") {
+                    await NotesAPI.moveNote(this.draggedNoteId, targetId, dropType, parentId);
+                } else {
+                    await NotesAPI.moveNote(this.draggedNoteId, targetId, dropType);
+                }
             }
         } else if (this.isDraggingAddButton) {
             if (isInsideDrop) {
@@ -413,7 +435,7 @@ export const EventHandlers = {
                 // Create new note as sibling
                 const dropType = this.dragTarget.classList.contains('drag-before') ? 'BEFORE' : 'AFTER';
                 await NotesAPI.createNoteDrop(
-                    hoverNote.dataset.parentId || null,
+                    hoverNote.dataset.parentId,
                     targetId,
                     dropType
                 );

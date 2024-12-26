@@ -64,8 +64,51 @@
 - [ ] Implement request batching
 - [ ] Add caching where appropriate
 
+## Future Improvements
+
+### API Refinements
+
+Split the generic `/move` endpoint into more specific use cases:
+- `/move/sibling` - Moving between siblings at same level
+- `/move/indent` - Moving a note to become a child of another note
+- `/move/outdent` - Moving a note out to parent level
+- `/move/reorder` - Reordering notes at the same level
+
+Benefits:
+- More semantic and self-documenting API
+- Simplified validation logic
+- Easier debugging
+- Cleaner frontend implementation
+
 ## Next Steps:
 1. Refactor main.js to use our new modules
 2. Set up testing infrastructure
 3. Add comprehensive documentation
 4. Implement performance optimizations 
+
+## Planned Improvements
+
+- [ ] Refactor main.js into smaller modules
+- [ ] Add proper error handling for API calls
+- [ ] Add loading states for operations
+- [x] Auto-focus new notes after creation
+- [x] Maintain cursor position after note movement
+- [x] Fix sibling note movement while preserving parent-child relationships
+
+### API Refinements
+
+Split the generic `/move` endpoint into more specific use cases:
+- `/move/sibling` - Moving between siblings at same level
+- `/move/indent` - Moving a note to become a child of another note
+- `/move/outdent` - Moving a note out to parent level
+- `/move/reorder` - Reordering notes at the same level
+
+Benefits:
+- More semantic and self-documenting API
+- Simplified validation logic
+- Easier debugging
+- Cleaner frontend implementation
+
+## Known Bugs
+
+- [ ] Drag and drop movement of notes is broken (likely needs same parent-child relationship fix as keyboard movement) 

@@ -110,14 +110,28 @@ export const NotesAPI = {
     /**
      * Move a note
      */
-    async moveNote(noteId, siblingId, position, newParentId = null) {
+    async moveNote(noteId, siblingId, position, newParentId) {
+        const body = {
+            sibling_id: siblingId,
+            position: position?.toUpperCase()
+        };
+        
+        // Only include new_parent_id if it was actually passed
+        if (newParentId !== undefined) {
+            body.new_parent_id = newParentId;
+        }
+
+        console.log('Move note params:', {
+            noteId,
+            siblingId,
+            position,
+            newParentId,
+            body
+        });
+
         const response = await this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
-            body: JSON.stringify({
-                new_parent_id: newParentId,
-                sibling_id: siblingId,
-                position: position?.toUpperCase()
-            })
+            body: JSON.stringify(body)
         });
         
         // Store note ID and preserve existing cursor position

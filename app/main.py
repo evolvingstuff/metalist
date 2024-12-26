@@ -41,7 +41,7 @@ async def home(request: Request, db: Session = Depends(get_db)):
         return [{
             'id': note.id,
             'content': note.content,
-            'parent_id': note.parent_id,
+            'parent_id': note.parent_id or '',
             'children': build_tree(note.id)  # Recursively get children
         } for note in notes]
     
