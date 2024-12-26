@@ -151,6 +151,8 @@ class LinkedListManager:
     def create_note_top(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
         """Create a new note and insert it as the new head of the linked list"""
         try:
+            if note_id is None:
+                raise ValueError("Note ID must be specified")
             # Create new note with no links initially
             db_note = DBNote(id=note_id, content="", parent_id=parent_id)
             db.add(db_note)
