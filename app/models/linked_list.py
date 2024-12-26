@@ -267,6 +267,19 @@ class LinkedListManager:
             raise
 
     @staticmethod
+    def get_note(db: Session, note_id: str):
+        # TODO: use in other functions
+        db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
+        if not db_note:
+            raise
+        return db_note
+
+    @staticmethod
+    def update_note(db: Session, note_id: str, content: str):
+        db_note = LinkedListManager.get_note(db, note_id)
+        db_note.content = content
+
+    @staticmethod
     def delete_note(db: Session, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
         try:

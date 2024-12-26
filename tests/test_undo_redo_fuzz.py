@@ -26,27 +26,8 @@ def test_fuzz_undo_redo(db):
 
         db.add_all(notes)
 
-    def visualize_tree():
-        def get_tree_string(parent_id=None, depth=0):
-            with transaction_scope(db):
-                nodes = LinkedListManager.get_ordered_child_list(db, parent_id)
-            if not nodes:
-                return ""
-
-            result = ""
-            for node in nodes:
-                prefix = "  " * depth
-                links = f"[prev={node.prev_id}, next={node.next_id}]"
-                result += f"{prefix}└─ {node.id} {links}\n"
-                result += get_tree_string(node.id, depth + 1)
-            return result
-
-        print("\nTree structure with links:")
-        print(get_tree_string())
-        print("─" * 40)
-
     print("\n=== Initial State ===")
-    visualize_tree()
+    visualize_tree(db)
 
     next_id = NODES  # For creating new notes
     with transaction_scope(db):
@@ -69,7 +50,7 @@ def test_fuzz_undo_redo(db):
         db.expire_all()
         if i % VISUALIZE_INTERVAL == 0 and i > 0:
             print(f"\n=== State after {i} operations ===")
-            visualize_tree()
+            visualize_tree(db)
 
         operation = random.random()
 
@@ -221,7 +202,7 @@ def test_fuzz_undo_redo(db):
                     LinkedListManager.redo(db)
                 print('REDO SUCCESSFUL')
             print('after undo/redo:')
-            visualize_tree()
+            visualize_tree(db)
             # raise NotImplementedError("Redo is not implemented yet")
 
         # Validate after each operation

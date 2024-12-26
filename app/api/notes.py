@@ -62,15 +62,11 @@ def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
 @db_transaction_decorator
 @api_transaction_decorator
 def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
-    print(f"DEBUG: Updating note {note_id} with content: {command.content}")
-    # TODO refactor this into
-    #  LinkedListManager.update_note(db, note_id)
-    db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
-    if not db_note:
+    try:
+        LinkedListManager.update_note(db, note_id, command.content)
+    except ValueError as e:
         raise HTTPException(status_code=404, detail="Note not found")
-    db_note.content = command.content
-    return Note.from_orm(db_note)
-
+    return {"status": "success"}
 
 
 @router.post("/{note_id}/move")
