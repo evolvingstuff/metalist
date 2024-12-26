@@ -2,7 +2,8 @@ import uuid
 
 import pytest
 from sqlalchemy.orm import scoped_session, sessionmaker
-from app.models.database import engine, DBNote, Base
+from app.models.database import DBNote, Base
+from app.core.database import engine
 from app.models.linked_list import LinkedListManager
 
 @pytest.fixture(scope='module')
