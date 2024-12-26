@@ -1,5 +1,4 @@
-from functools import wraps
-from .global_state import global_state
+from .global_state_mod import global_state
 from .models.api_transaction import ApiTransaction
 from .core.config import ENABLE_UNDO_REDO
 from functools import wraps

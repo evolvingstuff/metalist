@@ -9,7 +9,7 @@ import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
 from ..decorators import api_transaction_decorator, db_transaction_decorator
-from ..global_state import global_state
+from ..global_state_mod import global_state
 from ..core.config import ENABLE_UNDO_REDO
 
 router = APIRouter()
@@ -26,9 +26,11 @@ class MoveNoteCommand(BaseModel):
 def undo(db: Session = Depends(get_db)):
     if not ENABLE_UNDO_REDO:
         return {"status": "noop", "message": "Undo and redo are turned off"}
-    command_stack = global_state["command_stack"]
-    if command_stack.current_index >= 0:
-        command_stack.undo(db)
+    # command_stack = global_state["command_stack"]
+    # if command_stack.current_index >= 0:
+    #     command_stack.undo(db)
+    undid = LinkedListManager.undo(db)
+    if undid:
         return {"status": "success", "message": "Undo successful"}
     else:
         return {"status": "noop", "message": "No actions to undo"}
@@ -38,9 +40,11 @@ def undo(db: Session = Depends(get_db)):
 def redo(db: Session = Depends(get_db)):
     if not ENABLE_UNDO_REDO:
         return {"status": "noop", "message": "Undo and redo are turned off"}
-    command_stack = global_state["command_stack"]
-    if command_stack.current_index < len(command_stack.stack) - 1:
-        command_stack.redo(db)
+    # command_stack = global_state["command_stack"]
+    # if command_stack.current_index < len(command_stack.stack) - 1:
+    #     command_stack.redo(db)
+    redid = LinkedListManager.redo(db)
+    if redid:
         return {"status": "success", "message": "Redo successful"}
     else:
         return {"status": "noop", "message": "No actions to redo"}

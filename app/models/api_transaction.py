@@ -2,10 +2,8 @@ import uuid
 import copy
 from sqlalchemy import event
 from .database import DBNote
-from ..global_state import global_state
-from ..undo_redo import Command, CommandStack
-from functools import wraps
-from threading import Lock
+from ..global_state_mod import global_state
+from ..undo_redo import Command
 from ..core.config import ENABLE_EVENT_LISTENERS
 
 # transaction_lock = Lock()
