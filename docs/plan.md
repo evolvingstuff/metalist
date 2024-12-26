@@ -113,4 +113,5 @@ Benefits:
 ## Fixed Bugs
 
 - [x] Root level notes had "None" as parent_id in HTML instead of empty string
-- [x] Drag and drop movement of notes wasn't preserving parent-child relationships 
+- [x] Drag and drop movement of notes wasn't preserving parent-child relationships
+- [x] Content was lost when creating new notes via Cmd+Enter due to incorrect edit state checking 

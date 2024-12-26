@@ -59,11 +59,13 @@ def api_transaction_decorator(func):
 
                 # # Finalize the transaction
                 global_state["current_transaction"].finalize_transaction(func.__name__)
-                global_state["current_transaction"] = None
                 # command_stack = global_state["command_stack"]
                 # print(f'command stack size: {len(command_stack.stack)}')
                 return result
             except Exception as e:
                 print(f"Exception occurred in function {func.__name__}: {e}")
                 raise e
+            finally:
+                # Always clean up the transaction
+                global_state["current_transaction"] = None
     return wrapper
