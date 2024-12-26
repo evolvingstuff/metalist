@@ -69,13 +69,13 @@ def move_note(note_id):
     session = scoped_session(sessionmaker(bind=engine))
     try:
         command = request.json
-        note = session.query(DBNote).get(note_id)
+        note = session.get(DBNote, note_id)
         if not note:
             abort(404, description="Note not found")
         
         sibling_id = command.get('sibling_id')
         if sibling_id:
-            sibling = session.query(DBNote).get(sibling_id)
+            sibling = session.get(DBNote, sibling_id)
             if not sibling:
                 abort(404, description="Sibling note not found")
             if command.get('new_parent_id') != sibling.parent_id:

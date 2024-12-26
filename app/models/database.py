@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from datetime import datetime
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
+from datetime import datetime, timezone
+
 
 class SafeSession(Session):
     def commit(self):
@@ -39,9 +39,18 @@ class DBNote(Base):
     
     id = Column(String, primary_key=True)
     content = Column(String)
-    parent_id = Column(String, ForeignKey('notes.id'), nullable=True)
-    prev_id = Column(String, ForeignKey('notes.id'), nullable=True)
-    next_id = Column(String, ForeignKey('notes.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    parent_id = Column(String,
+                       ForeignKey('notes.id'),
+                       nullable=True)
+    prev_id = Column(String,
+                     ForeignKey('notes.id'),
+                     nullable=True)
+    next_id = Column(String,
+                     ForeignKey('notes.id'),
+                     nullable=True)
+    created_at = Column(DateTime,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
 

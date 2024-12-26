@@ -88,12 +88,12 @@ def move_note(
         return result
     
     # Validate notes exist
-    note = db.query(DBNote).get(note_id)
+    note = db.get(DBNote, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
     if command.sibling_id:
-        sibling = db.query(DBNote).get(command.sibling_id)
+        sibling = db.get(DBNote, command.sibling_id)
         if not sibling:
             raise HTTPException(status_code=404, detail="Sibling note not found")
 

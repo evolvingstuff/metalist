@@ -28,7 +28,7 @@ def test_sequence_add(db_session):
         LinkedListManager.create_note_top(db_session, note_id)
 
         # Update note value
-        note = db_session.query(DBNote).get(note_id)
+        note = db_session.get(DBNote, note_id)
         note.content = str(k)
         db_session.commit()
 
@@ -60,7 +60,7 @@ def test_sequence_add_v2(db_session):
     assert len(added) == K, f"Expected {K} notes, got {len(added)}"
 
     for k, note_id in enumerate(reversed(added)):
-        note = db_session.query(DBNote).get(note_id)
+        note = db_session.get(DBNote, note_id)
         note.content = str(k)
         db_session.commit()
 

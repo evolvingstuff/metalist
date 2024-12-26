@@ -50,7 +50,7 @@ class Command:
         # db_session.commit()
 
     def _update_note_in_db(self, note, db_session: Session):
-        existing_note = db_session.query(DBNote).get(note.id)
+        existing_note = db_session.get(DBNote, note.id)
         if existing_note:
             existing_note.content = note.content
             existing_note.parent_id = note.parent_id
@@ -60,7 +60,7 @@ class Command:
             # db_session.commit()
 
     def _delete_note_from_db(self, note, db_session: Session):
-        existing_note = db_session.query(DBNote).get(note.id)
+        existing_note = db_session.get(DBNote, note.id)
         if existing_note:
             db_session.delete(existing_note)
             # db_session.commit()

@@ -53,9 +53,9 @@ def test_move_note_after(db):
     assert [note.id for note in notes] == ["2", "3", "1"]
     
     # Verify all bidirectional links
-    note2 = db.query(DBNote).get("2")
-    note3 = db.query(DBNote).get("3")
-    note1 = db.query(DBNote).get("1")
+    note2 = db.get(DBNote, "2")
+    note3 = db.get(DBNote, "3")
+    note1 = db.get(DBNote, "1")
     
     assert note2.prev_id is None
     assert note2.next_id == "3"
@@ -90,9 +90,9 @@ def test_move_note_before(db):
     assert [note.id for note in notes] == ["2", "3", "1"]
     
     # Verify all bidirectional links
-    note2 = db.query(DBNote).get("2")
-    note3 = db.query(DBNote).get("3")
-    note1 = db.query(DBNote).get("1")
+    note2 = db.get(DBNote, "2")
+    note3 = db.get(DBNote, "3")
+    note1 = db.get(DBNote, "1")
     
     assert note2.prev_id is None
     assert note2.next_id == "3"
@@ -130,9 +130,9 @@ def test_move_note_as_child(db):
     assert [note.id for note in child_notes] == ["3"]
     
     # Verify all links
-    note2 = db.query(DBNote).get("2")
-    note3 = db.query(DBNote).get("3")
-    note1 = db.query(DBNote).get("1")
+    note2 = db.get(DBNote, "2")
+    note3 = db.get(DBNote, "3")
+    note1 = db.get(DBNote, "1")
     
     assert note2.prev_id is None
     assert note2.next_id == "1"
@@ -173,9 +173,9 @@ def test_move_note_from_child_to_root(db):
     assert len(child_notes) == 0
     
     # Verify all links
-    note2 = db.query(DBNote).get("2")
-    note3 = db.query(DBNote).get("3")
-    note1 = db.query(DBNote).get("1")
+    note2 = db.get(DBNote, "2")
+    note3 = db.get(DBNote, "3")
+    note1 = db.get(DBNote, "1")
     
     assert note2.prev_id is None
     assert note2.next_id == "1"
@@ -275,9 +275,9 @@ def test_move_note_chain(db):
     assert [note.id for note in notes] == ["1", "3", "2"]
     
     # Verify all links are correct
-    note1 = db.query(DBNote).get("1")
-    note2 = db.query(DBNote).get("2")
-    note3 = db.query(DBNote).get("3")
+    note1 = db.get(DBNote, "1")
+    note2 = db.get(DBNote, "2")
+    note3 = db.get(DBNote, "3")
     
     assert note1.prev_id is None
     assert note1.next_id == "3"
@@ -318,8 +318,8 @@ def test_move_note_to_parent_with_children(db):
     assert [note.id for note in child_notes] == ["3", "4"]
     
     # Verify all links
-    note3 = db.query(DBNote).get("3")
-    note4 = db.query(DBNote).get("4")
+    note3 = db.get(DBNote, "3")
+    note4 = db.get(DBNote, "4")
     
     assert note3.parent_id == "2"
     assert note3.prev_id is None
@@ -706,9 +706,9 @@ def test_move_note_inside_parent(db: Session):
     )
     
     # Refresh notes from database
-    note1 = db.query(DBNote).get("1")
-    note2 = db.query(DBNote).get("2")
-    note3 = db.query(DBNote).get("3")
+    note1 = db.get(DBNote, "1")
+    note2 = db.get(DBNote, "2")
+    note3 = db.get(DBNote, "3")
     
     # Assert:
     # 1. Verify root level notes
@@ -837,7 +837,7 @@ def test_fuzz_linked_list(db):
 
         # Pick a random note to move
         note_id = str(random.randint(0, NODES-1))
-        note = db.query(DBNote).get(note_id)
+        note = db.get(DBNote, note_id)
 
         # Pick a random target parent (can be None for root)
         possible_parents = [str(i) for i in range(NODES)]
@@ -975,7 +975,7 @@ def test_fuzz_linked_list_with_mutations(db):
             # Pick a random note to delete
             note_id = random.choice(active_note_ids)
             print(f"Deleting note {note_id}")
-            note = db.query(DBNote).get(note_id)
+            note = db.get(DBNote, note_id)
             with transaction_scope(db):
                 LinkedListManager.delete_note(db, note_id)
                 # Recalculate active notes after deletion
@@ -994,7 +994,7 @@ def test_fuzz_linked_list_with_mutations(db):
             if is_drag_add:  # Drag and drop creation
                 target_id = random.choice(active_note_ids)
                 with transaction_scope(db):
-                    target = db.query(DBNote).get(target_id)
+                    target = db.get(DBNote, target_id)
                 
                 # Randomly choose drop type
                 drop_type = random.choice(['inside', 'before', 'after'])
@@ -1033,7 +1033,7 @@ def test_fuzz_linked_list_with_mutations(db):
             # Pick a random note to move
             note_id = random.choice(active_note_ids)
             with transaction_scope(db):
-                note = db.query(DBNote).get(note_id)
+                note = db.get(DBNote, note_id)
 
             # Pick a random target parent from active notes
             possible_parents = active_note_ids
@@ -1186,7 +1186,7 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
 
             if is_drag_add:  # Drag and drop creation
                 target_id = random.choice(active_note_ids)
-                target = db.query(DBNote).get(target_id)
+                target = db.get(DBNote, target_id)
                 
                 # Randomly choose drop type
                 drop_type = random.choice(['inside', 'before', 'after'])
@@ -1225,7 +1225,7 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
             # Move operation (same as original)
             note_id = random.choice(active_note_ids)
             with transaction_scope(db):
-                note = db.query(DBNote).get(note_id)
+                note = db.get(DBNote, note_id)
             possible_parents = active_note_ids
             new_parent_id = random.choice(possible_parents + [None])
             sibling_id = None
@@ -1380,7 +1380,7 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
             if add_type == 'drag' and active_note_ids:
                 target_id = random.choice(active_note_ids)
                 with transaction_scope(db):
-                    target = db.query(DBNote).get(target_id)
+                    target = db.get(DBNote, target_id)
 
                 drop_type = random.choice(['inside', 'before', 'after'])
                 print(f"Dragging to {target_id} ({drop_type})")
@@ -1410,7 +1410,7 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
                     LinkedListManager.move_note(
                         db=db,
                         note_id=new_id,
-                        new_parent_id=db.query(DBNote).get(target_id).parent_id,
+                        new_parent_id=db.get(DBNote, target_id).parent_id,
                         sibling_id=target_id,
                         position=MovePosition.AFTER
                     )
@@ -1443,7 +1443,7 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
 
             note_id = random.choice(active_note_ids)
             with transaction_scope(db):
-                note = db.query(DBNote).get(note_id)
+                note = db.get(DBNote, note_id)
             possible_parents = active_note_ids
             new_parent_id = random.choice(possible_parents + [None])
             sibling_id = None

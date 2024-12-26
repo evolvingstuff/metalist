@@ -121,7 +121,7 @@ class LinkedListManager:
             if current == note_id:
                 return True
             seen.add(current)
-            parent = db.query(DBNote).get(current)
+            parent = db.get(DBNote, current)
             if not parent:
                 break
             current = parent.parent_id
@@ -155,7 +155,7 @@ class LinkedListManager:
         """Move a note to a new position"""
         try:
             # Get the note to move
-            note = db.query(DBNote).get(note_id)
+            note = db.get(DBNote, note_id)
             if not note:
                 raise ValueError(f"Note {note_id} not found")
 
@@ -178,11 +178,11 @@ class LinkedListManager:
 
             def is_descendant(parent_id: str, potential_child_id: str) -> bool:
                 """Check if potential_child_id is a descendant of parent_id"""
-                current = db.query(DBNote).get(potential_child_id)
+                current = db.get(DBNote, potential_child_id)
                 while current and current.parent_id:
                     if current.parent_id == parent_id:
                         return True
-                    current = db.query(DBNote).get(current.parent_id)
+                    current = db.get(DBNote, current.parent_id)
                 return False
 
             if new_parent_id and is_descendant(note_id, new_parent_id):
@@ -196,11 +196,11 @@ class LinkedListManager:
 
             # Step 1: Unlink note from current position
             if old_prev_id:
-                prev_note = db.query(DBNote).get(old_prev_id)
+                prev_note = db.get(DBNote, old_prev_id)
                 if prev_note:
                     prev_note.next_id = old_next_id
             if old_next_id:
-                next_note = db.query(DBNote).get(old_next_id)
+                next_note = db.get(DBNote, old_next_id)
                 if next_note:
                     next_note.prev_id = old_prev_id
 
@@ -219,7 +219,7 @@ class LinkedListManager:
                 return
 
             # Case 2: Positioning relative to a sibling
-            sibling = db.query(DBNote).get(sibling_id)
+            sibling = db.get(DBNote, sibling_id)
             if not sibling:
                 raise ValueError(f"Sibling note {sibling_id} not found")
 
@@ -231,7 +231,7 @@ class LinkedListManager:
                 note.prev_id = sibling.prev_id
                 sibling.prev_id = note_id
                 if note.prev_id:
-                    prev_note = db.query(DBNote).get(note.prev_id)
+                    prev_note = db.get(DBNote, note.prev_id)
                     if prev_note:
                         prev_note.next_id = note_id
             else:  # Position.AFTER
@@ -239,7 +239,7 @@ class LinkedListManager:
                 note.next_id = sibling.next_id
                 sibling.next_id = note_id
                 if note.next_id:
-                    next_note = db.query(DBNote).get(note.next_id)
+                    next_note = db.get(DBNote, note.next_id)
                     if next_note:
                         next_note.prev_id = note_id
         except Exception as e:
@@ -250,7 +250,7 @@ class LinkedListManager:
     def delete_note(db: Session, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
         try:
-            note = db.query(DBNote).get(note_id)
+            note = db.get(DBNote, note_id)
             if not note:
                 raise ValueError(f"Note {note_id} not found")
 
@@ -266,15 +266,15 @@ class LinkedListManager:
             # Delete all descendants first
             descendant_ids = get_all_descendant_ids(note_id)
             for descendant_id in descendant_ids:
-                descendant = db.query(DBNote).get(descendant_id)
+                descendant = db.get(DBNote, descendant_id)
                 db.delete(descendant)
 
             # Update links of surrounding notes at the original note's level
             if note.prev_id:
-                prev_note = db.query(DBNote).get(note.prev_id)
+                prev_note = db.get(DBNote, note.prev_id)
                 prev_note.next_id = note.next_id
             if note.next_id:
-                next_note = db.query(DBNote).get(note.next_id)
+                next_note = db.get(DBNote, note.next_id)
                 next_note.prev_id = note.prev_id
 
             # Delete the original note
