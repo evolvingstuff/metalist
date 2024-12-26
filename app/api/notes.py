@@ -40,10 +40,14 @@ def redo(db: Session = Depends(get_db)):
 
 
 @router.post("/new")
-@db_transaction_decorator
 @api_transaction_decorator
+@db_transaction_decorator
 def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     note_id = str(uuid.uuid4())
+
+    transaction = global_state["current_transaction"]
+    assert transaction is not None, "No transaction found"
+
     LinkedListManager.create_note_top(db, note_id, parent_id)
     return {"id": note_id}
 
@@ -113,10 +117,15 @@ def move_note(
     return {"status": "success"}
 
 @router.delete("/{note_id}")
-@db_transaction_decorator
 @api_transaction_decorator
-# @api_transaction_decorator
+@db_transaction_decorator
 def delete_note(note_id: str, db: Session = Depends(get_db)):
+
+    transaction = global_state["current_transaction"]
+    assert transaction is not None, "No transaction found"
+
+    print('DELETE HAZ TRANSACTION')
+
     note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")

@@ -332,6 +332,7 @@ class LinkedListManager:
 
             # Delete the original note
             db.delete(note)
+            print('Just deleted in the database')
         except Exception as e:
             print(e)
             raise

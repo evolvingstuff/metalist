@@ -7,6 +7,7 @@ from threading import Lock
 # Add a lock for transaction management
 transaction_lock = Lock()
 
+
 def db_transaction_decorator(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -31,6 +32,7 @@ def api_transaction_decorator(func):
 
             print('')
             print('^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^')
+            print('(added new transaction to global_state[])')
             print('')
 
             print(f"@ Starting transaction for function: {func.__name__}")
@@ -38,39 +40,47 @@ def api_transaction_decorator(func):
             try:
                 #####################################################
                 # Execute the wrapped function
+                print(f"@ Calling function {func.__name__}...")
                 result = func(*args, **kwargs)
                 print(f"@ Function {func.__name__} executed successfully")
                 #####################################################
 
+                if global_state["current_transaction"] is None:
+                    print('WTF where did our transaction go??')
+
                 print('@@@ notes before updated:')
+                tot = 0
                 for k in global_state["current_transaction"].state_before_updated.keys():
                     val = global_state["current_transaction"].state_before_updated[k].content[:8]
                     print(f'\t{k[:8]} content="{val}"')
+                    tot += 1
                 print('@@@ notes current updated:')
                 for k in global_state["current_transaction"].state_current_updated.keys():
                     val = global_state["current_transaction"].state_current_updated[k].content[:8]
                     print(f'\t{k[:8]} content="{val}"')
+                    tot += 1
                 print('@@@ notes added:')
                 for k in global_state["current_transaction"].state_added.keys():
                     val = global_state["current_transaction"].state_added[k].content[:8]
                     print(f'\t{k[:8]} content="{val}"')
+                    tot += 1
                 print('@@@ notes deleted:')
                 for k in global_state["current_transaction"].state_deleted.keys():
                     val = global_state["current_transaction"].state_deleted[k].content[:8]
                     print(f'\t{k[:8]} content="{val}"')
+                    tot += 1
+
+                # TODO: asdfasdf
+                # assert tot > 0, 'there should always be at least one note to be updated, added, or deleted'
 
                 # # Finalize the transaction
                 global_state["current_transaction"].finalize_transaction(func.__name__)
-                # Clear the transaction after use
                 global_state["current_transaction"] = None
+                print(f"@ Transaction ended for function: {func.__name__}")
                 # this is an action so gets rid of prior redos
                 command_stack = global_state["command_stack"]
-                # command_stack.clear_after_current()
-                print(f"@ Transaction ended for function: {func.__name__}")
-
+                # command_stack.clear_after_current()  # TODO: do not seem to need this?
                 print(f'command stack size: {len(command_stack.stack)}')
-
-
                 return result
             except Exception as e:
                 print(f"Exception occurred in function {func.__name__}: {e}")
