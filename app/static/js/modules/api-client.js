@@ -111,6 +111,9 @@ export const NotesAPI = {
      * Move a note
      */
     async moveNote(noteId, siblingId, position, newParentId = null) {
+        // Preserve the existing cursor position
+        const existingPosition = localStorage.getItem('cursorPosition');
+        
         const response = await this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
             body: JSON.stringify({
@@ -119,8 +122,13 @@ export const NotesAPI = {
                 position: position?.toUpperCase()
             })
         });
-        localStorage.setItem('newNoteId', noteId);  // Store the moved note's ID
-        localStorage.setItem('cursorPosition', 'end');
+        
+        localStorage.setItem('newNoteId', noteId);
+        // Don't overwrite the existing cursor position with 'end'
+        if (existingPosition) {
+            localStorage.setItem('cursorPosition', existingPosition);
+        }
+        
         return response;
     },
 

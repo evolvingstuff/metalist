@@ -18,14 +18,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Check for new note to edit
         const newNoteId = localStorage.getItem('newNoteId');
-        const cursorPosition = localStorage.getItem('cursorPosition');
+        const storedPosition = localStorage.getItem('cursorPosition');
         
         if (newNoteId) {
             const newNote = document.querySelector(`[data-id="${newNoteId}"]`);
             if (newNote) {
                 NoteState.startEditing(newNote);
-                if (cursorPosition === 'end') {
-                    DOMUtils.focusNote(newNote);  // This already puts cursor at end
+                try {
+                    const cursorPosition = storedPosition === 'end' ? 
+                        'end' : 
+                        JSON.parse(storedPosition);
+                    DOMUtils.setCursorPosition(newNote, cursorPosition);
+                } catch (e) {
+                    // Fallback to end if position is invalid
+                    DOMUtils.focusNote(newNote);
                 }
                 localStorage.removeItem('newNoteId');
                 localStorage.removeItem('cursorPosition');

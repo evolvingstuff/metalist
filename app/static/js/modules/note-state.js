@@ -14,22 +14,44 @@ export const NoteState = {
      * Start editing a note
      */
     startEditing(noteElement) {
-        if (this.currentEditingNote === noteElement) {
-            return; // Already editing this note
+        // If already editing a different note, finish that first
+        if (this.currentEditingNote && this.currentEditingNote !== noteElement) {
+            this.finishEditing();
         }
 
-        // Clean up any previous editing state
-        this.finishEditing();
-
-        // Set up new editing state
         this.currentEditingNote = noteElement;
         this.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
+        
         DOMUtils.setNoteEditable(noteElement, true);
-        DOMUtils.focusNote(noteElement);
-
+        
+        // Add selection change listener
+        const content = DOMUtils.getNoteContent(noteElement);
+        content.addEventListener('mouseup', () => {
+            const position = DOMUtils.getCursorPosition(noteElement);
+            if (position) {
+                localStorage.setItem('cursorPosition', JSON.stringify(position));
+            }
+        });
+        content.addEventListener('keyup', () => {
+            const position = DOMUtils.getCursorPosition(noteElement);
+            if (position) {
+                localStorage.setItem('cursorPosition', JSON.stringify(position));
+            }
+        });
+        
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Started editing note:', DOMUtils.getNoteId(noteElement));
         }
+
+        // Clear any existing inactivity timeout
+        if (this.inactivityTimeout) {
+            clearTimeout(this.inactivityTimeout);
+        }
+
+        // Set up auto-save
+        this.inactivityTimeout = setInterval(() => {
+            this.saveCurrentNote();
+        }, CONFIG.INACTIVITY_TIMEOUT);
     },
 
     /**
@@ -50,12 +72,18 @@ export const NoteState = {
     },
 
     /**
-     * Save the current note's content
+     * Save the current note's content and cursor position
      */
     async saveCurrentNote() {
         if (!this.currentEditingNote) return;
 
         const currentContent = DOMUtils.getNoteContentText(this.currentEditingNote);
+        const cursorPosition = DOMUtils.getCursorPosition(this.currentEditingNote);
+        
+        // Store cursor position for after page reload
+        if (cursorPosition) {
+            localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
+        }
         
         // Only save if content has changed
         if (currentContent !== this.lastSavedContent) {
@@ -80,6 +108,10 @@ export const NoteState = {
         await this.saveCurrentNote();
 
         // Clean up
+        const content = DOMUtils.getNoteContent(this.currentEditingNote);
+        content.removeEventListener('mouseup', this.handleCursorChange);
+        content.removeEventListener('keyup', this.handleCursorChange);
+        
         DOMUtils.setNoteEditable(this.currentEditingNote, false);
         
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {

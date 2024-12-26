@@ -109,5 +109,91 @@ export const DOMUtils = {
      */
     isNoteContent(element) {
         return element.classList.contains(CONFIG.CLASSES.NOTE_CONTENT);
+    },
+
+    /**
+     * Get current cursor position in a note
+     */
+    getCursorPosition(noteElement) {
+        const contentElement = this.getNoteContent(noteElement);
+        const selection = window.getSelection();
+        if (!selection.rangeCount) {
+            console.log('No selection range found');
+            return null;
+        }
+
+        const range = selection.getRangeAt(0);
+        if (!contentElement.contains(range.commonAncestorContainer)) {
+            console.log('Selection not in content element');
+            return null;
+        }
+
+        const position = {
+            offset: range.startOffset,
+            path: this.getNodePath(range.startContainer, contentElement)
+        };
+        
+        console.log('Stored cursor position:', position);
+        return position;
+    },
+
+    /**
+     * Get path to a node relative to its ancestor
+     */
+    getNodePath(node, ancestor) {
+        const path = [];
+        let current = node;
+        
+        while (current !== ancestor && current.parentNode) {
+            const parent = current.parentNode;
+            const children = Array.from(parent.childNodes);
+            path.unshift(children.indexOf(current));
+            current = parent;
+        }
+        
+        return path;
+    },
+
+    /**
+     * Restore cursor to a specific position
+     */
+    setCursorPosition(noteElement, position) {
+        console.log('Attempting to restore cursor position:', position);
+        
+        if (!position || position === 'end') {
+            console.log('No position or "end" specified, focusing at end');
+            this.focusNote(noteElement);
+            return;
+        }
+
+        const contentElement = this.getNoteContent(noteElement);
+        let node = contentElement;
+        
+        // Follow the path to find the target node
+        for (const index of position.path) {
+            console.log('Following path index:', index);
+            if (node.childNodes[index]) {
+                node = node.childNodes[index];
+            } else {
+                console.log('Path invalid, falling back to end');
+                this.focusNote(noteElement);
+                return;
+            }
+        }
+
+        try {
+            const range = document.createRange();
+            const selection = window.getSelection();
+            
+            range.setStart(node, position.offset);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            contentElement.focus();
+            console.log('Successfully restored cursor position');
+        } catch (e) {
+            console.error('Failed to set cursor position:', e);
+            this.focusNote(noteElement);
+        }
     }
 }; 

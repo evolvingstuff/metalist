@@ -279,7 +279,9 @@ export const EventHandlers = {
             const noteId = DOMUtils.getNoteId(noteElement);
             const siblingId = DOMUtils.getNoteId(sibling);
             
-            // Save the current editing state before moving
+            // Debug: check cursor position before move
+            console.log('Cursor position before move:', localStorage.getItem('cursorPosition'));
+            
             if (NoteState.isEditing(noteElement)) {
                 await NoteState.saveCurrentNote();
             }
