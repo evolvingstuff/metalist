@@ -1,3 +1,3 @@
 # BUGS
 
-* undo/redo are still completely broken
+* failed to create a new child node

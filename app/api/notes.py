@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..models.database import DBNote
-from ..models.entities import Note
 from ..models.commands import UpdateNoteContent
 from ..models.linked_list import LinkedListManager, MovePosition
 from .dependencies import get_db
@@ -126,8 +125,6 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
     transaction = global_state["current_transaction"]
     assert transaction is not None, "No transaction found"
 
-    print('DELETE HAZ TRANSACTION')
-
     note = db.query(DBNote).filter(DBNote.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -139,11 +136,7 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
 @router.post("/new-drop")
 @api_transaction_decorator
 @db_transaction_decorator
-# @api_transaction_decorator
-def create_note_with_position(
-    command: MoveNoteCommand,
-    db: Session = Depends(get_db)
-):
+def create_note_with_position(command: MoveNoteCommand, db: Session = Depends(get_db)):
     note_id = str(uuid.uuid4())
     LinkedListManager.create_note_drop(
         db, 
@@ -159,6 +152,8 @@ def create_note_with_position(
 @db_transaction_decorator
 # @api_transaction_decorator
 def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
+    print(f"DEBUG Creating new sibling from {note_id}")
+
     # Generate a new note ID
     new_note_id = str(uuid.uuid4())
     
@@ -185,6 +180,8 @@ def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
 @api_transaction_decorator
 @db_transaction_decorator
 def create_new_child(note_id: str, db: Session = Depends(get_db)):
+    print(f"DEBUG Creating new child from {note_id}")
+
     # Generate a new note ID
     new_note_id = str(uuid.uuid4())
     

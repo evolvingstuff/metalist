@@ -1,16 +1,22 @@
 # TODO
 
-* Tests for undo/redo
+* UI testing framework
+* front end state machines?
+* synch between browser windows
+* search
+* differential updates
+  * client must send state, at least search context and settings
+  * so we should probably wait until we have the API for search
+* menus / dialogs
+* expand / collapse
+* special item rendering
+* on large context changes, blow the undo/redo stack
+  * use a @decorator
 * Lorem Ipsum stress test
-* expand/collapse
-  * need differential updates and properties first
 * regex vs parser for content?
   * probably regex for now 
 * scrolling / infinite scrolling
   * need differential updates first
-* synch between browser windows
-* undo/redo
-* rendering
 * tracking client state?
 * indexing
 * encryption at rest
@@ -18,14 +24,12 @@
 * users / login / authentication (Google?)
   * need to solve encryption first
 * tags
-* search
-* menus / dialogs
 * "advanced" implications
 * @shell functionality
 * filesystem integration
-* keyboard shortcuts
 * tag suggestions
 * search suggestions
+  * need tags first
 * differential updates (per note?)
 * different "view" when rendering
   * need differential updates first? 
