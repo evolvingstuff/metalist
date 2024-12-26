@@ -167,6 +167,8 @@ class LinkedListManager:
                 # Make new note the head by linking it to current head
                 current_head.prev_id = note_id
                 db_note.next_id = current_head.id
+
+            db.flush()  # an attempt to make the note available for the next query
         except Exception as e:
             print(e)
             raise
@@ -176,9 +178,11 @@ class LinkedListManager:
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
         """Move a note to a new position"""
         try:
+            print(f"DEBUG: Moving note {note_id} to new_parent_id={new_parent_id}, sibling_id={sibling_id}, position={position}")
             # Get the note to move
             note = db.get(DBNote, note_id)
             if not note:
+                print(f"Note {note_id} not found")
                 raise ValueError(f"Note {note_id} not found")
 
             # Validate position parameters

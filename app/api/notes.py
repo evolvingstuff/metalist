@@ -152,7 +152,6 @@ def create_note_with_position(command: MoveNoteCommand, db: Session = Depends(ge
 @db_transaction_decorator
 # @api_transaction_decorator
 def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
-    print(f"DEBUG Creating new sibling from {note_id}")
 
     # Generate a new note ID
     new_note_id = str(uuid.uuid4())
@@ -161,9 +160,7 @@ def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     LinkedListManager.create_note_top(db, new_note_id)
     
     # Find the parent of the specified note
-    note = db.query(DBNote).filter(DBNote.id == note_id).first()
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+    note = LinkedListManager.get_note(db, note_id)
     
     # Move the new note to be a sibling of the specified note
     LinkedListManager.move_note(
