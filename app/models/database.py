@@ -1,31 +1,17 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, create_engine
+from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from datetime import datetime, timezone
+from app.core.database import SessionLocal
+from app.core.config import DATABASE_URL  # Assuming DATABASE_URL is defined here
 
 
 class SafeSession(Session):
     def commit(self):
         """Override commit to check for corruption in dev mode"""
-        # dev_mode = True  # Could be from config
-        #
-        # if dev_mode:
-        #     # Check for corruption in DBNote linked lists
-        #     if LinkedListManager.detect_corruption(self, DBNote, None):
-        #         self.rollback()
-        #         raise ValueError("Linked list corruption detected, rolling back changes")
-        
         super().commit()
 
-# Database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./sql_app.db"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=SafeSession)
-
 Base = declarative_base()
+
 
 def get_db():
     db = SessionLocal()
@@ -34,23 +20,15 @@ def get_db():
     finally:
         db.close()
 
+
 class DBNote(Base):
     __tablename__ = "notes"
     
     id = Column(String, primary_key=True)
     content = Column(String)
-    parent_id = Column(String,
-                       ForeignKey('notes.id'),
-                       nullable=True)
-    prev_id = Column(String,
-                     ForeignKey('notes.id'),
-                     nullable=True)
-    next_id = Column(String,
-                     ForeignKey('notes.id'),
-                     nullable=True)
-    created_at = Column(DateTime,
-                        default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime,
-                        default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    parent_id = Column(String, ForeignKey('notes.id'), nullable=True)
+    prev_id = Column(String, ForeignKey('notes.id'), nullable=True)
+    next_id = Column(String, ForeignKey('notes.id'), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
