@@ -4,9 +4,10 @@ from sqlalchemy import event
 from .database import DBNote
 from ..global_state_mod import global_state
 from ..undo_redo import Command
-from ..core.config import ENABLE_EVENT_LISTENERS
 
 _updating_state = False
+tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
+
 
 class ApiTransaction:
     def __init__(self):
@@ -59,23 +60,27 @@ class ApiTransaction:
 
     def log_attribute_set(self, target, value, oldvalue, initiator):
         if self._updating_state:
+            # print(f'$ _updating_state is True, skipping...')
             return
         if isinstance(target, DBNote):
-            # Define the attributes you want to track
-            tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
-
             # Check if the changed attribute is one of the tracked attributes
             if initiator.key not in tracked_attributes:
+                print(f'$ Skipping initiator.key={initiator.key}')
                 return  # Ignore changes to untracked attributes
 
-            # Filter out changes where oldvalue or value is not a string
-            if not isinstance(oldvalue, str) or not isinstance(value, str):
-                return  # Ignore these changes
+            if str(oldvalue) == 'LoaderCallableStatus.NO_VALUE':
+                print(f'$ LoaderCallableStatus.NO_VALUE, skipping...')
+                return
+
+            # # Filter out changes where oldvalue or value is not a string
+            # if not isinstance(oldvalue, str) or not isinstance(value, str):
+            #     print(f'$ oldvalue or value not str, skipping...')
+            #     print(f'\t$ oldvalue={str(oldvalue)}, value={str(value)}')
+            #     return  # Ignore these changes
 
             note_id = target.id
-            oldvalue_str = str(oldvalue)[:20] + '...' if oldvalue is not None else 'None'
-            assert oldvalue_str != 'LoaderCallableStatus...', 'uh oh'
-            value_str = str(value)[:20] + '...' if value is not None else 'None'
+            oldvalue_str = str(oldvalue) if oldvalue is not None else ''
+            value_str = str(value) if value is not None else ''
             print(f"$$$- Attribute change detected on note {note_id[:8]}: {initiator.key} changed from '{oldvalue_str}' to '{value_str}'")
             if note_id not in self.state_before_updated:
                 print(f'\t\tadding {note_id[:8]} to state_before_updated')
@@ -89,33 +94,11 @@ class ApiTransaction:
             # we trigger the event listener again, which causes an infinite loop...
             # ... and we do not like infinite loops :(
             self._updating_state = True
-            setattr(self.state_current_updated[note_id], initiator.key, value_str)
+            setattr(self.state_current_updated[note_id], initiator.key, value)
             self._updating_state = False
             ############################################################
-
-    def log_attribute_after_update(self, target, value, oldvalue, initiator):
-        if isinstance(target, DBNote):
-            # Define the attributes you want to track
-            tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
-
-            # Check if the changed attribute is one of the tracked attributes
-            if initiator.key not in tracked_attributes:
-                return  # Ignore changes to untracked attributes
-
-            # Filter out changes where oldvalue or value is not a string
-            if not isinstance(oldvalue, str) or not isinstance(value, str):
-                return  # Ignore these changes
-
-            note_id = target.id
-            oldvalue_str = str(oldvalue)[:20] + '...' if oldvalue is not None else 'None'
-            assert oldvalue_str != 'LoaderCallableStatus...', 'uh oh'
-            value_str = str(value)[:20] + '...' if value is not None else 'None'
-            print(f"$$$+ Attribute change detected on note {note_id[:8]}: {initiator.key} changed from '{oldvalue_str}' to '{value_str}'")
-            # if note_id not in self.state_before_updated:
-            #     print(f'\t\tadding {note_id[:8]} to state_before_updated')
-            #     self.state_before_updated[note_id] = copy.deepcopy(target)
-            print(f'\t\tadding {note_id[:8]} to state_current_updated')
-            self.state_current_updated[note_id] = copy.deepcopy(target)
+        else:
+            print(f'$ not a DBNote instance?1?')
 
     def log_note_after_insert(self, mapper, connection, target):
         if isinstance(target, DBNote):
@@ -128,7 +111,6 @@ class ApiTransaction:
                 self.state_added[note_id] = copy.deepcopy(target)
             print(f'\t\tadding {note_id[:8]} to state_current_updated')
             self.state_current_updated[note_id] = copy.deepcopy(target)
-
 
     def log_note_before_delete(self, mapper, connection, target):
         if isinstance(target, DBNote):

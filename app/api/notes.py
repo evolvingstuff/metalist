@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from ..decorators import api_transaction_decorator, db_transaction_decorator
 from ..global_state_mod import global_state
-from ..core.config import ENABLE_UNDO_REDO
 
 router = APIRouter()
 
@@ -24,11 +23,6 @@ class MoveNoteCommand(BaseModel):
 @router.post("/undo")
 @db_transaction_decorator
 def undo(db: Session = Depends(get_db)):
-    if not ENABLE_UNDO_REDO:
-        return {"status": "noop", "message": "Undo and redo are turned off"}
-    # command_stack = global_state["command_stack"]
-    # if command_stack.current_index >= 0:
-    #     command_stack.undo(db)
     undid = LinkedListManager.undo(db)
     if undid:
         return {"status": "success", "message": "Undo successful"}
@@ -38,11 +32,6 @@ def undo(db: Session = Depends(get_db)):
 @router.post("/redo")
 @db_transaction_decorator
 def redo(db: Session = Depends(get_db)):
-    if not ENABLE_UNDO_REDO:
-        return {"status": "noop", "message": "Undo and redo are turned off"}
-    # command_stack = global_state["command_stack"]
-    # if command_stack.current_index < len(command_stack.stack) - 1:
-    #     command_stack.redo(db)
     redid = LinkedListManager.redo(db)
     if redid:
         return {"status": "success", "message": "Redo successful"}
@@ -78,6 +67,8 @@ def move_note(
     db: Session = Depends(get_db)
 ):
     """Move a note to a new position"""
+
+    # TODO: more of this logic should be in the LinkedListManager
     
     def print_tree(parent_id=None, level=0):
         notes = LinkedListManager.get_ordered_child_list(db, parent_id)
@@ -102,10 +93,9 @@ def move_note(
             raise HTTPException(status_code=400, detail="Sibling must be at the same level")
     
     # Convert string position to enum
-    position = None
     if command.position:
         try:
-            position = MovePosition[command.position.upper()]
+            MovePosition[command.position.upper()]
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
 

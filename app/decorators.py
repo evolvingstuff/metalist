@@ -1,6 +1,5 @@
 from .global_state_mod import global_state
 from .models.api_transaction import ApiTransaction
-from .core.config import ENABLE_UNDO_REDO
 from functools import wraps
 from sqlalchemy.orm import Session
 from threading import Lock
@@ -25,14 +24,15 @@ def db_transaction_decorator(func):
 def api_transaction_decorator(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if not ENABLE_UNDO_REDO:
-            # print(f"Undo/redo is disabled, skipping transaction for function: {func.__name__}")
-            return func(*args, **kwargs)
-
         with transaction_lock:
             if global_state["current_transaction"] is not None:
                 raise Exception("Transaction already in progress")
             global_state["current_transaction"] = ApiTransaction()
+
+            print('')
+            print('^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^')
+            print('')
+
             print(f"@ Starting transaction for function: {func.__name__}")
 
             try:
@@ -69,6 +69,7 @@ def api_transaction_decorator(func):
                 print(f"@ Transaction ended for function: {func.__name__}")
 
                 print(f'command stack size: {len(command_stack.stack)}')
+
 
                 return result
             except Exception as e:
