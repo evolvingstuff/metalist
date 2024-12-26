@@ -21,6 +21,7 @@ class MoveNoteCommand(BaseModel):
 
 
 @router.post("/undo")
+# no @api_decorator because we don't want to create a new Command
 @db_transaction_decorator
 def undo(db: Session = Depends(get_db)):
     undid = LinkedListManager.undo(db)
@@ -30,6 +31,7 @@ def undo(db: Session = Depends(get_db)):
         return {"status": "noop", "message": "No actions to undo"}
 
 @router.post("/redo")
+# no @api_decorator because we don't want to create a new Command
 @db_transaction_decorator
 def redo(db: Session = Depends(get_db)):
     redid = LinkedListManager.redo(db)
@@ -52,8 +54,8 @@ def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     return {"id": note_id}
 
 @router.put("/{note_id}")
-@db_transaction_decorator
 @api_transaction_decorator
+@db_transaction_decorator
 def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
     try:
         LinkedListManager.update_note(db, note_id, command.content)
@@ -63,8 +65,8 @@ def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(
 
 
 @router.post("/{note_id}/move")
-@db_transaction_decorator
 @api_transaction_decorator
+@db_transaction_decorator
 def move_note(
     note_id: str, 
     command: MoveNoteCommand, 
@@ -135,8 +137,8 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/new-drop")
-@db_transaction_decorator
 @api_transaction_decorator
+@db_transaction_decorator
 # @api_transaction_decorator
 def create_note_with_position(
     command: MoveNoteCommand,
@@ -153,8 +155,8 @@ def create_note_with_position(
     return {"id": note_id}
 
 @router.post("/new-sibling/{note_id}")
-@db_transaction_decorator
 @api_transaction_decorator
+@db_transaction_decorator
 # @api_transaction_decorator
 def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     # Generate a new note ID
@@ -180,8 +182,8 @@ def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     return {"id": new_note_id}
 
 @router.post("/new-child/{note_id}")
-@db_transaction_decorator
 @api_transaction_decorator
+@db_transaction_decorator
 def create_new_child(note_id: str, db: Session = Depends(get_db)):
     # Generate a new note ID
     new_note_id = str(uuid.uuid4())

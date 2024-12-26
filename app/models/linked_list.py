@@ -174,12 +174,6 @@ class LinkedListManager:
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
         """Move a note to a new position"""
         try:
-            print(f'>>> move_note({note_id})')
-
-            # Sanity test:
-            # LinkedListManager.update_note(db, note_id, "MOVED!")
-            # return
-
             # Get the note to move
             note = db.get(DBNote, note_id)
             if not note:
@@ -225,33 +219,26 @@ class LinkedListManager:
                 prev_note = db.get(DBNote, old_prev_id)
                 if prev_note:
                     prev_note.next_id = old_next_id
-                    print(f'>>> move_note unlink prev ({prev_note.id})')
             if old_next_id:
                 next_note = db.get(DBNote, old_next_id)
                 if next_note:
                     next_note.prev_id = old_prev_id
-                    print(f'>>> move_note unlink next ({next_note.id})')
 
             # Step 2: Clear note's links
             note.prev_id = None
             note.next_id = None
             note.parent_id = new_parent_id
-            print(f'>>> move_note clear note links ({note.id})')
 
             if sibling_id is None:
                 # Case 1: Find existing head at this level
-                print(f'>>> move_note | Case 1: Find existing head at this level')
                 existing_head = next((n for n in target_notes if n.prev_id is None), None)
                 if existing_head:
                     # Make existing head point to our note
                     existing_head.prev_id = note_id
-                    print(f'>>> move_note update existing_head refs ({existing_head.id})')
                     note.next_id = existing_head.id
-                    print(f'>>> move_note update note refs ({note.id})')
                 return
 
             # Case 2: Positioning relative to a sibling
-            print(f'>>> move_note | Case 2: Positioning relative to a sibling')
             sibling = db.get(DBNote, sibling_id)
             if not sibling:
                 raise ValueError(f"Sibling note {sibling_id} not found")
@@ -262,26 +249,19 @@ class LinkedListManager:
             if position == MovePosition.BEFORE:
                 note.next_id = sibling_id
                 note.prev_id = sibling.prev_id
-                print(f'>>> move_note update note refs ({note.id})')
                 sibling.prev_id = note_id
-                print(f'>>> move_note update sibling refs ({sibling.id})')
                 if note.prev_id:
                     prev_note = db.get(DBNote, note.prev_id)
                     if prev_note:
                         prev_note.next_id = note_id
-                        print(f'>>> move_note update prev note refs ({prev_note.id})')
             else:  # Position.AFTER
                 note.prev_id = sibling_id
                 note.next_id = sibling.next_id
-                print(f'>>> move_note update note refs ({note.id})')
                 sibling.next_id = note_id
-                print(f'>>> move_note update sibling refs ({sibling.id})')
                 if note.next_id:
                     next_note = db.get(DBNote, note.next_id)
                     if next_note:
                         next_note.prev_id = note_id
-                        print(f'>>> move_note update next note refs ({next_note.id})')
-            print(f'>>> move_note done')
         except Exception as e:
             print(e)
             raise
@@ -332,7 +312,6 @@ class LinkedListManager:
 
             # Delete the original note
             db.delete(note)
-            print('Just deleted in the database')
         except Exception as e:
             print(e)
             raise

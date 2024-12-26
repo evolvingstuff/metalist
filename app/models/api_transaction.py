@@ -59,17 +59,14 @@ class ApiTransaction:
         print(f"Transaction added to (global) command stack (size = {len(global_state['command_stack'].stack)})")
 
     def log_attribute_set(self, target, value, oldvalue, initiator):
-        print(f'-> oldvalue: {str(oldvalue)} | value: {str(value)} | initiator.key: {str(initiator.key)}')
         if self._updating_state:
             return
         if isinstance(target, DBNote):
             # Check if the changed attribute is one of the tracked attributes
             if initiator.key not in tracked_attributes:
-                print(f'$ Skipping initiator.key={initiator.key}')
                 return  # Ignore changes to untracked attributes
 
             if str(oldvalue) == 'LoaderCallableStatus.NO_VALUE':
-                print(f'$ LoaderCallableStatus.NO_VALUE, skipping...')
                 return
 
             note_id = target.id
@@ -79,7 +76,6 @@ class ApiTransaction:
             if note_id not in self.state_before_updated:
                 print(f'\t\tadding {note_id[:8]} to state_before_updated')
                 self.state_before_updated[note_id] = copy.deepcopy(target)
-                # ^^ Aha, we cannot do this if .NO_VALUE for previous value
             print(f'\t\tadding {note_id[:8]} to state_current_updated')
             self.state_current_updated[note_id] = copy.deepcopy(target)
 
@@ -92,13 +88,9 @@ class ApiTransaction:
             setattr(self.state_current_updated[note_id], initiator.key, value)
             self._updating_state = False
             ############################################################
-        else:
-            print(f'$ not a DBNote instance?1?')
 
     def log_note_after_insert(self, mapper, connection, target):
-        print('IIIIINNNNSSSSEEEEERRRRRTTTTT loc1')
         if isinstance(target, DBNote):
-            print('IIIIINNNNSSSSEEEEERRRRRTTTTT loc2')
             assert target.id is not None, 'Target id is None'
             note_id = target.id
             print(f"+++ Note created with ID: {note_id[:8]}...")
@@ -133,32 +125,19 @@ def log_attribute_set(target, value, oldvalue, initiator):
 
 
 def log_note_after_insert(mapper, connection, target):
-    print('IIIIINNNNSSSSEEEEERRRRRTTTTT loc0')
     transaction = global_state["current_transaction"]
     if transaction:
         transaction.log_note_after_insert(mapper, connection, target)
-    else:
-        print('\twhy no can haz tranzacshun?')
-        # TODO asdfasdf big hack
-        # transaction = ApiTransaction()
-        # global_state["current_transaction"] = transaction
-        # transaction.log_note_after_insert(mapper, connection, target)
+
 
  # another hack!
 def log_note_before_delete(mapper, connection, target):
-    print('DEEELLLL333333333T loc0')
     transaction = global_state["current_transaction"]
     if transaction:
         transaction.log_note_before_delete(mapper, connection, target)
-    else:
-        print('\twhy no can haz tranzacshun?')
-        # TODO asdfasdf big hack
-        # transaction = ApiTransaction()
-        # global_state["current_transaction"] = transaction
-        # transaction.log_note_before_delete(mapper, connection, target)
+
 
 # Register event listeners
-
 event.listen(DBNote.content, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.parent_id, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.prev_id, 'set', log_attribute_set, retval=False)
