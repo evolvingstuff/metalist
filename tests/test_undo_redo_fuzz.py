@@ -228,4 +228,3 @@ def test_fuzz_undo_redo(db):
         if count == 0:
             raise AssertionError(f"Operation '{op}' was never performed.")
 
-    print('DONZO')

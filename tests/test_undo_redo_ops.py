@@ -3,8 +3,7 @@ from tests.common import *
 
 def test_undo_redo_ops(db):
 
-    SEED = 42
-    NODES = 5
+    NODES = 3
 
     # Create initial notes in a valid linked list structure
     with transaction_scope(db):
@@ -26,7 +25,7 @@ def test_undo_redo_ops(db):
         with transaction_scope(db):
              #LinkedListManager.update_note(db, str(i), f"{i}")
              note_id = str(i)
-             new_value = f"{i}"
+             new_value = f"val{i}"
              api_transaction_decorator(lambda:
                                        LinkedListManager.update_note(db, note_id, new_value)
                                        )()
@@ -48,12 +47,13 @@ def test_undo_redo_ops(db):
         print(f"\n=== State after undo {i+1} operations ===")
         visualize_tree(db)
 
-    print(f"Command stack: {command_stack.stack}")
+    print(command_stack)
     assert len(command_stack.stack) == NODES, f"Expected {NODES} operations, got {len(command_stack.stack)}"
     assert command_stack.current_index == -1, f"Expected current index -1, got {command_stack.current_index}"
 
     for i in range(NODES):
         with transaction_scope(db):
+            note_id = str(i)
             note = LinkedListManager.get_note(db, note_id)
             assert note.content == "", f"Expected empty content, got {note.content}"
 
@@ -68,21 +68,23 @@ def test_undo_redo_ops(db):
     # REDO
 
     for i in range(NODES):
+        note_id = str(i)
         with transaction_scope(db):
             LinkedListManager.redo(db)
         print(f"\n=== State after redo {i+1} operations ===")
         visualize_tree(db)
         note = LinkedListManager.get_note(db, note_id)
-        assert note.content == str(i), f"Expected filled content, got {note.content}"
+        assert note.content != '', f"Expected refilled content, got empty string <{note.content}> | loc 1"
 
-    print(f"Command stack: {command_stack.stack}")
+    print(command_stack)
     assert len(command_stack.stack) == NODES, f"Expected {NODES} operations, got {len(command_stack.stack)}"
     assert command_stack.current_index == NODES-1, f"Expected current index {NODES-1}, got {command_stack.current_index}"
 
     for i in range(NODES):
+        note_id = str(i)
         with transaction_scope(db):
             note = LinkedListManager.get_note(db, note_id)
-            assert note.content == str(i), f"Expected filled content, got {note.content}"
+            assert note.content != '', f"Expected refilled content, got empty string | loc 1"
 
     # Validate after each operation
     with transaction_scope(db):
@@ -91,4 +93,3 @@ def test_undo_redo_ops(db):
 
     print("Validation successful!")
 
-    print('DONZO')

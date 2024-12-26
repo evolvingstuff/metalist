@@ -60,7 +60,7 @@ def api_transaction_decorator(func):
                     print(f'\t{k[:8]} content="{val}"')
 
                 # # Finalize the transaction
-                global_state["current_transaction"].finalize_transaction()
+                global_state["current_transaction"].finalize_transaction(func.__name__)
                 # Clear the transaction after use
                 global_state["current_transaction"] = None
                 # this is an action so gets rid of prior redos

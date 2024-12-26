@@ -4,10 +4,27 @@ from .models.database import DBNote
 
 
 class Command:
-    def __init__(self, pre_state, post_state):
+    def __init__(self, pre_state: dict, post_state: dict, func_name:str):
         self.uuid = str(uuid.uuid4())
         self.pre_state = pre_state
         self.post_state = post_state
+        self.func_name = func_name
+
+    def __repr__(self):
+        prestates = ''
+        for k in self.pre_state.keys():
+            val = self.pre_state[k].content[:8]
+            prestates += f'{k[:8]} content="{val}"'
+        poststates = ''
+        for k in self.post_state.keys():
+            val = self.post_state[k].content[:8]
+            poststates += f'{k[:8]} content="{val}"'
+        result = 'Command:\n'
+        result += f'\tpre_state:\n'
+        result += f'\t\t{prestates}\n'
+        result += f'\tpost_state:\n'
+        result += f'\t\t{poststates}\n'
+        return result
 
     def undo(self, db: Session):
         # Revert to the pre_state
@@ -69,6 +86,14 @@ class CommandStack:
     def __init__(self):
         self.stack = []
         self.current_index = -1
+
+    def __repr__(self):
+        result = "CommandStack:\n"
+        result += "\tstack:\n"
+        for command in self.stack:
+            result += f"\t\t{command}\n"
+        result += f"\tcurrent_index: {self.current_index}"
+        return result
 
     def push(self, command):
         # Remove any commands after the current index

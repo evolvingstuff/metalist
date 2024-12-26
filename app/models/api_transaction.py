@@ -6,7 +6,7 @@ from ..global_state_mod import global_state
 from ..undo_redo import Command
 from ..core.config import ENABLE_EVENT_LISTENERS
 
-# transaction_lock = Lock()
+_updating_state = False
 
 class ApiTransaction:
     def __init__(self):
@@ -15,10 +15,11 @@ class ApiTransaction:
         self.state_current_updated = {}
         self.state_added = {}
         self.state_deleted = {}
+        self._updating_state = False
         print(f'@ New transaction created with ID: {self.uuid}')
 
     def calculate_states(self):
-        # TODO asdfasdf
+
         state_before = {}
         state_after = {}
 
@@ -47,16 +48,18 @@ class ApiTransaction:
 
         return state_before, state_after
 
-    def finalize_transaction(self):
+    def finalize_transaction(self, action: str):
         print(f'@ Finalizing transaction with ID: {self.uuid}')
         state_before, state_after = self.calculate_states()
         # Create a command with before and after states
-        command = Command(state_before, state_after)
+        command = Command(state_before, state_after, action)
         # Add the command to the transaction stack
         global_state["command_stack"].push(command)
         print(f"Transaction added to (global) command stack (size = {len(global_state['command_stack'].stack)})")
 
-    def log_attribute_change(self, target, value, oldvalue, initiator):
+    def log_attribute_set(self, target, value, oldvalue, initiator):
+        if self._updating_state:
+            return
         if isinstance(target, DBNote):
             # Define the attributes you want to track
             tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
@@ -65,7 +68,6 @@ class ApiTransaction:
             if initiator.key not in tracked_attributes:
                 return  # Ignore changes to untracked attributes
 
-            # TODO asdfasdf
             # Filter out changes where oldvalue or value is not a string
             if not isinstance(oldvalue, str) or not isinstance(value, str):
                 return  # Ignore these changes
@@ -81,7 +83,41 @@ class ApiTransaction:
             print(f'\t\tadding {note_id[:8]} to state_current_updated')
             self.state_current_updated[note_id] = copy.deepcopy(target)
 
-    def log_note_creation(self, mapper, connection, target):
+            ############################################################
+            # Temporarily remove the effects of the event listener
+            # This is a bit of a hack, but otherwise when we update the value
+            # we trigger the event listener again, which causes an infinite loop...
+            # ... and we do not like infinite loops :(
+            self._updating_state = True
+            setattr(self.state_current_updated[note_id], initiator.key, value_str)
+            self._updating_state = False
+            ############################################################
+
+    def log_attribute_after_update(self, target, value, oldvalue, initiator):
+        if isinstance(target, DBNote):
+            # Define the attributes you want to track
+            tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
+
+            # Check if the changed attribute is one of the tracked attributes
+            if initiator.key not in tracked_attributes:
+                return  # Ignore changes to untracked attributes
+
+            # Filter out changes where oldvalue or value is not a string
+            if not isinstance(oldvalue, str) or not isinstance(value, str):
+                return  # Ignore these changes
+
+            note_id = target.id
+            oldvalue_str = str(oldvalue)[:20] + '...' if oldvalue is not None else 'None'
+            assert oldvalue_str != 'LoaderCallableStatus...', 'uh oh'
+            value_str = str(value)[:20] + '...' if value is not None else 'None'
+            print(f"$$$+ Attribute change detected on note {note_id[:8]}: {initiator.key} changed from '{oldvalue_str}' to '{value_str}'")
+            # if note_id not in self.state_before_updated:
+            #     print(f'\t\tadding {note_id[:8]} to state_before_updated')
+            #     self.state_before_updated[note_id] = copy.deepcopy(target)
+            print(f'\t\tadding {note_id[:8]} to state_current_updated')
+            self.state_current_updated[note_id] = copy.deepcopy(target)
+
+    def log_note_after_insert(self, mapper, connection, target):
         if isinstance(target, DBNote):
             assert target.id is not None, 'Target id is None'
             note_id = target.id
@@ -94,7 +130,7 @@ class ApiTransaction:
             self.state_current_updated[note_id] = copy.deepcopy(target)
 
 
-    def log_note_deletion(self, mapper, connection, target):
+    def log_note_before_delete(self, mapper, connection, target):
         if isinstance(target, DBNote):
             assert target.id is not None, 'Target id is None'
             note_id = target.id
@@ -111,26 +147,40 @@ class ApiTransaction:
         
 
 # Event handler functions
-def log_attribute_change(target, value, oldvalue, initiator):
+def log_attribute_set(target, value, oldvalue, initiator):
     transaction = global_state["current_transaction"]
     if transaction:
-        transaction.log_attribute_change(target, value, oldvalue, initiator)
+        transaction.log_attribute_set(target, value, oldvalue, initiator)
 
-def log_note_creation(mapper, connection, target):
-    transaction = global_state["current_transaction"]
-    if transaction:
-        transaction.log_note_creation(mapper, connection, target)
 
-def log_note_deletion(mapper, connection, target):
+def log_attribute_after_update(target, value, oldvalue, initiator):
+    print('>>>> MODIFIED <<<<<<')
+    raise NotImplementedError('This function should not be called')
     transaction = global_state["current_transaction"]
     if transaction:
-        transaction.log_note_deletion(mapper, connection, target)
+        transaction.log_attribute_after_update(target, value, oldvalue, initiator)
+
+
+def log_note_after_insert(mapper, connection, target):
+    transaction = global_state["current_transaction"]
+    if transaction:
+        transaction.log_note_after_insert(mapper, connection, target)
+
+
+def log_note_before_delete(mapper, connection, target):
+    transaction = global_state["current_transaction"]
+    if transaction:
+        transaction.log_note_before_delete(mapper, connection, target)
 
 # Register event listeners
-if ENABLE_EVENT_LISTENERS:
-    event.listen(DBNote.content, 'set', log_attribute_change, retval=False)
-    event.listen(DBNote.parent_id, 'set', log_attribute_change, retval=False)
-    event.listen(DBNote.prev_id, 'set', log_attribute_change, retval=False)
-    event.listen(DBNote.next_id, 'set', log_attribute_change, retval=False)
-    event.listen(DBNote, 'before_insert', log_note_creation)
-    event.listen(DBNote, 'before_delete', log_note_deletion)
+
+event.listen(DBNote.content, 'set', log_attribute_set, retval=False)
+event.listen(DBNote.parent_id, 'set', log_attribute_set, retval=False)
+event.listen(DBNote.prev_id, 'set', log_attribute_set, retval=False)
+event.listen(DBNote.next_id, 'set', log_attribute_set, retval=False)
+event.listen(DBNote.content, 'modified', log_attribute_after_update, retval=False)
+event.listen(DBNote.parent_id, 'modified', log_attribute_after_update, retval=False)
+event.listen(DBNote.prev_id, 'modified', log_attribute_after_update, retval=False)
+event.listen(DBNote.next_id, 'modified', log_attribute_after_update, retval=False)
+event.listen(DBNote, 'after_insert', log_note_after_insert)
+event.listen(DBNote, 'before_delete', log_note_before_delete)
