@@ -278,10 +278,17 @@ export const EventHandlers = {
         if (sibling) {
             const noteId = DOMUtils.getNoteId(noteElement);
             const siblingId = DOMUtils.getNoteId(sibling);
-            const position = direction === 'prev' ? 'before' : 'after';
             
-            DOMUtils.saveCursorPosition(noteElement);
-            await NotesAPI.moveNote(noteId, siblingId, position);
+            // Save the current editing state before moving
+            if (NoteState.isEditing(noteElement)) {
+                await NoteState.saveCurrentNote();
+            }
+            
+            await NotesAPI.moveNote(
+                noteId, 
+                siblingId, 
+                direction === 'prev' ? 'BEFORE' : 'AFTER'
+            );
         }
     },
 

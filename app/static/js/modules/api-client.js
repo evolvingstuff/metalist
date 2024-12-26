@@ -54,14 +54,17 @@ export const NotesAPI = {
      * Create a new note
      */
     async createNote() {
-        return this._apiCall(CONFIG.API.NOTES.CREATE, { method: 'POST' });
+        const response = await this._apiCall(CONFIG.API.NOTES.CREATE, { method: 'POST' });
+        localStorage.setItem('newNoteId', response.id);
+        localStorage.setItem('cursorPosition', 'end');  // Default to end for new notes
+        return response;
     },
 
     /**
      * Create a new note via drag and drop
      */
     async createNoteDrop(parentId, siblingId, position) {
-        return this._apiCall(CONFIG.API.NOTES.CREATE_DROP, {
+        const response = await this._apiCall(CONFIG.API.NOTES.CREATE_DROP, {
             method: 'POST',
             body: JSON.stringify({
                 new_parent_id: parentId,
@@ -69,20 +72,29 @@ export const NotesAPI = {
                 position: position
             })
         });
+        localStorage.setItem('newNoteId', response.id);
+        localStorage.setItem('cursorPosition', 'end');
+        return response;
     },
 
     /**
      * Create a sibling note
      */
     async createSibling(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { method: 'POST' });
+        const response = await this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { method: 'POST' });
+        localStorage.setItem('newNoteId', response.id);
+        localStorage.setItem('cursorPosition', 'end');
+        return response;
     },
 
     /**
      * Create a child note
      */
     async createChild(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { method: 'POST' });
+        const response = await this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { method: 'POST' });
+        localStorage.setItem('newNoteId', response.id);
+        localStorage.setItem('cursorPosition', 'end');
+        return response;
     },
 
     /**
@@ -99,26 +111,17 @@ export const NotesAPI = {
      * Move a note
      */
     async moveNote(noteId, siblingId, position, newParentId = null) {
-        // Log the raw inputs
-        console.log('Move note raw inputs:', {
-            noteId,
-            siblingId,
-            position,
-            newParentId
-        });
-
-        const body = {
-            new_parent_id: newParentId,
-            sibling_id: siblingId,
-            position: position?.toUpperCase()
-        };
-        
-        console.log('Move note request body:', body);
-        
-        return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
+        const response = await this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
-            body: JSON.stringify(body)
+            body: JSON.stringify({
+                new_parent_id: newParentId,
+                sibling_id: siblingId,
+                position: position?.toUpperCase()
+            })
         });
+        localStorage.setItem('newNoteId', noteId);  // Store the moved note's ID
+        localStorage.setItem('cursorPosition', 'end');
+        return response;
     },
 
     /**
