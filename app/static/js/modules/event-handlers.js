@@ -17,6 +17,7 @@ export const EventHandlers = {
      * Initialize all event listeners
      */
     init() {
+        console.log('Initializing event handlers');
         // Initialize add button immediately (don't wait for DOMContentLoaded)
         this.initializeAddButton();
 
@@ -210,58 +211,80 @@ export const EventHandlers = {
      */
     async handleKeydown(event) {
         // Create new root note with Enter
-        if (event.key === 'Enter') {
-            console.log('Enter key pressed');
-            // Only if we're not in a contenteditable element
-            if (!event.target.isContentEditable) {
-                console.log('Creating new note via Enter key');
-                try {
-                    await NotesAPI.createNote();
-                } catch (error) {
-                    console.error('Failed to create note:', error);
-                }
-                return;
+        if (event.key === 'Enter' && !event.target.isContentEditable) {
+            console.log('Creating new note via Enter key');
+            try {
+                await NotesAPI.createNote();
+            } catch (error) {
+                console.error('Failed to create note:', error);
             }
+            return;
         }
 
         const currentNote = NoteState.getCurrentEditingNote();
         if (!currentNote) return;
 
         if (event.metaKey) {
+            console.log('Cmd key pressed with:', {
+                key: event.key,
+                currentNote,
+                isEditing: NoteState.isEditing(),
+                currentEditingNote: NoteState.getCurrentEditingNote()
+            });
+
             const noteId = DOMUtils.getNoteId(currentNote);
 
             switch (event.key) {
                 case 'Backspace':
-                    await NotesAPI.deleteNote(noteId);
+                    await NoteState.ensureNotesSaved(() => 
+                        NotesAPI.deleteNote(noteId)
+                    );
                     break;
                     
                 case 'ArrowUp':
                     event.preventDefault();
-                    await this.handleNoteMove(currentNote, 'prev');
+                    await NoteState.ensureNotesSaved(() => 
+                        this.handleNoteMove(currentNote, 'prev')
+                    );
                     break;
                     
                 case 'ArrowDown':
                     event.preventDefault();
-                    await this.handleNoteMove(currentNote, 'next');
+                    await NoteState.ensureNotesSaved(() => 
+                        this.handleNoteMove(currentNote, 'next')
+                    );
                     break;
                     
                 case 'Enter':
                     event.preventDefault();
+                    console.log('Before creating new note:', {
+                        isEditing: NoteState.isEditing(),
+                        currentContent: DOMUtils.getNoteContentText(currentNote)
+                    });
                     if (event.shiftKey) {
-                        await NotesAPI.createChild(noteId);
+                        await NoteState.ensureNotesSaved(async () => {
+                            await NotesAPI.createChild(noteId);
+                        });
                     } else {
-                        await NotesAPI.createSibling(noteId);
+                        await NoteState.ensureNotesSaved(async () => {
+                            await NotesAPI.createSibling(noteId);
+                        });
                     }
+                    console.log('After creating new note');
                     break;
                     
                 case 'z':
                     event.preventDefault();
-                    await NotesAPI.undo();
+                    await NoteState.ensureNotesSaved(() => 
+                        NotesAPI.undo()
+                    );
                     break;
                     
                 case 'y':
                     event.preventDefault();
-                    await NotesAPI.redo();
+                    await NoteState.ensureNotesSaved(() => 
+                        NotesAPI.redo()
+                    );
                     break;
             }
         }
@@ -381,11 +404,14 @@ export const EventHandlers = {
         const hoverNote = DOMUtils.findNoteElement(event.target);
         
         if (trashCan && this.draggedNoteId) {
-            await NotesAPI.deleteNote(this.draggedNoteId);
+            await NoteState.ensureNotesSaved(() => 
+                NotesAPI.deleteNote(this.draggedNoteId)
+            );
         } else if (hoverNote && this.dragTarget) {
-            await this.handleNoteDrop(hoverNote);
+            await NoteState.ensureNotesSaved(() => 
+                this.handleNoteDrop(hoverNote)
+            );
         }
-        
         this.cleanupDragState();
     },
 
@@ -396,15 +422,6 @@ export const EventHandlers = {
         const targetId = DOMUtils.getNoteId(this.dragTarget);
         const isInsideDrop = this.dragTarget.classList.contains('drag-inside');
         
-        console.log('Drop params:', {
-            targetId,
-            isInsideDrop,
-            draggedNoteId: this.draggedNoteId,
-            hoverNoteParentId: hoverNote.dataset.parentId,
-            hoverNoteDataset: hoverNote.dataset,
-            targetClasses: this.dragTarget.classList.toString()
-        });
-        
         if (this.draggedNoteId) {
             if (isInsideDrop) {
                 // When dropping inside, make target the new parent
@@ -413,13 +430,6 @@ export const EventHandlers = {
                 // When dropping before/after, only pass parentId if it exists and isn't "None"
                 const dropType = this.dragTarget.classList.contains('drag-before') ? 'BEFORE' : 'AFTER';
                 const parentId = hoverNote.dataset.parentId;
-                
-                console.log('Move params:', {
-                    draggedNoteId: this.draggedNoteId,
-                    targetId,
-                    dropType,
-                    parentId
-                });
                 
                 if (parentId && parentId !== "None") {
                     await NotesAPI.moveNote(this.draggedNoteId, targetId, dropType, parentId);

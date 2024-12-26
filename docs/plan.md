@@ -91,6 +91,7 @@ Benefits:
 - [ ] Refactor main.js into smaller modules
 - [ ] Add proper error handling for API calls
 - [ ] Add loading states for operations
+- [ ] Apply ensureNotesSaved pattern to all note operations
 - [x] Auto-focus new notes after creation
 - [x] Maintain cursor position after note movement
 - [x] Fix sibling note movement while preserving parent-child relationships
@@ -109,6 +110,7 @@ Benefits:
 - Easier debugging
 - Cleaner frontend implementation
 
-## Known Bugs
+## Fixed Bugs
 
-- [ ] Drag and drop movement of notes is broken (likely needs same parent-child relationship fix as keyboard movement) 
+- [x] Root level notes had "None" as parent_id in HTML instead of empty string
+- [x] Drag and drop movement of notes wasn't preserving parent-child relationships 

@@ -153,5 +153,27 @@ export const NoteState = {
      */
     async forceSaveAll() {
         await this.saveCurrentNote();
+    },
+
+    /**
+     * Ensure any current edits are saved before performing an action
+     */
+    async ensureNotesSaved(action) {
+        console.log('ensureNotesSaved:', {
+            isAnyEditing: this.isAnyNoteEditing(),
+            currentEditingNote: this.currentEditingNote,
+            lastSavedContent: this.lastSavedContent,
+            currentContent: this.currentEditingNote ? DOMUtils.getNoteContentText(this.currentEditingNote) : null
+        });
+        
+        if (this.isAnyNoteEditing()) {
+            console.log('Saving current note before action');
+            await this.saveCurrentNote();
+            console.log('Note saved');
+        }
+        console.log('Executing action');
+        const result = await action();
+        console.log('Action completed');
+        return result;
     }
 }; 
