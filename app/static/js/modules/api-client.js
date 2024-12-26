@@ -1,0 +1,144 @@
+import { CONFIG } from './config.js';
+
+/**
+ * Handles all API communication
+ */
+export const NotesAPI = {
+    /**
+     * Generic API call handler with error management
+     */
+    async _apiCall(url, options = {}, reloadOnSuccess = true) {
+        try {
+            // Detailed request logging
+            console.log('API Request:', {
+                url: url,
+                method: options.method || 'GET',
+                body: options.body ? JSON.parse(options.body) : undefined,
+                headers: options.headers
+            });
+
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            // Log the response
+            console.log('API Response:', {
+                url: url,
+                status: response.status,
+                data: data
+            });
+
+            if (reloadOnSuccess) {
+                window.location.reload();
+            }
+            
+            return data;
+        } catch (error) {
+            console.error('API Error:', error);
+            alert(`Operation failed: ${error.message}`);
+            throw error;
+        }
+    },
+
+    /**
+     * Create a new note
+     */
+    async createNote() {
+        return this._apiCall(CONFIG.API.NOTES.CREATE, { method: 'POST' });
+    },
+
+    /**
+     * Create a new note via drag and drop
+     */
+    async createNoteDrop(parentId, siblingId, position) {
+        return this._apiCall(CONFIG.API.NOTES.CREATE_DROP, {
+            method: 'POST',
+            body: JSON.stringify({
+                new_parent_id: parentId,
+                sibling_id: siblingId,
+                position: position
+            })
+        });
+    },
+
+    /**
+     * Create a sibling note
+     */
+    async createSibling(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { method: 'POST' });
+    },
+
+    /**
+     * Create a child note
+     */
+    async createChild(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { method: 'POST' });
+    },
+
+    /**
+     * Update a note's content
+     */
+    async updateNote(noteId, content) {
+        return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
+            method: 'PUT',
+            body: JSON.stringify({ content })
+        }, false); // Don't reload on content updates
+    },
+
+    /**
+     * Move a note
+     */
+    async moveNote(noteId, siblingId, position, newParentId = null) {
+        // Log the raw inputs
+        console.log('Move note raw inputs:', {
+            noteId,
+            siblingId,
+            position,
+            newParentId
+        });
+
+        const body = {
+            new_parent_id: newParentId,
+            sibling_id: siblingId,
+            position: position?.toUpperCase()
+        };
+        
+        console.log('Move note request body:', body);
+        
+        return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+    },
+
+    /**
+     * Delete a note
+     */
+    async deleteNote(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE' });
+    },
+
+    /**
+     * Undo last action
+     */
+    async undo() {
+        return this._apiCall(CONFIG.API.NOTES.UNDO, { method: 'POST' });
+    },
+
+    /**
+     * Redo last undone action
+     */
+    async redo() {
+        return this._apiCall(CONFIG.API.NOTES.REDO, { method: 'POST' });
+    }
+}; 
