@@ -275,21 +275,21 @@ export const EventHandlers = {
             noteElement.previousElementSibling : 
             noteElement.nextElementSibling;
             
-        if (sibling) {
+        if (sibling && sibling.classList.contains(CONFIG.CLASSES.NOTE)) {
             const noteId = DOMUtils.getNoteId(noteElement);
             const siblingId = DOMUtils.getNoteId(sibling);
-            
-            // Debug: check cursor position before move
-            console.log('Cursor position before move:', localStorage.getItem('cursorPosition'));
+            const parentId = noteElement.dataset.parentId || null;
             
             if (NoteState.isEditing(noteElement)) {
                 await NoteState.saveCurrentNote();
             }
             
+            // Move between siblings while maintaining parent relationship
             await NotesAPI.moveNote(
                 noteId, 
                 siblingId, 
-                direction === 'prev' ? 'BEFORE' : 'AFTER'
+                direction === 'prev' ? 'BEFORE' : 'AFTER',
+                parentId
             );
         }
     },
