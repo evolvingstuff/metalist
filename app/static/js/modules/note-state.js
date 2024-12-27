@@ -51,12 +51,16 @@ export const NoteState = {
      * New state machine implementation of startEditing
      */
     async startEditingWithStateMachine(noteElement) {
+        console.log('Attempting to start editing with state machine');
+        
         if (!NoteStateMachine.canTransitionTo('editing')) {
             console.warn('Cannot start editing in current state:', NoteStateMachine.getState());
             return;
         }
 
         await NoteStateMachine.transition('editing', async () => {
+            console.log('In editing transition');
+            
             // Store current content for change detection
             this.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
             this.currentEditingNote = noteElement;
@@ -66,14 +70,19 @@ export const NoteState = {
 
             // Set up cursor position tracking
             const content = DOMUtils.getNoteContent(noteElement);
-            content.addEventListener('mouseup', this.handleCursorChange);
-            content.addEventListener('keyup', this.handleCursorChange);
+            // Bind the handler to this context
+            const boundHandler = this.handleCursorChange.bind(this);
+            content.addEventListener('mouseup', boundHandler);
+            content.addEventListener('keyup', boundHandler);
 
+            console.log('Setting up inactivity timeout');
             // Set up auto-save
             if (this.inactivityTimeout) {
                 clearTimeout(this.inactivityTimeout);
             }
             this.setupInactivityTimeout();
+            
+            console.log('Finished editing setup');
         }, {
             currentNote: noteElement,
             lastSavedContent: DOMUtils.getNoteContentText(noteElement)
@@ -404,7 +413,12 @@ export const NoteState = {
     /**
      * Handle cursor position changes
      */
-    handleCursorChange() {
+    handleCursorChange: function() {
+        console.log('Cursor change handler called', {
+            useStateMachine: CONFIG.FEATURES.USE_STATE_MACHINE,
+            currentState: NoteStateMachine.getState()
+        });
+        
         return CONFIG.FEATURES.USE_STATE_MACHINE ?
             this.handleCursorChangeWithStateMachine() :
             this.handleCursorChangeLegacy();
@@ -413,7 +427,7 @@ export const NoteState = {
     /**
      * Legacy implementation of handleCursorChange
      */
-    handleCursorChangeLegacy() {
+    handleCursorChangeLegacy: function() {
         if (this.inactivityTimeout) {
             clearTimeout(this.inactivityTimeout);
         }
@@ -423,7 +437,7 @@ export const NoteState = {
     /**
      * New state machine implementation of handleCursorChange
      */
-    handleCursorChangeWithStateMachine() {
+    handleCursorChangeWithStateMachine: function() {
         if (this.inactivityTimeout) {
             clearTimeout(this.inactivityTimeout);
         }

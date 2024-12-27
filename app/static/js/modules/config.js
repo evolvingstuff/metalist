@@ -35,13 +35,13 @@ export const CONFIG = {
     
     // Feature flags
     FEATURES: {
-        USE_STATE_MACHINE: false,  // Set to false to use legacy system
+        USE_STATE_MACHINE: true,  // Enabling state machine
     },
     
     // Debug flags
     DEBUG: {
         LOG_API_CALLS: true,
         LOG_STATE_CHANGES: true,
-        LOG_STATE_MACHINE: true
+        LOG_STATE_MACHINE: true    // This will give us detailed state transition logs
     }
 }; 

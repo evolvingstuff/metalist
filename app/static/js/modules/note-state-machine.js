@@ -1,3 +1,5 @@
+import { CONFIG } from './config.js';
+
 /**
  * State machine for managing note editing and searching states
  */
