@@ -116,26 +116,26 @@ export const NotesAPI = {
             position: position?.toUpperCase()
         };
         
-        // Only include new_parent_id if it was actually passed
         if (newParentId !== undefined) {
             body.new_parent_id = newParentId;
         }
 
-        console.log('Move note params:', {
-            noteId,
-            siblingId,
-            position,
-            newParentId,
-            body
-        });
-
+        // Check if note is being edited BEFORE the move
+        const noteElement = document.querySelector(`[data-id="${noteId}"]`);
+        const wasEditing = noteElement?.classList.contains(CONFIG.CLASSES.EDITING);
+        
         const response = await this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
             body: JSON.stringify(body)
         });
         
-        // Store note ID and preserve existing cursor position
-        localStorage.setItem('newNoteId', noteId);
+        // Only store note ID if it was being edited
+        if (wasEditing) {
+            localStorage.setItem('newNoteId', noteId);
+            // Also store a flag to indicate this was a move operation
+            localStorage.setItem('wasMovedWhileEditing', 'true');
+        }
+        
         return response;
     },
 
