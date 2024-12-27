@@ -84,6 +84,8 @@ body {
     user-select: none;
     color: #999;
     flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.2s ease;  /* Smooth 0.2s fade animation */
 }
 
 .note-content {
@@ -209,12 +211,8 @@ body {
     border: 2px solid red;
 }
 
-.note .drag-handle {
-    visibility: hidden;
-}
-
-.note:hover > .drag-handle {
-    visibility: visible;
+.note:hover:not(:has(.note:hover)) > .drag-handle {
+    opacity: 1;
 }
 
 .tooltip {
@@ -229,4 +227,19 @@ body {
     transform: translateY(-100%);
     margin-top: -5px;
     pointer-events: none; /* Ensures the tooltip doesn't interfere with mouse events */
+}
+
+.search-input {
+    width: 500px;  /* Fixed width instead of flex: 1 */
+    margin: 0 auto;  /* Auto margins for centering */
+    padding: 5px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
 }
