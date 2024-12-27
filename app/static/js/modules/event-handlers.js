@@ -452,14 +452,15 @@ export const EventHandlers = {
     },
 
     /**
-     * Get drop type from target classes
-     *
-     * TODO: 'inside' is not a valid drop type for the API
+     * Get the type of drop based on CSS classes
+     * Returns position type that matches API expectations
+     * @returns {string|null} 'BEFORE', 'AFTER', or null for inside drops
      */
     getDropType() {
-        if (this.dragTarget.classList.contains('drag-before')) return 'before';
-        if (this.dragTarget.classList.contains('drag-after')) return 'after';
-        return 'inside';
+        if (this.dragTarget.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) return 'BEFORE';
+        if (this.dragTarget.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) return 'AFTER';
+        // Inside drops (CONFIG.CLASSES.DRAG_INSIDE) are handled separately with newParentId
+        return null;
     },
 
     /**
