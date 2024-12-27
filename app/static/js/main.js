@@ -19,27 +19,22 @@ document.addEventListener('DOMContentLoaded', () => {
         // Check for new note to edit
         const newNoteId = localStorage.getItem('newNoteId');
         const storedPosition = localStorage.getItem('cursorPosition');
-        const wasMovedWhileEditing = localStorage.getItem('wasMovedWhileEditing');
-        
+
         if (newNoteId) {
             const newNote = document.querySelector(`[data-id="${newNoteId}"]`);
             if (newNote) {
-                // Only start editing if this wasn't a move operation or if it was moved while being edited
-                if (!wasMovedWhileEditing || wasMovedWhileEditing === 'true') {
-                    NoteState.startEditing(newNote);
-                    try {
-                        const cursorPosition = storedPosition === 'end' ? 
-                            'end' : 
-                            JSON.parse(storedPosition);
-                        DOMUtils.setCursorPosition(newNote, cursorPosition);
-                    } catch (e) {
-                        // Fallback to end if position is invalid
-                        DOMUtils.focusNote(newNote);
-                    }
+                NoteState.startEditing(newNote);
+                try {
+                    const cursorPosition = storedPosition === 'end' ?
+                        'end' :
+                        JSON.parse(storedPosition);
+                    DOMUtils.setCursorPosition(newNote, cursorPosition);
+                } catch (e) {
+                    // Fallback to end if position is invalid
+                    DOMUtils.focusNote(newNote);
                 }
                 localStorage.removeItem('newNoteId');
                 localStorage.removeItem('cursorPosition');
-                localStorage.removeItem('wasMovedWhileEditing');
             }
         }
     } catch (error) {

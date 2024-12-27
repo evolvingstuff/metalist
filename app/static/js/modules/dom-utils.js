@@ -36,6 +36,8 @@ export const DOMUtils = {
 
     /**
      * Save cursor position for a content element
+     *
+     * TODO: why is this function not used??
      */
     saveCursorPosition(contentElement) {
         const selection = window.getSelection();
@@ -68,6 +70,8 @@ export const DOMUtils = {
 
     /**
      * Set the content of a note
+     *
+     * TODO: why is this function not used??
      */
     setNoteContent(noteElement, content) {
         const contentElement = this.getNoteContent(noteElement);
@@ -76,6 +80,8 @@ export const DOMUtils = {
 
     /**
      * Check if a note is currently being edited
+     *
+     * TODO: why is this function not used??
      */
     isNoteEditing(noteElement) {
         return noteElement.classList.contains(CONFIG.CLASSES.EDITING);

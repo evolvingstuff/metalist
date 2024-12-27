@@ -453,6 +453,8 @@ export const EventHandlers = {
 
     /**
      * Get drop type from target classes
+     *
+     * TODO: 'inside' is not a valid drop type for the API
      */
     getDropType() {
         if (this.dragTarget.classList.contains('drag-before')) return 'before';
