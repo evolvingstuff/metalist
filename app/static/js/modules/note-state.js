@@ -9,6 +9,7 @@ export const NoteState = {
     currentEditingNote: null,
     lastSavedContent: null,
     inactivityTimeout: null,
+    isFinishingEdit: false,
     
     /**
      * Start editing a note
@@ -92,28 +93,29 @@ export const NoteState = {
      * Finish editing the current note
      */
     async finishEditing() {
-        if (!this.currentEditingNote) return;
-
-        // Save any pending changes
-        await this.saveCurrentNote();
-
-        // Clean up
-        const content = DOMUtils.getNoteContent(this.currentEditingNote);
-        content.removeEventListener('mouseup', this.handleCursorChange);
-        content.removeEventListener('keyup', this.handleCursorChange);
+        if (this.isFinishingEdit || !this.currentEditingNote) return;
         
-        DOMUtils.setNoteEditable(this.currentEditingNote, false);
-        
-        if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
-            console.log('Finished editing note:', DOMUtils.getNoteId(this.currentEditingNote));
-        }
+        this.isFinishingEdit = true;
+        try {
+            // Save any pending changes
+            await this.saveCurrentNote();
 
-        this.currentEditingNote = null;
-        this.lastSavedContent = null;
-        
-        if (this.inactivityTimeout) {
-            clearTimeout(this.inactivityTimeout);
-            this.inactivityTimeout = null;
+            // Clean up
+            DOMUtils.setNoteEditable(this.currentEditingNote, false);
+            
+            if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
+                console.log('Finished editing note:', DOMUtils.getNoteId(this.currentEditingNote));
+            }
+
+            this.currentEditingNote = null;
+            this.lastSavedContent = null;
+            
+            if (this.inactivityTimeout) {
+                clearTimeout(this.inactivityTimeout);
+                this.inactivityTimeout = null;
+            }
+        } finally {
+            this.isFinishingEdit = false;
         }
     },
 
