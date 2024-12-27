@@ -35,21 +35,6 @@ export const DOMUtils = {
     },
 
     /**
-     * Save cursor position for a content element
-     *
-     * TODO: why is this function not used??
-     */
-    saveCursorPosition(contentElement) {
-        const selection = window.getSelection();
-        const range = selection.getRangeAt(0);
-        return {
-            range: range.cloneRange(),
-            start: range.startOffset,
-            end: range.endOffset
-        };
-    },
-
-    /**
      * Restore cursor position for a content element
      */
     restoreCursorPosition(contentElement, position) {
