@@ -1,117 +1,93 @@
-# Frontend Refactoring Plan
+# Note Editor Refactoring Plan
 
-## 1. Project Setup [✓]
-- [✓] Create module directory structure
-- [✓] Set up build process if needed
-- [✓] Configure module imports/exports
+## Current Issues
+- Multiple event sources can trigger the same state changes (blur, shortcuts, etc.)
+- State management is tightly coupled with DOM manipulation and API calls
+- Hard to track operation sequence and debug state issues
+- Implicit state dependencies make it difficult to reason about the code
 
-## 2. Core Modules Implementation
+## Proposed Architecture
+We'll implement three complementary patterns to make the code more maintainable and predictable:
 
-### 2.1 Configuration (config.js) [✓]
-- [✓] Define configuration constants
-- [✓] Add debug flags
-- [✓] Add API endpoints
-- [✓] Add CSS classes
+### 1. State Machine
+Manages the high-level state of note editing. This will:
+- Make state transitions explicit and predictable
+- Prevent invalid state changes
+- Make it easier to debug state-related issues
+- Provide a central place to track the current state
 
-### 2.2 API Client (api-client.js) [✓]
-- [✓] Implement API wrapper
-- [✓] Add error handling
-- [✓] Add debug logging
-- [✓] Handle different response types
+### 2. Event Queue
+Ensures operations happen in sequence and don't conflict. This will:
+- Prevent race conditions between different event sources
+- Make operation order predictable and debuggable
+- Allow for operation prioritization if needed
+- Provide a clear audit trail of what happened
 
-### 2.3 DOM Utilities (dom-utils.js) [✓]
-- [✓] Extract DOM manipulation methods
-- [✓] Add element finders/selectors
-- [✓] Implement cursor position handling
-- [✓] Add content management utilities
+### 3. Command Pattern
+Encapsulates the actual operations to perform. This will:
+- Separate what to do from how to do it
+- Make operations easier to test in isolation
+- Allow for operation logging and undoing
+- Make it easier to add new operations
 
-### 2.4 Note State Management (note-state.js) [✓]
-- [✓] Implement NoteState module
-- [✓] Extract state variables from global scope
-- [✓] Add auto-save functionality
-- [✓] Handle editing state transitions
+## Implementation Steps
 
-### 2.5 Event Handlers (event-handlers.js) [✓]
-- [✓] Implement event delegation system
-- [✓] Extract click handlers
-- [✓] Extract keyboard handlers
-- [✓] Extract drag-and-drop handlers
-- [✓] Implement event coordination
+### Phase 1: Setup and State Machine
+- [ ] Create new module files for the refactored architecture
+- [ ] Implement basic state machine with valid transitions
+- [ ] Add state transition logging for debugging
+- [ ] Create tests for state machine
 
-## 3. Main.js Refactoring [ ]
-- [ ] Remove global variables
-- [ ] Initialize modules
-- [ ] Set up event listeners
-- [ ] Clean up old code
-- [ ] Add error boundaries
+### Phase 2: Event Queue
+- [ ] Implement event queue system
+- [ ] Add queue processing logic
+- [ ] Connect queue to state machine
+- [ ] Create tests for event queue
 
-## 4. Testing [ ]
-- [ ] Set up Jest testing environment
-- [ ] Write tests for DOM utilities
-- [ ] Write tests for state management
-- [ ] Write tests for API client
-- [ ] Add integration tests
+### Phase 3: Commands
+- [ ] Define command interface and basic commands
+- [ ] Implement command execution logic
+- [ ] Connect commands to event queue
+- [ ] Create tests for commands
 
-## 5. Documentation [ ]
-- [ ] Add JSDoc comments
-- [ ] Create module documentation
-- [ ] Add usage examples
-- [ ] Document testing procedures
+### Phase 4: Integration
+- [ ] Modify event handlers to use new system
+- [ ] Update NoteState to use new architecture
+- [ ] Add comprehensive logging
+- [ ] Create integration tests
 
-## 6. Performance Optimization [ ]
+### Phase 5: Cleanup
+- [ ] Remove old state management code
+- [ ] Update documentation
 - [ ] Add performance monitoring
-- [ ] Optimize DOM operations
-- [ ] Implement request batching
-- [ ] Add caching where appropriate
+- [ ] Final testing and bug fixes
 
-## Future Improvements
+## Migration Strategy
+1. Implement new system alongside existing code
+2. Gradually move functionality over
+3. Run both systems in parallel with feature flag
+4. Monitor for issues
+5. Complete switchover when stable
 
-### API Refinements
+## Success Metrics
+- Reduced bug reports related to state management
+- Easier debugging (clear operation sequence)
+- Improved test coverage
+- Faster onboarding for new developers
+- More maintainable codebase
 
-Split the generic `/move` endpoint into more specific use cases:
-- `/move/sibling` - Moving between siblings at same level
-- `/move/indent` - Moving a note to become a child of another note
-- `/move/outdent` - Moving a note out to parent level
-- `/move/reorder` - Reordering notes at the same level
+## Risks and Mitigations
+- **Risk**: Performance impact from queue processing
+  *Mitigation*: Monitor performance metrics, optimize if needed
 
-Benefits:
-- More semantic and self-documenting API
-- Simplified validation logic
-- Easier debugging
-- Cleaner frontend implementation
+- **Risk**: Increased complexity from new patterns
+  *Mitigation*: Good documentation, clear examples, thorough testing
 
-## Next Steps:
-1. Refactor main.js to use our new modules
-2. Set up testing infrastructure
-3. Add comprehensive documentation
-4. Implement performance optimizations 
+- **Risk**: Migration issues
+  *Mitigation*: Gradual rollout, feature flags, monitoring
 
-## Planned Improvements
-
-- [ ] Refactor main.js into smaller modules
-- [ ] Add proper error handling for API calls
-- [ ] Add loading states for operations
-- [ ] Apply ensureNotesSaved pattern to all note operations
-- [x] Auto-focus new notes after creation
-- [x] Maintain cursor position after note movement
-- [x] Fix sibling note movement while preserving parent-child relationships
-
-### API Refinements
-
-Split the generic `/move` endpoint into more specific use cases:
-- `/move/sibling` - Moving between siblings at same level
-- `/move/indent` - Moving a note to become a child of another note
-- `/move/outdent` - Moving a note out to parent level
-- `/move/reorder` - Reordering notes at the same level
-
-Benefits:
-- More semantic and self-documenting API
-- Simplified validation logic
-- Easier debugging
-- Cleaner frontend implementation
-
-## Fixed Bugs
-
-- [x] Root level notes had "None" as parent_id in HTML instead of empty string
-- [x] Drag and drop movement of notes wasn't preserving parent-child relationships
-- [x] Content was lost when creating new notes via Cmd+Enter due to incorrect edit state checking 
+## Future Considerations
+- Potential for undo/redo system using command pattern
+- Possibility of adding operation replay for debugging
+- Could add operation analytics
+- Might enable offline operation queueing 
