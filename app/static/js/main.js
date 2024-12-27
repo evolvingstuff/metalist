@@ -3,13 +3,29 @@ import { NotesAPI } from './modules/api-client.js';
 import { DOMUtils } from './modules/dom-utils.js';
 import { NoteState } from './modules/note-state.js';
 import { EventHandlers } from './modules/event-handlers.js';
+import { NoteStateMachine } from './modules/note-state-machine.js';
 
 /**
  * Initialize the application when the DOM is ready
  */
 document.addEventListener('DOMContentLoaded', () => {
     try {
-        // Initialize modules in dependency order
+        // Initialize state machine first
+        if (CONFIG.FEATURES.USE_STATE_MACHINE) {
+            NoteStateMachine.init();
+            
+            if (CONFIG.DEBUG.LOG_STATE_MACHINE) {
+                NoteStateMachine.addListener((fromState, toState, data) => {
+                    console.log('State Change:', {
+                        from: fromState,
+                        to: toState,
+                        data: data
+                    });
+                });
+            }
+        }
+
+        // Initialize other modules in dependency order
         EventHandlers.init();
 
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
