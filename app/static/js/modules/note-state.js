@@ -14,41 +14,31 @@ export const NoteState = {
      * Start editing a note
      */
     startEditing(noteElement) {
-        // If already editing a different note, finish that first
-        if (this.currentEditingNote && this.currentEditingNote !== noteElement) {
+        if (this.currentEditingNote === noteElement) return;
+        
+        // If editing another note, finish that first
+        if (this.currentEditingNote) {
             this.finishEditing();
         }
 
+        // Set state first
         this.currentEditingNote = noteElement;
         this.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
         
-        DOMUtils.setNoteEditable(noteElement, true);
-        
-        // Add selection change listener
+        // Then update DOM
         const content = DOMUtils.getNoteContent(noteElement);
-        content.addEventListener('mouseup', () => {
-            const position = DOMUtils.getCursorPosition(noteElement);
-            if (position) {
-                localStorage.setItem('cursorPosition', JSON.stringify(position));
-            }
-        });
-        content.addEventListener('keyup', () => {
-            const position = DOMUtils.getCursorPosition(noteElement);
-            if (position) {
-                localStorage.setItem('cursorPosition', JSON.stringify(position));
-            }
-        });
+        content.contentEditable = true;
+        noteElement.classList.add(CONFIG.CLASSES.EDITING);
+        content.focus();
         
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Started editing note:', DOMUtils.getNoteId(noteElement));
         }
 
-        // Clear any existing inactivity timeout
         if (this.inactivityTimeout) {
             clearTimeout(this.inactivityTimeout);
         }
 
-        // Set up auto-save
         this.inactivityTimeout = setInterval(() => {
             this.saveCurrentNote();
         }, CONFIG.INACTIVITY_TIMEOUT);

@@ -158,12 +158,10 @@ export const EventHandlers = {
      */
     handleBlur(event) {
         if (DOMUtils.isNoteContent(event.target)) {
-            setTimeout(async () => {
-                const noteElement = DOMUtils.findNoteElement(event.target);
-                if (NoteState.isEditing(noteElement)) {
-                    await NoteState.finishEditing();
-                }
-            }, 0);
+            const noteElement = DOMUtils.findNoteElement(event.target);
+            if (NoteState.isEditing(noteElement)) {
+                NoteState.finishEditing();
+            }
         }
     },
 
