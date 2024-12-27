@@ -69,48 +69,6 @@ export const DOMUtils = {
     },
 
     /**
-     * Set the content of a note
-     *
-     * TODO: why is this function not used??
-     */
-    setNoteContent(noteElement, content) {
-        const contentElement = this.getNoteContent(noteElement);
-        contentElement.innerHTML = content;
-    },
-
-    /**
-     * Check if a note is currently being edited
-     *
-     * TODO: why is this function not used??
-     */
-    isNoteEditing(noteElement) {
-        return noteElement.classList.contains(CONFIG.CLASSES.EDITING);
-    },
-
-    /**
-     * Get all notes on the page
-     */
-    getAllNotes() {
-        return document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`);
-    },
-
-    /**
-     * Focus a note's content and place cursor at the end
-     */
-    focusNote(noteElement) {
-        const content = this.getNoteContent(noteElement);
-        content.focus();
-
-        // Place cursor at the end
-        const range = document.createRange();
-        const selection = window.getSelection();
-        range.selectNodeContents(content);
-        range.collapse(false); // false = collapse to end
-        selection.removeAllRanges();
-        selection.addRange(range);
-    },
-
-    /**
      * Check if element is a note content element
      */
     isNoteContent(element) {
@@ -201,5 +159,28 @@ export const DOMUtils = {
             console.error('Failed to set cursor position:', e);
             this.focusNote(noteElement);
         }
+    },
+
+    /**
+     * Get all notes on the page
+     */
+    getAllNotes() {
+        return document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`);
+    },
+
+    /**
+     * Focus a note's content and place cursor at the end
+     */
+    focusNote(noteElement) {
+        const content = this.getNoteContent(noteElement);
+        content.focus();
+
+        // Place cursor at the end
+        const range = document.createRange();
+        const selection = window.getSelection();
+        range.selectNodeContents(content);
+        range.collapse(false); // false = collapse to end
+        selection.removeAllRanges();
+        selection.addRange(range);
     }
 }; 
