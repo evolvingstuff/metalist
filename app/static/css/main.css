@@ -192,11 +192,16 @@ body {
     background-color: var(--editing-bg);
 }
 
-.trash-can.drag-over {
+.trash-can {
+    transition: all 0.2s ease;  /* Smooth transition for all changes */
+}
+
+.trash-can.trash-hover {
     background-color: #ffebee;  /* Light red background */
     border-color: #f44336;      /* Red border */
     transform: scale(1.1);      /* Slightly enlarge */
-    transition: all 0.2s ease;  /* Smooth transition */
+    color: #f44336;            /* Make the trash icon red */
+    filter: drop-shadow(0 0 2px rgba(244, 67, 54, 0.5));  /* Red glow effect */
 }
 
 .add-note {

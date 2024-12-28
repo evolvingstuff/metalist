@@ -426,10 +426,22 @@ export const EventHandlers = {
     handleTrashDragOver(event) {
         event.preventDefault();
         event.currentTarget.classList.add('trash-hover');
+        
+        // Add red border to the dragged note
+        const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
+        if (draggingElement) {
+            draggingElement.classList.add('drag-trash');
+        }
     },
 
     handleTrashDragLeave(event) {
         event.currentTarget.classList.remove('trash-hover');
+        
+        // Remove red border from the dragged note
+        const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
+        if (draggingElement) {
+            draggingElement.classList.remove('drag-trash');
+        }
     },
 
     handleTrashDrop(event) {
@@ -438,6 +450,11 @@ export const EventHandlers = {
         
         const draggedId = event.dataTransfer.getData('text/plain');
         if (draggedId && draggedId !== 'new-note') {
+            // Remove the drag-trash class before deleting
+            const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
+            if (draggingElement) {
+                draggingElement.classList.remove('drag-trash');
+            }
             NotesAPI.deleteNote(draggedId);
         }
     }
