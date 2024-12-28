@@ -43,8 +43,15 @@ export const NoteState = {
     async startEditing(noteElement) {
         if (CONFIG.FEATURES.USE_STATE_MACHINE) {
             const state = NoteStateMachine.getState();
+            const content = DOMUtils.getNoteContent(noteElement);
+            
+            // If clicking same note while editing, preserve cursor
+            if (state.state === 'editing' && noteElement === this.currentEditingNote) {
+                return;
+            }
+
+            // If already editing a different note, finish that first
             if (state.state === 'editing') {
-                // First finish any existing edit
                 await this.finishEditing();
             }
 
@@ -60,7 +67,12 @@ export const NoteState = {
             this.currentEditingNote = noteElement;
             this.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
             DOMUtils.setNoteEditable(noteElement, true);
-            DOMUtils.focusNote(noteElement);
+            
+            // NEVER force focus on direct clicks (let browser handle cursor)
+            // Only force focus for programmatic transitions (like keyboard shortcuts)
+            if (!event || event.type !== 'click') {
+                DOMUtils.focusNote(noteElement);
+            }
         } else {
             // Legacy code...
         }
