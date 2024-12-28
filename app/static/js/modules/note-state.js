@@ -70,7 +70,7 @@ export const NoteState = {
             
             // NEVER force focus on direct clicks (let browser handle cursor)
             // Only force focus for programmatic transitions (like keyboard shortcuts)
-            if (!event || event.type !== 'click') {
+            if (!document.activeElement?.closest('.note-content')) {
                 DOMUtils.focusNote(noteElement);
             }
         } else {

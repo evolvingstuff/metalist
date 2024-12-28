@@ -582,7 +582,7 @@ export const EventHandlers = {
             NoteStateMachine.transition('idle');
         });
 
-        // Handle search input - use startSearch() for consistent state handling
+        // Handle search input
         searchInput.addEventListener('input', async (event) => {
             const query = event.target.value;
             await NoteState.startSearch(query);
