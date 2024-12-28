@@ -96,8 +96,8 @@ export const NoteStateMachine = {
                     await NoteState.saveCurrentNoteWithStateMachine();
                 }
                 
-                // Only remove editing class, leave contentEditable alone
-                noteElement.classList.remove(CONFIG.CLASSES.EDITING);
+                // Make note non-editable
+                DOMUtils.setNoteEditable(noteElement, false);
             }
         },
         searching: {

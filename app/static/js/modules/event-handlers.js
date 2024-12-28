@@ -44,6 +44,21 @@ export const EventHandlers = {
         document.addEventListener('drop', this.handleDrop.bind(this));
         document.addEventListener('dragend', this.handleDragEnd.bind(this));
         
+        // Add button setup
+        const addButton = document.querySelector('.add-note');
+        if (addButton) {
+            addButton.addEventListener('click', () => NotesAPI.createNote());
+            addButton.addEventListener('dragstart', this.handleAddButtonDragStart.bind(this));
+        }
+
+        // Trash can setup
+        const trashCan = document.getElementById('trash-can');
+        if (trashCan) {
+            trashCan.addEventListener('dragover', this.handleTrashDragOver.bind(this));
+            trashCan.addEventListener('drop', this.handleTrashDrop.bind(this));
+            trashCan.addEventListener('dragleave', this.handleTrashDragLeave.bind(this));
+        }
+
         // Set up keyboard shortcuts
         setupKeyboardShortcuts({
             stopEditing: () => {
@@ -295,9 +310,27 @@ export const EventHandlers = {
         if (!noteElement) return;
 
         const draggedId = event.dataTransfer.getData('text/plain');
-        const targetId = DOMUtils.getNoteId(noteElement);
         
-        // Determine position based on drop zone
+        // Handle dropping from add button
+        if (draggedId === 'new-note') {
+            const targetId = DOMUtils.getNoteId(noteElement);
+            let position = null;
+            if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
+                position = 'BEFORE';
+            } else if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) {
+                position = 'AFTER';
+            }
+
+            const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
+                ? targetId 
+                : noteElement.dataset.parentId || null;
+
+            NotesAPI.createNoteDrop(newParentId, position ? targetId : null, position);
+            return;
+        }
+
+        // Handle moving existing notes (existing code)
+        const targetId = DOMUtils.getNoteId(noteElement);
         let position = null;
         if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
             position = 'BEFORE';
@@ -305,12 +338,10 @@ export const EventHandlers = {
             position = 'AFTER';
         }
 
-        // If dropping inside, we set the new parent without a position
         const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
             ? targetId 
-            : DOMUtils.findNoteElement(noteElement)?.dataset.parentId || null;
+            : noteElement.dataset.parentId || null;
 
-        // Use NotesAPI instead of direct fetch
         NotesAPI.moveNote(
             draggedId,
             position ? targetId : null,
@@ -335,5 +366,38 @@ export const EventHandlers = {
                 CONFIG.CLASSES.DRAG_INSIDE
             );
         });
+    },
+
+    // Add these new methods to handle add button drag and drop
+    handleAddButtonDragStart(event) {
+        // Only allow dragging if there's at least one note
+        const hasNotes = document.querySelector(`.${CONFIG.CLASSES.NOTE}`) !== null;
+        if (!hasNotes) {
+            event.preventDefault();
+            return;
+        }
+        
+        event.dataTransfer.setData('text/plain', 'new-note');
+        event.dataTransfer.effectAllowed = 'copy';
+    },
+
+    // Add these new methods to handle trash can functionality
+    handleTrashDragOver(event) {
+        event.preventDefault();
+        event.currentTarget.classList.add('trash-hover');
+    },
+
+    handleTrashDragLeave(event) {
+        event.currentTarget.classList.remove('trash-hover');
+    },
+
+    handleTrashDrop(event) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('trash-hover');
+        
+        const draggedId = event.dataTransfer.getData('text/plain');
+        if (draggedId && draggedId !== 'new-note') {
+            NotesAPI.deleteNote(draggedId);
+        }
     }
 }; 
