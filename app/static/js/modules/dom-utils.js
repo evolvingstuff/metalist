@@ -185,5 +185,18 @@ export const DOMUtils = {
         range.collapse(false); // false = collapse to end
         selection.removeAllRanges();
         selection.addRange(range);
+    },
+
+    isDescendant(potentialDescendant, potentialAncestor) {
+        // Get all ancestor notes of the potential descendant
+        let current = this.findNoteElement(potentialDescendant);
+        while (current) {
+            if (current === potentialAncestor) {
+                return true;
+            }
+            // Move up to parent note if it exists
+            current = current.parentElement ? this.findNoteElement(current.parentElement) : null;
+        }
+        return false;
     }
 }; 

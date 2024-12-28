@@ -299,11 +299,16 @@ export const EventHandlers = {
         const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
         if (!draggingElement || draggingElement === noteElement) return;
 
+        // Prevent showing indicators if dragging a parent over its descendant
+        if (DOMUtils.isDescendant(noteElement, draggingElement)) {
+            return;
+        }
+
         const rect = noteElement.getBoundingClientRect();
         const relativeY = event.clientY - rect.top;
         const relativeX = event.clientX - rect.left;
         const threshold = rect.height / 3;
-        const horizontalThresholdFromLeft = rect.width / 3;
+        const horizontalMidpoint = rect.width / 3;
 
         // Clear previous drag indicators from all notes
         document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
@@ -322,7 +327,7 @@ export const EventHandlers = {
         // Set new drag indicator
         noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER, CONFIG.CLASSES.DRAG_INSIDE);
         
-        if (relativeX > horizontalThresholdFromLeft) {
+        if (relativeX > horizontalMidpoint) {
             // Past midpoint - indicate nesting
             noteElement.classList.add(CONFIG.CLASSES.DRAG_INSIDE);
         } else if (relativeY < threshold && !isNextSibling) {
@@ -350,6 +355,22 @@ export const EventHandlers = {
         if (!noteElement) return;
 
         const draggedId = event.dataTransfer.getData('text/plain');
+        const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
+        
+        // Prevent dropping if trying to drop a parent on its descendant
+        if (draggingElement && DOMUtils.isDescendant(noteElement, draggingElement)) {
+            // Clean up classes and return early
+            draggingElement.classList.remove(CONFIG.CLASSES.DRAGGING);
+            document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
+                note.classList.remove(
+                    CONFIG.CLASSES.DRAG_BEFORE,
+                    CONFIG.CLASSES.DRAG_AFTER,
+                    CONFIG.CLASSES.DRAG_INSIDE
+                );
+            });
+            return;
+        }
+
         const targetId = DOMUtils.getNoteId(noteElement);
         
         // Handle dropping from add button
@@ -364,7 +385,6 @@ export const EventHandlers = {
                 position = 'AFTER';
                 siblingId = targetId;
             }
-            // If DRAG_INSIDE, both remain null for nesting
 
             const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
                 ? targetId 
@@ -383,7 +403,6 @@ export const EventHandlers = {
                 position = 'AFTER';
                 siblingId = targetId;
             }
-            // If DRAG_INSIDE, both remain null for nesting
 
             const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
                 ? targetId 
@@ -396,7 +415,6 @@ export const EventHandlers = {
         }
 
         // Clean up drag classes
-        const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
         if (draggingElement) {
             draggingElement.classList.remove(CONFIG.CLASSES.DRAGGING);
         }
