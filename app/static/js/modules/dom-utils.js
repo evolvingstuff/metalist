@@ -49,10 +49,7 @@ export const DOMUtils = {
      */
     setNoteEditable(noteElement, isEditable) {
         noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditable);
-        const contentElement = this.getNoteContent(noteElement);
-        if (contentElement) {
-            contentElement.contentEditable = isEditable;
-        }
+        // Note: contentEditable should always be true
     },
 
     /**
