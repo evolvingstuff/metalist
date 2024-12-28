@@ -105,8 +105,11 @@ export const NoteState = {
         }
 
         this.inactivityTimeout = setTimeout(async () => {
-            await this.saveCurrentNoteWithStateMachine();
-        }, CONFIG.AUTO_SAVE_DELAY);
+            const content = DOMUtils.getNoteContentText(this.currentEditingNote);
+            if (content !== this.lastSavedContent) {
+                await this.saveCurrentNoteWithStateMachine();
+            }
+        }, CONFIG.INACTIVITY_TIMEOUT);
     },
 
     /**
