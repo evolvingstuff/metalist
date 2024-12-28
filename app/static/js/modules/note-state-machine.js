@@ -52,7 +52,7 @@ export const NoteStateMachine = {
 
     transitions: {
         idle: ['editing', 'searching'],
-        editing: ['idle', 'searching'],
+        editing: ['idle', 'searching', 'editing'],
         searching: ['idle', 'editing']
     },
 
@@ -96,8 +96,8 @@ export const NoteStateMachine = {
                     await NoteState.saveCurrentNoteWithStateMachine();
                 }
                 
-                // Cleanup
-                DOMUtils.setNoteEditable(noteElement, false);
+                // Only remove editing class, leave contentEditable alone
+                noteElement.classList.remove(CONFIG.CLASSES.EDITING);
             }
         },
         searching: {
@@ -141,6 +141,12 @@ export const NoteStateMachine = {
     },
 
     async transition(toState, data = {}) {
+        console.log('🔄 TRANSITION:', {
+            from: this.state,
+            to: toState,
+            data,
+            stack: new Error().stack.split('\n').slice(1,3).join('\n')  // Just first 2 stack frames
+        });
         console.log(`State transition: ${this.state} → ${toState}`, data);
         
         if (!this.transitions[this.state]?.includes(toState)) {

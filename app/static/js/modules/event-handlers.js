@@ -48,12 +48,46 @@ export const EventHandlers = {
      * Handle click events
      */
     handleClick(event) {
+        console.log('👆 CLICK EVENT:', {
+            target: {
+                element: event.target?.className,
+                isNoteContent: DOMUtils.isNoteContent(event.target)
+            },
+            currentState: NoteStateMachine.state,
+            activeElement: document.activeElement?.className,
+            stack: new Error().stack
+        });
+
         const noteElement = DOMUtils.findNoteElement(event.target);
         if (noteElement && DOMUtils.isNoteContent(event.target)) {
+            console.log('🖱 Note state:', {
+                pristine: {
+                    classList: [...event.target.classList],
+                    contentEditable: event.target.contentEditable,
+                    attributes: [...event.target.attributes].map(a => `${a.name}="${a.value}"`),
+                },
+                parent: {
+                    classList: [...noteElement.classList],
+                    attributes: [...noteElement.attributes].map(a => `${a.name}="${a.value}"`)
+                }
+            });
+            
             // If we're in search mode, let the blur handler handle it
             if (NoteStateMachine.state === 'searching') {
                 return;
             }
+            
+            // Direct transition if already editing
+            if (NoteStateMachine.state === 'editing') {
+                console.log('   ➡️ Direct edit→edit transition');
+                NoteStateMachine.transition('editing', {
+                    currentNote: noteElement,
+                    lastSavedContent: DOMUtils.getNoteContentText(noteElement)
+                });
+                return;
+            }
+            
+            console.log('   ⚪ Going through NoteState.startEditing');
             NoteState.startEditing(noteElement);
         }
     },
@@ -72,18 +106,31 @@ export const EventHandlers = {
      */
     handleBlur(event) {
         // Only handle blur for note content
-        if (!DOMUtils.isNoteContent(event.target)) return;
-
-        const noteElement = DOMUtils.findNoteElement(event.target);
-        if (!noteElement) return;
-
-        // If clicking within the same note or moving to search, don't exit edit mode
-        if (event.relatedTarget?.closest('.note') === noteElement ||
-            event.relatedTarget?.id === 'search-input') {
+        if (!DOMUtils.isNoteContent(event.target)) {
+            console.log('🌟 Blur: Ignoring - not note content');
             return;
         }
 
-        // Otherwise transition to idle
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        if (!noteElement) {
+            console.log('🌟 Blur: Ignoring - no note element');
+            return;
+        }
+
+        // If clicking within any note content or search, don't exit edit mode
+        if ((event.relatedTarget && DOMUtils.isNoteContent(event.relatedTarget)) || 
+            event.relatedTarget?.id === 'search-input') {
+            console.log('🌟 Blur: Preserving edit mode - clicking note content or search');
+            return;
+        }
+
+        console.log('🌟 Blur: Transitioning to idle', {
+            from: event.target?.className,
+            to: event.relatedTarget?.className,
+            currentState: NoteStateMachine.state
+        });
+        
+        // Only transition to idle if we're not clicking another note's content
         NoteStateMachine.transition('idle');
     },
 
