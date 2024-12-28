@@ -304,11 +304,17 @@ export const EventHandlers = {
             return;
         }
 
+        // Prevent showing indicators if dragging over the parent of the dragged element
+        const draggedParentNote = DOMUtils.findNoteElement(draggingElement.parentElement);
+        if (draggedParentNote === noteElement) {
+            return;
+        }
+
         const rect = noteElement.getBoundingClientRect();
         const relativeY = event.clientY - rect.top;
         const relativeX = event.clientX - rect.left;
         const threshold = rect.height / 3;
-        const horizontalMidpoint = rect.width / 3;
+        const horizontalMidpoint = rect.width / 2;
 
         // Clear previous drag indicators from all notes
         document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
@@ -321,8 +327,9 @@ export const EventHandlers = {
             }
         });
 
-        // Check if the dragged element is immediately before the target
+        // Check if the dragged element is immediately before or after the target
         const isNextSibling = draggingElement.nextElementSibling === noteElement;
+        const isPrevSibling = draggingElement.previousElementSibling === noteElement;
 
         // Set new drag indicator
         noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER, CONFIG.CLASSES.DRAG_INSIDE);
@@ -331,10 +338,10 @@ export const EventHandlers = {
             // Past midpoint - indicate nesting
             noteElement.classList.add(CONFIG.CLASSES.DRAG_INSIDE);
         } else if (relativeY < threshold && !isNextSibling) {
-            // Top third - before
+            // Top third - before (but not if we're the next sibling)
             noteElement.classList.add(CONFIG.CLASSES.DRAG_BEFORE);
-        } else if (relativeY > rect.height - threshold) {
-            // Bottom third - after
+        } else if (relativeY > rect.height - threshold && !isPrevSibling) {
+            // Bottom third - after (but not if we're the previous sibling)
             noteElement.classList.add(CONFIG.CLASSES.DRAG_AFTER);
         }
     },
@@ -368,6 +375,19 @@ export const EventHandlers = {
                     CONFIG.CLASSES.DRAG_INSIDE
                 );
             });
+            return;
+        }
+
+        // Check if there's any valid drop indicator present
+        const hasValidDropIndicator = noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE) ||
+                                     noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER) ||
+                                     noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE);
+
+        if (!hasValidDropIndicator) {
+            // Clean up and return early if no valid drop location
+            if (draggingElement) {
+                draggingElement.classList.remove(CONFIG.CLASSES.DRAGGING);
+            }
             return;
         }
 
