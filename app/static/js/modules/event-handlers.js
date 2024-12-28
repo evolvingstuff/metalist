@@ -39,6 +39,10 @@ export const EventHandlers = {
         document.addEventListener('input', this.handleInput.bind(this));
         document.addEventListener('blur', this.handleBlur.bind(this), true);
         document.addEventListener('paste', this.handlePaste.bind(this));
+        document.addEventListener('dragstart', this.handleDragStart.bind(this));
+        document.addEventListener('dragover', this.handleDragOver.bind(this));
+        document.addEventListener('drop', this.handleDrop.bind(this));
+        document.addEventListener('dragend', this.handleDragEnd.bind(this));
         
         // Set up keyboard shortcuts
         setupKeyboardShortcuts({
@@ -215,26 +219,6 @@ export const EventHandlers = {
     },
 
     /**
-     * Handle keyboard shortcuts
-     */
-    // handleKeyDown(event) {
-    //     // Command/Control key shortcuts
-    //     if (event.metaKey || event.ctrlKey) {
-    //         switch (event.key) {
-    //             case 'f':
-    //                 event.preventDefault();
-    //                 NoteState.startSearch();
-    //                 break;
-    //
-    //             case 'Enter':
-    //                 event.preventDefault();
-    //                 // Handle save explicitly if needed
-    //                 break;
-    //         }
-    //     }
-    // },
-
-    /**
      * Handle paste events
      */
     async handlePaste(event) {
@@ -271,5 +255,85 @@ export const EventHandlers = {
         };
         
         reader.readAsDataURL(blob);
+    },
+
+    handleDragStart(event) {
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        if (!noteElement || !event.target.classList.contains('drag-handle')) return;
+        
+        noteElement.classList.add(CONFIG.CLASSES.DRAGGING);
+        event.dataTransfer.setData('text/plain', DOMUtils.getNoteId(noteElement));
+        event.dataTransfer.effectAllowed = 'move';
+    },
+
+    handleDragOver(event) {
+        event.preventDefault();
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        if (!noteElement) return;
+
+        const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
+        if (!draggingElement || draggingElement === noteElement) return;
+
+        const rect = noteElement.getBoundingClientRect();
+        const relativeY = event.clientY - rect.top;
+        const threshold = rect.height / 3;
+
+        noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER, CONFIG.CLASSES.DRAG_INSIDE);
+        
+        if (relativeY < threshold) {
+            noteElement.classList.add(CONFIG.CLASSES.DRAG_BEFORE);
+        } else if (relativeY > rect.height - threshold) {
+            noteElement.classList.add(CONFIG.CLASSES.DRAG_AFTER);
+        } else {
+            noteElement.classList.add(CONFIG.CLASSES.DRAG_INSIDE);
+        }
+    },
+
+    handleDrop(event) {
+        event.preventDefault();
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        if (!noteElement) return;
+
+        const draggedId = event.dataTransfer.getData('text/plain');
+        const targetId = DOMUtils.getNoteId(noteElement);
+        
+        // Determine position based on drop zone
+        let position = null;
+        if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
+            position = 'BEFORE';
+        } else if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) {
+            position = 'AFTER';
+        }
+
+        // If dropping inside, we set the new parent without a position
+        const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
+            ? targetId 
+            : DOMUtils.findNoteElement(noteElement)?.dataset.parentId || null;
+
+        // Use NotesAPI instead of direct fetch
+        NotesAPI.moveNote(
+            draggedId,
+            position ? targetId : null,
+            position,
+            newParentId
+        ).catch(error => {
+            console.error('Error moving note:', error);
+        });
+    },
+
+    handleDragEnd(event) {
+        const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
+        if (draggingElement) {
+            draggingElement.classList.remove(CONFIG.CLASSES.DRAGGING);
+        }
+        
+        // Remove all drag-related classes
+        document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
+            note.classList.remove(
+                CONFIG.CLASSES.DRAG_BEFORE,
+                CONFIG.CLASSES.DRAG_AFTER,
+                CONFIG.CLASSES.DRAG_INSIDE
+            );
+        });
     }
 }; 
