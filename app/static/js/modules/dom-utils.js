@@ -1,6 +1,25 @@
 import { CONFIG } from './config.js';
 
 /**
+ * IMPORTANT ASSUMPTIONS AND GOTCHAS:
+ * 
+ * 1. Cursor Management:
+ *    - setCursorPosition handles both manual and programmatic focus
+ *    - focusNote always moves cursor to end
+ *    - Position path must account for DOM mutations
+ * 
+ * 2. Note Structure:
+ *    - Notes must maintain expected DOM structure
+ *    - Content element must be directly accessible
+ *    - Class names defined in CONFIG must exist
+ * 
+ * 3. Focus Handling:
+ *    - Focus operations must be synchronous
+ *    - Selection changes must account for content editable
+ *    - Path calculations must handle nested structures
+ */
+
+/**
  * Utilities for DOM manipulation and traversal
  */
 export const DOMUtils = {

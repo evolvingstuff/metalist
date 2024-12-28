@@ -1,202 +1,197 @@
 import { CONFIG } from './config.js';
+import { DOMUtils } from './dom-utils.js';
+import { NoteState } from './note-state.js';
 
 /**
  * IMPORTANT ASSUMPTIONS AND GOTCHAS:
  * 
  * 1. State Transitions:
  *    - Valid transitions are strictly defined in this.transitions
- *    - When in 'editing' state, transition to 'searching' must save content first
- *    - Edit state is never preserved during search
- *    - All transitions from 'editing' must ensure content is saved
- *    - NEVER use 'finishing' state for search transitions - go directly to 'searching'
+ *    - Each state has enter/exit handlers to manage setup and cleanup
+ *    - Enter handlers receive the fromState to make context-aware decisions
+ *    - Exit handlers receive the toState to prepare for the next state
+ *    - All state changes must go through proper transitions
  * 
  * 2. State Data:
- *    - searchQuery persists only during search state
- *    - lastSavedContent must be updated before leaving 'editing'
- *    - currentNote reference is cleared if exiting edit mode
+ *    - Data is passed during transitions and available to handlers
+ *    - currentNote and lastSavedContent are managed in editing state
+ *    - searchQuery persists across transitions as app context
+ *    - State data cleanup only for truly temporary state
  * 
  * 3. Async Operations:
- *    - Content saves must complete before state changes
- *    - Search operations shouldn't interrupt pending saves
- *    - State might change during async operations
+ *    - Enter/exit handlers are async and must complete before state changes
+ *    - Content saves happen in editing state's exit handler
+ *    - Transitions wait for handlers to complete
  * 
- * 4. Search Specific:
- *    - Search can be triggered from any state
- *    - If in edit mode, save changes before searching
- *    - From search, valid transitions are to either 'idle' or 'editing'
- *    - ALWAYS use NoteState.startSearch() for entering search mode
+ * 4. Focus Management:
+ *    - Focus is managed by state enter handlers
+ *    - Direct user interactions (clicks) preserve cursor position
+ *    - Programmatic transitions may force focus as needed
+ *    - Search ↔ Edit transitions preserve user interaction context
+ * 
+ * 5. Context Preservation:
+ *    - Search query represents persistent app context
+ *    - State exits should not clear persistent context
+ *    - Only clear temporary state in exit handlers
+ *    - Context survives across state transitions
  */
 
 /**
  * State machine for managing note editing and searching states
  */
 export const NoteStateMachine = {
-    /**
-     * Possible states for note interactions
-     */
+    state: 'idle',
+    data: {},
+    listeners: [],
+
     states: {
-        IDLE: 'idle',         // Not editing or searching
-        EDITING: 'editing',    // Actively editing a note
-        FINISHING: 'finishing',  // Add finishing state
-        SEARCHING: 'searching' // Actively searching notes
+        IDLE: 'idle',
+        EDITING: 'editing',
+        SEARCHING: 'searching'
     },
 
-    /**
-     * Valid state transitions
-     */
     transitions: {
         idle: ['editing', 'searching'],
-        editing: ['idle', 'finishing', 'searching'],  // Allow transition to finishing
-        finishing: ['idle'],  // Finishing can only go back to idle
+        editing: ['idle', 'searching'],
         searching: ['idle', 'editing']
     },
 
-    /**
-     * Current state
-     */
-    currentState: 'idle',
+    // State handlers
+    stateHandlers: {
+        editing: {
+            enter: async (data, fromState) => {
+                console.log('🟢 ENTER editing state:', {
+                    from: fromState,
+                    noteElement: data.currentNote,
+                    activeElement: document.activeElement?.className
+                });
 
-    /**
-     * Debug history
-     */
-    debugHistory: [],
-    maxHistoryLength: 100,
+                console.log('Entering editing state from:', fromState);
+                const noteElement = data.currentNote;
+                
+                // Set up note for editing
+                DOMUtils.setNoteEditable(noteElement, true);
+                
+                // Only force focus if coming from idle state
+                if (fromState === 'idle' && !document.activeElement?.closest('.note-content')) {
+                    console.log('   👆 Forcing focus because coming from idle');
+                    DOMUtils.focusNote(noteElement);
+                } else {
+                    console.log('   🖱️ Preserving natural focus/cursor');
+                }
+            },
+            exit: async (data, toState) => {
+                console.log('🔴 EXIT editing state:', {
+                    to: toState,
+                    noteElement: data.currentNote
+                });
 
-    /**
-     * State-specific data
-     */
-    stateData: {
-        currentNote: null,     // Current note being edited
-        searchQuery: '',       // Current search query
-        lastSavedContent: null,// Last saved content of current note
-        cursorPosition: null   // Current cursor position in note
-    },
+                console.log('Exiting editing state to:', toState);
+                const noteElement = data.currentNote;
+                if (!noteElement) return;
 
-    /**
-     * State change listeners
-     */
-    listeners: [],
-
-    /**
-     * Initialize the state machine
-     */
-    init() {
-        this.currentState = 'idle';
-        this.stateData = {
-            currentNote: null,
-            searchQuery: '',
-            lastSavedContent: null,
-            cursorPosition: null
-        };
-        this.listeners = [];
-        this.debugHistory = [];
-        
-        if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
-            this.addListener((from, to, data) => {
-                console.log(`State transition: ${from} → ${to}`, data);
-            });
-        }
-    },
-
-    /**
-     * Add a state change listener
-     * @param {Function} listener - Called with (fromState, toState, stateData)
-     */
-    addListener(listener) {
-        this.listeners.push(listener);
-    },
-
-    /**
-     * Remove a state change listener
-     * @param {Function} listener - Listener to remove
-     */
-    removeListener(listener) {
-        this.listeners = this.listeners.filter(l => l !== listener);
-    },
-
-    /**
-     * Attempt to transition to a new state
-     * @param {string} to - State to transition to
-     * @param {Function} action - Action to perform during transition
-     * @param {Object} data - Additional data for the state
-     * @returns {Promise<boolean>} - Whether transition was successful
-     */
-    async transition(to, action, data = {}) {
-        const from = this.currentState;
-        
-        // Skip if trying to transition to current state
-        if (from === to) {
-            if (CONFIG.DEBUG.LOG_STATE_MACHINE) {
-                console.log(`Already in state: ${to}`);
+                // Save any pending changes
+                if (data.lastSavedContent !== DOMUtils.getNoteContentText(noteElement)) {
+                    console.log('   💾 Saving changes before exit');
+                    await NoteState.saveCurrentNoteWithStateMachine();
+                }
+                
+                // Cleanup
+                DOMUtils.setNoteEditable(noteElement, false);
             }
-            return true;
-        }
+        },
+        searching: {
+            enter: async (data, fromState) => {
+                console.log('🔍 ENTER search state:', {
+                    from: fromState,
+                    query: data.searchQuery
+                });
 
-        if (!this.transitions[from]?.includes(to)) {
-            console.error(`Invalid state transition attempted: ${from} → ${to}`, data);
+                console.log('Entering search state from:', fromState);
+                const searchInput = document.getElementById('search-input');
+                if (!searchInput) return;
+                
+                // Set up search and preserve existing query
+                if (data.searchQuery) {
+                    searchInput.value = data.searchQuery;
+                }
+                searchInput.focus();
+            },
+            exit: async (data, toState) => {
+                console.log('🔍 EXIT search state:', {
+                    to: toState,
+                    query: data.searchQuery
+                });
+
+                console.log('Exiting search state to:', toState);
+                // Search query is preserved as app context
+                // No cleanup needed - query persists across transitions
+            }
+        },
+        idle: {
+            enter: async (data, fromState) => {
+                console.log('⚪ ENTER idle state:', { from: fromState });
+                console.log('Entering idle state from:', fromState);
+            },
+            exit: async (data, toState) => {
+                console.log('⚪ EXIT idle state:', { to: toState });
+                console.log('Exiting idle state to:', toState);
+            }
+        }
+    },
+
+    async transition(toState, data = {}) {
+        console.log(`State transition: ${this.state} → ${toState}`, data);
+        
+        if (!this.transitions[this.state]?.includes(toState)) {
+            console.warn(`Invalid transition: ${this.state} → ${toState}`);
             return false;
         }
 
-        this.currentState = to;
-        this.stateData = { ...this.stateData, ...data };
+        const fromState = this.state;
         
-        // Notify listeners
-        this.listeners.forEach(listener => listener(from, to, this.stateData));
-        
-        return true;
-    },
+        try {
+            // Exit current state
+            if (this.stateHandlers[fromState]?.exit) {
+                await this.stateHandlers[fromState].exit(this.data, toState);
+            }
 
-    /**
-     * Add entry to debug history
-     * @param {Object} entry - Debug history entry
-     */
-    addToDebugHistory(entry) {
-        this.debugHistory.push(entry);
-        if (this.debugHistory.length > this.maxHistoryLength) {
-            this.debugHistory.shift();
+            // Update state
+            this.state = toState;
+            this.data = data;
+
+            // Enter new state
+            if (this.stateHandlers[toState]?.enter) {
+                await this.stateHandlers[toState].enter(data, fromState);
+            }
+
+            // Notify listeners
+            this.listeners.forEach(listener => listener(fromState, toState, data));
+            
+            return true;
+        } catch (error) {
+            console.error('State transition failed:', error);
+            return false;
         }
     },
 
-    /**
-     * Get debug history
-     * @returns {Array} Copy of debug history
-     */
-    getDebugHistory() {
-        return [...this.debugHistory];
+    init() {
+        this.state = this.states.IDLE;
+        this.data = {};
     },
 
-    /**
-     * Clear debug history
-     */
-    clearDebugHistory() {
-        this.debugHistory = [];
-    },
-
-    /**
-     * Get current state information
-     * @returns {Object} Current state and data
-     */
     getState() {
         return {
-            state: this.currentState,
-            data: { ...this.stateData }  // Return copy to prevent direct modification
+            state: this.state,
+            data: this.data
         };
     },
 
-    /**
-     * Check if a transition is valid
-     * @param {string} toState - State to check transition to
-     * @returns {boolean} Whether transition is valid
-     */
-    canTransitionTo(toState) {
-        const validTransitions = this.transitions[this.currentState];
-        return validTransitions?.includes(toState) ?? false;
+    addListener(callback) {
+        this.listeners.push(callback);
     },
 
-    /**
-     * Reset state machine to idle
-     */
-    reset() {
-        this.init();
+    removeListener(callback) {
+        this.listeners = this.listeners.filter(l => l !== callback);
     }
 }; 
