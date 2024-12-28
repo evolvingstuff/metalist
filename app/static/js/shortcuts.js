@@ -30,6 +30,16 @@ export const shortcuts = {
         key: 'y',
         modifiers: ['meta'],  // or ctrl for Windows
         description: 'Redo'
+    },
+    moveUp: {
+        key: 'ArrowUp',
+        modifiers: ['meta'],  // or ctrl for Windows
+        description: 'Move current note up'
+    },
+    moveDown: {
+        key: 'ArrowDown',
+        modifiers: ['meta'],  // or ctrl for Windows
+        description: 'Move current note down'
     }
 };
 

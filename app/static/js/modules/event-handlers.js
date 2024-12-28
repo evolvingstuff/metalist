@@ -84,7 +84,19 @@ export const EventHandlers = {
                 }
             },
             undo: () => NotesAPI.undo(),
-            redo: () => NotesAPI.redo()
+            redo: () => NotesAPI.redo(),
+            moveUp: async () => {
+                if (NoteStateMachine.state === 'editing') {
+                    const currentNote = NoteStateMachine.data.currentNote;
+                    await NotesAPI.moveNoteUp(DOMUtils.getNoteId(currentNote));
+                }
+            },
+            moveDown: async () => {
+                if (NoteStateMachine.state === 'editing') {
+                    const currentNote = NoteStateMachine.data.currentNote;
+                    await NotesAPI.moveNoteDown(DOMUtils.getNoteId(currentNote));
+                }
+            }
         });
 
         this.initSearchHandlers();

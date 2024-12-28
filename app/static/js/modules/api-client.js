@@ -1,4 +1,5 @@
 import { CONFIG } from './config.js';
+import { DOMUtils } from './dom-utils.js';
 
 /**
  * Handles all API communication
@@ -158,5 +159,47 @@ export const NotesAPI = {
      */
     async redo() {
         return this._apiCall(CONFIG.API.NOTES.REDO, { method: 'POST' });
+    },
+
+    async moveNoteUp(noteId) {
+        const noteElement = document.querySelector(`[data-id="${noteId}"]`);
+        const prevSibling = noteElement.previousElementSibling;
+        if (!prevSibling || !prevSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
+
+        // Store cursor position before move
+        const cursorPosition = DOMUtils.getCursorPosition(noteElement);
+        
+        await this.moveNote(
+            noteId,
+            DOMUtils.getNoteId(prevSibling),
+            'BEFORE',
+            noteElement.dataset.parentId || null
+        );
+
+        // Store cursor position to restore after move
+        if (cursorPosition) {
+            localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
+        }
+    },
+
+    async moveNoteDown(noteId) {
+        const noteElement = document.querySelector(`[data-id="${noteId}"]`);
+        const nextSibling = noteElement.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
+
+        // Store cursor position before move
+        const cursorPosition = DOMUtils.getCursorPosition(noteElement);
+        
+        await this.moveNote(
+            noteId,
+            DOMUtils.getNoteId(nextSibling),
+            'AFTER',
+            noteElement.dataset.parentId || null
+        );
+
+        // Store cursor position to restore after move
+        if (cursorPosition) {
+            localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
+        }
     }
 }; 
