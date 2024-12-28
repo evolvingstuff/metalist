@@ -289,7 +289,8 @@ export const EventHandlers = {
             document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
                 note.classList.remove(
                     CONFIG.CLASSES.DRAG_BEFORE,
-                    CONFIG.CLASSES.DRAG_AFTER
+                    CONFIG.CLASSES.DRAG_AFTER,
+                    CONFIG.CLASSES.DRAG_INSIDE
                 );
             });
             return;
@@ -300,14 +301,17 @@ export const EventHandlers = {
 
         const rect = noteElement.getBoundingClientRect();
         const relativeY = event.clientY - rect.top;
+        const relativeX = event.clientX - rect.left;
         const threshold = rect.height / 3;
+        const horizontalThresholdFromLeft = rect.width / 3;
 
         // Clear previous drag indicators from all notes
         document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
             if (note !== noteElement) {
                 note.classList.remove(
                     CONFIG.CLASSES.DRAG_BEFORE,
-                    CONFIG.CLASSES.DRAG_AFTER
+                    CONFIG.CLASSES.DRAG_AFTER,
+                    CONFIG.CLASSES.DRAG_INSIDE
                 );
             }
         });
@@ -316,12 +320,16 @@ export const EventHandlers = {
         const isNextSibling = draggingElement.nextElementSibling === noteElement;
 
         // Set new drag indicator
-        noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER);
+        noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER, CONFIG.CLASSES.DRAG_INSIDE);
         
-        if (relativeY < threshold && !isNextSibling) {
-            // Only show BEFORE indicator if we're not dragging onto our next sibling
+        if (relativeX > horizontalThresholdFromLeft) {
+            // Past midpoint - indicate nesting
+            noteElement.classList.add(CONFIG.CLASSES.DRAG_INSIDE);
+        } else if (relativeY < threshold && !isNextSibling) {
+            // Top third - before
             noteElement.classList.add(CONFIG.CLASSES.DRAG_BEFORE);
         } else if (relativeY > rect.height - threshold) {
+            // Bottom third - after
             noteElement.classList.add(CONFIG.CLASSES.DRAG_AFTER);
         }
     },
@@ -342,44 +350,49 @@ export const EventHandlers = {
         if (!noteElement) return;
 
         const draggedId = event.dataTransfer.getData('text/plain');
+        const targetId = DOMUtils.getNoteId(noteElement);
         
         // Handle dropping from add button
         if (draggedId === 'new-note') {
-            const targetId = DOMUtils.getNoteId(noteElement);
             let position = null;
+            let siblingId = null;
+
             if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
                 position = 'BEFORE';
+                siblingId = targetId;
             } else if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) {
                 position = 'AFTER';
+                siblingId = targetId;
             }
+            // If DRAG_INSIDE, both remain null for nesting
 
             const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
                 ? targetId 
                 : noteElement.dataset.parentId || null;
 
-            NotesAPI.createNoteDrop(newParentId, position ? targetId : null, position);
+            NotesAPI.createNoteDrop(newParentId, siblingId, position);
         } else {
             // Handle moving existing notes
-            const targetId = DOMUtils.getNoteId(noteElement);
             let position = null;
+            let siblingId = null;
+
             if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
                 position = 'BEFORE';
+                siblingId = targetId;
             } else if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) {
                 position = 'AFTER';
+                siblingId = targetId;
             }
+            // If DRAG_INSIDE, both remain null for nesting
 
             const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
                 ? targetId 
                 : noteElement.dataset.parentId || null;
 
-            NotesAPI.moveNote(
-                draggedId,
-                position ? targetId : null,
-                position,
-                newParentId
-            ).catch(error => {
-                console.error('Error moving note:', error);
-            });
+            NotesAPI.moveNote(draggedId, siblingId, position, newParentId)
+                .catch(error => {
+                    console.error('Error moving note:', error);
+                });
         }
 
         // Clean up drag classes
