@@ -81,5 +81,6 @@ npx cypress open
 
 Run tests headlessly
 ```
-npx cypress run
+cd tests/ui
+npx cypress open
 ```
