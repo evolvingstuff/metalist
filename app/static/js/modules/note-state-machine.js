@@ -1,6 +1,33 @@
 import { CONFIG } from './config.js';
 
 /**
+ * IMPORTANT ASSUMPTIONS AND GOTCHAS:
+ * 
+ * 1. State Transitions:
+ *    - Valid transitions are strictly defined in this.transitions
+ *    - When in 'editing' state, transition to 'searching' must save content first
+ *    - Edit state is never preserved during search
+ *    - All transitions from 'editing' must ensure content is saved
+ *    - NEVER use 'finishing' state for search transitions - go directly to 'searching'
+ * 
+ * 2. State Data:
+ *    - searchQuery persists only during search state
+ *    - lastSavedContent must be updated before leaving 'editing'
+ *    - currentNote reference is cleared if exiting edit mode
+ * 
+ * 3. Async Operations:
+ *    - Content saves must complete before state changes
+ *    - Search operations shouldn't interrupt pending saves
+ *    - State might change during async operations
+ * 
+ * 4. Search Specific:
+ *    - Search can be triggered from any state
+ *    - If in edit mode, save changes before searching
+ *    - From search, valid transitions are to either 'idle' or 'editing'
+ *    - ALWAYS use NoteState.startSearch() for entering search mode
+ */
+
+/**
  * State machine for managing note editing and searching states
  */
 export const NoteStateMachine = {
@@ -10,6 +37,7 @@ export const NoteStateMachine = {
     states: {
         IDLE: 'idle',         // Not editing or searching
         EDITING: 'editing',    // Actively editing a note
+        FINISHING: 'finishing',  // Add finishing state
         SEARCHING: 'searching' // Actively searching notes
     },
 
@@ -18,7 +46,8 @@ export const NoteStateMachine = {
      */
     transitions: {
         idle: ['editing', 'searching'],
-        editing: ['idle', 'searching'],
+        editing: ['idle', 'finishing', 'searching'],  // Allow transition to finishing
+        finishing: ['idle'],  // Finishing can only go back to idle
         searching: ['idle', 'editing']
     },
 
@@ -87,92 +116,34 @@ export const NoteStateMachine = {
 
     /**
      * Attempt to transition to a new state
-     * @param {string} newState - State to transition to
+     * @param {string} to - State to transition to
      * @param {Function} action - Action to perform during transition
      * @param {Object} data - Additional data for the state
      * @returns {Promise<boolean>} - Whether transition was successful
      */
-    async transition(newState, action, data = {}) {
-        const validTransitions = this.transitions[this.currentState];
+    async transition(to, action, data = {}) {
+        const from = this.currentState;
         
-        if (!validTransitions?.includes(newState)) {
-            console.warn(
-                `Invalid state transition attempted:`,
-                `${this.currentState} → ${newState}`,
-                data
-            );
-            return false;
-        }
-
-        const oldState = this.currentState;
-        const timestamp = new Date();
-        const transitionId = crypto.randomUUID();
-        
-        try {
-            // Update state data
-            this.stateData = {
-                ...this.stateData,
-                ...data
-            };
-            
-            // Perform state change
-            this.currentState = newState;
-            
-            // Add debug entry for transition start
-            if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
-                this.addToDebugHistory({
-                    id: transitionId,
-                    timestamp,
-                    type: 'transition-start',
-                    from: oldState,
-                    to: newState,
-                    data: { ...this.stateData },
-                    stack: new Error().stack
-                });
+        // Skip if trying to transition to current state
+        if (from === to) {
+            if (CONFIG.DEBUG.LOG_STATE_MACHINE) {
+                console.log(`Already in state: ${to}`);
             }
-            
-            // Notify listeners
-            this.listeners.forEach(listener => {
-                listener(oldState, newState, this.stateData);
-            });
-            
-            // Execute action if provided
-            if (action) {
-                await action(this.stateData);
-            }
-
-            // Add debug entry for transition complete
-            if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
-                this.addToDebugHistory({
-                    id: transitionId,
-                    timestamp: new Date(),
-                    type: 'transition-complete',
-                    from: oldState,
-                    to: newState,
-                    data: { ...this.stateData }
-                });
-            }
-            
             return true;
-        } catch (error) {
-            // Add debug entry for transition error
-            if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
-                this.addToDebugHistory({
-                    id: transitionId,
-                    timestamp: new Date(),
-                    type: 'transition-error',
-                    from: oldState,
-                    to: newState,
-                    error: error.message,
-                    stack: error.stack
-                });
-            }
+        }
 
-            // Revert state on error
-            this.currentState = oldState;
-            console.error('Error during state transition:', error);
+        if (!this.transitions[from]?.includes(to)) {
+            console.error(`Invalid state transition attempted: ${from} → ${to}`, data);
             return false;
         }
+
+        this.currentState = to;
+        this.stateData = { ...this.stateData, ...data };
+        
+        // Notify listeners
+        this.listeners.forEach(listener => listener(from, to, this.stateData));
+        
+        return true;
     },
 
     /**

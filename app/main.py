@@ -4,17 +4,16 @@ from fastapi.responses import HTMLResponse
 from pathlib import Path
 from mako.lookup import TemplateLookup
 from sqlalchemy.orm import Session
-from .api import notes
+from .api import notes, dev
 from .core.config import VERSION
-from .models.database import Base
-from .core.database import engine
+from .models.database import Base, SafeSession
 from .api.dependencies import get_db
 from .models.linked_list import LinkedListManager
 
 
 app = FastAPI()
 
-Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=SafeSession.get_engine())
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
@@ -25,6 +24,7 @@ templates = TemplateLookup(
 )
 
 app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
+app.include_router(dev.router, tags=["dev"])
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):

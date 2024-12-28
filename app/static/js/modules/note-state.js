@@ -4,6 +4,31 @@ import { NotesAPI } from './api-client.js';
 import { NoteStateMachine } from './note-state-machine.js';
 
 /**
+ * IMPORTANT ASSUMPTIONS AND GOTCHAS:
+ * 
+ * 1. State Management:
+ *    - Two parallel state tracking systems: local state (currentEditingNote) 
+ *      and state machine - they must stay in sync
+ *    - finishEditing() assumes current state is 'editing' - must verify
+ *    - startEditing() might be called while already editing
+ * 
+ * 2. Content Saving:
+ *    - lastSavedContent might be out of sync with actual content
+ *    - saveCurrentNote can be called from multiple places
+ *    - Must handle save requests in non-editing states gracefully
+ * 
+ * 3. Cleanup:
+ *    - DOM cleanup must happen before state transitions
+ *    - Timeouts must be cleared in all exit paths
+ *    - Event listeners might fire after state changes
+ * 
+ * 4. Legacy/State Machine Toggle:
+ *    - CONFIG.FEATURES.USE_STATE_MACHINE might change during runtime
+ *    - Both implementations must maintain identical behavior
+ *    - State transitions must match legacy behavior exactly
+ */
+
+/**
  * Manages the state of notes and editing
  */
 export const NoteState = {
@@ -16,9 +41,29 @@ export const NoteState = {
      * Start editing a note
      */
     async startEditing(noteElement) {
-        return CONFIG.FEATURES.USE_STATE_MACHINE ? 
-            this.startEditingWithStateMachine(noteElement) :
-            this.startEditingLegacy(noteElement);
+        if (CONFIG.FEATURES.USE_STATE_MACHINE) {
+            const state = NoteStateMachine.getState();
+            if (state.state === 'editing') {
+                // First finish any existing edit
+                await this.finishEditing();
+            }
+
+            // Now transition to editing state
+            if (!NoteStateMachine.transition('editing', {
+                currentNote: noteElement,
+                lastSavedContent: DOMUtils.getNoteContentText(noteElement)
+            })) {
+                return;
+            }
+
+            // Then set up editing
+            this.currentEditingNote = noteElement;
+            this.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
+            DOMUtils.setNoteEditable(noteElement, true);
+            DOMUtils.focusNote(noteElement);
+        } else {
+            // Legacy code...
+        }
     },
 
     /**
@@ -143,7 +188,7 @@ export const NoteState = {
      */
     async saveCurrentNoteWithStateMachine() {
         const state = NoteStateMachine.getState();
-        if (state.state !== 'editing') {
+        if (state.state !== 'editing' && state.state !== 'finishing') {
             console.warn('Cannot save note in current state:', state);
             return;
         }
@@ -167,9 +212,32 @@ export const NoteState = {
      * Finish editing the current note
      */
     async finishEditing() {
-        return CONFIG.FEATURES.USE_STATE_MACHINE ?
-            this.finishEditingWithStateMachine() :
-            this.finishEditingLegacy();
+        if (CONFIG.FEATURES.USE_STATE_MACHINE) {
+            const state = NoteStateMachine.getState();
+            if (state.state !== 'editing') {
+                return;
+            }
+
+            // First save any changes
+            await this.saveCurrentNote();
+
+            // Clean up before state transition
+            if (this.currentEditingNote) {
+                DOMUtils.setNoteEditable(this.currentEditingNote, false);
+                this.currentEditingNote = null;
+                this.lastSavedContent = null;
+            }
+
+            if (this.inactivityTimeout) {
+                clearTimeout(this.inactivityTimeout);
+                this.inactivityTimeout = null;
+            }
+
+            // Finally transition to idle
+            NoteStateMachine.transition('idle');
+        } else {
+            // Legacy code...
+        }
     },
 
     /**
@@ -421,9 +489,22 @@ export const NoteState = {
      * Handle transitions from EDITING state
      */
     async handleEditingTransition(toState) {
+        console.log('handleEditingTransition: starting transition to', toState);
+        
         // Save any pending changes
         if (this.currentEditingNote) {
-            await this.saveCurrentNote();
+            const currentContent = DOMUtils.getNoteContentText(this.currentEditingNote);
+            console.log('handleEditingTransition: current content:', currentContent);
+            console.log('handleEditingTransition: last saved content:', this.lastSavedContent);
+            
+            if (currentContent !== this.lastSavedContent) {
+                console.log('handleEditingTransition: content changed, saving...');
+                await this.saveCurrentNoteWithStateMachine();
+                console.log('handleEditingTransition: save completed');
+            } else {
+                console.log('handleEditingTransition: no changes to save');
+            }
+            
             DOMUtils.setNoteEditable(this.currentEditingNote, false);
             
             // Clean up
@@ -434,9 +515,34 @@ export const NoteState = {
                 clearTimeout(this.inactivityTimeout);
                 this.inactivityTimeout = null;
             }
+        } else {
+            console.log('handleEditingTransition: no note being edited');
         }
 
-        // Now we can transition directly to the next state
-        await NoteStateMachine.transition(toState);
+        // Now transition to the requested state (not idle)
+        console.log('handleEditingTransition: performing state transition to', toState);
+        await NoteStateMachine.transition(toState, {
+            searchQuery: ''  // Initialize empty search query for search state
+        });
+        console.log('handleEditingTransition: transition complete');
+    },
+
+    /**
+     * Start search mode
+     */
+    async startSearch(query = '') {
+        if (CONFIG.FEATURES.USE_STATE_MACHINE) {
+            const state = NoteStateMachine.getState();
+            
+            // If in edit mode, save first
+            if (state.state === 'editing') {
+                await this.handleEditingTransition('searching');
+            } else {
+                // Direct transition to search if not editing
+                NoteStateMachine.transition('searching', {
+                    searchQuery: query
+                });
+            }
+        }
     }
 }; 

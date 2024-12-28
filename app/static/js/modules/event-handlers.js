@@ -6,6 +6,30 @@ import { setupKeyboardShortcuts } from '../shortcuts.js';
 import { NoteStateMachine } from './note-state-machine.js';
 
 /**
+ * IMPORTANT ASSUMPTIONS AND GOTCHAS:
+ * 
+ * 1. Event Order:
+ *    - Keyboard events might fire in unexpected order
+ *    - Multiple handlers might respond to same event
+ *    - Event handlers must be idempotent
+ * 
+ * 2. State Changes:
+ *    - Events might fire during state transitions
+ *    - Must check state before AND after async operations
+ *    - Don't assume state remains constant during handler execution
+ * 
+ * 3. DOM Events:
+ *    - Events might fire for removed elements
+ *    - Blur events might fire after state changes
+ *    - Must validate DOM elements exist before using
+ * 
+ * 4. Shortcuts:
+ *    - Multiple systems handling same keys (shortcuts.js and handleKeydown)
+ *    - Must prevent event bubbling appropriately
+ *    - Order of handlers matters for event.preventDefault()
+ */
+
+/**
  * Manages all event handling for the application
  */
 export const EventHandlers = {
@@ -35,13 +59,6 @@ export const EventHandlers = {
         document.addEventListener('dragover', this.handleDragOver.bind(this));
         document.addEventListener('drop', this.handleDrop.bind(this));
         document.addEventListener('dragend', this.handleDragEnd.bind(this));
-
-        // Setup keyboard shortcuts
-        setupKeyboardShortcuts({
-            stopEditing: async () => {
-                await NoteState.finishEditing();
-            }
-        });
 
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Event handlers initialized');
@@ -210,6 +227,15 @@ export const EventHandlers = {
      * Handle keyboard events
      */
     async handleKeydown(event) {
+        // Handle Escape key
+        if (event.key === 'Escape') {
+            if (NoteState.isAnyNoteEditing()) {
+                event.preventDefault();
+                await NoteState.finishEditing();
+                return;
+            }
+        }
+
         // Create new root note with Enter
         if (event.key === 'Enter' && !event.target.isContentEditable) {
             console.log('Creating new note via Enter key');
@@ -535,16 +561,13 @@ export const EventHandlers = {
      * Initialize search handlers
      */
     initSearchHandlers() {
-        const searchInput = document.querySelector('.search-input');
+        const searchInput = document.getElementById('search-input');
         if (!searchInput) return;
 
         // Enter search mode on focus
         searchInput.addEventListener('focus', async () => {
-            if (NoteState.isAnyNoteEditing()) {
-                await NoteState.finishEditingWithStateMachine('searching');
-            } else {
-                await NoteStateMachine.transition('searching');
-            }
+            const query = searchInput.value;
+            await NoteState.startSearch(query);
         });
 
         // Exit search mode on blur (unless going to a note)
@@ -557,6 +580,12 @@ export const EventHandlers = {
             }
             // Otherwise go to idle
             NoteStateMachine.transition('idle');
+        });
+
+        // Handle search input - use startSearch() for consistent state handling
+        searchInput.addEventListener('input', async (event) => {
+            const query = event.target.value;
+            await NoteState.startSearch(query);
         });
     },
 

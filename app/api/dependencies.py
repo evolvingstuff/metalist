@@ -1,7 +1,7 @@
-from ..core.database import SessionLocal
+from app.models.database import SafeSession
 
 def get_db():
-    db = SessionLocal()
+    db = SafeSession(bind=SafeSession.get_engine())
     try:
         yield db
     finally:
