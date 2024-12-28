@@ -151,8 +151,16 @@ This approach provides intuitive undo/redo for content operations while avoiding
    - Compare hash at each step with stored hash
    - Verify arrival at final state
 
+### UI Testing with Cypress
+- End-to-end testing of UI interactions
+- State machine transition verification
+- Cross-reload state preservation testing
+- Automated regression testing of core workflows
+- Integration with CI pipeline
+
 ### Benefits
 - Tests system state as a whole rather than individual operations
 - Catches unexpected interactions between operations
 - Verifies perfect reversibility of operations
 - Can run many iterations with different random sequences
+- Ensures UI behavior remains consistent across changes

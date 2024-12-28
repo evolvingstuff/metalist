@@ -1,93 +1,77 @@
-# Note Editor Refactoring Plan
+# UI Testing Implementation Plan
 
-## Current Issues
-- Multiple event sources can trigger the same state changes (blur, shortcuts, etc.)
-- State management is tightly coupled with DOM manipulation and API calls
-- Hard to track operation sequence and debug state issues
-- Implicit state dependencies make it difficult to reason about the code
+## Setup
+[ ] Install Cypress
+[ ] Configure Cypress for our development environment
+    [ ] Set baseUrl to http://localhost:5000
+    [ ] Configure viewport dimensions
+    [ ] Set up test recording preferences
+[ ] Create initial test directory structure
+    [ ] cypress/e2e for test files
+    [ ] cypress/support for helpers
+    [ ] cypress/fixtures for test data
+[ ] Set up basic test utilities/helpers
+    [ ] Note creation helpers
+    [ ] State checking utilities
+    [ ] DOM interaction helpers
 
-## Proposed Architecture
-We'll implement three complementary patterns to make the code more maintainable and predictable:
+## Core Functionality Tests
+[ ] Note Creation
+    [ ] Create new empty note
+    [ ] Create child note (cmd+enter)
+    [ ] Create sibling note (enter)
+    [ ] Verify content persistence across reloads
+    [ ] Test note creation keyboard shortcuts
 
-### 1. State Machine
-Manages the high-level state of note editing. This will:
-- Make state transitions explicit and predictable
-- Prevent invalid state changes
-- Make it easier to debug state-related issues
-- Provide a central place to track the current state
+[ ] Note Editing
+    [ ] Basic content editing
+    [ ] Auto-save functionality
+    [ ] Cursor position preservation
+    [ ] Content persistence across reloads
+    [ ] Blur/focus behavior
 
-### 2. Event Queue
-Ensures operations happen in sequence and don't conflict. This will:
-- Prevent race conditions between different event sources
-- Make operation order predictable and debuggable
-- Allow for operation prioritization if needed
-- Provide a clear audit trail of what happened
+[ ] State Machine Tests
+    [ ] Verify valid state transitions
+        [ ] IDLE → EDITING
+        [ ] EDITING → SEARCHING
+        [ ] SEARCHING → EDITING
+    [ ] Test invalid state transitions
+    [ ] Verify state preservation across reloads
+    [ ] Test state data persistence
 
-### 3. Command Pattern
-Encapsulates the actual operations to perform. This will:
-- Separate what to do from how to do it
-- Make operations easier to test in isolation
-- Allow for operation logging and undoing
-- Make it easier to add new operations
+[ ] Navigation and Focus
+    [ ] Keyboard shortcuts
+        [ ] Arrow key navigation
+        [ ] Cmd/Ctrl combinations
+        [ ] Escape key behavior
+    [ ] Focus handling between notes
+    [ ] Search box focus/blur behavior
 
-## Implementation Steps
+## Integration Tests
+[ ] Note Operations
+    [ ] Drag and drop
+        [ ] Move between siblings
+        [ ] Move to child position
+        [ ] Move to parent level
+    [ ] Delete notes
+    [ ] Undo/Redo operations
+        [ ] Content changes
+        [ ] Note movements
+        [ ] Deletions
 
-### Phase 1: Setup and State Machine
-- [ ] Create new module files for the refactored architecture
-- [ ] Implement basic state machine with valid transitions
-- [ ] Add state transition logging for debugging
-- [ ] Create tests for state machine
+[ ] Search Functionality
+    [ ] Enter/exit search mode
+    [ ] Filter results
+    [ ] State transitions during search
+    [ ] Search result navigation
 
-### Phase 2: Event Queue
-- [ ] Implement event queue system
-- [ ] Add queue processing logic
-- [ ] Connect queue to state machine
-- [ ] Create tests for event queue
-
-### Phase 3: Commands
-- [ ] Define command interface and basic commands
-- [ ] Implement command execution logic
-- [ ] Connect commands to event queue
-- [ ] Create tests for commands
-
-### Phase 4: Integration
-- [ ] Modify event handlers to use new system
-- [ ] Update NoteState to use new architecture
-- [ ] Add comprehensive logging
-- [ ] Create integration tests
-
-### Phase 5: Cleanup
-- [ ] Remove old state management code
-- [ ] Update documentation
-- [ ] Add performance monitoring
-- [ ] Final testing and bug fixes
-
-## Migration Strategy
-1. Implement new system alongside existing code
-2. Gradually move functionality over
-3. Run both systems in parallel with feature flag
-4. Monitor for issues
-5. Complete switchover when stable
-
-## Success Metrics
-- Reduced bug reports related to state management
-- Easier debugging (clear operation sequence)
-- Improved test coverage
-- Faster onboarding for new developers
-- More maintainable codebase
-
-## Risks and Mitigations
-- **Risk**: Performance impact from queue processing
-  *Mitigation*: Monitor performance metrics, optimize if needed
-
-- **Risk**: Increased complexity from new patterns
-  *Mitigation*: Good documentation, clear examples, thorough testing
-
-- **Risk**: Migration issues
-  *Mitigation*: Gradual rollout, feature flags, monitoring
-
-## Future Considerations
-- Potential for undo/redo system using command pattern
-- Possibility of adding operation replay for debugging
-- Could add operation analytics
-- Might enable offline operation queueing 
+## Edge Cases and Error Handling
+[ ] Rapid state transitions
+[ ] Multiple notes editing attempts
+[ ] Browser reload scenarios
+    [ ] During edit
+    [ ] During search
+    [ ] During drag operation
+[ ] Network error handling
+[ ] Invalid state transitions
+[ ] Concurrent operations
