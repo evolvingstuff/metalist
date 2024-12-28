@@ -39,7 +39,34 @@ export const EventHandlers = {
         document.addEventListener('input', this.handleInput.bind(this));
         document.addEventListener('blur', this.handleBlur.bind(this), true);
         document.addEventListener('paste', this.handlePaste.bind(this));
-        document.addEventListener('keydown', this.handleKeyDown.bind(this));
+        
+        // Set up keyboard shortcuts
+        setupKeyboardShortcuts({
+            stopEditing: () => {
+                if (NoteStateMachine.state === 'editing') {
+                    NoteStateMachine.transition('idle');
+                }
+            },
+            addSibling: async () => {
+                if (NoteStateMachine.state === 'editing') {
+                    const currentNote = NoteStateMachine.data.currentNote;
+                    await NotesAPI.createSibling(DOMUtils.getNoteId(currentNote));
+                }
+            },
+            addChild: async () => {
+                if (NoteStateMachine.state === 'editing') {
+                    const currentNote = NoteStateMachine.data.currentNote;
+                    await NotesAPI.createChild(DOMUtils.getNoteId(currentNote));
+                }
+            },
+            addTop: async () => {
+                if (NoteStateMachine.state !== 'editing') {
+                    await NotesAPI.createNote();
+                }
+            },
+            undo: () => NotesAPI.undo(),
+            redo: () => NotesAPI.redo()
+        });
 
         this.initSearchHandlers();
     },
@@ -190,22 +217,22 @@ export const EventHandlers = {
     /**
      * Handle keyboard shortcuts
      */
-    handleKeyDown(event) {
-        // Command/Control key shortcuts
-        if (event.metaKey || event.ctrlKey) {
-            switch (event.key) {
-                case 'f':
-                    event.preventDefault();
-                    NoteState.startSearch();
-                    break;
-                    
-                case 'Enter':
-                    event.preventDefault();
-                    // Handle save explicitly if needed
-                    break;
-            }
-        }
-    },
+    // handleKeyDown(event) {
+    //     // Command/Control key shortcuts
+    //     if (event.metaKey || event.ctrlKey) {
+    //         switch (event.key) {
+    //             case 'f':
+    //                 event.preventDefault();
+    //                 NoteState.startSearch();
+    //                 break;
+    //
+    //             case 'Enter':
+    //                 event.preventDefault();
+    //                 // Handle save explicitly if needed
+    //                 break;
+    //         }
+    //     }
+    // },
 
     /**
      * Handle paste events
