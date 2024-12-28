@@ -3,6 +3,7 @@ import { NotesAPI } from './api-client.js';
 import { DOMUtils } from './dom-utils.js';
 import { NoteState } from './note-state.js';
 import { setupKeyboardShortcuts } from '../shortcuts.js';
+import { NoteStateMachine } from './note-state-machine.js';
 
 /**
  * Manages all event handling for the application
@@ -20,6 +21,7 @@ export const EventHandlers = {
         console.log('Initializing event handlers');
         // Initialize add button immediately (don't wait for DOMContentLoaded)
         this.initializeAddButton();
+        this.initSearchHandlers();
 
         document.addEventListener('DOMContentLoaded', this.handleDOMContentLoaded.bind(this));
         document.addEventListener('click', this.handleClick.bind(this));
@@ -527,5 +529,60 @@ export const EventHandlers = {
         } else {
             this.dragTarget.classList.add('drag-inside');
         }
+    },
+
+    /**
+     * Initialize search handlers
+     */
+    initSearchHandlers() {
+        const searchInput = document.querySelector('.search-input');
+        if (!searchInput) return;
+
+        // Enter search mode on focus
+        searchInput.addEventListener('focus', async () => {
+            if (NoteState.isAnyNoteEditing()) {
+                await NoteState.finishEditingWithStateMachine('searching');
+            } else {
+                await NoteStateMachine.transition('searching');
+            }
+        });
+
+        // Exit search mode on blur (unless going to a note)
+        searchInput.addEventListener('blur', (event) => {
+            // If clicking a note, go directly to editing
+            if (event.relatedTarget?.closest('.note')) {
+                const noteElement = event.relatedTarget.closest('.note');
+                NoteState.startEditing(noteElement);
+                return;
+            }
+            // Otherwise go to idle
+            NoteStateMachine.transition('idle');
+        });
+    },
+
+    async finishEditingWithStateMachine(nextState = 'idle') {
+        if (!this.currentEditingNote) return;
+
+        await NoteStateMachine.transition('finishing', async () => {
+            // Save any pending changes
+            await this.saveCurrentNote();
+
+            // Clean up
+            DOMUtils.setNoteEditable(this.currentEditingNote, false);
+            
+            if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
+                console.log('Finished editing note:', DOMUtils.getNoteId(this.currentEditingNote));
+            }
+
+            this.currentEditingNote = null;
+            this.lastSavedContent = null;
+            
+            if (this.inactivityTimeout) {
+                clearTimeout(this.inactivityTimeout);
+                this.inactivityTimeout = null;
+            }
+        });
+
+        await NoteStateMachine.transition(nextState);
     }
 }; 

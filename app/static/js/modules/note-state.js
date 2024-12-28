@@ -51,16 +51,12 @@ export const NoteState = {
      * New state machine implementation of startEditing
      */
     async startEditingWithStateMachine(noteElement) {
-        console.log('Attempting to start editing with state machine');
-        
         if (!NoteStateMachine.canTransitionTo('editing')) {
             console.warn('Cannot start editing in current state:', NoteStateMachine.getState());
             return;
         }
 
         await NoteStateMachine.transition('editing', async () => {
-            console.log('In editing transition');
-            
             // Store current content for change detection
             this.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
             this.currentEditingNote = noteElement;
@@ -70,19 +66,15 @@ export const NoteState = {
 
             // Set up cursor position tracking
             const content = DOMUtils.getNoteContent(noteElement);
-            // Bind the handler to this context
             const boundHandler = this.handleCursorChange.bind(this);
             content.addEventListener('mouseup', boundHandler);
             content.addEventListener('keyup', boundHandler);
 
-            console.log('Setting up inactivity timeout');
             // Set up auto-save
             if (this.inactivityTimeout) {
                 clearTimeout(this.inactivityTimeout);
             }
             this.setupInactivityTimeout();
-            
-            console.log('Finished editing setup');
         }, {
             currentNote: noteElement,
             lastSavedContent: DOMUtils.getNoteContentText(noteElement)
@@ -151,45 +143,23 @@ export const NoteState = {
      */
     async saveCurrentNoteWithStateMachine() {
         const state = NoteStateMachine.getState();
-        if (state.state !== 'editing' && state.state !== 'saving') {
+        if (state.state !== 'editing') {
             console.warn('Cannot save note in current state:', state);
             return;
         }
 
-        await NoteStateMachine.transition('saving', async () => {
-            if (!this.currentEditingNote) {
-                console.log('saveCurrentNote: no currentEditingNote');
-                return;
+        const currentNote = this.currentEditingNote;
+        const currentContent = DOMUtils.getNoteContentText(currentNote);
+        
+        if (currentContent !== this.lastSavedContent) {
+            const noteId = DOMUtils.getNoteId(currentNote);
+            try {
+                await NotesAPI.updateNote(noteId, currentContent);
+                this.lastSavedContent = currentContent;
+            } catch (e) {
+                console.error('Failed to save note:', e);
+                throw e;
             }
-
-            const currentContent = DOMUtils.getNoteContentText(this.currentEditingNote);
-            const cursorPosition = DOMUtils.getCursorPosition(this.currentEditingNote);
-            
-            if (cursorPosition) {
-                localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
-            }
-            
-            if (currentContent !== this.lastSavedContent) {
-                console.log('saveCurrentNote: content changed, about to call updateNote');
-                const noteId = DOMUtils.getNoteId(this.currentEditingNote);
-                try {
-                    await NotesAPI.updateNote(noteId, currentContent);
-                    console.log('saveCurrentNote: updateNote completed');
-                    this.lastSavedContent = currentContent;
-                } catch (e) {
-                    console.error('saveCurrentNote: updateNote failed:', e);
-                    throw e; // Let state machine handle the error
-                }
-            } else {
-                console.log('saveCurrentNote: content unchanged');
-            }
-        }, {
-            lastSavedContent: this.lastSavedContent
-        });
-
-        // Return to editing state after save
-        if (NoteStateMachine.getState().state === 'saving') {
-            await NoteStateMachine.transition('editing');
         }
     },
 
@@ -363,7 +333,10 @@ export const NoteState = {
 
         if (state.state === 'editing') {
             console.log('Saving current note before action');
-            await this.saveCurrentNote();
+            const currentContent = DOMUtils.getNoteContentText(this.currentEditingNote);
+            if (currentContent !== this.lastSavedContent) {
+                await this.saveCurrentNote();
+            }
             console.log('Note saved');
         }
         
@@ -414,10 +387,10 @@ export const NoteState = {
      * Handle cursor position changes
      */
     handleCursorChange: function() {
-        console.log('Cursor change handler called', {
-            useStateMachine: CONFIG.FEATURES.USE_STATE_MACHINE,
-            currentState: NoteStateMachine.getState()
-        });
+        // console.log('Cursor change handler called', {
+        //     useStateMachine: CONFIG.FEATURES.USE_STATE_MACHINE,
+        //     currentState: NoteStateMachine.getState()
+        // });
         
         return CONFIG.FEATURES.USE_STATE_MACHINE ?
             this.handleCursorChangeWithStateMachine() :
@@ -442,5 +415,28 @@ export const NoteState = {
             clearTimeout(this.inactivityTimeout);
         }
         this.setupInactivityTimeout();
+    },
+
+    /**
+     * Handle transitions from EDITING state
+     */
+    async handleEditingTransition(toState) {
+        // Save any pending changes
+        if (this.currentEditingNote) {
+            await this.saveCurrentNote();
+            DOMUtils.setNoteEditable(this.currentEditingNote, false);
+            
+            // Clean up
+            this.currentEditingNote = null;
+            this.lastSavedContent = null;
+            
+            if (this.inactivityTimeout) {
+                clearTimeout(this.inactivityTimeout);
+                this.inactivityTimeout = null;
+            }
+        }
+
+        // Now we can transition directly to the next state
+        await NoteStateMachine.transition(toState);
     }
 }; 

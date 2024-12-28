@@ -10,8 +10,6 @@ export const NoteStateMachine = {
     states: {
         IDLE: 'idle',         // Not editing or searching
         EDITING: 'editing',    // Actively editing a note
-        SAVING: 'saving',      // In the process of saving changes
-        FINISHING: 'finishing',// Cleaning up after editing
         SEARCHING: 'searching' // Actively searching notes
     },
 
@@ -20,9 +18,7 @@ export const NoteStateMachine = {
      */
     transitions: {
         idle: ['editing', 'searching'],
-        editing: ['saving', 'finishing', 'searching'],
-        saving: ['editing', 'finishing', 'searching'],
-        finishing: ['idle', 'searching'],
+        editing: ['idle', 'searching'],
         searching: ['idle', 'editing']
     },
 
