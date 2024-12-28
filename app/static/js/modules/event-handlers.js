@@ -278,7 +278,7 @@ export const EventHandlers = {
             range.deleteContents();
             range.insertNode(img);
             
-            await NoteState.saveCurrentNote();
+            await NoteState.saveCurrentNoteWithStateMachine();
         };
         
         reader.readAsDataURL(blob);
