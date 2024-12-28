@@ -42,7 +42,10 @@ Key design decisions:
 ## Development
 
 ### Setup
-1. Install Python dependencies (see requirements.txt)
+1. Install Python dependencies:
+```
+pip install -r requirements.txt
+```
 2. Install Node.js dependencies:
 ```
 npm install
@@ -61,9 +64,13 @@ python app.py
 ### Running Tests
 
 #### Backend tests:
+
+Unit tests:
 ```
-python -m pytest tests
+python -m pytest tests/unit
 ```
+
+Integration tests: TODO
 
 #### Frontend tests:
 

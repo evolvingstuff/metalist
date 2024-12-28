@@ -1,4 +1,4 @@
-from tests.common import *
+from tests.unit.common import *
 
 
 def test_undo_redo_ops(db):

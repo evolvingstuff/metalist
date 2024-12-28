@@ -1,4 +1,4 @@
-from tests.common import *
+from tests.unit.common import *
 
 UNDO_REDO_INTERVAL = 4
 

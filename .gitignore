@@ -24,3 +24,5 @@ notes.db
 .coverage
 .idea/
 app/sql_app.db
+package-lock.json
+node_modules/

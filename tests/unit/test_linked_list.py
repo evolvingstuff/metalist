@@ -1,4 +1,4 @@
-from tests.common import *
+from tests.unit.common import *
 
 
 def test_move_note_after(db):
