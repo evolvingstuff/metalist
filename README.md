@@ -76,6 +76,7 @@ Integration tests: TODO
 
 Open Cypress Test Runner
 ```
+cd tests/ui
 npx cypress open
 ```
 

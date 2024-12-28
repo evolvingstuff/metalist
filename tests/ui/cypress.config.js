@@ -9,6 +9,17 @@ module.exports = defineConfig({
     screenshotOnRunFailure: true,
     defaultCommandTimeout: 5000,
     specPattern: 'cypress/e2e/**/*.cy.{js,jsx,ts,tsx}',
-    failOnStatusCode: false
+    failOnStatusCode: false,
+    retries: {
+      runMode: 0,
+      openMode: 0
+    },
+    setupNodeEvents(on, config) {
+      on('task', {
+        testComplete() {
+          return null
+        }
+      })
+    }
   },
 })

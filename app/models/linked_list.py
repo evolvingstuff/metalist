@@ -273,11 +273,10 @@ class LinkedListManager:
             raise
 
     @staticmethod
-    def get_note(db: Session, note_id: str):
-        # TODO: use in other functions
+    def get_note(db: Session, note_id: str) -> DBNote:
         db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
         if not db_note:
-            raise
+            raise ValueError(f"Note with id {note_id} not found")
         return db_note
 
     @staticmethod

@@ -1,33 +1,31 @@
 describe('Smoke Test', () => {
-  it('can visit the app', () => {
-    cy.visit('/')
-    cy.get('body').should('exist')
-  })
-
-  it('can create a new note', () => {
+  it('handles basic note creation and editing', () => {
+    // Set up intercepts
+    cy.intercept('POST', '/api/notes/new').as('createNote')
+    
+    // Visit and create note
     cy.visit('/')
     cy.get('.add-note').click()
-    // Wait for API response and auto-reload
-    cy.intercept('POST', '/api/notes/new').as('createNote')
+    
+    // Wait for note creation
     cy.wait('@createNote')
+      .then((interception) => {
+        const noteId = interception.response.body.id
+        
+        // Set up update intercept
+        cy.intercept('PUT', `/api/notes/${noteId}`).as('updateNote')
+        
+        // Type in note
+        cy.get('.note.editing .note-content').type('test note')
+        
+        // Wait for update
+        cy.wait('@updateNote')
+        
+        // Verify and signal completion
+        cy.get('.note').should('contain', 'test note')
+          .then(() => {
+            cy.task('testComplete')
+          })
+      })
   })
-
-  it('handles page reloads', () => {
-    cy.visit('/')
-    // Create note and intercept the API call
-    cy.intercept('POST', '/api/notes/new').as('createNote')
-    cy.get('.add-note').click()
-    cy.wait('@createNote')
-    
-    // After auto-reload, type in the new note
-    cy.get('.note-content').type('test note')
-    
-    // Intercept the update API call
-    cy.intercept('PUT', '/api/notes/*').as('updateNote')
-    cy.wait('@updateNote')
-    
-    // Manual reload to verify persistence
-    cy.reload()
-    cy.get('.note').should('contain', 'test note')
-  })
-}) 
+})

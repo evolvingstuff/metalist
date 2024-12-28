@@ -17,12 +17,12 @@ class SafeSession(Session):
         print("""
 🧪 SWITCHING TO TEST MODE 🧪
 ┌──────────────────────────┐
-│     IN-MEMORY DATABASE   │
-│   All Data is Temporary  │
+│       DEV DATABASE       │
+│  *All Data is Temporary  │
 └──────────────────────────┘
         """)
         print("="*50 + "\n")
-        cls._memory_engine = create_engine('sqlite:///:memory:')
+        cls._memory_engine = create_engine('sqlite:///./notes.dev.db')
         Base.metadata.create_all(cls._memory_engine)
         return {'status': 'ok', 'message': 'Using in-memory database'}
 
@@ -34,8 +34,8 @@ class SafeSession(Session):
         print("""
 📝 RETURNING TO PRODUCTION MODE 📝
 ┌──────────────────────────┐
-│      FILE DATABASE       │
-│    Data is Persisted     │
+│      PROD DATABASE       │
+│                          │
 └──────────────────────────┘
         """)
         print("="*50 + "\n")

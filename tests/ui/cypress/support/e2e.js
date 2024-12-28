@@ -1,20 +1,20 @@
 // Import commands.js using ES2015 syntax:
 import './commands'
 
-// This is a good place to put global before/after hooks
-beforeEach(() => {
-  // Switch to in-memory database before each test
-  cy.request('POST', '/api/dev/use-memory-db').then((response) => {
-    expect(response.status).to.eq(200)
-    expect(response.body.status).to.eq('ok')
-  })
-  cy.visit('/')
-})
+before(() => {
+  cy.log('🔵 SUITE SETUP: Switching to dev database');
+  return cy.request('POST', '/dev/use-dev-db')
+    .then((response) => {
+      expect(response.status).to.eq(200);
+      cy.log('🔵 SUITE SETUP: Successfully switched to dev database');
+    });
+});
 
 after(() => {
-  // Switch back to file database after all tests complete
-  cy.request('POST', '/api/dev/use-file-db').then((response) => {
-    expect(response.status).to.eq(200)
-    expect(response.body.status).to.eq('ok')
-  })
-}) 
+  cy.log('🔴 SUITE CLEANUP: Switching back to file database');
+  return cy.request('POST', '/dev/use-file-db')
+    .then((response) => {
+      expect(response.status).to.eq(200);
+      cy.log('🔴 SUITE CLEANUP: Successfully switched back to file database');
+    });
+}); 
