@@ -281,6 +281,47 @@ export const EventHandlers = {
         event.dataTransfer.effectAllowed = 'move';
     },
 
+    getValidDropPosition(draggingElement, targetElement, event) {
+        if (!draggingElement || !targetElement) return null;
+        
+        // Can't drop on itself
+        if (draggingElement === targetElement) return null;
+        
+        // Can't drop on a descendant
+        if (DOMUtils.isDescendant(targetElement, draggingElement)) return null;
+        
+        // Calculate position relative to target
+        const rect = targetElement.getBoundingClientRect();
+        const relativeY = event.clientY - rect.top;
+        const relativeX = event.clientX - rect.left;
+        const threshold = rect.height / 2;  // 1/3
+        const horizontalMidpoint = rect.width / 2;
+
+        // Check if the dragged element is immediately before or after the target
+        const isNextSibling = draggingElement.nextElementSibling === targetElement;
+        const isPrevSibling = draggingElement.previousElementSibling === targetElement;
+
+        // Get parent note of target
+        const targetParentNote = DOMUtils.findNoteElement(targetElement.parentElement);
+        
+        // Can't drop into your own parent (but can drop before/after it)
+        const draggedParentNote = DOMUtils.findNoteElement(draggingElement.parentElement);
+        if (draggedParentNote === targetElement && relativeX > horizontalMidpoint) {
+            return null;
+        }
+
+        // Determine valid drop position based on location
+        if (relativeX > horizontalMidpoint) {
+            return 'inside';
+        } else if (relativeY < threshold && !isNextSibling) {
+            return 'before';
+        } else if (relativeY > rect.height - threshold && !isPrevSibling) {
+            return 'after';
+        }
+
+        return null;
+    },
+
     handleDragOver(event) {
         event.preventDefault();
         const noteElement = DOMUtils.findNoteElement(event.target);
@@ -297,26 +338,8 @@ export const EventHandlers = {
         }
 
         const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
-        if (!draggingElement || draggingElement === noteElement) return;
-
-        // Prevent showing indicators if dragging a parent over its descendant
-        if (DOMUtils.isDescendant(noteElement, draggingElement)) {
-            return;
-        }
-
-        // Prevent showing indicators if dragging over the parent of the dragged element
-        const draggedParentNote = DOMUtils.findNoteElement(draggingElement.parentElement);
-        if (draggedParentNote === noteElement) {
-            return;
-        }
-
-        const rect = noteElement.getBoundingClientRect();
-        const relativeY = event.clientY - rect.top;
-        const relativeX = event.clientX - rect.left;
-        const threshold = rect.height / 3;
-        const horizontalMidpoint = rect.width / 2;
-
-        // Clear previous drag indicators from all notes
+        
+        // Clear previous drag indicators
         document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
             if (note !== noteElement) {
                 note.classList.remove(
@@ -327,31 +350,28 @@ export const EventHandlers = {
             }
         });
 
-        // Check if the dragged element is immediately before or after the target
-        const isNextSibling = draggingElement.nextElementSibling === noteElement;
-        const isPrevSibling = draggingElement.previousElementSibling === noteElement;
-
-        // Set new drag indicator
+        // Remove all indicators from current note
         noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER, CONFIG.CLASSES.DRAG_INSIDE);
         
-        if (relativeX > horizontalMidpoint) {
-            // Past midpoint - indicate nesting
-            noteElement.classList.add(CONFIG.CLASSES.DRAG_INSIDE);
-        } else if (relativeY < threshold && !isNextSibling) {
-            // Top third - before (but not if we're the next sibling)
-            noteElement.classList.add(CONFIG.CLASSES.DRAG_BEFORE);
-        } else if (relativeY > rect.height - threshold && !isPrevSibling) {
-            // Bottom third - after (but not if we're the previous sibling)
-            noteElement.classList.add(CONFIG.CLASSES.DRAG_AFTER);
+        // Get valid drop position and show corresponding indicator
+        const dropPosition = this.getValidDropPosition(draggingElement, noteElement, event);
+        if (dropPosition) {
+            noteElement.classList.add(CONFIG.CLASSES[`DRAG_${dropPosition.toUpperCase()}`]);
         }
     },
 
     handleDragLeave(event) {
-        const noteElement = DOMUtils.findNoteElement(event.target);
-        if (noteElement) {
-            noteElement.classList.remove(
+        // Only clear indicators if we've actually left a note
+        // (not just moved between child elements)
+        const relatedTarget = event.relatedTarget;
+        const currentNoteElement = DOMUtils.findNoteElement(event.target);
+        const newNoteElement = relatedTarget ? DOMUtils.findNoteElement(relatedTarget) : null;
+
+        if (currentNoteElement && (!newNoteElement || currentNoteElement !== newNoteElement)) {
+            currentNoteElement.classList.remove(
                 CONFIG.CLASSES.DRAG_BEFORE,
-                CONFIG.CLASSES.DRAG_AFTER
+                CONFIG.CLASSES.DRAG_AFTER,
+                CONFIG.CLASSES.DRAG_INSIDE
             );
         }
     },
@@ -364,35 +384,16 @@ export const EventHandlers = {
         const draggedId = event.dataTransfer.getData('text/plain');
         const draggingElement = document.querySelector(`.${CONFIG.CLASSES.DRAGGING}`);
         
-        // Prevent dropping if trying to drop a parent on its descendant
-        if (draggingElement && DOMUtils.isDescendant(noteElement, draggingElement)) {
-            // Clean up classes and return early
-            draggingElement.classList.remove(CONFIG.CLASSES.DRAGGING);
-            document.querySelectorAll(`.${CONFIG.CLASSES.NOTE}`).forEach(note => {
-                note.classList.remove(
-                    CONFIG.CLASSES.DRAG_BEFORE,
-                    CONFIG.CLASSES.DRAG_AFTER,
-                    CONFIG.CLASSES.DRAG_INSIDE
-                );
-            });
-            return;
-        }
-
-        // Check if there's any valid drop indicator present
-        const hasValidDropIndicator = noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE) ||
-                                     noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER) ||
-                                     noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE);
-
-        if (!hasValidDropIndicator) {
-            // Clean up and return early if no valid drop location
+        // Get valid drop position
+        const dropPosition = this.getValidDropPosition(draggingElement, noteElement, event);
+        if (!dropPosition) {
+            // Clean up and return early if invalid
             if (draggingElement) {
                 draggingElement.classList.remove(CONFIG.CLASSES.DRAGGING);
             }
             return;
         }
 
-        const targetId = DOMUtils.getNoteId(noteElement);
-        
         // Handle dropping from add button
         if (draggedId === 'new-note') {
             let position = null;
@@ -400,14 +401,14 @@ export const EventHandlers = {
 
             if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
                 position = 'BEFORE';
-                siblingId = targetId;
+                siblingId = DOMUtils.getNoteId(noteElement);
             } else if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) {
                 position = 'AFTER';
-                siblingId = targetId;
+                siblingId = DOMUtils.getNoteId(noteElement);
             }
 
             const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
-                ? targetId 
+                ? DOMUtils.getNoteId(noteElement) 
                 : noteElement.dataset.parentId || null;
 
             NotesAPI.createNoteDrop(newParentId, siblingId, position);
@@ -418,14 +419,14 @@ export const EventHandlers = {
 
             if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_BEFORE)) {
                 position = 'BEFORE';
-                siblingId = targetId;
+                siblingId = DOMUtils.getNoteId(noteElement);
             } else if (noteElement.classList.contains(CONFIG.CLASSES.DRAG_AFTER)) {
                 position = 'AFTER';
-                siblingId = targetId;
+                siblingId = DOMUtils.getNoteId(noteElement);
             }
 
             const newParentId = noteElement.classList.contains(CONFIG.CLASSES.DRAG_INSIDE) 
-                ? targetId 
+                ? DOMUtils.getNoteId(noteElement) 
                 : noteElement.dataset.parentId || null;
 
             NotesAPI.moveNote(draggedId, siblingId, position, newParentId)
