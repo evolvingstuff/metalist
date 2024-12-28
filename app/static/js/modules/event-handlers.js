@@ -312,11 +312,16 @@ export const EventHandlers = {
             }
         });
 
+        // Check if the dragged element is immediately before the target
+        const isNextSibling = draggingElement.nextElementSibling === noteElement;
+
         // Set new drag indicator
         noteElement.classList.remove(CONFIG.CLASSES.DRAG_BEFORE, CONFIG.CLASSES.DRAG_AFTER);
-        if (relativeY < threshold) {
+        
+        if (relativeY < threshold && !isNextSibling) {
+            // Only show BEFORE indicator if we're not dragging onto our next sibling
             noteElement.classList.add(CONFIG.CLASSES.DRAG_BEFORE);
-        } else {
+        } else if (relativeY > rect.height - threshold) {
             noteElement.classList.add(CONFIG.CLASSES.DRAG_AFTER);
         }
     },
