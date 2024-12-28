@@ -48,8 +48,6 @@ export const DOMUtils = {
      * Make a note editable/non-editable
      */
     setNoteEditable(noteElement, isEditable) {
-        const content = this.getNoteContent(noteElement);
-        content.contentEditable = isEditable.toString();
         noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditable);
     },
 
