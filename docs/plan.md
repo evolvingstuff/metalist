@@ -81,6 +81,72 @@ This format:
 - Handles multiple node updates in single diff
 - Includes transaction ID for tracking/debugging
 
+### Versioning Strategy
+
+#### Hybrid Versioning Approach
+We'll use a combination of integer versioning for document state and content hashes for individual notes:
+
+1. Document Version (Integer)
+   - Monotonically increasing integer for overall document state
+   - Used for:
+     - Tracking undo/redo operations
+     - Ordering changes chronologically
+     - Simple version comparison (v2 > v1)
+   - Incremented with each transaction
+
+2. Note Content Hashes
+   - Hash of note's essential data: content + prev_id + next_id + parent_id
+   - Used for:
+     - Detecting conflicts at note level
+     - Identifying duplicate operations
+     - Verifying note integrity
+     - Content-addressed storage (like Git blobs)
+
+#### Version Management
+Example diff format with versioning:
+```json
+{
+  "doc_version": 42,
+  "changes": {
+    "added": [
+      {
+        "id": "note_id",
+        "content_hash": "hash_of_note_data",
+        "parent_id": "parent_id",
+        "prev_id": "prev_note_id",
+        "next_id": "next_note_id",
+        "content": "note content"
+      }
+    ],
+    "updated": [
+      {
+        "id": "note_id",
+        "content_hash": "new_hash_of_note_data",
+        "prev_id": "new_prev_id",    // only included if changed
+        "next_id": "new_next_id",    // only included if changed
+        "parent_id": "new_parent",   // only included if changed
+        "content": "updated content" // only included if changed
+      }
+    ],
+    "deleted": ["note_id1", "note_id2"]
+  },
+  "prev_doc_version": 41
+}
+```
+
+#### Benefits
+- Simple undo/redo with integer versions
+- Natural conflict detection with content hashes
+- Easy path to multi-client support
+- Efficient change tracking
+- Content integrity verification
+
+#### Future Multi-Client Support
+- Clients track their last seen document version
+- Content hashes enable conflict detection
+- Server can detect divergent changes
+- Similar to Git's distributed version control model
+
 ## Implementation Steps
 
 ### 1. Server-Side Changes
