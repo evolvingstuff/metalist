@@ -61,42 +61,43 @@ export const EventHandlers = {
 
         // Set up keyboard shortcuts
         setupKeyboardShortcuts({
-            stopEditing: () => {
+            stopEditing: async () => {
                 if (NoteStateMachine.state === 'editing') {
-                    NoteStateMachine.transition('idle');
+                    await NoteStateMachine.transition('idle');
                 }
             },
             addSibling: async () => {
                 if (NoteStateMachine.state === 'editing') {
-                    const currentNote = NoteStateMachine.data.currentNote;
-                    await NotesAPI.createSibling(DOMUtils.getNoteId(currentNote));
+                    await NoteStateMachine.transition('editing');
+                    await NotesAPI.createSibling(DOMUtils.getNoteId(NoteStateMachine.data.currentNote));
                 }
             },
             addChild: async () => {
                 if (NoteStateMachine.state === 'editing') {
-                    const currentNote = NoteStateMachine.data.currentNote;
-                    await NotesAPI.createChild(DOMUtils.getNoteId(currentNote));
+                    await NoteStateMachine.transition('editing');
+                    await NoteState.createChildNote(NoteStateMachine.data.currentNote);
                 }
             },
             addTop: async () => {
-                if (NoteStateMachine.state !== 'editing') {
-                    await NotesAPI.createNote();
+                if (NoteStateMachine.state === 'editing') {
+                    await NoteStateMachine.transition('editing');
                 }
+                await NotesAPI.createNote();
             },
-            undo: () => NotesAPI.undo(),
-            redo: () => NotesAPI.redo(),
             moveUp: async () => {
                 if (NoteStateMachine.state === 'editing') {
-                    const currentNote = NoteStateMachine.data.currentNote;
-                    await NotesAPI.moveNoteUp(DOMUtils.getNoteId(currentNote));
+                    await NoteStateMachine.transition('editing');
+                    await NotesAPI.moveNoteUp(DOMUtils.getNoteId(NoteStateMachine.data.currentNote));
                 }
             },
             moveDown: async () => {
                 if (NoteStateMachine.state === 'editing') {
-                    const currentNote = NoteStateMachine.data.currentNote;
-                    await NotesAPI.moveNoteDown(DOMUtils.getNoteId(currentNote));
+                    await NoteStateMachine.transition('editing');
+                    await NotesAPI.moveNoteDown(DOMUtils.getNoteId(NoteStateMachine.data.currentNote));
                 }
-            }
+            },
+            undo: () => NotesAPI.undo(),
+            redo: () => NotesAPI.redo(),
         });
 
         this.initSearchHandlers();
@@ -105,48 +106,55 @@ export const EventHandlers = {
     /**
      * Handle click events
      */
-    handleClick(event) {
-        console.log('👆 CLICK EVENT:', {
-            target: {
-                element: event.target?.className,
-                isNoteContent: DOMUtils.isNoteContent(event.target)
+    async handleClick(event) {
+        const isClickingNoteContent = DOMUtils.isNoteContent(event.target);
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        const currentNote = NoteStateMachine.data.currentNote;
+
+        // Get click position info
+        const selection = window.getSelection();
+        const clickPositionInfo = selection.rangeCount > 0 ? {
+            node: selection.getRangeAt(0).startContainer,
+            offset: selection.getRangeAt(0).startOffset,
+            hasSelection: selection.toString().length > 0
+        } : null;
+
+        console.log('🔍 Click Analysis:', {
+            isClickingNoteContent,
+            clickedElement: {
+                className: event.target.className,
+                noteId: noteElement ? DOMUtils.getNoteId(noteElement) : null
             },
             currentState: NoteStateMachine.state,
-            activeElement: document.activeElement?.className,
-            stack: new Error().stack
+            currentNote: currentNote ? {
+                id: DOMUtils.getNoteId(currentNote)
+            } : null,
+            isSameNote: noteElement === currentNote,
+            clickPosition: clickPositionInfo ? {
+                nodeType: clickPositionInfo.node.nodeType,
+                offset: clickPositionInfo.offset,
+                hasSelection: clickPositionInfo.hasSelection
+            } : null
         });
 
-        const noteElement = DOMUtils.findNoteElement(event.target);
-        if (noteElement && DOMUtils.isNoteContent(event.target)) {
-            console.log('🖱 Note state:', {
-                pristine: {
-                    classList: [...event.target.classList],
-                    contentEditable: event.target.contentEditable,
-                    attributes: [...event.target.attributes].map(a => `${a.name}="${a.value}"`),
-                },
-                parent: {
-                    classList: [...noteElement.classList],
-                    attributes: [...noteElement.attributes].map(a => `${a.name}="${a.value}"`)
-                }
-            });
-            
-            // If we're in search mode, let the blur handler handle it
-            if (NoteStateMachine.state === 'searching') {
-                return;
-            }
-            
-            // Direct transition if already editing
+        if (noteElement && isClickingNoteContent) {
             if (NoteStateMachine.state === 'editing') {
-                console.log('   ➡️ Direct edit→edit transition');
-                NoteStateMachine.transition('editing', {
-                    currentNote: noteElement,
-                    lastSavedContent: DOMUtils.getNoteContentText(noteElement)
-                });
+                if (noteElement !== NoteStateMachine.data.currentNote) {
+                    console.log('   🔄 Direct switch to different note', {
+                        from: DOMUtils.getNoteId(currentNote),
+                        to: DOMUtils.getNoteId(noteElement)
+                    });
+                    NoteStateMachine.data.currentNote = noteElement;
+                    await NoteStateMachine.transition('editing');
+                }
                 return;
             }
             
-            console.log('   ⚪ Going through NoteState.startEditing');
-            NoteState.startEditing(noteElement);
+            console.log('   ✏️ Starting to edit note:', DOMUtils.getNoteId(noteElement));
+            await NoteState.startEditing(noteElement, clickPositionInfo);
+        } else if (NoteStateMachine.state === 'editing' && !isClickingNoteContent) {
+            console.log('   ⚪ Clicking outside note content - going idle');
+            await NoteStateMachine.transition('idle');
         }
     },
 
@@ -163,33 +171,11 @@ export const EventHandlers = {
      * Handle blur events
      */
     handleBlur(event) {
-        // Only handle blur for note content
+        // Remove state management via blur
+        // Only keep any necessary focus/cursor management if needed
         if (!DOMUtils.isNoteContent(event.target)) {
-            console.log('🌟 Blur: Ignoring - not note content');
             return;
         }
-
-        const noteElement = DOMUtils.findNoteElement(event.target);
-        if (!noteElement) {
-            console.log('🌟 Blur: Ignoring - no note element');
-            return;
-        }
-
-        // If clicking within any note content or search, don't exit edit mode
-        if ((event.relatedTarget && DOMUtils.isNoteContent(event.relatedTarget)) || 
-            event.relatedTarget?.id === 'search-input') {
-            console.log('🌟 Blur: Preserving edit mode - clicking note content or search');
-            return;
-        }
-
-        console.log('🌟 Blur: Transitioning to idle', {
-            from: event.target?.className,
-            to: event.relatedTarget?.className,
-            currentState: NoteStateMachine.state
-        });
-        
-        // Only transition to idle if we're not clicking another note's content
-        NoteStateMachine.transition('idle');
     },
 
     /**

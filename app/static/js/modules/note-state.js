@@ -38,7 +38,7 @@ export const NoteState = {
     /**
      * Start editing a note
      */
-    async startEditing(noteElement) {
+    async startEditing(noteElement, clickPosition = null) {
         if (!CONFIG.FEATURES.USE_STATE_MACHINE) {
             return this.startEditingLegacy(noteElement);
         }
@@ -57,7 +57,8 @@ export const NoteState = {
         // Otherwise proceed with normal transition
         await NoteStateMachine.transition('editing', {
             currentNote: noteElement,
-            lastSavedContent: DOMUtils.getNoteContentText(noteElement)
+            lastSavedContent: DOMUtils.getNoteContentText(noteElement),
+            clickPosition
         });
 
         // Update our local references
@@ -84,15 +85,16 @@ export const NoteState = {
      * Save the current note
      */
     async saveCurrentNoteWithStateMachine() {
-        if (!this.currentEditingNote) return;
+        const noteElement = NoteStateMachine.data.currentNote;
+        if (!noteElement) return;
 
-        const content = DOMUtils.getNoteContentText(this.currentEditingNote);
-        if (content === this.lastSavedContent) return;
+        const content = DOMUtils.getNoteContentText(noteElement);
+        if (content === NoteStateMachine.data.lastSavedContent) return;
 
-        const noteId = DOMUtils.getNoteId(this.currentEditingNote);
+        const noteId = DOMUtils.getNoteId(noteElement);
         await NotesAPI.updateNote(noteId, content);
         
-        this.lastSavedContent = content;
+        NoteStateMachine.data.lastSavedContent = content;
         console.log('Note saved:', noteId);
     },
 
@@ -123,5 +125,21 @@ export const NoteState = {
     // Keep legacy methods for backward compatibility
     startEditingLegacy(noteElement) {
         // ... existing legacy code ...
+    },
+
+    async updateNote(noteId, content) {
+        const result = await this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
+            method: 'PUT',
+            body: JSON.stringify({ content })
+        }, false);
+        return result;
+    },
+
+    /**
+     * Creates a child note for the current note, ensuring proper state transitions
+     */
+    async createChildNote(parentNoteElement) {
+        const parentId = DOMUtils.getNoteId(parentNoteElement);
+        await NotesAPI.createChild(parentId);
     }
 }; 

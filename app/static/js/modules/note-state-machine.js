@@ -41,7 +41,11 @@ import { NoteState } from './note-state.js';
  */
 export const NoteStateMachine = {
     state: 'idle',
-    data: {},
+    data: {
+        currentNote: null,
+        lastSavedContent: null,
+        cursorPosition: 'end'
+    },
     listeners: [],
 
     states: {
@@ -59,51 +63,40 @@ export const NoteStateMachine = {
     // State handlers
     stateHandlers: {
         editing: {
-            enter: async (data, fromState) => {
-                console.log('🟢 ENTER editing state:', {
-                    from: fromState,
-                    noteElement: data.currentNote,
-                    activeElement: document.activeElement?.className
-                });
+            enter: async (fromState) => {
+                console.log('🟢 ENTER editing state:', { from: fromState });
 
-                console.log('Entering editing state from:', fromState);
-                const noteElement = data.currentNote;
+                // Get clicked note from event target
+                const clickedContent = document.activeElement;
+                const noteElement = clickedContent?.closest('.note');
+                if (!noteElement) return;
+
+                // Set up state
+                NoteStateMachine.data.currentNote = noteElement;
+                NoteStateMachine.data.lastSavedContent = DOMUtils.getNoteContentText(noteElement);
                 
                 // Set up note for editing
                 DOMUtils.setNoteEditable(noteElement, true);
-                
-                // Only force focus if coming from idle state
-                if (fromState === 'idle' && !document.activeElement?.closest('.note-content')) {
-                    console.log('   👆 Forcing focus because coming from idle');
-                    DOMUtils.focusNote(noteElement);
-                } else {
-                    console.log('   🖱️ Preserving natural focus/cursor');
-                }
+                DOMUtils.focusNote(noteElement);
             },
-            exit: async (data, toState) => {
-                console.log('🔴 EXIT editing state:', {
-                    to: toState,
-                    noteElement: data.currentNote
-                });
-
-                console.log('Exiting editing state to:', toState);
-                const noteElement = data.currentNote;
+            exit: async (toState) => {
+                const noteElement = NoteStateMachine.data.currentNote;
                 if (!noteElement) return;
 
+                const currentContent = DOMUtils.getNoteContentText(noteElement);
+                console.log('📝 Exit editing:', {
+                    content: currentContent,
+                    lastSaved: NoteStateMachine.data.lastSavedContent,
+                    needsSave: currentContent !== NoteStateMachine.data.lastSavedContent
+                });
+
                 // Save any pending changes
-                if (data.lastSavedContent !== DOMUtils.getNoteContentText(noteElement)) {
-                    console.log('   💾 Saving changes before exit');
+                if (NoteStateMachine.data.lastSavedContent !== currentContent) {
                     await NoteState.saveCurrentNoteWithStateMachine();
+                    NoteStateMachine.data.lastSavedContent = currentContent;
                 }
                 
-                // Make note non-editable
                 DOMUtils.setNoteEditable(noteElement, false);
-
-                // Remove the selection to hide the blinking cursor without triggering blur events
-                const selection = window.getSelection();
-                if (selection) {
-                    selection.removeAllRanges();
-                }
             }
         },
         searching: {
@@ -146,40 +139,30 @@ export const NoteStateMachine = {
         }
     },
 
-    async transition(toState, data = {}) {
+    async transition(toState) {
         console.log('🔄 TRANSITION:', {
             from: this.state,
-            to: toState,
-            data,
-            stack: new Error().stack.split('\n').slice(1,3).join('\n')  // Just first 2 stack frames
+            to: toState
         });
-        console.log(`State transition: ${this.state} → ${toState}`, data);
-        
+
         if (!this.transitions[this.state]?.includes(toState)) {
-            console.warn(`Invalid transition: ${this.state} → ${toState}`);
+            console.error(`Invalid transition: ${this.state} → ${toState}`);
             return false;
         }
 
         const fromState = this.state;
-        
         try {
-            // Exit current state
             if (this.stateHandlers[fromState]?.exit) {
-                await this.stateHandlers[fromState].exit(this.data, toState);
+                await this.stateHandlers[fromState].exit(toState);
             }
 
-            // Update state
             this.state = toState;
-            this.data = data;
 
-            // Enter new state
             if (this.stateHandlers[toState]?.enter) {
-                await this.stateHandlers[toState].enter(data, fromState);
+                await this.stateHandlers[toState].enter(fromState);
             }
 
-            // Notify listeners
-            this.listeners.forEach(listener => listener(fromState, toState, data));
-            
+            this.listeners.forEach(listener => listener(fromState, toState));
             return true;
         } catch (error) {
             console.error('State transition failed:', error);
