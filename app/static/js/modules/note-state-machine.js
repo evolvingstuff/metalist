@@ -98,6 +98,12 @@ export const NoteStateMachine = {
                 
                 // Make note non-editable
                 DOMUtils.setNoteEditable(noteElement, false);
+
+                // Remove the selection to hide the blinking cursor without triggering blur events
+                const selection = window.getSelection();
+                if (selection) {
+                    selection.removeAllRanges();
+                }
             }
         },
         searching: {
