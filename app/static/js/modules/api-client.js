@@ -40,9 +40,30 @@ export const NotesAPI = {
             });
 
             if (reloadOnSuccess) {
-                alert('Fragment will be called before reload');
-                alert('/fragment');
-                window.location.reload();
+                // Instead of window.location.reload(), fetch the fragment
+                if (CONFIG.DEBUG.LOG_API_CALLS) {
+                    console.log('API Request:', {
+                        url: '/api/notes/fragment',
+                        method: 'GET'
+                    });
+                }
+
+                const fragmentResponse = await fetch('/api/notes/fragment');
+                const fragmentData = await fragmentResponse.json();
+                
+                if (CONFIG.DEBUG.LOG_API_CALLS) {
+                    console.log('API Response:', {
+                        url: '/api/notes/fragment',
+                        status: fragmentResponse.status,
+                        data: fragmentData
+                    });
+                }
+
+                // Update the notes container with new HTML
+                const notesContainer = document.getElementById('notes-container');
+                if (notesContainer && fragmentData.data.html) {
+                    notesContainer.innerHTML = fragmentData.data.html;
+                }
             }
             
             return data;
