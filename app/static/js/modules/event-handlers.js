@@ -47,7 +47,10 @@ export const EventHandlers = {
         // Add button setup
         const addButton = document.querySelector('.add-note');
         if (addButton) {
-            addButton.addEventListener('click', () => NotesAPI.createNote());
+            addButton.addEventListener('click', async () => {
+                await NoteStateMachine.transition('editing');  // Enter editing first
+                await NotesAPI.createNote();
+            });
             addButton.addEventListener('dragstart', this.handleAddButtonDragStart.bind(this));
         }
 
@@ -79,10 +82,9 @@ export const EventHandlers = {
                 }
             },
             addTop: async () => {
-                if (NoteStateMachine.state === 'editing') {
-                    await NoteStateMachine.transition('editing');
-                }
+                await NoteStateMachine.transition('editing');  // Always enter editing for new note
                 await NotesAPI.createNote();
+                
             },
             moveUp: async () => {
                 if (NoteStateMachine.state === 'editing') {
@@ -108,6 +110,7 @@ export const EventHandlers = {
      */
     async handleClick(event) {
         const isClickingNoteContent = DOMUtils.isNoteContent(event.target);
+        const isClickingAddButton = event.target.classList.contains('add-note');
         const noteElement = DOMUtils.findNoteElement(event.target);
         const currentNote = NoteStateMachine.data.currentNote;
 
@@ -152,8 +155,8 @@ export const EventHandlers = {
             
             console.log('   ✏️ Starting to edit note:', DOMUtils.getNoteId(noteElement));
             await NoteState.startEditing(noteElement, clickPositionInfo);
-        } else if (NoteStateMachine.state === 'editing' && !isClickingNoteContent) {
-            console.log('   ⚪ Clicking outside note content - going idle');
+        } else if (!isClickingNoteContent && !isClickingAddButton && NoteStateMachine.state === 'editing') {
+            console.log('Clicking outside note content - going idle');
             await NoteStateMachine.transition('idle');
         }
     },
