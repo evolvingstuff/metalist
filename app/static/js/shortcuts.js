@@ -1,4 +1,4 @@
-import { NoteStateMachine } from './modules/note-state-machine.js';
+import { StateMachine } from './modules/state-machine/state-machine-controller.js';
 
 export const shortcuts = {
     stopEditing: {
@@ -58,7 +58,7 @@ export function setupKeyboardShortcuts(handlers) {
                 if (hasAllModifiers && hasOnlyRequiredModifiers) {
                     // Only handle Enter when not editing
                     if (shortcut.key === 'Enter' && 
-                        NoteStateMachine.state === 'editing' && 
+                        StateMachine.state === 'editing' && 
                         shortcut.modifiers.length === 0) {
                         return;
                     }

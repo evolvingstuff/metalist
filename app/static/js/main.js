@@ -1,61 +1,45 @@
+import { StateMachine } from './modules/state-machine/state-machine-controller.js';
 import { CONFIG } from './modules/config.js';
-import { NotesAPI } from './modules/api-client.js';
-import { DOMUtils } from './modules/dom-utils.js';
-import { NoteState } from './modules/note-state.js';
-import { EventHandlers } from './modules/event-handlers.js';
-import { NoteStateMachine } from './modules/note-state-machine.js';
 
 /**
  * Initialize the application when the DOM is ready
  */
 document.addEventListener('DOMContentLoaded', () => {
     try {
-        // Initialize state machine first
-        if (CONFIG.FEATURES.USE_STATE_MACHINE) {
-            NoteStateMachine.init();
-            
-            if (CONFIG.DEBUG.LOG_STATE_MACHINE) {
-                NoteStateMachine.addListener((fromState, toState, data) => {
-                    console.log('State Change:', {
-                        from: fromState,
-                        to: toState,
-                        data: data
-                    });
-                });
-            }
-        }
-
-        // Initialize other modules in dependency order
-        EventHandlers.init();
-
-        if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
-            console.log('Application initialized successfully');
+        // Initialize state machine
+        StateMachine.init();
+        
+        // Add button click handler
+        const addButton = document.querySelector('.add-note');
+        if (addButton) {
+            addButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                StateMachine.handleRawEvent('AddButtonClick', e);
+            });
         }
 
         // Check for new note to edit
         const newNoteId = localStorage.getItem('newNoteId');
-        const storedPosition = localStorage.getItem('cursorPosition');
-
         if (newNoteId) {
             const newNote = document.querySelector(`[data-id="${newNoteId}"]`);
             if (newNote) {
-                NoteState.startEditing(newNote);
-                try {
-                    const cursorPosition = storedPosition === 'end' ?
-                        'end' :
-                        JSON.parse(storedPosition);
-                    DOMUtils.setCursorPosition(newNote, cursorPosition);
-                } catch (e) {
-                    // Fallback to end if position is invalid
-                    DOMUtils.focusNote(newNote);
-                }
+                StateMachine.handleMappedEvent({
+                    type: 'START_EDITING',
+                    data: {
+                        nextNote: newNote,
+                        cursorPosition: localStorage.getItem('cursorPosition') || 'end'
+                    }
+                });
                 localStorage.removeItem('newNoteId');
                 localStorage.removeItem('cursorPosition');
             }
         }
+
+        if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
+            console.log('Application initialized successfully');
+        }
     } catch (error) {
-        console.error('Failed to initialize application:', error);
-        alert('Failed to initialize application. Please refresh the page.');
+        console.error('Initialization failed:', error);
     }
 });
 

@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
-import { NoteStateMachine } from './note-state-machine.js';
+import { StateMachine } from './state-machine/state-machine-controller.js';
 
 /**
  * Handles all API communication
@@ -64,7 +64,10 @@ export const NotesAPI = {
                 const notesContainer = document.getElementById('notes-container');
                 if (notesContainer && fragmentData.data.html) {
                     notesContainer.innerHTML = fragmentData.data.html;
-                    await NoteStateMachine.handleFragmentLoad(data);  // Pass API response data
+                    await StateMachine.handleMappedEvent({
+                        type: 'FRAGMENT_LOADED',
+                        data: { apiResponse: data }
+                    });
                 }
             }
             
@@ -80,10 +83,9 @@ export const NotesAPI = {
      * Create a new note
      */
     async createNote() {
-        const response = await this._apiCall(CONFIG.API.NOTES.CREATE, { method: 'POST' });
-        localStorage.setItem('newNoteId', response.id);
-        localStorage.setItem('cursorPosition', 'end');  // Default to end for new notes
-        return response;
+        return this._apiCall(CONFIG.API.NOTES.CREATE, {
+            method: 'POST'
+        });
     },
 
     /**
