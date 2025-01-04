@@ -108,6 +108,17 @@ Example JSON structure:
   }
 }
 
+## Position Management
+The system uses the `fractional-indexing` library to generate lexicographically ordered position strings. This allows inserting new items between any two existing positions without having to rebalance or update other positions.
+
+The library generates short position strings (typically 2-3 characters) that maintain their order:
+- First position is "a0"
+- Positions after: "a1", "a2", etc.
+- Positions before: "Zz", "Zy", "Zx", etc. (using ASCII ordering where uppercase comes before lowercase)
+- Can extend to longer strings (e.g., "YzN") when more granularity is needed
+
+This scheme allows for infinite positions in both directions while keeping strings compact.
+
 ### Versioning Strategy
 
 #### Note Versioning
@@ -184,20 +195,45 @@ Example JSON structure:
   "timestamp": "2024-01-20T15:30:05Z"
 }
 
+## Current Status
+
+### Completed
+- Basic note structure and relationships
+- Position string generation logic
+  - Successfully implemented using fractional indexing
+  - Handles infinite positions in both directions
+  - Maintains short, efficient position strings
+  - All tests passing including edge cases
+
+### Next Steps
+1. Integrate position strings into data model
+   - Add position string field
+   - Add indent level field
+   - Update schema to support both old and new fields
+   - Implement parallel system for validation
+2. Implement the note storage system
+   - Design the database schema
+   - Create SQLAlchemy models
+   - Implement CRUD operations
+3. Build the REST API endpoints
+   - Note creation/deletion
+   - Note movement and reordering
+   - Parent/child relationship management
+
 ## Implementation Steps
 
 ### 1. Position Management System
+- [x] Implement fractional indexing
+  - [x] Position string generation
+  - [x] Position comparison/sorting
+  - [x] Generate position between two others
+  - [x] Handle edge cases (first/last positions)
+
 - [ ] Add new fields without removing old
   - [ ] Add position string field
   - [ ] Add indent level field
   - [ ] Keep prev/next/parent working
   - [ ] Update schema to support both
-
-- [ ] Implement fractional indexing
-  - [ ] Position string generation
-  - [ ] Position comparison/sorting
-  - [ ] Generate position between two others
-  - [ ] Handle edge cases (first/last positions)
 
 - [ ] Add indent level support
   - [ ] Calculate indent from parent relationships

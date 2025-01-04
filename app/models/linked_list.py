@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from .enums import MovePosition
 from .database import DBNote
 from ..global_state_mod import global_state
+from .position import Position
 
 
 class LinkedListManager:
@@ -153,25 +154,111 @@ class LinkedListManager:
         try:
             if note_id is None:
                 raise ValueError("Note ID must be specified")
-            # Create new note with no links initially
-            db_note = DBNote(id=note_id, content="", parent_id=parent_id)
-            db.add(db_note)
 
-            # Find the current head
-            current_head = db.query(DBNote).filter(
+            # Calculate indent level based on parent chain
+            indent_level = 0
+            if parent_id:
+                parent = db.get(DBNote, parent_id)
+                if parent:
+                    indent_level = (parent.indent or 0) + 1
+
+            # Get the first note at this level to determine position
+            first_note = db.query(DBNote).filter(
                 DBNote.prev_id == None, 
                 DBNote.parent_id == parent_id
             ).first()
 
-            if current_head and current_head.id != note_id:  # Make sure we're not looking at ourselves
-                # Make new note the head by linking it to current head
-                current_head.prev_id = note_id
-                db_note.next_id = current_head.id
+            # Generate position string - if there's a first note, position before it
+            if first_note and first_note.position:
+                position_str = Position.get_position_between(None, first_note.position)
+            else:
+                position_str = Position.get_first_position()  # "a0"
 
-            db.flush()  # an attempt to make the note available for the next query
+            # Create new note with both linked list and position fields
+            db_note = DBNote(
+                id=note_id,
+                content="",
+                parent_id=parent_id,
+                position=position_str,
+                indent=indent_level
+            )
+            db.add(db_note)
+
+            # Update linked list pointers if there's an existing head
+            if first_note and first_note.id != note_id:
+                first_note.prev_id = note_id
+                db_note.next_id = first_note.id
+
+            db.flush()
         except Exception as e:
             print(e)
             raise
+
+    @staticmethod
+    def get_note(db: Session, note_id: str) -> DBNote:
+        db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
+        if not db_note:
+            raise ValueError(f"Note with id {note_id} not found")
+        return db_note
+
+    @staticmethod
+    def update_note(db: Session, note_id: str, content: str):
+        db_note = LinkedListManager.get_note(db, note_id)
+        db_note.content = content
+
+    @staticmethod
+    def delete_note(db: Session, note_id: str) -> None:
+        """Delete a note and ALL its descendants, updating surrounding links"""
+        try:
+            note = db.get(DBNote, note_id)
+            if not note:
+                raise ValueError(f"Note {note_id} not found")
+
+            def get_all_descendant_ids(parent_id: str) -> set[str]:
+                """Recursively get IDs of all descendants"""
+                descendants = set()
+                children = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
+                for child in children:
+                    descendants.add(child.id)
+                    descendants.update(get_all_descendant_ids(child.id))
+                return descendants
+
+            # Delete all descendants first
+            descendant_ids = get_all_descendant_ids(note_id)
+            for descendant_id in descendant_ids:
+                descendant = db.get(DBNote, descendant_id)
+                db.delete(descendant)
+
+            # Update links of surrounding notes at the original note's level
+            if note.prev_id:
+                prev_note = db.get(DBNote, note.prev_id)
+                prev_note.next_id = note.next_id
+            if note.next_id:
+                next_note = db.get(DBNote, note.next_id)
+                next_note.prev_id = note.prev_id
+
+            # Delete the original note
+            db.delete(note)
+        except Exception as e:
+            print(e)
+            raise
+
+
+    @staticmethod
+    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
+        # First create the note at root level
+        LinkedListManager.create_note_top(db, note_id)
+
+        # TODO: possible to fail at next step but original update still made...
+        
+        # Then move it to the desired location (either under a parent or relative to siblings)
+        LinkedListManager.move_note(
+            db=db,
+            note_id=note_id,
+            new_parent_id=new_parent_id,
+            sibling_id=sibling_id,
+            position=position
+        )
 
     @staticmethod
     def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
@@ -271,69 +358,3 @@ class LinkedListManager:
         except Exception as e:
             print(e)
             raise
-
-    @staticmethod
-    def get_note(db: Session, note_id: str) -> DBNote:
-        db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
-        if not db_note:
-            raise ValueError(f"Note with id {note_id} not found")
-        return db_note
-
-    @staticmethod
-    def update_note(db: Session, note_id: str, content: str):
-        db_note = LinkedListManager.get_note(db, note_id)
-        db_note.content = content
-
-    @staticmethod
-    def delete_note(db: Session, note_id: str) -> None:
-        """Delete a note and ALL its descendants, updating surrounding links"""
-        try:
-            note = db.get(DBNote, note_id)
-            if not note:
-                raise ValueError(f"Note {note_id} not found")
-
-            def get_all_descendant_ids(parent_id: str) -> set[str]:
-                """Recursively get IDs of all descendants"""
-                descendants = set()
-                children = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
-                for child in children:
-                    descendants.add(child.id)
-                    descendants.update(get_all_descendant_ids(child.id))
-                return descendants
-
-            # Delete all descendants first
-            descendant_ids = get_all_descendant_ids(note_id)
-            for descendant_id in descendant_ids:
-                descendant = db.get(DBNote, descendant_id)
-                db.delete(descendant)
-
-            # Update links of surrounding notes at the original note's level
-            if note.prev_id:
-                prev_note = db.get(DBNote, note.prev_id)
-                prev_note.next_id = note.next_id
-            if note.next_id:
-                next_note = db.get(DBNote, note.next_id)
-                next_note.prev_id = note.prev_id
-
-            # Delete the original note
-            db.delete(note)
-        except Exception as e:
-            print(e)
-            raise
-
-
-    @staticmethod
-    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
-        # First create the note at root level
-        LinkedListManager.create_note_top(db, note_id)
-
-        # TODO: possible to fail at next step but original update still made...
-        
-        # Then move it to the desired location (either under a parent or relative to siblings)
-        LinkedListManager.move_note(
-            db=db,
-            note_id=note_id,
-            new_parent_id=new_parent_id,
-            sibling_id=sibling_id,
-            position=position
-        )

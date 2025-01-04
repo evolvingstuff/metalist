@@ -1,3 +1,21 @@
+"""Position management using fractional indexing.
+
+This module uses the fractional-indexing library to generate lexicographically ordered
+position strings that can always fit a new position between any two existing positions.
+
+The system works by:
+1. Using "a0" as the first/starting position
+2. For positions after "a0": uses "a1", "a2", etc.
+3. For positions before "a0": uses uppercase letters which sort before lowercase in ASCII
+   - First position before "a0" is "Zz"
+   - Then "Zy", "Zx", etc.
+   - Can extend to "YzN", "Yks" etc. when more granularity is needed
+   - Maintains short strings (max 3 chars even after 1000 insertions)
+
+This allows for infinite positions in both directions while keeping the strings
+as short as possible. The library handles all the complexity of generating these
+position strings in a deterministic way."""
+
 from typing import Optional
 from fractional_indexing import generate_key_between
 

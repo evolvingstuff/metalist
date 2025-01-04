@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from datetime import datetime, timezone
 from app.core.config import DATABASE_URL
@@ -73,9 +73,15 @@ class DBNote(Base):
     
     id = Column(String, primary_key=True)
     content = Column(String)
+    
+    # Old fields for linked list implementation
     parent_id = Column(String, ForeignKey('notes.id'), nullable=True)
     prev_id = Column(String, ForeignKey('notes.id'), nullable=True)
     next_id = Column(String, ForeignKey('notes.id'), nullable=True)
+    
+    # New fields for position-based implementation
+    position = Column(String, nullable=True)  # Lexicographically ordered position string
+    indent = Column(Integer, nullable=True)   # Indentation level, derived from tree structure
+    
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-

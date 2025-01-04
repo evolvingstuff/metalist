@@ -132,3 +132,40 @@ def test_many_many_positions_before_first():
     # Verify all positions are less than the first position
     for pos in positions:
         assert pos < first_pos, f"Failed: {pos} should be < {first_pos}"
+
+
+def test_create_note_top_with_position():
+    """Test that creating a note sets both position and linked list fields correctly"""
+    from app.models.database import SafeSession, DBNote
+    from app.models.linked_list import LinkedListManager
+    from app.models.position import Position
+
+    # Set up in-memory database
+    SafeSession.use_memory_db()
+    db = SafeSession(bind=SafeSession.get_engine())
+
+    # Create first note - should get "a0" position and no indent
+    LinkedListManager.create_note_top(db, "note1")
+    note1 = db.get(DBNote, "note1")
+    assert note1.position == "a0"
+    assert note1.indent == 0
+    assert note1.prev_id is None
+    assert note1.next_id is None
+
+    # Create second note - should get position before "a0" and no indent
+    LinkedListManager.create_note_top(db, "note2")
+    note2 = db.get(DBNote, "note2")
+    assert Position.compare(note2.position, note1.position) < 0
+    assert note2.indent == 0
+    assert note2.prev_id is None
+    assert note2.next_id == "note1"
+    assert note1.prev_id == "note2"
+
+    # Create child note - should get "a0" position and indent 1
+    LinkedListManager.create_note_top(db, "child1", parent_id="note1")
+    child1 = db.get(DBNote, "child1")
+    assert child1.position == "a0"
+    assert child1.indent == 1
+    assert child1.parent_id == "note1"
+    assert child1.prev_id is None
+    assert child1.next_id is None
