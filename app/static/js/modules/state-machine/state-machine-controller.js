@@ -4,8 +4,28 @@ import { StateTransitions } from './transition-coordinator.js';
 import { NotesAPI } from '../api-client.js';
 
 /**
- * Main state machine controller
- * Coordinates raw events → event mapping → state transitions
+ * State Machine Controller
+ * 
+ * Core controller that coordinates all state machine operations:
+ * 1. Raw event handling (DOM events → low-level events)
+ * 2. Event mapping (low-level events → state machine events)
+ * 3. State transitions (state changes with enter/exit hooks)
+ * 
+ * Flow:
+ * DOM Event → Raw Event → Mapped Event → State Transition → New State
+ * 
+ * @example
+ * // Initialize
+ * StateMachine.init();
+ * 
+ * // Handle DOM event
+ * StateMachine.handleRawEvent('AddButtonClick', event);
+ * 
+ * // Direct state machine event
+ * StateMachine.handleMappedEvent({
+ *   type: 'START_EDITING',
+ *   data: { nextNote: noteElement }
+ * });
  */
 export const StateMachine = {
     state: 'idle',

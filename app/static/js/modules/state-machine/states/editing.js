@@ -1,6 +1,32 @@
 import { DOMUtils } from '../../dom-utils.js';
 import { NotesAPI } from '../../api-client.js';
 
+/**
+ * Editing State
+ * 
+ * Manages note editing functionality including:
+ * - Setting up editable notes
+ * - Cursor position management
+ * - Content change tracking
+ * - Auto-saving
+ * 
+ * State Data:
+ * - currentNote: Currently edited note element
+ * - lastSavedContent: Content at last save
+ * - currentContent: Current note content
+ * 
+ * Transitions:
+ * - Enter: Sets up note for editing, manages focus
+ * - Exit: Saves changes, cleans up editable state
+ * 
+ * @example
+ * // Enter editing state
+ * await transition('editing', {
+ *   nextNote: noteElement,
+ *   cursorPosition: 'end'
+ * });
+ */
+
 export const editingTransitions = {
     enter: async (data, prevState) => {
         const { nextNote, cursorPosition } = data;

@@ -1,8 +1,29 @@
 import { DOMUtils } from '../dom-utils.js';
 
 /**
- * Maps raw DOM events to low-level semantic events
- * No state awareness, pure event translation
+ * Raw Event Handlers
+ * 
+ * Converts DOM events into normalized low-level events.
+ * Handles initial event processing and data extraction.
+ * 
+ * Each handler:
+ * 1. Receives DOM event
+ * 2. Extracts relevant data
+ * 3. Returns normalized event object or null
+ * 
+ * Event Structure:
+ * {
+ *   type: 'EVENT_TYPE',
+ *   ...extracted data
+ * }
+ * 
+ * @example
+ * // Convert click to raw event
+ * handleAddButtonClick(event) {
+ *   return {
+ *     type: 'ADD_BUTTON_CLICKED'
+ *   };
+ * }
  */
 export const RawEvents = {
     handleClick(event) {

@@ -164,3 +164,49 @@ This approach provides intuitive undo/redo for content operations while avoiding
 - Verifies perfect reversibility of operations
 - Can run many iterations with different random sequences
 - Ensures UI behavior remains consistent across changes
+
+## State Machine Architecture
+
+### Overview
+The application uses a finite state machine to manage UI state and user interactions.
+Key states are: idle, editing, and searching.
+
+### Components
+1. State Machine Controller
+   - Coordinates all state machine operations
+   - Handles event flow and state transitions
+   - Maintains current state and context data
+
+2. Event Mapper
+   - Maps raw events to state machine events
+   - Context-aware event interpretation
+   - State-specific event handling
+
+3. Raw Event Handlers
+   - Converts DOM events to normalized events
+   - Initial event processing
+   - Data extraction
+
+4. Transition Coordinator
+   - Manages state transitions
+   - Handles enter/exit hooks
+   - Validates state changes
+
+### Event Flow
+1. DOM Event → Raw Event
+2. Raw Event → Mapped Event (with context)
+3. Mapped Event → State Transition
+4. State Transition → New State
+
+### State Data Management
+- Each state maintains its own data
+- Data passed through transitions
+- Clean separation between states
+- Automatic cleanup on state exit
+
+### Benefits
+- Clear state boundaries
+- Predictable behavior
+- Easy debugging
+- Modular design
+- Testable components

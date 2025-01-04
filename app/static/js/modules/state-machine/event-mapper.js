@@ -1,6 +1,31 @@
 /**
- * Maps low-level events to state machine events based on current state
- * This is where we interpret the user's intention based on context
+ * Event Mapper
+ * 
+ * Maps low-level events to state machine events based on current state.
+ * This is where we interpret user intentions based on context.
+ * 
+ * Structure:
+ * {
+ *   [state]: {
+ *     [eventType]: (event, context) => ({
+ *       type: 'STATE_MACHINE_EVENT',
+ *       data: { ... }
+ *     })
+ *   }
+ * }
+ * 
+ * Each handler:
+ * 1. Receives raw event and current state context
+ * 2. Returns state machine event or null
+ * 3. Can access DOM and other utilities
+ * 
+ * @example
+ * // Mapping in idle state
+ * idle: {
+ *   ADD_BUTTON_CLICKED: () => ({
+ *     type: 'CREATE_TOP_NOTE'
+ *   })
+ * }
  */
 export const EventMapper = {
     // Current state → event type → handler mapping

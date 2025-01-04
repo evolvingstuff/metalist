@@ -2,6 +2,25 @@ import { editingTransitions } from './states/editing.js';
 import { searchingTransitions } from './states/searching.js';
 import { idleTransitions } from './states/idle.js';
 
+/**
+ * State Transition Coordinator
+ * 
+ * Manages state transitions and their associated enter/exit hooks.
+ * Validates transitions and coordinates state cleanup/setup.
+ * 
+ * Features:
+ * - Validates allowed state transitions
+ * - Executes exit hooks for old state
+ * - Executes enter hooks for new state
+ * - Manages transition data flow
+ * - Handles transition errors
+ * 
+ * @example
+ * // Execute transition
+ * await StateTransitions.execute('idle', 'editing', {
+ *   nextNote: noteElement
+ * });
+ */
 export const StateTransitions = {
     // Define valid state transitions
     validTransitions: {
