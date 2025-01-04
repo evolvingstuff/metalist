@@ -188,5 +188,18 @@ export const NoteStateMachine = {
 
     removeListener(callback) {
         this.listeners = this.listeners.filter(l => l !== callback);
+    },
+
+    async handleFragmentLoad(responseData) {
+        if (this.state === 'editing') {
+            // If we have a response with an ID (new note), use that
+            const noteId = responseData?.id || DOMUtils.getNoteId(this.data.currentNote);
+            const newNoteElement = document.querySelector(`[data-id="${noteId}"]`);
+            if (newNoteElement) {
+                this.data.currentNote = newNoteElement;
+                DOMUtils.setNoteEditable(newNoteElement, true);
+                DOMUtils.focusNote(newNoteElement);
+            }
+        }
     }
 }; 

@@ -1,5 +1,6 @@
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
+import { NoteStateMachine } from './note-state-machine.js';
 
 /**
  * Handles all API communication
@@ -63,6 +64,7 @@ export const NotesAPI = {
                 const notesContainer = document.getElementById('notes-container');
                 if (notesContainer && fragmentData.data.html) {
                     notesContainer.innerHTML = fragmentData.data.html;
+                    await NoteStateMachine.handleFragmentLoad(data);  // Pass API response data
                 }
             }
             
