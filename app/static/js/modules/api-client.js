@@ -40,6 +40,8 @@ export const NotesAPI = {
             });
 
             if (reloadOnSuccess) {
+                alert('Fragment will be called before reload');
+                alert('/fragment');
                 window.location.reload();
             }
             
@@ -202,4 +204,4 @@ export const NotesAPI = {
             localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
         }
     }
-}; 
+};

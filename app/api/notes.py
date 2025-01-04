@@ -195,3 +195,42 @@ def create_new_child(note_id: str, db: Session = Depends(get_db)):
     )
     
     return {"id": new_note_id}
+
+@router.get("/fragment")
+def get_notes_fragment(db: Session = Depends(get_db)):
+    """Get the HTML fragment for the notes list"""
+    # This endpoint returns the notes_list.html template content for AJAX updates
+    from mako.template import Template
+    from mako.lookup import TemplateLookup
+    import os
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Set up template lookup
+        template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates')
+        lookup = TemplateLookup(directories=[template_dir])
+        template = lookup.get_template('notes_list.html')
+
+        # Use same tree building logic as main page
+        def build_tree(parent_id=None):
+            try:
+                notes = LinkedListManager.get_ordered_child_list(db, parent_id)
+                return [{
+                    'id': note.id,
+                    'content': note.content,
+                    'parent_id': note.parent_id or '',
+                    'children': build_tree(note.id)
+                } for note in notes]
+            except Exception as e:
+                logger.exception("Error building note tree")
+                raise
+
+        notes = build_tree(None)
+        html = template.render(notes=notes)
+        
+        return {"data": {"html": html}}
+    except Exception as e:
+        logger.exception("Error in fragment endpoint")
+        raise
