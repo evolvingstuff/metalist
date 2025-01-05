@@ -210,3 +210,37 @@ Key states are: idle, editing, and searching.
 - Easy debugging
 - Modular design
 - Testable components
+
+## Encrypted Index Persistence Strategy
+
+Indices use a Write-Ahead Log (WAL) + base index approach:
+
+### Components
+1. Base Index
+   - Encrypted, compressed snapshot of full index state
+   - Written periodically during checkpoints
+   - More expensive to write but contains bulk of data
+
+2. Write-Ahead Log (WAL)
+   - Append-only log of recent changes
+   - Each entry individually encrypted
+   - Fast to update (simple append operation)
+   - Replayed on startup to recover state
+
+### Operations
+- Writes: Append encrypted entry to WAL + update in-memory
+- Reads: Serve directly from in-memory index
+- Startup: Load base index + replay WAL
+- Checkpoint: Write new base index + clear WAL
+
+### Checkpointing Triggers
+- Time-based (e.g., every 6 hours)
+- Size-based (WAL exceeds X% of base index)
+- Clean shutdown
+
+Benefits:
+- Fast writes (just WAL append)
+- Crash-resistant (WAL replay)
+- Efficient storage (compressed base)
+- Quick startup (no rebuild needed)
+- Automatic recovery from interruption
