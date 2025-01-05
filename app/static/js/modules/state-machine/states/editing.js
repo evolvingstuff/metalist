@@ -60,6 +60,16 @@ export const editingTransitions = {
             );
         }
 
+        // Clear selection for the current note only
+        const contentElement = DOMUtils.getNoteContent(currentNote);
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            if (contentElement.contains(range.commonAncestorContainer)) {
+                selection.removeAllRanges();
+            }
+        }
+
         // Clean up note
         DOMUtils.setNoteEditable(currentNote, false);
 
