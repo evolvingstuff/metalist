@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Inte
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from datetime import datetime, timezone
 from app.core.config import DATABASE_URL
+from sqlalchemy.pool import StaticPool
 
 
 class SafeSession(Session):
@@ -17,12 +18,17 @@ class SafeSession(Session):
         print("""
 🧪 SWITCHING TO TEST MODE 🧪
 ┌──────────────────────────┐
-│       DEV DATABASE       │
+│   IN-MEMORY DATABASE     │
 │  *All Data is Temporary  │
 └──────────────────────────┘
         """)
         print("="*50 + "\n")
-        cls._memory_engine = create_engine('sqlite:///./notes.dev.db')
+        # Use StaticPool and connect_args for thread safety
+        cls._memory_engine = create_engine(
+            'sqlite:///:memory:',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool
+        )
         Base.metadata.create_all(cls._memory_engine)
         return {'status': 'ok', 'message': 'Using in-memory database'}
 
