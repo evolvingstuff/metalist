@@ -18,23 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Check for new note to edit
-        const newNoteId = localStorage.getItem('newNoteId');
-        if (newNoteId) {
-            const newNote = document.querySelector(`[data-id="${newNoteId}"]`);
-            if (newNote) {
-                StateMachine.handleMappedEvent({
-                    type: 'START_EDITING',
-                    data: {
-                        nextNote: newNote,
-                        cursorPosition: localStorage.getItem('cursorPosition') || 'end'
-                    }
-                });
-                localStorage.removeItem('newNoteId');
-                localStorage.removeItem('cursorPosition');
-            }
-        }
-
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Application initialized successfully');
         }

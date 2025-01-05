@@ -92,7 +92,7 @@ export const NotesAPI = {
      * Create a new note via drag and drop
      */
     async createNoteDrop(parentId, siblingId, position) {
-        const response = await this._apiCall(CONFIG.API.NOTES.CREATE_DROP, {
+        return this._apiCall(CONFIG.API.NOTES.CREATE_DROP, {
             method: 'POST',
             body: JSON.stringify({
                 new_parent_id: parentId,
@@ -100,29 +100,24 @@ export const NotesAPI = {
                 position: position
             })
         });
-        localStorage.setItem('newNoteId', response.id);
-        localStorage.setItem('cursorPosition', 'end');
-        return response;
     },
 
     /**
      * Create a sibling note
      */
     async createSibling(noteId) {
-        const response = await this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { method: 'POST' });
-        localStorage.setItem('newNoteId', response.id);
-        localStorage.setItem('cursorPosition', 'end');
-        return response;
+        return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
+            method: 'POST' 
+        });
     },
 
     /**
      * Create a child note
      */
     async createChild(noteId) {
-        const response = await this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { method: 'POST' });
-        localStorage.setItem('newNoteId', response.id);
-        localStorage.setItem('cursorPosition', 'end');
-        return response;
+        return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { 
+            method: 'POST' 
+        });
     },
 
     /**
@@ -148,23 +143,10 @@ export const NotesAPI = {
             body.new_parent_id = newParentId;
         }
 
-        // Check if note is being edited BEFORE the move
-        const noteElement = document.querySelector(`[data-id="${noteId}"]`);
-        const wasEditing = noteElement?.classList.contains(CONFIG.CLASSES.EDITING);
-        
-        const response = await this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
+        return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
             body: JSON.stringify(body)
         });
-        
-        // Only store note ID if it was being edited
-        if (wasEditing) {
-            localStorage.setItem('newNoteId', noteId);
-            // Also store a flag to indicate this was a move operation
-            localStorage.setItem('wasMovedWhileEditing', 'true');
-        }
-        
-        return response;
     },
 
     /**
@@ -192,9 +174,6 @@ export const NotesAPI = {
         const noteElement = document.querySelector(`[data-id="${noteId}"]`);
         const prevSibling = noteElement.previousElementSibling;
         if (!prevSibling || !prevSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
-
-        // Store cursor position before move
-        const cursorPosition = DOMUtils.getCursorPosition(noteElement);
         
         await this.moveNote(
             noteId,
@@ -202,20 +181,12 @@ export const NotesAPI = {
             'BEFORE',
             noteElement.dataset.parentId || null
         );
-
-        // Store cursor position to restore after move
-        if (cursorPosition) {
-            localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
-        }
     },
 
     async moveNoteDown(noteId) {
         const noteElement = document.querySelector(`[data-id="${noteId}"]`);
         const nextSibling = noteElement.nextElementSibling;
         if (!nextSibling || !nextSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
-
-        // Store cursor position before move
-        const cursorPosition = DOMUtils.getCursorPosition(noteElement);
         
         await this.moveNote(
             noteId,
@@ -223,10 +194,5 @@ export const NotesAPI = {
             'AFTER',
             noteElement.dataset.parentId || null
         );
-
-        // Store cursor position to restore after move
-        if (cursorPosition) {
-            localStorage.setItem('cursorPosition', JSON.stringify(cursorPosition));
-        }
     }
 };

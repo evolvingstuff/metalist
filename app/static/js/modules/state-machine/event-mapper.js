@@ -58,22 +58,7 @@ export const EventMapper = {
             }),
 
             FRAGMENT_LOADED: (event) => {
-                // Check if we need to start editing a new note
-                const newNoteId = localStorage.getItem('newNoteId');
-                if (newNoteId) {
-                    const newNote = document.querySelector(`[data-id="${newNoteId}"]`);
-                    if (newNote) {
-                        localStorage.removeItem('newNoteId');
-                        return {
-                            type: 'START_EDITING',
-                            data: {
-                                nextNote: newNote,
-                                cursorPosition: localStorage.getItem('cursorPosition') || 'end'
-                            }
-                        };
-                    }
-                }
-                return null;  // No state change needed
+                return null;  // No state change needed in idle state
             }
         },
 
@@ -121,25 +106,7 @@ export const EventMapper = {
             }),
 
             FRAGMENT_LOADED: (event, context) => {
-                // If we were editing a note that was moved
-                const wasMovedWhileEditing = localStorage.getItem('wasMovedWhileEditing');
-                if (wasMovedWhileEditing) {
-                    localStorage.removeItem('wasMovedWhileEditing');
-                    const noteId = localStorage.getItem('newNoteId');
-                    if (noteId) {
-                        const movedNote = document.querySelector(`[data-id="${noteId}"]`);
-                        if (movedNote) {
-                            return {
-                                type: 'SWITCH_NOTE',
-                                data: {
-                                    prevNote: context.currentNote,
-                                    nextNote: movedNote,
-                                    cursorPosition: localStorage.getItem('cursorPosition') || 'end'
-                                }
-                            };
-                        }
-                    }
-                }
+                // No state restoration needed
                 return null;
             }
         },
