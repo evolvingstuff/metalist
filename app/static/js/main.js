@@ -25,12 +25,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Handle clicks on notes to enter editing state
+        // and clicks outside interactive elements to exit editing state
         document.addEventListener('click', (e) => {
             const noteContent = e.target.closest('.note-content');
             if (noteContent) {
                 StateMachine.handleRawEvent('NoteContentClick', {
                     noteElement: noteContent.closest('.note')
                 });
+                return;
+            }
+
+            // If clicked anywhere except interactive elements, exit editing
+            if (!e.target.closest('.interactive')) {
+                StateMachine.handleRawEvent('ClickOutsideNote');
             }
         });
 

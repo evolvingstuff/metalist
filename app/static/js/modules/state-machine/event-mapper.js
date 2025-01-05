@@ -107,6 +107,14 @@ export const EventMapper = {
                 }
             }),
 
+            CLICK_OUTSIDE_NOTE: (event, context) => ({
+                type: 'STOP_EDITING',
+                data: {
+                    prevNote: context.currentNote,
+                    lastSavedContent: context.lastSavedContent
+                }
+            }),
+
             FRAGMENT_LOADED: (event, context) => {
                 // No state restoration needed
                 return null;

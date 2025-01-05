@@ -123,7 +123,13 @@ export const RawEvents = {
             noteElement,
             position: event.position
         };
-    }
+    },
+
+    handleClickOutsideNote(event) {
+        return {
+            type: 'CLICK_OUTSIDE_NOTE'
+        };
+    },
 
     // ... other raw event handlers
 }; 
