@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
             StateMachine.handleRawEvent('KeyDown', e);
         });
 
-        // Add note click handler
+        // Handle clicks on notes to enter editing state
         document.addEventListener('click', (e) => {
             const noteContent = e.target.closest('.note-content');
             if (noteContent) {
@@ -34,7 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Add focus handler to detect cursor activation
+        // Prevent "phantom" cursor appearing when focusing notes outside their bounds
+        // This can happen when clicking below/between notes since they are contenteditable
         document.addEventListener('focus', (e) => {
             const noteContent = e.target.closest('.note-content');
             if (noteContent) {
@@ -43,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.getSelection().removeAllRanges();
                 }
             }
-        }, true);  // Use capture phase to get event before contenteditable processes it
+        }, true);  // Capture phase ensures we handle focus before contenteditable processing
 
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Application initialized successfully');
