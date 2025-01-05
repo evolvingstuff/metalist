@@ -2,7 +2,7 @@
 
 // Example command to create a new note with content
 Cypress.Commands.add('createNote', (content) => {
-  cy.get('.add-note-button').click()
+  cy.get('.add-note').click()
   if (content) {
     cy.get('.note.editing .note-content').type(content)
   }
