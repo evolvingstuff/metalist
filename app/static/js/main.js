@@ -18,6 +18,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        // Add keyboard event handler
+        document.addEventListener('keydown', (e) => {
+            StateMachine.handleRawEvent('KeyDown', e);
+        });
+
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Application initialized successfully');
         }

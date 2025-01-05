@@ -12,20 +12,19 @@ describe('Smoke Test', () => {
       .then((interception) => {
         const noteId = interception.response.body.id
         
-        // Set up update intercept
+        // Set up update intercept AFTER we have the note ID
         cy.intercept('PUT', `/api/notes/${noteId}`).as('updateNote')
         
-        // Type in note
-        cy.get('.note.editing .note-content').type('test note')
+        // Type in note and press Escape to save
+        cy.get('.note.editing .note-content')
+          .type('test note')
+          .type('{esc}')  // Press Escape to trigger save
         
         // Wait for update
         cy.wait('@updateNote')
         
-        // Verify and signal completion
+        // Verify content
         cy.get('.note').should('contain', 'test note')
-          .then(() => {
-            cy.task('testComplete')
-          })
       })
   })
 })
