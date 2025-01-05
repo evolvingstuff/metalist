@@ -1,5 +1,6 @@
 import { StateMachine } from './modules/state-machine/state-machine-controller.js';
 import { CONFIG } from './modules/config.js';
+import { DOMUtils } from './modules/dom-utils.js';
 
 /**
  * Initialize the application when the DOM is ready
@@ -21,6 +22,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add keyboard event handler
         document.addEventListener('keydown', (e) => {
             StateMachine.handleRawEvent('KeyDown', e);
+        });
+
+        // Add note click handler
+        document.addEventListener('click', (e) => {
+            const noteContent = e.target.closest('.note-content');
+            if (noteContent) {
+                StateMachine.handleRawEvent('NoteContentClick', {
+                    noteElement: noteContent.closest('.note')
+                });
+            }
         });
 
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {

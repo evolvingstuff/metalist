@@ -112,6 +112,17 @@ export const RawEvents = {
             type: 'SEARCH_BLURRED',
             clickedElement: event.relatedTarget
         };
+    },
+
+    handleNoteContentClick(event) {
+        const noteElement = DOMUtils.findNoteElement(event.noteElement);
+        if (!noteElement) return null;
+
+        return {
+            type: 'NOTE_CONTENT_CLICKED',
+            noteElement,
+            position: event.position
+        };
     }
 
     // ... other raw event handlers
