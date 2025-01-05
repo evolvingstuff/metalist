@@ -34,6 +34,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // Add focus handler to detect cursor activation
+        document.addEventListener('focus', (e) => {
+            const noteContent = e.target.closest('.note-content');
+            if (noteContent) {
+                const rect = noteContent.getBoundingClientRect();
+                if (!(e.clientY >= rect.top && e.clientY <= rect.bottom)) {
+                    window.getSelection().removeAllRanges();
+                }
+            }
+        }, true);  // Use capture phase to get event before contenteditable processes it
+
         if (CONFIG.DEBUG.LOG_STATE_CHANGES) {
             console.log('Application initialized successfully');
         }
