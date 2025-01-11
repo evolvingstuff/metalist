@@ -1,7 +1,5 @@
 # TODO
 
-* UI testing framework
-* front end state machines?
 * synch between browser windows
 * search
 * differential updates
