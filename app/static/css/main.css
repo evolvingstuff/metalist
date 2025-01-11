@@ -18,7 +18,7 @@ body {
 .container {
     max-width: 800px;
     margin: 0 auto;
-    padding: 0.5rem;
+    padding: 0.5rem 5rem;  /* Symmetric padding for floating buttons */
 }
 
 .header {
@@ -247,4 +247,36 @@ body {
 .search-input:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+}
+
+/* Global Controls */
+.global-controls {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 1000;
+}
+
+.menu-button,
+.settings-button {
+    composes: add-note;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: white;
+    font-size: 1.2rem;
+    transition: background-color 0.2s;
+    padding: 0;
+}
+
+.menu-button:hover,
+.settings-button:hover {
+    background-color: var(--hover-color);
 }
