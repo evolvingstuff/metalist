@@ -44,7 +44,8 @@ export const EventMapper = {
                     cursorPosition: event.position
                 }
             }),
-
+            // Explicitly handle with no-op - clicking outside notes in idle state requires no action
+            CLICK_OUTSIDE_NOTE: () => null,
             COMMAND_ENTER_PRESSED: (event) => ({
                 type: 'CREATE_NOTE',
                 data: {
