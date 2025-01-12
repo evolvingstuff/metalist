@@ -154,32 +154,17 @@ class LinkedListManager:
             if note_id is None:
                 raise ValueError("Note ID must be specified")
 
-            # Calculate indent level based on parent chain
-            indent_level = 0
-            if parent_id:
-                parent = db.get(DBNote, parent_id)
-                if parent:
-                    indent_level = (parent.indent or 0) + 1
-
             # Get the first note at this level to determine position
             first_note = db.query(DBNote).filter(
                 DBNote.prev_id == None, 
                 DBNote.parent_id == parent_id
             ).first()
 
-            # Generate position string - if there's a first note, position before it
-            if first_note and first_note.position:
-                position_str = Position.get_position_between(None, first_note.position)
-            else:
-                position_str = Position.get_first_position()  # "a0"
-
             # Create new note with both linked list and position fields
             db_note = DBNote(
                 id=note_id,
                 content="",
-                parent_id=parent_id,
-                position=position_str,
-                indent=indent_level
+                parent_id=parent_id
             )
             db.add(db_note)
 
