@@ -28,8 +28,47 @@ import { ActivityMonitor } from './activity-monitor.js';
  *   data: { nextNote: noteElement }
  * });
  */
+
+// Valid state machine states
+export const States = {
+    IDLE: 'idle',
+    EDITING: 'editing',
+    SEARCHING: 'searching'
+};
+
+// Every single possible event must be listed here
+export const Events = {
+    // State transitions
+    START_EDITING: 'START_EDITING',
+    START_SEARCHING: 'START_SEARCHING',
+    START_IDLE: 'START_IDLE',
+    STOP_EDITING: 'STOP_EDITING',
+    STOP_SEARCHING: 'STOP_SEARCHING',
+    
+    // UI events
+    NOTE_CONTENT_CLICKED: 'NOTE_CONTENT_CLICKED',
+    CLICKED_OUTSIDE_NOTE: 'CLICKED_OUTSIDE_NOTE',
+    CREATE_TOP_NOTE: 'CREATE_TOP_NOTE',
+    KEY_DOWN: 'KEY_DOWN',
+    SWITCH_NOTE: 'SWITCH_NOTE',
+    SEARCH_FOCUSED: 'SEARCH_FOCUSED',
+    SEARCH_QUERY_CHANGED: 'SEARCH_QUERY_CHANGED',
+    FRAGMENT_LOADED: 'FRAGMENT_LOADED',
+    INACTIVITY_TIMEOUT: 'INACTIVITY_TIMEOUT',
+    NO_OP: 'NO_OP'
+};
+
+// Explicit mapping of which events can trigger which state transitions
+const StateTransitionMap = {
+    [Events.START_EDITING]: States.EDITING,
+    [Events.START_SEARCHING]: States.SEARCHING,
+    [Events.START_IDLE]: States.IDLE,
+    [Events.STOP_EDITING]: States.IDLE,
+    [Events.STOP_SEARCHING]: States.IDLE
+};
+
 export const StateMachine = {
-    state: 'idle',
+    state: States.IDLE,
     data: {},
     listeners: [],
     activityMonitor: null,
@@ -38,37 +77,44 @@ export const StateMachine = {
      * Initialize the state machine
      */
     init() {
-        this.state = 'idle';
+        this.state = States.IDLE;
         this.data = {};
         this.activityMonitor = new ActivityMonitor(this);
+    },
+
+    /**
+     * Check if an event type is valid
+     */
+    isValidEvent(eventType) {
+        return Object.values(Events).includes(eventType);
     },
 
     /**
      * Handle a raw DOM event
      */
     async handleRawEvent(eventName, domEvent) {
-        if (this.state === 'editing') {
+        if (this.state === States.EDITING) {
             this.activityMonitor.handleActivity();
         }
 
         // Convert DOM event to low-level event
-        const rawEvent = RawEvents[`handle${eventName}`]?.(domEvent);
-        if (!rawEvent) return;
-
-        console.log('🔰 Raw Event:', { eventName, rawEvent });
+        const rawEvent = RawEvents.handleEvent(eventName, domEvent);
+        console.log('🎯 Raw Event:', { eventName, rawEvent });
 
         // Map to state machine event
         const mappedEvent = EventMapper.mapEvent(rawEvent, this.state, this.data);
-        if (!mappedEvent) return;
+            
+        if (!mappedEvent) {
+            throw new Error(`No mapped event for raw event: ${rawEvent.type}`);
+        }
 
-        console.log('📍 Mapped Event:', { 
-            from: rawEvent.type,
-            to: mappedEvent.type,
-            state: this.state,
-            data: mappedEvent.data 
-        });
+        // Skip NO_OP events
+        if (mappedEvent.type === 'NO_OP') {
+            console.log('⏭️ Skipping NO_OP event');
+            return;
+        }
 
-        // Execute the event
+        // Handle mapped event
         await this.handleMappedEvent(mappedEvent);
     },
 
@@ -78,32 +124,70 @@ export const StateMachine = {
     async handleMappedEvent(event) {
         const { type, data } = event;
         
+        // Every event must be explicitly defined
+        if (!this.isValidEvent(type)) {
+            throw new Error(`Invalid event type: ${type}`);
+        }
+
         console.log('🎯 State Machine Event:', {
             type,
             currentState: this.state,
             data
         });
 
-        // Let current state handle event first
+        // Special case: NO_OP events are explicitly ignored
+        if (type === Events.NO_OP) {
+            console.log('🔕 Ignoring NO_OP event');
+            return;
+        }
+
+        // Handle state transitions
+        const targetState = StateTransitionMap[type];
+        if (targetState) {
+            await this.transition(targetState, data);
+            return;
+        }
+
+        // Let current state handle non-transition events
         const stateHandler = StateTransitions.handlers[this.state];
         if (!stateHandler?.handleEvent) {
             throw new Error(`No handler for state: ${this.state}`);
         }
 
         const result = await stateHandler.handleEvent(event, this.data);
-        if (!result) {
+        
+        // State MUST handle the event by either:
+        // 1. Returning a transition event
+        // 2. Returning new state data
+        if (typeof result !== 'object') {
+            throw new Error(`Invalid handler result for event ${type}: ${result}`);
+        }
+
+        // Handle transition requests from state handlers
+        const handlerTargetState = StateTransitionMap[result.type];
+        if (handlerTargetState) {
+            await this.transition(handlerTargetState, result.data);
             return;
         }
 
-        // If state handler returns a transition request, execute it
-        if (result.type?.startsWith('START_')) {
-            const newState = result.type.slice(6).toLowerCase();
-            await this.transition(newState, result.data);
-            return;
-        }
-
-        // Otherwise just update state data
+        // If not a transition, must be new state data
         this.data = { ...this.data, ...result };
+    },
+
+    /**
+     * Get target state from transition event
+     */
+    getTargetState(eventType) {
+        switch (eventType) {
+            case Events.START_EDITING:
+                return States.EDITING;
+            case Events.START_SEARCHING:
+                return States.SEARCHING;
+            case Events.START_IDLE:
+                return States.IDLE;
+            default:
+                throw new Error(`Unknown transition event: ${eventType}`);
+        }
     },
 
     /**
@@ -145,27 +229,6 @@ export const StateMachine = {
         } catch (error) {
             throw new Error('Transition failed:', error);
         }
-    },
-
-    /**
-     * Get new state based on event type
-     */
-    getNewState(eventType) {
-        const stateMap = {
-            'CREATE_TOP_NOTE': 'editing',
-            'START_EDITING': 'editing',
-            'STOP_EDITING': 'idle',
-            'SWITCH_NOTE': 'editing',
-            'SEARCH_FOCUSED': 'searching',
-            'STOP_SEARCH': 'idle',
-            'UPDATE_SEARCH' : null,  // null means stay in current state
-            'CREATE_NOTE': 'editing',
-            'ENTER_PRESSED': 'editing',
-            'COMMAND_ENTER_PRESSED': 'editing',
-            'INACTIVITY_TIMEOUT': null  // Stay in current state, let handler deal with it
-        };
-
-        return stateMap[eventType] ?? null;
     },
 
     /**

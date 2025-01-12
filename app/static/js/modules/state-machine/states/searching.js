@@ -42,5 +42,38 @@ export const searchingTransitions = {
         return {
             searchQuery: data.searchQuery
         };
+    },
+
+    handleEvent: async (event) => {
+        const { type } = event;
+
+        if (type === 'KEY_DOWN') {
+            const { key } = event;
+
+            if (key === 'Escape') {
+                return { type: 'START_IDLE' };
+            }
+
+            // All other keys update search input directly
+            return { type: 'NO_OP' };
+        }
+
+        if (type === 'SEARCH_QUERY_CHANGED') {
+            return {
+                searchQuery: event.query
+            };
+        }
+
+        if (type === 'NOTE_CONTENT_CLICKED') {
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote: event.noteElement,
+                    cursorPosition: event.position
+                }
+            };
+        }
+
+        throw new Error(`Unhandled event type: ${type}`);
     }
 }; 

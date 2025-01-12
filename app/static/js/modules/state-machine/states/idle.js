@@ -32,8 +32,31 @@ export const idleTransitions = {
     handleEvent: async (event) => {
         const { type } = event;
 
-        if (type === 'CLICK_OUTSIDE_NOTE') {
-            return null;
+        if (type === 'KEY_DOWN') {
+            const { key, metaKey } = event;
+
+            if (key === '/') {
+                return { type: 'START_SEARCHING' };
+            }
+
+            // All other keys are ignored in idle state
+            return { type: 'NO_OP' };
+        }
+
+        if (type === 'CLICKED_OUTSIDE_NOTE') {
+            return { type: 'NO_OP' };
+        }
+
+        if (type === 'NOTE_CONTENT_CLICKED') {
+            const { noteElement, position } = event.data;
+            console.log('Handling note click in idle:', { noteElement, position });
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote: noteElement,
+                    cursorPosition: position
+                }
+            };
         }
 
         if (type === 'CREATE_TOP_NOTE') {
@@ -76,6 +99,6 @@ export const idleTransitions = {
             };
         }
 
-        return null;
+        throw new Error(`Unhandled event type: ${type}`);
     }
 }; 

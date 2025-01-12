@@ -33,6 +33,8 @@ export const EventMapper = {
     // Current state → event type → handler mapping
     handlers: {
         idle: {
+            KEY_DOWN: (event) => event, // Pass through to state handler
+
             ADD_BUTTON_CLICKED: () => ({
                 type: 'CREATE_TOP_NOTE'
             }),
@@ -46,93 +48,52 @@ export const EventMapper = {
                 }
             }),
 
-            CLICK_OUTSIDE_NOTE: () => null,
-
-            ENTER_PRESSED: () => ({
-                type: 'ENTER_PRESSED'
-            }),
-
-            COMMAND_ENTER_PRESSED: (event, context) => ({
-                type: 'COMMAND_ENTER_PRESSED',
-                data: {
-                    shift: event.shift,
-                    note: context.currentNote
-                }
-            }),
+            CLICKED_OUTSIDE_NOTE: () => ({ type: 'NO_OP' }),
 
             SEARCH_FOCUSED: () => ({
-                type: 'SEARCH_FOCUSED',
+                type: 'START_SEARCHING',
                 data: {}
             }),
 
-            FRAGMENT_LOADED: (event) => {
-                return null;  // No state change needed in idle state
-            }
+            FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
+
+            NO_OP: () => ({ type: 'NO_OP' })
         },
 
         editing: {
+            KEY_DOWN: (event) => event, // Pass through to state handler
+
             NOTE_CONTENT_CLICKED: (event, context) => {
-                // If clicking same note, do nothing
+                // If clicking same note, no-op
                 if (event.noteElement === context.currentNote) {
-                    return null;
+                    return { type: 'NO_OP' };
                 }
 
+                // If clicking different note, switch to it
                 return {
                     type: 'SWITCH_NOTE',
                     data: {
-                        prevNote: context.currentNote,
-                        lastSavedContent: context.lastSavedContent,
                         nextNote: event.noteElement,
-                        nextContent: DOMUtils.getNoteContentText(event.noteElement),
                         cursorPosition: event.position
                     }
                 };
             },
 
-            ESCAPE_PRESSED: (event, context) => ({
-                type: 'STOP_EDITING',
-                data: {
-                    prevNote: context.currentNote,
-                    lastSavedContent: context.lastSavedContent
-                }
-            }),
-
-            COMMAND_ENTER_PRESSED: (event, context) => ({
-                type: 'COMMAND_ENTER_PRESSED',
-                data: {
-                    shift: event.shift,
-                    note: context.currentNote
-                }
-            }),
-
-            COMMAND_ARROW_PRESSED: (event, context) => ({
-                type: 'MOVE_NOTE',
-                data: {
-                    direction: event.direction,
-                    noteElement: context.currentNote
-                }
-            }),
-
-            CLICK_OUTSIDE_NOTE: (event, context) => ({
-                type: 'STOP_EDITING',
-                data: {
-                    prevNote: context.currentNote,
-                    lastSavedContent: context.lastSavedContent
-                }
-            }),
+            CLICKED_OUTSIDE_NOTE: () => ({ type: 'START_IDLE' }),
 
             SEARCH_FOCUSED: () => ({
-                type: 'SEARCH_FOCUSED',
-                data: {}
+                type: 'START_SEARCHING',
+                data: { query: '' }
             }),
 
-            FRAGMENT_LOADED: (event, context) => {
-                // No state restoration needed
-                return null;
-            }
+            FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
+
+            NO_OP: () => ({ type: 'NO_OP' })
         },
 
         searching: {
+            KEY_DOWN: (event) => event, // Pass through to state handler
+
             NOTE_CONTENT_CLICKED: (event) => ({
                 type: 'START_EDITING',
                 data: {
@@ -142,18 +103,15 @@ export const EventMapper = {
                 }
             }),
 
-            SEARCH_FOCUSED: () => null,
-
-            ESCAPE_PRESSED: () => ({
-                type: 'STOP_SEARCH'
+            CLICKED_OUTSIDE_NOTE: () => ({
+                type: 'START_IDLE'
             }),
 
-            SEARCH_QUERY_CHANGED: (event) => ({
-                type: 'UPDATE_SEARCH',
-                data: {
-                    query: event.query
-                }
-            })
+            SEARCH_FOCUSED: () => ({ type: 'NO_OP' }),
+
+            FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
+
+            NO_OP: () => ({ type: 'NO_OP' })
         }
     },
 
@@ -171,6 +129,8 @@ export const EventMapper = {
             throw new Error(`No handler for event ${rawEvent.type} in state ${currentState}`);
         }
 
-        return handler(rawEvent, context);
+        const mappedEvent = handler(rawEvent, context);
+        // Return a special NO_OP event for null returns
+        return mappedEvent === null ? { type: 'NO_OP' } : mappedEvent;
     }
 }; 

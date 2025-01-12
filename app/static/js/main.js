@@ -10,18 +10,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initialize state machine
         StateMachine.init();
         
-        // Add button click handler
-        const addButton = document.querySelector('.add-note');
-        if (addButton) {
-            addButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                StateMachine.handleRawEvent('AddButtonClick', e);
-            });
-        }
-
         // Add keyboard event handler
         document.addEventListener('keydown', (e) => {
             StateMachine.handleRawEvent('KeyDown', e);
+        });
+
+        // Handle all clicks through click handler
+        document.addEventListener('click', (e) => {
+            StateMachine.handleRawEvent('Click', e);
         });
 
         // Add search input focus handler
@@ -32,25 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Handle clicks on notes to enter editing state
-        // and clicks outside interactive elements to exit editing state
-        document.addEventListener('click', (e) => {
-            const noteContent = e.target.closest('.note-content');
-            if (noteContent) {
-                StateMachine.handleRawEvent('NoteContentClick', {
-                    noteElement: noteContent.closest('.note')
-                });
-                return;
-            }
-
-            // If clicked anywhere except interactive elements, exit editing
-            if (!e.target.closest('.interactive')) {
-                StateMachine.handleRawEvent('ClickOutsideNote');
-            }
-        });
-
         // Prevent "phantom" cursor appearing when focusing notes outside their bounds
         // This can happen when clicking below/between notes since they are contenteditable
+        // TODO: this is a hack we should revisit
         document.addEventListener('focus', (e) => {
             const noteContent = e.target.closest('.note-content');
             if (noteContent) {

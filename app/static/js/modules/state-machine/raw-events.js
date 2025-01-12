@@ -26,56 +26,115 @@ import { DOMUtils } from '../dom-utils.js';
  * }
  */
 export const RawEvents = {
+    /**
+     * Handle clicks based on target element classes
+     */
     handleClick(event) {
-        const noteElement = DOMUtils.findNoteElement(event.target);
-        const isClickingNoteContent = DOMUtils.isNoteContent(event.target);
-        
-        if (noteElement && isClickingNoteContent) {
-            return {
-                type: 'NOTE_CONTENT_CLICKED',
-                noteElement,
-                position: DOMUtils.getClickPosition(event)
-            };
+        // Log click details
+        console.log('Click handler:', {
+            target: event.target,
+            targetClasses: event.target.classList
+        });
+
+        // Check click target type
+        if (event.target.classList.contains('note-content')) {
+            return this.handleNoteContentClick(event);
+        }
+        if (event.target.classList.contains('search-input')) {
+            return this.handleSearchClick(event);
+        }
+        if (event.target.classList.contains('add-note')) {
+            return this.handleAddNoteClick(event);
+        }
+        if (event.target.classList.contains('menu-button')) {
+            return this.handleMenuClick(event);
+        }
+        if (event.target.classList.contains('trash-can')) {
+            return this.handleTrashCanClick(event);
+        }
+        if (event.target.classList.contains('interactive')) {
+            return { type: 'NO_OP' }; // Other interactive elements
         }
 
-        if (!isClickingNoteContent) {
-            return {
-                type: 'CLICKED_OUTSIDE_NOTE',
-                target: event.target
-            };
+        // Check if click is inside a note
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        if (noteElement) {
+            return { type: 'NO_OP' }; // Click inside note but not on content
         }
+
+        // Non-interactive click outside any note
+        return {
+            type: 'CLICKED_OUTSIDE_NOTE',
+            target: event.target
+        };
+    },
+
+    /**
+     * Handle clicks on note content
+     */
+    handleNoteContentClick(event) {
+        const noteElement = DOMUtils.findNoteElement(event.target);
+        const position = DOMUtils.getCursorPosition(noteElement);
+        console.log('Got cursor position:', position);
+        
+        return {
+            type: 'NOTE_CONTENT_CLICKED',
+            noteElement,
+            position
+        };
+    },
+
+    /**
+     * Handle clicks on search input
+     */
+    handleSearchClick(event) {
+        return {
+            type: 'SEARCH_FOCUSED',
+            query: event.target.value
+        };
+    },
+
+    /**
+     * Handle clicks on add note button
+     */
+    handleAddNoteClick() {
+        return {
+            type: 'ADD_BUTTON_CLICKED'
+        };
+    },
+
+    /**
+     * Handle clicks on menu button
+     */
+    handleMenuClick() {
+        alert('TODO: Implement menu handling');
+        return { type: 'NO_OP' }; // TODO: Implement menu handling
+    },
+
+    /**
+     * Handle clicks on trash can
+     */
+    handleTrashCanClick() {
+        alert('TODO: Implement trash can handling');
+        return { type: 'NO_OP' }; // TODO: Implement trash can handling
     },
 
     handleKeyDown(event) {
-        if (event.key === 'Escape') {
-            return { type: 'ESCAPE_PRESSED' };
-        }
-
-        if (event.key === 'Enter') {
-            // If it's a plain Enter (no modifiers), return ENTER_PRESSED
-            if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
-                return { type: 'ENTER_PRESSED' };
-            }
-            // Otherwise handle Command+Enter as before
-            if (event.metaKey || event.ctrlKey) {
-                return {
-                    type: 'COMMAND_ENTER_PRESSED',
-                    shift: event.shiftKey
-                };
-            }
-        }
-
-        if (event.key.startsWith('Arrow') && (event.metaKey || event.ctrlKey)) {
-            return {
-                type: 'COMMAND_ARROW_PRESSED',
-                direction: event.key.replace('Arrow', '').toLowerCase()
-            };
-        }
+        // Just pass through the key information, let states decide what to do
+        return {
+            type: 'KEY_DOWN',
+            key: event.key,
+            metaKey: event.metaKey || event.ctrlKey,
+            shiftKey: event.shiftKey,
+            target: event.target
+        };
     },
 
     handleDragStart(event) {
         const noteElement = DOMUtils.findNoteElement(event.target);
-        if (!noteElement) return;
+        if (!noteElement) {
+            return { type: 'NO_OP' };
+        }
 
         return {
             type: 'NOTE_DRAG_STARTED',
@@ -92,19 +151,7 @@ export const RawEvents = {
                 content: DOMUtils.getNoteContentText(event.target)
             };
         }
-    },
-
-    handleAddButtonClick(event) {
-        return {
-            type: 'ADD_BUTTON_CLICKED'
-        };
-    },
-
-    handleSearchFocus(event) {
-        return {
-            type: 'SEARCH_FOCUSED',
-            query: event.target.value
-        };
+        return { type: 'NO_OP' };
     },
 
     handleSearchInput(event) {
@@ -123,9 +170,27 @@ export const RawEvents = {
 
     handleClickOutsideNote(event) {
         return {
-            type: 'CLICK_OUTSIDE_NOTE'
+            type: 'CLICKED_OUTSIDE_NOTE'
         };
     },
 
-    // ... other raw event handlers
+    // Explicit mapping of event names to handlers
+    handleEvent(eventName, event) {
+        const handlers = {
+            'KeyDown': this.handleKeyDown,
+            'Click': this.handleClick,
+            'DragStart': this.handleDragStart,
+            'Input': this.handleInput,
+            'SearchInput': this.handleSearchInput,
+            'SearchBlur': this.handleSearchBlur,
+            'SearchFocus': this.handleSearchClick
+        };
+
+        const handler = handlers[eventName];
+        if (!handler) {
+            throw new Error(`No handler registered for event: ${eventName}`);
+        }
+
+        return handler.call(this, event);
+    }
 }; 
