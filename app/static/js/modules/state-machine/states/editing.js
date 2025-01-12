@@ -28,7 +28,16 @@ import { NotesAPI } from '../../api-client.js';
 
 export const editingTransitions = {
     enter: async (data, prevState) => {
+        if (!data) {
+            throw new Error('Editing enter transition missing data');
+        }
+
         const { noteId, cursorPosition, clickInfo, activityMonitor } = data;
+        
+        if (!noteId) {
+            throw new Error('Editing enter transition missing noteId');
+        }
+
         console.log('📝 [EDITING ENTER] Looking for note:', noteId);
         
         // Try both ID formats for debugging
@@ -64,6 +73,17 @@ export const editingTransitions = {
         if (clickInfo) {
             console.log('📝 [EDITING ENTER] Using stored click info:', clickInfo);
             
+            // Validate clickInfo structure
+            if (typeof clickInfo.isDiv !== 'boolean') {
+                throw new Error('Click info missing isDiv flag');
+            }
+            if (!clickInfo.noteId) {
+                throw new Error('Click info missing noteId');
+            }
+            if (clickInfo.noteId !== noteId) {
+                throw new Error('Click info noteId does not match target note');
+            }
+
             // Use stored click info after DOM refresh
             if (clickInfo.isDiv) {
                 console.log('📝 [EDITING ENTER] Focusing div');
@@ -71,6 +91,10 @@ export const editingTransitions = {
             } else {
                 // Find matching text node in refreshed DOM
                 const content = DOMUtils.getNoteContent(nextNote);
+                if (!content) {
+                    throw new Error('Could not find note content element');
+                }
+
                 const nodes = Array.from(content.childNodes);
                 console.log('📝 [EDITING ENTER] Looking for text node:', {
                     targetText: clickInfo.textContent,
@@ -80,10 +104,16 @@ export const editingTransitions = {
                 const index = nodes.findIndex(n => n.textContent === clickInfo.textContent);
                 if (index !== -1) {
                     console.log('📝 [EDITING ENTER] Found matching node at index:', index);
-                    DOMUtils.setCursorPosition(nextNote, {
-                        offset: clickInfo.offset,
-                        path: [index]
-                    });
+                    try {
+                        DOMUtils.setCursorPosition(nextNote, {
+                            offset: clickInfo.offset,
+                            path: [index]
+                        });
+                    } catch (e) {
+                        console.error('📝 [EDITING ENTER] Failed to set cursor:', e);
+                        // Fallback to focusing note
+                        DOMUtils.focusNote(nextNote);
+                    }
                 } else {
                     console.log('📝 [EDITING ENTER] No matching node found, focusing at end');
                     DOMUtils.focusNote(nextNote);
@@ -94,7 +124,13 @@ export const editingTransitions = {
             DOMUtils.focusNote(nextNote);
         } else if (cursorPosition) {
             console.log('📝 [EDITING ENTER] Setting cursor position:', cursorPosition);
-            DOMUtils.setCursorPosition(nextNote, cursorPosition);
+            try {
+                DOMUtils.setCursorPosition(nextNote, cursorPosition);
+            } catch (e) {
+                console.error('📝 [EDITING ENTER] Failed to set cursor:', e);
+                // Fallback to focusing note
+                DOMUtils.focusNote(nextNote);
+            }
         }
 
         // Start activity monitoring
@@ -102,7 +138,8 @@ export const editingTransitions = {
 
         return {
             currentNote: nextNote,
-            lastSavedContent: DOMUtils.getNoteContentText(nextNote)
+            lastSavedContent: DOMUtils.getNoteContentText(nextNote),
+            activityMonitor
         };
     },
 
@@ -111,20 +148,27 @@ export const editingTransitions = {
         
         // Stop activity monitoring
         activityMonitor?.stopMonitoring();
+
+        if (!currentNote) {
+            console.log('[EDITING EXIT] No current note to save');
+            return {};
+        }
+
+        const noteId = DOMUtils.getNoteId(currentNote);
+        if (!noteId) {
+            throw new Error('Current note missing ID');
+        }
         
         // Save if content changed
         const currentContent = DOMUtils.getNoteContentText(currentNote);
         if (currentContent !== lastSavedContent) {
-            console.log(' [EDITING EXIT] Saving content changes:', {
-                noteId: DOMUtils.getNoteId(currentNote),
+            console.log('[EDITING EXIT] Saving content changes:', {
+                noteId,
                 lastSavedContent,
                 currentContent
             });
-            await NotesAPI.saveNote(
-                DOMUtils.getNoteId(currentNote), 
-                currentContent
-            );
-            console.log(' [EDITING EXIT] Content saved');
+            await NotesAPI.saveNote(noteId, currentContent);
+            console.log('[EDITING EXIT] Content saved');
         }
 
         // Clean up all notes - remove editing class from everything
@@ -154,10 +198,16 @@ export const editingTransitions = {
             }
 
             if (key === 'Enter' && metaKey) {
+                const parentNote = DOMUtils.findNoteElement(target);
+                const parentId = DOMUtils.getNoteId(parentNote);
+                if (!parentId) {
+                    throw new Error('Create note missing parent ID');
+                }
+
                 return {
                     type: 'CREATE_NOTE',
                     data: {
-                        parentNote: DOMUtils.findNoteElement(target),
+                        parentId,  // Use ID instead of DOM node
                         noteType: shiftKey ? 'child' : 'sibling'
                     }
                 };
@@ -216,7 +266,7 @@ export const editingTransitions = {
             const noteId = DOMUtils.getNoteId(event.noteElement);
             const { target } = event;
             
-            console.log('📝 [EDITING] Got click on note:', {
+            console.log(' [EDITING] Got click on note:', {
                 noteElement: event.noteElement,
                 noteId,
                 dataset: event.noteElement?.dataset,
@@ -226,7 +276,7 @@ export const editingTransitions = {
             });
             
             if (!noteId) {
-                console.error('📝 [EDITING] No note ID found:', event.noteElement);
+                console.error(' [EDITING] No note ID found:', event.noteElement);
                 throw new Error('Could not find note ID on clicked element');
             }
 
@@ -279,18 +329,17 @@ export const editingTransitions = {
         }
 
         if (type === 'CREATE_NOTE') {
-            const { parentNote, noteType } = event.data;
-            const noteId = parentNote?.getAttribute('data-id');
+            const { parentId, noteType } = event.data;
             
-            if (!noteId) {
+            if (!parentId) {
                 throw new Error('No note ID found');
             }
 
             let result;
             if (noteType === 'child') {
-                result = await NotesAPI.createChild(noteId);
+                result = await NotesAPI.createChild(parentId);
             } else {
-                result = await NotesAPI.createSibling(noteId);
+                result = await NotesAPI.createSibling(parentId);
             }
             
             if (!result) {

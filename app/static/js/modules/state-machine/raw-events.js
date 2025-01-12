@@ -82,12 +82,17 @@ export const RawEvents = {
             throw new Error('Could not find parent note element for click target');
         }
 
+        const noteId = DOMUtils.getNoteId(noteElement);
+        if (!noteId) {
+            throw new Error('Note element missing ID');
+        }
+
         const position = DOMUtils.getCursorPosition(noteElement);
         console.log('Got cursor position:', position);
         
         return {
             type: 'NOTE_CONTENT_CLICKED',
-            noteElement,
+            noteId,  // Use ID instead of DOM node
             target: event.target,
             position
         };
@@ -183,23 +188,36 @@ export const RawEvents = {
         };
     },
 
+    /**
+     * Handle fragment loaded event
+     */
+    handleFragmentLoaded(event) {
+        return {
+            type: 'FRAGMENT_LOADED',
+            data: event
+        };
+    },
+
     // Explicit mapping of event names to handlers
     handleEvent(eventName, event) {
-        const handlers = {
-            'KeyDown': this.handleKeyDown,
-            'Click': this.handleClick,
-            'DragStart': this.handleDragStart,
-            'Input': this.handleInput,
-            'SearchInput': this.handleSearchInput,
-            'SearchBlur': this.handleSearchBlur,
-            'SearchFocus': this.handleSearchClick
+        // Map event names to handlers
+        const handlerMap = {
+            'Click': this.handleClick.bind(this),
+            'KeyDown': this.handleKeyDown.bind(this),
+            'DragStart': this.handleDragStart.bind(this),
+            'Input': this.handleInput.bind(this),
+            'SearchInput': this.handleSearchInput.bind(this),
+            'SearchBlur': this.handleSearchBlur.bind(this),
+            'SearchFocus': this.handleSearchClick.bind(this),
+            'ClickOutsideNote': this.handleClickOutsideNote.bind(this),
+            'FragmentLoaded': this.handleFragmentLoaded.bind(this)
         };
 
-        const handler = handlers[eventName];
+        const handler = handlerMap[eventName];
         if (!handler) {
-            throw new Error(`No handler registered for event: ${eventName}`);
+            throw new Error(`No handler for event: ${eventName}`);
         }
 
-        return handler.call(this, event);
+        return handler(event);
     }
 }; 

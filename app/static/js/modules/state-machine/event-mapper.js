@@ -42,7 +42,7 @@ export const EventMapper = {
             NOTE_CONTENT_CLICKED: (event) => ({
                 type: 'START_EDITING',
                 data: {
-                    noteId: DOMUtils.getNoteId(event.noteElement),
+                    noteId: event.noteId,
                     cursorPosition: event.position
                 }
             }),
@@ -99,7 +99,7 @@ export const EventMapper = {
             NOTE_CONTENT_CLICKED: (event) => ({
                 type: 'START_EDITING',
                 data: {
-                    noteId: DOMUtils.getNoteId(event.noteElement),
+                    noteId: event.noteId,
                     cursorPosition: event.position
                 }
             }),

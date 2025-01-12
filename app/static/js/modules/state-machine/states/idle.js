@@ -49,11 +49,16 @@ export const idleTransitions = {
 
         if (type === 'NOTE_CONTENT_CLICKED') {
             const { noteElement, position } = event.data;
-            console.log('Handling note click in idle:', { noteElement, position });
+            const noteId = DOMUtils.getNoteId(noteElement);
+            if (!noteId) {
+                throw new Error('Note click missing noteId');
+            }
+
+            console.log('Handling note click in idle:', { noteElement, noteId, position });
             return {
                 type: 'START_EDITING',
                 data: {
-                    nextNote: noteElement,
+                    noteId,  
                     cursorPosition: position
                 }
             };
@@ -61,10 +66,11 @@ export const idleTransitions = {
 
         if (type === 'CREATE_TOP_NOTE') {
             const result = await NotesAPI.createNote();
-            if (!result) {
-                throw new Error('Failed to create note');
+            if (!result?.id) {
+                throw new Error('Failed to create note - missing ID in response');
             }
 
+            // Wait for DOM to update
             const newNote = document.querySelector(`[data-id="${result.id}"]`);
             if (!newNote) {
                 throw new Error('Created note not found in DOM');
@@ -73,7 +79,7 @@ export const idleTransitions = {
             return {
                 type: 'START_EDITING',
                 data: {
-                    nextNote: newNote,
+                    noteId: result.id,  
                     cursorPosition: 'end'
                 }
             };
@@ -81,10 +87,11 @@ export const idleTransitions = {
 
         if (type === 'ENTER_PRESSED' || type === 'COMMAND_ENTER_PRESSED') {
             const result = await NotesAPI.createNote();
-            if (!result) {
-                throw new Error('Failed to create note');
+            if (!result?.id) {
+                throw new Error('Failed to create note - missing ID in response');
             }
 
+            // Wait for DOM to update
             const newNote = document.querySelector(`[data-id="${result.id}"]`);
             if (!newNote) {
                 throw new Error('Created note not found in DOM');
@@ -93,10 +100,16 @@ export const idleTransitions = {
             return {
                 type: 'START_EDITING',
                 data: {
-                    nextNote: newNote,
+                    noteId: result.id,  
                     cursorPosition: 'end'
                 }
             };
+        }
+
+        if (type === 'FRAGMENT_LOADED') {
+            // Fragment loaded events are handled by updating the DOM
+            // No state transition needed
+            return { type: 'NO_OP' };
         }
 
         throw new Error(`Unhandled event type: ${type}`);

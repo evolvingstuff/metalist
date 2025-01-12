@@ -53,6 +53,9 @@ export const NotesAPI = {
                 }
 
                 const fragmentResponse = await fetch('/api/notes/fragment');
+                if (!fragmentResponse.ok) {
+                    throw new Error(`Failed to fetch fragment: ${fragmentResponse.status}`);
+                }
                 const fragmentData = await fragmentResponse.json();
                 
                 if (CONFIG.DEBUG.LOG_API_CALLS) {
@@ -76,7 +79,8 @@ export const NotesAPI = {
             
             return data;
         } catch (error) {
-            throw new Error('API Error:', error);
+            console.error('[API] Error:', error);
+            throw error;  // Re-throw the original error
         }
     },
 

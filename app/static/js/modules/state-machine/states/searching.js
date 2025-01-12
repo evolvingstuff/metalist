@@ -65,10 +65,15 @@ export const searchingTransitions = {
         }
 
         if (type === 'NOTE_CONTENT_CLICKED') {
+            const noteId = event.noteId;
+            if (!noteId) {
+                throw new Error('Note click missing noteId');
+            }
+
             return {
                 type: 'START_EDITING',
                 data: {
-                    nextNote: event.noteElement,
+                    noteId,
                     cursorPosition: event.position
                 }
             };
