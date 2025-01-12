@@ -71,12 +71,17 @@ body {
     position: relative;
     margin: 2px 0;
     padding: 4px;
-    border: 1px solid #ccc;
+    border: 1px solid #e5e5e5;  /* Lighter default border */
     border-radius: 4px;
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 2px;
+    transition: border-color 0.3s ease;
+}
+
+.note.editing {
+    border-color: #999;  /* Keep the darker border for editing */
 }
 
 .drag-handle {
