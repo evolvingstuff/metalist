@@ -2,6 +2,7 @@ import { RawEvents } from './raw-events.js';
 import { EventMapper } from './event-mapper.js';
 import { StateTransitions } from './transition-coordinator.js';
 import { NotesAPI } from '../api-client.js';
+import { ActivityMonitor } from './activity-monitor.js';
 
 /**
  * State Machine Controller
@@ -31,6 +32,7 @@ export const StateMachine = {
     state: 'idle',
     data: {},
     listeners: [],
+    activityMonitor: null,
 
     /**
      * Initialize the state machine
@@ -38,12 +40,17 @@ export const StateMachine = {
     init() {
         this.state = 'idle';
         this.data = {};
+        this.activityMonitor = new ActivityMonitor(this);
     },
 
     /**
      * Handle a raw DOM event
      */
     async handleRawEvent(eventName, domEvent) {
+        if (this.state === 'editing') {
+            this.activityMonitor.handleActivity();
+        }
+
         // Convert DOM event to low-level event
         const rawEvent = RawEvents[`handle${eventName}`]?.(domEvent);
         if (!rawEvent) return;
@@ -76,6 +83,16 @@ export const StateMachine = {
             currentState: this.state,
             data
         });
+
+        // Let current state handle event first
+        const stateHandler = StateTransitions.handlers[this.state];
+        if (stateHandler?.handleEvent) {
+            const newData = await stateHandler.handleEvent(event, this.data);
+            if (newData) {
+                this.data = { ...this.data, ...newData };
+                return;
+            }
+        }
 
         if (type === 'CREATE_TOP_NOTE') {
             console.log('📝 Creating new note...');
@@ -218,6 +235,8 @@ export const StateMachine = {
     async transition(newState, data = {}, command = null) {
         const oldState = this.state;
         
+        data.activityMonitor = this.activityMonitor;
+        
         console.log('🔄 [TRANSITION] Start:', {
             from: oldState,
             to: newState,
@@ -266,7 +285,8 @@ export const StateMachine = {
             'UPDATE_SEARCH' : null,  // null means stay in current state
             'CREATE_NOTE': 'editing',
             'ENTER_PRESSED': 'editing',
-            'COMMAND_ENTER_PRESSED': 'editing'
+            'COMMAND_ENTER_PRESSED': 'editing',
+            'INACTIVITY_TIMEOUT': null  // Stay in current state, let handler deal with it
         };
 
         return stateMap[eventType] ?? null;

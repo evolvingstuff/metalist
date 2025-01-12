@@ -29,7 +29,7 @@ import { NotesAPI } from '../../api-client.js';
 
 export const editingTransitions = {
     enter: async (data, prevState) => {
-        const { nextNote, cursorPosition } = data;
+        const { nextNote, cursorPosition, activityMonitor } = data;
         
         // Set up note for editing
         DOMUtils.setNoteEditable(nextNote, true);
@@ -41,6 +41,9 @@ export const editingTransitions = {
             DOMUtils.setCursorPosition(nextNote, cursorPosition);
         }
 
+        // Start activity monitoring
+        activityMonitor?.startMonitoring();
+
         return {
             currentNote: nextNote,
             lastSavedContent: DOMUtils.getNoteContentText(nextNote),
@@ -49,7 +52,10 @@ export const editingTransitions = {
     },
 
     exit: async (data, nextState) => {
-        const { currentNote, lastSavedContent } = data;
+        const { currentNote, lastSavedContent, activityMonitor } = data;
+        
+        // Stop activity monitoring
+        activityMonitor?.stopMonitoring();
         
         // Save if content changed
         const currentContent = DOMUtils.getNoteContentText(currentNote);
@@ -80,5 +86,34 @@ export const editingTransitions = {
         DOMUtils.setNoteEditable(currentNote, false);
 
         return {};  // Clear temporary editing state
+    },
+
+    handleEvent: async (event, data) => {
+        const { type } = event;
+        
+        if (type === 'INACTIVITY_TIMEOUT') {
+            const { currentNote, lastSavedContent } = data;
+            const currentContent = DOMUtils.getNoteContentText(currentNote);
+            
+            // Only save if content has changed
+            if (currentContent !== lastSavedContent) {
+                console.log('⏰ [EDITING] Auto-saving on inactivity:', {
+                    noteId: DOMUtils.getNoteId(currentNote),
+                    lastSavedContent,
+                    currentContent
+                });
+                
+                NotesAPI.updateNote(
+                    DOMUtils.getNoteId(currentNote), 
+                    currentContent
+                );
+                
+                return {
+                    lastSavedContent: currentContent
+                };
+            }
+        }
+        
+        return null;
     }
 }; 
