@@ -12,11 +12,12 @@ export const NotesAPI = {
     async _apiCall(url, options = {}, reloadOnSuccess = true) {
         try {
             // Detailed request logging
-            console.log('API Request:', {
+            console.log(' [API] Request:', {
                 url: url,
                 method: options.method || 'GET',
                 body: options.body ? JSON.parse(options.body) : undefined,
-                headers: options.headers
+                headers: options.headers,
+                reloadOnSuccess
             });
 
             const response = await fetch(url, {
@@ -34,13 +35,15 @@ export const NotesAPI = {
             const data = await response.json();
             
             // Log the response
-            console.log('API Response:', {
+            console.log(' [API] Response:', {
                 url: url,
                 status: response.status,
-                data: data
+                data: data,
+                reloadOnSuccess
             });
 
             if (reloadOnSuccess) {
+                console.log(' [API] Fetching fragment');
                 // Instead of window.location.reload(), fetch the fragment
                 if (CONFIG.DEBUG.LOG_API_CALLS) {
                     console.log('API Request:', {
@@ -121,13 +124,23 @@ export const NotesAPI = {
     },
 
     /**
-     * Update a note's content
+     * Update a note's content (fire and forget)
      */
     async updateNote(noteId, content) {
         return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
             method: 'PUT',
             body: JSON.stringify({ content })
         }, false); // Don't reload on content updates
+    },
+
+    /**
+     * Save a note's content and wait for confirmation
+     */
+    async saveNote(noteId, content) {
+        return this._apiCall(CONFIG.API.NOTES.SAVE(noteId), {
+            method: 'PUT',
+            body: JSON.stringify({ content })
+        }); // Wait for save confirmation
     },
 
     /**

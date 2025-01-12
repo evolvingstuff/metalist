@@ -62,6 +62,17 @@ def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Note not found")
     return {"status": "success"}
 
+@router.put("/{note_id}/save")
+@api_transaction_decorator
+@db_transaction_decorator
+def save_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
+    """Save a note's content and wait for confirmation"""
+    # TODO: redundant with update_note...
+    try:
+        LinkedListManager.update_note(db, note_id, command.content)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"status": "success"}
 
 @router.post("/{note_id}/move")
 @api_transaction_decorator

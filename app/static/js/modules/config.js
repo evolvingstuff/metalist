@@ -13,6 +13,7 @@ export const CONFIG = {
             CREATE_SIBLING: (noteId) => `/api/notes/new-sibling/${noteId}`,
             CREATE_CHILD: (noteId) => `/api/notes/new-child/${noteId}`,
             UPDATE: (noteId) => `/api/notes/${noteId}`,
+            SAVE: (noteId) => `/api/notes/${noteId}/save`,
             MOVE: (noteId) => `/api/notes/${noteId}/move`,
             DELETE: (noteId) => `/api/notes/${noteId}`,
             UNDO: '/api/notes/undo',

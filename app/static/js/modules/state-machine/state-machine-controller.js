@@ -96,6 +96,106 @@ export const StateMachine = {
             return;
         }
 
+        if (type === 'CREATE_NOTE') {
+            console.log('📝 Creating new note...', data);
+            const { parentNote, type: noteType } = data;
+            const noteId = parentNote?.getAttribute('data-id');
+            
+            if (!noteId) {
+                console.warn('❌ No note ID found');
+                return;
+            }
+
+            let result;
+            if (noteType === 'child') {
+                result = await NotesAPI.createChild(noteId);
+            } else {
+                // Creates sibling AFTER the current note by default
+                result = await NotesAPI.createSibling(noteId);
+            }
+            
+            if (!result) {
+                console.warn('❌ Failed to create note');
+                return;
+            }
+
+            console.log('✅ Note created:', result);
+            const newNote = document.querySelector(`[data-id="${result.id}"]`);
+            if (newNote) {
+                await this.transition('editing', {
+                    nextNote: newNote,
+                    cursorPosition: 'end'
+                });
+            }
+            return;
+        }
+
+        if (type === 'ENTER_PRESSED') {
+            console.log('Enter pressed in state:', this.state);
+            
+            // In idle state, create at top
+            if (this.state === 'idle') {
+                const result = await NotesAPI.createNote();
+                if (!result) {
+                    console.warn('❌ Failed to create note');
+                    return;
+                }
+
+                console.log('✅ Note created:', result);
+                const newNote = document.querySelector(`[data-id="${result.id}"]`);
+                if (newNote) {
+                    await this.transition('editing', {
+                        nextNote: newNote,
+                        cursorPosition: 'end'
+                    });
+                }
+            }
+            return;
+        }
+
+        if (type === 'COMMAND_ENTER_PRESSED') {
+            console.log('🔍 [COMMAND_ENTER] Start handling in state:', this.state);
+            const { note, shift } = data;
+            
+            // In idle state, create at top (just like Enter)
+            if (this.state === 'idle') {
+                const createCommand = async () => {
+                    const result = await NotesAPI.createNote();
+                    if (!result) {
+                        console.warn('❌ Failed to create note');
+                        return;
+                    }
+                    const newNote = document.querySelector(`[data-id="${result.id}"]`);
+                    return { nextNote: newNote, cursorPosition: 'end' };
+                };
+
+                await this.transition('editing', {}, createCommand);
+                return;
+            }
+            
+            // In editing state, create child or sibling
+            if (this.state === 'editing') {
+                const noteId = note?.getAttribute('data-id');
+                if (!noteId) {
+                    console.warn('❌ No note ID found');
+                    return;
+                }
+
+                const createCommand = async () => {
+                    const result = await NotesAPI[shift ? 'createChild' : 'createSibling'](noteId);
+                    if (!result) {
+                        console.warn('❌ Failed to create note');
+                        return;
+                    }
+                    const newNote = document.querySelector(`[data-id="${result.id}"]`);
+                    return { nextNote: newNote, cursorPosition: 'end' };
+                };
+
+                await this.transition('editing', {}, createCommand);
+            }
+            return;
+        }
+
         try {
             // Determine new state based on event type
             const newState = this.getNewState(type);
@@ -113,12 +213,12 @@ export const StateMachine = {
     },
 
     /**
-     * Execute a state transition
+     * Execute a state transition with an optional command
      */
-    async transition(newState, data = {}) {
+    async transition(newState, data = {}, command = null) {
         const oldState = this.state;
         
-        console.log('🔄 State Transition:', {
+        console.log('🔄 [TRANSITION] Start:', {
             from: oldState,
             to: newState,
             data
@@ -126,16 +226,18 @@ export const StateMachine = {
 
         try {
             // Execute transition and get new state data
+            console.log('🔄 [TRANSITION] Executing state transition');
             const newData = await StateTransitions.execute(oldState, newState, {
                 ...this.data,
                 ...data
-            });
+            }, command);
+            console.log('🔄 [TRANSITION] State transition executed');
 
             // Update state
             this.state = newState;
             this.data = { ...this.data, ...newData };
 
-            console.log('✨ New State:', {
+            console.log('✨ [TRANSITION] New State:', {
                 state: this.state,
                 data: this.data
             });
@@ -161,7 +263,10 @@ export const StateMachine = {
             'SWITCH_NOTE': 'editing',
             'START_SEARCH': 'searching',
             'STOP_SEARCH': 'idle',
-            UPDATE_SEARCH: null  // null means stay in current state
+            UPDATE_SEARCH: null,  // null means stay in current state
+            'CREATE_NOTE': 'editing',
+            'ENTER_PRESSED': 'editing',
+            'COMMAND_ENTER_PRESSED': 'editing'
         };
 
         return stateMap[eventType] ?? null;
@@ -186,4 +291,4 @@ export const StateMachine = {
             }
         });
     }
-}; 
+};

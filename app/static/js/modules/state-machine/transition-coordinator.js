@@ -37,24 +37,41 @@ export const StateTransitions = {
     },
 
     /**
-     * Execute a state transition
+     * Execute a state transition with an optional command
      */
-    async execute(fromState, toState, data = {}) {
+    async execute(fromState, toState, data = {}, command = null) {
         // Validate transition
         if (!this.validTransitions[fromState]?.includes(toState)) {
             throw new Error(`Invalid transition: ${fromState} -> ${toState}`);
         }
 
         try {
-            // Run exit handler for current state
+            // 1. Exit handler
+            console.log(' [COORDINATOR] Running exit handler', { fromState, toState });
             const exitData = await this.handlers[fromState].exit?.(data, toState) || {};
+            console.log(' [COORDINATOR] Exit handler complete');
 
-            // Run enter handler for new state
-            const enterData = await this.handlers[toState].enter?.(data, fromState) || {};
+            // 2. Execute command if provided
+            let commandData = {};
+            if (command) {
+                console.log(' [COORDINATOR] Executing command');
+                commandData = await command(exitData) || {};
+                console.log(' [COORDINATOR] Command complete');
+            }
+
+            // 3. Enter handler
+            console.log(' [COORDINATOR] Running enter handler');
+            const enterData = await this.handlers[toState].enter?.({
+                ...data,
+                ...exitData,
+                ...commandData
+            }, fromState) || {};
+            console.log(' [COORDINATOR] Enter handler complete');
 
             // Merge and return new state data
             return {
                 ...exitData,
+                ...commandData,
                 ...enterData
             };
         } catch (error) {

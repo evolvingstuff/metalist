@@ -49,11 +49,15 @@ export const EventMapper = {
             CLICK_OUTSIDE_NOTE: () => null,
 
             ENTER_PRESSED: () => ({
-                type: 'CREATE_TOP_NOTE'
+                type: 'ENTER_PRESSED'
             }),
 
-            COMMAND_ENTER_PRESSED: () => ({
-                type: 'CREATE_TOP_NOTE'
+            COMMAND_ENTER_PRESSED: (event, context) => ({
+                type: 'COMMAND_ENTER_PRESSED',
+                data: {
+                    shift: event.shift,
+                    note: context.currentNote
+                }
             }),
 
             SEARCH_FOCUSED: (event) => ({
@@ -96,10 +100,10 @@ export const EventMapper = {
             }),
 
             COMMAND_ENTER_PRESSED: (event, context) => ({
-                type: 'CREATE_NOTE',
+                type: 'COMMAND_ENTER_PRESSED',
                 data: {
-                    type: event.shift ? 'child' : 'sibling',
-                    parentNote: context.currentNote
+                    shift: event.shift,
+                    note: context.currentNote
                 }
             }),
 

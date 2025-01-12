@@ -54,10 +54,16 @@ export const editingTransitions = {
         // Save if content changed
         const currentContent = DOMUtils.getNoteContentText(currentNote);
         if (currentContent !== lastSavedContent) {
-            await NotesAPI.updateNote(
+            console.log(' [EDITING EXIT] Saving content changes:', {
+                noteId: DOMUtils.getNoteId(currentNote),
+                lastSavedContent,
+                currentContent
+            });
+            await NotesAPI.saveNote(
                 DOMUtils.getNoteId(currentNote), 
                 currentContent
             );
+            console.log(' [EDITING EXIT] Content saved');
         }
 
         // Clear selection for the current note only

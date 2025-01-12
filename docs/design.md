@@ -191,12 +191,49 @@ Key states are: idle, editing, and searching.
    - Manages state transitions
    - Handles enter/exit hooks
    - Validates state changes
+   - Executes commands between exit and enter hooks
 
 ### Event Flow
 1. DOM Event → Raw Event
 2. Raw Event → Mapped Event (with context)
 3. Mapped Event → State Transition
 4. State Transition → New State
+
+### State Transition Pattern
+The state machine follows a strict exit → command → enter pattern for all transitions:
+
+1. Exit Handler
+   - Cleans up current state (e.g., saves content, removes event listeners)
+   - Must complete before any other operations begin
+   - Returns exitData to be passed to command
+
+2. Command (optional)
+   - Executes between exit and enter handlers
+   - Performs the actual work (e.g., creating a note, moving a note)
+   - Receives exitData from exit handler
+   - Returns commandData to be passed to enter handler
+
+3. Enter Handler
+   - Sets up new state (e.g., makes note editable, adds event listeners)
+   - Receives merged data from exit and command
+   - Runs only after command completes
+
+Example:
+```javascript
+// Creating a new note
+const createCommand = async () => {
+    const result = await NotesAPI.createNote();
+    const newNote = document.querySelector(`[data-id="${result.id}"]`);
+    return { nextNote: newNote, cursorPosition: 'end' };
+};
+await transition('editing', {}, createCommand);
+```
+
+This pattern ensures:
+- Clean state transitions (no lingering state)
+- Proper cleanup before operations
+- Consistent state initialization
+- No race conditions between operations
 
 ### State Data Management
 - Each state maintains its own data
