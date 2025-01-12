@@ -113,6 +113,15 @@ export const editingTransitions = {
                 };
             }
         }
+
+        if (type === 'CLICK_OUTSIDE_NOTE') {
+            return { type: 'START_IDLE' };
+        }
+        
+        if (type === 'NOTE_CONTENT_CHANGED') {
+            const { content } = event;
+            return { currentContent: content };
+        }
         
         return null;
     }

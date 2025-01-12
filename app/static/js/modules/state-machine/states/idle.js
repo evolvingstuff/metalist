@@ -25,5 +25,14 @@ export const idleTransitions = {
     exit: async (data, nextState) => {
         // No cleanup needed
         return {};
+    },
+
+    handleEvent: (event) => {
+        switch (event.type) {
+            case 'CLICK_OUTSIDE_NOTE':
+                return null;
+            default:
+                return null;
+        }
     }
 }; 
