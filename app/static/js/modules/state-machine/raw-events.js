@@ -51,11 +51,18 @@ export const RawEvents = {
             return { type: 'ESCAPE_PRESSED' };
         }
 
-        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            return {
-                type: 'COMMAND_ENTER_PRESSED',
-                shift: event.shiftKey
-            };
+        if (event.key === 'Enter') {
+            // If it's a plain Enter (no modifiers), return ENTER_PRESSED
+            if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+                return { type: 'ENTER_PRESSED' };
+            }
+            // Otherwise handle Command+Enter as before
+            if (event.metaKey || event.ctrlKey) {
+                return {
+                    type: 'COMMAND_ENTER_PRESSED',
+                    shift: event.shiftKey
+                };
+            }
         }
 
         if (event.key.startsWith('Arrow') && (event.metaKey || event.ctrlKey)) {
