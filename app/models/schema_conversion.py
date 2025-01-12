@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import List, Optional, Dict
-from .position import Position  # For fractional indexing
 
 @dataclass
 class OldSchemaNote:

@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from .enums import MovePosition
 from .database import DBNote
 from ..global_state_mod import global_state
-from .position import Position
 
 
 class LinkedListManager:
