@@ -86,149 +86,24 @@ export const StateMachine = {
 
         // Let current state handle event first
         const stateHandler = StateTransitions.handlers[this.state];
-        if (stateHandler?.handleEvent) {
-            const newData = await stateHandler.handleEvent(event, this.data);
-            if (newData) {
-                this.data = { ...this.data, ...newData };
-                return;
-            }
+        if (!stateHandler?.handleEvent) {
+            throw new Error(`No handler for state: ${this.state}`);
         }
 
-        if (type === 'SWITCH_NOTE') {
-            const { nextNote, cursorPosition } = data;
-            await this.transition('editing', {
-                nextNote,
-                cursorPosition
-            });
+        const result = await stateHandler.handleEvent(event, this.data);
+        if (!result) {
             return;
         }
 
-        if (type === 'CREATE_TOP_NOTE') {
-            console.log('📝 Creating new note...');
-            const result = await NotesAPI.createNote();
-            if (!result) {
-                throw new Error('Failed to create note');
-            }
-
-            console.log('✅ Note created:', result);
-            const newNote = document.querySelector(`[data-id="${result.id}"]`);
-            if (newNote) {
-                await this.transition('editing', {
-                    nextNote: newNote,
-                    cursorPosition: 'end'
-                });
-            }
+        // If state handler returns a transition request, execute it
+        if (result.type?.startsWith('START_')) {
+            const newState = result.type.slice(6).toLowerCase();
+            await this.transition(newState, result.data);
             return;
         }
 
-        if (type === 'CREATE_NOTE') {
-            console.log('📝 Creating new note...', data);
-            const { parentNote, type: noteType } = data;
-            const noteId = parentNote?.getAttribute('data-id');
-            
-            if (!noteId) {
-                throw new Error('No note ID found');
-            }
-
-            let result;
-            if (noteType === 'child') {
-                result = await NotesAPI.createChild(noteId);
-            } else {
-                // Creates sibling AFTER the current note by default
-                result = await NotesAPI.createSibling(noteId);
-            }
-            
-            if (!result) {
-                throw new Error('Failed to create note');
-            }
-
-            console.log('✅ Note created:', result);
-            const newNote = document.querySelector(`[data-id="${result.id}"]`);
-            if (newNote) {
-                await this.transition('editing', {
-                    nextNote: newNote,
-                    cursorPosition: 'end'
-                });
-            }
-            return;
-        }
-
-        if (type === 'ENTER_PRESSED') {
-            console.log('Enter pressed in state:', this.state);
-            
-            // In idle state, create at top
-            if (this.state === 'idle') {
-                const result = await NotesAPI.createNote();
-                if (!result) {
-                    throw new Error('Failed to create note');
-                }
-
-                console.log('✅ Note created:', result);
-                const newNote = document.querySelector(`[data-id="${result.id}"]`);
-                if (newNote) {
-                    await this.transition('editing', {
-                        nextNote: newNote,
-                        cursorPosition: 'end'
-                    });
-                }
-            }
-            return;
-        }
-
-        if (type === 'COMMAND_ENTER_PRESSED') {
-            console.log('🔍 [COMMAND_ENTER] Start handling in state:', this.state);
-            const { note, shift } = data;
-            
-            // In idle state, create at top (just like Enter)
-            if (this.state === 'idle') {
-                const createCommand = async () => {
-                    const result = await NotesAPI.createNote();
-                    if (!result) {
-                        throw new Error('Failed to create note');
-                    }
-                    const newNote = document.querySelector(`[data-id="${result.id}"]`);
-                    return { nextNote: newNote, cursorPosition: 'end' };
-                };
-
-                await this.transition('editing', {}, createCommand);
-                return;
-            }
-            
-            // In editing state, create child or sibling
-            if (this.state === 'editing') {
-                const noteId = note?.getAttribute('data-id');
-                if (!noteId) {
-                    throw new Error('No note ID found');
-                }
-
-                const createCommand = async () => {
-                    const result = await NotesAPI[shift ? 'createChild' : 'createSibling'](noteId);
-                    if (!result) {
-                        throw new Error('Failed to create note');
-                    }
-                    const newNote = document.querySelector(`[data-id="${result.id}"]`);
-                    return { nextNote: newNote, cursorPosition: 'end' };
-                };
-
-                await this.transition('editing', {}, createCommand);
-            }
-            return;
-        }
-
-        try {
-            // Determine new state based on event type
-            const newState = this.getNewState(type);
-            if (!newState || newState === this.state) {
-                // Just update data if no state change
-                this.data = { ...this.data, ...data };
-                return;
-            }
-
-            // Execute state transition
-            await this.transition(newState, data);
-        } catch (error) {
-            throw new Error('Event handling failed:', error);
-        }
+        // Otherwise just update state data
+        this.data = { ...this.data, ...result };
     },
 
     /**

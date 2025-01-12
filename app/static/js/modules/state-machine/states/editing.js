@@ -82,8 +82,9 @@ export const editingTransitions = {
             }
         }
 
-        // Clean up note
-        DOMUtils.setNoteEditable(currentNote, false);
+        // Clean up all notes - remove editing class from everything
+        const allNotes = DOMUtils.getAllNotes();
+        allNotes.forEach(note => DOMUtils.setNoteEditable(note, false));
 
         return {};  // Clear temporary editing state
     },
@@ -121,6 +122,79 @@ export const editingTransitions = {
         if (type === 'NOTE_CONTENT_CHANGED') {
             const { content } = event;
             return { currentContent: content };
+        }
+
+        if (type === 'SWITCH_NOTE') {
+            const { nextNote, cursorPosition } = event.data;
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote,
+                    cursorPosition
+                }
+            };
+        }
+
+        if (type === 'CREATE_NOTE') {
+            const { parentNote, noteType } = event.data;
+            const noteId = parentNote?.getAttribute('data-id');
+            
+            if (!noteId) {
+                throw new Error('No note ID found');
+            }
+
+            let result;
+            if (noteType === 'child') {
+                result = await NotesAPI.createChild(noteId);
+            } else {
+                result = await NotesAPI.createSibling(noteId);
+            }
+            
+            if (!result) {
+                throw new Error('Failed to create note');
+            }
+
+            const newNote = document.querySelector(`[data-id="${result.id}"]`);
+            if (!newNote) {
+                throw new Error('Created note not found in DOM');
+            }
+
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote: newNote,
+                    cursorPosition: 'end'
+                }
+            };
+        }
+
+        if (type === 'COMMAND_ENTER_PRESSED') {
+            const { note, shift } = event.data;
+            const noteId = note?.getAttribute('data-id');
+            if (!noteId) {
+                throw new Error('No note ID found');
+            }
+
+            const result = shift ? 
+                await NotesAPI.createChild(noteId) :
+                await NotesAPI.createSibling(noteId);
+
+            if (!result) {
+                throw new Error('Failed to create note');
+            }
+
+            const newNote = document.querySelector(`[data-id="${result.id}"]`);
+            if (!newNote) {
+                throw new Error('Created note not found in DOM');
+            }
+
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote: newNote,
+                    cursorPosition: 'end'
+                }
+            };
         }
         
         return null;

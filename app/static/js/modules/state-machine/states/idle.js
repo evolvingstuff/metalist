@@ -1,3 +1,5 @@
+import { NotesAPI } from '../../api-client.js';
+
 /**
  * Idle State
  * 
@@ -27,12 +29,53 @@ export const idleTransitions = {
         return {};
     },
 
-    handleEvent: (event) => {
-        switch (event.type) {
-            case 'CLICK_OUTSIDE_NOTE':
-                return null;
-            default:
-                return null;
+    handleEvent: async (event) => {
+        const { type } = event;
+
+        if (type === 'CLICK_OUTSIDE_NOTE') {
+            return null;
         }
+
+        if (type === 'CREATE_TOP_NOTE') {
+            const result = await NotesAPI.createNote();
+            if (!result) {
+                throw new Error('Failed to create note');
+            }
+
+            const newNote = document.querySelector(`[data-id="${result.id}"]`);
+            if (!newNote) {
+                throw new Error('Created note not found in DOM');
+            }
+
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote: newNote,
+                    cursorPosition: 'end'
+                }
+            };
+        }
+
+        if (type === 'ENTER_PRESSED' || type === 'COMMAND_ENTER_PRESSED') {
+            const result = await NotesAPI.createNote();
+            if (!result) {
+                throw new Error('Failed to create note');
+            }
+
+            const newNote = document.querySelector(`[data-id="${result.id}"]`);
+            if (!newNote) {
+                throw new Error('Created note not found in DOM');
+            }
+
+            return {
+                type: 'START_EDITING',
+                data: {
+                    nextNote: newNote,
+                    cursorPosition: 'end'
+                }
+            };
+        }
+
+        return null;
     }
 }; 
