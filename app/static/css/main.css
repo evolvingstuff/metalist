@@ -259,8 +259,7 @@ body {
     z-index: 1000;
 }
 
-.menu-button,
-.settings-button {
+.menu-button {
     composes: add-note;
     width: 30px;
     height: 30px;
@@ -276,7 +275,6 @@ body {
     padding: 0;
 }
 
-.menu-button:hover,
-.settings-button:hover {
+.menu-button:hover {
     background-color: var(--hover-color);
 }
