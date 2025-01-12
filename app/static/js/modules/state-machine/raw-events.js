@@ -73,13 +73,22 @@ export const RawEvents = {
      * Handle clicks on note content
      */
     handleNoteContentClick(event) {
+        if (!event?.target) {
+            throw new Error('Note content click event missing target');
+        }
+
         const noteElement = DOMUtils.findNoteElement(event.target);
+        if (!noteElement) {
+            throw new Error('Could not find parent note element for click target');
+        }
+
         const position = DOMUtils.getCursorPosition(noteElement);
         console.log('Got cursor position:', position);
         
         return {
             type: 'NOTE_CONTENT_CLICKED',
             noteElement,
+            target: event.target,
             position
         };
     },

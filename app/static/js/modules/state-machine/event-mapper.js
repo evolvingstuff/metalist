@@ -42,8 +42,7 @@ export const EventMapper = {
             NOTE_CONTENT_CLICKED: (event) => ({
                 type: 'START_EDITING',
                 data: {
-                    nextNote: event.noteElement,
-                    nextContent: DOMUtils.getNoteContentText(event.noteElement),
+                    noteId: DOMUtils.getNoteId(event.noteElement),
                     cursorPosition: event.position
                 }
             }),
@@ -64,18 +63,21 @@ export const EventMapper = {
             KEY_DOWN: (event) => event, // Pass through to state handler
 
             NOTE_CONTENT_CLICKED: (event, context) => {
-                // If clicking same note, no-op
-                if (event.noteElement === context.currentNote) {
-                    return { type: 'NO_OP' };
+                // Validate required fields
+                if (!event) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing event');
+                }
+                if (!event.target) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing event.target');
+                }
+                if (!event.noteElement) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing event.noteElement');
                 }
 
-                // If clicking different note, switch to it
-                return {
-                    type: 'SWITCH_NOTE',
-                    data: {
-                        nextNote: event.noteElement,
-                        cursorPosition: event.position
-                    }
+                return { 
+                    type: 'NOTE_CONTENT_CLICKED',
+                    noteElement: event.noteElement,
+                    target: event.target
                 };
             },
 
@@ -97,8 +99,7 @@ export const EventMapper = {
             NOTE_CONTENT_CLICKED: (event) => ({
                 type: 'START_EDITING',
                 data: {
-                    nextNote: event.noteElement,
-                    nextContent: DOMUtils.getNoteContentText(event.noteElement),
+                    noteId: DOMUtils.getNoteId(event.noteElement),
                     cursorPosition: event.position
                 }
             }),

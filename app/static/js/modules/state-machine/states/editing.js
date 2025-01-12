@@ -13,7 +13,6 @@ import { NotesAPI } from '../../api-client.js';
  * State Data:
  * - currentNote: Currently edited note element
  * - lastSavedContent: Content at last save
- * - currentContent: Current note content
  * 
  * Transitions:
  * - Enter: Sets up note for editing, manages focus
@@ -29,7 +28,30 @@ import { NotesAPI } from '../../api-client.js';
 
 export const editingTransitions = {
     enter: async (data, prevState) => {
-        const { nextNote, cursorPosition, activityMonitor } = data;
+        const { noteId, cursorPosition, clickInfo, activityMonitor } = data;
+        console.log('📝 [EDITING ENTER] Looking for note:', noteId);
+        
+        // Try both ID formats for debugging
+        const nextNote = document.querySelector(`[data-note-id="${noteId}"], [data-id="${noteId}"]`);
+        if (!nextNote) {
+            console.error('📝 [EDITING ENTER] Could not find note:', {
+                noteId,
+                existingIds: Array.from(document.querySelectorAll('[data-note-id], [data-id]')).map(el => ({
+                    noteId: el.dataset.noteId,
+                    id: el.dataset.id
+                }))
+            });
+            throw new Error(`Could not find note with ID: ${noteId}`);
+        }
+        
+        console.log('📝 [EDITING ENTER] Starting with data:', {
+            noteId,
+            nextNote,
+            nextNoteDataset: nextNote.dataset,
+            cursorPosition,
+            clickInfo,
+            hasActivityMonitor: !!activityMonitor
+        });
         
         // Clean up any existing editing state
         const allNotes = DOMUtils.getAllNotes();
@@ -39,9 +61,39 @@ export const editingTransitions = {
         DOMUtils.setNoteEditable(nextNote, true);
         
         // Handle cursor position based on context
-        if (cursorPosition === 'end') {
+        if (clickInfo) {
+            console.log('📝 [EDITING ENTER] Using stored click info:', clickInfo);
+            
+            // Use stored click info after DOM refresh
+            if (clickInfo.isDiv) {
+                console.log('📝 [EDITING ENTER] Focusing div');
+                DOMUtils.focusNote(nextNote);
+            } else {
+                // Find matching text node in refreshed DOM
+                const content = DOMUtils.getNoteContent(nextNote);
+                const nodes = Array.from(content.childNodes);
+                console.log('📝 [EDITING ENTER] Looking for text node:', {
+                    targetText: clickInfo.textContent,
+                    foundNodes: nodes.map(n => n.textContent)
+                });
+                
+                const index = nodes.findIndex(n => n.textContent === clickInfo.textContent);
+                if (index !== -1) {
+                    console.log('📝 [EDITING ENTER] Found matching node at index:', index);
+                    DOMUtils.setCursorPosition(nextNote, {
+                        offset: clickInfo.offset,
+                        path: [index]
+                    });
+                } else {
+                    console.log('📝 [EDITING ENTER] No matching node found, focusing at end');
+                    DOMUtils.focusNote(nextNote);
+                }
+            }
+        } else if (cursorPosition === 'end') {
+            console.log('📝 [EDITING ENTER] Focusing at end');
             DOMUtils.focusNote(nextNote);
         } else if (cursorPosition) {
+            console.log('📝 [EDITING ENTER] Setting cursor position:', cursorPosition);
             DOMUtils.setCursorPosition(nextNote, cursorPosition);
         }
 
@@ -50,8 +102,7 @@ export const editingTransitions = {
 
         return {
             currentNote: nextNote,
-            lastSavedContent: DOMUtils.getNoteContentText(nextNote),
-            currentContent: DOMUtils.getNoteContentText(nextNote)
+            lastSavedContent: DOMUtils.getNoteContentText(nextNote)
         };
     },
 
@@ -89,6 +140,10 @@ export const editingTransitions = {
     },
 
     handleEvent: async (event, data) => {
+        if (!event) {
+            throw new Error('Editing state received null/undefined event');
+        }
+
         const { type } = event;
         
         if (type === 'KEY_DOWN') {
@@ -154,8 +209,62 @@ export const editingTransitions = {
         }
         
         if (type === 'NOTE_CONTENT_CHANGED') {
-            const { content } = event;
-            return { currentContent: content };
+            return { type: 'NO_OP' };  // Content changes handled by auto-save
+        }
+
+        if (type === 'NOTE_CONTENT_CLICKED') {
+            const noteId = DOMUtils.getNoteId(event.noteElement);
+            const { target } = event;
+            
+            console.log('📝 [EDITING] Got click on note:', {
+                noteElement: event.noteElement,
+                noteId,
+                dataset: event.noteElement?.dataset,
+                target,
+                targetDataset: target?.dataset,
+                currentNote: data.currentNote
+            });
+            
+            if (!noteId) {
+                console.error('📝 [EDITING] No note ID found:', event.noteElement);
+                throw new Error('Could not find note ID on clicked element');
+            }
+
+            // If clicking same note, no-op
+            if (noteId === DOMUtils.getNoteId(data.currentNote)) {
+                return { type: 'NO_OP' };
+            }
+
+            // Don't store DOM node references, just the data we need
+            const isDiv = target.tagName === 'DIV';
+            
+            // DIVs might not have direct text content, but spans should
+            if (!isDiv && !target.textContent) {
+                console.error('📝 [EDITING] Non-div target missing textContent:', target);
+                throw new Error('Non-div target missing textContent');
+            }
+
+            const clickInfo = {
+                isDiv,
+                offset: isDiv ? 0 : target.textContent.length,
+                textContent: isDiv ? '' : target.textContent,  // Empty for divs, actual content for spans
+                noteId
+            };
+
+            console.log('📝 [EDITING] Note content clicked:', {
+                tagName: target.tagName,
+                textContent: target.textContent,
+                noteId,
+                clickInfo
+            });
+
+            return {
+                type: 'START_EDITING',
+                data: {
+                    noteId,
+                    clickInfo
+                }
+            };
         }
 
         if (type === 'SWITCH_NOTE') {
@@ -264,4 +373,4 @@ export const editingTransitions = {
 
         throw new Error(`Unhandled event type: ${type}`);
     }
-}; 
+};

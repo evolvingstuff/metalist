@@ -75,7 +75,8 @@ export const StateTransitions = {
                 ...enterData
             };
         } catch (error) {
-            throw new Error('Transition failed:', error);
+            console.error(' [COORDINATOR] Transition failed:', error);
+            throw new Error(`Transition failed: ${error.message}`);
         }
     }
 }; 

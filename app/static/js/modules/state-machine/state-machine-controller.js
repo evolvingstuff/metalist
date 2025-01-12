@@ -227,7 +227,8 @@ export const StateMachine = {
 
             return true;
         } catch (error) {
-            throw new Error('Transition failed:', error);
+            console.error('🔥 [TRANSITION] Failed:', error);
+            throw new Error(`Transition failed: ${error.message}`);
         }
     },
 
@@ -246,7 +247,8 @@ export const StateMachine = {
             try {
                 listener(oldState, newState, this.data);
             } catch (error) {
-                throw new Error('Listener error:', error);
+                console.error('🔥 [TRANSITION] Listener failed:', error);
+                throw new Error(`Listener error: ${error.message}`);
             }
         });
     }
