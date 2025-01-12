@@ -85,14 +85,12 @@ export const DOMUtils = {
         const contentElement = this.getNoteContent(noteElement);
         const selection = window.getSelection();
         if (!selection.rangeCount) {
-            console.log('No selection range found');
-            return null;
+            throw new Error('No selection range found');
         }
 
         const range = selection.getRangeAt(0);
         if (!contentElement.contains(range.commonAncestorContainer)) {
-            console.log('Selection not in content element');
-            return null;
+            throw new Error('Selection not in content element');
         }
 
         const position = {
@@ -159,8 +157,7 @@ export const DOMUtils = {
             contentElement.focus();
             console.log('Successfully restored cursor position');
         } catch (e) {
-            console.error('Failed to set cursor position:', e);
-            this.focusNote(noteElement);
+            throw new Error('Failed to set cursor position:', e);
         }
     },
 

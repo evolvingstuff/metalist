@@ -121,17 +121,6 @@ export const RawEvents = {
         };
     },
 
-    handleNoteContentClick(event) {
-        const noteElement = DOMUtils.findNoteElement(event.noteElement);
-        if (!noteElement) return null;
-
-        return {
-            type: 'NOTE_CONTENT_CLICKED',
-            noteElement,
-            position: event.position
-        };
-    },
-
     handleClickOutsideNote(event) {
         return {
             type: 'CLICK_OUTSIDE_NOTE'

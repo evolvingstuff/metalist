@@ -107,8 +107,7 @@ export const StateMachine = {
             console.log('📝 Creating new note...');
             const result = await NotesAPI.createNote();
             if (!result) {
-                console.warn('❌ Failed to create note');
-                return;
+                throw new Error('Failed to create note');
             }
 
             console.log('✅ Note created:', result);
@@ -128,8 +127,7 @@ export const StateMachine = {
             const noteId = parentNote?.getAttribute('data-id');
             
             if (!noteId) {
-                console.warn('❌ No note ID found');
-                return;
+                throw new Error('No note ID found');
             }
 
             let result;
@@ -141,8 +139,7 @@ export const StateMachine = {
             }
             
             if (!result) {
-                console.warn('❌ Failed to create note');
-                return;
+                throw new Error('Failed to create note');
             }
 
             console.log('✅ Note created:', result);
@@ -163,8 +160,7 @@ export const StateMachine = {
             if (this.state === 'idle') {
                 const result = await NotesAPI.createNote();
                 if (!result) {
-                    console.warn('❌ Failed to create note');
-                    return;
+                    throw new Error('Failed to create note');
                 }
 
                 console.log('✅ Note created:', result);
@@ -188,8 +184,7 @@ export const StateMachine = {
                 const createCommand = async () => {
                     const result = await NotesAPI.createNote();
                     if (!result) {
-                        console.warn('❌ Failed to create note');
-                        return;
+                        throw new Error('Failed to create note');
                     }
                     const newNote = document.querySelector(`[data-id="${result.id}"]`);
                     return { nextNote: newNote, cursorPosition: 'end' };
@@ -203,15 +198,13 @@ export const StateMachine = {
             if (this.state === 'editing') {
                 const noteId = note?.getAttribute('data-id');
                 if (!noteId) {
-                    console.warn('❌ No note ID found');
-                    return;
+                    throw new Error('No note ID found');
                 }
 
                 const createCommand = async () => {
                     const result = await NotesAPI[shift ? 'createChild' : 'createSibling'](noteId);
                     if (!result) {
-                        console.warn('❌ Failed to create note');
-                        return;
+                        throw new Error('Failed to create note');
                     }
                     const newNote = document.querySelector(`[data-id="${result.id}"]`);
                     return { nextNote: newNote, cursorPosition: 'end' };
@@ -234,7 +227,7 @@ export const StateMachine = {
             // Execute state transition
             await this.transition(newState, data);
         } catch (error) {
-            console.error('Event handling failed:', error);
+            throw new Error('Event handling failed:', error);
         }
     },
 
@@ -275,8 +268,7 @@ export const StateMachine = {
 
             return true;
         } catch (error) {
-            console.error('❌ Transition failed:', error);
-            return false;
+            throw new Error('Transition failed:', error);
         }
     },
 
@@ -316,7 +308,7 @@ export const StateMachine = {
             try {
                 listener(oldState, newState, this.data);
             } catch (error) {
-                console.error('Listener error:', error);
+                throw new Error('Listener error:', error);
             }
         });
     }

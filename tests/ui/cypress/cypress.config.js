@@ -15,8 +15,7 @@ module.exports = defineConfig({
         }).then(() => {
           console.log('Successfully switched to dev database')
         }).catch(err => {
-          console.error('Failed to switch to dev database:', err)
-          throw err
+          throw new Error('Failed to switch to dev database:', err)
         })
       })
 
@@ -31,8 +30,7 @@ module.exports = defineConfig({
         }).then(() => {
           console.log('Successfully switched back to production database')
         }).catch(err => {
-          console.error('Failed to switch back to production database:', err)
-          throw err
+          throw new Error('Failed to switch back to production database:', err)
         })
       })
     },

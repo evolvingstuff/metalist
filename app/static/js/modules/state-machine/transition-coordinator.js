@@ -75,8 +75,7 @@ export const StateTransitions = {
                 ...enterData
             };
         } catch (error) {
-            console.error('Transition failed:', error);
-            throw error;
+            throw new Error('Transition failed:', error);
         }
     }
 }; 

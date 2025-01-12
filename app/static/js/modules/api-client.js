@@ -76,9 +76,7 @@ export const NotesAPI = {
             
             return data;
         } catch (error) {
-            console.error('API Error:', error);
-            alert(`Operation failed: ${error.message}`);
-            throw error;
+            throw new Error('API Error:', error);
         }
     },
 

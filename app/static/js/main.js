@@ -65,11 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Application initialized successfully');
         }
     } catch (error) {
-        console.error('Initialization failed:', error);
+        throw new Error('Initialization failed:', error);
     }
 });
 
 // Handle unhandled promise rejections
 window.addEventListener('unhandledrejection', event => {
-    console.error('Unhandled promise rejection:', event.reason);
+    throw new Error('Unhandled promise rejection:', event.reason);
 });

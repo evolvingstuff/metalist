@@ -163,14 +163,12 @@ export const EventMapper = {
     mapEvent(rawEvent, currentState, context = {}) {
         const stateHandlers = this.handlers[currentState];
         if (!stateHandlers) {
-            console.warn(`No handlers for state: ${currentState}`);
-            return null;
+            throw new Error(`No handlers for state: ${currentState}`);
         }
 
         const handler = stateHandlers[rawEvent.type];
         if (!handler) {
-            console.warn(`No handler for event ${rawEvent.type} in state ${currentState}`);
-            return null;
+            throw new Error(`No handler for event ${rawEvent.type} in state ${currentState}`);
         }
 
         return handler(rawEvent, context);
