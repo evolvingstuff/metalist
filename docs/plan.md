@@ -6,14 +6,14 @@ Implement a system for rendering notes differently when viewing vs editing, with
 ## Tasks
 
 ### Backend Changes
-- [ ] Add placeholder render functions in notes.py:
-  - [ ] `is_renderable(note)` - Always returns False for now
-  - [ ] `maybe_render_content(note)` - Returns raw content for now
-- [ ] Add `editing_note_id` parameter to `/fragment` endpoint
-- [ ] Update `build_tree` to use render functions and set flags:
-  - [ ] Pass `editing_note_id` through
-  - [ ] Add `isRendered` flag based on `is_renderable`
-  - [ ] Use `maybe_render_content` for non-edited notes
+- [x] Add placeholder render functions in notes.py:
+  - [x] `is_renderable(note)` - Always returns False for now
+  - [x] `maybe_render_content(note)` - Returns raw content for now
+- [x] Add `editing_note_id` parameter to `/fragment` endpoint
+- [x] Update `build_tree` to use render functions and set flags:
+  - [x] Pass `editing_note_id` through
+  - [x] Add `isRendered` flag based on `is_renderable`
+  - [x] Use `maybe_render_content` for non-edited notes
 
 ### Frontend State Machine Changes
 - [ ] Remove fragment loading from API client:
