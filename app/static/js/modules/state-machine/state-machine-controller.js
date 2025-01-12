@@ -263,7 +263,7 @@ export const StateMachine = {
             'SWITCH_NOTE': 'editing',
             'START_SEARCH': 'searching',
             'STOP_SEARCH': 'idle',
-            UPDATE_SEARCH: null,  // null means stay in current state
+            'UPDATE_SEARCH' : null,  // null means stay in current state
             'CREATE_NOTE': 'editing',
             'ENTER_PRESSED': 'editing',
             'COMMAND_ENTER_PRESSED': 'editing'
