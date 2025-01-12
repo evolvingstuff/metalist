@@ -33,26 +33,26 @@ export const RawEvents = {
         // Log click details
         console.log('Click handler:', {
             target: event.target,
-            targetClasses: event.target.classList
+            targetClasses: event.target?.classList
         });
 
         // Check click target type
-        if (event.target.classList.contains('note-content')) {
+        if (event.target?.classList?.contains('note-content')) {
             return this.handleNoteContentClick(event);
         }
-        if (event.target.classList.contains('search-input')) {
+        if (event.target?.classList?.contains('search-input')) {
             return this.handleSearchClick(event);
         }
-        if (event.target.classList.contains('add-note')) {
+        if (event.target?.classList?.contains('add-note')) {
             return this.handleAddNoteClick(event);
         }
-        if (event.target.classList.contains('menu-button')) {
+        if (event.target?.classList?.contains('menu-button')) {
             return this.handleMenuClick(event);
         }
-        if (event.target.classList.contains('trash-can')) {
+        if (event.target?.classList?.contains('trash-can')) {
             return this.handleTrashCanClick(event);
         }
-        if (event.target.classList.contains('interactive')) {
+        if (event.target?.classList?.contains('interactive')) {
             return { type: 'NO_OP' }; // Other interactive elements
         }
 
@@ -64,8 +64,7 @@ export const RawEvents = {
 
         // Non-interactive click outside any note
         return {
-            type: 'CLICKED_OUTSIDE_NOTE',
-            target: event.target
+            type: 'CLICKED_OUTSIDE_NOTE'
         };
     },
 
@@ -92,8 +91,7 @@ export const RawEvents = {
         
         return {
             type: 'NOTE_CONTENT_CLICKED',
-            noteId,  // Use ID instead of DOM node
-            target: event.target,
+            noteId,
             position
         };
     },
@@ -202,15 +200,15 @@ export const RawEvents = {
     handleEvent(eventName, event) {
         // Map event names to handlers
         const handlerMap = {
-            'Click': this.handleClick.bind(this),
-            'KeyDown': this.handleKeyDown.bind(this),
-            'DragStart': this.handleDragStart.bind(this),
-            'Input': this.handleInput.bind(this),
-            'SearchInput': this.handleSearchInput.bind(this),
-            'SearchBlur': this.handleSearchBlur.bind(this),
-            'SearchFocus': this.handleSearchClick.bind(this),
-            'ClickOutsideNote': this.handleClickOutsideNote.bind(this),
-            'FragmentLoaded': this.handleFragmentLoaded.bind(this)
+            'Click': (e) => this.handleClick(e),
+            'KeyDown': (e) => this.handleKeyDown(e),
+            'DragStart': (e) => this.handleDragStart(e),
+            'Input': (e) => this.handleInput(e),
+            'SearchInput': (e) => this.handleSearchInput(e),
+            'SearchBlur': (e) => this.handleSearchBlur(e),
+            'SearchFocus': (e) => this.handleSearchClick(e),
+            'ClickOutsideNote': (e) => this.handleClickOutsideNote(e),
+            'FragmentLoaded': (e) => this.handleFragmentLoaded(e)
         };
 
         const handler = handlerMap[eventName];

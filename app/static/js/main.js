@@ -6,25 +6,39 @@ import { DOMUtils } from './modules/dom-utils.js';
  * Initialize the application when the DOM is ready
  */
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded fired');
     try {
         // Initialize state machine
         StateMachine.init();
+        console.log('StateMachine initialized');
         
         // Add keyboard event handler
         document.addEventListener('keydown', (e) => {
-            StateMachine.handleRawEvent('KeyDown', e);
+            try {
+                StateMachine.handleRawEvent('KeyDown', e);
+            } catch (err) {
+                console.error('Error handling keydown:', err);
+            }
         });
 
         // Handle all clicks through click handler
         document.addEventListener('click', (e) => {
-            StateMachine.handleRawEvent('Click', e);
+            try {
+                StateMachine.handleRawEvent('Click', e);
+            } catch (err) {
+                console.error('Error handling click:', err);
+            }
         });
 
         // Add search input focus handler
         const searchInput = document.getElementById('search-input');
         if (searchInput) {
             searchInput.addEventListener('focus', (e) => {
-                StateMachine.handleRawEvent('SearchFocus', e);
+                try {
+                    StateMachine.handleRawEvent('SearchFocus', e);
+                } catch (err) {
+                    console.error('Error handling search focus:', err);
+                }
             });
         }
 
@@ -45,11 +59,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Application initialized successfully');
         }
     } catch (error) {
-        throw new Error('Initialization failed:', error);
+        console.error('Initialization failed:', error);
     }
 });
 
 // Handle unhandled promise rejections
 window.addEventListener('unhandledrejection', event => {
-    throw new Error('Unhandled promise rejection:', event.reason);
+    console.error('Unhandled promise rejection:', event.reason);
 });

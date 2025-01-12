@@ -3,45 +3,32 @@
  * 
  * Manages search functionality including:
  * - Search input focus
- * - Query persistence
  * - Results filtering
  * 
  * State Data:
- * - searchQuery: Current search string
- * - initialQuery: Starting search value
  * 
  * Transitions:
- * - Enter: Sets up search input, applies initial query
- * - Exit: Preserves search context for future use
+ * - Enter: Sets up search input
+ * - Exit: 
  * 
  * @example
  * // Enter search state
- * await transition('searching', {
- *   initialQuery: 'search term'
- * });
+ * await transition('searching');
  */
 
 export const searchingTransitions = {
     enter: async (data, prevState) => {
-        const { initialQuery = '' } = data;
-        
         // Focus search input
         const searchInput = document.getElementById('search-input');
         if (searchInput) {
-            searchInput.value = initialQuery;
             searchInput.focus();
         }
 
-        return {
-            searchQuery: initialQuery
-        };
+        return {};
     },
 
     exit: async (data, nextState) => {
-        // Preserve search query across transitions
-        return {
-            searchQuery: data.searchQuery
-        };
+        return {};
     },
 
     handleEvent: async (event) => {
@@ -56,12 +43,6 @@ export const searchingTransitions = {
 
             // All other keys update search input directly
             return { type: 'NO_OP' };
-        }
-
-        if (type === 'SEARCH_QUERY_CHANGED') {
-            return {
-                searchQuery: event.query
-            };
         }
 
         if (type === 'NOTE_CONTENT_CLICKED') {

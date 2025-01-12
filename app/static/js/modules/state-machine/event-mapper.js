@@ -50,8 +50,7 @@ export const EventMapper = {
             CLICKED_OUTSIDE_NOTE: () => ({ type: 'NO_OP' }),
 
             SEARCH_FOCUSED: () => ({
-                type: 'START_SEARCHING',
-                data: {}
+                type: 'START_SEARCHING'
             }),
 
             FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
@@ -67,25 +66,23 @@ export const EventMapper = {
                 if (!event) {
                     throw new Error('NOTE_CONTENT_CLICKED missing event');
                 }
-                if (!event.target) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing event.target');
-                }
-                if (!event.noteElement) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing event.noteElement');
+                if (!event.noteId) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing noteId');
                 }
 
                 return { 
                     type: 'NOTE_CONTENT_CLICKED',
-                    noteElement: event.noteElement,
-                    target: event.target
+                    data: {
+                        noteId: event.noteId,
+                        position: event.position
+                    }
                 };
             },
 
             CLICKED_OUTSIDE_NOTE: () => ({ type: 'START_IDLE' }),
 
             SEARCH_FOCUSED: () => ({
-                type: 'START_SEARCHING',
-                data: { query: '' }
+                type: 'START_SEARCHING'
             }),
 
             FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),

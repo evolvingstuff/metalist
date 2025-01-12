@@ -175,9 +175,13 @@ export const editingTransitions = {
         const allNotes = DOMUtils.getAllNotes();
         allNotes.forEach(note => DOMUtils.setNoteEditable(note, false));
 
-        // Clear selection
-        if (window.getSelection) {
-            window.getSelection().removeAllRanges();
+        // Clear only the current note's selection
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            if (currentNote.contains(range.commonAncestorContainer)) {
+                selection.removeAllRanges();
+            }
         }
 
         return {};  // Clear temporary editing state
@@ -263,56 +267,24 @@ export const editingTransitions = {
         }
 
         if (type === 'NOTE_CONTENT_CLICKED') {
-            const noteId = DOMUtils.getNoteId(event.noteElement);
-            const { target } = event;
+            const { noteId, position } = event.data;
             
             console.log(' [EDITING] Got click on note:', {
-                noteElement: event.noteElement,
                 noteId,
-                dataset: event.noteElement?.dataset,
-                target,
-                targetDataset: target?.dataset,
+                position,
                 currentNote: data.currentNote
             });
             
             if (!noteId) {
-                console.error(' [EDITING] No note ID found:', event.noteElement);
-                throw new Error('Could not find note ID on clicked element');
+                console.error(' [EDITING] Missing noteId');
+                throw new Error('Missing noteId in NOTE_CONTENT_CLICKED event');
             }
-
-            // If clicking same note, no-op
-            if (noteId === DOMUtils.getNoteId(data.currentNote)) {
-                return { type: 'NO_OP' };
-            }
-
-            // Don't store DOM node references, just the data we need
-            const isDiv = target.tagName === 'DIV';
-            
-            // DIVs might not have direct text content, but spans should
-            if (!isDiv && !target.textContent) {
-                console.error('📝 [EDITING] Non-div target missing textContent:', target);
-                throw new Error('Non-div target missing textContent');
-            }
-
-            const clickInfo = {
-                isDiv,
-                offset: isDiv ? 0 : target.textContent.length,
-                textContent: isDiv ? '' : target.textContent,  // Empty for divs, actual content for spans
-                noteId
-            };
-
-            console.log('📝 [EDITING] Note content clicked:', {
-                tagName: target.tagName,
-                textContent: target.textContent,
-                noteId,
-                clickInfo
-            });
 
             return {
                 type: 'START_EDITING',
                 data: {
                     noteId,
-                    clickInfo
+                    cursorPosition: position
                 }
             };
         }
