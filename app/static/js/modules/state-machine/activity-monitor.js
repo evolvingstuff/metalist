@@ -8,7 +8,7 @@ export class ActivityMonitor {
     constructor(stateMachine) {
         this.stateMachine = stateMachine;
         this.timer = null;
-        this.TIMEOUT = 2000;
+        this.TIMEOUT = 100000000;  //TODO
     }
 
     startMonitoring() {

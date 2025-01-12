@@ -94,6 +94,15 @@ export const StateMachine = {
             }
         }
 
+        if (type === 'SWITCH_NOTE') {
+            const { nextNote, cursorPosition } = data;
+            await this.transition('editing', {
+                nextNote,
+                cursorPosition
+            });
+            return;
+        }
+
         if (type === 'CREATE_TOP_NOTE') {
             console.log('📝 Creating new note...');
             const result = await NotesAPI.createNote();
