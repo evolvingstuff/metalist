@@ -142,6 +142,8 @@ export const EventMapper = {
                 }
             }),
 
+            SEARCH_FOCUSED: () => null,  // Already in search state, do nothing
+
             ESCAPE_PRESSED: () => ({
                 type: 'STOP_SEARCH'
             }),
@@ -154,7 +156,7 @@ export const EventMapper = {
             }),
 
             FRAGMENT_LOADED: (event, context) => ({
-                type: 'UPDATE_SEARCH',
+                type: 'UPDATE_SEARCH',  // TODO: why update AFTER fragment loaded?
                 data: {
                     query: context.searchQuery,
                     fragmentData: event.data.apiResponse
