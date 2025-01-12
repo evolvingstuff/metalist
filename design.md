@@ -68,6 +68,23 @@
 - Real-time updates with version tracking
 - Conflict resolution UI
 
+## Testing Best Practices
+
+### Cache Busting in Cypress Tests
+
+When visiting pages in Cypress tests, always use a cache-busting query parameter to ensure fresh JS files are loaded:
+
+```javascript
+cy.visit('/?t=' + Date.now())
+```
+
+This is critical because:
+1. Browser caching can cause tests to use stale JS files
+2. This can hide recent changes to event handlers, state machine logic, etc.
+3. Tests may pass/fail inconsistently without cache busting
+
+Always add this pattern to any test that depends on JS functionality.
+
 ## Performance Considerations
 
 ### Scalability

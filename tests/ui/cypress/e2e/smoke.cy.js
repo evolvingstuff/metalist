@@ -1,10 +1,18 @@
+/**
+ * IMPORTANT: Always use cache busting when visiting pages in tests.
+ * This ensures we get fresh JS files and don't use cached versions:
+ * cy.visit('/?t=' + Date.now())
+ * 
+ * Without this, tests may use stale JS and pass/fail inconsistently.
+ */
+
 describe('Smoke Test', () => {
   it('handles basic note creation and editing', () => {
     // Set up intercepts
     cy.intercept('POST', '/api/notes/new').as('createNote')
     
-    // Visit and create note
-    cy.visit('/')
+    // Visit and create note with cache buster
+    cy.visit('/?t=' + Date.now())
     cy.get('.add-note').click()
     
     // Wait for note creation
