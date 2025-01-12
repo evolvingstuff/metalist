@@ -24,6 +24,14 @@ document.addEventListener('DOMContentLoaded', () => {
             StateMachine.handleRawEvent('KeyDown', e);
         });
 
+        // Add search input focus handler
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            searchInput.addEventListener('focus', (e) => {
+                StateMachine.handleRawEvent('SearchFocus', e);
+            });
+        }
+
         // Handle clicks on notes to enter editing state
         // and clicks outside interactive elements to exit editing state
         document.addEventListener('click', (e) => {

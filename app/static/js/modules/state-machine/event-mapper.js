@@ -60,11 +60,9 @@ export const EventMapper = {
                 }
             }),
 
-            SEARCH_FOCUSED: (event) => ({
-                type: 'START_SEARCH',
-                data: {
-                    initialQuery: event.query
-                }
+            SEARCH_FOCUSED: () => ({
+                type: 'SEARCH_FOCUSED',
+                data: {}
             }),
 
             FRAGMENT_LOADED: (event) => {
@@ -121,6 +119,11 @@ export const EventMapper = {
                     prevNote: context.currentNote,
                     lastSavedContent: context.lastSavedContent
                 }
+            }),
+
+            SEARCH_FOCUSED: () => ({
+                type: 'SEARCH_FOCUSED',
+                data: {}
             }),
 
             FRAGMENT_LOADED: (event, context) => {

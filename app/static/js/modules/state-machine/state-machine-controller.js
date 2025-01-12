@@ -289,7 +289,7 @@ export const StateMachine = {
             'START_EDITING': 'editing',
             'STOP_EDITING': 'idle',
             'SWITCH_NOTE': 'editing',
-            'START_SEARCH': 'searching',
+            'SEARCH_FOCUSED': 'searching',
             'STOP_SEARCH': 'idle',
             'UPDATE_SEARCH' : null,  // null means stay in current state
             'CREATE_NOTE': 'editing',
