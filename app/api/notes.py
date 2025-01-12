@@ -208,7 +208,7 @@ def create_new_child(note_id: str, db: Session = Depends(get_db)):
     return {"id": new_note_id}
 
 @router.get("/fragment")
-def get_notes_fragment(db: Session = Depends(get_db)):
+def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depends(get_db)):
     """Get the HTML fragment for the notes list"""
     # This endpoint returns the notes_list.html template content for AJAX updates
     from mako.template import Template
@@ -224,15 +224,31 @@ def get_notes_fragment(db: Session = Depends(get_db)):
         lookup = TemplateLookup(directories=[template_dir])
         template = lookup.get_template('notes_list.html')
 
+        def is_renderable(note) -> bool:
+            """Check if note should be rendered differently when not editing.
+            For now, always return False until we implement special rendering."""
+            return False
+
+        def maybe_render_content(note) -> str:
+            """Apply special rendering to content if needed.
+            For now, just return content as-is until we implement special rendering."""
+            return note.content
+
         # Use same tree building logic as main page
         def build_tree(parent_id=None):
             try:
                 notes = LinkedListManager.get_ordered_child_list(db, parent_id)
                 return [{
                     'id': note.id,
-                    'content': note.content,
+                    'content': note.content if note.id == editing_note_id else maybe_render_content(note),
                     'parent_id': note.parent_id or '',
-                    'children': build_tree(note.id)
+                    'children': build_tree(note.id),
+                    'flags': {
+                        'isEditing': note.id == editing_note_id,
+                        'isCollapsed': False,
+                        'isHighlighted': False,
+                        'isRendered': note.id != editing_note_id and is_renderable(note)
+                    }
                 } for note in notes]
             except Exception as e:
                 logger.exception("Error building note tree")

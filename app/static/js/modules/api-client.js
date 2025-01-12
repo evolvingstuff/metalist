@@ -42,45 +42,13 @@ export const NotesAPI = {
                 reloadOnSuccess
             });
 
-            if (reloadOnSuccess) {
-                console.log(' [API] Fetching fragment');
-                // Instead of window.location.reload(), fetch the fragment
-                if (CONFIG.DEBUG.LOG_API_CALLS) {
-                    console.log('API Request:', {
-                        url: '/api/notes/fragment',
-                        method: 'GET'
-                    });
-                }
-
-                const fragmentResponse = await fetch('/api/notes/fragment');
-                if (!fragmentResponse.ok) {
-                    throw new Error(`Failed to fetch fragment: ${fragmentResponse.status}`);
-                }
-                const fragmentData = await fragmentResponse.json();
-                
-                if (CONFIG.DEBUG.LOG_API_CALLS) {
-                    console.log('API Response:', {
-                        url: '/api/notes/fragment',
-                        status: fragmentResponse.status,
-                        data: fragmentData
-                    });
-                }
-
-                // Update the notes container with new HTML
-                const notesContainer = document.getElementById('notes-container');
-                if (notesContainer && fragmentData.data.html) {
-                    notesContainer.innerHTML = fragmentData.data.html;
-                    await StateMachine.handleMappedEvent({
-                        type: 'FRAGMENT_LOADED',
-                        data: { apiResponse: data }
-                    });
-                }
-            }
+            // Note: No longer auto-fetching fragment here
+            // Fragment loading is now handled by state machine commands
             
             return data;
         } catch (error) {
-            console.error('[API] Error:', error);
-            throw error;  // Re-throw the original error
+            console.error(' [API] Error:', error);
+            throw error;
         }
     },
 
