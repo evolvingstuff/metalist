@@ -1,3 +1,5 @@
+import { CONFIG } from '../config.js';
+
 /**
  * Activity Monitor
  * 
@@ -8,7 +10,7 @@ export class ActivityMonitor {
     constructor(stateMachine) {
         this.stateMachine = stateMachine;
         this.timer = null;
-        this.TIMEOUT = 100000000;  //TODO
+        this.TIMEOUT = CONFIG.INACTIVITY_TIMEOUT;
     }
 
     startMonitoring() {
