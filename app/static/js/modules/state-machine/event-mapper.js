@@ -142,7 +142,7 @@ export const EventMapper = {
                 }
             }),
 
-            SEARCH_FOCUSED: () => null,  // Already in search state, do nothing
+            SEARCH_FOCUSED: () => null,
 
             ESCAPE_PRESSED: () => ({
                 type: 'STOP_SEARCH'
@@ -152,14 +152,6 @@ export const EventMapper = {
                 type: 'UPDATE_SEARCH',
                 data: {
                     query: event.query
-                }
-            }),
-
-            FRAGMENT_LOADED: (event, context) => ({
-                type: 'UPDATE_SEARCH',  // TODO: why update AFTER fragment loaded?
-                data: {
-                    query: context.searchQuery,
-                    fragmentData: event.data.apiResponse
                 }
             })
         }
