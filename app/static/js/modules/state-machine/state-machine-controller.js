@@ -1,3 +1,44 @@
+/**
+ * State Machine Controller
+ * 
+ * Manages application state transitions and side effects in a predictable way:
+ * 
+ * 1. Events flow through:
+ *    raw event -> mapped event -> state handler -> (optional) transition
+ * 
+ * 2. State transitions:
+ *    - Run exit handler for old state
+ *    - Execute queued effects
+ *    - Update fragment
+ *    - Change state
+ *    - Run enter handler for new state
+ * 
+ * 3. State Context:
+ *    - Holds all state data (noteId, content, cursor position, etc.)
+ *    - Validates data access
+ *    - Queues effects for next transition
+ * 
+ * Example flow:
+ * ```
+ * // 1. Initialize
+ * StateMachine.init();
+ * 
+ * // 2. Handle raw event
+ * StateMachine.handleRawEvent({
+ *   type: 'keydown',
+ *   key: 'Enter'
+ * });
+ * 
+ * // 3. State handler queues effects and sets target state
+ * stateContext
+ *   .queueEffect(new CreateNoteEffect())
+ *   .setTargetState('editing');
+ * 
+ * // 4. Transition runs effects and handlers
+ * await StateMachine.transition();
+ * ```
+ */
+
 import { RawEvents } from './raw-events.js';
 import { EventMapper } from './event-mapper.js';
 import { NotesAPI } from '../api-client.js';
@@ -8,46 +49,6 @@ import { idleTransitions } from './states/idle.js';
 import { StateContext } from './state-context.js';
 import { DOMUtils } from '../dom-utils.js';
 import { CONFIG } from '../config.js';
-
-/**
- * State Machine Controller
- * 
- * Core controller that coordinates all state machine operations:
- * 1. Raw event handling (DOM events → StateContext)
- * 2. Event mapping (StateContext → state machine events)
- * 3. State transitions (state changes with enter/exit hooks)
- * 
- * Flow:
- * DOM Event → StateContext → Mapped Event → State Transition → New State
- * 
- * Each stage:
- * 1. Raw Events:
- *    - Takes DOM event
- *    - Returns StateContext with event type and data
- * 
- * 2. Event Mapper:
- *    - Takes StateContext and current state
- *    - Returns state machine event with same or modified StateContext
- * 
- * 3. State Machine:
- *    - Takes state machine event
- *    - Handles state transitions using StateContext
- * 
- * @example
- * // Initialize
- * StateMachine.init();
- * 
- * // Handle DOM event
- * StateMachine.handleRawEvent('Click', domEvent);
- * 
- * // Direct state machine event
- * StateMachine.handleMappedEvent({
- *   type: 'START_EDITING',
- *   context: new StateContext()
- *     .setNoteId('note-1')
- *     .setContent('Note content')
- * });
- */
 
 // Valid state machine states
 export const States = {

@@ -281,3 +281,72 @@ Benefits:
 - Efficient storage (compressed base)
 - Quick startup (no rebuild needed)
 - Automatic recovery from interruption
+
+## Frontend State Management
+
+## State Machine Architecture
+
+The frontend uses a state machine pattern to manage UI interactions in a predictable way:
+
+### Event Pipeline
+```
+DOM Event → Mapped Event → State Handler → Effects → State Transition
+```
+
+Each state (idle, editing, searching) defines:
+- What events it handles (KEY_DOWN, CLICK, etc.)
+- What effects those events trigger (create note, save content)
+- What state to transition to next
+
+### State Context
+Single source of truth for all frontend state:
+- Current note ID and content
+- Cursor position and selection
+- Last saved content
+- Queued effects for next transition
+
+Uses builder pattern with strict validation:
+```javascript
+context
+  .setNoteId('123')
+  .setContent('hello')
+  .setCursorOffset(5);
+```
+
+### Effects Pipeline
+Side effects (API calls, DOM updates) run in a controlled sequence:
+1. Effects queued during event handling
+2. Run in order during state transition
+3. Complete before state changes
+4. Update context with results
+
+Example:
+```
+1. CreateNoteEffect
+   - API call to create note
+   - Set noteId in context
+   - Set initial content
+   - Set cursor position
+
+2. State Transition
+   - Run exit handler
+   - Update fragment
+   - Change state
+   - Run enter handler
+```
+
+This architecture provides:
+1. **Predictable Updates**
+   - Clear event → effect → state flow
+   - Side effects run in controlled pipeline
+   - State only changes after effects complete
+
+2. **Type Safety**
+   - Context validates all data access
+   - Invalid states fail fast
+   - Effects must update context properly
+
+3. **Debuggability**
+   - Each step logs its actions
+   - Context always valid
+   - Effects track progress

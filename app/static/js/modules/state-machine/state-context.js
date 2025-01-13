@@ -1,8 +1,35 @@
 /**
  * State Context
  * 
- * Single source of truth for state machine context.
- * NO MERCY validation - all data must be perfect!
+ * Single source of truth for application state data. Provides:
+ * 
+ * 1. Data Management:
+ *    - Current state data (noteId, content, cursor position)
+ *    - Event data for state handlers
+ *    - Target state for transitions
+ * 
+ * 2. Effect Queue:
+ *    - Queue effects to run during next transition
+ *    - Effects are run in order before state changes
+ * 
+ * 3. Validation:
+ *    - All getters validate data exists
+ *    - Fail fast with clear error messages
+ * 
+ * Example usage:
+ * ```
+ * // 1. Create context
+ * const context = new StateContext();
+ * 
+ * // 2. Update state (builder pattern)
+ * context
+ *   .setNoteId('123')
+ *   .setLastSavedContent('hello')
+ *   .setCursorOffset(5);
+ * 
+ * // 3. Queue effect for transition
+ * context.addEffect(new CreateNoteEffect());
+ * ```
  */
 export class StateContext {
     constructor() {
