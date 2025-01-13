@@ -12,6 +12,9 @@ export class StateContext {
         this.coordinates = null;      // Click coordinates for cursor positioning
         this.activityMonitor = null; // Activity tracking
         this.lastSavedContent = null;// Content snapshot for change detection
+        this.key = null;             // Key pressed (for keyboard events)
+        this.metaKey = false;        // Meta key pressed
+        this.shiftKey = false;       // Shift key pressed
 
         // Bind methods to instance
         this.setNoteId = this.setNoteId.bind(this);

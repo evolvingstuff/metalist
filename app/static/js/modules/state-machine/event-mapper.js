@@ -79,12 +79,14 @@ export const EventMapper = {
         editing: {
             KEY_DOWN: (event) => {
                 // Pass through key info but strip DOM
+                const context = event.context || new StateContext();
+                context.key = event.key;
+                context.metaKey = event.metaKey;
+                context.shiftKey = event.shiftKey;
+
                 return {
                     type: 'KEY_DOWN',
-                    context: event.context,  // Pass through existing context
-                    key: event.key,
-                    metaKey: event.metaKey,
-                    shiftKey: event.shiftKey
+                    context
                 };
             },
 
