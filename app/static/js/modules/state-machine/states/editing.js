@@ -2,6 +2,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
 import { StateMachine } from '../state-machine-controller.js';
+import { CONFIG } from '../../config.js';
 
 /**
  * Editing State
@@ -103,10 +104,7 @@ export const editingTransitions = {
 
         switch (eventType) {
             case 'CLICKED_OUTSIDE_NOTE': {
-                // Return to idle if inactive
-                if (StateMachine.currentStateContext.isInactive()) {
-                    StateMachine.currentStateContext.setType('RETURN_TO_IDLE');
-                }
+                StateMachine.currentStateContext.setTargetState('idle');
                 break;
             }
 
@@ -147,7 +145,9 @@ export const editingTransitions = {
                 // Handle keyboard shortcuts
                 if (key === 'Escape') {
                     // Escape: Return to idle
-                    StateMachine.currentStateContext.setType('CLICKED_OUTSIDE_NOTE');
+                    StateMachine.currentStateContext
+                        .setType('CLICKED_OUTSIDE_NOTE')
+                        .setTargetState('idle');
                     break;
                 }
 

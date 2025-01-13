@@ -65,13 +65,6 @@ export const Events = {
     NO_OP: 'NO_OP'
 };
 
-// State transition map
-export const StateTransitionMap = {
-    [Events.NOTE_CONTENT_CLICKED]: States.EDITING,
-    [Events.SEARCH_FOCUSED]: States.SEARCHING,
-    [Events.CLICKED_OUTSIDE_NOTE]: States.IDLE
-};
-
 export const StateMachine = {
     // Current state and context
     state: States.IDLE,
@@ -151,7 +144,7 @@ export const StateMachine = {
         this.handleMappedEvent();
     },
 
-    handleMappedEvent() {
+    async handleMappedEvent() {
         // NO MERCY validation
         if (!this.currentStateContext || typeof this.currentStateContext !== 'object') {
             throw new Error('Invalid state context: not an object');
@@ -178,54 +171,39 @@ export const StateMachine = {
             throw new Error(`Invalid event type: ${eventType}`);
         }
 
-        // Try to handle as state transition
-        try {
-            const targetState = this.getTargetState(eventType);
-            if (!targetState || typeof targetState !== 'string') {
-                throw new Error('Invalid target state');
-            }
+        // Let current state handle event
+        const stateHandler = StateTransitions.handlers[this.state];
+        if (!stateHandler) {
+            throw new Error(`No handler for state: ${this.state}`);
+        }
+        if (typeof stateHandler.handleEvent !== 'function') {
+            throw new Error(`Invalid handler for state: ${this.state}`);
+        }
+
+        // Handle event in current state
+        await stateHandler.handleEvent();
+
+        // Check if we need to transition
+        const targetState = this.currentStateContext.getTargetState();
+        if (targetState) {
             if (!Object.values(States).includes(targetState)) {
                 throw new Error(`Invalid target state: ${targetState}`);
             }
 
-            console.log('🎯 Attempting transition:', {
+            console.log('🔄 Transitioning due to event:', {
                 from: this.state,
                 to: targetState,
                 event: eventType,
-                noteId: this.currentStateContext.getNoteId(),
-                content: this.currentStateContext.getLastSavedContent()
+                noteId: this.currentStateContext.getNoteId()
             });
 
-            this.currentStateContext.setTargetState(targetState);
-            this.transition();
-            return;
-        } catch (error) {
-            console.log('⚠️ Not a transition event, letting current state handle:', {
+            await this.transition();
+        } else {
+            console.log('🎯 Handled by current state:', {
                 state: this.state,
-                event: eventType,
-                error: error.message
+                event: eventType
             });
-
-            // Let current state handle it
-            const stateHandler = StateTransitions.handlers[this.state];
-            if (!stateHandler) {
-                throw new Error(`No handler for state: ${this.state}`);
-            }
-            if (typeof stateHandler.handleEvent !== 'function') {
-                throw new Error(`Invalid handler for state: ${this.state}`);
-            }
-
-            // Handle event in current state
-            stateHandler.handleEvent();
         }
-    },
-
-    getTargetState(eventType) {
-        const targetState = StateTransitionMap[eventType];
-        if (!targetState) {
-            throw new Error(`Not a transition event: ${eventType}`);
-        }
-        return targetState;
     },
 
     async transition() {
@@ -251,20 +229,16 @@ export const StateMachine = {
 
         // Update state
         this.state = targetState;
-        this.currentStateContext.setCurrentState(targetState);
-        
-        // Clear event-specific properties
-        this.currentStateContext
-            .resetTargetState()
-            .resetType()
-            .resetCoordinates();
 
         // Run enter handler for new state
         if (enterHandler?.enter) {
             await enterHandler.enter();
         }
 
-        // Notify listeners of state change
+        // Reset target state
+        this.currentStateContext.resetTargetState();
+
+        // Notify listeners
         this.notifyListeners();
     },
 
@@ -284,6 +258,6 @@ export const StateMachine = {
     },
 
     notifyListeners() {
-        this.listeners.forEach(callback => callback(this.currentStateContext));
+        this.listeners.forEach(callback => callback());
     }
 };

@@ -76,13 +76,16 @@ export const idleTransitions = {
                     .setType('START_EDITING')
                     .setNoteId(noteId)
                     .setLastSavedContent(content)
-                    .setCoordinates(StateMachine.currentStateContext.coordinates);
+                    .setCoordinates(StateMachine.currentStateContext.coordinates)
+                    .setTargetState('editing');
                 break;
             }
 
             case 'SEARCH_FOCUSED': {
                 // Request transition to searching
-                StateMachine.currentStateContext.setType('START_SEARCHING');
+                StateMachine.currentStateContext
+                    .setType('START_SEARCHING')
+                    .setTargetState('searching');
                 break;
             }
 
@@ -94,6 +97,28 @@ export const idleTransitions = {
                     .setType('NOTE_CONTENT_CLICKED')
                     .setNoteId(noteId)
                     .setLastSavedContent('');
+                break;
+            }
+
+            case 'CLICKED_OUTSIDE_NOTE': {
+                // Do nothing - we're already in idle
+                break;
+            }
+
+            case 'KEY_DOWN': {
+                const key = StateMachine.currentStateContext.getKey();
+                if (key === 'Enter') {
+                    // Create new note just like Add button
+                    const response = await NotesAPI.createNote();
+                    const noteId = response.id; // Extract ID from response
+                    
+                    // Set up new note for editing
+                    StateMachine.currentStateContext
+                        .setType('NOTE_CONTENT_CLICKED')
+                        .setNoteId(noteId)
+                        .setTargetState('editing')
+                        .setLastSavedContent('');
+                }
                 break;
             }
 

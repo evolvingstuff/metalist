@@ -132,9 +132,7 @@ export class StateContext {
      * @throws {Error} If targetState is not set
      */
     getTargetState() {
-        if (!this.targetState) {
-            throw new Error('Target state not set');
-        }
+        // target state CAN be null; indicates no transition
         return this.targetState;
     }
 
