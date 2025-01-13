@@ -1,8 +1,10 @@
 import { RawEvents } from './raw-events.js';
 import { EventMapper } from './event-mapper.js';
-import { StateTransitions } from './transition-coordinator.js';
 import { NotesAPI } from '../api-client.js';
 import { ActivityMonitor } from './activity-monitor.js';
+import { editingTransitions } from './states/editing.js';
+import { searchingTransitions } from './states/searching.js';
+import { idleTransitions } from './states/idle.js';
 import { StateContext } from './state-context.js';
 import { DOMUtils } from '../dom-utils.js';
 import { CONFIG } from '../config.js';
@@ -66,8 +68,22 @@ export const Events = {
 };
 
 export const StateMachine = {
-    // Current state and context
-    state: States.IDLE,
+    // State handlers
+    handlers: {
+        idle: idleTransitions,
+        editing: editingTransitions,
+        searching: searchingTransitions
+    },
+
+    // Valid state transitions
+    validTransitions: {
+        idle: ['editing', 'searching'],
+        editing: ['idle', 'editing', 'searching'],
+        searching: ['idle', 'editing']
+    },
+
+    // State variables
+    state: 'idle',
     currentStateContext: null,
     listeners: [],
 
@@ -172,7 +188,7 @@ export const StateMachine = {
         }
 
         // Let current state handle event
-        const stateHandler = StateTransitions.handlers[this.state];
+        const stateHandler = this.handlers[this.state];
         if (!stateHandler) {
             throw new Error(`No handler for state: ${this.state}`);
         }
@@ -186,10 +202,6 @@ export const StateMachine = {
         // Check if we need to transition
         const targetState = this.currentStateContext.getTargetState();
         if (targetState) {
-            if (!Object.values(States).includes(targetState)) {
-                throw new Error(`Invalid target state: ${targetState}`);
-            }
-
             console.log('🔄 Transitioning due to event:', {
                 from: this.state,
                 to: targetState,
@@ -213,8 +225,8 @@ export const StateMachine = {
         }
 
         // Get handlers for current and target states
-        const exitHandler = StateTransitions.handlers[this.state];
-        const enterHandler = StateTransitions.handlers[targetState];
+        const exitHandler = this.handlers[this.state];
+        const enterHandler = this.handlers[targetState];
 
         console.log('🔄 State transition:', {
             from: this.state,
