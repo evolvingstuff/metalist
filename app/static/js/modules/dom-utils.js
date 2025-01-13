@@ -101,7 +101,6 @@ export const DOMUtils = {
 
     /**
      * Get cursor offset from start of note
-     * NO MERCY - must return valid number or throw
      */
     getCursorOffset(noteElement) {
         if (!noteElement) {
@@ -143,7 +142,6 @@ export const DOMUtils = {
 
     /**
      * Set cursor offset in note
-     * NO MERCY - must set exactly or throw
      */
     setCursorOffset(noteElement, offset) {
         if (!noteElement) {
@@ -201,7 +199,6 @@ export const DOMUtils = {
 
     /**
      * Get cursor offset from click coordinates
-     * NO MERCY - must return valid number or throw
      */
     getCursorOffsetFromClick(noteElement, coordinates) {
         if (!noteElement) {
@@ -248,7 +245,6 @@ export const DOMUtils = {
 
     /**
      * Get note content HTML
-     * NO MERCY - must return content or throw
      */
     getNoteContentHTML(noteElement) {
         const content = this.getNoteContent(noteElement);
@@ -260,7 +256,6 @@ export const DOMUtils = {
 
     /**
      * Get note content HTML by ID
-     * NO MERCY - must return content or throw
      */
     getNoteContentHTMLById(noteId) {
         const noteElement = this.getNoteById(noteId);
@@ -284,5 +279,35 @@ export const DOMUtils = {
         }
 
         return current === ancestor ? path : null;
-    }
+    },
+
+    /**
+     * Check if element is a note content element
+     */
+    isNoteContent(element) {
+        if (!element) {
+            return false;
+        }
+        return element.classList?.contains(CONFIG.CLASSES.NOTE_CONTENT);
+    },
+
+    /**
+     * Check if coordinates are within search results panel
+     */
+    isInSearchResults(coordinates) {
+        if (!coordinates || !coordinates.x || !coordinates.y) {
+            throw new Error('Valid coordinates required');
+        }
+
+        const searchResults = document.querySelector(`.${CONFIG.CLASSES.SEARCH_RESULTS}`);
+        if (!searchResults) {
+            throw new Error('Search results panel not found');
+        }
+
+        const rect = searchResults.getBoundingClientRect();
+        return coordinates.x >= rect.left && 
+               coordinates.x <= rect.right &&
+               coordinates.y >= rect.top && 
+               coordinates.y <= rect.bottom;
+    },
 };

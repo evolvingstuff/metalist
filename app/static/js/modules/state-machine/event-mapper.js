@@ -4,29 +4,34 @@ import { StateContext } from './state-context.js';
 /**
  * Event Mapper
  * 
- * Maps low-level events to state machine events based on current state.
- * This is where we interpret user intentions based on context.
+ * Maps raw events (StateContext objects) to state machine events based on current state.
+ * This is where we interpret user intentions based on state context.
  * 
  * Structure:
  * {
  *   [state]: {
- *     [eventType]: (event, context) => ({
+ *     [eventType]: (stateContext) => ({
  *       type: 'STATE_MACHINE_EVENT',
- *       data: { ... }
+ *       context: stateContext  // Pass through or modified StateContext
  *     })
  *   }
  * }
  * 
- * Each handler:
- * 1. Receives raw event and current state context
- * 2. Returns state machine event or null
- * 3. Can access DOM and other utilities
+ * Flow:
+ * 1. Raw Events -> StateContext with event type and data
+ * 2. Event Mapper -> State machine event with same or modified StateContext
+ * 3. State Machine -> Handles event and context
+ * 
+ * NO_OP events are returned when:
+ * - No handler exists for current state/event type
+ * - Event should be ignored in current state
  * 
  * @example
  * // Mapping in idle state
  * idle: {
- *   ADD_BUTTON_CLICKED: () => ({
- *     type: 'CREATE_TOP_NOTE'
+ *   ADD_BUTTON_CLICKED: (stateContext) => ({
+ *     type: 'CREATE_TOP_NOTE',
+ *     context: stateContext
  *   })
  * }
  */
@@ -34,188 +39,140 @@ export const EventMapper = {
     // Current state → event type → handler mapping
     handlers: {
         idle: {
-            KEY_DOWN: (event) => {
+            KEY_DOWN: (stateContext) => {
                 // Pass through key info but strip DOM
-                return {
-                    type: 'KEY_DOWN',
-                    context: event.context,  // Pass through existing context
-                    key: event.key,
-                    metaKey: event.metaKey,
-                    shiftKey: event.shiftKey
-                };
+                return stateContext.setType('KEY_DOWN').setKey(stateContext.key).setMetaKey(stateContext.metaKey).setShiftKey(stateContext.shiftKey);
             },
 
-            ADD_BUTTON_CLICKED: () => ({
-                type: 'CREATE_TOP_NOTE'
-            }),
+            ADD_BUTTON_CLICKED: (stateContext) => stateContext.setType('CREATE_TOP_NOTE'),
 
-            NOTE_CONTENT_CLICKED: (event) => {
-                // Validate required fields
-                if (!event) {
+            NOTE_CONTENT_CLICKED: (stateContext) => {
+                if (!stateContext) {
                     throw new Error('NOTE_CONTENT_CLICKED missing event');
                 }
-                if (!event.context) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing context');
-                }
-                if (!(event.context instanceof StateContext)) {
-                    throw new Error('Invalid context: must be StateContext instance');
+
+                if (!stateContext.noteId) {
+                    throw new Error('Note content click missing note ID');
                 }
 
-                return {
-                    type: 'NOTE_CONTENT_CLICKED',
-                    context: event.context
-                };
+                return stateContext.setType('NOTE_CONTENT_CLICKED').setNoteId(stateContext.noteId);
             },
 
-            NOTE_CONTENT_CHANGED: (event) => {
-                // Pass through content change
-                const context = event.context || new StateContext();
-                context.noteId = event.noteId;
-                context.content = event.content;
-
-                return {
-                    type: 'NOTE_CONTENT_CHANGED',
-                    context
-                };
+            NOTE_CONTENT_CHANGED: (stateContext) => {
+                return stateContext
+                    .setType('NOTE_CONTENT_CHANGED')
+                    .setNoteId(stateContext.noteId)
+                    .setContent(stateContext.content);
             },
 
-            CLICKED_OUTSIDE_NOTE: () => ({ type: 'CLICKED_OUTSIDE_NOTE' }),
+            CLICKED_OUTSIDE_NOTE: (stateContext) => stateContext.setType('CLICKED_OUTSIDE_NOTE'),
 
-            SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
+            SEARCH_FOCUSED: (stateContext) => stateContext.setType('SEARCH_FOCUSED'),
 
-            FRAGMENT_LOADED: () => ({ type: 'FRAGMENT_LOADED' }),
+            FRAGMENT_LOADED: (stateContext) => stateContext.setType('FRAGMENT_LOADED'),
 
-            NO_OP: () => ({ type: 'NO_OP' })
+            NO_OP: (stateContext) => stateContext.setType('NO_OP')
         },
 
         editing: {
-            KEY_DOWN: (event) => {
-                // Pass through key info but strip DOM
-                const context = event.context || new StateContext();
-                context.key = event.key;
-                context.metaKey = event.metaKey;
-                context.shiftKey = event.shiftKey;
+            KEY_DOWN: (stateContext) => {
+                const context = stateContext.context || new StateContext();
+                context.key = stateContext.key;
+                context.metaKey = stateContext.metaKey;
+                context.shiftKey = stateContext.shiftKey;
 
-                return {
-                    type: 'KEY_DOWN',
-                    context
-                };
+                return stateContext.setType('KEY_DOWN').setContext(context);
             },
 
-            NOTE_CONTENT_CLICKED: (event) => {
-                // Validate required fields
-                if (!event) {
+            NOTE_CONTENT_CLICKED: (stateContext) => {
+                if (!stateContext) {
                     throw new Error('NOTE_CONTENT_CLICKED missing event');
                 }
-                if (!event.context) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing context');
-                }
-                if (!(event.context instanceof StateContext)) {
-                    throw new Error('Invalid context: must be StateContext instance');
+
+                if (!stateContext.noteId) {
+                    throw new Error('Note content click missing note ID');
                 }
 
-                return {
-                    type: 'NOTE_CONTENT_CLICKED',
-                    context: event.context
-                };
+                return stateContext.setType('NOTE_CONTENT_CLICKED').setNoteId(stateContext.noteId);
             },
 
-            NOTE_CONTENT_CHANGED: (event) => {
-                // Pass through content change
-                const context = event.context || new StateContext();
-                context.noteId = event.noteId;
-                context.content = event.content;
-
-                return {
-                    type: 'NOTE_CONTENT_CHANGED',
-                    context
-                };
+            NOTE_CONTENT_CHANGED: (stateContext) => {
+                return stateContext
+                    .setType('NOTE_CONTENT_CHANGED')
+                    .setNoteId(stateContext.noteId)
+                    .setContent(stateContext.content);
             },
 
-            CLICKED_OUTSIDE_NOTE: () => ({ type: 'CLICKED_OUTSIDE_NOTE' }),
+            CLICKED_OUTSIDE_NOTE: (stateContext) => stateContext.setType('CLICKED_OUTSIDE_NOTE'),
 
-            SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
+            SEARCH_FOCUSED: (stateContext) => stateContext.setType('SEARCH_FOCUSED'),
 
-            FRAGMENT_LOADED: () => ({ type: 'FRAGMENT_LOADED' }),
+            FRAGMENT_LOADED: (stateContext) => stateContext.setType('FRAGMENT_LOADED'),
 
-            NO_OP: () => ({ type: 'NO_OP' })
+            NO_OP: (stateContext) => stateContext.setType('NO_OP')
         },
 
         searching: {
-            KEY_DOWN: (event) => {
-                // Pass through key info but strip DOM
-                return {
-                    type: 'KEY_DOWN',
-                    context: event.context,  // Pass through existing context
-                    key: event.key,
-                    metaKey: event.metaKey,
-                    shiftKey: event.shiftKey
-                };
+            KEY_DOWN: (stateContext) => stateContext
+                .setType('KEY_DOWN')
+                .setKey(stateContext.key)
+                .setMetaKey(stateContext.metaKey)
+                .setShiftKey(stateContext.shiftKey),
+
+            NOTE_CONTENT_CLICKED: (stateContext) => {
+                if (!stateContext) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing event');
+                }
+
+                if (!stateContext.noteId) {
+                    throw new Error('Note content click missing note ID');
+                }
+
+                return stateContext
+                    .setType('NOTE_CONTENT_CLICKED')
+                    .setNoteId(stateContext.noteId)
+                    .setCoordinates(stateContext.coordinates)
+                    .setLastSavedContent(stateContext.lastSavedContent);
             },
 
-            NOTE_CONTENT_CLICKED: (event) => ({
-                type: 'NOTE_CONTENT_CLICKED',
-                context: event.context  // Pass through the context
-            }),
-
-            NOTE_CONTENT_CHANGED: (event) => {
-                // Pass through content change
-                const context = event.context || new StateContext();
-                context.noteId = event.noteId;
-                context.content = event.content;
-
-                return {
-                    type: 'NOTE_CONTENT_CHANGED',
-                    context
-                };
+            NOTE_CONTENT_CHANGED: (stateContext) => {
+                return stateContext
+                    .setType('NOTE_CONTENT_CHANGED')
+                    .setNoteId(stateContext.noteId)
+                    .setContent(stateContext.content);
             },
 
-            CLICKED_OUTSIDE_NOTE: () => ({
-                type: 'CLICKED_OUTSIDE_NOTE'
-            }),
+            CLICKED_OUTSIDE_NOTE: (stateContext) => stateContext.setType('CLICKED_OUTSIDE_NOTE'),
 
-            SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
+            SEARCH_FOCUSED: (stateContext) => stateContext.setType('SEARCH_FOCUSED'),
 
-            FRAGMENT_LOADED: () => ({ type: 'FRAGMENT_LOADED' }),
+            FRAGMENT_LOADED: (stateContext) => stateContext.setType('FRAGMENT_LOADED'),
 
-            NO_OP: () => ({ type: 'NO_OP' })
+            NO_OP: (stateContext) => stateContext.setType('NO_OP')
         }
     },
 
     /**
      * Maps a low-level event to a state machine event based on current state
-     * NO MERCY - all data must be valid!
      */
-    mapEvent(rawEvent, currentState, context = {}) {
-        // NO MERCY validation
-        if (!rawEvent) {
-            throw new Error('Raw event is required');
+    mapEvent(stateContext, currentState) {
+        if (!stateContext) {
+            throw new Error('State context is required');
         }
-        if (!rawEvent.type) {
-            throw new Error('Raw event missing type');
+        if (!(stateContext instanceof StateContext)) {
+            throw new Error('Invalid state context');
         }
         if (!currentState) {
             throw new Error('Current state is required');
         }
-        if (!this.handlers[currentState]) {
-            throw new Error(`Invalid state: ${currentState}`);
-        }
 
         // Get handler for current state and event type
-        const handler = this.handlers[currentState][rawEvent.type];
+        const handler = this.handlers[currentState]?.[stateContext.type];
         if (!handler) {
-            throw new Error(`No handler for event ${rawEvent.type} in state ${currentState}`);
+            return stateContext.setType('NO_OP');
         }
 
-        // Map event with context
-        const mappedEvent = handler(rawEvent);
-        if (!mappedEvent) {
-            throw new Error(`Handler returned null for event ${rawEvent.type}`);
-        }
-        if (!mappedEvent.type) {
-            throw new Error(`Handler returned event without type for ${rawEvent.type}`);
-        }
-
-        return mappedEvent;
+        // Map raw event to state machine event
+        return handler(stateContext);
     }
 }; 

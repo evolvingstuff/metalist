@@ -1,122 +1,147 @@
-import { StateContext } from '../state-context.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { NotesAPI } from '../../api-client.js';
+import { StateContext } from '../state-context.js';
 
 /**
  * Searching State
  * 
  * Manages search functionality including:
  * - Search input focus
- * - Results filtering
+ * - Query handling
+ * - Results display
  * 
- * State Data:
+ * State Context:
+ * - query: Current search query
  * 
  * Transitions:
- * - Enter: Sets up search input
- * - Exit: 
+ * - Enter: Focus search input, show results panel
+ * - Exit: Clear results, restore normal view
  * 
  * @example
- * // Enter search state
- * await transition('searching');
+ * // Enter searching state
+ * stateContext
+ *   .setType('START_SEARCHING')
+ *   .setQuery('');
  */
 
 export const searchingTransitions = {
-    enter: async (context) => {
+    enter: async (stateContext) => {
+        // NO MERCY validation
+        if (!stateContext || !(stateContext instanceof StateContext)) {
+            throw new Error('Invalid state context');
+        }
+
+        console.log(' Starting search with context:', stateContext);
+        
         // Focus search input
-        const searchInput = document.querySelector('.search-input');
+        const searchInput = DOMUtils.getSearchInput();
         if (!searchInput) {
-            throw new Error('Search input not found');
+            throw new Error('Could not find search input');
         }
         searchInput.focus();
 
-        // Clear any previous context
-        return null;
+        // Show results panel
+        DOMUtils.showSearchResults();
+
+        return stateContext;
     },
 
-    exit: async () => {
+    exit: async (stateContext) => {
+        // NO MERCY validation
+        if (!stateContext || !(stateContext instanceof StateContext)) {
+            throw new Error('Invalid state context');
+        }
+
         // Clear search input
-        const searchInput = document.querySelector('.search-input');
-        if (searchInput) {
-            searchInput.value = '';
+        const searchInput = DOMUtils.getSearchInput();
+        if (!searchInput) {
+            throw new Error('Could not find search input');
         }
+        searchInput.value = '';
+
+        // Hide results panel
+        DOMUtils.hideSearchResults();
+
+        return stateContext;
     },
 
-    handleEvent: async (stateMachineEvent) => {
-        if (!stateMachineEvent) {
-            throw new Error('Searching state received null/undefined event');
+    handleEvent: async (stateContext) => {
+        // NO MERCY validation
+        if (!stateContext || !(stateContext instanceof StateContext)) {
+            throw new Error('Invalid state context');
         }
 
-        const { type, context } = stateMachineEvent;
-        if (!type) {
-            throw new Error('Event missing type');
+        const eventType = stateContext.getType();
+        if (!eventType) {
+            throw new Error('State context missing event type');
         }
 
-        if (type === 'KEY_DOWN') {
-            const { key } = stateMachineEvent;
-            if (!key) {
-                throw new Error('KEY_DOWN missing key');
-            }
+        console.log('Handling event in searching:', {
+            type: eventType,
+            context: stateContext
+        });
 
-            // Escape to exit search
-            if (key === 'Escape') {
-                return { type: 'START_IDLE' };
-            }
-
-            // Enter to edit selected note
-            if (key === 'Enter') {
-                const selectedNote = document.querySelector('.search-result.selected');
-                if (!selectedNote) {
-                    return context;  // No selection, stay in search
+        switch (eventType) {
+            case 'SEARCH_QUERY_CHANGED': {
+                const query = stateContext.getQuery();
+                if (query === undefined) {
+                    throw new Error('Search query change missing query');
                 }
 
-                const noteId = selectedNote.dataset.noteId;
+                // Update results
+                const results = await NotesAPI.searchNotes(query);
+                DOMUtils.updateSearchResults(results);
+
+                return stateContext;
+            }
+
+            case 'NOTE_CONTENT_CLICKED': {
+                const noteId = stateContext.getNoteId();
                 if (!noteId) {
-                    throw new Error('Selected note missing ID');
+                    throw new Error('Note click missing note ID');
                 }
 
-                return {
-                    type: 'START_EDITING',
-                    context: StateContext.fromStateData({
-                        noteId,
-                        cursorOffset: 0,  // Start at beginning of note
-                    })
-                };
+                // Get current content
+                const noteElement = DOMUtils.getNoteById(noteId);
+                if (!noteElement) {
+                    throw new Error(`Could not find note element with ID: ${noteId}`);
+                }
+                const content = DOMUtils.getNoteContent(noteElement);
+
+                // Switch to editing clicked note
+                return stateContext
+                    .setType('START_EDITING')
+                    .setNoteId(noteId)
+                    .setLastSavedContent(content);
             }
 
-            // Arrow keys to navigate results
-            if (key.startsWith('Arrow')) {
-                return context;  // Let DOM handle selection
+            case 'SEARCH_BLUR': {
+                // Request transition to idle if not clicked on note
+                const noteId = stateContext.getNoteId();
+                if (!noteId) {
+                    return stateContext.setType('START_IDLE');
+                }
+                return stateContext;
             }
 
-            return context;  // Regular typing handled by input
-        }
-
-        if (type === 'NOTE_CONTENT_CLICKED') {
-            return {
-                type: 'START_EDITING',
-                context: stateMachineEvent.context  // Already validated
-            };
-        }
-
-        if (type === 'CLICKED_OUTSIDE_NOTE') {
-            const target = stateMachineEvent.target;
-            if (!target) {
-                throw new Error('Click event missing target');
+            case 'CLICKED_OUTSIDE_NOTE': {
+                // Stay in search if clicked in results panel
+                const coordinates = stateContext.getCoordinates();
+                if (!coordinates) {
+                    throw new Error('Click missing coordinates');
+                }
+                
+                if (DOMUtils.isInSearchResults(coordinates)) {
+                    return stateContext;
+                }
+                
+                // Otherwise go to idle
+                return stateContext.setType('START_IDLE');
             }
 
-            // Stay in search if clicking search area
-            if (target.closest('.search-container')) {
-                return context;
-            }
-
-            return { type: 'START_IDLE' };
+            default:
+                console.log('Ignoring event in searching:', eventType);
+                return stateContext;
         }
-
-        // These events don't affect search state
-        if (type === 'FRAGMENT_LOADED' || 
-            type === 'NO_OP') {
-            return context;
-        }
-
-        throw new Error(`Unknown event type: ${type}`);
     }
 };
