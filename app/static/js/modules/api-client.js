@@ -9,15 +9,14 @@ export const NotesAPI = {
     /**
      * Generic API call handler with error management
      */
-    async _apiCall(url, options = {}, reloadOnSuccess = true) {
+    async _apiCall(url, options = {}) {
         try {
             // Detailed request logging
             console.log(' [API] Request:', {
                 url: url,
                 method: options.method || 'GET',
                 body: options.body ? JSON.parse(options.body) : undefined,
-                headers: options.headers,
-                reloadOnSuccess
+                headers: options.headers
             });
 
             const response = await fetch(url, {
@@ -38,12 +37,8 @@ export const NotesAPI = {
             console.log(' [API] Response:', {
                 url: url,
                 status: response.status,
-                data: data,
-                reloadOnSuccess
+                data: data
             });
-
-            // Note: No longer auto-fetching fragment here
-            // Fragment loading is now handled by state machine commands
             
             return data;
         } catch (error) {
@@ -100,7 +95,7 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
             method: 'PUT',
             body: JSON.stringify({ content })
-        }, false); // Don't reload on content updates
+        });
     },
 
     /**
@@ -153,8 +148,30 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.REDO, { method: 'POST' });
     },
 
+    /**
+     * Get a note element by ID
+     */
+    getNoteElement(noteId) {
+        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (!noteElement) {
+            throw new Error(`Note not found: ${noteId}`);
+        }
+        return noteElement;
+    },
+
+    /**
+     * Get a note's content element by ID
+     */
+    getNoteContentElement(noteId) {
+        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (!noteElement) {
+            throw new Error(`Note not found: ${noteId}`);
+        }
+        return noteElement.querySelector('.note-content');
+    },
+
     async moveNoteUp(noteId) {
-        const noteElement = document.querySelector(`[data-id="${noteId}"]`);
+        const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;
         if (!prevSibling || !prevSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
         
@@ -167,7 +184,7 @@ export const NotesAPI = {
     },
 
     async moveNoteDown(noteId) {
-        const noteElement = document.querySelector(`[data-id="${noteId}"]`);
+        const noteElement = this.getNoteElement(noteId);
         const nextSibling = noteElement.nextElementSibling;
         if (!nextSibling || !nextSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
         

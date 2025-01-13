@@ -208,6 +208,7 @@ def create_new_child(note_id: str, db: Session = Depends(get_db)):
     return {"id": new_note_id}
 
 @router.get("/fragment")
+@api_transaction_decorator
 def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depends(get_db)):
     """Get the HTML fragment for the notes list"""
     # This endpoint returns the notes_list.html template content for AJAX updates

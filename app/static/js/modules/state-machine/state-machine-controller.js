@@ -3,6 +3,8 @@ import { EventMapper } from './event-mapper.js';
 import { StateTransitions } from './transition-coordinator.js';
 import { NotesAPI } from '../api-client.js';
 import { ActivityMonitor } from './activity-monitor.js';
+import { StateContext } from './state-context.js';
+import { DOMUtils } from '../dom-utils.js';
 
 /**
  * State Machine Controller
@@ -25,7 +27,7 @@ import { ActivityMonitor } from './activity-monitor.js';
  * // Direct state machine event
  * StateMachine.handleMappedEvent({
  *   type: 'START_EDITING',
- *   data: { nextNote: noteElement }
+ *   context: { nextNote: noteElement }
  * });
  */
 
@@ -49,13 +51,15 @@ export const Events = {
     NOTE_CONTENT_CLICKED: 'NOTE_CONTENT_CLICKED',
     CLICKED_OUTSIDE_NOTE: 'CLICKED_OUTSIDE_NOTE',
     CREATE_TOP_NOTE: 'CREATE_TOP_NOTE',
-    KEY_DOWN: 'KEY_DOWN',
-    SWITCH_NOTE: 'SWITCH_NOTE',
+    MENU_CLICKED: 'MENU_CLICKED',
+    TRASH_CAN_CLICKED: 'TRASH_CAN_CLICKED',
     SEARCH_FOCUSED: 'SEARCH_FOCUSED',
-    SEARCH_QUERY_CHANGED: 'SEARCH_QUERY_CHANGED',
+    KEY_DOWN: 'KEY_DOWN',
     FRAGMENT_LOADED: 'FRAGMENT_LOADED',
-    INACTIVITY_TIMEOUT: 'INACTIVITY_TIMEOUT',
-    NO_OP: 'NO_OP'
+    NO_OP: 'NO_OP',
+
+    // Activity events
+    INACTIVITY_TIMEOUT: 'INACTIVITY_TIMEOUT'
 };
 
 // Explicit mapping of which events can trigger which state transitions
@@ -69,17 +73,16 @@ const StateTransitionMap = {
 
 export const StateMachine = {
     state: States.IDLE,
-    data: {},
-    listeners: [],
     activityMonitor: null,
+    listeners: [],
 
     /**
      * Initialize the state machine
      */
     init() {
         this.state = States.IDLE;
-        this.data = {};
-        this.activityMonitor = new ActivityMonitor(this);
+        this.activityMonitor = new ActivityMonitor(this);  // Pass controller reference
+        this.listeners = [];
     },
 
     /**
@@ -90,88 +93,121 @@ export const StateMachine = {
     },
 
     /**
-     * Handle a raw DOM event
+     * Handle raw DOM event
+     * NO MERCY - all errors must be thrown!
      */
-    async handleRawEvent(eventName, domEvent) {
-        if (this.state === States.EDITING) {
-            this.activityMonitor.handleActivity();
+    handleRawEvent(eventName, domEvent) {
+        // NO MERCY - event validation
+        if (!eventName) {
+            throw new Error('Event name is required');
+        }
+        if (!domEvent) {
+            throw new Error('DOM event is required');
         }
 
-        // Convert DOM event to low-level event
+        // Create raw event with context
         const rawEvent = RawEvents.handleEvent(eventName, domEvent);
-        console.log('🎯 Raw Event:', { eventName, rawEvent });
 
-        // Map to state machine event
-        const mappedEvent = EventMapper.mapEvent(rawEvent, this.state, this.data);
-            
+        // NO MERCY validation
+        if (!rawEvent) {
+            throw new Error('Raw event handler returned null');
+        }
+        if (!rawEvent.type) {
+            throw new Error('Raw event missing type');
+        }
+
+        // Get note info if event happened in a note
+        const noteElement = DOMUtils.findNoteElement(domEvent.target);
+        if (noteElement) {
+            const noteId = DOMUtils.getNoteId(noteElement);
+            if (!noteId) {
+                throw new Error('Note missing ID');
+            }
+
+            // Create context if none exists
+            if (!rawEvent.context) {
+                rawEvent.context = StateContext.fromStateData({
+                    noteId,
+                    cursorOffset: 0
+                });
+            }
+        }
+
+        // Map raw event to state machine event
+        const mappedEvent = EventMapper.mapEvent(rawEvent, this.state);
         if (!mappedEvent) {
-            throw new Error(`No mapped event for raw event: ${rawEvent.type}`);
+            throw new Error('Event mapper returned null');
         }
 
         // Skip NO_OP events
-        if (mappedEvent.type === 'NO_OP') {
-            console.log('⏭️ Skipping NO_OP event');
+        if (mappedEvent.type === Events.NO_OP) {
+            console.log('Skipping NO_OP event');
             return;
         }
 
         // Handle mapped event
-        await this.handleMappedEvent(mappedEvent);
+        return this.handleMappedEvent(mappedEvent);
     },
 
     /**
      * Handle a mapped state machine event
      */
     async handleMappedEvent(event) {
-        const { type, data } = event;
+        // Validate event structure
+        if (!event || typeof event !== 'object') {
+            throw new Error('Invalid event: not an object');
+        }
+
+        const { type, context } = event;
         
-        // Every event must be explicitly defined
+        // Validate event type
+        if (!type || typeof type !== 'string') {
+            throw new Error('Invalid event: missing or invalid type');
+        }
         if (!this.isValidEvent(type)) {
             throw new Error(`Invalid event type: ${type}`);
         }
 
-        console.log('🎯 State Machine Event:', {
+        // For START_EDITING, validate context
+        if (type === Events.START_EDITING) {
+            if (!context) {
+                throw new Error('START_EDITING missing context');
+            }
+            if (!(context instanceof StateContext)) {
+                throw new Error('Invalid context: must be StateContext instance');
+            }
+            context.validate();  // NO MERCY validation
+        }
+
+        console.log(' State Machine Event:', {
             type,
             currentState: this.state,
-            data
+            context
         });
 
-        // Special case: NO_OP events are explicitly ignored
-        if (type === Events.NO_OP) {
-            console.log('🔕 Ignoring NO_OP event');
+        // Try transition events first
+        try {
+            const targetState = this.getTargetState(type);
+            await this.transition(targetState, context);
             return;
-        }
+        } catch (error) {
+            // Not a transition event, let current state handle it
+            const stateHandler = StateTransitions.handlers[this.state];
+            if (!stateHandler) {
+                throw new Error(`No handler for state: ${this.state}`);
+            }
 
-        // Handle state transitions
-        const targetState = StateTransitionMap[type];
-        if (targetState) {
-            await this.transition(targetState, data);
-            return;
-        }
+            const result = await stateHandler.handleEvent(event);
+            if (!result) {
+                throw new Error(`State ${this.state} did not handle event ${type}`);
+            }
 
-        // Let current state handle non-transition events
-        const stateHandler = StateTransitions.handlers[this.state];
-        if (!stateHandler?.handleEvent) {
-            throw new Error(`No handler for state: ${this.state}`);
+            // Check if state handler requested a transition
+            if (result.type && result.type !== type) {
+                const targetState = this.getTargetState(result.type);
+                await this.transition(targetState, result.context || context);
+            }
         }
-
-        const result = await stateHandler.handleEvent(event, this.data);
-        
-        // State MUST handle the event by either:
-        // 1. Returning a transition event
-        // 2. Returning new state data
-        if (typeof result !== 'object') {
-            throw new Error(`Invalid handler result for event ${type}: ${result}`);
-        }
-
-        // Handle transition requests from state handlers
-        const handlerTargetState = StateTransitionMap[result.type];
-        if (handlerTargetState) {
-            await this.transition(handlerTargetState, result.data);
-            return;
-        }
-
-        // If not a transition, must be new state data
-        this.data = { ...this.data, ...result };
     },
 
     /**
@@ -184,6 +220,8 @@ export const StateMachine = {
             case Events.START_SEARCHING:
                 return States.SEARCHING;
             case Events.START_IDLE:
+            case Events.STOP_EDITING:  // Stop editing -> go to idle
+            case Events.STOP_SEARCHING:  // Stop searching -> go to idle
                 return States.IDLE;
             default:
                 throw new Error(`Unknown transition event: ${eventType}`);
@@ -191,45 +229,51 @@ export const StateMachine = {
     },
 
     /**
-     * Execute a state transition with an optional command
+     * Execute a state transition
      */
-    async transition(newState, data = {}, command = null) {
+    async transition(newState, context = null) {
+        // NO MERCY - validate state
+        if (!newState) {
+            throw new Error('New state is required');
+        }
+        if (!Object.values(States).includes(newState)) {
+            throw new Error(`Invalid state: ${newState}`);
+        }
+
+        // NO MERCY - validate context
+        if (context && !(context instanceof StateContext)) {
+            throw new Error('Invalid context: must be StateContext instance');
+        }
+
+        // Add activity monitor to context if needed
+        if (context && newState === States.EDITING) {
+            context.setActivityMonitor(this.activityMonitor);
+        }
+
+        // Get handlers
         const oldState = this.state;
-        
-        data.activityMonitor = this.activityMonitor;
-        
-        console.log('🔄 [TRANSITION] Start:', {
+        const exitHandler = StateTransitions.handlers[oldState];
+        const enterHandler = StateTransitions.handlers[newState];
+
+        // Execute transition
+        console.log('[TRANSITION] State transition:', {
             from: oldState,
             to: newState,
-            data
+            context: context || 'none'
         });
 
-        try {
-            // Execute transition and get new state data
-            console.log('🔄 [TRANSITION] Executing state transition');
-            const newData = await StateTransitions.execute(oldState, newState, {
-                ...this.data,
-                ...data
-            }, command);
-            console.log('🔄 [TRANSITION] State transition executed');
-
-            // Update state
-            this.state = newState;
-            this.data = { ...this.data, ...newData };
-
-            console.log('✨ [TRANSITION] New State:', {
-                state: this.state,
-                data: this.data
-            });
-
-            // Notify listeners
-            this.notifyListeners(oldState, newState);
-
-            return true;
-        } catch (error) {
-            console.error('🔥 [TRANSITION] Failed:', error);
-            throw new Error(`Transition failed: ${error.message}`);
+        if (exitHandler?.exit) {
+            await exitHandler.exit(context);
         }
+
+        this.state = newState;
+
+        if (enterHandler?.enter) {
+            await enterHandler.enter(context);
+        }
+
+        // Notify listeners
+        this.notifyListeners(oldState, newState, context);
     },
 
     /**
@@ -242,13 +286,12 @@ export const StateMachine = {
     /**
      * Notify listeners of state change
      */
-    notifyListeners(oldState, newState) {
+    notifyListeners(oldState, newState, context) {
         this.listeners.forEach(listener => {
             try {
-                listener(oldState, newState, this.data);
+                listener(oldState, newState, context);
             } catch (error) {
-                console.error('🔥 [TRANSITION] Listener failed:', error);
-                throw new Error(`Listener error: ${error.message}`);
+                console.error('Listener error:', error);
             }
         });
     }

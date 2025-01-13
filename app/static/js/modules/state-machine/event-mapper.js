@@ -1,4 +1,5 @@
 import { DOMUtils } from '../dom-utils.js';
+import { StateContext } from './state-context.js';
 
 /**
  * Event Mapper
@@ -33,81 +34,111 @@ export const EventMapper = {
     // Current state → event type → handler mapping
     handlers: {
         idle: {
-            KEY_DOWN: (event) => event, // Pass through to state handler
+            KEY_DOWN: (event) => {
+                // Pass through key info but strip DOM
+                return {
+                    type: 'KEY_DOWN',
+                    context: event.context,  // Pass through existing context
+                    key: event.key,
+                    metaKey: event.metaKey,
+                    shiftKey: event.shiftKey
+                };
+            },
 
             ADD_BUTTON_CLICKED: () => ({
                 type: 'CREATE_TOP_NOTE'
             }),
 
-            NOTE_CONTENT_CLICKED: (event) => ({
-                type: 'START_EDITING',
-                data: {
-                    noteId: event.noteId,
-                    cursorPosition: event.position
+            NOTE_CONTENT_CLICKED: (event) => {
+                // Validate required fields
+                if (!event) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing event');
                 }
-            }),
+                if (!event.context) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing context');
+                }
+                if (!(event.context instanceof StateContext)) {
+                    throw new Error('Invalid context: must be StateContext instance');
+                }
 
-            CLICKED_OUTSIDE_NOTE: () => ({ type: 'NO_OP' }),
+                return {
+                    type: 'NOTE_CONTENT_CLICKED',
+                    context: event.context
+                };
+            },
 
-            SEARCH_FOCUSED: () => ({
-                type: 'START_SEARCHING'
-            }),
+            CLICKED_OUTSIDE_NOTE: () => ({ type: 'CLICKED_OUTSIDE_NOTE' }),
 
-            FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
+            SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
+
+            FRAGMENT_LOADED: () => ({ type: 'FRAGMENT_LOADED' }),
 
             NO_OP: () => ({ type: 'NO_OP' })
         },
 
         editing: {
-            KEY_DOWN: (event) => event, // Pass through to state handler
+            KEY_DOWN: (event) => {
+                // Pass through key info but strip DOM
+                return {
+                    type: 'KEY_DOWN',
+                    context: event.context,  // Pass through existing context
+                    key: event.key,
+                    metaKey: event.metaKey,
+                    shiftKey: event.shiftKey
+                };
+            },
 
-            NOTE_CONTENT_CLICKED: (event, context) => {
+            NOTE_CONTENT_CLICKED: (event) => {
                 // Validate required fields
                 if (!event) {
                     throw new Error('NOTE_CONTENT_CLICKED missing event');
                 }
-                if (!event.noteId) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing noteId');
+                if (!event.context) {
+                    throw new Error('NOTE_CONTENT_CLICKED missing context');
+                }
+                if (!(event.context instanceof StateContext)) {
+                    throw new Error('Invalid context: must be StateContext instance');
                 }
 
-                return { 
+                return {
                     type: 'NOTE_CONTENT_CLICKED',
-                    data: {
-                        noteId: event.noteId,
-                        position: event.position
-                    }
+                    context: event.context
                 };
             },
 
-            CLICKED_OUTSIDE_NOTE: () => ({ type: 'START_IDLE' }),
+            CLICKED_OUTSIDE_NOTE: () => ({ type: 'CLICKED_OUTSIDE_NOTE' }),
 
-            SEARCH_FOCUSED: () => ({
-                type: 'START_SEARCHING'
-            }),
+            SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
 
-            FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
+            FRAGMENT_LOADED: () => ({ type: 'FRAGMENT_LOADED' }),
 
             NO_OP: () => ({ type: 'NO_OP' })
         },
 
         searching: {
-            KEY_DOWN: (event) => event, // Pass through to state handler
+            KEY_DOWN: (event) => {
+                // Pass through key info but strip DOM
+                return {
+                    type: 'KEY_DOWN',
+                    context: event.context,  // Pass through existing context
+                    key: event.key,
+                    metaKey: event.metaKey,
+                    shiftKey: event.shiftKey
+                };
+            },
 
             NOTE_CONTENT_CLICKED: (event) => ({
-                type: 'START_EDITING',
-                data: {
-                    noteId: event.noteId,
-                    cursorPosition: event.position
-                }
+                type: 'NOTE_CONTENT_CLICKED',
+                context: event.context  // Pass through the context
             }),
 
             CLICKED_OUTSIDE_NOTE: () => ({
-                type: 'START_IDLE'
+                type: 'CLICKED_OUTSIDE_NOTE'
             }),
 
-            SEARCH_FOCUSED: () => ({ type: 'NO_OP' }),
+            SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
 
-            FRAGMENT_LOADED: () => ({ type: 'NO_OP' }),
+            FRAGMENT_LOADED: () => ({ type: 'FRAGMENT_LOADED' }),
 
             NO_OP: () => ({ type: 'NO_OP' })
         }
@@ -115,20 +146,38 @@ export const EventMapper = {
 
     /**
      * Maps a low-level event to a state machine event based on current state
+     * NO MERCY - all data must be valid!
      */
     mapEvent(rawEvent, currentState, context = {}) {
-        const stateHandlers = this.handlers[currentState];
-        if (!stateHandlers) {
-            throw new Error(`No handlers for state: ${currentState}`);
+        // NO MERCY validation
+        if (!rawEvent) {
+            throw new Error('Raw event is required');
+        }
+        if (!rawEvent.type) {
+            throw new Error('Raw event missing type');
+        }
+        if (!currentState) {
+            throw new Error('Current state is required');
+        }
+        if (!this.handlers[currentState]) {
+            throw new Error(`Invalid state: ${currentState}`);
         }
 
-        const handler = stateHandlers[rawEvent.type];
+        // Get handler for current state and event type
+        const handler = this.handlers[currentState][rawEvent.type];
         if (!handler) {
             throw new Error(`No handler for event ${rawEvent.type} in state ${currentState}`);
         }
 
-        const mappedEvent = handler(rawEvent, context);
-        // Return a special NO_OP event for null returns
-        return mappedEvent === null ? { type: 'NO_OP' } : mappedEvent;
+        // Map event with context
+        const mappedEvent = handler(rawEvent);
+        if (!mappedEvent) {
+            throw new Error(`Handler returned null for event ${rawEvent.type}`);
+        }
+        if (!mappedEvent.type) {
+            throw new Error(`Handler returned event without type for ${rawEvent.type}`);
+        }
+
+        return mappedEvent;
     }
 }; 

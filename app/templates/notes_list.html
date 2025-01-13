@@ -1,6 +1,6 @@
 <%def name="render_note(note)">
     <div class="note interactive${' editing' if note['flags']['isEditing'] else ''}${' rendered-content' if note['flags']['isRendered'] else ''}" 
-         data-id="${note['id']}" 
+         data-note-id="${note['id']}" 
          data-parent-id="${note.get('parent_id', '')}">
         <div class="drag-handle" draggable="true">⋮⋮</div>
         <div class="note-content" contenteditable="true">

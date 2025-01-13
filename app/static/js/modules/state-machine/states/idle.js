@@ -1,4 +1,6 @@
 import { NotesAPI } from '../../api-client.js';
+import { StateContext } from '../state-context.js';
+import { DOMUtils } from '../../dom-utils.js';
 
 /**
  * Idle State
@@ -20,47 +22,36 @@ import { NotesAPI } from '../../api-client.js';
 
 export const idleTransitions = {
     enter: async (data, prevState) => {
-        // Clean slate when entering idle
-        return {};
+        // Clear any previous context
+        return null;
     },
 
-    exit: async (data, nextState) => {
-        // No cleanup needed
-        return {};
+    exit: async () => {
+        // Nothing to clean up
     },
 
-    handleEvent: async (event) => {
-        const { type } = event;
-
-        if (type === 'KEY_DOWN') {
-            const { key, metaKey } = event;
-
-            if (key === '/') {
-                return { type: 'START_SEARCHING' };
-            }
-
-            // All other keys are ignored in idle state
-            return { type: 'NO_OP' };
+    handleEvent: async (stateMachineEvent) => {
+        if (!stateMachineEvent) {
+            throw new Error('Idle state received null/undefined event');
         }
 
-        if (type === 'CLICKED_OUTSIDE_NOTE') {
-            return { type: 'NO_OP' };
+        const { type, context } = stateMachineEvent;
+        if (!type) {
+            throw new Error('Event missing type');
         }
 
         if (type === 'NOTE_CONTENT_CLICKED') {
-            const { noteElement, position } = event.data;
-            const noteId = DOMUtils.getNoteId(noteElement);
-            if (!noteId) {
-                throw new Error('Note click missing noteId');
+            if (!context) {
+                throw new Error('Note click missing context');
+            }
+            if (!(context instanceof StateContext)) {
+                throw new Error('Invalid context: must be StateContext instance');
             }
 
-            console.log('Handling note click in idle:', { noteElement, noteId, position });
+            console.log('Handling note click in idle:', context);
             return {
                 type: 'START_EDITING',
-                data: {
-                    noteId,  
-                    cursorPosition: position
-                }
+                context
             };
         }
 
@@ -70,18 +61,12 @@ export const idleTransitions = {
                 throw new Error('Failed to create note - missing ID in response');
             }
 
-            // Wait for DOM to update
-            const newNote = document.querySelector(`[data-id="${result.id}"]`);
-            if (!newNote) {
-                throw new Error('Created note not found in DOM');
-            }
-
             return {
                 type: 'START_EDITING',
-                data: {
-                    noteId: result.id,  
-                    cursorPosition: 'end'
-                }
+                context: StateContext.fromStateData({
+                    noteId: result.id,
+                    cursorOffset: 0
+                })
             };
         }
 
@@ -91,27 +76,42 @@ export const idleTransitions = {
                 throw new Error('Failed to create note - missing ID in response');
             }
 
-            // Wait for DOM to update
-            const newNote = document.querySelector(`[data-id="${result.id}"]`);
-            if (!newNote) {
-                throw new Error('Created note not found in DOM');
-            }
-
+            // Note: We trust the API response and don't check DOM
+            // The view layer will handle showing the new note
             return {
                 type: 'START_EDITING',
-                data: {
-                    noteId: result.id,  
-                    cursorPosition: 'end'
-                }
+                context: StateContext.fromStateData({
+                    noteId: result.id,
+                    cursorOffset: 0
+                })
             };
+        }
+
+        if (type === 'KEY_DOWN') {
+            const { key, metaKey, shiftKey } = stateMachineEvent;
+
+            if (key === '/') {
+                return { type: 'START_SEARCHING' };
+            }
+
+            // All other keys are ignored in idle state
+            return context;  // No changes needed
+        }
+
+        if (type === 'SEARCH_FOCUSED') {
+            return { type: 'START_SEARCHING' };
+        }
+
+        if (type === 'CLICKED_OUTSIDE_NOTE') {
+            return context;
         }
 
         if (type === 'FRAGMENT_LOADED') {
             // Fragment loaded events are handled by updating the DOM
             // No state transition needed
-            return { type: 'NO_OP' };
+            return context;
         }
 
-        throw new Error(`Unhandled event type: ${type}`);
+        throw new Error(`Unknown event type: ${type}`);
     }
 }; 

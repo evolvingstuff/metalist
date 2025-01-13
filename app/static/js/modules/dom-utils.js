@@ -4,7 +4,7 @@ import { CONFIG } from './config.js';
  * IMPORTANT ASSUMPTIONS AND GOTCHAS:
  * 
  * 1. Cursor Management:
- *    - setCursorPosition handles both manual and programmatic focus
+ *    - setCursorOffset handles both manual and programmatic focus
  *    - focusNote always moves cursor to end
  *    - Position path must account for DOM mutations
  * 
@@ -41,124 +41,40 @@ export const DOMUtils = {
      * Get the ID of a note element
      */
     getNoteId(noteElement) {
-        return noteElement.dataset.id;
+        if (!noteElement) {
+            throw new Error('Note element is required');
+        }
+        const noteId = noteElement.dataset.noteId;
+        if (!noteId) {
+            throw new Error('Note missing data-note-id');
+        }
+        return noteId;
     },
 
     /**
      * Make a note editable/non-editable
      */
     setNoteEditable(noteElement, isEditable) {
-        noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditable);
-        // Note: contentEditable should always be true
-    },
-
-    /**
-     * Restore cursor position for a content element
-     */
-    restoreCursorPosition(contentElement, position) {
-        if (!position) return;
-
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(position.range);
-    },
-
-    /**
-     * Get the current content of a note
-     */
-    getNoteContentText(noteElement) {
         const content = this.getNoteContent(noteElement);
-        return content.innerHTML.trim();
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+        content.contentEditable = isEditable;
+        noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditable);
     },
 
     /**
-     * Check if element is a note content element
+     * Get a note element by its ID
      */
-    isNoteContent(element) {
-        return element.classList.contains(CONFIG.CLASSES.NOTE_CONTENT);
-    },
-
-    /**
-     * Get current cursor position in a note
-     */
-    getCursorPosition(noteElement) {
-        const contentElement = this.getNoteContent(noteElement);
-        const selection = window.getSelection();
-        if (!selection.rangeCount) {
-            throw new Error('No selection range found');
+    getNoteById(noteId) {
+        if (!noteId) {
+            throw new Error('Note ID is required');
         }
-
-        const range = selection.getRangeAt(0);
-        if (!contentElement.contains(range.commonAncestorContainer)) {
-            throw new Error('Selection not in content element');
+        const note = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (!note) {
+            throw new Error(`Note not found: ${noteId}`);
         }
-
-        const position = {
-            offset: range.startOffset,
-            path: this.getNodePath(range.startContainer, contentElement)
-        };
-        
-        console.log('Stored cursor position:', position);
-        return position;
-    },
-
-    /**
-     * Get path to a node relative to its ancestor
-     */
-    getNodePath(node, ancestor) {
-        const path = [];
-        let current = node;
-        
-        while (current !== ancestor && current.parentNode) {
-            const parent = current.parentNode;
-            const children = Array.from(parent.childNodes);
-            path.unshift(children.indexOf(current));
-            current = parent;
-        }
-        
-        return path;
-    },
-
-    /**
-     * Restore cursor to a specific position
-     */
-    setCursorPosition(noteElement, position) {
-        console.log('Attempting to restore cursor position:', position);
-        
-        if (!position || position === 'end') {
-            console.log('No position or "end" specified, focusing at end');
-            this.focusNote(noteElement);
-            return;
-        }
-
-        const contentElement = this.getNoteContent(noteElement);
-        let node = contentElement;
-        
-        // Follow the path to find the target node
-        for (const index of position.path) {
-            console.log('Following path index:', index);
-            if (node.childNodes[index]) {
-                node = node.childNodes[index];
-            } else {
-                console.log('Path invalid, falling back to end');
-                this.focusNote(noteElement);
-                return;
-            }
-        }
-
-        try {
-            const range = document.createRange();
-            const selection = window.getSelection();
-            
-            range.setStart(node, position.offset);
-            range.collapse(true);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            contentElement.focus();
-            console.log('Successfully restored cursor position');
-        } catch (e) {
-            throw new Error('Failed to set cursor position:', e);
-        }
+        return note;
     },
 
     /**
@@ -169,31 +85,204 @@ export const DOMUtils = {
     },
 
     /**
-     * Focus a note's content and place cursor at the end
+     * Focus a note's content and place cursor at end
      */
     focusNote(noteElement) {
+        if (!noteElement) {
+            throw new Error('Note element is required');
+        }
         const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
         content.focus();
+        this.setCursorOffset(noteElement, content.textContent?.length || 0);
+    },
 
-        // Place cursor at the end
-        const range = document.createRange();
+    /**
+     * Get cursor offset from start of note
+     * NO MERCY - must return valid number or throw
+     */
+    getCursorOffset(noteElement) {
+        if (!noteElement) {
+            throw new Error('Note element is required');
+        }
+
         const selection = window.getSelection();
-        range.selectNodeContents(content);
-        range.collapse(false); // false = collapse to end
+        if (!selection) {
+            throw new Error('No selection found');
+        }
+
+        const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+
+        if (!content.contains(selection.anchorNode)) {
+            throw new Error('Selection not in note');
+        }
+
+        // Get path to cursor node
+        const path = this.getNodePath(selection.anchorNode, content);
+        if (!path) {
+            throw new Error('Could not find path to cursor');
+        }
+
+        // Calculate offset
+        let offset = 0;
+        for (const node of path) {
+            if (node === selection.anchorNode) {
+                offset += selection.anchorOffset;
+                break;
+            }
+            offset += node.textContent?.length || 0;
+        }
+
+        return offset;
+    },
+
+    /**
+     * Set cursor offset in note
+     * NO MERCY - must set exactly or throw
+     */
+    setCursorOffset(noteElement, offset) {
+        if (!noteElement) {
+            throw new Error('Note element is required');
+        }
+        if (typeof offset !== 'number' || offset < 0) {
+            throw new Error(`Invalid offset: ${offset}`);
+        }
+
+        const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+
+        // Find target node and local offset
+        let currentOffset = 0;
+        let targetNode = null;
+        let localOffset = 0;
+
+        const walk = document.createTreeWalker(
+            content,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+
+        let node;
+        while ((node = walk.nextNode())) {
+            const length = node.textContent?.length || 0;
+            if (currentOffset + length >= offset) {
+                targetNode = node;
+                localOffset = offset - currentOffset;
+                break;
+            }
+            currentOffset += length;
+        }
+
+        if (!targetNode) {
+            throw new Error(`Offset ${offset} beyond note content length ${currentOffset}`);
+        }
+
+        // Set selection
+        const range = document.createRange();
+        range.setStart(targetNode, localOffset);
+        range.collapse(true);
+
+        const selection = window.getSelection();
+        if (!selection) {
+            throw new Error('Could not get selection');
+        }
+
         selection.removeAllRanges();
         selection.addRange(range);
     },
 
-    isDescendant(potentialDescendant, potentialAncestor) {
-        // Get all ancestor notes of the potential descendant
-        let current = this.findNoteElement(potentialDescendant);
-        while (current) {
-            if (current === potentialAncestor) {
-                return true;
-            }
-            // Move up to parent note if it exists
-            current = current.parentElement ? this.findNoteElement(current.parentElement) : null;
+    /**
+     * Get cursor offset from click coordinates
+     * NO MERCY - must return valid number or throw
+     */
+    getCursorOffsetFromClick(noteElement, coordinates) {
+        if (!noteElement) {
+            throw new Error('Note element is required');
         }
-        return false;
+        if (!coordinates) {
+            throw new Error('Coordinates are required');
+        }
+        if (typeof coordinates.x !== 'number' || typeof coordinates.y !== 'number') {
+            throw new Error('Invalid coordinates');
+        }
+
+        const range = document.caretRangeFromPoint(coordinates.x, coordinates.y);
+        if (!range) {
+            throw new Error('Could not create range from click point');
+        }
+
+        const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+
+        if (!content.contains(range.startContainer)) {
+            throw new Error('Click not in note content');
+        }
+
+        // Calculate offset
+        let offset = 0;
+        const path = this.getNodePath(range.startContainer, content);
+        if (!path) {
+            throw new Error('Could not find path to clicked node');
+        }
+
+        for (const node of path) {
+            if (node === range.startContainer) {
+                offset += range.startOffset;
+                break;
+            }
+            offset += node.textContent?.length || 0;
+        }
+
+        return offset;
+    },
+
+    /**
+     * Get note content HTML
+     * NO MERCY - must return content or throw
+     */
+    getNoteContentHTML(noteElement) {
+        const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+        return content.innerHTML;
+    },
+
+    /**
+     * Get note content HTML by ID
+     * NO MERCY - must return content or throw
+     */
+    getNoteContentHTMLById(noteId) {
+        const noteElement = this.getNoteById(noteId);
+        return this.getNoteContentHTML(noteElement);
+    },
+
+    /**
+     * Get path to a node relative to its ancestor
+     */
+    getNodePath(node, ancestor) {
+        if (!node || !ancestor) {
+            return null;
+        }
+
+        const path = [];
+        let current = node;
+
+        while (current && current !== ancestor) {
+            path.unshift(current);
+            current = current.parentNode;
+        }
+
+        return current === ancestor ? path : null;
     }
-}; 
+};

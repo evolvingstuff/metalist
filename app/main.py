@@ -61,7 +61,13 @@ async def home(request: Request, db: Session = Depends(get_db)):
                     'id': note.id,
                     'content': note.content,
                     'parent_id': note.parent_id or '',
-                    'children': build_tree(note.id)
+                    'children': build_tree(note.id),
+                    'flags': {
+                        'isEditing': False,
+                        'isCollapsed': False,
+                        'isHighlighted': False,
+                        'isRendered': False
+                    }
                 } for note in notes]
             except Exception as e:
                 logger.exception("Error building note tree")
