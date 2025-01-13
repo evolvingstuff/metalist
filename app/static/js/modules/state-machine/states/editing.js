@@ -80,6 +80,11 @@ export const editingTransitions = {
             console.log('[EDITING EXIT] No note to save');
             return {};
         }
+
+        // Validate lastSavedContent - should never be null
+        if (lastSavedContent === null) {
+            throw new Error('lastSavedContent is null - this should never happen. Check that setLastSavedContent was called in enter()');
+        }
         
         // Save if content changed
         const currentContent = DOMUtils.getNoteContentHTMLById(noteId);
@@ -89,7 +94,9 @@ export const editingTransitions = {
                 lastSavedContent,
                 currentContent
             });
+            // Must use saveNote here to ensure save completes before state transition
             await NotesAPI.saveNote(noteId, currentContent);
+            context.setLastSavedContent(currentContent);
             console.log('[EDITING EXIT] Content saved');
         }
 
@@ -104,6 +111,22 @@ export const editingTransitions = {
         }
         if (!(context instanceof StateContext)) {
             throw new Error('Invalid context: must be StateContext instance');
+        }
+
+        if (type === 'NOTE_CONTENT_CHANGED') {
+            const { noteId, content } = context;
+            if (!noteId) {
+                throw new Error('Note content change missing note ID');
+            }
+            if (content === undefined) {
+                throw new Error('Note content change missing content');
+            }
+            if (context.lastSavedContent === null) {
+                throw new Error('lastSavedContent is null - this should never happen. Check that setLastSavedContent was called in enter()');
+            }
+
+            // Don't update lastSavedContent - that only happens after server save
+            return context;
         }
 
         if (type === 'KEY_DOWN') {
@@ -167,11 +190,8 @@ export const editingTransitions = {
                 });
 
                 try {
-                    await NotesAPI.updateNote(noteId, {
-                        content: currentContent
-                    });
-
-                    // Update last saved content
+                    await NotesAPI.updateNote(noteId, { content: currentContent });
+                    // Update last saved content after successful save
                     context.setLastSavedContent(currentContent);
                     return context;
                 } catch (error) {
@@ -189,10 +209,6 @@ export const editingTransitions = {
         }
 
         // Content changes handled by auto-save
-        if (type === 'NOTE_CONTENT_CHANGED') {
-            return context;
-        }
-
         if (type === 'NOTE_CONTENT_CLICKED') {
             // Validate event context
             if (!context.noteId) {
@@ -201,27 +217,26 @@ export const editingTransitions = {
 
             // If clicking same note, just update cursor
             if (context.noteId === currentNoteId) {
-                const coordinates = context.coordinates;
-                if (!coordinates) {
-                    throw new Error('Event context missing coordinates');
-                }
-
-                try {
-                    const offset = DOMUtils.getCursorOffsetFromClick(DOMUtils.getActiveNoteElement(), coordinates);
-                    context.setCursorOffset(offset);
-                    DOMUtils.setCursorOffset(DOMUtils.getActiveNoteElement(), offset);
-                    return context;
-                } catch (error) {
-                    console.error(' [EDITING] Failed to set cursor from click:', error);
-                    return context;  // Keep editing even if cursor update fails
-                }
+                return context;
             }
 
-            // Different note - start editing that one
-            return {
-                type: 'START_EDITING',
-                context: context
-            };
+            // Check if current note has unsaved changes before switching
+            const currentContent = DOMUtils.getNoteContentHTMLById(currentNoteId);
+            if (currentContent !== context.lastSavedContent) {
+                console.log('[EDITING] Saving changes before switching notes:', {
+                    noteId: currentNoteId,
+                    lastSavedContent: context.lastSavedContent,
+                    currentContent
+                });
+                
+                // Must use saveNote here since we're changing notes
+                await NotesAPI.saveNote(currentNoteId, currentContent);
+                context.setLastSavedContent(currentContent);
+            }
+
+            // Switch to new note
+            currentNoteId = context.noteId;
+            return context;
         }
 
         if (type === 'SWITCH_NOTE') {

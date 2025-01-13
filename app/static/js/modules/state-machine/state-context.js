@@ -15,6 +15,7 @@ export class StateContext {
         this.key = null;             // Key pressed (for keyboard events)
         this.metaKey = false;        // Meta key pressed
         this.shiftKey = false;       // Shift key pressed
+        this.content = null;         // Current note content
 
         // Bind methods to instance
         this.setNoteId = this.setNoteId.bind(this);

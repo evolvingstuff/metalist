@@ -157,9 +157,11 @@ export const RawEvents = {
         // Get or create context
         let context = event.context;
         if (!context) {
+            const content = DOMUtils.getNoteContentHTMLById(noteId);
             context = StateContext.fromStateData({
                 noteId,
-                cursorOffset: 0
+                cursorOffset: 0,
+                lastSavedContent: content
             });
         }
 
@@ -251,12 +253,13 @@ export const RawEvents = {
                 throw new Error('Note element missing ID');
             }
 
-            const content = DOMUtils.getNoteContentText(event.target);
+            const content = DOMUtils.getNoteContentHTML(noteElement);
 
             return {
                 type: 'NOTE_CONTENT_CHANGED',
                 noteId,
-                content
+                content,
+                context: event.context  // Pass through any existing context
             };
         }
         return { type: 'NO_OP' };

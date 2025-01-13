@@ -67,6 +67,18 @@ export const EventMapper = {
                 };
             },
 
+            NOTE_CONTENT_CHANGED: (event) => {
+                // Pass through content change
+                const context = event.context || new StateContext();
+                context.noteId = event.noteId;
+                context.content = event.content;
+
+                return {
+                    type: 'NOTE_CONTENT_CHANGED',
+                    context
+                };
+            },
+
             CLICKED_OUTSIDE_NOTE: () => ({ type: 'CLICKED_OUTSIDE_NOTE' }),
 
             SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
@@ -108,6 +120,18 @@ export const EventMapper = {
                 };
             },
 
+            NOTE_CONTENT_CHANGED: (event) => {
+                // Pass through content change
+                const context = event.context || new StateContext();
+                context.noteId = event.noteId;
+                context.content = event.content;
+
+                return {
+                    type: 'NOTE_CONTENT_CHANGED',
+                    context
+                };
+            },
+
             CLICKED_OUTSIDE_NOTE: () => ({ type: 'CLICKED_OUTSIDE_NOTE' }),
 
             SEARCH_FOCUSED: () => ({ type: 'SEARCH_FOCUSED' }),
@@ -133,6 +157,18 @@ export const EventMapper = {
                 type: 'NOTE_CONTENT_CLICKED',
                 context: event.context  // Pass through the context
             }),
+
+            NOTE_CONTENT_CHANGED: (event) => {
+                // Pass through content change
+                const context = event.context || new StateContext();
+                context.noteId = event.noteId;
+                context.content = event.content;
+
+                return {
+                    type: 'NOTE_CONTENT_CHANGED',
+                    context
+                };
+            },
 
             CLICKED_OUTSIDE_NOTE: () => ({
                 type: 'CLICKED_OUTSIDE_NOTE'
