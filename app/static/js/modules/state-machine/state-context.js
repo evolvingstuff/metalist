@@ -11,6 +11,7 @@ export class StateContext {
         this.currentState = null;    // Current state machine state
         this.targetState = null;     // Target state for transitions
         this.noteId = null;          // ID of current note
+        this.clickedNoteId = null;   // ID of clicked note
         this.cursorOffset = null;    // Cursor offset from start of note
         this.coordinates = null;      // Click coordinates for cursor positioning
         this.activityMonitor = null; // Activity tracking
@@ -19,12 +20,14 @@ export class StateContext {
         this.metaKey = false;        // Meta key pressed
         this.shiftKey = false;       // Shift key pressed
         this.query = null;           // Search query
+        this.effects = [];           // Effects to run during transition
 
         // Bind methods to instance
         this.setType = this.setType.bind(this);
         this.setCurrentState = this.setCurrentState.bind(this);
         this.setTargetState = this.setTargetState.bind(this);
         this.setNoteId = this.setNoteId.bind(this);
+        this.setClickedNoteId = this.setClickedNoteId.bind(this);
         this.setCursorOffset = this.setCursorOffset.bind(this);
         this.setCoordinates = this.setCoordinates.bind(this);
         this.setActivityMonitor = this.setActivityMonitor.bind(this);
@@ -33,10 +36,13 @@ export class StateContext {
         this.setKey = this.setKey.bind(this);
         this.setMetaKey = this.setMetaKey.bind(this);
         this.setShiftKey = this.setShiftKey.bind(this);
+        this.addEffect = this.addEffect.bind(this);
+        this.resetEffects = this.resetEffects.bind(this);
         this.resetType = this.resetType.bind(this);
         this.resetCurrentState = this.resetCurrentState.bind(this);
         this.resetTargetState = this.resetTargetState.bind(this);
         this.resetNoteId = this.resetNoteId.bind(this);
+        this.resetClickedNoteId = this.resetClickedNoteId.bind(this);
         this.resetCursorOffset = this.resetCursorOffset.bind(this);
         this.resetCoordinates = this.resetCoordinates.bind(this);
         this.resetActivityMonitor = this.resetActivityMonitor.bind(this);
@@ -160,12 +166,9 @@ export class StateContext {
 
     /**
      * Get note ID
-     * @throws {Error} If noteId is not set
+     * @returns {string|null} Note ID if set, null otherwise
      */
     getNoteId() {
-        if (!this.noteId) {
-            throw new Error('Note ID not set');
-        }
         return this.noteId;
     }
 
@@ -174,6 +177,39 @@ export class StateContext {
      */
     resetNoteId() {
         this.noteId = null;
+        return this;
+    }
+
+    /**
+     * Set clicked note ID with validation
+     */
+    setClickedNoteId(noteId) {
+        if (!noteId) {
+            throw new Error('Clicked note ID is required');
+        }
+        if (typeof noteId !== 'string') {
+            throw new Error('Clicked note ID must be a string');
+        }
+        this.clickedNoteId = noteId;
+        return this;
+    }
+
+    /**
+     * Get clicked note ID
+     * @throws {Error} If clickedNoteId is not set
+     */
+    getClickedNoteId() {
+        if (!this.clickedNoteId) {
+            throw new Error('Clicked note ID not set');
+        }
+        return this.clickedNoteId;
+    }
+
+    /**
+     * Reset clicked note ID
+     */
+    resetClickedNoteId() {
+        this.clickedNoteId = null;
         return this;
     }
 
@@ -417,6 +453,32 @@ export class StateContext {
     }
 
     /**
+     * Add an effect to run during transition
+     */
+    addEffect(effect) {
+        if (!effect) {
+            throw new Error('Effect is required');
+        }
+        this.effects.push(effect);
+        return this;
+    }
+
+    /**
+     * Reset effects array
+     */
+    resetEffects() {
+        this.effects = [];
+        return this;
+    }
+
+    /**
+     * Get effects array
+     */
+    getEffects() {
+        return this.effects;
+    }
+
+    /**
      * Validate entire context
      */
     validate() {
@@ -457,67 +519,6 @@ export class StateContext {
 
         if (coordinates) {
             context.setCoordinates(coordinates);
-        }
-
-        return context;
-    }
-
-    /**
-     * Create context from state data
-     */
-    static fromStateData(data) {
-        const context = new StateContext();
-
-        if (!data) {
-            throw new Error('Missing state data');
-        }
-
-        if (data.type) {
-            context.setType(data.type);
-        }
-
-        if (data.currentState) {
-            context.setCurrentState(data.currentState);
-        }
-
-        if (data.targetState) {
-            context.setTargetState(data.targetState);
-        }
-
-        if (data.noteId) {
-            context.setNoteId(data.noteId);
-        }
-
-        if (data.cursorOffset !== undefined) {
-            context.setCursorOffset(data.cursorOffset);
-        }
-
-        if (data.coordinates) {
-            context.setCoordinates(data.coordinates);
-        }
-
-        if (data.activityMonitor) {
-            context.setActivityMonitor(data.activityMonitor);
-        }
-
-        if (data.lastSavedContent) {
-            context.setLastSavedContent(data.lastSavedContent);
-        }
-
-        if (data.query) {
-            context.setQuery(data.query);
-        }
-
-        if (data.key) {
-            context.setKey(data.key);
-        }
-
-        if (data.metaKey !== undefined) {
-            context.setMetaKey(data.metaKey);
-        }
-
-        if (data.shiftKey !== undefined) {
-            context.setShiftKey(data.shiftKey);
         }
 
         return context;

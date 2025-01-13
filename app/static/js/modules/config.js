@@ -17,7 +17,8 @@ export const CONFIG = {
             MOVE: (noteId) => `/api/notes/${noteId}/move`,
             DELETE: (noteId) => `/api/notes/${noteId}`,
             UNDO: '/api/notes/undo',
-            REDO: '/api/notes/redo'
+            REDO: '/api/notes/redo',
+            FRAGMENT: '/api/notes/fragment'
         }
     },
     

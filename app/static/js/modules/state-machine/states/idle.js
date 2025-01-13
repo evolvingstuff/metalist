@@ -2,6 +2,7 @@ import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { StateMachine } from '../state-machine-controller.js';
+import { CreateNoteEffect } from '../effects.js';
 
 /**
  * Idle State
@@ -108,16 +109,9 @@ export const idleTransitions = {
             case 'KEY_DOWN': {
                 const key = StateMachine.currentStateContext.getKey();
                 if (key === 'Enter') {
-                    // Create new note just like Add button
-                    const response = await NotesAPI.createNote();
-                    const noteId = response.id; // Extract ID from response
-                    
-                    // Set up new note for editing
                     StateMachine.currentStateContext
-                        .setType('NOTE_CONTENT_CLICKED')
-                        .setNoteId(noteId)
-                        .setTargetState('editing')
-                        .setLastSavedContent('');
+                        .addEffect(new CreateNoteEffect())
+                        .setTargetState('editing');
                 }
                 break;
             }

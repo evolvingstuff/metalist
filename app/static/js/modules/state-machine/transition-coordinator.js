@@ -1,6 +1,7 @@
 import { editingTransitions } from './states/editing.js';
 import { searchingTransitions } from './states/searching.js';
 import { idleTransitions } from './states/idle.js';
+import { NotesAPI } from '../api-client.js';
 
 /**
  * State Transition Coordinator
@@ -63,11 +64,7 @@ export const StateTransitions = {
             if (fromState === 'editing' || toState === 'editing') {
                 console.log(' [COORDINATOR] Loading fragment');
                 const editing_note_id = toState === 'editing' ? data.noteId : null;
-                const response = await fetch(`/api/notes/fragment${editing_note_id ? `?editing_note_id=${editing_note_id}` : ''}`);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch fragment: ${response.status}`);
-                }
-                const fragment = await response.json();
+                const fragment = await NotesAPI.getFragment(editing_note_id);
                 
                 // Update the notes container with new HTML
                 const notesContainer = document.getElementById('notes-container');

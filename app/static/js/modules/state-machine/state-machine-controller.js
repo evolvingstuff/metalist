@@ -227,12 +227,41 @@ export const StateMachine = {
             await exitHandler.exit();
         }
 
+        // Run all queued effects
+        const effects = this.currentStateContext.getEffects();
+        console.log('🔄 Running effects:', effects.map(e => e.constructor.name));
+        for (const effect of effects) {
+            await effect.execute();
+        }
+        this.currentStateContext.resetEffects();
+
+        // Trigger fragment render
+        console.log('🔄 Updating fragment (state-machine-controller)');
+        const fragment = await NotesAPI.getFragment();
+        if (!fragment || !fragment.data) {
+            throw new Error('Invalid fragment response');
+        }
+
+        // Update the notes container with new HTML
+        const notesContainer = document.getElementById('notes-container');
+        if (!notesContainer) {
+            throw new Error('Notes container not found');
+        }
+        if (typeof fragment.data.html !== 'string') {
+            throw new Error('Invalid fragment HTML');
+        }
+
+        notesContainer.innerHTML = fragment.data.html;
+        console.log('✅ Fragment updated (state-machine-controller)');
+
         // Update state
         this.state = targetState;
 
         // Run enter handler for new state
         if (enterHandler?.enter) {
+            console.log('🔄 Running enter handler for:', targetState);
             await enterHandler.enter();
+            console.log('✅ Enter handler complete');
         }
 
         // Reset target state

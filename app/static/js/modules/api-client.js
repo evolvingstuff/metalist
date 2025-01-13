@@ -170,6 +170,20 @@ export const NotesAPI = {
         return noteElement.querySelector('.note-content');
     },
 
+    /**
+     * Get updated fragment
+     * @param {string|null} noteId - ID of note being edited, if any
+     */
+    async getFragment(noteId = null) {
+        const url = `${CONFIG.API.NOTES.FRAGMENT}${noteId ? `?editing_note_id=${noteId}` : ''}`;
+        return this._apiCall(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'text/html'
+            }
+        });
+    },
+
     async moveNoteUp(noteId) {
         const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;
