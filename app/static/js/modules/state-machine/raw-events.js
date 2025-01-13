@@ -1,5 +1,6 @@
 import { DOMUtils } from '../dom-utils.js';
 import { StateContext } from './state-context.js';
+import { StateMachine } from './state-machine-controller.js'; // Import StateMachine
 
 /**
  * Raw Event Handlers
@@ -30,6 +31,8 @@ export const RawEvents = {
         if (!domEvent.target) {
             throw new Error('Click event missing target');
         }
+
+        // StateMachine.resetOnNewEvent();  //this is redundant TODO
 
         // Get click coordinates
         const clickInfo = {
@@ -68,7 +71,6 @@ export const RawEvents = {
     },
 
     handleNoteContentClick(domEvent) {
-        // NO MERCY - validate event
         if (!domEvent) {
             throw new Error('Note content click missing event');
         }
@@ -78,6 +80,8 @@ export const RawEvents = {
         if (typeof domEvent.clientX !== 'number' || typeof domEvent.clientY !== 'number') {
             throw new Error('Click event missing coordinates');
         }
+
+        StateMachine.resetOnNewEvent();
 
         // Get note element and ID
         const noteElement = DOMUtils.findNoteElement(domEvent.target);
@@ -100,35 +104,60 @@ export const RawEvents = {
         });
 
         const content = DOMUtils.getNoteContentHTMLById(noteId);
-        return new StateContext()
+        const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, { x: domEvent.clientX, y: domEvent.clientY });
+        
+        StateMachine.currentStateContext
             .setType('NOTE_CONTENT_CLICKED')
             .setNoteId(noteId)
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY })
-            .setLastSavedContent(content);
+            .setLastSavedContent(content)
+            .setCursorOffset(cursorOffset);
     },
 
     handleSearchClick(domEvent) {
-        return new StateContext()
-            .setType('SEARCH_FOCUSED')
-            .setQuery(domEvent.target.value);
+        if (!domEvent) {
+            throw new Error('Search click missing event');
+        }
+        if (!domEvent.target) {
+            throw new Error('Search click missing target');
+        }
+
+        StateMachine.resetOnNewEvent();
+        
+        StateMachine.currentStateContext
+            .setType('SEARCH_CLICKED')
+            .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY });
     },
 
     handleAddNoteClick(domEvent) {
-        return new StateContext().setType('ADD_BUTTON_CLICKED');
+        StateMachine.resetOnNewEvent();
+        
+        StateMachine.currentStateContext
+            .setType('ADD_BUTTON_CLICKED');
     },
 
     handleMenuClick(domEvent) {
-        alert('TODO: Implement menu handling');
-        return new StateContext().setType('NO_OP');
+        StateMachine.resetOnNewEvent();
+        
+        StateMachine.currentStateContext
+            .setType('MENU_CLICKED');
     },
 
     handleTrashCanClick(domEvent) {
-        alert('TODO: Implement trash can handling');
-        return new StateContext().setType('NO_OP');
+        StateMachine.resetOnNewEvent();
+        
+        StateMachine.currentStateContext
+            .setType('TRASH_CAN_CLICKED');
     },
 
     handleKeyDown(domEvent) {
-        return new StateContext()
+        if (!domEvent) {
+            throw new Error('Key down missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
+        StateMachine.currentStateContext
             .setType('KEY_DOWN')
             .setKey(domEvent.key)
             .setMetaKey(domEvent.metaKey || domEvent.ctrlKey)
@@ -144,6 +173,8 @@ export const RawEvents = {
             throw new Error('Drag start event missing target');
         }
 
+        StateMachine.resetOnNewEvent();
+
         const noteElement = DOMUtils.findNoteElement(domEvent.target);
         if (!noteElement) {
             throw new Error('Drag start not in note');
@@ -154,12 +185,18 @@ export const RawEvents = {
             throw new Error('Note missing ID');
         }
 
-        return new StateContext()
+        StateMachine.currentStateContext
             .setType('DRAG_STARTED')
             .setNoteId(noteId);
     },
 
     handleInput(domEvent) {
+        if (!domEvent) {
+            throw new Error('Input missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
         if (DOMUtils.isNoteContent(domEvent.target)) {
             const noteElement = DOMUtils.findNoteElement(domEvent.target);
             if (!noteElement) {
@@ -171,27 +208,36 @@ export const RawEvents = {
                 throw new Error('Note element missing ID');
             }
 
-            const content = DOMUtils.getNoteContentHTML(noteElement);
-            return new StateContext()
+            StateMachine.currentStateContext
                 .setType('NOTE_CONTENT_CHANGED')
-                .setNoteId(noteId)
-                .setContent(content);
+                .setNoteId(noteId);
         }
-        return new StateContext().setType('NO_OP');
     },
 
     handleSearchInput(domEvent) {
-        return new StateContext()
+        if (!domEvent) {
+            throw new Error('Search input missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
+        StateMachine.currentStateContext
             .setType('SEARCH_QUERY_CHANGED')
             .setQuery(domEvent.target.value);
     },
 
     handleSearchBlur(domEvent) {
+        if (!domEvent) {
+            throw new Error('Search blur missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
         // If we blurred to a note, get its ID
         const noteElement = domEvent.relatedTarget ? DOMUtils.findNoteElement(domEvent.relatedTarget) : null;
         const noteId = noteElement ? DOMUtils.getNoteId(noteElement) : null;
         
-        return new StateContext()
+        StateMachine.currentStateContext
             .setType('SEARCH_BLURRED')
             .setNoteId(noteId);  // Will be null if not clicked on note
     },
@@ -200,23 +246,45 @@ export const RawEvents = {
         if (!domEvent) {
             throw new Error('Click outside note missing event');
         }
-        return new StateContext()
+
+        StateMachine.resetOnNewEvent();
+
+        StateMachine.currentStateContext
             .setType('CLICKED_OUTSIDE_NOTE')
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY });
     },
 
     handleFragmentLoaded(domEvent) {
-        return new StateContext().setType('FRAGMENT_LOADED');
+        if (!domEvent) {
+            throw new Error('Fragment loaded missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
+        StateMachine.currentStateContext
+            .setType('FRAGMENT_LOADED');
     },
 
     handleInteractiveClick(domEvent) {
-        return new StateContext()
+        if (!domEvent) {
+            throw new Error('Interactive click missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
+        StateMachine.currentStateContext
             .setType('NO_OP')
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY });
     },
 
     handleNoteClick(domEvent) {
-        return new StateContext()
+        if (!domEvent) {
+            throw new Error('Note click missing event');
+        }
+
+        StateMachine.resetOnNewEvent();
+
+        StateMachine.currentStateContext
             .setType('NO_OP')
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY });
     }

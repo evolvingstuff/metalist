@@ -1,6 +1,7 @@
-import { DOMUtils } from '../../dom-utils.js';
 import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
+import { DOMUtils } from '../../dom-utils.js';
+import { StateMachine } from '../state-machine-controller.js';
 
 /**
  * Searching State
@@ -25,123 +26,112 @@ import { StateContext } from '../state-context.js';
  */
 
 export const searchingTransitions = {
-    enter: async (stateContext) => {
-        // NO MERCY validation
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+    enter: async () => {
+        // Validate context
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
-        console.log(' Starting search with context:', stateContext);
+        console.log(' Starting search with context:', StateMachine.currentStateContext);
         
         // Focus search input
-        const searchInput = DOMUtils.getSearchInput();
-        if (!searchInput) {
-            throw new Error('Could not find search input');
-        }
-        searchInput.focus();
+        DOMUtils.focusSearch();
 
         // Show results panel
         DOMUtils.showSearchResults();
-
-        return stateContext;
     },
 
-    exit: async (stateContext) => {
-        // NO MERCY validation
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+    exit: async () => {
+        // Validate context
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
         // Clear search input
-        const searchInput = DOMUtils.getSearchInput();
-        if (!searchInput) {
-            throw new Error('Could not find search input');
-        }
-        searchInput.value = '';
+        DOMUtils.clearSearch();
 
         // Hide results panel
         DOMUtils.hideSearchResults();
-
-        return stateContext;
     },
 
-    handleEvent: async (stateContext) => {
-        // NO MERCY validation
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+    handleEvent: async () => {
+        // Validate context
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
-        const eventType = stateContext.getType();
+        const eventType = StateMachine.currentStateContext.getType();
         if (!eventType) {
             throw new Error('State context missing event type');
         }
 
         console.log('Handling event in searching:', {
             type: eventType,
-            context: stateContext
+            context: StateMachine.currentStateContext
         });
 
         switch (eventType) {
             case 'SEARCH_QUERY_CHANGED': {
-                const query = stateContext.getQuery();
-                if (query === undefined) {
-                    throw new Error('Search query change missing query');
+                const query = StateMachine.currentStateContext.getQuery();
+                if (typeof query !== 'string') {
+                    throw new Error('Search query must be string');
                 }
 
-                // Update results
+                // Update search results
                 const results = await NotesAPI.searchNotes(query);
                 DOMUtils.updateSearchResults(results);
+                break;
+            }
 
-                return stateContext;
+            case 'SEARCH_BLURRED': {
+                // Return to idle if not clicking on note
+                const noteId = StateMachine.currentStateContext.getNoteId();
+                if (!noteId) {
+                    StateMachine.currentStateContext.setType('RETURN_TO_IDLE');
+                }
+                break;
             }
 
             case 'NOTE_CONTENT_CLICKED': {
-                const noteId = stateContext.getNoteId();
+                const noteId = StateMachine.currentStateContext.getNoteId();
                 if (!noteId) {
                     throw new Error('Note click missing note ID');
                 }
 
-                // Get current content
                 const noteElement = DOMUtils.getNoteById(noteId);
                 if (!noteElement) {
-                    throw new Error(`Could not find note element with ID: ${noteId}`);
+                    throw new Error('Note element not found');
                 }
+
                 const content = DOMUtils.getNoteContent(noteElement);
 
-                // Switch to editing clicked note
-                return stateContext
-                    .setType('START_EDITING')
+                // Request transition to editing
+                StateMachine.currentStateContext
+                    .setType('NOTE_CONTENT_CLICKED')
                     .setNoteId(noteId)
-                    .setLastSavedContent(content);
-            }
-
-            case 'SEARCH_BLUR': {
-                // Request transition to idle if not clicked on note
-                const noteId = stateContext.getNoteId();
-                if (!noteId) {
-                    return stateContext.setType('START_IDLE');
-                }
-                return stateContext;
+                    .setLastSavedContent(content)
+                    .setCoordinates(StateMachine.currentStateContext.coordinates);
+                break;
             }
 
             case 'CLICKED_OUTSIDE_NOTE': {
                 // Stay in search if clicked in results panel
-                const coordinates = stateContext.getCoordinates();
+                const coordinates = StateMachine.currentStateContext.getCoordinates();
                 if (!coordinates) {
                     throw new Error('Click missing coordinates');
                 }
                 
                 if (DOMUtils.isInSearchResults(coordinates)) {
-                    return stateContext;
+                    break;
                 }
                 
                 // Otherwise go to idle
-                return stateContext.setType('START_IDLE');
+                StateMachine.currentStateContext.setType('RETURN_TO_IDLE');
+                break;
             }
 
             default:
-                console.log('Ignoring event in searching:', eventType);
-                return stateContext;
+                throw new Error(`Unhandled event in searching state: ${eventType}`);
         }
     }
 };

@@ -36,13 +36,14 @@ export const CONFIG = {
     
     // Feature flags
     FEATURES: {
-        USE_STATE_MACHINE: true,  // Enabling state machine
+        USE_STATE_MACHINE: true,      // Enable state machine
+        USE_INACTIVITY_TIMEOUT: false // Enable inactivity timeout
     },
     
     // Debug flags
     DEBUG: {
         LOG_API_CALLS: true,
         LOG_STATE_CHANGES: true,
-        LOG_STATE_MACHINE: true    // This will give us detailed state transition logs
+        LOG_STATE_MACHINE: true
     }
-}; 
+};

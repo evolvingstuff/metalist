@@ -22,6 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
         StateMachine.handleRawEvent('Click', e);
     });
 
+    // Handle all input events (for note content changes)
+    document.addEventListener('input', (e) => {
+        StateMachine.handleRawEvent('Input', e);
+    });
+
     // Add search input focus handler
     const searchInput = document.getElementById('search-input');
     if (searchInput) {

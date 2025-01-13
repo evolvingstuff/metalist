@@ -1,6 +1,7 @@
 import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { StateMachine } from '../state-machine-controller.js';
 
 /**
  * Idle State
@@ -17,83 +18,87 @@ import { DOMUtils } from '../../dom-utils.js';
  * 
  * @example
  * // Return to idle state
- * stateContext.setTargetState('idle');
- * await transition(stateContext);
+ * StateMachine.currentStateContext.setTargetState('idle');
+ * await StateMachine.transition();
  */
 
 export const idleTransitions = {
-    enter: async (stateContext) => {
+    enter: async () => {
         // Validate context
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
         
-        // Nothing to set up
-        return stateContext;
+        // Clear all note-related state
+        StateMachine.currentStateContext
+            .resetNoteId()
+            .resetLastSavedContent()
+            .resetCursorOffset()
+            .resetActivityMonitor();
     },
 
-    exit: async (stateContext) => {
+    exit: async () => {
         // Nothing to clean up
-        return stateContext;
     },
 
-    handleEvent: async (stateContext) => {
+    handleEvent: async () => {
         // NO MERCY validation
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
-        const eventType = stateContext.getType();
+        const eventType = StateMachine.currentStateContext.getType();
         if (!eventType) {
             throw new Error('State context missing event type');
         }
 
         console.log('Handling event in idle:', {
             type: eventType,
-            context: stateContext
+            context: StateMachine.currentStateContext
         });
 
         switch (eventType) {
             case 'NOTE_CONTENT_CLICKED': {
-                const noteId = stateContext.getNoteId();
+                const noteId = StateMachine.currentStateContext.getNoteId();
                 if (!noteId) {
                     throw new Error('Note click missing note ID');
                 }
-
-                // Get current content
+                
                 const noteElement = DOMUtils.getNoteById(noteId);
                 if (!noteElement) {
-                    throw new Error(`Could not find note element with ID: ${noteId}`);
+                    throw new Error('Note element not found');
                 }
+                
                 const content = DOMUtils.getNoteContent(noteElement);
 
                 // Request transition to editing
-                return stateContext
+                StateMachine.currentStateContext
                     .setType('START_EDITING')
                     .setNoteId(noteId)
                     .setLastSavedContent(content)
-                    .setCoordinates(stateContext.coordinates);
+                    .setCoordinates(StateMachine.currentStateContext.coordinates);
+                break;
             }
 
             case 'SEARCH_FOCUSED': {
                 // Request transition to searching
-                return stateContext.setType('START_SEARCHING');
+                StateMachine.currentStateContext.setType('START_SEARCHING');
+                break;
             }
 
             case 'ADD_BUTTON_CLICKED': {
                 // Create new note
                 const noteId = await NotesAPI.createNote();
                 
-                // Request transition to editing new note
-                return stateContext
-                    .setType('START_EDITING')
+                StateMachine.currentStateContext
+                    .setType('NOTE_CONTENT_CLICKED')
                     .setNoteId(noteId)
                     .setLastSavedContent('');
+                break;
             }
 
             default:
-                console.log('Ignoring event in idle:', eventType);
-                return stateContext;
+                throw new Error(`Unhandled event in idle state: ${eventType}`);
         }
     }
 }; 

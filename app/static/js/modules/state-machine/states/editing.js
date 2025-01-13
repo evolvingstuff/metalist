@@ -1,6 +1,7 @@
 import { DOMUtils } from '../../dom-utils.js';
 import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
+import { StateMachine } from '../state-machine-controller.js';
 
 /**
  * Editing State
@@ -8,7 +9,6 @@ import { StateContext } from '../state-context.js';
  * Manages note editing functionality including:
  * - Setting up editable notes
  * - Cursor position management
- * - Content change tracking
  * - Auto-saving
  * 
  * State Context:
@@ -30,125 +30,163 @@ import { StateContext } from '../state-context.js';
  */
 
 export const editingTransitions = {
-    enter: async (stateContext) => {
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+    enter: async () => {
+        // Validate context
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
-        const noteId = stateContext.getNoteId();
+        const noteId = StateMachine.currentStateContext.getNoteId();
         if (!noteId) {
-            throw new Error('Editing state requires note ID');
-        }
-
-        console.log(' Starting edit with context:', stateContext);
-        
-        // Start activity monitoring
-        stateContext.getActivityMonitor()?.startMonitoring();
-
-        // Set up note for editing
-        const noteElement = DOMUtils.getNoteById(noteId);
-        if (!noteElement) {
-            throw new Error(`Could not find note element with ID: ${noteId}`);
+            throw new Error('Note ID not set');
         }
 
         // Make note editable
-        DOMUtils.setNoteEditable(noteElement, true);
-
-        // Set cursor position if specified
-        const cursorOffset = stateContext.getCursorOffset();
-        if (typeof cursorOffset === 'number') {
-            DOMUtils.setCursorOffset(noteElement, cursorOffset);
-        }
-
-        return stateContext;
-    },
-
-    exit: async (stateContext) => {
-        if (!stateContext || !(stateContext instanceof StateContext)) {
-            throw new Error('Invalid state context');
-        }
-
-        const noteId = stateContext.getNoteId();
-        if (!noteId) {
-            throw new Error('Cannot exit editing without note ID');
-        }
-
-        // Stop activity monitoring
-        stateContext.getActivityMonitor()?.stopMonitoring();
-
-        // Get current content
         const noteElement = DOMUtils.getNoteById(noteId);
         if (!noteElement) {
-            throw new Error(`Could not find note element with ID: ${noteId}`);
-        }
-        const content = DOMUtils.getNoteContent(noteElement);
-
-        // Save if content changed
-        const lastSavedContent = stateContext.getLastSavedContent();
-        if (content !== lastSavedContent) {
-            await NotesAPI.updateNote(noteId, content);
-            stateContext.setLastSavedContent(content);
+            throw new Error('Note element not found');
         }
 
-        // Clean up note
-        DOMUtils.setNoteEditable(noteElement, false);
+        // Set initial content for comparison on exit
+        const content = DOMUtils.getNoteContentHTML(noteElement);
+        StateMachine.currentStateContext.setLastSavedContent(content);
 
-        return stateContext;
+        DOMUtils.setNoteEditable(noteElement, true);
+        DOMUtils.focusNote(noteElement, StateMachine.currentStateContext.getCursorOffset());
+
+        // Start tracking activity
+        StateMachine.startActivityMonitor();
     },
 
-    handleEvent: async (stateContext) => {
-        if (!stateContext || !(stateContext instanceof StateContext)) {
+    exit: async () => {
+        // Stop tracking activity
+        StateMachine.stopActivityMonitor();
+
+        // Save note content if changed
+        const noteId = StateMachine.currentStateContext.getNoteId();
+        if (!noteId) {
+            throw new Error('No note ID in editing state context');
+        }
+
+        const noteElement = DOMUtils.getNoteById(noteId);
+        if (!noteElement) {
+            throw new Error('Note element not found');
+        }
+
+        // Compare current content with last saved
+        const currentContent = DOMUtils.getNoteContentHTML(noteElement);
+        const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
+        if (currentContent !== lastSavedContent) {
+            await NotesAPI.updateNote(noteId, currentContent);
+            StateMachine.currentStateContext.setLastSavedContent(currentContent);
+        }
+
+        // Make current note non-editable
+        DOMUtils.setNoteEditable(noteElement, false);
+    },
+
+    handleEvent: async () => {
+        // Validate context
+        if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
-        const eventType = stateContext.getType();
+        const eventType = StateMachine.currentStateContext.getType();
         if (!eventType) {
             throw new Error('State context missing event type');
         }
 
-        const noteId = stateContext.getNoteId();
-        if (!noteId) {
-            throw new Error('Editing state missing note ID');
-        }
-
         console.log('Handling event in editing:', {
             type: eventType,
-            context: stateContext
+            context: StateMachine.currentStateContext
         });
 
         switch (eventType) {
-            case 'NOTE_CONTENT_CLICKED': {
-                const clickedNoteId = stateContext.getNoteId();
-                if (clickedNoteId === noteId) {
-                    // Clicked same note - do nothing
-                    return stateContext;
+            case 'CLICKED_OUTSIDE_NOTE': {
+                // Return to idle if inactive
+                if (StateMachine.currentStateContext.isInactive()) {
+                    StateMachine.currentStateContext.setType('RETURN_TO_IDLE');
                 }
-
-                // Get current content
-                const noteElement = DOMUtils.getNoteById(clickedNoteId);
-                if (!noteElement) {
-                    throw new Error(`Could not find note element with ID: ${clickedNoteId}`);
-                }
-                const content = DOMUtils.getNoteContent(noteElement);
-
-                // Switch to new note
-                return stateContext
-                    .setType('START_EDITING')
-                    .setNoteId(clickedNoteId)
-                    .setLastSavedContent(content);
+                break;
             }
 
-            case 'CLICKED_OUTSIDE_NOTE': {
-                return stateContext.setType('START_IDLE');
+            case 'NOTE_CONTENT_CLICKED': {
+                const noteId = StateMachine.currentStateContext.getNoteId();
+                const clickedNoteId = StateMachine.currentStateContext.getClickedNoteId();
+
+                // If clicking different note and inactive, switch to it
+                if (noteId !== clickedNoteId && StateMachine.currentStateContext.isInactive()) {
+                    const noteElement = DOMUtils.getNoteById(clickedNoteId);
+                    if (!noteElement) {
+                        throw new Error('Note element not found');
+                    }
+
+                    const content = DOMUtils.getNoteContentHTML(noteElement);
+                    StateMachine.currentStateContext
+                        .setType('NOTE_CONTENT_CLICKED')
+                        .setNoteId(clickedNoteId)
+                        .setLastSavedContent(content)
+                        .setCoordinates(StateMachine.currentStateContext.coordinates);
+                }
+                break;
             }
 
             case 'SEARCH_FOCUSED': {
-                return stateContext.setType('START_SEARCHING');
+                // Return to idle if inactive
+                if (StateMachine.currentStateContext.isInactive()) {
+                    StateMachine.currentStateContext.setType('SEARCH_FOCUSED');
+                }
+                break;
+            }
+
+            case 'KEY_DOWN': {
+                const key = StateMachine.currentStateContext.getKey();
+                const metaKey = StateMachine.currentStateContext.getMetaKey();
+                const shiftKey = StateMachine.currentStateContext.getShiftKey();
+                
+                // Handle keyboard shortcuts
+                if (key === 'Escape') {
+                    // Escape: Return to idle
+                    StateMachine.currentStateContext.setType('CLICKED_OUTSIDE_NOTE');
+                    break;
+                }
+
+                if (metaKey && key === 'Enter') {
+                    // Get current note ID for positioning
+                    const currentNoteId = StateMachine.currentStateContext.getNoteId();
+                    if (!currentNoteId) {
+                        throw new Error('Current note ID not set');
+                    }
+
+                    if (shiftKey) {
+                        // Shift+Cmd+Enter: Create child note
+                        const noteId = await NotesAPI.createChildNote(currentNoteId);
+                        // Switch to new note
+                        StateMachine.currentStateContext
+                            .setType('NOTE_CONTENT_CLICKED')
+                            .setNoteId(noteId)
+                            .setLastSavedContent('');
+                    } else {
+                        // Cmd+Enter: Create sibling note below
+                        const noteId = await NotesAPI.createSiblingNote(currentNoteId);
+                        // Switch to new note
+                        StateMachine.currentStateContext
+                            .setType('NOTE_CONTENT_CLICKED')
+                            .setNoteId(noteId)
+                            .setLastSavedContent('');
+                    }
+                }
+                break;
+            }
+
+            case 'NOTE_CONTENT_CHANGED': {
+                // Reset inactivity timer
+                StateMachine.startActivityMonitor();
+                break;
             }
 
             default:
-                console.log('Ignoring event in editing:', eventType);
-                return stateContext;
+                throw new Error(`Unhandled event in editing state: ${eventType}`);
         }
     }
 };

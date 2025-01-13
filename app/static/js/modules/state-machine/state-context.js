@@ -18,7 +18,6 @@ export class StateContext {
         this.key = null;             // Key pressed (for keyboard events)
         this.metaKey = false;        // Meta key pressed
         this.shiftKey = false;       // Shift key pressed
-        this.content = null;         // Current note content
         this.query = null;           // Search query
 
         // Bind methods to instance
@@ -34,6 +33,18 @@ export class StateContext {
         this.setKey = this.setKey.bind(this);
         this.setMetaKey = this.setMetaKey.bind(this);
         this.setShiftKey = this.setShiftKey.bind(this);
+        this.resetType = this.resetType.bind(this);
+        this.resetCurrentState = this.resetCurrentState.bind(this);
+        this.resetTargetState = this.resetTargetState.bind(this);
+        this.resetNoteId = this.resetNoteId.bind(this);
+        this.resetCursorOffset = this.resetCursorOffset.bind(this);
+        this.resetCoordinates = this.resetCoordinates.bind(this);
+        this.resetActivityMonitor = this.resetActivityMonitor.bind(this);
+        this.resetLastSavedContent = this.resetLastSavedContent.bind(this);
+        this.resetQuery = this.resetQuery.bind(this);
+        this.resetKey = this.resetKey.bind(this);
+        this.resetMetaKey = this.resetMetaKey.bind(this);
+        this.resetShiftKey = this.resetShiftKey.bind(this);
     }
 
     /**
@@ -52,9 +63,21 @@ export class StateContext {
 
     /**
      * Get event type
+     * @throws {Error} If type is not set
      */
     getType() {
+        if (!this.type) {
+            throw new Error('Event type not set');
+        }
         return this.type;
+    }
+
+    /**
+     * Reset event type
+     */
+    resetType() {
+        this.type = null;
+        return this;
     }
 
     /**
@@ -71,8 +94,23 @@ export class StateContext {
         return this;
     }
 
+    /**
+     * Get current state
+     * @throws {Error} If currentState is not set
+     */
     getCurrentState() {
+        if (!this.currentState) {
+            throw new Error('Current state not set');
+        }
         return this.currentState;
+    }
+
+    /**
+     * Reset current state
+     */
+    resetCurrentState() {
+        this.currentState = null;
+        return this;
     }
 
     /**
@@ -91,9 +129,21 @@ export class StateContext {
 
     /**
      * Get target state
+     * @throws {Error} If targetState is not set
      */
     getTargetState() {
+        if (!this.targetState) {
+            throw new Error('Target state not set');
+        }
         return this.targetState;
+    }
+
+    /**
+     * Reset target state
+     */
+    resetTargetState() {
+        this.targetState = null;
+        return this;
     }
 
     /**
@@ -112,9 +162,33 @@ export class StateContext {
 
     /**
      * Get note ID
+     * @throws {Error} If noteId is not set
      */
     getNoteId() {
+        if (!this.noteId) {
+            throw new Error('Note ID not set');
+        }
         return this.noteId;
+    }
+
+    /**
+     * Reset note ID
+     */
+    resetNoteId() {
+        this.noteId = null;
+        return this;
+    }
+
+    /**
+     * Get cursor offset
+     * @returns {number|null} Cursor offset from start of note
+     * @throws {Error} If cursorOffset is not set
+     */
+    getCursorOffset() {
+        if (this.cursorOffset === undefined || this.cursorOffset === null) {
+            throw new Error('Cursor offset not set');
+        }
+        return this.cursorOffset;
     }
 
     /**
@@ -129,6 +203,14 @@ export class StateContext {
     }
 
     /**
+     * Reset cursor offset
+     */
+    resetCursorOffset() {
+        this.cursorOffset = null;
+        return this;
+    }
+
+    /**
      * Set click coordinates with validation
      */
     setCoordinates(coordinates) {
@@ -139,6 +221,25 @@ export class StateContext {
             throw new Error('Invalid coordinates');
         }
         this.coordinates = coordinates;
+        return this;
+    }
+
+    /**
+     * Get coordinates
+     * @throws {Error} If coordinates is not set
+     */
+    getCoordinates() {
+        if (!this.coordinates) {
+            throw new Error('Coordinates not set');
+        }
+        return this.coordinates;
+    }
+
+    /**
+     * Reset coordinates
+     */
+    resetCoordinates() {
+        this.coordinates = null;
         return this;
     }
 
@@ -160,6 +261,25 @@ export class StateContext {
     }
 
     /**
+     * Get activity monitor
+     * @throws {Error} If activityMonitor is not set
+     */
+    getActivityMonitor() {
+        if (!this.activityMonitor) {
+            throw new Error('Activity monitor not set');
+        }
+        return this.activityMonitor;
+    }
+
+    /**
+     * Reset activity monitor
+     */
+    resetActivityMonitor() {
+        this.activityMonitor = null;
+        return this;
+    }
+
+    /**
      * Set last saved content with validation
      */
     setLastSavedContent(content) {
@@ -167,6 +287,25 @@ export class StateContext {
             throw new Error('Content is required');
         }
         this.lastSavedContent = content;
+        return this;
+    }
+
+    /**
+     * Get last saved content
+     * @throws {Error} If lastSavedContent is not set
+     */
+    getLastSavedContent() {
+        if (!this.lastSavedContent) {
+            throw new Error('Last saved content not set');
+        }
+        return this.lastSavedContent;
+    }
+
+    /**
+     * Reset last saved content
+     */
+    resetLastSavedContent() {
+        this.lastSavedContent = null;
         return this;
     }
 
@@ -183,9 +322,21 @@ export class StateContext {
 
     /**
      * Get search query
+     * @throws {Error} If query is not set
      */
     getQuery() {
+        if (this.query === undefined || this.query === null) {
+            throw new Error('Search query not set');
+        }
         return this.query;
+    }
+
+    /**
+     * Reset search query
+     */
+    resetQuery() {
+        this.query = null;
+        return this;
     }
 
     /**
@@ -203,10 +354,44 @@ export class StateContext {
     }
 
     /**
+     * Get key
+     * @throws {Error} If key is not set
+     */
+    getKey() {
+        if (!this.key) {
+            throw new Error('Key not set');
+        }
+        return this.key;
+    }
+
+    /**
+     * Reset key
+     */
+    resetKey() {
+        this.key = null;
+        return this;
+    }
+
+    /**
      * Set meta key state
      */
     setMetaKey(metaKey) {
         this.metaKey = Boolean(metaKey);
+        return this;
+    }
+
+    /**
+     * Get meta key state
+     */
+    getMetaKey() {
+        return !!this.metaKey;  // Convert to boolean
+    }
+
+    /**
+     * Reset meta key state
+     */
+    resetMetaKey() {
+        this.metaKey = false;
         return this;
     }
 
@@ -219,20 +404,32 @@ export class StateContext {
     }
 
     /**
+     * Get shift key state
+     */
+    getShiftKey() {
+        return !!this.shiftKey;  // Convert to boolean
+    }
+
+    /**
+     * Reset shift key state
+     */
+    resetShiftKey() {
+        this.shiftKey = false;
+        return this;
+    }
+
+    /**
      * Validate entire context
      */
     validate() {
         if (!this.type) {
-            throw new Error('Context missing type');
-        }
-        if (!this.noteId) {
-            throw new Error('Context missing noteId');
-        }
-        if (this.cursorOffset === null) {
-            throw new Error('Context missing cursorOffset');
+            throw new Error('Event type not set');
         }
         if (!this.currentState) {
-            throw new Error('Context missing currentState');
+            throw new Error('Current state not set');
+        }
+        if (!this.noteId) {
+            throw new Error('Note ID not set');
         }
         // Coordinates optional - only needed for click positioning
         // Activity monitor optional - only needed for auto-save

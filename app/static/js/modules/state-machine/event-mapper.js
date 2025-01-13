@@ -4,150 +4,54 @@ import { StateContext } from './state-context.js';
 /**
  * Event Mapper
  * 
- * Maps raw events (StateContext objects) to state machine events based on current state.
- * This is where we interpret user intentions based on state context.
+ * Maps raw DOM events to state machine events based on the current state.
+ * The mapping is purely about event type translation - all event properties
+ * (noteId, content, coordinates, etc.) are preserved from the original StateContext.
  * 
- * Structure:
- * {
- *   [state]: {
- *     [eventType]: (stateContext) => ({
- *       type: 'STATE_MACHINE_EVENT',
- *       context: stateContext  // Pass through or modified StateContext
- *     })
- *   }
- * }
+ * Design:
+ * 1. Each state (idle, editing, searching) defines which raw events it handles
+ * 2. For each raw event, defines what state machine event it maps to
+ * 3. Unhandled events in a state are considered errors
  * 
- * Flow:
- * 1. Raw Events -> StateContext with event type and data
- * 2. Event Mapper -> State machine event with same or modified StateContext
- * 3. State Machine -> Handles event and context
+ * Example:
+ * In idle state:
+ *   NOTE_CONTENT_CLICKED -> NOTE_CONTENT_CLICKED
+ *   SEARCH_FOCUSED -> SEARCH_FOCUSED
  * 
- * NO_OP events are returned when:
- * - No handler exists for current state/event type
- * - Event should be ignored in current state
- * 
- * @example
- * // Mapping in idle state
- * idle: {
- *   ADD_BUTTON_CLICKED: (stateContext) => ({
- *     type: 'CREATE_TOP_NOTE',
- *     context: stateContext
- *   })
- * }
+ * In editing state:
+ *   CLICKED_OUTSIDE_NOTE -> CLICKED_OUTSIDE_NOTE
+ *   NOTE_CONTENT_CLICKED -> NOTE_CONTENT_CLICKED (same event)
  */
 export const EventMapper = {
     // Current state → event type → handler mapping
     handlers: {
         idle: {
-            KEY_DOWN: (stateContext) => {
-                // Pass through key info but strip DOM
-                return stateContext.setType('KEY_DOWN').setKey(stateContext.key).setMetaKey(stateContext.metaKey).setShiftKey(stateContext.shiftKey);
-            },
-
-            ADD_BUTTON_CLICKED: (stateContext) => stateContext.setType('CREATE_TOP_NOTE'),
-
-            NOTE_CONTENT_CLICKED: (stateContext) => {
-                if (!stateContext) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing event');
-                }
-
-                if (!stateContext.noteId) {
-                    throw new Error('Note content click missing note ID');
-                }
-
-                return stateContext.setType('NOTE_CONTENT_CLICKED').setNoteId(stateContext.noteId);
-            },
-
-            NOTE_CONTENT_CHANGED: (stateContext) => {
-                return stateContext
-                    .setType('NOTE_CONTENT_CHANGED')
-                    .setNoteId(stateContext.noteId)
-                    .setContent(stateContext.content);
-            },
-
+            KEY_DOWN: (stateContext) => stateContext.setType('KEY_DOWN'),
+            ADD_BUTTON_CLICKED: (stateContext) => stateContext.setType('ADD_BUTTON_CLICKED'),
+            NOTE_CONTENT_CLICKED: (stateContext) => stateContext.setType('NOTE_CONTENT_CLICKED'),
+            NOTE_CONTENT_CHANGED: (stateContext) => stateContext.setType('NOTE_CONTENT_CHANGED'),
             CLICKED_OUTSIDE_NOTE: (stateContext) => stateContext.setType('CLICKED_OUTSIDE_NOTE'),
-
             SEARCH_FOCUSED: (stateContext) => stateContext.setType('SEARCH_FOCUSED'),
-
             FRAGMENT_LOADED: (stateContext) => stateContext.setType('FRAGMENT_LOADED'),
-
             NO_OP: (stateContext) => stateContext.setType('NO_OP')
         },
 
         editing: {
-            KEY_DOWN: (stateContext) => {
-                const context = stateContext.context || new StateContext();
-                context.key = stateContext.key;
-                context.metaKey = stateContext.metaKey;
-                context.shiftKey = stateContext.shiftKey;
-
-                return stateContext.setType('KEY_DOWN').setContext(context);
-            },
-
-            NOTE_CONTENT_CLICKED: (stateContext) => {
-                if (!stateContext) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing event');
-                }
-
-                if (!stateContext.noteId) {
-                    throw new Error('Note content click missing note ID');
-                }
-
-                return stateContext.setType('NOTE_CONTENT_CLICKED').setNoteId(stateContext.noteId);
-            },
-
-            NOTE_CONTENT_CHANGED: (stateContext) => {
-                return stateContext
-                    .setType('NOTE_CONTENT_CHANGED')
-                    .setNoteId(stateContext.noteId)
-                    .setContent(stateContext.content);
-            },
-
+            KEY_DOWN: (stateContext) => stateContext.setType('KEY_DOWN'),
+            NOTE_CONTENT_CLICKED: (stateContext) => stateContext.setType('NOTE_CONTENT_CLICKED'),
+            NOTE_CONTENT_CHANGED: (stateContext) => stateContext.setType('NOTE_CONTENT_CHANGED'),
             CLICKED_OUTSIDE_NOTE: (stateContext) => stateContext.setType('CLICKED_OUTSIDE_NOTE'),
-
             SEARCH_FOCUSED: (stateContext) => stateContext.setType('SEARCH_FOCUSED'),
-
             FRAGMENT_LOADED: (stateContext) => stateContext.setType('FRAGMENT_LOADED'),
-
             NO_OP: (stateContext) => stateContext.setType('NO_OP')
         },
 
         searching: {
-            KEY_DOWN: (stateContext) => stateContext
-                .setType('KEY_DOWN')
-                .setKey(stateContext.key)
-                .setMetaKey(stateContext.metaKey)
-                .setShiftKey(stateContext.shiftKey),
-
-            NOTE_CONTENT_CLICKED: (stateContext) => {
-                if (!stateContext) {
-                    throw new Error('NOTE_CONTENT_CLICKED missing event');
-                }
-
-                if (!stateContext.noteId) {
-                    throw new Error('Note content click missing note ID');
-                }
-
-                return stateContext
-                    .setType('NOTE_CONTENT_CLICKED')
-                    .setNoteId(stateContext.noteId)
-                    .setCoordinates(stateContext.coordinates)
-                    .setLastSavedContent(stateContext.lastSavedContent);
-            },
-
-            NOTE_CONTENT_CHANGED: (stateContext) => {
-                return stateContext
-                    .setType('NOTE_CONTENT_CHANGED')
-                    .setNoteId(stateContext.noteId)
-                    .setContent(stateContext.content);
-            },
-
+            KEY_DOWN: (stateContext) => stateContext.setType('KEY_DOWN'),
+            NOTE_CONTENT_CLICKED: (stateContext) => stateContext.setType('NOTE_CONTENT_CLICKED'),
             CLICKED_OUTSIDE_NOTE: (stateContext) => stateContext.setType('CLICKED_OUTSIDE_NOTE'),
-
             SEARCH_FOCUSED: (stateContext) => stateContext.setType('SEARCH_FOCUSED'),
-
             FRAGMENT_LOADED: (stateContext) => stateContext.setType('FRAGMENT_LOADED'),
-
             NO_OP: (stateContext) => stateContext.setType('NO_OP')
         }
     },
@@ -169,7 +73,7 @@ export const EventMapper = {
         // Get handler for current state and event type
         const handler = this.handlers[currentState]?.[stateContext.type];
         if (!handler) {
-            return stateContext.setType('NO_OP');
+            throw new Error(`No handler for event '${stateContext.type}' in state '${currentState}'`);
         }
 
         // Map raw event to state machine event

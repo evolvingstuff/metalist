@@ -245,13 +245,25 @@ export const DOMUtils = {
 
     /**
      * Get note content HTML
+     * @returns {string} The note's content HTML
+     * @throws {Error} If note content element is missing or invalid
      */
     getNoteContentHTML(noteElement) {
-        const content = this.getNoteContent(noteElement);
-        if (!content) {
+        if (!noteElement) {
+            throw new Error('Note element is required');
+        }
+        const contentElement = this.getNoteContent(noteElement);
+        if (!contentElement) {
             throw new Error('Note missing content element');
         }
-        return content.innerHTML;
+        if (!(contentElement instanceof HTMLElement)) {
+            throw new Error('Invalid content element type');
+        }
+        const html = contentElement.innerHTML;
+        if (typeof html !== 'string') {
+            throw new Error('Note content must be string');
+        }
+        return html;
     },
 
     /**
