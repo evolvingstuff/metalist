@@ -194,7 +194,8 @@ body {
 }
 
 .note.editing {
-    background-color: var(--editing-bg);
+    background-color: rgba(0, 255, 0, 0.05);  /* Very subtle green */
+    border-left: 2px solid rgba(0, 255, 0, 0.2);  /* Slightly more visible indicator */
 }
 
 .trash-can {

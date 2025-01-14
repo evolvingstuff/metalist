@@ -109,11 +109,11 @@ export const editingTransitions = {
             }
 
             case 'NOTE_CONTENT_CLICKED': {
-                const noteId = StateMachine.currentStateContext.getNoteId();
+                const currentNoteId = StateMachine.currentStateContext.getNoteId();
                 const clickedNoteId = StateMachine.currentStateContext.getClickedNoteId();
 
-                // If clicking different note and inactive, switch to it
-                if (noteId !== clickedNoteId && StateMachine.currentStateContext.isInactive()) {
+                // If clicking different note, switch to it
+                if (currentNoteId !== clickedNoteId) {
                     const noteElement = DOMUtils.getNoteById(clickedNoteId);
                     if (!noteElement) {
                         throw new Error('Note element not found');
@@ -121,10 +121,9 @@ export const editingTransitions = {
 
                     const content = DOMUtils.getNoteContentHTML(noteElement);
                     StateMachine.currentStateContext
-                        .setType('NOTE_CONTENT_CLICKED')
                         .setNoteId(clickedNoteId)
                         .setLastSavedContent(content)
-                        .setCoordinates(StateMachine.currentStateContext.coordinates);
+                        .setTargetState('editing');  
                 }
                 break;
             }

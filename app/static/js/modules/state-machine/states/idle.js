@@ -60,24 +60,23 @@ export const idleTransitions = {
 
         switch (eventType) {
             case 'NOTE_CONTENT_CLICKED': {
-                const noteId = StateMachine.currentStateContext.getNoteId();
-                if (!noteId) {
+                const clickedNoteId = StateMachine.currentStateContext.getClickedNoteId();
+                if (!clickedNoteId) {
                     throw new Error('Note click missing note ID');
                 }
                 
-                const noteElement = DOMUtils.getNoteById(noteId);
+                const noteElement = DOMUtils.getNoteById(clickedNoteId);
                 if (!noteElement) {
                     throw new Error('Note element not found');
                 }
                 
-                const content = DOMUtils.getNoteContent(noteElement);
+                const content = DOMUtils.getNoteContentHTML(noteElement);
 
                 // Request transition to editing
                 StateMachine.currentStateContext
                     .setType('START_EDITING')
-                    .setNoteId(noteId)
+                    .setNoteId(clickedNoteId)
                     .setLastSavedContent(content)
-                    .setCoordinates(StateMachine.currentStateContext.coordinates)
                     .setTargetState('editing');
                 break;
             }

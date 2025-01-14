@@ -108,10 +108,9 @@ export const RawEvents = {
         
         StateMachine.currentStateContext
             .setType('NOTE_CONTENT_CLICKED')
-            .setNoteId(noteId)
+            .setClickedNoteId(noteId)  // Only set which note was clicked
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY })
-            .setLastSavedContent(content)
-            .setCursorOffset(cursorOffset);
+            .setCursorOffset(cursorOffset);  // Pass the cursor position from click
     },
 
     handleSearchClick(domEvent) {
