@@ -1,5 +1,6 @@
 # TODO
 
+* reenable timeout save of note content
 * synch between browser windows
 * search
 * differential updates
