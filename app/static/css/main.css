@@ -82,6 +82,7 @@ body {
 
 .note.editing {
     border-color: #999;  /* Keep the darker border for editing */
+    background-color: rgba(0, 255, 0, 0.05);  /* Very subtle green */
 }
 
 .drag-handle {
@@ -191,11 +192,6 @@ body {
     padding: 0.5rem 1rem;
     border-radius: 4px;
     cursor: pointer;
-}
-
-.note.editing {
-    background-color: rgba(0, 255, 0, 0.05);  /* Very subtle green */
-    border-left: 2px solid rgba(0, 255, 0, 0.2);  /* Slightly more visible indicator */
 }
 
 .trash-can {
