@@ -160,19 +160,25 @@ export const editingTransitions = {
 
                     if (shiftKey) {
                         // Shift+Cmd+Enter: Create child note
-                        const noteId = await NotesAPI.createChildNote(currentNoteId);
+                        const data = await NotesAPI.createChild(currentNoteId);
+                        if (!data?.id) {
+                            throw new Error('Invalid API response: missing note ID');
+                        }
                         // Switch to new note
                         StateMachine.currentStateContext
                             .setType('NOTE_CONTENT_CLICKED')
-                            .setNoteId(noteId)
+                            .setNoteId(data.id)
                             .setLastSavedContent('');
                     } else {
                         // Cmd+Enter: Create sibling note below
-                        const noteId = await NotesAPI.createSiblingNote(currentNoteId);
+                        const data = await NotesAPI.createSibling(currentNoteId);
+                        if (!data?.id) {
+                            throw new Error('Invalid API response: missing note ID');
+                        }
                         // Switch to new note
                         StateMachine.currentStateContext
                             .setType('NOTE_CONTENT_CLICKED')
-                            .setNoteId(noteId)
+                            .setNoteId(data.id)
                             .setLastSavedContent('');
                     }
                 }
