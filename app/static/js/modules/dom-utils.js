@@ -85,18 +85,22 @@ export const DOMUtils = {
     },
 
     /**
-     * Focus a note's content and place cursor at end
+     * Focus a note's content and set cursor position
+     * @param {HTMLElement} noteElement - The note element to focus
+     * @param {number} cursorOffset - Integer offset from start of content where cursor should be placed
+     * @throws {Error} If note content element not found or cursor offset invalid
      */
-    focusNote(noteElement) {
-        if (!noteElement) {
-            throw new Error('Note element is required');
+    focusNote(noteElement, cursorOffset) {
+        const contentElement = this.getNoteContent(noteElement);
+        if (!contentElement) {
+            throw new Error('Note content element not found');
         }
-        const content = this.getNoteContent(noteElement);
-        if (!content) {
-            throw new Error('Note missing content element');
+        if (typeof cursorOffset !== 'number' || !Number.isInteger(cursorOffset)) {
+            throw new Error('Cursor offset must be an integer');
         }
-        content.focus();
-        this.setCursorOffset(noteElement, content.textContent?.length || 0);
+
+        contentElement.focus();
+        this.setCursorOffset(noteElement, cursorOffset);
     },
 
     /**

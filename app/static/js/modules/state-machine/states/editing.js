@@ -123,6 +123,7 @@ export const editingTransitions = {
                     StateMachine.currentStateContext
                         .setNoteId(clickedNoteId)
                         .setLastSavedContent(content)
+                        .setCursorOffset(StateMachine.currentStateContext.getCursorOffset())  // Keep cursor position from click
                         .setTargetState('editing');  
                 }
                 break;
