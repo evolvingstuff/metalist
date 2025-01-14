@@ -258,7 +258,7 @@ def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depe
         notes = build_tree(None)
         html = template.render(notes=notes)
         
-        return {"data": {"html": html}}
+        return {"html": html}
     except Exception as e:
         logger.exception("Error in fragment endpoint")
         raise
