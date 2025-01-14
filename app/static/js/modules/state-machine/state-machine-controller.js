@@ -250,8 +250,8 @@ export const StateMachine = {
 
         // Trigger fragment render
         console.log('🔄 Updating fragment (state-machine-controller)');
-        const data = await NotesAPI.getFragment();
-        if (!data?.html) {
+        const html = await NotesAPI.getFragment();
+        if (!html) {
             throw new Error('Invalid fragment: missing HTML');
         }
 
@@ -260,11 +260,11 @@ export const StateMachine = {
         if (!notesContainer) {
             throw new Error('Notes container not found');
         }
-        if (typeof data.html !== 'string') {
+        if (typeof html !== 'string') {
             throw new Error('Invalid fragment HTML type');
         }
 
-        notesContainer.innerHTML = data.html;
+        notesContainer.innerHTML = html;
         console.log('✅ Fragment updated (state-machine-controller)');
 
         // Update state
