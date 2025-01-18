@@ -87,8 +87,8 @@ export const editingTransitions = {
         const currentContent = DOMUtils.getNoteContentHTML(noteElement);
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
         if (currentContent !== lastSavedContent) {
-            // Queue update effect - fire and forget
-            StateMachine.currentStateContext.addEffect(new UpdateNoteEffect(noteId, currentContent));
+            // Use SaveNoteEffect to ensure save completes before transition
+            StateMachine.currentStateContext.addEffect(new SaveNoteEffect(noteId, currentContent));
         }
 
         // Make current note non-editable
@@ -113,7 +113,10 @@ export const editingTransitions = {
 
         switch (eventType) {
             case 'CLICKED_OUTSIDE_NOTE': {
-                StateMachine.currentStateContext.setTargetState('idle');
+                // Ensure proper exit by setting both type and target state
+                StateMachine.currentStateContext
+                    .setType('CLICKED_OUTSIDE_NOTE')
+                    .setTargetState('idle');
                 break;
             }
 
