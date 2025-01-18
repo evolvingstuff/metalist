@@ -284,12 +284,9 @@ export class StateContext {
 
     /**
      * Get coordinates
-     * @throws {Error} If coordinates is not set
+     * @returns {Object|null} Coordinates if set, null otherwise
      */
     getCoordinates() {
-        if (!this.coordinates) {
-            throw new Error('Coordinates not set');
-        }
         return this.coordinates;
     }
 
