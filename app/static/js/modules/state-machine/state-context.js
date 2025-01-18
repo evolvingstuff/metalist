@@ -48,6 +48,7 @@ export class StateContext {
         this.shiftKey = false;       // Shift key pressed
         this.query = null;           // Search query
         this.effects = [];           // Effects to run during transition
+        this.phase = null;           // Current transition phase
 
         // Bind methods to instance
         this.setType = this.setType.bind(this);
@@ -78,12 +79,16 @@ export class StateContext {
         this.resetKey = this.resetKey.bind(this);
         this.resetMetaKey = this.resetMetaKey.bind(this);
         this.resetShiftKey = this.resetShiftKey.bind(this);
+        this.getPhase = this.getPhase.bind(this);
+        this.setPhase = this.setPhase.bind(this);
+        this.validatePhase = this.validatePhase.bind(this);
     }
 
     /**
      * Set event type with validation
      */
     setType(type) {
+        this.validatePhase(['event']);  // Only set type during initial event
         if (!type) {
             throw new Error('Event type is required');
         }
@@ -99,6 +104,7 @@ export class StateContext {
      * @throws {Error} If type is not set
      */
     getType() {
+        this.validatePhase(['event', 'effects']);  // Need type during event handling and effects
         if (!this.type) {
             throw new Error('Event type not set');
         }
@@ -132,6 +138,7 @@ export class StateContext {
      * @throws {Error} If currentState is not set
      */
     getCurrentState() {
+        this.validatePhase(['event', 'exiting', 'effects', 'transition', 'render', 'entering']);  // Can read current state in all phases
         if (!this.currentState) {
             throw new Error('Current state not set');
         }
@@ -150,6 +157,7 @@ export class StateContext {
      * Set target state with validation
      */
     setTargetState(state) {
+        this.validatePhase(['event', 'effects']);  // Can set target during event or effects
         if (!state) {
             throw new Error('Target state is required');
         }
@@ -165,6 +173,7 @@ export class StateContext {
      * @throws {Error} If targetState is not set
      */
     getTargetState() {
+        this.validatePhase(['event', 'effects', 'transition', 'entering']);  // Need target during event handling
         // target state CAN be null; indicates no transition
         return this.targetState;
     }
@@ -181,6 +190,7 @@ export class StateContext {
      * Set note ID with validation
      */
     setNoteId(noteId) {
+        this.validatePhase(['transition']);  // Can only set current note during transition
         if (!noteId) {
             throw new Error('Note ID is required');
         }
@@ -196,6 +206,7 @@ export class StateContext {
      * @returns {string|null} Note ID if set, null otherwise
      */
     getNoteId() {
+        this.validatePhase(['event', 'exiting', 'effects', 'transition', 'render', 'entering']);  // Can read current note in all phases
         return this.noteId;
     }
 
@@ -210,14 +221,15 @@ export class StateContext {
     /**
      * Set target note ID with validation
      */
-    setTargetNoteId(noteId) {
-        if (!noteId) {
+    setTargetNoteId(targetNoteId) {
+        this.validatePhase(['event']);  // Can set target during event or effects
+        if (!targetNoteId) {
             throw new Error('Target note ID is required');
         }
-        if (typeof noteId !== 'string') {
+        if (typeof targetNoteId !== 'string') {
             throw new Error('Target note ID must be a string');
         }
-        this.targetNoteId = noteId;
+        this.targetNoteId = targetNoteId;
         return this;
     }
 
@@ -226,6 +238,7 @@ export class StateContext {
      * @returns {string|null} Target note ID if set, null otherwise
      */
     getTargetNoteId() {
+        this.validatePhase(['event', 'effects', 'transition']);  // Need target during event handling too
         return this.targetNoteId;
     }
 
@@ -272,11 +285,12 @@ export class StateContext {
      * Set click coordinates with validation
      */
     setCoordinates(coordinates) {
-        if (!coordinates) {
-            throw new Error('Coordinates are required');
+        this.validatePhase(['event']);  // Only set coordinates during event phase
+        if (!coordinates || typeof coordinates !== 'object') {
+            throw new Error('Coordinates must be an object');
         }
         if (typeof coordinates.x !== 'number' || typeof coordinates.y !== 'number') {
-            throw new Error('Invalid coordinates');
+            throw new Error('Coordinates must have numeric x and y values');
         }
         this.coordinates = coordinates;
         return this;
@@ -350,6 +364,7 @@ export class StateContext {
      * @throws {Error} If lastSavedContent is not set
      */
     getLastSavedContent() {
+        this.validatePhase(['event', 'exiting', 'effects']);  // Only need content during these phases
         if (this.lastSavedContent === null || this.lastSavedContent === undefined) {
             throw new Error('Last saved content not set');
         }
@@ -368,8 +383,9 @@ export class StateContext {
      * Set search query with validation
      */
     setQuery(query) {
-        if (query !== null && typeof query !== 'string') {
-            throw new Error('Search query must be a string or null');
+        this.validatePhase(['event']);  // Only set query during event phase
+        if (typeof query !== 'string') {
+            throw new Error('Query must be a string');
         }
         this.query = query;
         return this;
@@ -398,6 +414,7 @@ export class StateContext {
      * Set keyboard key with validation
      */
     setKey(key) {
+        this.validatePhase(['event']);  // Only set key during event phase
         if (!key) {
             throw new Error('Key is required');
         }
@@ -431,6 +448,7 @@ export class StateContext {
      * Set meta key state
      */
     setMetaKey(metaKey) {
+        this.validatePhase(['event']);  // Only set meta key during event phase
         this.metaKey = Boolean(metaKey);
         return this;
     }
@@ -454,6 +472,7 @@ export class StateContext {
      * Set shift key state
      */
     setShiftKey(shiftKey) {
+        this.validatePhase(['event']);  // Only set shift key during event phase
         this.shiftKey = Boolean(shiftKey);
         return this;
     }
@@ -496,7 +515,42 @@ export class StateContext {
      * Get effects array
      */
     getEffects() {
+        this.validatePhase(['event', 'effects']);  // Can read effects during event handling too
         return this.effects;
+    }
+
+    /**
+     * Get current phase
+     * @returns {string|null} Current phase if set, null otherwise
+     */
+    getPhase() {
+        return this.phase;
+    }
+
+    /**
+     * Set current phase
+     * @param {string} phase - Must be one of: 'event', 'exiting', 'effects', 'transition', 'render', 'entering'
+     * @throws {Error} If phase is invalid
+     */
+    setPhase(phase) {
+        const validPhases = ['event', 'exiting', 'effects', 'transition', 'render', 'entering'];
+        if (!validPhases.includes(phase)) {
+            throw new Error(`Invalid phase: ${phase}. Must be one of: ${validPhases.join(', ')}`);
+        }
+        console.log(`🔄 Phase: ${this.phase || 'null'} -> ${phase}`);
+        this.phase = phase;
+        return this;
+    }
+
+    /**
+     * Validate that we're in one of the allowed phases for state access
+     * @param {Array<string>} allowedPhases - Phases where this access is allowed
+     * @throws {Error} If current phase isn't in allowedPhases
+     */
+    validatePhase(allowedPhases) {
+        if (!allowedPhases.includes(this.phase)) {
+            throw new Error(`Invalid state access in phase ${this.phase}. Only allowed in: ${allowedPhases.join(', ')}`);
+        }
     }
 
     /**

@@ -127,6 +127,9 @@ export const StateMachine = {
             throw new Error('DOM event is required');
         }
 
+        // Set event phase BEFORE any state changes
+        this.currentStateContext.setPhase('event');
+
         // Clear event-specific state
         this.currentStateContext
             .resetKey()
@@ -237,10 +240,12 @@ export const StateMachine = {
 
         // Run exit handler for current state - needs current noteId
         if (exitHandler?.exit) {
+            this.currentStateContext.setPhase('exiting');
             await exitHandler.exit();
         }
 
         // Run all queued effects - needs current noteId
+        this.currentStateContext.setPhase('effects');
         const effects = this.currentStateContext.getEffects();
         console.log('🔄 Running effects:', effects.map(e => e.constructor.name));
         for (const effect of effects) {
@@ -251,6 +256,9 @@ export const StateMachine = {
         // Cache the target note ID before any resets
         const targetNoteId = this.currentStateContext.getTargetNoteId();
         
+        // Set phase to transition before ID updates
+        this.currentStateContext.setPhase('transition');
+
         // NOW safe to reset and update IDs since exit and effects are done
         this.currentStateContext.resetNoteId();  // Always start fresh
         this.currentStateContext.resetTargetNoteId();
@@ -280,12 +288,14 @@ export const StateMachine = {
         // Update state
         this.state = targetState;
 
-        // Run enter handler for new state
+        // Run enter handler for target state
         if (enterHandler?.enter) {
-            console.log('🔄 Running enter handler for:', targetState);
+            this.currentStateContext.setPhase('entering');
             await enterHandler.enter();
-            console.log('✅ Enter handler complete');
         }
+
+        // Reset phase to event for next event
+        this.currentStateContext.setPhase('event');
 
         // Reset target state
         this.currentStateContext.resetTargetState();

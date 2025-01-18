@@ -194,23 +194,8 @@ export const RawEvents = {
             throw new Error('Input missing event');
         }
 
-        StateMachine.resetOnNewEvent();
-
-        if (DOMUtils.isNoteContent(domEvent.target)) {
-            const noteElement = DOMUtils.findNoteElement(domEvent.target);
-            if (!noteElement) {
-                throw new Error('Could not find parent note element');
-            }
-
-            const noteId = DOMUtils.getNoteId(noteElement);
-            if (!noteId) {
-                throw new Error('Note element missing ID');
-            }
-
-            StateMachine.currentStateContext
-                .setType('NOTE_CONTENT_CHANGED')
-                .setNoteId(noteId);
-        }
+        StateMachine.currentStateContext
+            .setType('NOTE_CONTENT_CHANGED');
     },
 
     handleSearchInput(domEvent) {
