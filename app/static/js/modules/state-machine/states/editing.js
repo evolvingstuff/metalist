@@ -3,6 +3,7 @@ import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
 import { StateMachine } from '../state-machine-controller.js';
 import { CONFIG } from '../../config.js';
+import { CreateChildEffect, CreateSiblingEffect, UpdateNoteEffect, SaveNoteEffect } from '../effects.js';
 
 /**
  * Editing State
@@ -78,8 +79,8 @@ export const editingTransitions = {
         const currentContent = DOMUtils.getNoteContentHTML(noteElement);
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
         if (currentContent !== lastSavedContent) {
-            await NotesAPI.updateNote(noteId, currentContent);
-            StateMachine.currentStateContext.setLastSavedContent(currentContent);
+            // Queue update effect - fire and forget
+            StateMachine.currentStateContext.addEffect(new UpdateNoteEffect(noteId, currentContent));
         }
 
         // Make current note non-editable
@@ -160,26 +161,16 @@ export const editingTransitions = {
 
                     if (shiftKey) {
                         // Shift+Cmd+Enter: Create child note
-                        const data = await NotesAPI.createChild(currentNoteId);
-                        if (!data?.id) {
-                            throw new Error('Invalid API response: missing note ID');
-                        }
-                        // Switch to new note
                         StateMachine.currentStateContext
+                            .addEffect(new CreateChildEffect(currentNoteId))
                             .setType('NOTE_CONTENT_CLICKED')
-                            .setNoteId(data.id)
-                            .setLastSavedContent('');
+                            .setTargetState('editing');
                     } else {
                         // Cmd+Enter: Create sibling note below
-                        const data = await NotesAPI.createSibling(currentNoteId);
-                        if (!data?.id) {
-                            throw new Error('Invalid API response: missing note ID');
-                        }
-                        // Switch to new note
                         StateMachine.currentStateContext
+                            .addEffect(new CreateSiblingEffect(currentNoteId))
                             .setType('NOTE_CONTENT_CLICKED')
-                            .setNoteId(data.id)
-                            .setLastSavedContent('');
+                            .setTargetState('editing');
                     }
                 }
                 break;
