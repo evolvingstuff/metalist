@@ -108,7 +108,7 @@ export const RawEvents = {
         
         StateMachine.currentStateContext
             .setType('NOTE_CONTENT_CLICKED')
-            .setClickedNoteId(noteId)  // Only set which note was clicked
+            .setTargetNoteId(noteId)  // Set target note for transition
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY })
             .setCursorOffset(cursorOffset);  // Pass the cursor position from click
     },

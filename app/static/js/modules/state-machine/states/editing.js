@@ -38,6 +38,30 @@ export const editingTransitions = {
             throw new Error('Invalid state context');
         }
 
+        // If we have a target note, switch to it
+        const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
+        if (targetNoteId) {
+            const targetElement = DOMUtils.getNoteById(targetNoteId);
+            if (!targetElement) {
+                throw new Error('Target note element not found');
+            }
+
+            const content = DOMUtils.getNoteContentHTML(targetElement);
+            const coordinates = StateMachine.currentStateContext.getCoordinates();
+            const cursorOffset = coordinates ? 
+                DOMUtils.getCursorOffsetFromClick(targetElement, coordinates) :
+                0;
+
+            // Now safe to switch to target note
+            StateMachine.currentStateContext
+                .setNoteId(targetNoteId)
+                .setLastSavedContent(content)
+                .setCursorOffset(cursorOffset)
+                .resetTargetNoteId()
+                .resetCoordinates();
+        }
+
+        // Validate we have a note ID (either existing or from target)
         const noteId = StateMachine.currentStateContext.getNoteId();
         if (!noteId) {
             throw new Error('Note ID not set');
@@ -86,6 +110,15 @@ export const editingTransitions = {
         // Compare current content with last saved
         const currentContent = DOMUtils.getNoteContentHTML(noteElement);
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
+        console.log(' Exit content comparison:', {
+            noteId,
+            currentLength: currentContent.length,
+            lastSavedLength: lastSavedContent.length,
+            current: currentContent.slice(0, 50) + '...',
+            lastSaved: lastSavedContent.slice(0, 50) + '...',
+            equal: currentContent === lastSavedContent
+        });
+
         if (currentContent !== lastSavedContent) {
             // Use SaveNoteEffect to ensure save completes before transition
             StateMachine.currentStateContext.addEffect(new SaveNoteEffect(noteId, currentContent));
@@ -131,18 +164,18 @@ export const editingTransitions = {
                 });
 
                 const currentNoteId = StateMachine.currentStateContext.getNoteId();
-                const clickedNoteId = StateMachine.currentStateContext.getClickedNoteId();
+                const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
 
                 // If clicking different note, switch to it
-                if (currentNoteId !== clickedNoteId) {
-                    const noteElement = DOMUtils.getNoteById(clickedNoteId);
+                if (currentNoteId !== targetNoteId) {
+                    const noteElement = DOMUtils.getNoteById(targetNoteId);
                     if (!noteElement) {
                         throw new Error('Note element not found');
                     }
 
                     const content = DOMUtils.getNoteContentHTML(noteElement);
                     console.log('Switching to note:', {
-                        noteId: clickedNoteId,
+                        noteId: targetNoteId,
                         contentLength: content.length,
                         cursorOffset: StateMachine.currentStateContext.getCursorOffset()
                     });
@@ -151,11 +184,11 @@ export const editingTransitions = {
                     const clickCoordinates = StateMachine.currentStateContext.getCoordinates();
                     const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, clickCoordinates);
 
+                    // Transition to editing state (triggers exit handler)
                     StateMachine.currentStateContext
-                        .setNoteId(clickedNoteId)
-                        .setLastSavedContent(content)
-                        .setCursorOffset(cursorOffset)  // Use cursor offset from click
-                        .setTargetState('editing');  
+                        .setTargetNoteId(targetNoteId)
+                        .setCursorOffset(cursorOffset)
+                        .setTargetState('editing');
                 }
                 break;
             }

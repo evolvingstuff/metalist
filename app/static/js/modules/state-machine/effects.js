@@ -166,6 +166,15 @@ export class SaveNoteEffect extends Effect {
     async execute() {
         // Skip if content hasn't changed
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
+        console.log(' SaveNoteEffect comparison:', {
+            noteId: this.noteId,
+            contentLength: this.content.length,
+            lastSavedLength: lastSavedContent.length,
+            content: this.content.slice(0, 50) + '...',
+            lastSaved: lastSavedContent.slice(0, 50) + '...',
+            equal: this.content === lastSavedContent
+        });
+
         if (this.content === lastSavedContent) {
             console.log(' Note unchanged, skipping save:', this.noteId);
             return;

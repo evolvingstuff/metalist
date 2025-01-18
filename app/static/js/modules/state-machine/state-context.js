@@ -38,7 +38,7 @@ export class StateContext {
         this.currentState = null;    // Current state machine state
         this.targetState = null;     // Target state for transitions
         this.noteId = null;          // ID of current note
-        this.clickedNoteId = null;   // ID of clicked note
+        this.targetNoteId = null;    // ID of note to switch to after transition
         this.cursorOffset = null;    // Cursor offset from start of note
         this.coordinates = null;      // Click coordinates for cursor positioning
         this.activityMonitor = null; // Activity tracking
@@ -54,7 +54,7 @@ export class StateContext {
         this.setCurrentState = this.setCurrentState.bind(this);
         this.setTargetState = this.setTargetState.bind(this);
         this.setNoteId = this.setNoteId.bind(this);
-        this.setClickedNoteId = this.setClickedNoteId.bind(this);
+        this.setTargetNoteId = this.setTargetNoteId.bind(this);
         this.setCursorOffset = this.setCursorOffset.bind(this);
         this.setCoordinates = this.setCoordinates.bind(this);
         this.setActivityMonitor = this.setActivityMonitor.bind(this);
@@ -69,7 +69,7 @@ export class StateContext {
         this.resetCurrentState = this.resetCurrentState.bind(this);
         this.resetTargetState = this.resetTargetState.bind(this);
         this.resetNoteId = this.resetNoteId.bind(this);
-        this.resetClickedNoteId = this.resetClickedNoteId.bind(this);
+        this.resetTargetNoteId = this.resetTargetNoteId.bind(this);
         this.resetCursorOffset = this.resetCursorOffset.bind(this);
         this.resetCoordinates = this.resetCoordinates.bind(this);
         this.resetActivityMonitor = this.resetActivityMonitor.bind(this);
@@ -208,35 +208,35 @@ export class StateContext {
     }
 
     /**
-     * Set clicked note ID with validation
+     * Set target note ID with validation
      */
-    setClickedNoteId(noteId) {
+    setTargetNoteId(noteId) {
         if (!noteId) {
-            throw new Error('Clicked note ID is required');
+            throw new Error('Target note ID is required');
         }
         if (typeof noteId !== 'string') {
-            throw new Error('Clicked note ID must be a string');
+            throw new Error('Target note ID must be a string');
         }
-        this.clickedNoteId = noteId;
+        this.targetNoteId = noteId;
         return this;
     }
 
     /**
-     * Get clicked note ID
-     * @throws {Error} If clickedNoteId is not set
+     * Get target note ID
+     * @throws {Error} If targetNoteId is not set
      */
-    getClickedNoteId() {
-        if (!this.clickedNoteId) {
-            throw new Error('Clicked note ID not set');
+    getTargetNoteId() {
+        if (!this.targetNoteId) {
+            throw new Error('Target note ID not set');
         }
-        return this.clickedNoteId;
+        return this.targetNoteId;
     }
 
     /**
-     * Reset clicked note ID
+     * Reset target note ID
      */
-    resetClickedNoteId() {
-        this.clickedNoteId = null;
+    resetTargetNoteId() {
+        this.targetNoteId = null;
         return this;
     }
 

@@ -33,8 +33,10 @@ export const idleTransitions = {
         // Clear all note-related state
         StateMachine.currentStateContext
             .resetNoteId()
+            .resetTargetNoteId()
             .resetLastSavedContent()
             .resetCursorOffset()
+            .resetCoordinates()
             .resetActivityMonitor();
     },
 
@@ -60,12 +62,12 @@ export const idleTransitions = {
 
         switch (eventType) {
             case 'NOTE_CONTENT_CLICKED': {
-                const clickedNoteId = StateMachine.currentStateContext.getClickedNoteId();
-                if (!clickedNoteId) {
+                const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
+                if (!targetNoteId) {
                     throw new Error('Note click missing note ID');
                 }
                 
-                const noteElement = DOMUtils.getNoteById(clickedNoteId);
+                const noteElement = DOMUtils.getNoteById(targetNoteId);
                 if (!noteElement) {
                     throw new Error('Note element not found');
                 }
@@ -75,7 +77,7 @@ export const idleTransitions = {
                 // Request transition to editing
                 StateMachine.currentStateContext
                     .setType('START_EDITING')
-                    .setNoteId(clickedNoteId)
+                    .setNoteId(targetNoteId)
                     .setLastSavedContent(content)
                     .setCursorOffset(StateMachine.currentStateContext.getCursorOffset())  // Keep cursor position from click
                     .setTargetState('editing');
