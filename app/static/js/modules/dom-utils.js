@@ -99,6 +99,11 @@ export const DOMUtils = {
             throw new Error('Cursor offset must be an integer');
         }
 
+        // For empty notes, ensure there's a text node
+        if (!contentElement.firstChild) {
+            contentElement.appendChild(document.createTextNode(''));
+        }
+
         contentElement.focus();
         this.setCursorOffset(noteElement, cursorOffset);
     },
