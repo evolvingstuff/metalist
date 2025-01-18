@@ -123,8 +123,11 @@ export const editingTransitions = {
             case 'NOTE_CONTENT_CLICKED': {
                 const noteElement = DOMUtils.getNoteById(StateMachine.currentStateContext.getNoteId());
                 const contentElement = DOMUtils.getNoteContent(noteElement);
-                console.log('Note content clicked:', {
-                    innerHTML: contentElement.innerHTML
+                const currentContent = DOMUtils.getNoteContentHTML(noteElement);
+                console.log('Current note state:', {
+                    noteId: StateMachine.currentStateContext.getNoteId(),
+                    contentLength: currentContent.length,
+                    cursorOffset: StateMachine.currentStateContext.getCursorOffset()
                 });
 
                 const currentNoteId = StateMachine.currentStateContext.getNoteId();
@@ -138,10 +141,20 @@ export const editingTransitions = {
                     }
 
                     const content = DOMUtils.getNoteContentHTML(noteElement);
+                    console.log('Switching to note:', {
+                        noteId: clickedNoteId,
+                        contentLength: content.length,
+                        cursorOffset: StateMachine.currentStateContext.getCursorOffset()
+                    });
+
+                    // Get cursor offset from click coordinates
+                    const clickCoordinates = StateMachine.currentStateContext.getCoordinates();
+                    const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, clickCoordinates);
+
                     StateMachine.currentStateContext
                         .setNoteId(clickedNoteId)
                         .setLastSavedContent(content)
-                        .setCursorOffset(StateMachine.currentStateContext.getCursorOffset())  // Keep cursor position from click
+                        .setCursorOffset(cursorOffset)  // Use cursor offset from click
                         .setTargetState('editing');  
                 }
                 break;

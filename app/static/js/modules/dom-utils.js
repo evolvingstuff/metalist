@@ -170,9 +170,14 @@ export const DOMUtils = {
         let targetNode = null;
         let localOffset = 0;
 
+        // Create a tree walker to traverse the DOM
+        // IMPORTANT: We need both SHOW_TEXT and SHOW_ELEMENT because:
+        // 1. Note content can be nested in elements (e.g. <div>some text</div>)
+        // 2. Without SHOW_ELEMENT, we can't traverse into nested elements
+        // 3. This ensures cursor positioning works for both plain text and rich content
         const walk = document.createTreeWalker(
             content,
-            NodeFilter.SHOW_TEXT,
+            NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
             null,
             false
         );
