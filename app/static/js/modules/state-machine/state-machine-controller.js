@@ -235,12 +235,12 @@ export const StateMachine = {
             context: this.currentStateContext
         });
 
-        // Run exit handler for current state
+        // Run exit handler for current state - needs current noteId
         if (exitHandler?.exit) {
             await exitHandler.exit();
         }
 
-        // Run all queued effects
+        // Run all queued effects - needs current noteId
         const effects = this.currentStateContext.getEffects();
         console.log('🔄 Running effects:', effects.map(e => e.constructor.name));
         for (const effect of effects) {
@@ -248,9 +248,19 @@ export const StateMachine = {
         }
         this.currentStateContext.resetEffects();
 
-        // Trigger fragment render
+        // Cache the target note ID before any resets
+        const targetNoteId = this.currentStateContext.getTargetNoteId();
+        
+        // NOW safe to reset and update IDs since exit and effects are done
+        this.currentStateContext.resetNoteId();  // Always start fresh
+        this.currentStateContext.resetTargetNoteId();
+        if (targetNoteId) {  // Only set if we have a target
+            this.currentStateContext.setNoteId(targetNoteId);
+        }
+
+        // Trigger fragment render with the new noteId
         console.log('🔄 Updating fragment (state-machine-controller)');
-        const html = await NotesAPI.getFragment();
+        const html = await NotesAPI.getFragment(this.currentStateContext.getNoteId());
         if (!html) {
             throw new Error('Invalid fragment: missing HTML');
         }

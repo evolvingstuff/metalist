@@ -79,7 +79,7 @@ export class CreateChildEffect extends Effect {
         console.log(' Child note created:', data.id);
         
         StateMachine.currentStateContext
-            .setNoteId(data.id)
+            .setTargetNoteId(data.id)
             .setLastSavedContent('')
             .setCursorOffset(0);  // Start cursor at beginning of empty note
     }
@@ -106,7 +106,7 @@ export class CreateSiblingEffect extends Effect {
         console.log(' Sibling note created:', data.id);
         
         StateMachine.currentStateContext
-            .setNoteId(data.id)
+            .setTargetNoteId(data.id)
             .setLastSavedContent('')
             .setCursorOffset(0);  // Start cursor at beginning of empty note
     }

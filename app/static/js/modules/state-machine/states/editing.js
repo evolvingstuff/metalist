@@ -38,39 +38,24 @@ export const editingTransitions = {
             throw new Error('Invalid state context');
         }
 
-        // If we have a target note, switch to it
-        const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
-        if (targetNoteId) {
-            const targetElement = DOMUtils.getNoteById(targetNoteId);
-            if (!targetElement) {
-                throw new Error('Target note element not found');
-            }
-
-            const content = DOMUtils.getNoteContentHTML(targetElement);
-            const coordinates = StateMachine.currentStateContext.getCoordinates();
-            const cursorOffset = coordinates ? 
-                DOMUtils.getCursorOffsetFromClick(targetElement, coordinates) :
-                0;
-
-            // Now safe to switch to target note
-            StateMachine.currentStateContext
-                .setNoteId(targetNoteId)
-                .setLastSavedContent(content)
-                .setCursorOffset(cursorOffset)
-                .resetTargetNoteId()
-                .resetCoordinates();
-        }
-
-        // Validate we have a note ID (either existing or from target)
+        // Get current note ID - should be set by transition()
         const noteId = StateMachine.currentStateContext.getNoteId();
         if (!noteId) {
             throw new Error('Note ID not set');
         }
 
-        // Make note editable
+        // Get note element
         const noteElement = DOMUtils.getNoteById(noteId);
         if (!noteElement) {
             throw new Error('Note element not found');
+        }
+
+        // Set up cursor position if we have coordinates
+        const coordinates = StateMachine.currentStateContext.getCoordinates();
+        if (coordinates) {
+            const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, coordinates);
+            StateMachine.currentStateContext.setCursorOffset(cursorOffset);
+            StateMachine.currentStateContext.resetCoordinates();
         }
 
         // Log the note content
@@ -82,9 +67,9 @@ export const editingTransitions = {
 
         // Set initial content for comparison on exit
         const content = DOMUtils.getNoteContentHTML(noteElement);
-        // For new notes, initialize with empty content to avoid comparison errors
         StateMachine.currentStateContext.setLastSavedContent(content || '');
 
+        // Make note editable and focus
         DOMUtils.setNoteEditable(noteElement, true);
         DOMUtils.focusNote(noteElement, StateMachine.currentStateContext.getCursorOffset());
 

@@ -62,6 +62,7 @@ export const idleTransitions = {
 
         switch (eventType) {
             case 'NOTE_CONTENT_CLICKED': {
+                // Validate we have all required data
                 const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
                 if (!targetNoteId) {
                     throw new Error('Note click missing note ID');
@@ -71,15 +72,20 @@ export const idleTransitions = {
                 if (!noteElement) {
                     throw new Error('Note element not found');
                 }
-                
-                const content = DOMUtils.getNoteContentHTML(noteElement);
 
-                // Request transition to editing
+                const coordinates = StateMachine.currentStateContext.getCoordinates();
+                if (!coordinates) {
+                    throw new Error('Note click missing coordinates');
+                }
+
+                const cursorOffset = StateMachine.currentStateContext.getCursorOffset();
+                if (typeof cursorOffset !== 'number') {
+                    throw new Error('Note click missing cursor offset');
+                }
+
+                // Request transition to editing - let transition() handle moving targetNoteId to noteId
                 StateMachine.currentStateContext
                     .setType('START_EDITING')
-                    .setNoteId(targetNoteId)
-                    .setLastSavedContent(content)
-                    .setCursorOffset(StateMachine.currentStateContext.getCursorOffset())  // Keep cursor position from click
                     .setTargetState('editing');
                 break;
             }
@@ -93,33 +99,49 @@ export const idleTransitions = {
             }
 
             case 'ADD_BUTTON_CLICKED': {
-                // Create new note
-                const noteId = await NotesAPI.createNote();
-                
+                // Queue create note effect and transition to editing
                 StateMachine.currentStateContext
-                    .setType('NOTE_CONTENT_CLICKED')
-                    .setNoteId(noteId)
-                    .setLastSavedContent('');
-                break;
-            }
-
-            case 'CLICKED_OUTSIDE_NOTE': {
-                // Do nothing - we're already in idle
+                    .setType('START_EDITING')
+                    .addEffect(new CreateNoteEffect())
+                    .setTargetState('editing');
                 break;
             }
 
             case 'KEY_DOWN': {
+                // Handle keyboard shortcuts
                 const key = StateMachine.currentStateContext.getKey();
-                if (key === 'Enter') {
+                if (!key) {
+                    throw new Error('Key event missing key');
+                }
+                const metaKey = StateMachine.currentStateContext.getMetaKey();
+                if (typeof metaKey !== 'boolean') {
+                    throw new Error('Key event missing meta key state');
+                }
+                const shiftKey = StateMachine.currentStateContext.getShiftKey();
+                if (typeof shiftKey !== 'boolean') {
+                    throw new Error('Key event missing shift key state');
+                }
+
+                if (metaKey && key === 'k') {
+                    // Cmd+K: Focus search
                     StateMachine.currentStateContext
+                        .setType('START_SEARCHING')
+                        .setTargetState('searching');
+                    break;
+                }
+                if (metaKey && key === 'n') {
+                    // Cmd+N: Create new note
+                    StateMachine.currentStateContext
+                        .setType('START_EDITING')
                         .addEffect(new CreateNoteEffect())
                         .setTargetState('editing');
+                    break;
                 }
                 break;
             }
 
             default:
-                throw new Error(`Unhandled event in idle state: ${eventType}`);
+                console.log('Ignoring event in idle:', eventType);
         }
     }
 }; 

@@ -223,12 +223,9 @@ export class StateContext {
 
     /**
      * Get target note ID
-     * @throws {Error} If targetNoteId is not set
+     * @returns {string|null} Target note ID if set, null otherwise
      */
     getTargetNoteId() {
-        if (!this.targetNoteId) {
-            throw new Error('Target note ID not set');
-        }
         return this.targetNoteId;
     }
 
