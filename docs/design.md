@@ -235,6 +235,43 @@ This pattern ensures:
 - Consistent state initialization
 - No race conditions between operations
 
+### Phase-Aware State Management
+The state machine enforces strict phase control over state access and mutations:
+
+1. Event Phase
+   - Raw event processing and mapping
+   - Setting event type and target state
+   - Setting target note ID (for existing notes)
+   - Reading last saved content (for activity monitoring)
+
+2. Exiting Phase
+   - Current state cleanup
+   - Content comparison and save decisions
+   - Reading last saved content
+   - Making notes non-editable
+
+3. Effects Phase
+   - Running queued side effects (API calls, DOM updates)
+   - Setting target note ID (for newly created notes)
+   - Reading last saved content
+   - Setting content for new notes
+
+4. Transition Phase
+   - ID management (resetting and updating noteId)
+   - Fragment rendering
+   - State cleanup
+
+5. Entering Phase
+   - New state setup
+   - Making notes editable
+   - Setting up event listeners
+
+Each state getter/setter is validated against allowed phases, ensuring that:
+- State mutations happen at the right time
+- Side effects are properly sequenced
+- Content comparisons are valid
+- IDs are managed consistently
+
 ### State Data Management
 - Each state maintains its own data
 - Data passed through transitions
