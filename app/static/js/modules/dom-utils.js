@@ -303,13 +303,15 @@ export const DOMUtils = {
     },
 
     /**
-     * Check if element is a note content element
+     * Check if element is a note content element or is inside one
      */
     isNoteContent(element) {
         if (!element) {
             return false;
         }
-        return element.classList?.contains(CONFIG.CLASSES.NOTE_CONTENT);
+        // Check if the element itself or any of its parents has the note-content class
+        return element.classList?.contains(CONFIG.CLASSES.NOTE_CONTENT) ||
+               !!element.closest(`.${CONFIG.CLASSES.NOTE_CONTENT}`);
     },
 
     /**
