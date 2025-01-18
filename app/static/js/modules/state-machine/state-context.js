@@ -222,12 +222,9 @@ export class StateContext {
      * Set target note ID with validation
      */
     setTargetNoteId(targetNoteId) {
-        this.validatePhase(['event']);  // Can set target during event or effects
+        this.validatePhase(['event', 'effects']);  // Allow in effects for new note creation
         if (!targetNoteId) {
-            throw new Error('Target note ID is required');
-        }
-        if (typeof targetNoteId !== 'string') {
-            throw new Error('Target note ID must be a string');
+            throw new Error('Target note ID required');
         }
         this.targetNoteId = targetNoteId;
         return this;
