@@ -130,7 +130,9 @@ export class UpdateNoteEffect extends Effect {
 
     async execute() {
         // Skip if content hasn't changed
+        console.log('UpdateNoteEffect: Getting lastSavedContent');
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
+        console.log('UpdateNoteEffect: lastSavedContent =', lastSavedContent);
         if (this.content === lastSavedContent) {
             console.log(' Note unchanged, skipping update:', this.noteId);
             return;

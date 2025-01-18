@@ -49,9 +49,17 @@ export const editingTransitions = {
             throw new Error('Note element not found');
         }
 
+        // Log the note content
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        console.log('Entering edit mode for note:', {
+            noteId,
+            innerHTML: contentElement.innerHTML
+        });
+
         // Set initial content for comparison on exit
         const content = DOMUtils.getNoteContentHTML(noteElement);
-        StateMachine.currentStateContext.setLastSavedContent(content);
+        // For new notes, initialize with empty content to avoid comparison errors
+        StateMachine.currentStateContext.setLastSavedContent(content || '');
 
         DOMUtils.setNoteEditable(noteElement, true);
         DOMUtils.focusNote(noteElement, StateMachine.currentStateContext.getCursorOffset());
@@ -110,6 +118,12 @@ export const editingTransitions = {
             }
 
             case 'NOTE_CONTENT_CLICKED': {
+                const noteElement = DOMUtils.getNoteById(StateMachine.currentStateContext.getNoteId());
+                const contentElement = DOMUtils.getNoteContent(noteElement);
+                console.log('Note content clicked:', {
+                    innerHTML: contentElement.innerHTML
+                });
+
                 const currentNoteId = StateMachine.currentStateContext.getNoteId();
                 const clickedNoteId = StateMachine.currentStateContext.getClickedNoteId();
 
@@ -145,6 +159,7 @@ export const editingTransitions = {
                 
                 // Handle keyboard shortcuts
                 if (key === 'Escape') {
+                    console.log('Escape key pressed');
                     // Escape: Return to idle
                     StateMachine.currentStateContext
                         .setType('CLICKED_OUTSIDE_NOTE')
@@ -177,6 +192,9 @@ export const editingTransitions = {
             }
 
             case 'NOTE_CONTENT_CHANGED': {
+                // Log the current lastSavedContent value
+                console.log('Last saved content:', StateMachine.currentStateContext.getLastSavedContent());
+                
                 // Reset inactivity timer
                 StateMachine.startActivityMonitor();
                 break;

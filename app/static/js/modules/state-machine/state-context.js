@@ -356,7 +356,7 @@ export class StateContext {
      * @throws {Error} If lastSavedContent is not set
      */
     getLastSavedContent() {
-        if (!this.lastSavedContent) {
+        if (this.lastSavedContent === null || this.lastSavedContent === undefined) {
             throw new Error('Last saved content not set');
         }
         return this.lastSavedContent;
