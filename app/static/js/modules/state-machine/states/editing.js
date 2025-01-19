@@ -211,6 +211,13 @@ export const editingTransitions = {
                 break;
             }
 
+            case 'SEARCH_CLICKED': {
+                // Save and transition to searching state
+                StateMachine.currentStateContext
+                    .setTargetState('searching');
+                break;
+            }
+
             case 'KEY_DOWN': {
                 const key = StateMachine.currentStateContext.getKey();
                 const metaKey = StateMachine.currentStateContext.getMetaKey();

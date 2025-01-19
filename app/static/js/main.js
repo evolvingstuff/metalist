@@ -27,14 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
         StateMachine.handleRawEvent('Input', e);
     });
 
-    // Add search input focus handler
-    const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.addEventListener('focus', (e) => {
-            StateMachine.handleRawEvent('SearchFocus', e);
-        });
-    }
-
     // Prevent "phantom" cursor appearing when focusing notes outside their bounds
     // This can happen when clicking below/between notes since they are contenteditable
     // TODO: this is a hack we should revisit

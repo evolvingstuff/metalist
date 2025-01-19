@@ -338,4 +338,15 @@ export const DOMUtils = {
                coordinates.y >= rect.top && 
                coordinates.y <= rect.bottom;
     },
+
+    /**
+     * Focus the search input
+     */
+    focusSearch() {
+        const searchInput = document.querySelector(`.${CONFIG.CLASSES.SEARCH_INPUT}`);
+        if (!searchInput) {
+            throw new Error('Search input not found');
+        }
+        searchInput.focus();
+    },
 };

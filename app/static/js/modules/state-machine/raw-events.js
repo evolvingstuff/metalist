@@ -124,8 +124,7 @@ export const RawEvents = {
         StateMachine.resetOnNewEvent();
         
         StateMachine.currentStateContext
-            .setType('SEARCH_CLICKED')
-            .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY });
+            .setType('SEARCH_CLICKED');
     },
 
     handleAddNoteClick(domEvent) {

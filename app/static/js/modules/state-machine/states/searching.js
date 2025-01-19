@@ -36,9 +36,6 @@ export const searchingTransitions = {
         
         // Focus search input
         DOMUtils.focusSearch();
-
-        // Show results panel
-        DOMUtils.showSearchResults();
     },
 
     exit: async () => {
@@ -46,12 +43,6 @@ export const searchingTransitions = {
         if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
-
-        // Clear search input
-        DOMUtils.clearSearch();
-
-        // Hide results panel
-        DOMUtils.hideSearchResults();
     },
 
     handleEvent: async () => {
@@ -111,19 +102,16 @@ export const searchingTransitions = {
                 break;
             }
 
+            case 'SEARCH_CLICKED': {
+                // Just focus the search input again
+                DOMUtils.focusSearch();
+                break;
+            }
+
             case 'CLICKED_OUTSIDE_NOTE': {
-                // Stay in search if clicked in results panel
-                const coordinates = StateMachine.currentStateContext.getCoordinates();
-                if (!coordinates) {
-                    throw new Error('Click missing coordinates');
-                }
-                
-                if (DOMUtils.isInSearchResults(coordinates)) {
-                    break;
-                }
-                
-                // Otherwise go to idle
-                StateMachine.currentStateContext.setType('RETURN_TO_IDLE');
+                // Return to idle if clicked outside note
+                StateMachine.currentStateContext
+                    .setTargetState('idle');
                 break;
             }
 

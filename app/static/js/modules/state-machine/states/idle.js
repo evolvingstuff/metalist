@@ -85,7 +85,6 @@ export const idleTransitions = {
 
                 // Set target state to editing with clicked note
                 StateMachine.currentStateContext
-                    .setType('START_EDITING')
                     .setTargetState('editing');
                 break;
             }
@@ -93,7 +92,6 @@ export const idleTransitions = {
             case 'SEARCH_FOCUSED': {
                 // Request transition to searching
                 StateMachine.currentStateContext
-                    .setType('START_SEARCHING')
                     .setTargetState('searching');
                 break;
             }
@@ -101,9 +99,15 @@ export const idleTransitions = {
             case 'ADD_BUTTON_CLICKED': {
                 // Queue create note effect and transition to editing
                 StateMachine.currentStateContext
-                    .setType('START_EDITING')
                     .addEffect(new CreateNoteEffect())
                     .setTargetState('editing');
+                break;
+            }
+
+            case 'SEARCH_CLICKED': {
+                // Transition directly to searching state
+                StateMachine.currentStateContext
+                    .setTargetState('searching');
                 break;
             }
 
@@ -125,14 +129,12 @@ export const idleTransitions = {
                 if (metaKey && key === 'k') {
                     // Cmd+K: Focus search
                     StateMachine.currentStateContext
-                        .setType('START_SEARCHING')
                         .setTargetState('searching');
                     break;
                 }
                 if (key === 'Enter' || (metaKey && key === 'Enter')) {
                     // Enter or Cmd+Enter: Create new note
                     StateMachine.currentStateContext
-                        .setType('START_EDITING')
                         .addEffect(new CreateNoteEffect())
                         .setTargetState('editing');
                     break;

@@ -32,7 +32,8 @@ export const CONFIG = {
         DRAG_BEFORE: 'drag-before',
         DRAG_AFTER: 'drag-after',
         DRAG_INSIDE: 'drag-inside',
-        DRAG_TRASH: 'drag-trash'
+        DRAG_TRASH: 'drag-trash',
+        SEARCH_INPUT: 'search-input'
     },
     
     // Feature flags
