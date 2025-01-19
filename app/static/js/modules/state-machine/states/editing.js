@@ -3,7 +3,7 @@ import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
 import { StateMachine } from '../state-machine-controller.js';
 import { CONFIG } from '../../config.js';
-import { CreateChildEffect, CreateSiblingEffect, UpdateNoteEffect, SaveNoteEffect } from '../effects.js';
+import { CreateChildEffect, CreateSiblingEffect, UpdateNoteEffect, SaveNoteEffect, DeleteNoteEffect } from '../effects.js';
 
 /**
  * Editing State
@@ -250,6 +250,19 @@ export const editingTransitions = {
                             .setTargetState('editing');
                     }
                 }
+
+                if (metaKey && (key === 'Delete' || key === 'Backspace')) {
+                    // Cmd+Delete: Delete current note
+                    const currentNoteId = StateMachine.currentStateContext.getNoteId();
+                    if (!currentNoteId) {
+                        throw new Error('Current note ID not set');
+                    }
+
+                    StateMachine.currentStateContext
+                        .addEffect(new DeleteNoteEffect(currentNoteId))
+                        .setType('CLICKED_OUTSIDE_NOTE')  // weird we need to name this
+                        .setTargetState('idle');
+                }
                 break;
             }
 
@@ -259,6 +272,19 @@ export const editingTransitions = {
                 
                 // Reset inactivity timer
                 StateMachine.startActivityMonitor();
+                break;
+            }
+
+            case 'TRASH_CAN_CLICKED': {
+                const currentNoteId = StateMachine.currentStateContext.getNoteId();
+                if (!currentNoteId) {
+                    throw new Error('Current note ID not set');
+                }
+
+                StateMachine.currentStateContext
+                    .addEffect(new DeleteNoteEffect(currentNoteId))
+                    .setType('CLICKED_OUTSIDE_NOTE')  // weird we need to name this
+                    .setTargetState('idle');
                 break;
             }
 

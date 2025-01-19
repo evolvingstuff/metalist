@@ -203,13 +203,5 @@ export class DeleteNoteEffect extends Effect {
         console.log(' Deleting note:', this.noteId);
         await NotesAPI.deleteNote(this.noteId);
         console.log(' Note deleted:', this.noteId);
-        
-        // Clear note ID if we just deleted the current note
-        const currentNoteId = StateMachine.currentStateContext.getNoteId();
-        if (currentNoteId === this.noteId) {
-            StateMachine.currentStateContext
-                .setNoteId(null)
-                .setLastSavedContent('');
-        }
     }
 }

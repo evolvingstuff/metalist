@@ -47,7 +47,8 @@ export class StateContext {
         this.metaKey = false;        // Meta key pressed
         this.shiftKey = false;       // Shift key pressed
         this.query = null;           // Search query
-        this.effects = [];           // Effects to run during transition
+        this.effects_exit = [];      // Effects to run during exit phase
+        this.effects_transition = []; // Effects to run during transition phase
         this.phase = null;           // Current transition phase
 
         // Bind methods to instance
@@ -224,7 +225,10 @@ export class StateContext {
     setTargetNoteId(targetNoteId) {
         this.validatePhase(['event', 'effects']);  // Allow in effects for new note creation
         if (!targetNoteId) {
-            throw new Error('Target note ID required');
+            throw new Error('Target note ID is required');
+        }
+        if (typeof targetNoteId !== 'string') {
+            throw new Error('Target note ID must be a string');
         }
         this.targetNoteId = targetNoteId;
         return this;
@@ -496,24 +500,30 @@ export class StateContext {
         if (!effect) {
             throw new Error('Effect is required');
         }
-        this.effects.push(effect);
+        // During exit phase, add to exit queue, otherwise transition queue
+        if (this.phase === 'exiting') {
+            this.effects_exit.push(effect);
+        } else {
+            this.effects_transition.push(effect);
+        }
         return this;
     }
 
     /**
-     * Reset effects array
+     * Reset effects arrays
      */
     resetEffects() {
-        this.effects = [];
+        this.effects_exit = [];
+        this.effects_transition = [];
         return this;
     }
 
     /**
-     * Get effects array
+     * Get all effects in order (exit effects first, then transition effects)
      */
     getEffects() {
         this.validatePhase(['event', 'effects']);  // Can read effects during event handling too
-        return this.effects;
+        return [...this.effects_exit, ...this.effects_transition];
     }
 
     /**
