@@ -93,24 +93,21 @@ export const searchingTransitions = {
             }
 
             case 'NOTE_CONTENT_CLICKED': {
-                const noteId = StateMachine.currentStateContext.getNoteId();
-                if (!noteId) {
+                // Validate we have all required data
+                const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
+                if (!targetNoteId) {
                     throw new Error('Note click missing note ID');
                 }
-
-                const noteElement = DOMUtils.getNoteById(noteId);
+                
+                const noteElement = DOMUtils.getNoteById(targetNoteId);
                 if (!noteElement) {
                     throw new Error('Note element not found');
                 }
 
-                const content = DOMUtils.getNoteContent(noteElement);
-
-                // Request transition to editing
+                // Let transition() handle moving targetNoteId to noteId
                 StateMachine.currentStateContext
-                    .setType('NOTE_CONTENT_CLICKED')
-                    .setNoteId(noteId)
-                    .setLastSavedContent(content)
-                    .setCoordinates(StateMachine.currentStateContext.coordinates);
+                    .setLastSavedContent(DOMUtils.getNoteContentHTML(noteElement))
+                    .setTargetState('editing');
                 break;
             }
 

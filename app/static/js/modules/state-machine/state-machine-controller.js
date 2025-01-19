@@ -189,10 +189,9 @@ export const StateMachine = {
         // Check if we need to transition
         const targetState = this.currentStateContext.getTargetState();
         if (targetState) {
-            console.log('🔄 Transitioning due to event:', {
+            console.log('🔄 Transitioning:', {
                 from: this.state,
                 to: targetState,
-                event: eventType,
                 noteId: this.currentStateContext.getNoteId()
             });
 

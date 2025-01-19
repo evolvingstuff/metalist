@@ -83,7 +83,7 @@ export const idleTransitions = {
                     throw new Error('Note click missing cursor offset');
                 }
 
-                // Request transition to editing - let transition() handle moving targetNoteId to noteId
+                // Set target state to editing with clicked note
                 StateMachine.currentStateContext
                     .setType('START_EDITING')
                     .setTargetState('editing');

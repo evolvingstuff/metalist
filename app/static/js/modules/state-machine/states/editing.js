@@ -131,9 +131,8 @@ export const editingTransitions = {
 
         switch (eventType) {
             case 'CLICKED_OUTSIDE_NOTE': {
-                // Ensure proper exit by setting both type and target state
+                // Just set target state - no need for type during transition
                 StateMachine.currentStateContext
-                    .setType('CLICKED_OUTSIDE_NOTE')
                     .setTargetState('idle');
                 break;
             }
@@ -194,13 +193,11 @@ export const editingTransitions = {
                     // Shift+Add: Create child note
                     StateMachine.currentStateContext
                         .addEffect(new CreateChildEffect(currentNoteId))
-                        .setType('NOTE_CONTENT_CLICKED')
                         .setTargetState('editing');
                 } else {
                     // Add: Create sibling note below
                     StateMachine.currentStateContext
                         .addEffect(new CreateSiblingEffect(currentNoteId))
-                        .setType('NOTE_CONTENT_CLICKED')
                         .setTargetState('editing');
                 }
                 break;
@@ -209,7 +206,7 @@ export const editingTransitions = {
             case 'SEARCH_FOCUSED': {
                 // Return to idle if inactive
                 if (StateMachine.currentStateContext.isInactive()) {
-                    StateMachine.currentStateContext.setType('SEARCH_FOCUSED');
+                    StateMachine.currentStateContext.setTargetState('idle');
                 }
                 break;
             }
@@ -224,7 +221,6 @@ export const editingTransitions = {
                     console.log('Escape key pressed');
                     // Escape: Return to idle
                     StateMachine.currentStateContext
-                        .setType('CLICKED_OUTSIDE_NOTE')
                         .setTargetState('idle');
                     break;
                 }
@@ -240,13 +236,11 @@ export const editingTransitions = {
                         // Shift+Cmd+Enter: Create child note
                         StateMachine.currentStateContext
                             .addEffect(new CreateChildEffect(currentNoteId))
-                            .setType('NOTE_CONTENT_CLICKED')
                             .setTargetState('editing');
                     } else {
                         // Cmd+Enter: Create sibling note below
                         StateMachine.currentStateContext
                             .addEffect(new CreateSiblingEffect(currentNoteId))
-                            .setType('NOTE_CONTENT_CLICKED')
                             .setTargetState('editing');
                     }
                 }
@@ -260,7 +254,6 @@ export const editingTransitions = {
 
                     StateMachine.currentStateContext
                         .addEffect(new DeleteNoteEffect(currentNoteId))
-                        .setType('CLICKED_OUTSIDE_NOTE')  // weird we need to name this
                         .setTargetState('idle');
                 }
                 break;
@@ -283,7 +276,6 @@ export const editingTransitions = {
 
                 StateMachine.currentStateContext
                     .addEffect(new DeleteNoteEffect(currentNoteId))
-                    .setType('CLICKED_OUTSIDE_NOTE')  // weird we need to name this
                     .setTargetState('idle');
                 break;
             }
