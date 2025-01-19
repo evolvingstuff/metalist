@@ -129,10 +129,9 @@ export const RawEvents = {
     },
 
     handleAddNoteClick(domEvent) {
-        StateMachine.resetOnNewEvent();
-        
         StateMachine.currentStateContext
-            .setType('ADD_BUTTON_CLICKED');
+            .setType('ADD_BUTTON_CLICKED')
+            .setShiftKey(domEvent.shiftKey);
     },
 
     handleMenuClick(domEvent) {

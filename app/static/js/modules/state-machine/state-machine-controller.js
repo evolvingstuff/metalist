@@ -57,17 +57,6 @@ export const States = {
     SEARCHING: 'searching'
 };
 
-// Valid state machine events
-export const Events = {
-    KEY_DOWN: 'KEY_DOWN',
-    NOTE_CONTENT_CLICKED: 'NOTE_CONTENT_CLICKED',
-    NOTE_CONTENT_CHANGED: 'NOTE_CONTENT_CHANGED',
-    CLICKED_OUTSIDE_NOTE: 'CLICKED_OUTSIDE_NOTE',
-    SEARCH_FOCUSED: 'SEARCH_FOCUSED',
-    FRAGMENT_LOADED: 'FRAGMENT_LOADED',
-    NO_OP: 'NO_OP'
-};
-
 export const StateMachine = {
     // State handlers
     handlers: {
@@ -114,10 +103,6 @@ export const StateMachine = {
         return this;
     },
 
-    isValidEvent(eventType) {
-        return Object.values(Events).includes(eventType);
-    },
-
     handleRawEvent(eventName, domEvent) {
         // NO MERCY - event validation
         if (!eventName) {
@@ -149,7 +134,8 @@ export const StateMachine = {
             'SearchBlur': () => RawEvents.handleSearchBlur(domEvent),
             'SearchFocus': () => RawEvents.handleSearchClick(domEvent),
             'ClickOutsideNote': () => RawEvents.handleClickOutsideNote(domEvent),
-            'FragmentLoaded': () => RawEvents.handleFragmentLoaded(domEvent)
+            'FragmentLoaded': () => RawEvents.handleFragmentLoaded(domEvent),
+            'AddButtonClick': () => RawEvents.handleAddNoteClick(domEvent)
         };
 
         const handler = handlerMap[eventName];
@@ -186,9 +172,6 @@ export const StateMachine = {
         }
         if (typeof eventType !== 'string') {
             throw new Error('Event type must be a string');
-        }
-        if (!this.isValidEvent(eventType)) {
-            throw new Error(`Invalid event type: ${eventType}`);
         }
 
         // Let current state handle event

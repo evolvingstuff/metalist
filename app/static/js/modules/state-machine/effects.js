@@ -52,7 +52,7 @@ export class CreateNoteEffect extends Effect {
         const data = await NotesAPI.createNote();
         console.log(' Note created:', data.id);
         StateMachine.currentStateContext
-            .setNoteId(data.id)
+            .setTargetNoteId(data.id)
             .setLastSavedContent('')
             .setCursorOffset(0);  // Start cursor at beginning of empty note
     }

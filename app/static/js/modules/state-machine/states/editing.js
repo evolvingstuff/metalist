@@ -178,6 +178,34 @@ export const editingTransitions = {
                 break;
             }
 
+            case 'ADD_BUTTON_CLICKED': {
+                // Get current note ID for positioning
+                const currentNoteId = StateMachine.currentStateContext.getNoteId();
+                if (!currentNoteId) {
+                    throw new Error('Current note ID not set');
+                }
+
+                const shiftKey = StateMachine.currentStateContext.getShiftKey();
+                if (typeof shiftKey !== 'boolean') {
+                    throw new Error('Add button click missing shift key state');
+                }
+
+                if (shiftKey) {
+                    // Shift+Add: Create child note
+                    StateMachine.currentStateContext
+                        .addEffect(new CreateChildEffect(currentNoteId))
+                        .setType('NOTE_CONTENT_CLICKED')
+                        .setTargetState('editing');
+                } else {
+                    // Add: Create sibling note below
+                    StateMachine.currentStateContext
+                        .addEffect(new CreateSiblingEffect(currentNoteId))
+                        .setType('NOTE_CONTENT_CLICKED')
+                        .setTargetState('editing');
+                }
+                break;
+            }
+
             case 'SEARCH_FOCUSED': {
                 // Return to idle if inactive
                 if (StateMachine.currentStateContext.isInactive()) {

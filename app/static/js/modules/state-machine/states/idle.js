@@ -129,8 +129,8 @@ export const idleTransitions = {
                         .setTargetState('searching');
                     break;
                 }
-                if (metaKey && key === 'n') {
-                    // Cmd+N: Create new note
+                if (key === 'Enter' || (metaKey && key === 'Enter')) {
+                    // Enter or Cmd+Enter: Create new note
                     StateMachine.currentStateContext
                         .setType('START_EDITING')
                         .addEffect(new CreateNoteEffect())
