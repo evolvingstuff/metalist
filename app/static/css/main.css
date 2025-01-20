@@ -142,7 +142,7 @@ body {
 }
 
 .note-content:empty::before {
-    content: "Click to edit";
+    content: "";
     color: #999;
     font-style: italic;
 }
