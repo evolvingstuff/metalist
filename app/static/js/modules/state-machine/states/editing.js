@@ -3,7 +3,7 @@ import { NotesAPI } from '../../api-client.js';
 import { StateContext } from '../state-context.js';
 import { StateMachine } from '../state-machine-controller.js';
 import { CONFIG } from '../../config.js';
-import { CreateChildEffect, CreateSiblingEffect, UpdateNoteEffect, SaveNoteEffect, DeleteNoteEffect } from '../effects.js';
+import { CreateChildEffect, CreateSiblingEffect, UpdateNoteEffect, SaveNoteEffect, DeleteNoteEffect, MoveNoteEffect } from '../effects.js';
 
 /**
  * Editing State
@@ -262,6 +262,20 @@ export const editingTransitions = {
                     StateMachine.currentStateContext
                         .addEffect(new DeleteNoteEffect(currentNoteId))
                         .setTargetState('idle');
+                }
+
+                if (metaKey && (key === 'ArrowUp' || key === 'ArrowDown')) {
+                    // Get current note ID for moving
+                    const currentNoteId = StateMachine.currentStateContext.getNoteId();
+                    if (!currentNoteId) {
+                        throw new Error('Current note ID not set');
+                    }
+
+                    // Queue move effect and stay in editing
+                    StateMachine.currentStateContext
+                        .addEffect(new MoveNoteEffect(currentNoteId, key === 'ArrowUp' ? 'before' : 'after'))
+                        .setTargetState('editing')
+                        .setTargetNoteId(currentNoteId);
                 }
                 break;
             }

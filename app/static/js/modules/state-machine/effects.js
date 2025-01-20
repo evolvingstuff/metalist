@@ -205,3 +205,24 @@ export class DeleteNoteEffect extends Effect {
         console.log(' Note deleted:', this.noteId);
     }
 }
+
+/**
+ * Move note before/after sibling
+ */
+export class MoveNoteEffect extends Effect {
+    constructor(noteId, direction) {
+        super();
+        if (!noteId) {
+            throw new Error('Note ID required');
+        }
+        if (direction !== 'before' && direction !== 'after') {
+            throw new Error('Direction must be "before" or "after"');
+        }
+        this.noteId = noteId;
+        this.direction = direction;
+    }
+
+    async execute() {
+        await NotesAPI.moveNoteRelative(this.noteId, this.direction);
+    }
+}

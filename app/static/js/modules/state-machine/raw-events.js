@@ -154,7 +154,7 @@ export const RawEvents = {
 
         StateMachine.resetOnNewEvent();
 
-        StateMachine.currentStateContext
+        return StateMachine.currentStateContext
             .setType('KEY_DOWN')
             .setKey(domEvent.key)
             .setMetaKey(domEvent.metaKey || domEvent.ctrlKey)

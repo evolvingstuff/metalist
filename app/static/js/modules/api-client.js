@@ -128,6 +128,48 @@ export const NotesAPI = {
     },
 
     /**
+     * Move note before/after sibling
+     * @param {string} noteId - ID of note to move
+     * @param {string} direction - 'before' or 'after'
+     */
+    async moveNoteRelative(noteId, direction) {
+        console.log('Moving note:', { noteId, direction });
+        
+        const noteElement = DOMUtils.getNoteById(noteId);
+        console.log('Note element:', noteElement);
+        if (!noteElement) {
+            throw new Error('Note element not found');
+        }
+
+        const siblingElement = direction === 'before' ? 
+            noteElement.previousElementSibling : 
+            noteElement.nextElementSibling;
+        console.log('Sibling element:', siblingElement);
+            
+        if (!siblingElement) {
+            console.log('No sibling found in direction:', direction);
+            return;
+        }
+
+        const siblingId = DOMUtils.getNoteId(siblingElement);
+        console.log('Found sibling:', { siblingId });
+
+        const payload = { 
+            position: direction.toUpperCase(),
+            sibling_id: siblingId
+        };
+        console.log('Sending payload:', payload);
+
+        return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+    },
+
+    /**
      * Delete a note
      */
     async deleteNote(noteId) {
