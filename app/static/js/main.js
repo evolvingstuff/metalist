@@ -1,4 +1,5 @@
 import { StateMachine } from './modules/state-machine/state-machine-controller.js';
+import { ModeManager } from './modules/mode-manager.js';
 import { CONFIG } from './modules/config.js';
 import { DOMUtils } from './modules/dom-utils.js';
 
@@ -7,6 +8,11 @@ import { DOMUtils } from './modules/dom-utils.js';
  */
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded fired');
+    
+    // Initialize ModeManager BEFORE state machine
+    // This ensures ModeManager's event listeners are registered first
+    const modeManager = new ModeManager();
+    console.log('ModeManager initialized');
     
     // Initialize state machine
     StateMachine.init();
