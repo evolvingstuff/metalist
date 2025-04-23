@@ -1,5 +1,5 @@
+import { ModeManager } from './modules/mode-manager/mode-manager-controller.js';
 import { StateMachine } from './modules/state-machine/state-machine-controller.js';
-import { ModeManager } from './modules/mode-manager.js';
 import { CONFIG } from './modules/config.js';
 import { DOMUtils } from './modules/dom-utils.js';
 
@@ -9,10 +9,22 @@ import { DOMUtils } from './modules/dom-utils.js';
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded fired');
     
+    // Add direct log to see if this code runs
+    console.log('+++ main.js: About to initialize ModeManager');
+    
     // Initialize ModeManager BEFORE state machine
-    // This ensures ModeManager's event listeners are registered first
-    const modeManager = new ModeManager();
-    console.log('ModeManager initialized');
+    try {
+        // Check if ModeManager loaded properly
+        if (!ModeManager) {
+            console.error('+++ main.js: ModeManager not defined!');
+        } else {
+            console.log('+++ main.js: ModeManager exists, calling init()');
+            ModeManager.init();
+            console.log('+++ main.js: ModeManager init() completed');
+        }
+    } catch (error) {
+        console.error('+++ main.js: Error initializing ModeManager:', error);
+    }
     
     // Initialize state machine
     StateMachine.init();
