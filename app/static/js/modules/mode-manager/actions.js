@@ -77,14 +77,19 @@ export function saveNote(noteId) {
  * Refresh UI with latest content from server
  * Gets fragment from server and updates the DOM based on current context
  * Also handles editability and cursor positioning if a note is selected
+ * @param {Object} options - Options for refresh
+ * @param {boolean} options.skipLoadingState - If true, doesn't set/clear loading state (for composing actions)
  * @returns {Promise} Promise resolving when refresh is complete
  */
-export function refresh() {
+export function refresh(options = {}) {
   // Always use the current note ID from context
   const noteId = ModeContext.currentNoteId;
   
-  // Set loading state while we fetch content
-  ModeContext.setLoading(true);
+  // Set loading state if not already set and not skipped
+  const shouldManageLoading = !options.skipLoadingState;
+  if (shouldManageLoading && !ModeContext.isLoading) {
+    ModeContext.setLoading(true);
+  }
   
   // Call the API to get the fragment
   return NotesAPI.getFragment(noteId)
@@ -169,8 +174,10 @@ export function refresh() {
       throw error;
     })
     .finally(() => {
-      // Clear loading state
-      ModeContext.setLoading(false);
+      // Clear loading state if we managed it
+      if (shouldManageLoading) {
+        ModeContext.setLoading(false);
+      }
     });
 }
 
@@ -361,4 +368,122 @@ export function switchNotes(newNoteId) {
     Logger.logError(`Failed to switch from note ${currentNoteId} to ${newNoteId}`, error);
     throw error;
   });
+}
+
+/**
+ * Delete the currently selected note
+ * @param {string} noteId - ID of the note to delete
+ * @returns {Promise} Promise resolving when deletion is complete
+ */
+export function deleteNote(noteId) {
+  // Validate input
+  if (!noteId) {
+    throw new Error('Cannot delete note: noteId is required');
+  }
+  
+  // Validate the note ID matches the current note
+  if (ModeContext.currentNoteId !== noteId) {
+    throw new Error(`Programming error: Deleting note ${noteId}, but currentNoteId is ${ModeContext.currentNoteId}`);
+  }
+  
+  // Validate we're in editing mode
+  if (!ModeContext.isEditing) {
+    throw new Error(`Programming error: Deleting current note ${noteId}, but isEditing is false`);
+  }
+  
+  // Clear editing state before API call
+  ModeContext.setEditing(false);
+  ModeContext.setCurrentNoteId(null);
+  
+  // Only clear content and dirty if they have values to avoid redundant state changes
+  if (ModeContext.currentContent !== null) {
+    ModeContext.setCurrentContent(null);
+  }
+  
+  if (ModeContext.isDirty) {
+    ModeContext.setDirty(false);
+  }
+  
+  // Set loading state for API call
+  ModeContext.setLoading(true);
+  
+  // Do the API call
+  return NotesAPI.deleteNote(noteId)
+    .then(() => {
+      // Log the successful deletion
+      Logger.logAction('deleteNote', { noteId });
+      
+      // Clear loading state before calling refresh
+      ModeContext.setLoading(false);
+      
+      // Now that state is fully cleared, refresh the UI
+      return refresh();
+    })
+    .catch(error => {
+      Logger.logError(`Failed to delete note ${noteId}`, error);
+      ModeContext.setLoading(false);
+      throw error;
+    });
+}
+
+/**
+ * Create a new note
+ * - If no note is selected, creates at top of list
+ * - If a note is selected, creates a new sibling after that note
+ * @returns {Promise} Promise resolving when creation is complete
+ */
+export function createNote() {
+  // Check if we currently have a note selected
+  const currentNoteId = ModeContext.currentNoteId;
+  
+  // If we're editing and have unsaved changes, save first
+  let initialPromise = Promise.resolve();
+  if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
+    initialPromise = saveNote(currentNoteId);
+  }
+  
+  // Set loading state for API call
+  ModeContext.setLoading(true);
+  
+  return initialPromise
+    .then(() => {
+      // Choose the right API call based on selection state
+      if (currentNoteId) {
+        // Create a sibling after the currently selected note
+        Logger.logDebug('Creating new sibling note after note', { 
+          currentNoteId 
+        }, Logger.LogCategory.ACTION);
+        return NotesAPI.createSibling(currentNoteId);
+      } else {
+        // No note selected, create at top of list
+        Logger.logDebug('Creating new note at top of list', {}, Logger.LogCategory.ACTION);
+        return NotesAPI.createNote();
+      }
+    })
+    .then(data => {
+      // API returns the new note ID
+      const newNoteId = data.id;
+      
+      // Log the successful creation
+      Logger.logAction('createNote', { 
+        newNoteId,
+        createdAfter: currentNoteId || null
+      });
+      
+      // Clear loading state
+      ModeContext.setLoading(false);
+      
+      // Select the new note to start editing it
+      // Use switchNotes if we're already editing, otherwise selectNote
+      if (ModeContext.isEditing) {
+        return switchNotes(newNoteId);
+      } else {
+        return selectNote(newNoteId);
+      }
+    })
+    .catch(error => {
+      Logger.logError('Failed to create note', error);
+      ModeContext.setLoading(false);
+      throw error;
+    });
 }

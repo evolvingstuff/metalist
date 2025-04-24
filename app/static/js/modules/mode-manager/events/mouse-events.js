@@ -12,7 +12,7 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { selectNote, deselectNote, switchNotes } from '../actions.js';
+import { selectNote, deselectNote, switchNotes, deleteNote, createNote } from '../actions.js';
 import { DOMUtils } from '../../dom-utils.js'; // Fix the path - go up one more level
 
 /**
@@ -56,10 +56,29 @@ function handleClick(event) {
   // Analyze click target
   const noteContent = event.target.closest('.note-content');
   const searchField = event.target.closest('#search-input');
-  const createButton = event.target.closest('#create-note-button');
+  const createButton = event.target.closest('.add-note');
+  const deleteButton = event.target.closest('#trash-can');
   
   // Update mode based on what was clicked
-  if (noteContent) {
+  if (deleteButton) {
+    // Only delete if there's a currently selected note
+    const noteId = ModeContext.currentNoteId;
+    
+    if (noteId) {
+      Logger.logDebug('Delete button clicked for current note', { 
+        noteId,
+        coordinates 
+      }, Logger.LogCategory.EVENT);
+      
+      // Call the delete action on the currently selected note
+      deleteNote(noteId);
+    } else {
+      // No note is currently selected, nothing to delete
+      Logger.logNoop('Delete button clicked but no note is selected', { 
+        coordinates 
+      });
+    }
+  } else if (noteContent) {
     const noteElement = noteContent.closest('.note');
     if (!noteElement) {
       throw new Error('Found .note-content without parent .note element');
@@ -164,7 +183,7 @@ function handleClick(event) {
     Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
   } else if (createButton) {
     Logger.logDebug('Create note button clicked', { coordinates }, Logger.LogCategory.EVENT);
-    // Future implementation: ModeContext.createNewNote();
+    createNote();
   } else {
     // Click was not on any note or interactive element
     // Exit editing mode if we were editing
