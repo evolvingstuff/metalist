@@ -12,7 +12,7 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { selectNote, deselectNote } from '../actions.js';
+import { selectNote, deselectNote, switchNotes } from '../actions.js';
 import { DOMUtils } from '../../dom-utils.js'; // Fix the path - go up one more level
 
 /**
@@ -122,7 +122,11 @@ function handleClick(event) {
         }
         
         // This was a real user click in the note - use action to select it
-        selectNote(noteId);
+        if (ModeContext.currentNoteId) {
+          switchNotes(noteId);
+        } else {
+          selectNote(noteId);
+        }
         
         Logger.logDebug('Click in note content - selecting note', { 
           noteId,
