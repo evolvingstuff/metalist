@@ -29,6 +29,14 @@ export function initKeyboardEvents() {
  * @param {KeyboardEvent} event - DOM keydown event
  */
 function handleKeyDown(event) {
+  if (!event) {
+    throw new Error('handleKeyDown called without an event object');
+  }
+  
+  if (typeof event.key !== 'string') {
+    throw new Error(`Invalid KeyboardEvent: missing or invalid key property: ${event.key}`);
+  }
+  
   // Store key state in context
   ModeContext.setKeyPressed(
     event.key,
@@ -67,8 +75,13 @@ function handleKeyDown(event) {
  * Used to cancel search, exit editing, etc.
  */
 function handleEscapeKey() {
+  if (ModeContext.isSearching === undefined) {
+    throw new Error('ModeContext missing isSearching property in handleEscapeKey');
+  }
+  
   if (ModeContext.isSearching) {
     ModeContext.setSearching(false);
+    ModeContext.validate();
     Logger.logDebug('Search cancelled via Escape key');
   }
   
@@ -81,18 +94,34 @@ function handleEscapeKey() {
  * @param {KeyboardEvent} event - Original keydown event
  */
 function handleEnterKey(event) {
+  if (!event) {
+    throw new Error('handleEnterKey called without an event object');
+  }
+  
+  if (ModeContext.isEditing === undefined) {
+    throw new Error('ModeContext missing isEditing property in handleEnterKey');
+  }
+  
   // Just log for now - logic to be implemented later
   Logger.logDebug('Enter key pressed', {
     inEditor: ModeContext.isEditing,
     noteId: ModeContext.currentNoteId
   });
+  
+  // If we make any state changes in the future, we'd validate here
+  // ModeContext.validate();
 }
 
 /**
  * Handle search shortcut (Cmd+/ or Ctrl+/)
  */
 function handleSearchShortcut() {
+  if (typeof ModeContext.setSearching !== 'function') {
+    throw new Error('ModeContext missing setSearching method in handleSearchShortcut');
+  }
+  
   ModeContext.setSearching(true);
+  ModeContext.validate();
   Logger.logDebug('Search activated via keyboard shortcut');
   
   // Focus search input (will be implemented once we start handling events)

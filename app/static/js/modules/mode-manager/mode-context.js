@@ -10,6 +10,8 @@
  * - Event information (key pressed, click coordinates, etc.)
  */
 
+import * as Logger from './mode-logger.js';
+
 class ModeContext {
   constructor() {
     // Core application modes
@@ -310,11 +312,17 @@ class ModeContext {
    * @private
    */
   _notifyListeners(property, newValue) {
+    // Store old value before it's changed
+    const oldValue = this[`_${property}`];
+    
+    // Log the state change with proper categorization
+    Logger.logState(property, newValue, oldValue);
+    
     this._listeners.forEach(listener => {
       try {
         listener(property, newValue);
       } catch (e) {
-        console.error('+++ ModeManager ERROR: Error in listener callback', e);
+        Logger.logError('Error in listener callback', e);
       }
     });
   }
@@ -324,25 +332,53 @@ class ModeContext {
    * @returns {Object} Complete state object
    */
   getFullState() {
-    return {
+    const state = {
       modes: {
         editing: this._editing,
         searching: this._searching,
         callingApi: this._callingApi,
-        idle: this.isIdle,
-        active: this._active
+        loading: this._loading
       },
       context: {
-        noteId: this._currentNoteId,
-        searchQuery: this._searchQuery,
-        cursorOffset: this._cursorOffset
+        currentNoteId: this._currentNoteId,
+        currentContent: this._currentContent,
+        searchQuery: this._searchQuery
       },
-      eventMemory: {
-        lastKey: this._lastKeyPressed,
-        metaKey: this._metaKeyPressed,
-        shiftKey: this._shiftKeyPressed
-      }
+      event: this._eventMemory
     };
+    
+    // Log the full state with the new categorized logger
+    Logger.logFullState(state);
+    
+    return state;
+  }
+  
+  /**
+   * Validate state invariants to ensure system consistency
+   * Throws an error if any invariants are violated
+   */
+  validate() {
+    // Invariant 1: If editing, must have a currentNoteId
+    if (this._editing && !this._currentNoteId) {
+      const errorMsg = `Invariant violation: editing mode is active (${this._editing}) but no currentNoteId is set`;
+      Logger.logError(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    // Invariant 2: If not editing, must not have a currentNoteId
+    if (!this._editing && this._currentNoteId) {
+      const errorMsg = `Invariant violation: editing mode is inactive (${this._editing}) but currentNoteId is set (${this._currentNoteId})`;
+      Logger.logError(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    // Invariant 3: If searching, must have a non-empty search query (or we are in the process of beginning a search)
+    // Commented out as it might be too restrictive - search might start without query initially
+    // if (this._searching && !this._searchQuery) {
+    //   const errorMsg = `Invariant violation: searching mode is active but no search query is set`;
+    //   Logger.logError(errorMsg);
+    //   throw new Error(errorMsg);
+    // }
   }
 }
 
