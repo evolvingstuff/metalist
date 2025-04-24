@@ -191,6 +191,78 @@ All logs are prefixed with `+++ ModeManager` for easy filtering in the console.
 4. Use `logNoop()` when an event is processed but intentionally ignored
 5. Use `logError()` for validation failures and exceptions
 
+## Asynchronous Code Pattern
+
+The ModeManager uses the `async/await` pattern for all asynchronous operations rather than Promise chains:
+
+### Key Benefits
+
+1. **Linear Code Flow**: Code executes top-to-bottom in a more readable and maintainable way
+2. **Better Error Propagation**: Errors naturally propagate up the call stack when not caught
+3. **Simplified Variable Scoping**: Variables are accessible throughout the entire function
+4. **Reduced Nesting**: Eliminates the "pyramid of doom" from nested Promise chains
+5. **Improved Debugging**: Error stack traces are more accurate and meaningful
+
+### Implementation Guidelines
+
+```javascript
+// DO: Use async/await
+export async function saveNote(noteId) {
+  // Validation
+  if (!noteId) {
+    throw new Error('Cannot save note: noteId is required');
+  }
+  
+  // Set loading state
+  ModeContext.setLoading(true);
+  
+  // Call API and await result
+  const response = await NotesAPI.saveNote(noteId, contentHTML);
+  
+  // Update state after API call
+  ModeContext.setLastSavedContent(contentHTML);
+  ModeContext.setDirty(false);
+  
+  // Clear loading state
+  ModeContext.setLoading(false);
+  
+  return response;
+}
+
+// DON'T: Use Promise chains
+export function saveNote(noteId) {
+  // Validation
+  if (!noteId) {
+    throw new Error('Cannot save note: noteId is required');
+  }
+  
+  // Set loading state
+  ModeContext.setLoading(true);
+  
+  // Call API with Promise chain
+  return NotesAPI.saveNote(noteId, contentHTML)
+    .then(response => {
+      // Update state in nested callback
+      ModeContext.setLastSavedContent(contentHTML);
+      ModeContext.setDirty(false);
+      
+      // Clear loading state
+      ModeContext.setLoading(false);
+      
+      return response;
+    });
+}
+```
+
+### Rule of Thumb
+
+* All asynchronous functions should be marked with `async` keyword
+* Use `await` for all Promise-returning function calls
+* Avoid `try/catch` blocks to maintain fail-fast behavior when errors occur
+* Never use `.then()`, `.catch()`, or `.finally()` methods in new code
+
+This pattern works particularly well with our "Always Be Changin'" (ABC) validation approach, as the linear flow makes state transitions more explicit and easier to follow.
+
 ## Code Examples
 
 ### Event Handler (Processing but not "doing")
@@ -247,8 +319,8 @@ This approach:
 ### Action (The "doing" part)
 
 ```javascript
-export function selectNote(noteId) {
-  // Validate input
+export async function selectNote(noteId) {
+  // Validation
   if (!noteId) {
     throw new Error('Cannot select note: noteId is required');
   }
@@ -263,32 +335,26 @@ export function selectNote(noteId) {
   ModeContext.setCallingApi(true);
   
   // 2. Make API call to load note content
-  api.fetchNoteContent(noteId)
-    .then(content => {
-      // 3. Process API response
-      
-      // 4. Update state with note content and set editing mode
-      ModeContext.setCurrentContent(content);
-      ModeContext.setCurrentNoteId(noteId);
-      ModeContext.setEditing(true);
-      
-      // 5. UI update - focus the editor
-      document.querySelector(`[data-note-id="${noteId}"] .note-content`).focus();
-      
-      // 6. Final state change - mark API call as complete
-      ModeContext.setCallingApi(false);
-      
-      // 7. Validate the resulting state
-      ModeContext.validate();
-      
-      // 8. Log the action completion
-      Logger.logAction('selectNote', { noteId, success: true });
-    })
-    .catch(error => {
-      // Handle errors
-      ModeContext.setCallingApi(false);
-      Logger.logError(`Failed to select note ${noteId}`, error);
-    });
+  const response = await api.fetchNoteContent(noteId);
+  
+  // 3. Process API response
+  
+  // 4. Update state with note content and set editing mode
+  ModeContext.setCurrentContent(response.content);
+  ModeContext.setCurrentNoteId(noteId);
+  ModeContext.setEditing(true);
+  
+  // 5. UI update - focus the editor
+  document.querySelector(`[data-note-id="${noteId}"] .note-content`).focus();
+  
+  // 6. Final state change - mark API call as complete
+  ModeContext.setCallingApi(false);
+  
+  // 7. Validate the resulting state
+  ModeContext.validate();
+  
+  // 8. Log the action completion
+  Logger.logAction('selectNote', { noteId, success: true });
 }
 ```
 
