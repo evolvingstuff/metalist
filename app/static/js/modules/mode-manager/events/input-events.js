@@ -10,6 +10,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { selectNote } from '../actions.js';
+import { DOMUtils } from '../../dom-utils.js';
 
 /**
  * Initialize input event handlers
@@ -49,15 +50,34 @@ function handleInput(event) {
       throw new Error('Note element missing data-note-id attribute in input handler');
     }
     
-    // Set dirty flag since content has changed
-    ModeContext.setDirty(true);
-    
     // Ensure we're in editing mode for this note
     if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
       selectNote(noteId);
+      return; // selectNote will handle the rest
     }
     
-    Logger.logDebug('Note content changed', { noteId }, Logger.LogCategory.EVENT);
+    // Get current content from the DOM
+    const currentHtmlContent = DOMUtils.getNoteContentHTML(noteElement);
+    
+    // Only set dirty if content has actually changed from what we have stored
+    if (currentHtmlContent !== ModeContext.currentContent) {
+      // Update the stored content
+      ModeContext.setCurrentContent(currentHtmlContent);
+      
+      // Only set dirty flag if it's not already set
+      if (!ModeContext.isDirty) {
+        ModeContext.setDirty(true);
+        Logger.logDebug('Content marked as dirty due to typing', { 
+          key: event.data, 
+          noteId 
+        }, Logger.LogCategory.STATE);
+      }
+      
+      Logger.logDebug('Note content changed', { 
+        noteId,
+        contentLength: currentHtmlContent.length
+      }, Logger.LogCategory.EVENT);
+    }
   } else if (searchField) {
     if (searchField.value === undefined) {
       throw new Error('Search field has no value property');
