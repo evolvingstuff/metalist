@@ -12,7 +12,7 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { deselectNote, createNote } from '../actions.js';
+import { deselectNote, createNote, deleteNote } from '../actions.js';
 
 /**
  * Initialize keyboard event handlers
@@ -90,10 +90,20 @@ function handleKeyDown(event) {
       handleEscapeKey();
       break;
     case 'Enter':
-      if (event.metaKey || event.ctrlKey) {
+      if (event.metaKey) {
+        handleCreateNoteShortcut(event);
+      } else if (event.ctrlKey) {
         handleCreateNoteShortcut(event);
       } else {
         handleEnterKey(event);
+      }
+      break;
+    case 'Backspace':
+    case 'Delete':
+      if (event.metaKey) {
+        handleDeleteNoteShortcut(event);
+      } else if (event.ctrlKey) {
+        handleDeleteNoteShortcut(event);
       }
       break;
     case '/':
@@ -170,14 +180,50 @@ function handleCreateNoteShortcut(event) {
     throw new Error('handleCreateNoteShortcut called without an event object');
   }
   
-  if (ModeContext.isEditing === undefined) {
-    throw new Error('ModeContext missing isEditing property in handleCreateNoteShortcut');
+  // Log the shortcut activation
+  Logger.logDebug('Create note shortcut triggered', {
+    isEditing: ModeContext.isEditing,
+    currentNoteId: ModeContext.currentNoteId
+  }, Logger.LogCategory.EVENT);
+  
+  // Prevent default browser action
+  event.preventDefault();
+  
+  // Call createNote which already handles context-aware creation
+  createNote();
+}
+
+/**
+ * Handle delete note shortcut (Cmd+Delete or Ctrl+Delete)
+ * @param {KeyboardEvent} event - Original keydown event
+ */
+function handleDeleteNoteShortcut(event) {
+  if (!event) {
+    throw new Error('handleDeleteNoteShortcut called without an event object');
   }
   
-  // Call the action to create a new note
-  createNote();
+  const noteId = ModeContext.currentNoteId;
   
-  Logger.logDebug('New note created via keyboard shortcut', {}, Logger.LogCategory.EVENT);
+  // Log the shortcut activation
+  Logger.logDebug('Delete note shortcut triggered', {
+    isEditing: ModeContext.isEditing,
+    currentNoteId: noteId
+  }, Logger.LogCategory.EVENT);
+  
+  // Prevent default browser action
+  event.preventDefault();
+  
+  // Only try to delete if we have a note selected
+  if (noteId) {
+    // The deleteNote function already handles validation about editing state
+    deleteNote(noteId);
+  } else {
+    // No note to delete - log as NOOP
+    Logger.logNoop('Delete shortcut pressed but no note is selected', {
+      isEditing: ModeContext.isEditing,
+      currentNoteId: null
+    });
+  }
 }
 
 /**
