@@ -348,6 +348,15 @@ export function switchNotes(newNoteId) {
   
   // Then switch to the new note
   return promise.then(() => {
+    // Validate we have content before switching
+    // This enforces our state invariants and catches programming errors
+    if (ModeContext.currentContent === null) {
+      throw new Error(`Programming error: Switching from note ${currentNoteId} but currentContent is null`);
+    }
+    
+    // Clear current content before switching to prevent redundant state change errors
+    ModeContext.setCurrentContent(null);
+    
     // Set the new note ID and keep editing mode active
     ModeContext.setCurrentNoteId(newNoteId);
     
