@@ -56,15 +56,11 @@ export function saveNote(noteId) {
       ModeContext.setLastSavedContent(contentHTML);
       ModeContext.setDirty(false);
       
-      return response;
-    })
-    .catch(error => {
-      Logger.logError(`Failed to save note ${noteId}`, error);
-      throw error; // Re-throw for caller to handle
-    })
-    .finally(() => {
       // Clear loading state
       ModeContext.setLoading(false);
+      
+      // Return response
+      return response;
     });
 }
 
@@ -442,11 +438,14 @@ export function createNote() {
     initialPromise = saveNote(currentNoteId);
   }
   
-  // Set loading state for API call
-  ModeContext.setLoading(true);
-  
   return initialPromise
     .then(() => {
+      // Only set loading=true if we didn't just call saveNote
+      // (which would have already handled the loading state)
+      if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
+        ModeContext.setLoading(true);
+      }
+      
       // Choose the right API call based on selection state
       if (currentNoteId) {
         // Create a sibling after the currently selected note
