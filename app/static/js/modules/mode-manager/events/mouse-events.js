@@ -107,37 +107,33 @@ function handleClick(event) {
       // Only select the note if we're not already editing it
       if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
         // Calculate cursor position BEFORE fragment loading replaces DOM
-        try {
-          // Get the cursor offset (character position) directly
-          const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, coordinates);
-          
-          // Debug logging with proper category
-          const content = DOMUtils.getNoteContent(noteElement);
-          Logger.logDebug('Note content structure:', { 
-            html: content.innerHTML,
-            text: content.textContent,
-            cursorOffset,
-            coordinates,
-            childNodes: Array.from(content.childNodes).map(node => ({
-              type: node.nodeType,
-              name: node.nodeName,
-              text: node.textContent?.substring(0, 20)
-            }))
-          }, Logger.LogCategory.DEBUG);
-          
-          // Store the offset and noteId
-          ModeContext._savedCursorOffset = { 
-            offset: cursorOffset,
-            noteId // Store which note this was for
-          };
-          
-          Logger.logDebug('Stored cursor offset before fragment load', { 
-            cursorOffset, 
-            noteId 
-          }, Logger.LogCategory.EVENT);
-        } catch (error) {
-          Logger.logError('Failed to calculate cursor offset', error);
-        }
+        // Get the cursor offset (character position) directly
+        const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, coordinates);
+        
+        // Debug logging with proper category
+        const content = DOMUtils.getNoteContent(noteElement);
+        Logger.logDebug('Note content structure:', { 
+          html: content.innerHTML,
+          text: content.textContent,
+          cursorOffset,
+          coordinates,
+          childNodes: Array.from(content.childNodes).map(node => ({
+            type: node.nodeType,
+            name: node.nodeName,
+            text: node.textContent?.substring(0, 20)
+          }))
+        }, Logger.LogCategory.DEBUG);
+        
+        // Store the offset and noteId
+        ModeContext._savedCursorOffset = { 
+          offset: cursorOffset,
+          noteId // Store which note this was for
+        };
+        
+        Logger.logDebug('Stored cursor offset before fragment load', { 
+          cursorOffset, 
+          noteId 
+        }, Logger.LogCategory.EVENT);
         
         // This was a real user click in the note - use action to select it
         if (ModeContext.currentNoteId) {
