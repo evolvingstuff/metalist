@@ -99,62 +99,46 @@ export async function refresh(options = {}) {
   
   // If we have a current note, get its content and handle editability
   if (noteId) {
-    try {
-      const noteElement = DOMUtils.getNoteById(noteId);
-      const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+    const noteElement = DOMUtils.getNoteById(noteId);
+    const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+    
+    // Store content in context
+    ModeContext.setCurrentContent(contentHtml);
+    
+    // If we're in editing mode, make the note editable and position cursor
+    if (ModeContext.isEditing) {
+      // Make note editable
+      DOMUtils.setNoteEditable(noteElement, true);
       
-      // Store content in context
-      ModeContext.setCurrentContent(contentHtml);
+      // Position cursor and focus the note
+      let cursorOffset = 0;
       
-      // If we're in editing mode, make the note editable and position cursor
-      if (ModeContext.isEditing) {
-        // Make note editable
-        DOMUtils.setNoteEditable(noteElement, true);
+      if (ModeContext._savedCursorOffset && ModeContext._savedCursorOffset.noteId === noteId) {
+        // Use stored offset directly
+        cursorOffset = ModeContext._savedCursorOffset.offset;
         
-        // Position cursor and focus the note
-        let cursorOffset = 0;
+        // Clean up
+        ModeContext._savedCursorOffset = null;
         
-        if (ModeContext._savedCursorOffset && ModeContext._savedCursorOffset.noteId === noteId) {
-          try {
-            // Use stored offset directly
-            cursorOffset = ModeContext._savedCursorOffset.offset;
-            
-            // Clean up
-            ModeContext._savedCursorOffset = null;
-            
-            Logger.logDebug('Using stored cursor offset', {
-              cursorOffset
-            }, Logger.LogCategory.DEBUG);
-          } catch (error) {
-            Logger.logError('Failed to use stored cursor offset', error);
-            // Fall back to default cursor position (end of content)
-            const contentElement = DOMUtils.getNoteContent(noteElement);
-            cursorOffset = contentElement.textContent.length || 0;
-          }
-        } else {
-          // No stored offset available - default to end of content
-          const contentElement = DOMUtils.getNoteContent(noteElement);
-          cursorOffset = contentElement.textContent.length || 0;
-        }
-        
-        // Focus the note with cursor at proper position
-        DOMUtils.focusNote(noteElement, cursorOffset);
+        Logger.logDebug('Using stored cursor offset', {
+          cursorOffset
+        }, Logger.LogCategory.DEBUG);
+      } else {
+        // No stored offset available - default to end of content
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        cursorOffset = contentElement.textContent.length || 0;
       }
       
-      // Clean up loading state if needed following ABC pattern
-      if (shouldManageLoading && ModeContext.isLoading) {
-        ModeContext.setLoading(false);
-      }
-      
-      return contentHtml;
-    } catch (error) {
-      // Clean up loading state if needed following ABC pattern
-      if (shouldManageLoading && ModeContext.isLoading) {
-        ModeContext.setLoading(false);
-      }
-      
-      throw error;
+      // Focus the note with cursor at proper position
+      DOMUtils.focusNote(noteElement, cursorOffset);
     }
+    
+    // Clean up loading state if needed following ABC pattern
+    if (shouldManageLoading && ModeContext.isLoading) {
+      ModeContext.setLoading(false);
+    }
+    
+    return contentHtml;
   } else {
     // Clean up loading state if needed following ABC pattern
     if (shouldManageLoading && ModeContext.isLoading) {
