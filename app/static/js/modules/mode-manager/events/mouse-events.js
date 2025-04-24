@@ -13,6 +13,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { selectNote, deselectNote } from '../actions.js';
+import { DOMUtils } from '../../dom-utils.js'; // Fix the path - go up one more level
 
 /**
  * Initialize mouse event handlers
@@ -87,6 +88,25 @@ function handleClick(event) {
     if (isWithinBounds) {
       // Only select the note if we're not already editing it
       if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+        // Calculate cursor position BEFORE fragment loading replaces DOM
+        try {
+          // Get the cursor offset (character position) directly
+          const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, coordinates);
+          
+          // Store the offset and noteId
+          ModeContext._savedCursorOffset = { 
+            offset: cursorOffset,
+            noteId // Store which note this was for
+          };
+          
+          Logger.logDebug('Stored cursor offset before fragment load', { 
+            cursorOffset, 
+            noteId 
+          }, Logger.LogCategory.EVENT);
+        } catch (error) {
+          Logger.logError('Failed to calculate cursor offset', error);
+        }
+        
         // This was a real user click in the note - use action to select it
         selectNote(noteId);
         

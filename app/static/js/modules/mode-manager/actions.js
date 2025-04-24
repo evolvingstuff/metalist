@@ -10,6 +10,8 @@
 
 import { ModeContextInstance as ModeContext } from './mode-context.js';
 import * as Logger from './mode-logger.js';
+import { NotesAPI } from '../api-client.js';
+import { DOMUtils } from '../dom-utils.js';
 
 /**
  * Save the current note content
@@ -44,7 +46,7 @@ export function saveNote(noteId) {
 
 /**
  * Load a note's content
- * This is a simplified version without actual API calls
+ * This fetches the fragment from server and updates DOM
  * @param {string} noteId - ID of the note to load
  * @returns {Promise} Promise resolving when loading is complete
  * @throws {Error} If noteId is falsy or invalid
@@ -65,33 +67,45 @@ export function loadNote(noteId) {
   // Set loading state while we fetch content
   ModeContext.setLoading(true);
   
-  // In a real implementation, this would be an API call
-  // For now, simulate with a timeout
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Simulate getting content from server
-      const dummyContent = `Note content for ${noteId}`;
-      
-      // Store content in context
-      ModeContext.setCurrentContent(dummyContent);
-      
-      // Clear loading state
-      ModeContext.setLoading(false);
-      
-      // Reset dirty state for the newly loaded note
-      if (ModeContext.isDirty) {
-        ModeContext.setDirty(false);
+  // Call the API to get the fragment
+  return NotesAPI.getFragment(noteId)
+    .then(html => {
+      // Update the notes container with new HTML
+      const notesContainer = document.getElementById('notes-container');
+      if (!notesContainer) {
+        throw new Error('Notes container not found');
       }
       
-      // Log the action at a high level
-      Logger.logAction('loadNote', { 
-        noteId,
-        contentLength: dummyContent.length
-      });
+      notesContainer.innerHTML = html;
       
-      resolve(dummyContent);
-    }, 100); // Simulate network delay
-  });
+      // Now get the note content
+      try {
+        const noteElement = DOMUtils.getNoteById(noteId);
+        const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+        
+        // Store content in context
+        ModeContext.setCurrentContent(contentHtml);
+        
+        // Log the action at a high level
+        Logger.logAction('loadNote', { 
+          noteId,
+          contentLength: contentHtml.length
+        });
+        
+        return contentHtml;
+      } catch (error) {
+        Logger.logError(`Error getting note content for ${noteId}`, error);
+        throw error;
+      } finally {
+        // Clear loading state
+        ModeContext.setLoading(false);
+      }
+    })
+    .catch(error => {
+      Logger.logError(`Failed to load note ${noteId}`, error);
+      ModeContext.setLoading(false);
+      throw error;
+    });
 }
 
 /**
@@ -131,13 +145,47 @@ export function selectNote(noteId) {
       ModeContext.setCurrentNoteId(noteId);
       ModeContext.setEditing(true);
       
+      // Get note element and make it editable
+      const noteElement = DOMUtils.getNoteById(noteId);
+      DOMUtils.setNoteEditable(noteElement, true);
+      
+      // Position cursor and focus the note
+      let cursorOffset = 0;
+      
+      if (ModeContext._savedCursorOffset && ModeContext._savedCursorOffset.noteId === noteId) {
+        try {
+          // Use stored offset directly
+          cursorOffset = ModeContext._savedCursorOffset.offset;
+          
+          // Clean up
+          ModeContext._savedCursorOffset = null;
+          
+          Logger.logDebug('Using stored cursor offset', {
+            cursorOffset
+          }, Logger.LogCategory.EVENT);
+        } catch (error) {
+          Logger.logError('Failed to use stored cursor offset', error);
+          // Fall back to default cursor position (end of content)
+          const contentElement = DOMUtils.getNoteContent(noteElement);
+          cursorOffset = contentElement.textContent.length || 0;
+        }
+      } else {
+        // No stored offset available - default to end of content
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        cursorOffset = contentElement.textContent.length || 0;
+      }
+      
+      // Focus the note with cursor at proper position
+      DOMUtils.focusNote(noteElement, cursorOffset);
+      
       // Validate the resulting state
       ModeContext.validate();
       
       // Log the action completion
       Logger.logAction('selectNote', { 
         noteId,
-        wasSearching: ModeContext.isSearching
+        wasSearching: ModeContext.isSearching,
+        cursorOffset
       });
     })
     .catch(error => {

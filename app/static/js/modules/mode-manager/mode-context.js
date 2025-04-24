@@ -376,6 +376,15 @@ class ModeContext {
     return this._coordinates;
   }
   
+  /**
+   * Reset click coordinates
+   * @returns {ModeContext} this - For method chaining
+   */
+  resetCoordinates() {
+    this._coordinates = null;
+    return this;
+  }
+  
   //---------- STATE LISTENERS ----------//
   
   /**

@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('+++ main.js: Error initializing ModeManager:', error);
     }
     
+    // DISABLED FOR MODEMANAGER TESTING
+    /*
     // Initialize state machine
     StateMachine.init();
     console.log('StateMachine initialized');
@@ -44,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('input', (e) => {
         StateMachine.handleRawEvent('Input', e);
     });
+    */
+    
+    console.log('StateMachine disabled for ModeManager testing');
 
     // Prevent "phantom" cursor appearing when focusing notes outside their bounds
     // This can happen when clicking below/between notes since they are contenteditable
