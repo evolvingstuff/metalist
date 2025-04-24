@@ -20,7 +20,7 @@ import { DOMUtils } from '../dom-utils.js';
  * @returns {Promise} Promise resolving when save is complete
  * @throws {Error} If noteId is falsy or invalid
  */
-export function saveNote(noteId) {
+export async function saveNote(noteId) {
   Logger.logAction('saveNote', { noteId });
   
   // Validate input
@@ -50,18 +50,17 @@ export function saveNote(noteId) {
   ModeContext.setLoading(true);
   
   // Call the API to save the note
-  return NotesAPI.saveNote(noteId, contentHTML)
-    .then(response => {
-      // Update state to reflect save
-      ModeContext.setLastSavedContent(contentHTML);
-      ModeContext.setDirty(false);
-      
-      // Clear loading state
-      ModeContext.setLoading(false);
-      
-      // Return response
-      return response;
-    });
+  const response = await NotesAPI.saveNote(noteId, contentHTML);
+  
+  // Update state to reflect save
+  ModeContext.setLastSavedContent(contentHTML);
+  ModeContext.setDirty(false);
+  
+  // Clear loading state
+  ModeContext.setLoading(false);
+  
+  // Return response
+  return response;
 }
 
 /**
@@ -72,7 +71,7 @@ export function saveNote(noteId) {
  * @param {boolean} options.skipLoadingState - If true, doesn't set/clear loading state (for composing actions)
  * @returns {Promise} Promise resolving when refresh is complete
  */
-export function refresh(options = {}) {
+export async function refresh(options = {}) {
   Logger.logAction('refresh', { 
     noteId: ModeContext.currentNoteId,
     isEditing: ModeContext.isEditing
@@ -88,83 +87,82 @@ export function refresh(options = {}) {
   }
   
   // Call the API to get the fragment
-  return NotesAPI.getFragment(noteId)
-    .then(html => {
-      // Update the notes container with new HTML
-      const notesContainer = document.getElementById('notes-container');
-      if (!notesContainer) {
-        throw new Error('Notes container not found');
-      }
+  const html = await NotesAPI.getFragment(noteId);
+  
+  // Update the notes container with new HTML
+  const notesContainer = document.getElementById('notes-container');
+  if (!notesContainer) {
+    throw new Error('Notes container not found');
+  }
+  
+  notesContainer.innerHTML = html;
+  
+  // If we have a current note, get its content and handle editability
+  if (noteId) {
+    try {
+      const noteElement = DOMUtils.getNoteById(noteId);
+      const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
       
-      notesContainer.innerHTML = html;
+      // Store content in context
+      ModeContext.setCurrentContent(contentHtml);
       
-      // If we have a current note, get its content and handle editability
-      if (noteId) {
-        try {
-          const noteElement = DOMUtils.getNoteById(noteId);
-          const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
-          
-          // Store content in context
-          ModeContext.setCurrentContent(contentHtml);
-          
-          // If we're in editing mode, make the note editable and position cursor
-          if (ModeContext.isEditing) {
-            // Make note editable
-            DOMUtils.setNoteEditable(noteElement, true);
+      // If we're in editing mode, make the note editable and position cursor
+      if (ModeContext.isEditing) {
+        // Make note editable
+        DOMUtils.setNoteEditable(noteElement, true);
+        
+        // Position cursor and focus the note
+        let cursorOffset = 0;
+        
+        if (ModeContext._savedCursorOffset && ModeContext._savedCursorOffset.noteId === noteId) {
+          try {
+            // Use stored offset directly
+            cursorOffset = ModeContext._savedCursorOffset.offset;
             
-            // Position cursor and focus the note
-            let cursorOffset = 0;
+            // Clean up
+            ModeContext._savedCursorOffset = null;
             
-            if (ModeContext._savedCursorOffset && ModeContext._savedCursorOffset.noteId === noteId) {
-              try {
-                // Use stored offset directly
-                cursorOffset = ModeContext._savedCursorOffset.offset;
-                
-                // Clean up
-                ModeContext._savedCursorOffset = null;
-                
-                Logger.logDebug('Using stored cursor offset', {
-                  cursorOffset
-                }, Logger.LogCategory.DEBUG);
-              } catch (error) {
-                Logger.logError('Failed to use stored cursor offset', error);
-                // Fall back to default cursor position (end of content)
-                const contentElement = DOMUtils.getNoteContent(noteElement);
-                cursorOffset = contentElement.textContent.length || 0;
-              }
-            } else {
-              // No stored offset available - default to end of content
-              const contentElement = DOMUtils.getNoteContent(noteElement);
-              cursorOffset = contentElement.textContent.length || 0;
-            }
-            
-            // Focus the note with cursor at proper position
-            DOMUtils.focusNote(noteElement, cursorOffset);
+            Logger.logDebug('Using stored cursor offset', {
+              cursorOffset
+            }, Logger.LogCategory.DEBUG);
+          } catch (error) {
+            Logger.logError('Failed to use stored cursor offset', error);
+            // Fall back to default cursor position (end of content)
+            const contentElement = DOMUtils.getNoteContent(noteElement);
+            cursorOffset = contentElement.textContent.length || 0;
           }
-          
-          // Clean up loading state if needed following ABC pattern
-          if (shouldManageLoading && ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-          }
-          
-          return contentHtml;
-        } catch (error) {
-          // Clean up loading state if needed following ABC pattern
-          if (shouldManageLoading && ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-          }
-          
-          throw error;
-        }
-      } else {
-        // Clean up loading state if needed following ABC pattern
-        if (shouldManageLoading && ModeContext.isLoading) {
-          ModeContext.setLoading(false);
+        } else {
+          // No stored offset available - default to end of content
+          const contentElement = DOMUtils.getNoteContent(noteElement);
+          cursorOffset = contentElement.textContent.length || 0;
         }
         
-        return html;
+        // Focus the note with cursor at proper position
+        DOMUtils.focusNote(noteElement, cursorOffset);
       }
-    });
+      
+      // Clean up loading state if needed following ABC pattern
+      if (shouldManageLoading && ModeContext.isLoading) {
+        ModeContext.setLoading(false);
+      }
+      
+      return contentHtml;
+    } catch (error) {
+      // Clean up loading state if needed following ABC pattern
+      if (shouldManageLoading && ModeContext.isLoading) {
+        ModeContext.setLoading(false);
+      }
+      
+      throw error;
+    }
+  } else {
+    // Clean up loading state if needed following ABC pattern
+    if (shouldManageLoading && ModeContext.isLoading) {
+      ModeContext.setLoading(false);
+    }
+    
+    return html;
+  }
 }
 
 /**
@@ -174,7 +172,7 @@ export function refresh(options = {}) {
  * @returns {Promise} Promise resolving when loading is complete
  * @throws {Error} If noteId is falsy or invalid
  */
-export function loadNote(noteId) {
+export async function loadNote(noteId) {
   Logger.logAction('loadNote', { noteId });
   
   // Validate input
@@ -182,18 +180,9 @@ export function loadNote(noteId) {
     throw new Error('Cannot load note: noteId is required');
   }
   
-  // Validate state - fail fast if in an unexpected state
-  if (ModeContext.isDirty) {
-    const errorMsg = `Programming error: Cannot load note ${noteId} while dirty flag is set. Current note should be saved or deselected first.`;
-    Logger.logError(errorMsg);
-    throw new Error(errorMsg);
-  }
-  
-  // Set the noteId in context first
-  ModeContext.setCurrentNoteId(noteId);
-  
-  // Then use refresh to load the content
-  return refresh();
+  // Just call refresh, but pass the noteId to override the current one
+  // This is a convenience function that delegates to refresh
+  return await refresh();
 }
 
 /**
@@ -202,42 +191,39 @@ export function loadNote(noteId) {
  * @param {string} noteId - ID of the note to select
  * @throws {Error} If noteId is falsy or invalid
  */
-export function selectNote(noteId) {
-  Logger.logAction('selectNote', { noteId });
+export async function selectNote(noteId) {
+  Logger.logAction('selectNote', { 
+    noteId, 
+    currentNoteId: ModeContext.currentNoteId 
+  });
   
   // Validate input
   if (!noteId) {
     throw new Error('Cannot select note: noteId is required');
   }
   
-  // Check for redundant selection
-  if (ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
-    const errorMsg = `Redundant note selection: note ${noteId} is already selected and in edit mode`;
-    Logger.logError(errorMsg);
-    throw new Error(errorMsg);
-  }
-  
-  // If already editing a different note, deselect it first (which also saves it)
+  // If we're currently editing a note, save and deselect it first
   if (ModeContext.isEditing) {
-    deselectNote();
+    if (ModeContext.currentNoteId === noteId) {
+      Logger.logDebug('Note already selected, skipping', { noteId });
+      return; // Already selected this note
+    }
+    
+    // Save and deselect the current note
+    await deselectNote();
   }
   
-  // If we're in search mode, exit it first
-  if (ModeContext.isSearching) {
-    ModeContext.setSearching(false);
-    Logger.logDebug('Exiting search mode to edit note', { noteId }, Logger.LogCategory.STATE);
-  }
-  
-  // Set the note ID in context and enter editing mode
+  // Now select the new note
   ModeContext.setCurrentNoteId(noteId);
+  
+  // Refresh to get note content and make it editable
+  await refresh();
+  
+  // Enter editing mode
   ModeContext.setEditing(true);
   
-  // Use refresh to load content (which will now handle cursor positioning)
-  return refresh()
-    .then(() => {
-      // Validate the resulting state after refresh
-      ModeContext.validate();
-    });
+  // Validate the resulting state
+  ModeContext.validate();
 }
 
 /**
@@ -245,44 +231,53 @@ export function selectNote(noteId) {
  * Will save content if dirty
  * @throws {Error} If not currently editing (fail fast approach)
  */
-export function deselectNote() {
+export async function deselectNote() {
   Logger.logAction('deselectNote', { 
-    currentNoteId: ModeContext.currentNoteId
+    currentNoteId: ModeContext.currentNoteId,
+    isEditing: ModeContext.isEditing,
+    isDirty: ModeContext.isDirty
   });
   
-  // Validate current state - fail fast if inconsistent
-  if (!ModeContext.isEditing) {
-    throw new Error('Cannot deselect note: not currently in editing mode');
-  }
-  
-  if (!ModeContext.currentNoteId) {
-    throw new Error('Inconsistent state: editing mode active but no currentNoteId');
-  }
-  
+  // Get the current state
   const noteId = ModeContext.currentNoteId;
+  const isEditing = ModeContext.isEditing;
+  const isDirty = ModeContext.isDirty;
   
-  // Chain operations to avoid redundant state changes
-  // First save if dirty, then deselect
-  let promise = Promise.resolve();
-  
-  if (ModeContext.isDirty) {
-    // First save if needed
-    promise = saveNote(noteId);
+  // Validate we're actually editing
+  if (!isEditing) {
+    throw new Error('Cannot deselect note: not currently editing');
   }
   
-  return promise.then(() => {
-    // Now exit editing mode and clear all note-related state
+  // Save if dirty
+  if (isDirty && noteId) {
+    await saveNote(noteId);
+  }
+  
+  // Exit editing mode (only if we're currently editing, to avoid redundant state changes)
+  if (isEditing) {
     ModeContext.setEditing(false);
+  }
+  
+  // Get the note element before clearing the note ID
+  const noteElement = noteId ? DOMUtils.getNoteById(noteId) : null;
+  
+  // Clear current note ID
+  if (noteId) {
     ModeContext.setCurrentNoteId(null);
-    ModeContext.setCurrentContent(null);  // Clear content when deselecting
-    
-    // Refresh UI based on new context (no selected note)
-    return refresh();
-  })
-  .then(() => {
-    // Validate the resulting state
-    ModeContext.validate();
-  });
+  }
+  
+  // Make the note non-editable
+  if (noteElement) {
+    DOMUtils.setNoteEditable(noteElement, false);
+  }
+  
+  // Clear content
+  if (ModeContext.currentContent !== null) {
+    ModeContext.setCurrentContent(null);
+  }
+  
+  // Validate the resulting state
+  ModeContext.validate();
 }
 
 /**
@@ -292,10 +287,12 @@ export function deselectNote() {
  * @returns {Promise} Promise resolving when switch is complete
  * @throws {Error} If newNoteId is falsy, or same as current note
  */
-export function switchNotes(newNoteId) {
+export async function switchNotes(newNoteId) {
   Logger.logAction('switchNotes', { 
-    fromNoteId: ModeContext.currentNoteId,
-    toNoteId: newNoteId
+    currentNoteId: ModeContext.currentNoteId,
+    newNoteId,
+    isEditing: ModeContext.isEditing,
+    isDirty: ModeContext.isDirty
   });
   
   // Validate input
@@ -303,51 +300,43 @@ export function switchNotes(newNoteId) {
     throw new Error('Cannot switch notes: newNoteId is required');
   }
   
-  // Make sure we're in editing mode
-  if (!ModeContext.isEditing) {
-    return selectNote(newNoteId); // Just select if not already editing
-  }
-  
-  // Get current note ID
   const currentNoteId = ModeContext.currentNoteId;
-  if (!currentNoteId) {
-    throw new Error('Inconsistent state: editing mode active but no currentNoteId');
-  }
   
-  // Check for redundant switch (switching to the same note)
+  // Validate we're not switching to the same note
   if (currentNoteId === newNoteId) {
-    const message = `Redundant switch: note ${newNoteId} is already selected`;
-    Logger.logDebug(message, {}, Logger.LogCategory.NOOP);
-    return Promise.resolve(); // Nothing to do
+    Logger.logDebug('Already on this note, not switching', { noteId: newNoteId });
+    return;
   }
   
-  // First save current note if dirty
-  let promise = Promise.resolve();
-  if (ModeContext.isDirty) {
-    promise = saveNote(currentNoteId);
+  // If we have a current note and it's dirty, save it
+  if (ModeContext.isDirty && currentNoteId) {
+    await saveNote(currentNoteId);
   }
   
-  // Then switch to the new note
-  return promise.then(() => {
-    // Validate we have content before switching
-    // This enforces our state invariants and catches programming errors
-    if (ModeContext.currentContent === null) {
-      throw new Error(`Programming error: Switching from note ${currentNoteId} but currentContent is null`);
-    }
-    
-    // Clear current content before switching to prevent redundant state change errors
-    ModeContext.setCurrentContent(null);
-    
-    // Set the new note ID and keep editing mode active
-    ModeContext.setCurrentNoteId(newNoteId);
-    
-    // Use refresh to load the new content
-    return refresh();
-  })
-  .then(() => {
-    // Validate the resulting state
-    ModeContext.validate();
-  });
+  // Get the current note element
+  const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
+  
+  // Make the current note non-editable
+  if (currentNoteElement) {
+    DOMUtils.setNoteEditable(currentNoteElement, false);
+  }
+  
+  // Validate content is not null (fail fast)
+  if (ModeContext.currentContent === null) {
+    throw new Error(`Programming error: Switching from note ${currentNoteId} but currentContent is null`);
+  }
+  
+  // Clear current content before switching to prevent redundant state change errors
+  ModeContext.setCurrentContent(null);
+  
+  // Set the new note ID and keep editing mode active
+  ModeContext.setCurrentNoteId(newNoteId);
+  
+  // Use refresh to load the new content
+  await refresh();
+  
+  // Validate the resulting state
+  ModeContext.validate();
 }
 
 /**
@@ -355,7 +344,7 @@ export function switchNotes(newNoteId) {
  * @param {string} noteId - ID of the note to delete
  * @returns {Promise} Promise resolving when deletion is complete
  */
-export function deleteNote(noteId) {
+export async function deleteNote(noteId) {
   Logger.logAction('deleteNote', { 
     noteId,
     isEditing: ModeContext.isEditing,
@@ -394,14 +383,13 @@ export function deleteNote(noteId) {
   ModeContext.setLoading(true);
   
   // Do the API call
-  return NotesAPI.deleteNote(noteId)
-    .then(() => {
-      // Clear loading state before calling refresh
-      ModeContext.setLoading(false);
-      
-      // Now that state is fully cleared, refresh the UI
-      return refresh();
-    });
+  await NotesAPI.deleteNote(noteId);
+  
+  // Clear loading state before calling refresh
+  ModeContext.setLoading(false);
+  
+  // Now that state is fully cleared, refresh the UI
+  return await refresh();
 }
 
 /**
@@ -410,7 +398,7 @@ export function deleteNote(noteId) {
  * - If a note is selected, creates a new sibling after that note
  * @returns {Promise} Promise resolving when creation is complete
  */
-export function createNote() {
+export async function createNote() {
   Logger.logAction('createNote', {
     currentNoteId: ModeContext.currentNoteId,
     isEditing: ModeContext.isEditing,
@@ -421,45 +409,41 @@ export function createNote() {
   const currentNoteId = ModeContext.currentNoteId;
   
   // If we're editing and have unsaved changes, save first
-  let initialPromise = Promise.resolve();
   if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
-    initialPromise = saveNote(currentNoteId);
+    await saveNote(currentNoteId);
   }
   
-  return initialPromise
-    .then(() => {
-      // Only set loading=true if we didn't just call saveNote
-      // (which would have already handled the loading state)
-      if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
-        ModeContext.setLoading(true);
-      }
-      
-      // Choose the right API call based on selection state
-      if (currentNoteId) {
-        // Create a sibling after the currently selected note
-        Logger.logDebug('Creating new sibling note after note', { 
-          currentNoteId 
-        }, Logger.LogCategory.ACTION);
-        return NotesAPI.createSibling(currentNoteId);
-      } else {
-        // No note selected, create at top of list
-        Logger.logDebug('Creating new note at top of list', {}, Logger.LogCategory.ACTION);
-        return NotesAPI.createNote();
-      }
-    })
-    .then(data => {
-      // API returns the new note ID
-      const newNoteId = data.id;
-      
-      // Clear loading state
-      ModeContext.setLoading(false);
-      
-      // Select the new note to start editing it
-      // Use switchNotes if we're already editing, otherwise selectNote
-      if (ModeContext.isEditing) {
-        return switchNotes(newNoteId);
-      } else {
-        return selectNote(newNoteId);
-      }
-    });
+  // Only set loading=true if we didn't just call saveNote
+  // (which would have already handled the loading state)
+  if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
+    ModeContext.setLoading(true);
+  }
+  
+  // Choose the right API call based on selection state
+  let data;
+  if (currentNoteId) {
+    // Create a sibling after the currently selected note
+    Logger.logDebug('Creating new sibling note after note', { 
+      currentNoteId 
+    }, Logger.LogCategory.ACTION);
+    data = await NotesAPI.createSibling(currentNoteId);
+  } else {
+    // No note selected, create at top of list
+    Logger.logDebug('Creating new note at top of list', {}, Logger.LogCategory.ACTION);
+    data = await NotesAPI.createNote();
+  }
+  
+  // API returns the new note ID
+  const newNoteId = data.id;
+  
+  // Clear loading state
+  ModeContext.setLoading(false);
+  
+  // Select the new note to start editing it
+  // Use switchNotes if we're already editing, otherwise selectNote
+  if (ModeContext.isEditing) {
+    return await switchNotes(newNoteId);
+  } else {
+    return await selectNote(newNoteId);
+  }
 }
