@@ -20,6 +20,7 @@ import * as Logger from './mode-logger.js';
 // Import event handlers
 import { initKeyboardEvents } from './events/keyboard-events.js';
 import { initMouseEvents } from './events/mouse-events.js';
+import { initInputEvents } from './events/input-events.js';
 import { initFocusEvents } from './events/focus-events.js';
 import { initInactivityEvents, pauseActivityTracking, resumeActivityTracking } from './events/inactivity-events.js';
 
@@ -84,6 +85,7 @@ const ModeManager = {
       // Initialize event handlers from dedicated modules
       initKeyboardEvents();
       initMouseEvents();
+      initInputEvents();
       initFocusEvents();
       
       // Initialize inactivity tracking if enabled
