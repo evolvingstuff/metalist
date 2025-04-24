@@ -14,6 +14,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote } from '../actions/note-actions.js';
 import { selectNote, deselectNote, switchNotes } from '../actions/selection-actions.js';
+import { enterSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; // Fix the path - go up one more level
 
 /**
@@ -175,8 +176,8 @@ function handleClick(event) {
       }, Logger.LogCategory.EVENT);
     }
   } else if (searchField) {
-    ModeContext.setSearching(true);
-    ModeContext.validate();
+    // Use the dedicated action for entering search mode
+    enterSearchMode();
     Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
   } else if (createButton) {
     Logger.logDebug('Create note button clicked', { coordinates }, Logger.LogCategory.EVENT);
