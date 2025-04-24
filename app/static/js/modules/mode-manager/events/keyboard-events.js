@@ -12,6 +12,7 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
+import { deselectNote } from '../actions.js';
 
 /**
  * Initialize keyboard event handlers
@@ -82,11 +83,23 @@ function handleEscapeKey() {
   if (ModeContext.isSearching) {
     ModeContext.setSearching(false);
     ModeContext.validate();
-    Logger.logDebug('Search cancelled via Escape key');
+    Logger.logDebug('Search cancelled via Escape key', {}, Logger.LogCategory.EVENT);
   }
-  
-  // Initially don't handle other escape scenarios
-  // We'll expand this as we migrate more functionality
+  else if (ModeContext.isEditing) {
+    // Call the action instead of modifying state directly
+    deselectNote();
+    
+    Logger.logDebug('Editing cancelled via Escape key', {
+      previousNoteId: ModeContext.currentNoteId // Will capture the ID before deselectNote completes
+    }, Logger.LogCategory.EVENT);
+  }
+  else {
+    // Escape pressed but no action was taken - log as NOOP
+    Logger.logNoop('Escape key pressed but had no effect', {
+      isSearching: ModeContext.isSearching,
+      isEditing: ModeContext.isEditing
+    });
+  }
 }
 
 /**
