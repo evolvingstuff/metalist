@@ -12,7 +12,8 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { selectNote, deselectNote, switchNotes, deleteNote, createNote } from '../actions.js';
+import { createNote, deleteNote } from '../actions/note-actions.js';
+import { selectNote, deselectNote, switchNotes } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; // Fix the path - go up one more level
 
 /**

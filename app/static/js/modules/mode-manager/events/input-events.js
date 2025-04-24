@@ -9,7 +9,7 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { selectNote } from '../actions.js';
+import { selectNote } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js';
 
 /**

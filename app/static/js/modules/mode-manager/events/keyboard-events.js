@@ -12,7 +12,8 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { deselectNote, createNote, deleteNote } from '../actions.js';
+import { createNote, deleteNote } from '../actions/note-actions.js';
+import { deselectNote } from '../actions/selection-actions.js';
 
 /**
  * Initialize keyboard event handlers
