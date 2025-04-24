@@ -12,7 +12,7 @@
 
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { deselectNote } from '../actions.js';
+import { deselectNote, createNote } from '../actions.js';
 
 /**
  * Initialize keyboard event handlers
@@ -90,7 +90,11 @@ function handleKeyDown(event) {
       handleEscapeKey();
       break;
     case 'Enter':
-      handleEnterKey(event);
+      if (event.metaKey || event.ctrlKey) {
+        handleCreateNoteShortcut(event);
+      } else {
+        handleEnterKey(event);
+      }
       break;
     case '/':
       if (event.metaKey || event.ctrlKey) {
@@ -155,6 +159,25 @@ function handleEnterKey(event) {
   
   // If we make any state changes in the future, we'd validate here
   // ModeContext.validate();
+}
+
+/**
+ * Handle create note shortcut (Cmd+Enter or Ctrl+Enter)
+ * @param {KeyboardEvent} event - Original keydown event
+ */
+function handleCreateNoteShortcut(event) {
+  if (!event) {
+    throw new Error('handleCreateNoteShortcut called without an event object');
+  }
+  
+  if (ModeContext.isEditing === undefined) {
+    throw new Error('ModeContext missing isEditing property in handleCreateNoteShortcut');
+  }
+  
+  // Call the action to create a new note
+  createNote();
+  
+  Logger.logDebug('New note created via keyboard shortcut', {}, Logger.LogCategory.EVENT);
 }
 
 /**
