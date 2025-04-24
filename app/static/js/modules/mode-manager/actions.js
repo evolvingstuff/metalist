@@ -142,23 +142,27 @@ export function refresh(options = {}) {
             DOMUtils.focusNote(noteElement, cursorOffset);
           }
           
+          // Clean up loading state if needed following ABC pattern
+          if (shouldManageLoading && ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+          }
+          
           return contentHtml;
         } catch (error) {
-          Logger.logError(`Error getting note content for ${noteId}`, error);
+          // Clean up loading state if needed following ABC pattern
+          if (shouldManageLoading && ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+          }
+          
           throw error;
         }
       } else {
+        // Clean up loading state if needed following ABC pattern
+        if (shouldManageLoading && ModeContext.isLoading) {
+          ModeContext.setLoading(false);
+        }
+        
         return html;
-      }
-    })
-    .catch(error => {
-      Logger.logError(`Failed to refresh${noteId ? ` note ${noteId}` : ''}`, error);
-      throw error;
-    })
-    .finally(() => {
-      // Clear loading state if we managed it
-      if (shouldManageLoading) {
-        ModeContext.setLoading(false);
       }
     });
 }
@@ -233,9 +237,6 @@ export function selectNote(noteId) {
     .then(() => {
       // Validate the resulting state after refresh
       ModeContext.validate();
-    })
-    .catch(error => {
-      Logger.logError(`Failed to select note ${noteId}`, error);
     });
 }
 
@@ -281,10 +282,6 @@ export function deselectNote() {
   .then(() => {
     // Validate the resulting state
     ModeContext.validate();
-  })
-  .catch(error => {
-    Logger.logError(`Error during deselect note flow: ${error.message}`, error);
-    throw error;
   });
 }
 
@@ -350,10 +347,6 @@ export function switchNotes(newNoteId) {
   .then(() => {
     // Validate the resulting state
     ModeContext.validate();
-  })
-  .catch(error => {
-    Logger.logError(`Failed to switch from note ${currentNoteId} to ${newNoteId}`, error);
-    throw error;
   });
 }
 
@@ -408,11 +401,6 @@ export function deleteNote(noteId) {
       
       // Now that state is fully cleared, refresh the UI
       return refresh();
-    })
-    .catch(error => {
-      Logger.logError(`Failed to delete note ${noteId}`, error);
-      ModeContext.setLoading(false);
-      throw error;
     });
 }
 
@@ -473,12 +461,5 @@ export function createNote() {
       } else {
         return selectNote(newNoteId);
       }
-    })
-    .catch(error => {
-      Logger.logError('Failed to create note', {
-        error: error.message
-      });
-      ModeContext.setLoading(false);
-      throw error;
     });
 }
