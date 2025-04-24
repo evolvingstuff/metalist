@@ -93,6 +93,20 @@ function handleClick(event) {
           // Get the cursor offset (character position) directly
           const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, coordinates);
           
+          // Debug logging with proper category
+          const content = DOMUtils.getNoteContent(noteElement);
+          Logger.logDebug('Note content structure:', { 
+            html: content.innerHTML,
+            text: content.textContent,
+            cursorOffset,
+            coordinates,
+            childNodes: Array.from(content.childNodes).map(node => ({
+              type: node.nodeType,
+              name: node.nodeName,
+              text: node.textContent?.substring(0, 20)
+            }))
+          }, Logger.LogCategory.DEBUG);
+          
           // Store the offset and noteId
           ModeContext._savedCursorOffset = { 
             offset: cursorOffset,

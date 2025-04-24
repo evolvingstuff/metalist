@@ -21,7 +21,8 @@ export const LogCategory = {
   EVENT: 'EVENT',
   INIT: 'INIT',
   ERROR: 'ERROR',
-  NOOP: 'NOOP'  // No Operation - when an event was processed but intentionally ignored
+  NOOP: 'NOOP',  // No Operation - when an event was processed but intentionally ignored
+  DEBUG: 'DEBUG'  // Detailed debugging information
 };
 
 /**

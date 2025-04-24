@@ -165,50 +165,40 @@ export const DOMUtils = {
             throw new Error('Note missing content element');
         }
 
-        // Find target node and local offset
-        let currentOffset = 0;
-        let targetNode = null;
-        let localOffset = 0;
-
-        // Create a tree walker to traverse the DOM
-        // IMPORTANT: We need both SHOW_TEXT and SHOW_ELEMENT because:
-        // 1. Note content can be nested in elements (e.g. <div>some text</div>)
-        // 2. Without SHOW_ELEMENT, we can't traverse into nested elements
-        // 3. This ensures cursor positioning works for both plain text and rich content
-        const walk = document.createTreeWalker(
-            content,
-            NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-            null,
-            false
-        );
-
-        let node;
-        while ((node = walk.nextNode())) {
-            const length = node.textContent?.length || 0;
-            if (currentOffset + length >= offset) {
-                targetNode = node;
-                localOffset = offset - currentOffset;
-                break;
+        console.log("[DEBUG] Setting cursor at offset:", offset);
+        
+        // Use the same Range approach for setting position that we use for getting it
+        // This ensures consistent cursor behavior
+        try {
+            // Create new range over all content
+            const allTextRange = document.createRange();
+            allTextRange.selectNodeContents(content);
+            const allText = allTextRange.toString();
+            
+            // Validate offset is in bounds
+            if (offset > allText.length) {
+                console.log("[DEBUG] Offset beyond content length, clamping to end");
+                offset = allText.length;
             }
-            currentOffset += length;
+            
+            // Use Range API to find the right position
+            const targetRange = findRangeAtOffset(content, offset);
+            if (!targetRange) {
+                throw new Error(`Could not find position at offset ${offset}`);
+            }
+            
+            // Set selection
+            const selection = window.getSelection();
+            if (!selection) {
+                throw new Error('Could not get selection');
+            }
+            
+            selection.removeAllRanges();
+            selection.addRange(targetRange);
+        } catch (error) {
+            console.error("[DEBUG] Error setting cursor position:", error);
+            throw error;
         }
-
-        if (!targetNode) {
-            throw new Error(`Offset ${offset} beyond note content length ${currentOffset}`);
-        }
-
-        // Set selection
-        const range = document.createRange();
-        range.setStart(targetNode, localOffset);
-        range.collapse(true);
-
-        const selection = window.getSelection();
-        if (!selection) {
-            throw new Error('Could not get selection');
-        }
-
-        selection.removeAllRanges();
-        selection.addRange(range);
     },
 
     /**
@@ -246,14 +236,18 @@ export const DOMUtils = {
             throw new Error('Could not find path to clicked node');
         }
 
-        for (const node of path) {
-            if (node === range.startContainer) {
-                offset += range.startOffset;
-                break;
-            }
-            offset += node.textContent?.length || 0;
-        }
-
+        // Switch approach - directly use the browser's Range object
+        const textRange = document.createRange();
+        textRange.selectNodeContents(content);
+        textRange.setEnd(range.startContainer, range.startOffset);
+        const selectedText = textRange.toString();
+        offset = selectedText.length;
+        
+        console.log("[DEBUG] Range-based offset:", offset);
+        console.log("[DEBUG] Selected text:", selectedText);
+        console.log("[DEBUG] Clicked node:", range.startContainer.nodeName);
+        
+        // Return the range-based offset which should be more accurate for complex DOM
         return offset;
     },
 
@@ -350,3 +344,41 @@ export const DOMUtils = {
         searchInput.focus();
     },
 };
+
+// Helper function to find a range at a specific character offset
+// Returns a collapsed range at the specified offset
+function findRangeAtOffset(container, targetOffset) {
+    // Use a TreeWalker to navigate text nodes
+    const walker = document.createTreeWalker(
+        container,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+    );
+    
+    let currentOffset = 0;
+    let node = walker.nextNode();
+    
+    // Walk through text nodes until we find our target position
+    while (node) {
+        const nodeLength = node.length;
+        
+        // If target is within this node
+        if (currentOffset + nodeLength >= targetOffset) {
+            const range = document.createRange();
+            range.setStart(node, targetOffset - currentOffset);
+            range.collapse(true);
+            return range;
+        }
+        
+        // Move to next node
+        currentOffset += nodeLength;
+        node = walker.nextNode();
+    }
+    
+    // If we can't find exact position, return range at the end
+    const range = document.createRange();
+    range.selectNodeContents(container);
+    range.collapse(false);
+    return range;
+}
