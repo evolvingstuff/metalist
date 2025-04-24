@@ -21,6 +21,8 @@ import { DOMUtils } from '../dom-utils.js';
  * @throws {Error} If noteId is falsy or invalid
  */
 export function saveNote(noteId) {
+  Logger.logAction('saveNote', { noteId });
+  
   // Validate input
   if (!noteId) {
     throw new Error('Cannot save note: noteId is required');
@@ -54,13 +56,6 @@ export function saveNote(noteId) {
       ModeContext.setLastSavedContent(contentHTML);
       ModeContext.setDirty(false);
       
-      // Log the action at a high level
-      Logger.logAction('saveNote', { 
-        noteId,
-        contentLength: contentHTML.length,
-        response
-      });
-      
       return response;
     })
     .catch(error => {
@@ -82,6 +77,11 @@ export function saveNote(noteId) {
  * @returns {Promise} Promise resolving when refresh is complete
  */
 export function refresh(options = {}) {
+  Logger.logAction('refresh', { 
+    noteId: ModeContext.currentNoteId,
+    isEditing: ModeContext.isEditing
+  });
+  
   // Always use the current note ID from context
   const noteId = ModeContext.currentNoteId;
   
@@ -146,26 +146,12 @@ export function refresh(options = {}) {
             DOMUtils.focusNote(noteElement, cursorOffset);
           }
           
-          // Log the action at a high level with note ID
-          Logger.logAction('refresh', { 
-            noteId,
-            contentLength: contentHtml.length,
-            fragmentSize: html.length,
-            editMode: ModeContext.isEditing
-          });
-          
           return contentHtml;
         } catch (error) {
           Logger.logError(`Error getting note content for ${noteId}`, error);
           throw error;
         }
       } else {
-        // Log the action without note ID
-        Logger.logAction('refresh', { 
-          noteId: null,
-          fragmentSize: html.length
-        });
-        
         return html;
       }
     })
@@ -189,6 +175,8 @@ export function refresh(options = {}) {
  * @throws {Error} If noteId is falsy or invalid
  */
 export function loadNote(noteId) {
+  Logger.logAction('loadNote', { noteId });
+  
   // Validate input
   if (!noteId) {
     throw new Error('Cannot load note: noteId is required');
@@ -215,6 +203,8 @@ export function loadNote(noteId) {
  * @throws {Error} If noteId is falsy or invalid
  */
 export function selectNote(noteId) {
+  Logger.logAction('selectNote', { noteId });
+  
   // Validate input
   if (!noteId) {
     throw new Error('Cannot select note: noteId is required');
@@ -247,12 +237,6 @@ export function selectNote(noteId) {
     .then(() => {
       // Validate the resulting state after refresh
       ModeContext.validate();
-      
-      // Log the action completion
-      Logger.logAction('selectNote', { 
-        noteId,
-        wasSearching: ModeContext.isSearching
-      });
     })
     .catch(error => {
       Logger.logError(`Failed to select note ${noteId}`, error);
@@ -265,6 +249,10 @@ export function selectNote(noteId) {
  * @throws {Error} If not currently editing (fail fast approach)
  */
 export function deselectNote() {
+  Logger.logAction('deselectNote', { 
+    currentNoteId: ModeContext.currentNoteId
+  });
+  
   // Validate current state - fail fast if inconsistent
   if (!ModeContext.isEditing) {
     throw new Error('Cannot deselect note: not currently in editing mode');
@@ -297,11 +285,6 @@ export function deselectNote() {
   .then(() => {
     // Validate the resulting state
     ModeContext.validate();
-    
-    // Log the action at a high level
-    Logger.logAction('deselectNote', { 
-      previousNoteId: noteId 
-    });
   })
   .catch(error => {
     Logger.logError(`Error during deselect note flow: ${error.message}`, error);
@@ -317,6 +300,11 @@ export function deselectNote() {
  * @throws {Error} If newNoteId is falsy, or same as current note
  */
 export function switchNotes(newNoteId) {
+  Logger.logAction('switchNotes', { 
+    fromNoteId: ModeContext.currentNoteId,
+    toNoteId: newNoteId
+  });
+  
   // Validate input
   if (!newNoteId) {
     throw new Error('Cannot switch notes: newNoteId is required');
@@ -366,12 +354,6 @@ export function switchNotes(newNoteId) {
   .then(() => {
     // Validate the resulting state
     ModeContext.validate();
-    
-    // Log the action completion
-    Logger.logAction('switchNotes', { 
-      fromNoteId: currentNoteId, 
-      toNoteId: newNoteId 
-    });
   })
   .catch(error => {
     Logger.logError(`Failed to switch from note ${currentNoteId} to ${newNoteId}`, error);
@@ -385,6 +367,12 @@ export function switchNotes(newNoteId) {
  * @returns {Promise} Promise resolving when deletion is complete
  */
 export function deleteNote(noteId) {
+  Logger.logAction('deleteNote', { 
+    noteId,
+    isEditing: ModeContext.isEditing,
+    currentNoteId: ModeContext.currentNoteId
+  });
+  
   // Validate input
   if (!noteId) {
     throw new Error('Cannot delete note: noteId is required');
@@ -419,9 +407,6 @@ export function deleteNote(noteId) {
   // Do the API call
   return NotesAPI.deleteNote(noteId)
     .then(() => {
-      // Log the successful deletion
-      Logger.logAction('deleteNote', { noteId });
-      
       // Clear loading state before calling refresh
       ModeContext.setLoading(false);
       
@@ -442,6 +427,12 @@ export function deleteNote(noteId) {
  * @returns {Promise} Promise resolving when creation is complete
  */
 export function createNote() {
+  Logger.logAction('createNote', {
+    currentNoteId: ModeContext.currentNoteId,
+    isEditing: ModeContext.isEditing,
+    isDirty: ModeContext.isDirty
+  });
+  
   // Check if we currently have a note selected
   const currentNoteId = ModeContext.currentNoteId;
   
@@ -473,12 +464,6 @@ export function createNote() {
       // API returns the new note ID
       const newNoteId = data.id;
       
-      // Log the successful creation
-      Logger.logAction('createNote', { 
-        newNoteId,
-        createdAfter: currentNoteId || null
-      });
-      
       // Clear loading state
       ModeContext.setLoading(false);
       
@@ -491,7 +476,9 @@ export function createNote() {
       }
     })
     .catch(error => {
-      Logger.logError('Failed to create note', error);
+      Logger.logError('Failed to create note', {
+        error: error.message
+      });
       ModeContext.setLoading(false);
       throw error;
     });
