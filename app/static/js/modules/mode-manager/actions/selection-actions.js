@@ -41,11 +41,11 @@ export async function selectNote(noteId) {
   // Now select the new note
   ModeContext.setCurrentNoteId(noteId);
   
+  // Enter editing mode BEFORE refresh so cursor positioning works
+  ModeContext.setEditing(true);
+  
   // Refresh to get note content and make it editable
   await refresh();
-  
-  // Enter editing mode
-  ModeContext.setEditing(true);
   
   // Validate the resulting state
   ModeContext.validate();
