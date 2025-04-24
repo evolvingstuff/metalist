@@ -19,12 +19,15 @@ class ModeContext {
     this._searching = false;   // Whether search is active
     this._callingApi = false;  // Whether API calls are in progress
     this._active = true;       // Whether user is actively interacting with the app
+    this._dirty = false;       // Whether content has unsaved changes
+    this._loading = false;     // Whether content is loading
     
     // Context properties
     this._currentNoteId = null;     // ID of currently active note
     this._lastSavedContent = null;  // Content last saved to server
     this._cursorOffset = null;      // Cursor position in current note
     this._searchQuery = null;       // Current search term
+    this._currentContent = null;    // Current content being edited
     
     // Event memory
     this._lastKeyPressed = null;    // Last keyboard key pressed
@@ -39,11 +42,16 @@ class ModeContext {
   //---------- MODE SETTERS & GETTERS ----------//
   
   /**
-   * Set editing mode with validation
-   * @param {boolean} value - New editing mode state
+   * Set editing mode on/off
+   * @param {boolean} value - Whether editing mode is active
    * @returns {ModeContext} - For method chaining
    */
   setEditing(value) {
+    // Redundancy check - fail fast on programming errors
+    if (this._editing === value) {
+      throw new Error(`Redundant state change: editing is already ${value}`);
+    }
+    
     const oldValue = this._editing;
     this._editing = Boolean(value);
     
@@ -63,11 +71,16 @@ class ModeContext {
   }
   
   /**
-   * Set searching mode with validation
-   * @param {boolean} value - New searching mode state
+   * Set searching mode on/off
+   * @param {boolean} value - Whether search mode is active
    * @returns {ModeContext} - For method chaining
    */
   setSearching(value) {
+    // Redundancy check - fail fast on programming errors
+    if (this._searching === value) {
+      throw new Error(`Redundant state change: searching is already ${value}`);
+    }
+    
     const oldValue = this._searching;
     this._searching = Boolean(value);
     
@@ -92,11 +105,16 @@ class ModeContext {
   }
   
   /**
-   * Set API calling mode with validation
-   * @param {boolean} value - New API calling mode state
+   * Set API call flag on/off
+   * @param {boolean} value - Whether API call is in progress
    * @returns {ModeContext} - For method chaining
    */
   setCallingApi(value) {
+    // Redundancy check - fail fast on programming errors
+    if (this._callingApi === value) {
+      throw new Error(`Redundant state change: callingApi is already ${value}`);
+    }
+    
     const oldValue = this._callingApi;
     this._callingApi = Boolean(value);
     
@@ -147,16 +165,69 @@ class ModeContext {
     return this._active;
   }
   
+  /**
+   * Set dirty flag
+   * @param {boolean} value - Whether content has unsaved changes
+   * @returns {ModeContext} - For method chaining
+   */
+  setDirty(value) {
+    // Redundancy check - fail fast on programming errors
+    if (this._dirty === value) {
+      throw new Error(`Redundant state change: dirty is already ${value}`);
+    }
+    
+    this._dirty = Boolean(value);
+    this._notifyListeners('dirty', this._dirty);
+    return this;
+  }
+  
+  /**
+   * Check if content has unsaved changes
+   * @returns {boolean} True if dirty
+   */
+  get isDirty() {
+    return this._dirty;
+  }
+  
+  /**
+   * Set loading flag on/off
+   * @param {boolean} value - Whether loading is in progress
+   * @returns {ModeContext} - For method chaining
+   */
+  setLoading(value) {
+    // Redundancy check - fail fast on programming errors
+    if (this._loading === value) {
+      throw new Error(`Redundant state change: loading is already ${value}`);
+    }
+    
+    this._loading = Boolean(value);
+    this._notifyListeners('loading', this._loading);
+    return this;
+  }
+  
+  /**
+   * Check if content is loading
+   * @returns {boolean} True if loading
+   */
+  get isLoading() {
+    return this._loading;
+  }
+  
   //---------- CONTEXT SETTERS & GETTERS ----------//
   
   /**
    * Set current note ID
-   * @param {string} noteId - ID of the current note
+   * @param {string|null} noteId - ID of the current note, or null if no note selected
    * @returns {ModeContext} - For method chaining
    */
   setCurrentNoteId(noteId) {
+    // Redundancy check - fail fast on programming errors
+    if (this._currentNoteId === noteId) {
+      throw new Error(`Redundant state change: currentNoteId is already ${noteId}`);
+    }
+    
     this._currentNoteId = noteId;
-    this._notifyListeners('currentNoteId', this._currentNoteId);
+    this._notifyListeners('currentNoteId', noteId);
     return this;
   }
   
@@ -211,7 +282,7 @@ class ModeContext {
    */
   setSearchQuery(query) {
     this._searchQuery = query;
-    this._notifyListeners('searchQuery', this._searchQuery);
+    this._notifyListeners('searchQuery', query);
     return this;
   }
   
@@ -221,6 +292,30 @@ class ModeContext {
    */
   get searchQuery() {
     return this._searchQuery;
+  }
+  
+  /**
+   * Set current content being edited
+   * @param {string} content - Content text
+   * @returns {ModeContext} - For method chaining
+   */
+  setCurrentContent(content) {
+    // Redundancy check - fail fast on programming errors
+    if (this._currentContent === content) {
+      throw new Error(`Redundant state change: currentContent is already set to the same value`);
+    }
+    
+    this._currentContent = content;
+    this._notifyListeners('currentContent', content);
+    return this;
+  }
+  
+  /**
+   * Get current content being edited
+   * @returns {string|null} Current content or null if not editing
+   */
+  get currentContent() {
+    return this._currentContent;
   }
   
   //---------- EVENT MEMORY ----------//

@@ -50,7 +50,39 @@ function handleKeyDown(event) {
     key: event.key,
     meta: event.metaKey || event.ctrlKey,
     shift: event.shiftKey
-  });
+  }, Logger.LogCategory.EVENT);
+  
+  // If in editing mode and key is a content-changing key, mark content as dirty
+  if (ModeContext.isEditing) {
+    // Ignore special keys and modifier-only key presses
+    const isModifierKey = event.key === 'Control' || event.key === 'Alt' || 
+                          event.key === 'Shift' || event.key === 'Meta';
+    const isNavigationKey = event.key === 'ArrowUp' || event.key === 'ArrowDown' || 
+                            event.key === 'ArrowLeft' || event.key === 'ArrowRight' ||
+                            event.key === 'Home' || event.key === 'End' || 
+                            event.key === 'PageUp' || event.key === 'PageDown';
+    const isFunctionKey = event.key.startsWith('F') && event.key.length > 1; // F1-F12 keys
+                            
+    // Only mark as dirty for content-changing keys
+    if (!isModifierKey && !isNavigationKey && !isFunctionKey && 
+        !event.ctrlKey && !event.metaKey && event.key !== 'Escape') {
+      
+      // Let's log that we're about to mark content as dirty
+      Logger.logDebug('Detected content-changing keypress', {
+        key: event.key,
+        noteId: ModeContext.currentNoteId
+      }, Logger.LogCategory.EVENT);
+      
+      // Set the dirty flag if not already set
+      if (!ModeContext.isDirty) {
+        ModeContext.setDirty(true);
+        Logger.logDebug('Content marked as dirty due to typing', {
+          key: event.key,
+          noteId: ModeContext.currentNoteId
+        }, Logger.LogCategory.STATE);
+      }
+    }
+  }
   
   // Handle special keys
   switch (event.key) {

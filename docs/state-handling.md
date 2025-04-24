@@ -63,15 +63,44 @@ User Interaction → Event Handler → Action
 
 ### Validation Strategy
 
-The system follows a "fail-fast" approach to error handling:
+The system follows a "fail-fast" approach to error handling at multiple levels:
 
 1. **Input Validation**: Actions validate their inputs before proceeding
 2. **State Invariants**: The ModeContext enforces state consistency rules
-3. **Error Propagation**: Errors are thrown and logged immediately when detected
+3. **Redundancy Checks**: State setters fail on redundant state changes
+4. **Error Propagation**: Errors are thrown and logged immediately when detected
 
-Key invariants include:
+Key invariants and validation rules include:
 - If editing mode is active, a currentNoteId must be set
 - If editing mode is not active, no currentNoteId should be set
+- Setting a state flag to its current value is considered a programming error
+
+#### Redundancy Checks vs. NOOP Pattern
+
+The ModeManager implements two distinct approaches to handle potentially redundant operations:
+
+1. **Redundancy Checks (in ModeContext)**: 
+   ```javascript
+   // Inside setEditing() method
+   if (this._editing === value) {
+     throw new Error(`Redundant state change: editing is already ${value}`);
+   }
+   ```
+   These catch programming errors where code accidentally tries to set state to its current value.
+
+2. **NOOP Pattern (in event handlers)**:
+   ```javascript
+   // In handleClick()
+   if (ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
+     Logger.logNoop('Click in already selected note - no action needed');
+     return; // Prevent redundant action call
+   }
+   ```
+   This handles expected user behaviors like clicking the same note twice.
+
+This dual approach ensures:
+- Programming errors fail fast and visibly (with errors)
+- Expected user behaviors are handled gracefully (with NOOP logs)
 
 ## Boolean Flags vs. Traditional State Machines
 
