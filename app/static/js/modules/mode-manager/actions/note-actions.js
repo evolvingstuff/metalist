@@ -84,3 +84,41 @@ export async function createNote() {
         return await selectNote(newNoteId);
     }
 }
+
+export async function createChildNote() {
+    Logger.logAction('createChildNote', {
+        currentNoteId: ModeContext.currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty
+    });
+
+    const currentNoteId = ModeContext.currentNoteId;
+
+    if (!currentNoteId) {
+        Logger.logDebug('Cannot create child note: no parent note selected', {}, Logger.LogCategory.DEBUG);
+        return await createNote();
+    }
+
+    if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
+        await saveNote(currentNoteId);
+    }
+
+    if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
+        ModeContext.setLoading(true);
+    }
+
+    Logger.logDebug('Creating new child note under parent', { 
+        parentNoteId: currentNoteId 
+    }, Logger.LogCategory.DEBUG);
+    
+    const data = await NotesAPI.createChild(currentNoteId);
+    const newNoteId = data.id;
+
+    ModeContext.setLoading(false);
+
+    if (ModeContext.isEditing) {
+        return await switchNotes(newNoteId);
+    } else {
+        return await selectNote(newNoteId);
+    }
+}

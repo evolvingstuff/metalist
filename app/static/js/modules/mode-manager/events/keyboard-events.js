@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, createChildNote } from '../actions/note-actions.js';
 import { deselectNote } from '../actions/selection-actions.js';
 
 export function initKeyboardEvents() {
@@ -64,9 +64,9 @@ function handleKeyDown(event) {
             handleEscapeKey();
             break;
         case 'Enter':
-            if (event.metaKey) {
-                handleCreateNoteShortcut(event);
-            } else if (event.ctrlKey) {
+            if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
+                handleCreateChildNoteShortcut(event);
+            } else if (event.metaKey || event.ctrlKey) {
                 handleCreateNoteShortcut(event);
             } else {
                 handleEnterKey(event);
@@ -145,6 +145,21 @@ function handleCreateNoteShortcut(event) {
     event.preventDefault();
 
     createNote();
+}
+
+function handleCreateChildNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleCreateChildNoteShortcut called without an event object');
+    }
+
+    Logger.logDebug('Create child note shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+
+    createChildNote();
 }
 
 function handleDeleteNoteShortcut(event) {
