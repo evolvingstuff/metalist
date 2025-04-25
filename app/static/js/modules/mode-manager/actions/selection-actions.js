@@ -9,6 +9,7 @@ import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { saveNote } from './content-actions.js';
 import { refresh } from './ui-actions.js';
+import { exitSearchMode } from './search-actions.js';
 
 /**
  * Select a note and enter editing mode

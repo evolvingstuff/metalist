@@ -14,7 +14,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote } from '../actions/note-actions.js';
 import { selectNote, deselectNote, switchNotes } from '../actions/selection-actions.js';
-import { enterSearchMode } from '../actions/search-actions.js';
+import { enterSearchMode, exitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; // Fix the path - go up one more level
 
 /**
@@ -106,6 +106,20 @@ function handleClick(event) {
     );
     
     if (isWithinBounds) {
+      // Exit search mode if active (ABC pattern)
+      if (ModeContext.isSearching) {
+        console.log('DEBUG: About to call exitSearchMode', { 
+          isSearching: ModeContext.isSearching, 
+          where: 'click in note' 
+        });
+        exitSearchMode();
+      } else {
+        console.log('DEBUG: Search mode already inactive', { 
+          isSearching: ModeContext.isSearching, 
+          where: 'click in note' 
+        });
+      }
+      
       // Only select the note if we're not already editing it
       if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
         // Calculate cursor position BEFORE fragment loading replaces DOM
@@ -176,10 +190,26 @@ function handleClick(event) {
       }, Logger.LogCategory.EVENT);
     }
   } else if (searchField) {
-    // Use the dedicated action for entering search mode
+    // Always call enterSearchMode when clicking search
+    // enterSearchMode handles conditional deselection internally
     enterSearchMode();
+    
     Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
   } else if (createButton) {
+    // Exit search mode if active (ABC pattern)
+    if (ModeContext.isSearching) {
+      console.log('DEBUG: About to call exitSearchMode', { 
+        isSearching: ModeContext.isSearching, 
+        where: 'create note button' 
+      });
+      exitSearchMode();
+    } else {
+      console.log('DEBUG: Search mode already inactive', { 
+        isSearching: ModeContext.isSearching, 
+        where: 'create note button' 
+      });
+    }
+    
     Logger.logDebug('Create note button clicked', { coordinates }, Logger.LogCategory.EVENT);
     createNote();
   } else {
@@ -193,6 +223,20 @@ function handleClick(event) {
         isEditing: false,
         currentNoteId: null
       }, Logger.LogCategory.EVENT);
+    }
+    
+    // Exit search mode if active (ABC pattern)
+    if (ModeContext.isSearching) {
+      console.log('DEBUG: About to call exitSearchMode', { 
+        isSearching: ModeContext.isSearching, 
+        where: 'click outside handler' 
+      });
+      exitSearchMode();
+    } else {
+      console.log('DEBUG: Search mode already inactive', { 
+        isSearching: ModeContext.isSearching, 
+        where: 'click outside handler' 
+      });
     }
   }
   

@@ -40,9 +40,10 @@ function handleFocus(event) {
   const searchField = event.target.closest('#search-input');
   
   if (searchField) {
-    // Handle search field focus
-    ModeContext.setSearching(true);
-    Logger.logDebug('Search field focused');
+    // We no longer handle search via focus events
+    // All search interactions are now handled by click events in mouse-events.js
+    // and through keyboard shortcuts
+    Logger.logDebug('Search field focused (no state change)');
   }
   // Note: We explicitly ignore note content focus events
   // All note interactions are handled by click events in mouse-events.js
@@ -64,11 +65,9 @@ function handleBlur(event) {
   const searchField = event.target.closest('#search-input');
   
   if (searchField) {
-    // Only exit search mode if search is empty
-    if (!ModeContext.searchQuery) {
-      ModeContext.setSearching(false);
-      Logger.logDebug('Search field blurred and empty');
-    }
+    // We no longer handle search via blur events
+    // All search interactions are now handled by click events in mouse-events.js
+    Logger.logDebug('Search field blurred (no state change)');
   }
   // Note: We explicitly ignore note content blur events
   // All note interactions are handled by mouse events

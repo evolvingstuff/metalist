@@ -1,8 +1,7 @@
 /**
  * ModeLogger
  * 
- * Centralized logging utility for the ModeManager.
- * All logs are prefixed with '+++ ' for easy filtering in the console.
+ * Centralized logging utility for the Note Manager.
  * Categories allow filtering for specific types of events:
  * - ACTION: High-level user actions (selectNote, deselectNote)
  * - STATE: Individual state changes (editing, currentNoteId)
@@ -26,14 +25,14 @@ export const LogCategory = {
 };
 
 /**
- * Log a message with mode manager data
+ * Log a message with note manager data
  * @param {string} message - The message to log
  * @param {Object} data - Additional data to include in the log
  * @param {LogCategory} category - The category of log (ACTION, STATE, EVENT, etc.)
  * @param {Object} modes - Current mode states
  */
 export function logDebug(message, data = {}, category = LogCategory.EVENT, modes = null) {
-  console.log(`+++ ModeManager [${category}]: ${message}`, {
+  console.log(`[${category}]: ${message}`, {
     ...(modes && { modes }),
     ...data
   });
@@ -45,7 +44,7 @@ export function logDebug(message, data = {}, category = LogCategory.EVENT, modes
  * @param {Object} data - Additional data about the action
  */
 export function logAction(actionName, data = {}) {
-  console.log(`+++ ModeManager [${LogCategory.ACTION}]: ${actionName}`, data);
+  console.log(`[${LogCategory.ACTION}]: ${actionName}`, data);
 }
 
 /**
@@ -55,7 +54,7 @@ export function logAction(actionName, data = {}) {
  * @param {any} oldValue - The previous value
  */
 export function logState(property, newValue, oldValue = undefined) {
-  console.log(`+++ ModeManager [${LogCategory.STATE}]: ${property} changed`, {
+  console.log(`[${LogCategory.STATE}]: ${property} changed`, {
     from: oldValue,
     to: newValue
   });
@@ -66,7 +65,7 @@ export function logState(property, newValue, oldValue = undefined) {
  * @param {Object} stateObj - Full state object containing modes, context, and event memory
  */
 export function logFullState(stateObj) {
-  console.log(`+++ ModeManager [${LogCategory.STATE}]: Current State:`, stateObj);
+  console.log(`[${LogCategory.STATE}]: Current State:`, stateObj);
 }
 
 /**
@@ -74,16 +73,16 @@ export function logFullState(stateObj) {
  * @param {string} componentName - Name of the component being initialized
  */
 export function logInit(componentName) {
-  console.log(`+++ ModeManager [${LogCategory.INIT}]: ${componentName} initialized`);
+  console.log(`[${LogCategory.INIT}]: ${componentName} initialized`);
 }
 
 /**
- * Log an error with mode manager prefix
- * @param {string} message - Error message
- * @param {Error} error - Error object if available
+ * Log an error with category prefix
+ * @param {string} message - Error message to log
+ * @param {Error|Object} error - Error object or data
  */
-export function logError(message, error = null) {
-  console.error(`+++ ModeManager [${LogCategory.ERROR}]: ${message}`, error || '');
+export function logError(message, error = {}) {
+  console.error(`[${LogCategory.ERROR}]: ${message}`, error);
 }
 
 /**
@@ -92,5 +91,5 @@ export function logError(message, error = null) {
  * @param {Object} data - Additional data about the skipped operation
  */
 export function logNoop(message, data = {}) {
-  console.log(`+++ ModeManager [${LogCategory.NOOP}]: ${message}`, data);
+  console.log(`[${LogCategory.NOOP}]: ${message}`, data);
 }

@@ -21,13 +21,8 @@ export async function enterSearchMode() {
     await deselectNote();
   }
   
-  // Follow ABC pattern - only set if it's changing
-  if (!ModeContext.isSearching) {
-    ModeContext.setSearching(true);
-  }
-  
-  // Focus the search field
-  DOMUtils.focusSearchField();
+  // Unconditionally set search mode - ABC pattern is handled by event handlers
+  ModeContext.setSearching(true);
   
   // Validate the resulting state
   ModeContext.validate();
@@ -39,10 +34,8 @@ export async function enterSearchMode() {
 export function exitSearchMode() {
   Logger.logAction('exitSearchMode');
   
-  // Follow ABC pattern - only set if it's changing
-  if (ModeContext.isSearching) {
-    ModeContext.setSearching(false);
-  }
+  // Unconditionally set search mode to false - ABC pattern is handled by event handlers
+  ModeContext.setSearching(false);
   
   // Validate the resulting state
   ModeContext.validate();
