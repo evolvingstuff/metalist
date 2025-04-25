@@ -97,11 +97,11 @@ export async function createNote() {
     // Create a sibling after the currently selected note
     Logger.logDebug('Creating new sibling note after note', { 
       currentNoteId 
-    }, Logger.LogCategory.ACTION);
+    }, Logger.LogCategory.DEBUG);
     data = await NotesAPI.createSibling(currentNoteId);
   } else {
     // No note selected, create at top of list
-    Logger.logDebug('Creating new note at top of list', {}, Logger.LogCategory.ACTION);
+    Logger.logDebug('Creating new note at top of list', {}, Logger.LogCategory.DEBUG);
     data = await NotesAPI.createNote();
   }
   

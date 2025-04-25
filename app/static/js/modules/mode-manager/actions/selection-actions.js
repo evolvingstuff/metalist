@@ -66,41 +66,29 @@ export async function deselectNote() {
   
   // Get the current state
   const noteId = ModeContext.currentNoteId;
-  const isEditing = ModeContext.isEditing;
   const isDirty = ModeContext.isDirty;
   
   // Validate we're actually editing
-  if (!isEditing) {
+  if (!ModeContext.isEditing) {
     throw new Error('Cannot deselect note: not currently editing');
   }
   
-  // Save if dirty
-  if (isDirty && noteId) {
+  // Save if dirty (noteId must exist if we're editing)
+  if (isDirty) {
     await saveNote(noteId);
   }
   
-  // Exit editing mode (only if we're currently editing, to avoid redundant state changes)
-  if (isEditing) {
-    ModeContext.setEditing(false);
-  }
+  // Exit editing mode (no need to check - we've already validated)
+  ModeContext.setEditing(false);
   
-  // Get the note element before clearing the note ID
-  const noteElement = noteId ? DOMUtils.getNoteById(noteId) : null;
+  // Clear current note ID (no need to check - we're definitely editing a note)
+  ModeContext.setCurrentNoteId(null);
   
-  // Clear current note ID
-  if (noteId) {
-    ModeContext.setCurrentNoteId(null);
-  }
+  // Clear content (no need to check - we've definitely set content if editing)
+  ModeContext.setCurrentContent(null);
   
-  // Make the note non-editable
-  if (noteElement) {
-    DOMUtils.setNoteEditable(noteElement, false);
-  }
-  
-  // Clear content
-  if (ModeContext.currentContent !== null) {
-    ModeContext.setCurrentContent(null);
-  }
+  // Refresh the UI to reflect state changes
+  await refresh();
   
   // Validate the resulting state
   ModeContext.validate();

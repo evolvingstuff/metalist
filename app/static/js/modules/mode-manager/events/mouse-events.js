@@ -63,6 +63,11 @@ function handleClick(event) {
   
   // Update mode based on what was clicked
   if (deleteButton) {
+    // Exit search mode if active (ABC pattern)
+    if (ModeContext.isSearching) {
+      exitSearchMode();
+    }
+    
     // Only delete if there's a currently selected note
     const noteId = ModeContext.currentNoteId;
     
