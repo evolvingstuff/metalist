@@ -1,44 +1,3 @@
-/**
- * State Machine Controller
- * 
- * Manages application state transitions and side effects in a predictable way:
- * 
- * 1. Events flow through:
- *    raw event -> mapped event -> state handler -> (optional) transition
- * 
- * 2. State transitions:
- *    - Run exit handler for old state
- *    - Execute queued effects
- *    - Update fragment
- *    - Change state
- *    - Run enter handler for new state
- * 
- * 3. State Context:
- *    - Holds all state data (noteId, content, cursor position, etc.)
- *    - Validates data access
- *    - Queues effects for next transition
- * 
- * Example flow:
- * ```
- * // 1. Initialize
- * StateMachine.init();
- * 
- * // 2. Handle raw event
- * StateMachine.handleRawEvent({
- *   type: 'keydown',
- *   key: 'Enter'
- * });
- * 
- * // 3. State handler queues effects and sets target state
- * stateContext
- *   .queueEffect(new CreateNoteEffect())
- *   .setTargetState('editing');
- * 
- * // 4. Transition runs effects and handlers
- * await StateMachine.transition();
- * ```
- */
-
 import { RawEvents } from './raw-events.js';
 import { EventMapper } from './event-mapper.js';
 import { NotesAPI } from '../api-client.js';
@@ -50,7 +9,6 @@ import { StateContext } from './state-context.js';
 import { DOMUtils } from '../dom-utils.js';
 import { CONFIG } from '../config.js';
 
-// Valid state machine states
 export const States = {
     IDLE: 'idle',
     EDITING: 'editing',
@@ -58,26 +16,23 @@ export const States = {
 };
 
 export const StateMachine = {
-    // State handlers
+                
     handlers: {
         idle: idleTransitions,
         editing: editingTransitions,
         searching: searchingTransitions
     },
 
-    // Valid state transitions
     validTransitions: {
         idle: ['editing', 'searching'],
         editing: ['idle', 'editing', 'searching'],
         searching: ['idle', 'editing']
     },
 
-    // State variables
     state: 'idle',
     currentStateContext: null,
     listeners: [],
 
-    // Activity monitoring
     startActivityMonitor() {
         if (CONFIG.FEATURES.USE_INACTIVITY_TIMEOUT) {
             const activityMonitor = new ActivityMonitor(this);
@@ -104,7 +59,7 @@ export const StateMachine = {
     },
 
     handleRawEvent(eventName, domEvent) {
-        // NO MERCY - event validation
+                                
         if (!eventName) {
             throw new Error('Event name is required');
         }
@@ -112,10 +67,8 @@ export const StateMachine = {
             throw new Error('DOM event is required');
         }
 
-        // Set event phase BEFORE any state changes
         this.currentStateContext.setPhase('event');
 
-        // Clear event-specific state
         this.currentStateContext
             .resetKey()
             .resetMetaKey()
@@ -124,7 +77,6 @@ export const StateMachine = {
             .resetCoordinates()
             .resetType();
 
-        // Map event names to handlers
         const handlerMap = {
             'Click': () => RawEvents.handleClick(domEvent),
             'KeyDown': () => RawEvents.handleKeyDown(domEvent),
@@ -143,15 +95,13 @@ export const StateMachine = {
             throw new Error(`No handler for event: ${eventName}`);
         }
 
-        // Handle raw event
         handler();
 
-        // Map and handle the event
         this.handleMappedEvent();
     },
 
     async handleMappedEvent() {
-        // NO MERCY validation
+                                
         if (!this.currentStateContext || typeof this.currentStateContext !== 'object') {
             throw new Error('Invalid state context: not an object');
         }
@@ -165,7 +115,6 @@ export const StateMachine = {
             throw new Error(`Invalid current state: ${this.state}`);
         }
 
-        // Map the event using current state
         const eventType = this.currentStateContext.getType();
         if (!eventType) {
             throw new Error('Event type not set');
@@ -174,7 +123,6 @@ export const StateMachine = {
             throw new Error('Event type must be a string');
         }
 
-        // Let current state handle event
         const stateHandler = this.handlers[this.state];
         if (!stateHandler) {
             throw new Error(`No handler for state: ${this.state}`);
@@ -183,10 +131,8 @@ export const StateMachine = {
             throw new Error(`Invalid handler for state: ${this.state}`);
         }
 
-        // Handle event in current state
         await stateHandler.handleEvent();
 
-        // Check if we need to transition
         const targetState = this.currentStateContext.getTargetState();
         if (targetState) {
             console.log('🔄 Transitioning:', {
@@ -210,7 +156,6 @@ export const StateMachine = {
             throw new Error('Target state not set');
         }
 
-        // Get handlers for current and target states
         const exitHandler = this.handlers[this.state];
         const enterHandler = this.handlers[targetState];
 
@@ -220,13 +165,11 @@ export const StateMachine = {
             context: this.currentStateContext
         });
 
-        // Run exit handler for current state - needs current noteId
         if (exitHandler?.exit) {
             this.currentStateContext.setPhase('exiting');
             await exitHandler.exit();
         }
 
-        // Run all queued effects - needs current noteId
         this.currentStateContext.setPhase('effects');
         const effects = this.currentStateContext.getEffects();
         console.log('🔄 Running effects:', effects.map(e => e.constructor.name));
@@ -235,27 +178,22 @@ export const StateMachine = {
         }
         this.currentStateContext.resetEffects();
 
-        // Cache the target note ID before any resets
         const targetNoteId = this.currentStateContext.getTargetNoteId();
-        
-        // Set phase to transition before ID updates
+
         this.currentStateContext.setPhase('transition');
 
-        // NOW safe to reset and update IDs since exit and effects are done
-        this.currentStateContext.resetNoteId();  // Always start fresh
+        this.currentStateContext.resetNoteId();  
         this.currentStateContext.resetTargetNoteId();
-        if (targetNoteId) {  // Only set if we have a target
+        if (targetNoteId) {  
             this.currentStateContext.setNoteId(targetNoteId);
         }
 
-        // Trigger fragment render with the new noteId
         console.log('🔄 Updating fragment (state-machine-controller)');
         const html = await NotesAPI.getFragment(this.currentStateContext.getNoteId());
         if (!html) {
             throw new Error('Invalid fragment: missing HTML');
         }
 
-        // Update the notes container with new HTML
         const notesContainer = document.getElementById('notes-container');
         if (!notesContainer) {
             throw new Error('Notes container not found');
@@ -267,27 +205,22 @@ export const StateMachine = {
         notesContainer.innerHTML = html;
         console.log('✅ Fragment updated (state-machine-controller)');
 
-        // Update state
         this.state = targetState;
 
-        // Run enter handler for target state
         if (enterHandler?.enter) {
             this.currentStateContext.setPhase('entering');
             await enterHandler.enter();
         }
 
-        // Reset phase to event for next event
         this.currentStateContext.setPhase('event');
 
-        // Reset target state
         this.currentStateContext.resetTargetState();
 
-        // Notify listeners
         this.notifyListeners();
     },
 
     resetOnNewEvent() {
-        // Clear event-specific state
+                                
         this.currentStateContext
             .resetKey()
             .resetMetaKey()

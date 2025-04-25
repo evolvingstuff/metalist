@@ -1,11 +1,5 @@
 import { CONFIG } from '../config.js';
 
-/**
- * Activity Monitor
- * 
- * Tracks user activity and emits timeout events to the state machine.
- * Manages inactivity timers and cleanup.
- */
 export class ActivityMonitor {
     constructor(stateMachine) {
         this.stateMachine = stateMachine;

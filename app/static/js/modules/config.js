@@ -1,11 +1,7 @@
-/**
- * Application-wide configuration settings
- */
 export const CONFIG = {
-    // Timeouts
-    INACTIVITY_TIMEOUT: 10000,  // Time before auto-save (ms)
-    
-    // API Endpoints
+                
+    INACTIVITY_TIMEOUT: 10000,  
+
     API: {
         NOTES: {
             CREATE: '/api/notes/new',
@@ -21,8 +17,7 @@ export const CONFIG = {
             FRAGMENT: '/api/notes/fragment'
         }
     },
-    
-    // CSS Classes
+
     CLASSES: {
         NOTE: 'note',
         NOTE_CONTENT: 'note-content',
@@ -35,14 +30,12 @@ export const CONFIG = {
         DRAG_TRASH: 'drag-trash',
         SEARCH_INPUT: 'search-input'
     },
-    
-    // Feature flags
+
     FEATURES: {
-        USE_STATE_MACHINE: true,      // Enable state machine
-        USE_INACTIVITY_TIMEOUT: false // Enable inactivity timeout
+        USE_STATE_MACHINE: true,      
+        USE_INACTIVITY_TIMEOUT: false 
     },
-    
-    // Debug flags
+
     DEBUG: {
         LOG_API_CALLS: true,
         LOG_STATE_CHANGES: true,

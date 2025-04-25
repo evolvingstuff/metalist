@@ -1,51 +1,12 @@
-/**
- * State Machine Effects
- * 
- * Effects handle side effects during state transitions:
- * 
- * 1. Effect Pipeline:
- *    - Effects are queued in state context
- *    - Run in order during transitions
- *    - Complete before state changes
- * 
- * 2. Effect Types:
- *    - CreateNoteEffect: Creates new note and updates context
- *    - More effects can be added for other operations
- * 
- * 3. Effect Pattern:
- *    - Each effect extends base Effect class
- *    - Must implement execute() method
- *    - Should update context with results
- * 
- * Example:
- * ```
- * // 1. Queue effect
- * stateContext.queueEffect(new CreateNoteEffect());
- * 
- * // 2. Effect runs during transition
- * await effect.execute();
- * // - Creates note via API
- * // - Sets noteId in context
- * // - Sets initial content
- * // - Sets cursor position
- * ```
- */
-
 import { NotesAPI } from '../api-client.js';
 import { StateMachine } from './state-machine-controller.js';
 
-/**
- * Base class for all effects
- */
 export class Effect {
     async execute() {
         throw new Error('Effect must implement execute()');
     }
 }
 
-/**
- * Creates a new note
- */
 export class CreateNoteEffect extends Effect {
     async execute() {
         console.log(' Creating new note');
@@ -54,13 +15,10 @@ export class CreateNoteEffect extends Effect {
         StateMachine.currentStateContext
             .setTargetNoteId(data.id)
             .setLastSavedContent('')
-            .setCursorOffset(0);  // Start cursor at beginning of empty note
+            .setCursorOffset(0);  
     }
 }
 
-/**
- * Creates a new child note under specified parent
- */
 export class CreateChildEffect extends Effect {
     constructor(parentId) {
         super();
@@ -77,17 +35,14 @@ export class CreateChildEffect extends Effect {
             throw new Error('Invalid API response: missing note ID');
         }
         console.log(' Child note created:', data.id);
-        
+                                
         StateMachine.currentStateContext
             .setTargetNoteId(data.id)
             .setLastSavedContent('')
-            .setCursorOffset(0);  // Start cursor at beginning of empty note
+            .setCursorOffset(0);  
     }
 }
 
-/**
- * Creates a new sibling note after the specified note
- */
 export class CreateSiblingEffect extends Effect {
     constructor(siblingId) {
         super();
@@ -104,17 +59,14 @@ export class CreateSiblingEffect extends Effect {
             throw new Error('Invalid API response: missing note ID');
         }
         console.log(' Sibling note created:', data.id);
-        
+                                
         StateMachine.currentStateContext
             .setTargetNoteId(data.id)
             .setLastSavedContent('')
-            .setCursorOffset(0);  // Start cursor at beginning of empty note
+            .setCursorOffset(0);  
     }
 }
 
-/**
- * Updates a note's content
- */
 export class UpdateNoteEffect extends Effect {
     constructor(noteId, content) {
         super();
@@ -129,7 +81,7 @@ export class UpdateNoteEffect extends Effect {
     }
 
     async execute() {
-        // Skip if content hasn't changed
+                                
         console.log('UpdateNoteEffect: Getting lastSavedContent');
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
         console.log('UpdateNoteEffect: lastSavedContent =', lastSavedContent);
@@ -139,7 +91,7 @@ export class UpdateNoteEffect extends Effect {
         }
 
         console.log(' Updating note:', this.noteId);
-        // Fire and forget - don't await
+                                
         NotesAPI.updateNote(this.noteId, this.content)
             .catch(err => console.error('Failed to update note:', err));
         console.log(' Note update triggered:', this.noteId);
@@ -147,9 +99,6 @@ export class UpdateNoteEffect extends Effect {
     }
 }
 
-/**
- * Saves a note's content and waits for confirmation
- */
 export class SaveNoteEffect extends Effect {
     constructor(noteId, content) {
         super();
@@ -164,7 +113,7 @@ export class SaveNoteEffect extends Effect {
     }
 
     async execute() {
-        // Skip if content hasn't changed
+                                
         const lastSavedContent = StateMachine.currentStateContext.getLastSavedContent();
         console.log(' SaveNoteEffect comparison:', {
             noteId: this.noteId,
@@ -187,9 +136,6 @@ export class SaveNoteEffect extends Effect {
     }
 }
 
-/**
- * Deletes a note and its children
- */
 export class DeleteNoteEffect extends Effect {
     constructor(noteId) {
         super();
@@ -206,9 +152,6 @@ export class DeleteNoteEffect extends Effect {
     }
 }
 
-/**
- * Move note before/after sibling
- */
 export class MoveNoteEffect extends Effect {
     constructor(noteId, direction) {
         super();

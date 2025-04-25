@@ -1,57 +1,23 @@
-/**
- * State Context
- * 
- * Single source of truth for application state data. Provides:
- * 
- * 1. Data Management:
- *    - Current state data (noteId, content, cursor position)
- *    - Event data for state handlers
- *    - Target state for transitions
- * 
- * 2. Effect Queue:
- *    - Queue effects to run during next transition
- *    - Effects are run in order before state changes
- * 
- * 3. Validation:
- *    - All getters validate data exists
- *    - Fail fast with clear error messages
- * 
- * Example usage:
- * ```
- * // 1. Create context
- * const context = new StateContext();
- * 
- * // 2. Update state (builder pattern)
- * context
- *   .setNoteId('123')
- *   .setLastSavedContent('hello')
- *   .setCursorOffset(5);
- * 
- * // 3. Queue effect for transition
- * context.addEffect(new CreateNoteEffect());
- * ```
- */
 export class StateContext {
     constructor() {
-        // Initialize with null values
-        this.type = null;            // Event type
-        this.currentState = null;    // Current state machine state
-        this.targetState = null;     // Target state for transitions
-        this.noteId = null;          // ID of current note
-        this.targetNoteId = null;    // ID of note to switch to after transition
-        this.cursorOffset = null;    // Cursor offset from start of note
-        this.coordinates = null;      // Click coordinates for cursor positioning
-        this.activityMonitor = null; // Activity tracking
-        this.lastSavedContent = null;// Content snapshot for change detection
-        this.key = null;             // Key pressed (for keyboard events)
-        this.metaKey = false;        // Meta key pressed
-        this.shiftKey = false;       // Shift key pressed
-        this.query = null;           // Search query
-        this.effects_exit = [];      // Effects to run during exit phase
-        this.effects_transition = []; // Effects to run during transition phase
-        this.phase = null;           // Current transition phase
+                                
+        this.type = null;            
+        this.currentState = null;    
+        this.targetState = null;     
+        this.noteId = null;          
+        this.targetNoteId = null;    
+        this.cursorOffset = null;    
+        this.coordinates = null;      
+        this.activityMonitor = null; 
+        this.lastSavedContent = null;
+        this.key = null;             
+        this.metaKey = false;        
+        this.shiftKey = false;       
+        this.query = null;           
+        this.effects_exit = [];      
+        this.effects_transition = []; 
+        this.phase = null;           
 
-        // Bind methods to instance
         this.setType = this.setType.bind(this);
         this.setCurrentState = this.setCurrentState.bind(this);
         this.setTargetState = this.setTargetState.bind(this);
@@ -85,11 +51,8 @@ export class StateContext {
         this.validatePhase = this.validatePhase.bind(this);
     }
 
-    /**
-     * Set event type with validation
-     */
     setType(type) {
-        this.validatePhase(['event']);  // Only set type during initial event
+        this.validatePhase(['event']);  
         if (!type) {
             throw new Error('Event type is required');
         }
@@ -100,29 +63,19 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get event type
-     * @throws {Error} If type is not set
-     */
     getType() {
-        this.validatePhase(['event', 'effects']);  // Need type during event handling and effects
+        this.validatePhase(['event', 'effects']);  
         if (!this.type) {
             throw new Error('Event type not set');
         }
         return this.type;
     }
 
-    /**
-     * Reset event type
-     */
     resetType() {
         this.type = null;
         return this;
     }
 
-    /**
-     * Set current state with validation
-     */
     setCurrentState(state) {
         if (!state) {
             throw new Error('Current state is required');
@@ -134,31 +87,21 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get current state
-     * @throws {Error} If currentState is not set
-     */
     getCurrentState() {
-        this.validatePhase(['event', 'exiting', 'effects', 'transition', 'render', 'entering']);  // Can read current state in all phases
+        this.validatePhase(['event', 'exiting', 'effects', 'transition', 'render', 'entering']);  
         if (!this.currentState) {
             throw new Error('Current state not set');
         }
         return this.currentState;
     }
 
-    /**
-     * Reset current state
-     */
     resetCurrentState() {
         this.currentState = null;
         return this;
     }
 
-    /**
-     * Set target state with validation
-     */
     setTargetState(state) {
-        this.validatePhase(['event', 'effects']);  // Can set target during event or effects
+        this.validatePhase(['event', 'effects']);  
         if (!state) {
             throw new Error('Target state is required');
         }
@@ -169,29 +112,19 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get target state
-     * @throws {Error} If targetState is not set
-     */
     getTargetState() {
-        this.validatePhase(['event', 'effects', 'transition', 'entering']);  // Need target during event handling
-        // target state CAN be null; indicates no transition
+        this.validatePhase(['event', 'effects', 'transition', 'entering']);  
+                                
         return this.targetState;
     }
 
-    /**
-     * Reset target state
-     */
     resetTargetState() {
         this.targetState = null;
         return this;
     }
 
-    /**
-     * Set note ID with validation
-     */
     setNoteId(noteId) {
-        this.validatePhase(['transition']);  // Can only set current note during transition
+        this.validatePhase(['transition']);  
         if (!noteId) {
             throw new Error('Note ID is required');
         }
@@ -202,28 +135,18 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get note ID
-     * @returns {string|null} Note ID if set, null otherwise
-     */
     getNoteId() {
-        this.validatePhase(['event', 'exiting', 'effects', 'transition', 'render', 'entering']);  // Can read current note in all phases
+        this.validatePhase(['event', 'exiting', 'effects', 'transition', 'render', 'entering']);  
         return this.noteId;
     }
 
-    /**
-     * Reset note ID
-     */
     resetNoteId() {
         this.noteId = null;
         return this;
     }
 
-    /**
-     * Set target note ID with validation
-     */
     setTargetNoteId(targetNoteId) {
-        this.validatePhase(['event', 'effects']);  // Allow in effects for new note creation
+        this.validatePhase(['event', 'effects']);  
         if (!targetNoteId) {
             throw new Error('Target note ID is required');
         }
@@ -234,28 +157,16 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get target note ID
-     * @returns {string|null} Target note ID if set, null otherwise
-     */
     getTargetNoteId() {
-        this.validatePhase(['event', 'effects', 'transition']);  // Need target during event handling too
+        this.validatePhase(['event', 'effects', 'transition']);  
         return this.targetNoteId;
     }
 
-    /**
-     * Reset target note ID
-     */
     resetTargetNoteId() {
         this.targetNoteId = null;
         return this;
     }
 
-    /**
-     * Get cursor offset
-     * @returns {number|null} Cursor offset from start of note
-     * @throws {Error} If cursorOffset is not set
-     */
     getCursorOffset() {
         if (this.cursorOffset === undefined || this.cursorOffset === null) {
             throw new Error('Cursor offset not set');
@@ -263,9 +174,6 @@ export class StateContext {
         return this.cursorOffset;
     }
 
-    /**
-     * Set cursor offset with validation
-     */
     setCursorOffset(offset) {
         if (typeof offset !== 'number' || offset < 0) {
             throw new Error(`Invalid cursor offset: ${offset}`);
@@ -274,19 +182,13 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Reset cursor offset
-     */
     resetCursorOffset() {
         this.cursorOffset = null;
         return this;
     }
 
-    /**
-     * Set click coordinates with validation
-     */
     setCoordinates(coordinates) {
-        this.validatePhase(['event']);  // Only set coordinates during event phase
+        this.validatePhase(['event']);  
         if (!coordinates || typeof coordinates !== 'object') {
             throw new Error('Coordinates must be an object');
         }
@@ -297,25 +199,15 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get coordinates
-     * @returns {Object|null} Coordinates if set, null otherwise
-     */
     getCoordinates() {
         return this.coordinates;
     }
 
-    /**
-     * Reset coordinates
-     */
     resetCoordinates() {
         this.coordinates = null;
         return this;
     }
 
-    /**
-     * Set activity monitor with validation
-     */
     setActivityMonitor(monitor) {
         if (!monitor) {
             throw new Error('Activity monitor is required');
@@ -330,10 +222,6 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get activity monitor
-     * @throws {Error} If activityMonitor is not set
-     */
     getActivityMonitor() {
         if (!this.activityMonitor) {
             throw new Error('Activity monitor not set');
@@ -341,17 +229,11 @@ export class StateContext {
         return this.activityMonitor;
     }
 
-    /**
-     * Reset activity monitor
-     */
     resetActivityMonitor() {
         this.activityMonitor = null;
         return this;
     }
 
-    /**
-     * Set last saved content with validation
-     */
     setLastSavedContent(content) {
         if (content === undefined || content === null) {
             throw new Error('Content is required');
@@ -360,31 +242,21 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get last saved content
-     * @throws {Error} If lastSavedContent is not set
-     */
     getLastSavedContent() {
-        this.validatePhase(['event', 'exiting', 'effects']);  // Only need content during these phases
+        this.validatePhase(['event', 'exiting', 'effects']);  
         if (this.lastSavedContent === null || this.lastSavedContent === undefined) {
             throw new Error('Last saved content not set');
         }
         return this.lastSavedContent;
     }
 
-    /**
-     * Reset last saved content
-     */
     resetLastSavedContent() {
         this.lastSavedContent = null;
         return this;
     }
 
-    /**
-     * Set search query with validation
-     */
     setQuery(query) {
-        this.validatePhase(['event']);  // Only set query during event phase
+        this.validatePhase(['event']);  
         if (typeof query !== 'string') {
             throw new Error('Query must be a string');
         }
@@ -392,10 +264,6 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get search query
-     * @throws {Error} If query is not set
-     */
     getQuery() {
         if (this.query === undefined || this.query === null) {
             throw new Error('Search query not set');
@@ -403,19 +271,13 @@ export class StateContext {
         return this.query;
     }
 
-    /**
-     * Reset search query
-     */
     resetQuery() {
         this.query = null;
         return this;
     }
 
-    /**
-     * Set keyboard key with validation
-     */
     setKey(key) {
-        this.validatePhase(['event']);  // Only set key during event phase
+        this.validatePhase(['event']);  
         if (!key) {
             throw new Error('Key is required');
         }
@@ -426,10 +288,6 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Get key
-     * @throws {Error} If key is not set
-     */
     getKey() {
         if (!this.key) {
             throw new Error('Key not set');
@@ -437,70 +295,46 @@ export class StateContext {
         return this.key;
     }
 
-    /**
-     * Reset key
-     */
     resetKey() {
         this.key = null;
         return this;
     }
 
-    /**
-     * Set meta key state
-     */
     setMetaKey(metaKey) {
-        this.validatePhase(['event']);  // Only set meta key during event phase
+        this.validatePhase(['event']);  
         this.metaKey = Boolean(metaKey);
         return this;
     }
 
-    /**
-     * Get meta key state
-     */
     getMetaKey() {
-        return !!this.metaKey;  // Convert to boolean
+        return !!this.metaKey;  
     }
 
-    /**
-     * Reset meta key state
-     */
     resetMetaKey() {
         this.metaKey = false;
         return this;
     }
 
-    /**
-     * Set shift key state
-     */
     setShiftKey(shiftKey) {
-        this.validatePhase(['event']);  // Only set shift key during event phase
+        this.validatePhase(['event']);  
         this.shiftKey = Boolean(shiftKey);
         return this;
     }
 
-    /**
-     * Get shift key state
-     */
     getShiftKey() {
-        return !!this.shiftKey;  // Convert to boolean
+        return !!this.shiftKey;  
     }
 
-    /**
-     * Reset shift key state
-     */
     resetShiftKey() {
         this.shiftKey = false;
         return this;
     }
 
-    /**
-     * Add an effect to run during transition
-     */
     addEffect(effect) {
         if (!effect) {
             throw new Error('Effect is required');
         }
-        // During exit phase, add to exit queue, otherwise transition queue
+                                
         if (this.phase === 'exiting') {
             this.effects_exit.push(effect);
         } else {
@@ -509,36 +343,21 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Reset effects arrays
-     */
     resetEffects() {
         this.effects_exit = [];
         this.effects_transition = [];
         return this;
     }
 
-    /**
-     * Get all effects in order (exit effects first, then transition effects)
-     */
     getEffects() {
-        this.validatePhase(['event', 'effects']);  // Can read effects during event handling too
+        this.validatePhase(['event', 'effects']);  
         return [...this.effects_exit, ...this.effects_transition];
     }
 
-    /**
-     * Get current phase
-     * @returns {string|null} Current phase if set, null otherwise
-     */
     getPhase() {
         return this.phase;
     }
 
-    /**
-     * Set current phase
-     * @param {string} phase - Must be one of: 'event', 'exiting', 'effects', 'transition', 'render', 'entering'
-     * @throws {Error} If phase is invalid
-     */
     setPhase(phase) {
         const validPhases = ['event', 'exiting', 'effects', 'transition', 'render', 'entering'];
         if (!validPhases.includes(phase)) {
@@ -549,20 +368,12 @@ export class StateContext {
         return this;
     }
 
-    /**
-     * Validate that we're in one of the allowed phases for state access
-     * @param {Array<string>} allowedPhases - Phases where this access is allowed
-     * @throws {Error} If current phase isn't in allowedPhases
-     */
     validatePhase(allowedPhases) {
         if (!allowedPhases.includes(this.phase)) {
             throw new Error(`Invalid state access in phase ${this.phase}. Only allowed in: ${allowedPhases.join(', ')}`);
         }
     }
 
-    /**
-     * Validate entire context
-     */
     validate() {
         if (!this.type) {
             throw new Error('Event type not set');
@@ -573,15 +384,10 @@ export class StateContext {
         if (!this.noteId) {
             throw new Error('Note ID not set');
         }
-        // Coordinates optional - only needed for click positioning
-        // Activity monitor optional - only needed for auto-save
-        // Last saved content optional - only needed for change detection
+
         return this;
     }
 
-    /**
-     * Create context from raw event data
-     */
     static fromRawEvent(type, noteId, cursorOffset, coordinates) {
         const context = new StateContext();
 

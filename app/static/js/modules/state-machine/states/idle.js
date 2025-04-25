@@ -4,33 +4,13 @@ import { DOMUtils } from '../../dom-utils.js';
 import { StateMachine } from '../state-machine-controller.js';
 import { CreateNoteEffect } from '../effects.js';
 
-/**
- * Idle State
- * 
- * Default application state when no active interactions.
- * Serves as the base state for transitions to editing/searching.
- * 
- * State Context:
- * - No persistent data needed
- * 
- * Transitions:
- * - Enter: Cleans up any leftover state
- * - Exit: No specific cleanup needed
- * 
- * @example
- * // Return to idle state
- * StateMachine.currentStateContext.setTargetState('idle');
- * await StateMachine.transition();
- */
-
 export const idleTransitions = {
     enter: async () => {
-        // Validate context
+                                
         if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
-        
-        // Clear all note-related state
+
         StateMachine.currentStateContext
             .resetNoteId()
             .resetTargetNoteId()
@@ -41,11 +21,11 @@ export const idleTransitions = {
     },
 
     exit: async () => {
-        // Nothing to clean up
+                                
     },
 
     handleEvent: async () => {
-        // NO MERCY validation
+                                
         if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
@@ -62,12 +42,12 @@ export const idleTransitions = {
 
         switch (eventType) {
             case 'NOTE_CONTENT_CLICKED': {
-                // Validate we have all required data
+                                                                
                 const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
                 if (!targetNoteId) {
                     throw new Error('Note click missing note ID');
                 }
-                
+                                                                
                 const noteElement = DOMUtils.getNoteById(targetNoteId);
                 if (!noteElement) {
                     throw new Error('Note element not found');
@@ -83,21 +63,20 @@ export const idleTransitions = {
                     throw new Error('Note click missing cursor offset');
                 }
 
-                // Set target state to editing with clicked note
                 StateMachine.currentStateContext
                     .setTargetState('editing');
                 break;
             }
 
             case 'SEARCH_FOCUSED': {
-                // Request transition to searching
+                                                                
                 StateMachine.currentStateContext
                     .setTargetState('searching');
                 break;
             }
 
             case 'ADD_BUTTON_CLICKED': {
-                // Queue create note effect and transition to editing
+                                                                
                 StateMachine.currentStateContext
                     .addEffect(new CreateNoteEffect())
                     .setTargetState('editing');
@@ -105,14 +84,14 @@ export const idleTransitions = {
             }
 
             case 'SEARCH_CLICKED': {
-                // Transition directly to searching state
+                                                                
                 StateMachine.currentStateContext
                     .setTargetState('searching');
                 break;
             }
 
             case 'KEY_DOWN': {
-                // Handle keyboard shortcuts
+                                                                
                 const key = StateMachine.currentStateContext.getKey();
                 if (!key) {
                     throw new Error('Key event missing key');
@@ -127,13 +106,13 @@ export const idleTransitions = {
                 }
 
                 if (metaKey && key === 'k') {
-                    // Cmd+K: Focus search
+                                                                                
                     StateMachine.currentStateContext
                         .setTargetState('searching');
                     break;
                 }
                 if (key === 'Enter' || (metaKey && key === 'Enter')) {
-                    // Enter or Cmd+Enter: Create new note
+                                                                                
                     StateMachine.currentStateContext
                         .addEffect(new CreateNoteEffect())
                         .setTargetState('editing');

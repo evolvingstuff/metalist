@@ -1,30 +1,11 @@
 import { DOMUtils } from '../dom-utils.js';
 import { StateContext } from './state-context.js';
-import { StateMachine } from './state-machine-controller.js'; // Import StateMachine
+import { StateMachine } from './state-machine-controller.js'; 
 
-/**
- * Raw Event Handlers
- * 
- * Converts DOM events into StateContext objects.
- * Handles initial event processing and data extraction.
- * 
- * Each handler:
- * 1. Receives DOM event
- * 2. Extracts relevant data
- * 3. Returns StateContext with:
- *    - type: Event type (e.g. 'NOTE_CONTENT_CLICKED')
- *    - Any other relevant fields (e.g. noteId, content, coordinates)
- * 
- * @example
- * // Convert click to StateContext
- * handleAddNoteClick(event) {
- *   return new StateContext().setType('ADD_BUTTON_CLICKED');
- * }
- */
 export const RawEvents = {
 
     handleClick(domEvent) {
-        // NO MERCY validation
+                                
         if (!domEvent) {
             throw new Error('Click missing event');
         }
@@ -32,17 +13,13 @@ export const RawEvents = {
             throw new Error('Click event missing target');
         }
 
-        // StateMachine.resetOnNewEvent();  //this is redundant TODO
-
-        // Get click coordinates
         const clickInfo = {
             x: domEvent.clientX,
             y: domEvent.clientY
         };
 
-        // Handle click based on target
         if (DOMUtils.isNoteContent(domEvent.target)) {
-            return this.handleNoteContentClick(domEvent);  // Let handleNoteContentClick handle click info
+            return this.handleNoteContentClick(domEvent);  
         }
         if (domEvent.target?.classList?.contains('search-input')) {
             return this.handleSearchClick(domEvent);
@@ -60,13 +37,11 @@ export const RawEvents = {
             return this.handleInteractiveClick(domEvent);
         }
 
-        // Check if click is inside a note
         const noteElement = DOMUtils.findNoteElement(domEvent.target);
         if (noteElement) {
             return this.handleNoteClick(domEvent);
         }
 
-        // Non-interactive click outside any note
         return this.handleClickOutsideNote(domEvent);
     },
 
@@ -83,7 +58,6 @@ export const RawEvents = {
 
         StateMachine.resetOnNewEvent();
 
-        // Get note element and ID
         const noteElement = DOMUtils.findNoteElement(domEvent.target);
         if (!noteElement) {
             throw new Error('Click not in note');
@@ -98,19 +72,19 @@ export const RawEvents = {
             classList: domEvent.target?.classList?.toString(),
             nodeType: domEvent.target?.nodeType,
             nodeName: domEvent.target?.nodeName,
-            textContent: domEvent.target?.textContent?.slice(0, 20), // First 20 chars
+            textContent: domEvent.target?.textContent?.slice(0, 20), 
             coordinates: { x: domEvent.clientX, y: domEvent.clientY },
             noteId
         });
 
         const content = DOMUtils.getNoteContentHTMLById(noteId);
         const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, { x: domEvent.clientX, y: domEvent.clientY });
-        
+                                
         StateMachine.currentStateContext
             .setType('NOTE_CONTENT_CLICKED')
-            .setTargetNoteId(noteId)  // Set target note for transition
+            .setTargetNoteId(noteId)  
             .setCoordinates({ x: domEvent.clientX, y: domEvent.clientY })
-            .setCursorOffset(cursorOffset);  // Pass the cursor position from click
+            .setCursorOffset(cursorOffset);  
     },
 
     handleSearchClick(domEvent) {
@@ -122,7 +96,7 @@ export const RawEvents = {
         }
 
         StateMachine.resetOnNewEvent();
-        
+                                
         StateMachine.currentStateContext
             .setType('SEARCH_CLICKED');
     },
@@ -135,14 +109,14 @@ export const RawEvents = {
 
     handleMenuClick(domEvent) {
         StateMachine.resetOnNewEvent();
-        
+                                
         StateMachine.currentStateContext
             .setType('MENU_CLICKED');
     },
 
     handleTrashCanClick(domEvent) {
         StateMachine.resetOnNewEvent();
-        
+                                
         StateMachine.currentStateContext
             .setType('TRASH_CAN_CLICKED');
     },
@@ -162,7 +136,7 @@ export const RawEvents = {
     },
 
     handleDragStart(domEvent) {
-        // NO MERCY validation
+                                
         if (!domEvent) {
             throw new Error('Drag start missing event');
         }
@@ -215,13 +189,12 @@ export const RawEvents = {
 
         StateMachine.resetOnNewEvent();
 
-        // If we blurred to a note, get its ID
         const noteElement = domEvent.relatedTarget ? DOMUtils.findNoteElement(domEvent.relatedTarget) : null;
         const noteId = noteElement ? DOMUtils.getNoteId(noteElement) : null;
-        
+                                
         StateMachine.currentStateContext
             .setType('SEARCH_BLURRED')
-            .setNoteId(noteId);  // Will be null if not clicked on note
+            .setNoteId(noteId);  
     },
 
     handleClickOutsideNote(domEvent) {

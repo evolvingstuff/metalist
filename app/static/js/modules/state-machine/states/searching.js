@@ -3,50 +3,27 @@ import { StateContext } from '../state-context.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { StateMachine } from '../state-machine-controller.js';
 
-/**
- * Searching State
- * 
- * Manages search functionality including:
- * - Search input focus
- * - Query handling
- * - Results display
- * 
- * State Context:
- * - query: Current search query
- * 
- * Transitions:
- * - Enter: Focus search input, show results panel
- * - Exit: Clear results, restore normal view
- * 
- * @example
- * // Enter searching state
- * stateContext
- *   .setType('START_SEARCHING')
- *   .setQuery('');
- */
-
 export const searchingTransitions = {
     enter: async () => {
-        // Validate context
+                                
         if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
 
         console.log(' Starting search with context:', StateMachine.currentStateContext);
-        
-        // Focus search input
+
         DOMUtils.focusSearch();
     },
 
     exit: async () => {
-        // Validate context
+                                
         if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
     },
 
     handleEvent: async () => {
-        // Validate context
+                                
         if (!(StateMachine.currentStateContext instanceof StateContext)) {
             throw new Error('Invalid state context');
         }
@@ -68,14 +45,13 @@ export const searchingTransitions = {
                     throw new Error('Search query must be string');
                 }
 
-                // Update search results
                 const results = await NotesAPI.searchNotes(query);
                 DOMUtils.updateSearchResults(results);
                 break;
             }
 
             case 'SEARCH_BLURRED': {
-                // Return to idle if not clicking on note
+                                                                
                 const noteId = StateMachine.currentStateContext.getNoteId();
                 if (!noteId) {
                     StateMachine.currentStateContext.setType('RETURN_TO_IDLE');
@@ -84,18 +60,17 @@ export const searchingTransitions = {
             }
 
             case 'NOTE_CONTENT_CLICKED': {
-                // Validate we have all required data
+                                                                
                 const targetNoteId = StateMachine.currentStateContext.getTargetNoteId();
                 if (!targetNoteId) {
                     throw new Error('Note click missing note ID');
                 }
-                
+                                                                
                 const noteElement = DOMUtils.getNoteById(targetNoteId);
                 if (!noteElement) {
                     throw new Error('Note element not found');
                 }
 
-                // Let transition() handle moving targetNoteId to noteId
                 StateMachine.currentStateContext
                     .setLastSavedContent(DOMUtils.getNoteContentHTML(noteElement))
                     .setTargetState('editing');
@@ -103,13 +78,13 @@ export const searchingTransitions = {
             }
 
             case 'SEARCH_CLICKED': {
-                // Just focus the search input again
+                                                                
                 DOMUtils.focusSearch();
                 break;
             }
 
             case 'CLICKED_OUTSIDE_NOTE': {
-                // Return to idle if clicked outside note
+                                                                
                 StateMachine.currentStateContext
                     .setTargetState('idle');
                 break;
