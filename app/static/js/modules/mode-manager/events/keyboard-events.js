@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, createChildNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown } from '../actions/note-actions.js';
 import { deselectNote } from '../actions/selection-actions.js';
 
 export function initKeyboardEvents() {
@@ -83,6 +83,16 @@ function handleKeyDown(event) {
         case '/':
             if (event.metaKey || event.ctrlKey) {
                 handleSearchShortcut();
+            }
+            break;
+        case 'ArrowUp':
+            if (event.metaKey || event.ctrlKey) {
+                handleMoveNoteUpShortcut(event);
+            }
+            break;
+        case 'ArrowDown':
+            if (event.metaKey || event.ctrlKey) {
+                handleMoveNoteDownShortcut(event);
             }
             break;
                 
@@ -197,4 +207,48 @@ function handleSearchShortcut() {
     ModeContext.validate();
     Logger.logDebug('Search activated via keyboard shortcut');
 
+}
+
+function handleMoveNoteUpShortcut(event) {
+    if (!event) {
+        throw new Error('handleMoveNoteUpShortcut called without an event object');
+    }
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        Logger.logNoop('Move up shortcut pressed but no note is selected', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: null
+        });
+        return;
+    }
+
+    Logger.logDebug('Move note up shortcut triggered', {
+        noteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+    moveNoteUp(noteId);
+}
+
+function handleMoveNoteDownShortcut(event) {
+    if (!event) {
+        throw new Error('handleMoveNoteDownShortcut called without an event object');
+    }
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        Logger.logNoop('Move down shortcut pressed but no note is selected', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: null
+        });
+        return;
+    }
+
+    Logger.logDebug('Move note down shortcut triggered', {
+        noteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+    moveNoteDown(noteId);
 }

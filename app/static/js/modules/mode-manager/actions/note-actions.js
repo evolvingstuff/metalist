@@ -122,3 +122,57 @@ export async function createChildNote() {
         return await selectNote(newNoteId);
     }
 }
+
+export async function moveNoteUp(noteId) {
+    Logger.logAction('moveNoteUp', { 
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isDirty: ModeContext.isDirty
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot move note: noteId is required');
+    }
+
+    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+        await saveNote(noteId);
+    }
+
+    ModeContext.setLoading(true);
+    
+    try {
+        await NotesAPI.moveNoteUp(noteId);
+    } finally {
+        ModeContext.setLoading(false);
+    }
+    
+    await refresh();
+}
+
+export async function moveNoteDown(noteId) {
+    Logger.logAction('moveNoteDown', { 
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isDirty: ModeContext.isDirty
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot move note: noteId is required');
+    }
+
+    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+        await saveNote(noteId);
+    }
+
+    ModeContext.setLoading(true);
+    
+    try {
+        await NotesAPI.moveNoteDown(noteId);
+    } finally {
+        ModeContext.setLoading(false);
+    }
+    
+    await refresh();
+}
