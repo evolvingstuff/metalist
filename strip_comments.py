@@ -84,8 +84,8 @@ def convert_indentation(text):
 
         prev_indent = current_indent
 
-    # If we couldn't detect any clear indentation, use 2 as a fallback
-    base_indent = min(indent_sizes) if indent_sizes else 2
+    # If we couldn't detect any clear indentation, use 4 as a fallback
+    base_indent = min(indent_sizes) if indent_sizes else 4
 
     # Now process all lines
     for line in lines:
