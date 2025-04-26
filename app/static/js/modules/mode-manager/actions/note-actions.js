@@ -3,7 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { saveNote } from './content-actions.js';
 import { switchNotes, selectNote } from './selection-actions.js';
-import { refresh } from './ui-actions.js';
+import { refresh_and_maybe_select } from './ui-actions.js';
 
 export async function deleteNote(noteId) {
     Logger.logAction('deleteNote', { 
@@ -41,7 +41,7 @@ export async function deleteNote(noteId) {
 
     ModeContext.setLoading(false);
 
-    await refresh();
+    await refresh_and_maybe_select();
 
     return;
 }
@@ -153,7 +153,7 @@ export async function moveNoteUp(noteId) {
         ModeContext.setLoading(false);
     }
 
-    const newContent = await refresh();
+    const newContent = await refresh_and_maybe_select();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -188,7 +188,7 @@ export async function moveNoteDown(noteId) {
         ModeContext.setLoading(false);
     }
 
-    const newContent = await refresh();
+    const newContent = await refresh_and_maybe_select();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);

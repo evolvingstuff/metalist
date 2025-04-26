@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown } from '../actions/note-actions.js';
 import { deselectNote } from '../actions/selection-actions.js';
+import { undo } from '../actions/history-actions.js';
 
 export function initKeyboardEvents() {
         
@@ -93,6 +94,11 @@ function handleKeyDown(event) {
         case 'ArrowDown':
             if (event.metaKey || event.ctrlKey) {
                 handleMoveNoteDownShortcut(event);
+            }
+            break;
+        case 'z':
+            if (event.metaKey || event.ctrlKey) {
+                handleUndoShortcut(event);
             }
             break;
                 
@@ -251,4 +257,24 @@ function handleMoveNoteDownShortcut(event) {
 
     event.preventDefault();
     moveNoteDown(noteId);
+}
+
+function handleUndoShortcut(event) {
+    if (!event) {
+        throw new Error('handleUndoShortcut called without an event object');
+    }
+
+    Logger.logDebug('Undo shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    // Prevent any browser default behavior (e.g., browser's own undo)
+    event.preventDefault();
+    
+    // Stop event propagation to ensure no other handlers catch this
+    event.stopPropagation();
+    
+    // Call the undo action
+    undo();
 }

@@ -2,7 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { saveNote } from './content-actions.js';
-import { refresh } from './ui-actions.js';
+import { refresh_and_maybe_select } from './ui-actions.js';
 
 export async function selectNote(noteId) {
     Logger.logAction('selectNote', { 
@@ -27,7 +27,7 @@ export async function selectNote(noteId) {
 
     ModeContext.setEditing(true);
 
-    const newContent = await refresh();
+    const newContent = await refresh_and_maybe_select();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -60,7 +60,7 @@ export async function deselectNote() {
 
     ModeContext.setCurrentContent(null);
 
-    await refresh();
+    await refresh_and_maybe_select();
 
     ModeContext.validate();
 }
@@ -102,7 +102,7 @@ export async function switchNotes(newNoteId) {
 
     ModeContext.setCurrentNoteId(newNoteId);
 
-    const newContent = await refresh();
+    const newContent = await refresh_and_maybe_select();
     
     ModeContext.setCurrentContent(newContent);
   
