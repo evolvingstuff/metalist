@@ -1,6 +1,5 @@
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
-import { StateMachine } from './state-machine/state-machine-controller.js';
 
 export const NotesAPI = {
                 

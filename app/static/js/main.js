@@ -1,5 +1,4 @@
 import { ModeManager } from './modules/mode-manager/mode-manager-controller.js';
-import { StateMachine } from './modules/state-machine/state-machine-controller.js';
 import { CONFIG } from './modules/config.js';
 import { DOMUtils } from './modules/dom-utils.js';
 
@@ -20,8 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
         console.error('+++ main.js: Error initializing ModeManager:', error);
     }
-
-    console.log('StateMachine disabled for ModeManager testing');
 
     document.addEventListener('focus', (e) => {
         const noteContent = e.target.closest('.note-content');
