@@ -71,7 +71,7 @@ body {
     position: relative;
     margin: 2px 0;
     padding: 4px;
-    border: 1px solid #e5e5e5;  /* Lighter default border */
+    border: 1px solid #cccccc;  /* Darker border for better visibility */
     border-radius: 4px;
     display: flex;
     flex-wrap: wrap;
