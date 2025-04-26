@@ -2,7 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown } from '../actions/note-actions.js';
 import { deselectNote } from '../actions/selection-actions.js';
-import { undo } from '../actions/history-actions.js';
+import { undo, redo } from '../actions/history-actions.js';
 
 export function initKeyboardEvents() {
         
@@ -98,7 +98,19 @@ function handleKeyDown(event) {
             break;
         case 'z':
             if (event.metaKey || event.ctrlKey) {
-                handleUndoShortcut(event);
+                if (event.shiftKey) {
+                    // Mac-style redo: Cmd+Shift+Z or Ctrl+Shift+Z
+                    handleRedoShortcut(event);
+                } else {
+                    // Standard undo: Cmd+Z or Ctrl+Z
+                    handleUndoShortcut(event);
+                }
+            }
+            break;
+        case 'y':
+            if (event.metaKey || event.ctrlKey) {
+                // Windows-style redo: Ctrl+Y or Cmd+Y
+                handleRedoShortcut(event);
             }
             break;
                 
@@ -277,4 +289,24 @@ function handleUndoShortcut(event) {
     
     // Call the undo action
     undo();
+}
+
+function handleRedoShortcut(event) {
+    if (!event) {
+        throw new Error('handleRedoShortcut called without an event object');
+    }
+
+    Logger.logDebug('Redo shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    // Prevent any browser default behavior
+    event.preventDefault();
+    
+    // Stop event propagation to ensure no other handlers catch this
+    event.stopPropagation();
+    
+    // Call the redo action
+    redo();
 }
