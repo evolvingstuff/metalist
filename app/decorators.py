@@ -3,10 +3,57 @@ from .models.api_transaction import ApiTransaction
 from functools import wraps
 from sqlalchemy.orm import Session
 from threading import Lock
+import time
 
 # Add a lock for transaction management
 transaction_lock = Lock()
 
+# Configuration for API response delays (in seconds)
+API_DELAY = {
+    "ENABLED": True,  # Set to True to enable artificial delays
+    "DEFAULT": 1.0,    # Default delay in seconds
+    "RANDOM": False,   # Whether to use random delay within MIN/MAX range
+    "MIN": 0.5,        # Minimum random delay (if RANDOM is True)
+    "MAX": 2.0,        # Maximum random delay (if RANDOM is True)
+    # Per-endpoint delays, override DEFAULT (add as needed)
+    "ENDPOINTS": {
+        "undo": 1.5,
+        "redo": 1.5,
+        "get_notes_fragment": 1.0
+    }
+}
+
+def delay_response_decorator(func):
+    """Decorator to add configurable delay to API responses for testing loading states"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Skip if delays are disabled
+        if not API_DELAY["ENABLED"]:
+            return func(*args, **kwargs)
+            
+        # Determine delay time
+        delay = API_DELAY["DEFAULT"]
+        
+        # Check if this endpoint has a specific delay
+        func_name = func.__name__
+        if func_name in API_DELAY["ENDPOINTS"]:
+            delay = API_DELAY["ENDPOINTS"][func_name]
+            
+        # Apply random delay if configured
+        if API_DELAY["RANDOM"]:
+            import random
+            delay = random.uniform(API_DELAY["MIN"], API_DELAY["MAX"])
+            
+        # Log the delay (helpful for debugging)
+        print(f"[API Delay] Adding {delay:.2f}s delay to {func_name}...")
+        
+        # Apply the delay
+        time.sleep(delay)
+        
+        # Execute the original function
+        return func(*args, **kwargs)
+    
+    return wrapper
 
 def db_transaction_decorator(func):
     @wraps(func)

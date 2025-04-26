@@ -17,6 +17,15 @@ function handleFocus(event) {
     if (!event.target) {
         throw new Error('Focus event missing target element');
     }
+    
+    // Skip during loading state
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Focus event ignored while system is loading', {
+            targetElement: event.target.tagName,
+            isLoading: true
+        });
+        return;
+    }
         
     const searchField = event.target.closest('#search-input');
         
@@ -33,6 +42,15 @@ function handleBlur(event) {
         
     if (!event.target) {
         throw new Error('Blur event missing target element');
+    }
+    
+    // Skip during loading state
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Blur event ignored while system is loading', {
+            targetElement: event.target.tagName,
+            isLoading: true
+        });
+        return;
     }
         
     const searchField = event.target.closest('#search-input');

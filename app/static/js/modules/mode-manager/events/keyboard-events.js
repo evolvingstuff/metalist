@@ -20,6 +20,19 @@ function handleKeyDown(event) {
         throw new Error(`Invalid KeyboardEvent: missing or invalid key property: ${event.key}`);
     }
 
+    // Block all keyboard events during loading
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Keyboard event ignored while system is loading', {
+            key: event.key,
+            meta: event.metaKey || event.ctrlKey,
+            shift: event.shiftKey,
+            isLoading: true
+        });
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
     ModeContext.setKeyPressed(
         event.key,
         event.metaKey || event.ctrlKey,

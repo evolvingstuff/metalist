@@ -7,7 +7,7 @@ from .dependencies import get_db
 import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
-from ..decorators import api_transaction_decorator, db_transaction_decorator
+from ..decorators import api_transaction_decorator, db_transaction_decorator, delay_response_decorator
 from ..global_state_mod import global_state
 
 router = APIRouter()
@@ -21,6 +21,7 @@ class MoveNoteCommand(BaseModel):
 
 @router.post("/undo")
 # no @api_decorator because we don't want to create a new Command
+@delay_response_decorator
 @db_transaction_decorator
 def undo(db: Session = Depends(get_db)):
     undid = LinkedListManager.undo(db)
@@ -31,6 +32,7 @@ def undo(db: Session = Depends(get_db)):
 
 @router.post("/redo")
 # no @api_decorator because we don't want to create a new Command
+@delay_response_decorator
 @db_transaction_decorator
 def redo(db: Session = Depends(get_db)):
     redid = LinkedListManager.redo(db)
@@ -41,6 +43,7 @@ def redo(db: Session = Depends(get_db)):
 
 
 @router.post("/new")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
@@ -53,6 +56,7 @@ def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
     return {"id": note_id}
 
 @router.put("/{note_id}")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
@@ -63,6 +67,7 @@ def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(
     return {"status": "success"}
 
 @router.put("/{note_id}/save")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def save_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
@@ -75,6 +80,7 @@ def save_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(ge
     return {"status": "success"}
 
 @router.post("/{note_id}/move")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def move_note(
@@ -129,6 +135,7 @@ def move_note(
     return {"status": "success"}
 
 @router.delete("/{note_id}")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def delete_note(note_id: str, db: Session = Depends(get_db)):
@@ -145,6 +152,7 @@ def delete_note(note_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/new-drop")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def create_note_with_position(command: MoveNoteCommand, db: Session = Depends(get_db)):
@@ -159,6 +167,7 @@ def create_note_with_position(command: MoveNoteCommand, db: Session = Depends(ge
     return {"id": note_id}
 
 @router.post("/new-sibling/{note_id}")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 # @api_transaction_decorator
@@ -185,6 +194,7 @@ def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
     return {"id": new_note_id}
 
 @router.post("/new-child/{note_id}")
+@delay_response_decorator
 @api_transaction_decorator
 @db_transaction_decorator
 def create_new_child(note_id: str, db: Session = Depends(get_db)):
@@ -216,6 +226,7 @@ def create_new_child(note_id: str, db: Session = Depends(get_db)):
 # 3. Break the assumption that every command in the stack represents an actual state change
 # 
 # We still need @db_transaction_decorator for database session management, but not for undo/redo tracking.
+@delay_response_decorator
 @db_transaction_decorator
 def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depends(get_db)):
     """Get the HTML fragment for the notes list"""

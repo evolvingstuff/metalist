@@ -21,13 +21,23 @@ export const CONFIG = {
         NOTE_CONTENT: 'note-content',
         EDITING: 'editing',
         SEARCH_INPUT: 'search-input',
-        SEARCH_RESULTS: 'search-results'
+        SEARCH_RESULTS: 'search-results',
+        LOADING: 'loading'
     },
 
     DEBUG: {
         LOG_API_CALLS: true,
         LOG_STATE_CHANGES: true
     },
-
-    SELECT_ON_UNDO_OR_REDO: true
+    
+    LOADING: {
+        // Artificial delay in milliseconds to simulate slow network (0 to disable)
+        ARTIFICIAL_DELAY: 0,
+        
+        // Time in milliseconds before showing the loading cursor
+        SPINNER_DELAY: 500,
+        
+        // Whether to block user actions while loading
+        BLOCK_ACTIONS: true
+    }
 };

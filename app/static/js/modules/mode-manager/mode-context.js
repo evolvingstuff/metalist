@@ -1,4 +1,5 @@
 import * as Logger from './mode-logger.js';
+import { CONFIG } from '../config.js';
 
 class ModeContext {
     constructor() {
@@ -9,6 +10,7 @@ class ModeContext {
         this._active = true;       
         this._dirty = false;       
         this._loading = false;     
+        this._loadingTimeoutId = null;
 
         this._currentNoteId = null;     
         this._lastSavedContent = null;  
@@ -128,8 +130,49 @@ class ModeContext {
         if (this._loading === value) {
             throw new Error(`Redundant state change: loading is already ${value}`);
         }
-                
+        
+        const oldValue = this._loading;
         this._loading = Boolean(value);
+        
+        // Handle loading state UI changes only - event blocking is now in handlers
+        if (this._loading) {
+            // Add loading class to body after a delay
+            if (CONFIG.LOADING.SPINNER_DELAY > 0) {
+                // Clear any existing timeout to prevent multiple timers
+                if (this._loadingTimeoutId) {
+                    clearTimeout(this._loadingTimeoutId);
+                    this._loadingTimeoutId = null;
+                }
+                
+                // Set timeout to add loading cursor after delay
+                this._loadingTimeoutId = setTimeout(() => {
+                    document.body.classList.add(CONFIG.CLASSES.LOADING);
+                    this._loadingTimeoutId = null;
+                }, CONFIG.LOADING.SPINNER_DELAY);
+            } else {
+                // No delay, add loading class immediately
+                document.body.classList.add(CONFIG.CLASSES.LOADING);
+            }
+            
+            // Apply artificial delay if configured
+            if (CONFIG.LOADING.ARTIFICIAL_DELAY > 0) {
+                return new Promise(resolve => {
+                    setTimeout(() => {
+                        resolve(this);
+                    }, CONFIG.LOADING.ARTIFICIAL_DELAY);
+                });
+            }
+        } else {
+            // When loading is finished, remove loading class immediately
+            document.body.classList.remove(CONFIG.CLASSES.LOADING);
+            
+            // Clear any pending timeout
+            if (this._loadingTimeoutId) {
+                clearTimeout(this._loadingTimeoutId);
+                this._loadingTimeoutId = null;
+            }
+        }
+        
         this._notifyListeners('loading', this._loading);
         return this;
     }
