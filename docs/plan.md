@@ -125,6 +125,225 @@ def paste_child(source_note_id: str, target_note_id: str, db: Session = Depends(
 - **Maintaining List Integrity**: Ensure the linked list structure remains valid
 - **Transaction Safety**: Use appropriate transaction isolation to prevent corruption
 
+## UI Implementation
+
+After implementing the backend functionality for copying and pasting notes, we'll now add UI actions to expose this functionality to users via intuitive keyboard shortcuts.
+
+### 1. Update ModeContext
+
+First, we'll update the ModeContext to track the currently copied note:
+
+```javascript
+// In mode-context.js
+class ModeContext {
+    // Existing properties...
+    
+    // New property to track copied note
+    _clipboardNoteId = null;
+    
+    // Getter and setter
+    get clipboardNoteId() {
+        return this._clipboardNoteId;
+    }
+    
+    setClipboardNoteId(id) {
+        // Handle null - clear clipboard
+        if (id === null) {
+            console.log("Clearing clipboard note ID");
+            this._clipboardNoteId = null;
+            return;
+        }
+        
+        // Only update if changing to prevent redundant updates
+        if (this._clipboardNoteId !== id) {
+            console.log(`Setting clipboard note ID to: ${id}`);
+            this._clipboardNoteId = id;
+        }
+    }
+}
+```
+
+### 2. Add Action Functions
+
+Next, we'll implement three action functions for copying and pasting notes:
+
+```javascript
+// In keyboard-events.js or a new copy-paste-actions.js
+
+function actionCopyNote() {
+    // Get the currently edited note ID
+    const currentNoteId = ModeContext.currentNoteId;
+    
+    // Only proceed if we're editing a note
+    if (!ModeContext.isEditing || !currentNoteId) {
+        console.log("Cannot copy note: No note is being edited");
+        return;
+    }
+    
+    // Check if text is selected
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+        // Text is selected, let default copy behavior handle it
+        console.log("Text selection detected, using default copy behavior");
+        return;
+    }
+    
+    // Save the note ID to clipboard
+    ModeContext.setClipboardNoteId(currentNoteId);
+    console.log(`Copied note with ID: ${currentNoteId}`);
+    
+    // Optional: Provide visual feedback to user
+    showToast("Note copied!");
+}
+
+async function actionPasteNoteSibling() {
+    // Get the currently edited note ID and clipboard note ID
+    const currentNoteId = ModeContext.currentNoteId;
+    const clipboardNoteId = ModeContext.clipboardNoteId;
+    
+    // Validate we have both required IDs
+    if (!ModeContext.isEditing || !currentNoteId) {
+        console.log("Cannot paste note: No target note is being edited");
+        return;
+    }
+    
+    if (!clipboardNoteId) {
+        console.log("Cannot paste note: No note has been copied");
+        showToast("Nothing to paste! Copy a note first.");
+        return;
+    }
+    
+    // Call the API to paste as sibling
+    try {
+        const response = await fetch(`/api/notes/${clipboardNoteId}/paste-sibling/${currentNoteId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to paste note: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log(`Pasted note as sibling with new ID: ${result.id}`);
+        
+        // Refresh the notes list
+        await refreshNotesList();
+        
+        // Optional: Provide visual feedback
+        showToast("Note pasted as sibling!");
+    } catch (error) {
+        console.error("Error pasting note as sibling:", error);
+        showToast("Failed to paste note");
+    }
+}
+
+async function actionPasteNoteChild() {
+    // Get the currently edited note ID and clipboard note ID
+    const currentNoteId = ModeContext.currentNoteId;
+    const clipboardNoteId = ModeContext.clipboardNoteId;
+    
+    // Validate we have both required IDs
+    if (!ModeContext.isEditing || !currentNoteId) {
+        console.log("Cannot paste note: No target note is being edited");
+        return;
+    }
+    
+    if (!clipboardNoteId) {
+        console.log("Cannot paste note: No note has been copied");
+        showToast("Nothing to paste! Copy a note first.");
+        return;
+    }
+    
+    // Call the API to paste as child
+    try {
+        const response = await fetch(`/api/notes/${clipboardNoteId}/paste-child/${currentNoteId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to paste note: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log(`Pasted note as child with new ID: ${result.id}`);
+        
+        // Refresh the notes list
+        await refreshNotesList();
+        
+        // Optional: Provide visual feedback
+        showToast("Note pasted as child!");
+    } catch (error) {
+        console.error("Error pasting note as child:", error);
+        showToast("Failed to paste note");
+    }
+}
+```
+
+### 3. Add Keyboard Event Handlers
+
+Finally, we'll add keyboard event handlers for the copy/paste shortcuts:
+
+```javascript
+// In keyboard-events.js
+
+function handleKeyDown(event) {
+    // Existing key handlers...
+    
+    // Handle copy (Cmd/Ctrl+C)
+    if ((event.metaKey || event.ctrlKey) && event.key === 'c') {
+        // We let the default copy behavior happen for text selection
+        // But also try our note copy action which will only activate 
+        // if there's no text selection
+        actionCopyNote();
+        return;
+    }
+    
+    // Handle paste as sibling (Cmd/Ctrl+V)
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === 'v') {
+        // Check if an input element is focused
+        const activeEl = document.activeElement;
+        const isInputFocused = activeEl.tagName === 'INPUT' || 
+                              activeEl.tagName === 'TEXTAREA' || 
+                              activeEl.isContentEditable;
+        
+        // If we're in an input field, we need to be careful not to interfere with normal paste
+        if (isInputFocused) {
+            // Get selection info
+            const selection = window.getSelection();
+            const hasTextSelected = selection && !selection.isCollapsed;
+            
+            if (hasTextSelected || !ModeContext.clipboardNoteId) {
+                // Let default paste behavior handle this
+                return;
+            }
+            
+            // Prevent default paste for note pasting
+            event.preventDefault();
+        }
+        
+        actionPasteNoteSibling();
+        return;
+    }
+    
+    // Handle paste as child (Shift+Cmd/Ctrl+V)
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'v') {
+        event.preventDefault(); // Always prevent default for this combo
+        actionPasteNoteChild();
+        return;
+    }
+}
+```
+
+### 4. Edge Cases and Additional Features
+
+- **Clipboard Persistence**: Consider how long the clipboard note ID should persist
+- **Visual Feedback**: Add indicators to show when a note is copied
+- **Paste Button**: Add UI buttons for pasting in addition to keyboard shortcuts
+- **Empty Clipboard Handling**: Clear feedback when trying to paste without copying first
+- **Error Handling**: Proper user feedback for API failures
+
 ## Future Enhancements
 
 - Add a "cut" operation that moves rather than copies

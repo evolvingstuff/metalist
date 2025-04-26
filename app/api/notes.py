@@ -134,6 +134,91 @@ def move_note(
     
     return {"status": "success"}
 
+@router.post("/{source_note_id}/paste-sibling/{target_note_id}")
+@delay_response_decorator
+@api_transaction_decorator
+@db_transaction_decorator
+def paste_sibling(source_note_id: str, target_note_id: str, db: Session = Depends(get_db)):
+    """Paste a copy of source_note and its descendants as a sibling after target_note"""
+    # Validate notes exist
+    source_note = db.get(DBNote, source_note_id)
+    if not source_note:
+        raise HTTPException(status_code=404, detail="Source note not found")
+    
+    target_note = db.get(DBNote, target_note_id)
+    if not target_note:
+        raise HTTPException(status_code=404, detail="Target note not found")
+    
+    # Prevent pasting a note as a sibling of itself
+    if source_note_id == target_note_id:
+        raise HTTPException(status_code=400, detail="Cannot paste a note as a sibling of itself")
+    
+    # Import the copy_note function
+    from ..models.utils import copy_note
+    
+    # Create a deep copy of the source note and its descendants
+    new_note_id = copy_note(db, source_note_id)
+    
+    # Position the copied note as a sibling after the target note
+    LinkedListManager.move_note(
+        db=db,
+        note_id=new_note_id,
+        new_parent_id=target_note.parent_id,
+        sibling_id=target_note_id,
+        position=MovePosition.AFTER
+    )
+    
+    return {"id": new_note_id}
+
+@router.post("/{source_note_id}/paste-child/{target_note_id}")
+@delay_response_decorator
+@api_transaction_decorator
+@db_transaction_decorator
+def paste_child(source_note_id: str, target_note_id: str, db: Session = Depends(get_db)):
+    """Paste a copy of source_note and its descendants as the first child of target_note"""
+    # Validate notes exist
+    source_note = db.get(DBNote, source_note_id)
+    if not source_note:
+        raise HTTPException(status_code=404, detail="Source note not found")
+    
+    target_note = db.get(DBNote, target_note_id)
+    if not target_note:
+        raise HTTPException(status_code=404, detail="Target note not found")
+    
+    # Prevent pasting a note as a child of itself
+    if source_note_id == target_note_id:
+        raise HTTPException(status_code=400, detail="Cannot paste a note as a child of itself")
+    
+    # Prevent circular references
+    def is_descendant(parent_id: str, potential_child_id: str) -> bool:
+        """Check if potential_child_id is a descendant of parent_id"""
+        current = db.get(DBNote, potential_child_id)
+        while current and current.parent_id:
+            if current.parent_id == parent_id:
+                return True
+            current = db.get(DBNote, current.parent_id)
+        return False
+    
+    if is_descendant(source_note_id, target_note_id):
+        raise HTTPException(status_code=400, detail="Cannot paste a note as a child of its own descendant")
+    
+    # Import the copy_note function
+    from ..models.utils import copy_note
+    
+    # Create a deep copy of the source note and its descendants
+    new_note_id = copy_note(db, source_note_id)
+    
+    # Position the copied note as a child of the target note
+    LinkedListManager.move_note(
+        db=db,
+        note_id=new_note_id,
+        new_parent_id=target_note_id,
+        sibling_id=None,
+        position=None
+    )
+    
+    return {"id": new_note_id}
+
 @router.delete("/{note_id}")
 @delay_response_decorator
 @api_transaction_decorator

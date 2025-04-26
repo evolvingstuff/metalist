@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown } from '../actions/note-actions.js';
+import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote } from '../actions/note-actions.js';
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 
@@ -116,6 +116,11 @@ function handleKeyDown(event) {
                 } else {
                     handleUndoShortcut(event);
                 }
+            }
+            break;
+        case 'c':
+            if (event.metaKey || event.ctrlKey) {
+                handleCopyNoteShortcut(event);
             }
             break;
         case 'y':
@@ -321,4 +326,57 @@ function handleRedoShortcut(event) {
     event.stopPropagation();
 
     actionRedo();
+}
+
+function handleCopyNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleCopyNoteShortcut called without an event object');
+    }
+
+    Logger.logDebug('Copy note shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    // If we're not in editing mode, there's nothing to copy
+    if (!ModeContext.isEditing) {
+        Logger.logNoop('Copy shortcut pressed but not in editing mode', {
+            isEditing: false
+        });
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (!currentNoteId) {
+        Logger.logNoop('Copy shortcut pressed but no note is selected', {
+            isEditing: true,
+            currentNoteId: null
+        });
+        return;
+    }
+
+    // Check if text is selected
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+        // Text is selected, so don't use our custom copy behavior
+        // Let the default browser copy behavior handle it
+        Logger.logDebug('Text selection detected, using default copy behavior', {}, Logger.LogCategory.EVENT);
+        
+        // Clear the clipboard note ID when doing a regular text copy
+        if (ModeContext.clipboardNoteId) {
+            Logger.logDebug('Clearing clipboard note ID due to text copy', {
+                previousClipboardNoteId: ModeContext.clipboardNoteId
+            }, Logger.LogCategory.EVENT);
+            ModeContext.setClipboardNoteId(null);
+        }
+        
+        return;
+    }
+
+    // No text is selected, just a cursor position - proceed with note copy
+    actionCopyNote();
+    
+    Logger.logDebug('Note copied to clipboard', {
+        noteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
 }

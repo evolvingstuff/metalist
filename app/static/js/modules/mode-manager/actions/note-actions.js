@@ -194,3 +194,25 @@ export async function moveNoteDown(noteId) {
         ModeContext.setCurrentContent(newContent);
     }
 }
+
+/**
+ * Copies a note to the internal clipboard.
+ * This does not call any API endpoint, it just stores the note ID for later paste operations.
+ * 
+ * Note: Event handler should validate context before calling this action.
+ * This function assumes:
+ * - We are in editing mode
+ * - A valid note ID is available
+ * - No text is selected (just cursor)
+ */
+export function actionCopyNote() {
+    const currentNoteId = ModeContext.currentNoteId;
+    
+    Logger.logAction('actionCopyNote', { 
+        currentNoteId: currentNoteId,
+        isEditing: ModeContext.isEditing
+    });
+
+    // Save the note ID to clipboard
+    ModeContext.setClipboardNoteId(currentNoteId);
+}

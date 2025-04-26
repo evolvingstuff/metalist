@@ -25,6 +25,7 @@ class ModeContext {
         this._listeners = [];
         this._savedCursorOffset = null;
         this._lastContentChangeTime = null;
+        this._clipboardNoteId = null; // Track the currently copied note
     }
 
     setEditing(value) {
@@ -355,6 +356,30 @@ class ModeContext {
      */
     get lastContentChangeTime() {
         return this._lastContentChangeTime;
+    }
+
+    setClipboardNoteId(noteId) {
+        // Handle null - clear clipboard
+        if (noteId === null) {
+            Logger.logAction('Clearing clipboard note ID');
+            this._clipboardNoteId = null;
+            this._notifyListeners('clipboardNoteId', null);
+            return this;
+        }
+        
+        // Only update if changing to prevent redundant updates
+        if (this._clipboardNoteId === noteId) {
+            throw new Error(`Redundant state change: clipboardNoteId is already ${noteId}`);
+        }
+        
+        Logger.logAction(`Setting clipboard note ID to: ${noteId}`);
+        this._clipboardNoteId = noteId;
+        this._notifyListeners('clipboardNoteId', noteId);
+        return this;
+    }
+
+    get clipboardNoteId() {
+        return this._clipboardNoteId;
     }
 
     // /**
