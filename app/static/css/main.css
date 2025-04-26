@@ -77,12 +77,12 @@ body {
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 2px;
-    transition: border-color 0.3s ease;
 }
 
 .note.editing {
-    border-color: #999;  /* Keep the darker border for editing */
-    background-color: rgba(0, 255, 0, 0.05);  /* Very subtle green */
+    border-color: #333333;  /* Almost black border for editing state */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);  /* Stronger drop shadow */
+    background-color: #ffffff;  /* Remove the green background */
 }
 
 .drag-handle {
