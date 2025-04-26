@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 
@@ -107,6 +107,15 @@ function handleKeyDown(event) {
         case 'ArrowDown':
             if (event.metaKey || event.ctrlKey) {
                 handleMoveNoteDownShortcut(event);
+            }
+            break;
+        case 'v':
+            if (event.metaKey || event.ctrlKey) {
+                if (event.shiftKey) {
+                    handlePasteNoteChildShortcut(event);
+                } else {
+                    handlePasteNoteSiblingShortcut(event);
+                }
             }
             break;
         case 'z':
@@ -379,4 +388,64 @@ function handleCopyNoteShortcut(event) {
     Logger.logDebug('Note copied to clipboard', {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
+}
+
+function handlePasteNoteSiblingShortcut(event) {
+    if (!event) {
+        throw new Error('handlePasteNoteSiblingShortcut called without an event object');
+    }
+
+    Logger.logDebug('Paste note as sibling shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        clipboardNoteId: ModeContext.clipboardNoteId
+    }, Logger.LogCategory.EVENT);
+
+    // Skip our handler if we're not editing or don't have required IDs
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId || !ModeContext.clipboardNoteId) {
+        Logger.logNoop('Paste shortcut conditions not met', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: ModeContext.currentNoteId,
+            clipboardNoteId: ModeContext.clipboardNoteId
+        });
+        return;
+    }
+
+    // If text is selected in an editable area, use default paste
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && document.activeElement.isContentEditable) {
+        Logger.logDebug('Text selection detected, using default paste', {}, Logger.LogCategory.EVENT);
+        return;
+    }
+    
+    // Prevent default paste and use our handler
+    event.preventDefault();
+    actionPasteNoteSibling();
+}
+
+function handlePasteNoteChildShortcut(event) {
+    if (!event) {
+        throw new Error('handlePasteNoteChildShortcut called without an event object');
+    }
+
+    // Always prevent default for Shift+Cmd/Ctrl+V
+    event.preventDefault();
+
+    Logger.logDebug('Paste note as child shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        clipboardNoteId: ModeContext.clipboardNoteId
+    }, Logger.LogCategory.EVENT);
+
+    // Skip our handler if we're not editing or don't have required IDs
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId || !ModeContext.clipboardNoteId) {
+        Logger.logNoop('Paste as child shortcut conditions not met', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: ModeContext.currentNoteId,
+            clipboardNoteId: ModeContext.clipboardNoteId
+        });
+        return;
+    }
+    
+    actionPasteNoteChild();
 }

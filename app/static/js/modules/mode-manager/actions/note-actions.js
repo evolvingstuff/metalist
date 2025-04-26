@@ -216,3 +216,81 @@ export function actionCopyNote() {
     // Save the note ID to clipboard
     ModeContext.setClipboardNoteId(currentNoteId);
 }
+
+/**
+ * Pastes a copy of the clipboard note as a sibling after the current note.
+ * 
+ * Note: Event handler should validate context before calling this action.
+ * This function assumes:
+ * - We are in editing mode
+ * - A valid current note ID is available
+ * - A valid clipboard note ID is available
+ * 
+ * @returns {Promise<void>}
+ */
+export async function actionPasteNoteSibling() {
+    const currentNoteId = ModeContext.currentNoteId;
+    const clipboardNoteId = ModeContext.clipboardNoteId;
+    
+    Logger.logAction('actionPasteNoteSibling', { 
+        currentNoteId,
+        clipboardNoteId,
+        isEditing: ModeContext.isEditing
+    });
+
+    // Save any pending changes first
+    if (ModeContext.isDirty) {
+        await actionSaveNote(currentNoteId);
+    }
+
+    ModeContext.setLoading(true);
+    
+        // Call the API to paste as sibling
+        await NotesAPI.pasteNoteSibling(clipboardNoteId, currentNoteId);
+        
+    ModeContext.setLoading(false);
+    
+    // Refresh will handle setting loading = false when complete
+        await actionRefreshAndMaybeSelect();
+}
+
+/**
+ * Pastes a copy of the clipboard note as a child of the current note.
+ * 
+ * Note: Event handler should validate context before calling this action.
+ * This function assumes:
+ * - We are in editing mode
+ * - A valid current note ID is available
+ * - A valid clipboard note ID is available
+ * 
+ * @returns {Promise<void>}
+ */
+export async function actionPasteNoteChild() {
+    const currentNoteId = ModeContext.currentNoteId;
+    const clipboardNoteId = ModeContext.clipboardNoteId;
+    
+    Logger.logAction('actionPasteNoteChild', { 
+        currentNoteId,
+        clipboardNoteId,
+        isEditing: ModeContext.isEditing
+    });
+
+    // Save any pending changes first
+    if (ModeContext.isDirty) {
+        await actionSaveNote(currentNoteId);
+    }
+
+    ModeContext.setLoading(true);
+    
+    try {
+        // Call the API to paste as child
+        await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
+        
+        // Refresh the notes list to show the pasted content
+        await actionRefreshAndMaybeSelect();
+    } catch (error) {
+        Logger.logError('Error in actionPasteNoteChild', error);
+    } finally {
+        ModeContext.setLoading(false);
+    }
+}

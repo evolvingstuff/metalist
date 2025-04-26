@@ -198,5 +198,17 @@ export const NotesAPI = {
             'AFTER',
             noteElement.dataset.parentId || null
         );
+    },
+
+    async pasteNoteSibling(sourceNoteId, targetNoteId) {
+        return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(sourceNoteId, targetNoteId), {
+            method: 'POST'
+        });
+    },
+
+    async pasteNoteChild(sourceNoteId, targetNoteId) {
+        return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(sourceNoteId, targetNoteId), {
+            method: 'POST'
+        });
     }
 };

@@ -10,6 +10,8 @@ export const CONFIG = {
             SAVE: (noteId) => `/api/notes/${noteId}/save`,
             MOVE: (noteId) => `/api/notes/${noteId}/move`,
             DELETE: (noteId) => `/api/notes/${noteId}`,
+            PASTE_SIBLING: (sourceNoteId, targetNoteId) => `/api/notes/${sourceNoteId}/paste-sibling/${targetNoteId}`,
+            PASTE_CHILD: (sourceNoteId, targetNoteId) => `/api/notes/${sourceNoteId}/paste-child/${targetNoteId}`,
             UNDO: '/api/notes/undo',
             REDO: '/api/notes/redo',
             FRAGMENT: '/api/notes/fragment'

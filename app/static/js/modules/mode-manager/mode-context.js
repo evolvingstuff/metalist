@@ -25,7 +25,6 @@ class ModeContext {
         this._listeners = [];
         this._savedCursorOffset = null;
         this._lastContentChangeTime = null;
-        this._clipboardNoteId = null; // Track the currently copied note
     }
 
     setEditing(value) {
