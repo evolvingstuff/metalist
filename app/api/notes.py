@@ -208,7 +208,15 @@ def create_new_child(note_id: str, db: Session = Depends(get_db)):
     return {"id": new_note_id}
 
 @router.get("/fragment")
-@api_transaction_decorator
+# IMPORTANT: This endpoint must NOT use @api_transaction_decorator as it is a read-only operation.
+# The api_transaction_decorator tracks state changes and adds entries to the command stack for undo/redo.
+# Since this endpoint only reads data without modifying it, adding it to the command stack would:
+# 1. Create "empty" transactions with no actual state changes
+# 2. Pollute the undo/redo history with non-modifying operations
+# 3. Break the assumption that every command in the stack represents an actual state change
+# 
+# We still need @db_transaction_decorator for database session management, but not for undo/redo tracking.
+@db_transaction_decorator
 def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depends(get_db)):
     """Get the HTML fragment for the notes list"""
     # This endpoint returns the notes_list.html template content for AJAX updates
