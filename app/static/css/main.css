@@ -98,6 +98,8 @@ body {
     flex: 1;
     min-height: 1.5em;
     outline: none;
+    padding-left: 15px; /* Add left padding for better readability */
+    padding-right: 15px; /* Matching right padding for symmetry */
 }
 
 .note-children {
