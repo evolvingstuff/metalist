@@ -112,10 +112,7 @@ function handleClick(event) {
                     }))
                 }, Logger.LogCategory.DEBUG);
 
-                ModeContext._savedCursorOffset = { 
-                    offset: cursorOffset,
-                    noteId 
-                };
+                ModeContext.setSavedCursorOffset(noteId, cursorOffset);
                                 
                 Logger.logDebug('Stored cursor offset before fragment load', { 
                     cursorOffset, 

@@ -106,10 +106,7 @@ export async function switchNotes(newNoteId) {
 
     const newContent = await refresh();
     
-    // Set the current content if it's different
-    if (ModeContext.currentContent !== newContent) {
-        ModeContext.setCurrentContent(newContent);
-    }
-
+    ModeContext.setCurrentContent(newContent);
+  
     ModeContext.validate();
 }

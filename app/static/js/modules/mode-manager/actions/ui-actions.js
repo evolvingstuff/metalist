@@ -40,11 +40,12 @@ export async function refresh(options = {}) {
 
             let cursorOffset = 0;
                         
-            if (ModeContext._savedCursorOffset && ModeContext._savedCursorOffset.noteId === noteId) {
+            const savedOffset = ModeContext.savedCursorOffset;
+            if (savedOffset && savedOffset.noteId === noteId) {
                                 
-                cursorOffset = ModeContext._savedCursorOffset.offset;
+                cursorOffset = savedOffset.offset;
 
-                ModeContext._savedCursorOffset = null;
+                ModeContext.clearSavedCursorOffset();
                                 
                 Logger.logDebug('Using stored cursor offset', {
                     cursorOffset

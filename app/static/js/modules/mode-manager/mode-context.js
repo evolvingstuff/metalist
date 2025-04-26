@@ -22,6 +22,7 @@ class ModeContext {
         this._shiftKeyPressed = false;  
 
         this._listeners = [];
+        this._savedCursorOffset = null;
     }
 
     setEditing(value) {
@@ -168,6 +169,33 @@ class ModeContext {
 
     get cursorOffset() {
         return this._cursorOffset;
+    }
+
+    setSavedCursorOffset(noteId, offset) {
+        // Check if we're setting to the same value (ABC pattern)
+        const currentValue = this._savedCursorOffset;
+        if (currentValue && 
+            currentValue.noteId === noteId && 
+            currentValue.offset === offset) {
+            throw new Error(`Redundant state change: savedCursorOffset is already set to the same values`);
+        }
+        
+        this._savedCursorOffset = { noteId, offset };
+        return this;
+    }
+
+    clearSavedCursorOffset() {
+        // Check if we're setting to the same value (ABC pattern)
+        if (this._savedCursorOffset === null) {
+            throw new Error(`Redundant state change: savedCursorOffset is already null`);
+        }
+        
+        this._savedCursorOffset = null;
+        return this;
+    }
+
+    get savedCursorOffset() {
+        return this._savedCursorOffset;
     }
 
     setSearchQuery(query) {

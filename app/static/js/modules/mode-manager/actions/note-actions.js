@@ -143,6 +143,11 @@ export async function moveNoteUp(noteId) {
         await saveNote(noteId);
     }
 
+    // Save cursor position if this is the active note
+    if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
+        ModeContext.setSavedCursorOffset(noteId, window.getSelection().focusOffset);
+    }
+
     ModeContext.setLoading(true);
     
     try {
@@ -174,6 +179,11 @@ export async function moveNoteDown(noteId) {
 
     if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
         await saveNote(noteId);
+    }
+
+    // Save cursor position if this is the active note
+    if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
+        ModeContext.setSavedCursorOffset(noteId, window.getSelection().focusOffset);
     }
 
     ModeContext.setLoading(true);
