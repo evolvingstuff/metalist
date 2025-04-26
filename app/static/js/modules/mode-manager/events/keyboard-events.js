@@ -364,10 +364,21 @@ function handleCopyNoteShortcut(event) {
         return;
     }
 
-    // Simplified check: If text is selected in an editable area, use default copy
+    // Check if text is selected
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && document.activeElement.isContentEditable) {
+        // Text is selected, so don't use our custom copy behavior
+        // Let the default browser copy behavior handle it
         Logger.logDebug('Text selection detected, using default copy behavior', {}, Logger.LogCategory.EVENT);
+        
+        // Clear the clipboard note ID when doing a regular text copy
+        if (ModeContext.clipboardNoteId) {
+            Logger.logDebug('Clearing clipboard note ID due to text copy', {
+                previousClipboardNoteId: ModeContext.clipboardNoteId
+            }, Logger.LogCategory.EVENT);
+            ModeContext.setClipboardNoteId(null);
+        }
+        
         return;
     }
 
