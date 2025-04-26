@@ -1,202 +1,57 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
+import { actionSaveNoteOnIdle } from '../actions/content-actions.js';
 
-let activityTimer = null;
-let autosaveTimer = null;
-let lastActivityTime = Date.now();
-let isActive = true;
-let currentConfig = null;
+// Settings
+const CHECK_INTERVAL = 500;
+const CONTENT_INACTIVITY_THRESHOLD = 10000; // Save after 10 seconds of no changes
 
-export function initInactivityEvents(options = {}) {
-    if (!options) {
-        throw new Error('initInactivityEvents called with null/undefined options');
-    }
+// Timer reference
+let contentCheckTimer = null;
 
-    currentConfig = { ...options };
-        
-    if (!currentConfig.inactivityTimeout) {
-        throw new Error('Missing required inactivityTimeout in configuration');
-    }
-        
-    if (typeof currentConfig.inactivityTimeout !== 'number' || currentConfig.inactivityTimeout <= 0) {
-        throw new Error(`Invalid inactivityTimeout: ${currentConfig.inactivityTimeout}`);
-    }
-        
-    if (currentConfig.autosaveTimeout && (typeof currentConfig.autosaveTimeout !== 'number' || currentConfig.autosaveTimeout <= 0)) {
-        throw new Error(`Invalid autosaveTimeout: ${currentConfig.autosaveTimeout}`);
-    }
-
-    registerActivityDetection();
-
-    startActivityTracking();
-        
-    Logger.logInit('Inactivity events handler');
-    Logger.logDebug('Inactivity monitoring started', { 
-        inactivityTimeout: currentConfig.inactivityTimeout,
-        autosaveTimeout: currentConfig.autosaveTimeout
-    });
+/**
+ * Initialize the content auto-save timer
+ */
+function initContentAutoSave() {
+    // Start the timer that periodically checks for content inactivity
+    contentCheckTimer = setInterval(checkAndSaveContent, CHECK_INTERVAL);
+    
+    Logger.logInit('Content auto-save initialized');
 }
 
-function registerActivityDetection() {
-    if (!currentConfig) {
-        throw new Error('Activity detection registered before configuration was set');
+/**
+ * Check if content has been inactive and save if needed
+ */
+function checkAndSaveContent() {
+    // Only proceed if editing a note and content is dirty
+    if (!ModeContext.isEditing || !ModeContext.isDirty) {
+        return;
     }
-
-    const activityEvents = [
-        'mousedown', 'mousemove', 'keydown', 
-        'scroll', 'touchstart', 'click'
-    ];
-        
-    activityEvents.forEach(eventType => {
-        document.addEventListener(eventType, handleUserActivity, { 
-            passive: true,  
-            capture: false  
+    
+    const lastChangeTime = ModeContext.lastContentChangeTime;
+    
+    // // Skip if there's no content change timestamp yet
+    // if (!lastChangeTime) {
+    //     // Initialize it now so we have a reference point
+    //     ModeContext.setLastContentChangeTime(Date.now());
+    //     return;
+    // }
+    
+    const timeSinceLastChange = Date.now() - lastChangeTime;
+    
+    // If content hasn't changed for the threshold period, save it
+    if (timeSinceLastChange >= CONTENT_INACTIVITY_THRESHOLD) {
+        Logger.logDebug('Auto-saving content after inactivity', {
+            noteId: ModeContext.currentNoteId,
+            inactivityDuration: timeSinceLastChange
         });
-    });
-}
-
-function handleUserActivity(event) {
-    if (!event) {
-        throw new Error('handleUserActivity called without an event object');
-    }
         
-    if (!currentConfig) {
-        throw new Error('User activity detected but configuration is missing');
-    }
-
-    lastActivityTime = Date.now();
-
-    if (!isActive) {
-        isActive = true;
-        if (typeof ModeContext.setActive !== 'function') {
-            throw new Error('ModeContext missing setActive method');
-        }
-        ModeContext.setActive(true);
-        Logger.logDebug('User activity resumed');
-    }
-
-    resetActivityTimer();
-}
-
-function startActivityTracking() {
-    if (!currentConfig) {
-        throw new Error('Cannot start activity tracking without configuration');
-    }
+        // Save the content
+        actionSaveNoteOnIdle(ModeContext.currentNoteId);
         
-    if (!currentConfig.inactivityTimeout) {
-        throw new Error('Cannot start activity tracking without inactivityTimeout');
-    }
-
-    resetActivityTimer();
-
-    activityTimer = setTimeout(() => {
-        handleUserInactivity();
-    }, currentConfig.inactivityTimeout);
-}
-
-function resetActivityTimer() {
-        
-    if (activityTimer) {
-        clearTimeout(activityTimer);
-        activityTimer = null;
-    }
-
-    if (autosaveTimer) {
-        clearTimeout(autosaveTimer);
-        autosaveTimer = null;
-    }
-
-    if (isActive && currentConfig) {
-        if (!currentConfig.inactivityTimeout) {
-            throw new Error('Cannot reset activity timer without inactivityTimeout');
-        }
-                
-        activityTimer = setTimeout(() => {
-            handleUserInactivity();
-        }, currentConfig.inactivityTimeout);
+        // // Update the timestamp to prevent multiple saves
+        // ModeContext.setLastContentChangeTime(Date.now());
     }
 }
 
-function handleUserInactivity() {
-    if (!currentConfig) {
-        throw new Error('User inactivity detected but configuration is missing');
-    }
-
-    isActive = false;
-    if (typeof ModeContext.setActive !== 'function') {
-        throw new Error('ModeContext missing setActive method');
-    }
-    ModeContext.setActive(false);
-        
-    Logger.logDebug('User inactive', { 
-        inactiveSince: new Date(lastActivityTime).toISOString(),
-        inactiveDuration: Date.now() - lastActivityTime
-    });
-
-    if (ModeContext.isEditing === undefined) {
-        throw new Error('ModeContext missing isEditing property');
-    }
-        
-    if (ModeContext.isEditing && currentConfig.autosaveTimeout) {
-        Logger.logDebug('Starting auto-save timer');
-                
-        autosaveTimer = setTimeout(() => {
-            handleAutoSave();
-        }, currentConfig.autosaveTimeout);
-    }
-}
-
-function handleAutoSave() {
-    if (ModeContext.isEditing === undefined) {
-        throw new Error('ModeContext missing isEditing property');
-    }
-        
-    if (ModeContext.currentNoteId === undefined) {
-        throw new Error('ModeContext missing currentNoteId property');
-    }
-
-    if (ModeContext.isEditing && ModeContext.currentNoteId) {
-                
-        if (typeof ModeContext.setCallingApi !== 'function') {
-            throw new Error('ModeContext missing setCallingApi method');
-        }
-                
-        ModeContext.setCallingApi(true);
-                
-        Logger.logDebug('Auto-saving note due to inactivity', {
-            noteId: ModeContext.currentNoteId
-        });
-
-        setTimeout(() => {
-            ModeContext.setCallingApi(false);
-            Logger.logDebug('Auto-save completed');
-        }, 500);
-    }
-}
-
-export function pauseActivityTracking() {
-        
-    if (activityTimer) {
-        clearTimeout(activityTimer);
-        activityTimer = null;
-    }
-        
-    if (autosaveTimer) {
-        clearTimeout(autosaveTimer);
-        autosaveTimer = null;
-    }
-        
-    Logger.logDebug('Activity tracking paused');
-}
-
-export function resumeActivityTracking() {
-    if (!currentConfig) {
-        throw new Error('Cannot resume activity tracking without configuration');
-    }
-
-    lastActivityTime = Date.now();
-
-    resetActivityTimer();
-        
-    Logger.logDebug('Activity tracking resumed');
-}
+export { initContentAutoSave };

@@ -25,6 +25,7 @@ class ModeContext {
 
         this._listeners = [];
         this._savedCursorOffset = null;
+        this._lastContentChangeTime = null;
     }
 
     setEditing(value) {
@@ -258,6 +259,12 @@ class ModeContext {
         }
                 
         this._currentContent = content;
+        if (content === null) {
+            this._lastSavedContent = null;
+        }
+        else {
+            this._lastContentChangeTime = Date.now();
+        }
         this._notifyListeners('currentContent', content);
         return this;
     }
@@ -364,6 +371,22 @@ class ModeContext {
             throw new Error(errorMsg);
         }
     }
+
+    /**
+     * Gets the timestamp of when content was last changed
+     */
+    get lastContentChangeTime() {
+        return this._lastContentChangeTime;
+    }
+
+    // /**
+    //  * Sets the timestamp of when content was last changed
+    //  */
+    // setLastContentChangeTime(timestamp) {
+    //     this._lastContentChangeTime = timestamp;
+    //     this._notifyListeners('lastContentChangeTime', timestamp);
+    //     return this;
+    // }
 }
 
 export const ModeContextInstance = new ModeContext();

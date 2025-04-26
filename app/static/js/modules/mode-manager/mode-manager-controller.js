@@ -7,15 +7,9 @@ import { initKeyboardEvents } from './events/keyboard-events.js';
 import { initMouseEvents } from './events/mouse-events.js';
 import { initInputEvents } from './events/input-events.js';
 import { initFocusEvents } from './events/focus-events.js';
-import { initInactivityEvents, pauseActivityTracking, resumeActivityTracking } from './events/inactivity-events.js';
+import { initContentAutoSave } from './events/inactivity-events.js';
 
-const DEFAULT_CONFIG = {
-    inactivity: {
-        enabled: true,
-        inactivityTimeout: 30000, 
-        autosaveTimeout: 5000     
-    }
-};
+const DEFAULT_CONFIG = {};
 
 const ModeManager = {
         
@@ -28,11 +22,7 @@ const ModeManager = {
 
             const mergedConfig = {
                 ...DEFAULT_CONFIG,
-                ...config,
-                inactivity: {
-                    ...DEFAULT_CONFIG.inactivity,
-                    ...(config.inactivity || {})
-                }
+                ...config
             };
 
             this._registerEventListeners(mergedConfig);
@@ -56,13 +46,7 @@ const ModeManager = {
             initMouseEvents();
             initInputEvents();
             initFocusEvents();
-
-            if (config.inactivity.enabled) {
-                initInactivityEvents({
-                    inactivityTimeout: config.inactivity.inactivityTimeout,
-                    autosaveTimeout: config.inactivity.autosaveTimeout
-                });
-            }
+            initContentAutoSave(); // Content auto-save initialization
                         
             Logger.logDebug('Event handlers registered', { config });
         } catch (error) {
@@ -72,15 +56,7 @@ const ModeManager = {
     },
 
     _handleVisibilityChange(event) {
-        if (document.hidden) {
-                        
-            pauseActivityTracking();
-            Logger.logDebug('Page visibility: hidden');
-        } else {
-                        
-            resumeActivityTracking();
-            Logger.logDebug('Page visibility: visible');
-        }
+        Logger.logDebug('Page visibility: ' + (document.hidden ? 'hidden' : 'visible'));
     },
 
     _handleModeChange(property, newValue) {

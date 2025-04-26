@@ -36,3 +36,53 @@ export async function actionSaveNote(noteId) {
 
     return response;
 }
+
+export async function actionSaveNoteOnIdle(noteId) {
+    Logger.logAction('saveNoteOnIdle', { 
+        noteId,
+        idle: !ModeContext.isActive
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot save note on idle: noteId is required');
+    }
+
+    if (ModeContext.currentNoteId !== noteId) {
+        throw new Error(`Cannot save note ${noteId} on idle - not the current note being edited (${ModeContext.currentNoteId})`);
+    }
+
+    // Only save if the note is dirty
+    if (!ModeContext.isDirty) {
+        Logger.logDebug('Note not dirty, skipping idle save', { 
+            noteId,
+            isActive: ModeContext.isActive
+        }, Logger.LogCategory.DEBUG);
+        return Promise.resolve(); 
+    }
+
+    // Don't use loading state for idle saves to avoid UI changes during inactivity
+    // Use callingApi instead, which doesn't affect the UI
+
+
+    const noteElement = DOMUtils.getNoteById(noteId);
+    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
+    
+    Logger.logDebug('Auto-saving note during idle period', {
+        noteId,
+        contentLength: contentHTML.length
+    }, Logger.LogCategory.STATE);
+
+    ModeContext.setLoading(true);
+    const response = await NotesAPI.saveNote(noteId, contentHTML);
+    ModeContext.setLoading(false);
+
+    ModeContext.setLastSavedContent(contentHTML);
+    ModeContext.setDirty(false);
+
+    Logger.logDebug('Idle save completed successfully', {
+        noteId,
+        response: response ? 'success' : 'error'
+    }, Logger.LogCategory.STATE);
+    return response;
+
+}
