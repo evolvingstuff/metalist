@@ -1,7 +1,5 @@
 export const CONFIG = {
                 
-    INACTIVITY_TIMEOUT: 10000,  
-
     API: {
         NOTES: {
             CREATE: '/api/notes/new',
@@ -22,23 +20,14 @@ export const CONFIG = {
         NOTE: 'note',
         NOTE_CONTENT: 'note-content',
         EDITING: 'editing',
-        DRAGGING: 'dragging',
-        DRAG_OVER: 'drag-over',
-        DRAG_BEFORE: 'drag-before',
-        DRAG_AFTER: 'drag-after',
-        DRAG_INSIDE: 'drag-inside',
-        DRAG_TRASH: 'drag-trash',
-        SEARCH_INPUT: 'search-input'
-    },
-
-    FEATURES: {
-        USE_STATE_MACHINE: true,      
-        USE_INACTIVITY_TIMEOUT: false 
+        SEARCH_INPUT: 'search-input',
+        SEARCH_RESULTS: 'search-results'
     },
 
     DEBUG: {
         LOG_API_CALLS: true,
-        LOG_STATE_CHANGES: true,
-        LOG_STATE_MACHINE: true
-    }
+        LOG_STATE_CHANGES: true
+    },
+
+    SELECT_ON_UNDO_OR_REDO: true
 };

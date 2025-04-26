@@ -3,6 +3,8 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { saveNote } from './content-actions.js';
 import { refresh_and_maybe_select } from './ui-actions.js';
+import { CONFIG } from '../../config.js';
+import { DOMUtils } from '../../dom-utils.js';
 
 export async function undo() {
     Logger.logAction('undo', {
