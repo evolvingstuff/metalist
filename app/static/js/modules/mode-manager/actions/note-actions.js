@@ -196,25 +196,24 @@ export async function moveNoteDown(noteId) {
 }
 
 /**
- * Copies a note to the internal clipboard.
- * This does not call any API endpoint, it just stores the note ID for later paste operations.
+ * Copies the current note to the clipboard.
  * 
- * Note: Event handler should validate context before calling this action.
- * This function assumes:
- * - We are in editing mode
- * - A valid note ID is available
- * - No text is selected (just cursor)
+ * This sets the current note ID in the clipboard, making it available
+ * for paste operations.
  */
 export function actionCopyNote() {
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionCopyNote', { 
-        currentNoteId: currentNoteId,
-        isEditing: ModeContext.isEditing
+        currentNoteId,
+        isEditing: ModeContext.isEditing,
+        clipboardNoteId: ModeContext.clipboardNoteId
     });
-
-    // Save the note ID to clipboard
-    ModeContext.setClipboardNoteId(currentNoteId);
+    
+    // ABC Pattern: Only update if changing to prevent redundant updates
+    if (ModeContext.clipboardNoteId !== currentNoteId) {
+        ModeContext.setClipboardNoteId(currentNoteId);
+    }
 }
 
 /**
@@ -281,16 +280,8 @@ export async function actionPasteNoteChild() {
     }
 
     ModeContext.setLoading(true);
-    
-    try {
-        // Call the API to paste as child
-        await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
-        
-        // Refresh the notes list to show the pasted content
-        await actionRefreshAndMaybeSelect();
-    } catch (error) {
-        Logger.logError('Error in actionPasteNoteChild', error);
-    } finally {
-        ModeContext.setLoading(false);
-    }
+    await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
+    ModeContext.setLoading(false);
+
+    await actionRefreshAndMaybeSelect();
 }
