@@ -60,9 +60,6 @@ export async function actionSaveNoteOnIdle(noteId) {
         return Promise.resolve(); 
     }
 
-    // Don't use loading state for idle saves to avoid UI changes during inactivity
-    // Use callingApi instead, which doesn't affect the UI
-
 
     const noteElement = DOMUtils.getNoteById(noteId);
     const contentHTML = DOMUtils.getNoteContentHTML(noteElement);

@@ -71,7 +71,6 @@ const ModeManager = {
 
     get isEditing() { return ModeContext.isEditing; },
     get isSearching() { return ModeContext.isSearching; },
-    get isCallingApi() { return ModeContext.isCallingApi; },
     get isIdle() { return ModeContext.isIdle; },
     get isActive() { return ModeContext.isActive; }
 };

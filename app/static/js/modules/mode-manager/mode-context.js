@@ -5,8 +5,7 @@ class ModeContext {
     constructor() {
                 
         this._editing = false;     
-        this._searching = false;   
-        this._callingApi = false;  
+        this._searching = false;
         this._active = true;       
         this._dirty = false;       
         this._loading = false;     
@@ -72,28 +71,8 @@ class ModeContext {
         return this._searching;
     }
 
-    setCallingApi(value) {
-                
-        if (this._callingApi === value) {
-            throw new Error(`Redundant state change: callingApi is already ${value}`);
-        }
-                
-        const oldValue = this._callingApi;
-        this._callingApi = Boolean(value);
-                
-        if (oldValue !== this._callingApi) {
-            this._notifyListeners('callingApi', this._callingApi);
-        }
-                
-        return this;
-    }
-
-    get isCallingApi() {
-        return this._callingApi;
-    }
-
     get isIdle() {
-        return !this._editing && !this._searching && !this._callingApi;
+        return !this._editing && !this._searching && !this._loading;
     }
 
     setActive(value) {
@@ -341,7 +320,6 @@ class ModeContext {
             modes: {
                 editing: this._editing,
                 searching: this._searching,
-                callingApi: this._callingApi,
                 loading: this._loading
             },
             context: {

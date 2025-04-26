@@ -332,7 +332,7 @@ export async function selectNote(noteId) {
   }
   
   // 1. Update state - mark that we're calling API
-  ModeContext.setCallingApi(true);
+  ModeContext.setLoading(true);
   
   // 2. Make API call to load note content
   const response = await api.fetchNoteContent(noteId);
@@ -348,7 +348,7 @@ export async function selectNote(noteId) {
   document.querySelector(`[data-note-id="${noteId}"] .note-content`).focus();
   
   // 6. Final state change - mark API call as complete
-  ModeContext.setCallingApi(false);
+  ModeContext.setLoading(false);
   
   // 7. Validate the resulting state
   ModeContext.validate();
