@@ -99,17 +99,17 @@ function handleKeyDown(event) {
         case 'z':
             if (event.metaKey || event.ctrlKey) {
                 if (event.shiftKey) {
-                    // Mac-style redo: Cmd+Shift+Z or Ctrl+Shift+Z
+                    
                     handleRedoShortcut(event);
                 } else {
-                    // Standard undo: Cmd+Z or Ctrl+Z
+                    
                     handleUndoShortcut(event);
                 }
             }
             break;
         case 'y':
             if (event.metaKey || event.ctrlKey) {
-                // Windows-style redo: Ctrl+Y or Cmd+Y
+                
                 handleRedoShortcut(event);
             }
             break;
@@ -281,13 +281,10 @@ function handleUndoShortcut(event) {
         currentNoteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    // Prevent any browser default behavior (e.g., browser's own undo)
     event.preventDefault();
-    
-    // Stop event propagation to ensure no other handlers catch this
+
     event.stopPropagation();
-    
-    // Call the undo action
+
     undo();
 }
 
@@ -301,12 +298,9 @@ function handleRedoShortcut(event) {
         currentNoteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    // Prevent any browser default behavior
     event.preventDefault();
-    
-    // Stop event propagation to ensure no other handlers catch this
+
     event.stopPropagation();
-    
-    // Call the redo action
+
     redo();
 }
