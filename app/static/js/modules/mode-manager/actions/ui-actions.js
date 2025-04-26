@@ -31,9 +31,6 @@ export async function refresh(options = {}) {
         const noteElement = DOMUtils.getNoteById(noteId);
         contentHtml = DOMUtils.getNoteContentHTML(noteElement);
 
-        // No longer setting ModeContext.setCurrentContent here
-        // Calling action is responsible for setting content state
-
         if (ModeContext.isEditing) {
                         
             DOMUtils.setNoteEditable(noteElement, true);
@@ -82,8 +79,7 @@ export async function loadNote(noteId) {
     }
 
     const newContent = await refresh({ noteId });
-    
-    // Set the current content if it's different
+
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }

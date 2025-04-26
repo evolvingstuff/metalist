@@ -172,7 +172,7 @@ class ModeContext {
     }
 
     setSavedCursorOffset(noteId, offset) {
-        // Check if we're setting to the same value (ABC pattern)
+        
         const currentValue = this._savedCursorOffset;
         if (currentValue && 
             currentValue.noteId === noteId && 
@@ -185,7 +185,7 @@ class ModeContext {
     }
 
     clearSavedCursorOffset() {
-        // Check if we're setting to the same value (ABC pattern)
+        
         if (this._savedCursorOffset === null) {
             throw new Error(`Redundant state change: savedCursorOffset is already null`);
         }

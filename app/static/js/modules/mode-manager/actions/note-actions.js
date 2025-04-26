@@ -41,8 +41,6 @@ export async function deleteNote(noteId) {
 
     ModeContext.setLoading(false);
 
-    // No need to update content after refresh when deleting a note
-    // as we've already set it to null above
     await refresh();
 
     return;
@@ -143,7 +141,6 @@ export async function moveNoteUp(noteId) {
         await saveNote(noteId);
     }
 
-    // Save cursor position if this is the active note
     if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
         ModeContext.setSavedCursorOffset(noteId, window.getSelection().focusOffset);
     }
@@ -155,11 +152,9 @@ export async function moveNoteUp(noteId) {
     } finally {
         ModeContext.setLoading(false);
     }
-    
-    // refresh() now returns content without setting it
+
     const newContent = await refresh();
-    
-    // We handle state updates here in the action
+
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }
@@ -181,7 +176,6 @@ export async function moveNoteDown(noteId) {
         await saveNote(noteId);
     }
 
-    // Save cursor position if this is the active note
     if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
         ModeContext.setSavedCursorOffset(noteId, window.getSelection().focusOffset);
     }
@@ -193,11 +187,9 @@ export async function moveNoteDown(noteId) {
     } finally {
         ModeContext.setLoading(false);
     }
-    
-    // refresh() now returns content without setting it
+
     const newContent = await refresh();
-    
-    // We handle state updates here in the action
+
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }
