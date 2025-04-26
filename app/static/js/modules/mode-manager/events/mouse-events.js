@@ -1,8 +1,8 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote } from '../actions/note-actions.js';
-import { selectNote, deselectNote, switchNotes } from '../actions/selection-actions.js';
-import { enterSearchMode, exitSearchMode } from '../actions/search-actions.js';
+import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
+import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
 
 export function initMouseEvents() {
@@ -48,7 +48,7 @@ function handleClick(event) {
     if (deleteButton) {
                 
         if (ModeContext.isSearching) {
-            exitSearchMode();
+            actionExitSearchMode();
         }
 
         const noteId = ModeContext.currentNoteId;
@@ -97,7 +97,7 @@ function handleClick(event) {
                     isSearching: ModeContext.isSearching, 
                     where: 'click in note' 
                 });
-                exitSearchMode();
+                actionExitSearchMode();
             } else {
                 console.log('DEBUG: Search mode already inactive', { 
                     isSearching: ModeContext.isSearching, 
@@ -130,9 +130,9 @@ function handleClick(event) {
                 }, Logger.LogCategory.EVENT);
 
                 if (ModeContext.currentNoteId) {
-                    switchNotes(noteId);
+                    actionSwitchNotes(noteId);
                 } else {
-                    selectNote(noteId);
+                    actionSelectNote(noteId);
                 }
                                 
                 Logger.logDebug('Click in note content - selecting note', { 
@@ -151,7 +151,7 @@ function handleClick(event) {
         } else {
                         
             if (ModeContext.isEditing) {
-                deselectNote();
+                actionDeselectNote();
             }
                         
             Logger.logDebug('Click near note but outside content bounds', {
@@ -168,7 +168,7 @@ function handleClick(event) {
         }
     } else if (searchField) {
 
-        enterSearchMode();
+        actionEnterSearchMode();
                 
         Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
     } else if (createButton) {
@@ -186,7 +186,7 @@ function handleClick(event) {
                 isSearching: ModeContext.isSearching, 
                 where: 'create note button' 
             });
-            exitSearchMode();
+            actionExitSearchMode();
         } else {
             console.log('DEBUG: Search mode already inactive', { 
                 isSearching: ModeContext.isSearching, 
@@ -199,7 +199,7 @@ function handleClick(event) {
     } else {
 
         if (ModeContext.isEditing) {
-            deselectNote();
+            actionDeselectNote();
                         
             Logger.logDebug('Click outside any note - exiting edit mode', {
                 coordinates,
@@ -213,7 +213,7 @@ function handleClick(event) {
                 isSearching: ModeContext.isSearching, 
                 where: 'click outside handler' 
             });
-            exitSearchMode();
+            actionExitSearchMode();
         } else {
             console.log('DEBUG: Search mode already inactive', { 
                 isSearching: ModeContext.isSearching, 

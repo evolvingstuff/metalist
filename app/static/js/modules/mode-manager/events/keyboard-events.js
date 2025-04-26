@@ -1,8 +1,8 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown } from '../actions/note-actions.js';
-import { deselectNote } from '../actions/selection-actions.js';
-import { undo, redo } from '../actions/history-actions.js';
+import { actionDeselectNote } from '../actions/selection-actions.js';
+import { actionUndo, actionRedo } from '../actions/history-actions.js';
 
 export function initKeyboardEvents() {
         
@@ -142,7 +142,7 @@ function handleEscapeKey() {
     }
     else if (ModeContext.isEditing) {
                 
-        deselectNote();
+        actionDeselectNote();
                 
         Logger.logDebug('Editing cancelled via Escape key', {
             previousNoteId: ModeContext.currentNoteId 
@@ -298,7 +298,7 @@ function handleUndoShortcut(event) {
 
     event.stopPropagation();
 
-    undo();
+    actionUndo();
 }
 
 function handleRedoShortcut(event) {
@@ -315,5 +315,5 @@ function handleRedoShortcut(event) {
 
     event.stopPropagation();
 
-    redo();
+    actionRedo();
 }

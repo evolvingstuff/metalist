@@ -1,12 +1,12 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
-import { saveNote } from './content-actions.js';
-import { refresh_and_maybe_select } from './ui-actions.js';
+import { actionSaveNote } from './content-actions.js';
+import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { CONFIG } from '../../config.js';
 import { DOMUtils } from '../../dom-utils.js';
 
-export async function undo() {
+export async function actionUndo() {
     Logger.logAction('undo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -15,7 +15,7 @@ export async function undo() {
     });
 
     if (ModeContext.isDirty && ModeContext.currentNoteId) {
-        await saveNote(ModeContext.currentNoteId);
+        await actionSaveNote(ModeContext.currentNoteId);
     }
 
     if (ModeContext.isSearching) {
@@ -60,7 +60,7 @@ export async function undo() {
         throw new Error(`Undo failed: ${result.message || 'Unknown error'}`);
     }
 
-    const newContent = await refresh_and_maybe_select();
+    const newContent = await actionRefreshAndMaybeSelect();
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);
@@ -69,7 +69,7 @@ export async function undo() {
     ModeContext.validate();
 }
 
-export async function redo() {
+export async function actionRedo() {
     Logger.logAction('redo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -78,7 +78,7 @@ export async function redo() {
     });
 
     if (ModeContext.isDirty && ModeContext.currentNoteId) {
-        await saveNote(ModeContext.currentNoteId);
+        await actionSaveNote(ModeContext.currentNoteId);
     }
 
     if (ModeContext.isSearching) {
@@ -123,7 +123,7 @@ export async function redo() {
         throw new Error(`Redo failed: ${result.message || 'Unknown error'}`);
     }
 
-    const newContent = await refresh_and_maybe_select();
+    const newContent = await actionRefreshAndMaybeSelect();
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);

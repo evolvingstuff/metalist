@@ -1,9 +1,9 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
-import { saveNote } from './content-actions.js';
-import { switchNotes, selectNote } from './selection-actions.js';
-import { refresh_and_maybe_select } from './ui-actions.js';
+import { actionSaveNote } from './content-actions.js';
+import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
+import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
 export async function deleteNote(noteId) {
     Logger.logAction('deleteNote', { 
@@ -41,7 +41,7 @@ export async function deleteNote(noteId) {
 
     ModeContext.setLoading(false);
 
-    await refresh_and_maybe_select();
+    await actionRefreshAndMaybeSelect();
 
     return;
 }
@@ -56,7 +56,7 @@ export async function createNote() {
     const currentNoteId = ModeContext.currentNoteId;
 
     if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
-        await saveNote(currentNoteId);
+        await actionSaveNote(currentNoteId);
     }
 
     if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
@@ -81,9 +81,9 @@ export async function createNote() {
     ModeContext.setLoading(false);
 
     if (ModeContext.isEditing) {
-        return await switchNotes(newNoteId);
+        return await actionSwitchNotes(newNoteId);
     } else {
-        return await selectNote(newNoteId);
+        return await actionSelectNote(newNoteId);
     }
 }
 
@@ -102,7 +102,7 @@ export async function createChildNote() {
     }
 
     if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
-        await saveNote(currentNoteId);
+        await actionSaveNote(currentNoteId);
     }
 
     if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
@@ -119,9 +119,9 @@ export async function createChildNote() {
     ModeContext.setLoading(false);
 
     if (ModeContext.isEditing) {
-        return await switchNotes(newNoteId);
+        return await actionSwitchNotes(newNoteId);
     } else {
-        return await selectNote(newNoteId);
+        return await actionSelectNote(newNoteId);
     }
 }
 
@@ -138,7 +138,7 @@ export async function moveNoteUp(noteId) {
     }
 
     if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
-        await saveNote(noteId);
+        await actionSaveNote(noteId);
     }
 
     if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
@@ -153,7 +153,7 @@ export async function moveNoteUp(noteId) {
         ModeContext.setLoading(false);
     }
 
-    const newContent = await refresh_and_maybe_select();
+    const newContent = await actionRefreshAndMaybeSelect();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -173,7 +173,7 @@ export async function moveNoteDown(noteId) {
     }
 
     if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
-        await saveNote(noteId);
+        await actionSaveNote(noteId);
     }
 
     if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
@@ -188,7 +188,7 @@ export async function moveNoteDown(noteId) {
         ModeContext.setLoading(false);
     }
 
-    const newContent = await refresh_and_maybe_select();
+    const newContent = await actionRefreshAndMaybeSelect();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);

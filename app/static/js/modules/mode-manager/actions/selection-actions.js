@@ -1,10 +1,10 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
-import { saveNote } from './content-actions.js';
-import { refresh_and_maybe_select } from './ui-actions.js';
+import { actionSaveNote } from './content-actions.js';
+import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
-export async function selectNote(noteId) {
+export async function actionSelectNote(noteId) {
     Logger.logAction('selectNote', { 
         noteId, 
         currentNoteId: ModeContext.currentNoteId 
@@ -20,14 +20,14 @@ export async function selectNote(noteId) {
             return; 
         }
 
-        await deselectNote();
+        await actionDeselectNote();
     }
 
     ModeContext.setCurrentNoteId(noteId);
 
     ModeContext.setEditing(true);
 
-    const newContent = await refresh_and_maybe_select();
+    const newContent = await actionRefreshAndMaybeSelect();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -36,7 +36,7 @@ export async function selectNote(noteId) {
     ModeContext.validate();
 }
 
-export async function deselectNote() {
+export async function actionDeselectNote() {
     Logger.logAction('deselectNote', { 
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -51,7 +51,7 @@ export async function deselectNote() {
     }
 
     if (isDirty) {
-        await saveNote(noteId);
+        await actionSaveNote(noteId);
     }
 
     ModeContext.setEditing(false);
@@ -60,12 +60,12 @@ export async function deselectNote() {
 
     ModeContext.setCurrentContent(null);
 
-    await refresh_and_maybe_select();
+    await actionRefreshAndMaybeSelect();
 
     ModeContext.validate();
 }
 
-export async function switchNotes(newNoteId) {
+export async function actionSwitchNotes(newNoteId) {
     Logger.logAction('switchNotes', { 
         currentNoteId: ModeContext.currentNoteId,
         newNoteId,
@@ -85,7 +85,7 @@ export async function switchNotes(newNoteId) {
     }
 
     if (ModeContext.isDirty && currentNoteId) {
-        await saveNote(currentNoteId);
+        await actionSaveNote(currentNoteId);
     }
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
@@ -102,7 +102,7 @@ export async function switchNotes(newNoteId) {
 
     ModeContext.setCurrentNoteId(newNoteId);
 
-    const newContent = await refresh_and_maybe_select();
+    const newContent = await actionRefreshAndMaybeSelect();
     
     ModeContext.setCurrentContent(newContent);
   

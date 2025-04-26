@@ -269,21 +269,21 @@ This pattern works particularly well with our "Always Be Changin'" (ABC) validat
 
 ```javascript
 function handleClick(event) {
-  // Determine what was clicked
-  const noteContent = event.target.closest('.note-content');
-  
-  if (noteContent) {
-    const noteId = noteContent.closest('.note').dataset.noteId;
-    
-    // Only call the action if needed (avoid redundant operations)
-    if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
-      // Map the event to an action (but don't modify state directly)
-      selectNote(noteId);
-    } else {
-      // Log intentionally ignored operations
-      Logger.logNoop('Click in already selected note - no action needed', { noteId });
-    }
-  }
+   // Determine what was clicked
+   const noteContent = event.target.closest('.note-content');
+
+   if (noteContent) {
+      const noteId = noteContent.closest('.note').dataset.noteId;
+
+      // Only call the action if needed (avoid redundant operations)
+      if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+         // Map the event to an action (but don't modify state directly)
+         actionSelectNote(noteId);
+      } else {
+         // Log intentionally ignored operations
+         Logger.logNoop('Click in already selected note - no action needed', {noteId});
+      }
+   }
 }
 ```
 
@@ -293,20 +293,20 @@ Some user interactions require multiple actions to execute in sequence. Event ha
 
 ```javascript
 function handleSearchClick(event) {
-  // 1. Check if we need to deselect the current note first
-  if (ModeContext.isEditing) {
-    // Call the deselectNote action to properly exit editing mode
-    deselectNote();
-  }
-  
-  // 2. Now focus the search field and enter search mode
-  enterSearchMode();
-  
-  // 3. Log the user's intention at a high level
-  Logger.logDebug('User clicked search - chained deselectNote and enterSearchMode', {
-    wasEditing: ModeContext.isEditing,
-    searchQuery: ModeContext.searchQuery
-  }, Logger.LogCategory.EVENT);
+   // 1. Check if we need to deselect the current note first
+   if (ModeContext.isEditing) {
+      // Call the deselectNote action to properly exit editing mode
+      actionDeselectNote();
+   }
+
+   // 2. Now focus the search field and enter search mode
+   actionEnterSearchMode();
+
+   // 3. Log the user's intention at a high level
+   Logger.logDebug('User clicked search - chained deselectNote and enterSearchMode', {
+      wasEditing: ModeContext.isEditing,
+      searchQuery: ModeContext.searchQuery
+   }, Logger.LogCategory.EVENT);
 }
 ```
 

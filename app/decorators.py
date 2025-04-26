@@ -10,7 +10,7 @@ transaction_lock = Lock()
 
 # Configuration for API response delays (in seconds)
 API_DELAY = {
-    "ENABLED": True,  # Set to True to enable artificial delays
+    "ENABLED": False,  # Set to True to enable artificial delays
     "DEFAULT": 1.0,    # Default delay in seconds
     "RANDOM": False,   # Whether to use random delay within MIN/MAX range
     "MIN": 0.5,        # Minimum random delay (if RANDOM is True)
@@ -22,6 +22,7 @@ API_DELAY = {
         "get_notes_fragment": 1.0
     }
 }
+
 
 def delay_response_decorator(func):
     """Decorator to add configurable delay to API responses for testing loading states"""

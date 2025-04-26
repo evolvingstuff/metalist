@@ -3,7 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 
-export async function saveNote(noteId) {
+export async function actionSaveNote(noteId) {
     Logger.logAction('saveNote', { noteId });
 
     if (!noteId) {

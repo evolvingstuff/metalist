@@ -3,7 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 
-export async function refresh_and_maybe_select(options = {}) {
+export async function actionRefreshAndMaybeSelect(options = {}) {
     Logger.logAction('refresh_and_maybe_select', { 
         noteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing
@@ -69,20 +69,4 @@ export async function refresh_and_maybe_select(options = {}) {
                 
         return html;
     }
-}
-
-export async function loadNote(noteId) {
-    Logger.logAction('loadNote', { noteId });
-
-    if (!noteId) {
-        throw new Error('Cannot load note: noteId is required');
-    }
-
-    const newContent = await refresh_and_maybe_select({ noteId });
-
-    if (ModeContext.currentContent !== newContent) {
-        ModeContext.setCurrentContent(newContent);
-    }
-    
-    return newContent;
 }

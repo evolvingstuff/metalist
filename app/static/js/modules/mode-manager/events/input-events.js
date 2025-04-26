@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { selectNote } from '../actions/selection-actions.js';
+import { actionSelectNote } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js';
 
 export function initInputEvents() {
@@ -45,7 +45,7 @@ function handleInput(event) {
         }
 
         if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
-            selectNote(noteId);
+            actionSelectNote(noteId);
             return; 
         }
 
