@@ -244,13 +244,17 @@ export async function actionPasteNoteSibling() {
 
     ModeContext.setLoading(true);
     
-        // Call the API to paste as sibling
-        await NotesAPI.pasteNoteSibling(clipboardNoteId, currentNoteId);
-        
+    // Call the API to paste as sibling and get the new note ID
+    const response = await NotesAPI.pasteNoteSibling(clipboardNoteId, currentNoteId);
+    const newNoteId = response.id;
+    
+    // Set the new note as the current note before refreshing
+    ModeContext.setCurrentNoteId(newNoteId);
+    
     ModeContext.setLoading(false);
     
-    // Refresh will handle setting loading = false when complete
-        await actionRefreshAndMaybeSelect();
+    // Refresh will show the pasted note and make it editable since it's the current note
+    await actionRefreshAndMaybeSelect();
 }
 
 /**
@@ -280,8 +284,16 @@ export async function actionPasteNoteChild() {
     }
 
     ModeContext.setLoading(true);
-    await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
+    
+    // Call the API to paste as child and get the new note ID
+    const response = await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
+    const newNoteId = response.id;
+    
+    // Set the new note as the current note before refreshing
+    ModeContext.setCurrentNoteId(newNoteId);
+    
     ModeContext.setLoading(false);
-
+    
+    // Refresh will show the pasted note and make it editable since it's the current note
     await actionRefreshAndMaybeSelect();
 }
