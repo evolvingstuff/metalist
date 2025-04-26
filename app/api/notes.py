@@ -149,10 +149,6 @@ def paste_sibling(source_note_id: str, target_note_id: str, db: Session = Depend
     if not target_note:
         raise HTTPException(status_code=404, detail="Target note not found")
     
-    # Prevent pasting a note as a sibling of itself
-    if source_note_id == target_note_id:
-        raise HTTPException(status_code=400, detail="Cannot paste a note as a sibling of itself")
-    
     # Import the copy_note function
     from ..models.utils import copy_note
     
@@ -184,10 +180,6 @@ def paste_child(source_note_id: str, target_note_id: str, db: Session = Depends(
     target_note = db.get(DBNote, target_note_id)
     if not target_note:
         raise HTTPException(status_code=404, detail="Target note not found")
-    
-    # Prevent pasting a note as a child of itself
-    if source_note_id == target_note_id:
-        raise HTTPException(status_code=400, detail="Cannot paste a note as a child of itself")
     
     # Prevent circular references
     def is_descendant(parent_id: str, potential_child_id: str) -> bool:
