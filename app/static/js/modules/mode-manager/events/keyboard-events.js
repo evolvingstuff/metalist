@@ -112,17 +112,14 @@ function handleKeyDown(event) {
         case 'z':
             if (event.metaKey || event.ctrlKey) {
                 if (event.shiftKey) {
-                    
                     handleRedoShortcut(event);
                 } else {
-                    
                     handleUndoShortcut(event);
                 }
             }
             break;
         case 'y':
             if (event.metaKey || event.ctrlKey) {
-                
                 handleRedoShortcut(event);
             }
             break;
@@ -289,6 +286,10 @@ function handleUndoShortcut(event) {
         throw new Error('handleUndoShortcut called without an event object');
     }
 
+    if (ModeContext.isEditing) {
+        return;  // use regular events
+    }
+
     Logger.logDebug('Undo shortcut triggered', {
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId
@@ -304,6 +305,10 @@ function handleUndoShortcut(event) {
 function handleRedoShortcut(event) {
     if (!event) {
         throw new Error('handleRedoShortcut called without an event object');
+    }
+
+    if (ModeContext.isEditing) {
+        return;  // use regular events
     }
 
     Logger.logDebug('Redo shortcut triggered', {
