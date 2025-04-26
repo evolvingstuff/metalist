@@ -27,7 +27,12 @@ export async function selectNote(noteId) {
 
     ModeContext.setEditing(true);
 
-    await refresh();
+    const newContent = await refresh();
+    
+    // Set the current content if it's different
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
 
     ModeContext.validate();
 }
@@ -57,6 +62,7 @@ export async function deselectNote() {
     ModeContext.setCurrentContent(null);
 
     await refresh();
+    // No need to set content when deselecting as we explicitly set it to null above
 
     ModeContext.validate();
 }
@@ -98,7 +104,12 @@ export async function switchNotes(newNoteId) {
 
     ModeContext.setCurrentNoteId(newNoteId);
 
-    await refresh();
+    const newContent = await refresh();
+    
+    // Set the current content if it's different
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
 
     ModeContext.validate();
 }

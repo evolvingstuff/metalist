@@ -25,11 +25,14 @@ export async function refresh(options = {}) {
         
     notesContainer.innerHTML = html;
 
+    let contentHtml = null;
+    
     if (noteId) {
         const noteElement = DOMUtils.getNoteById(noteId);
-        const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+        contentHtml = DOMUtils.getNoteContentHTML(noteElement);
 
-        ModeContext.setCurrentContent(contentHtml);
+        // No longer setting ModeContext.setCurrentContent here
+        // Calling action is responsible for setting content state
 
         if (ModeContext.isEditing) {
                         
@@ -77,5 +80,12 @@ export async function loadNote(noteId) {
         throw new Error('Cannot load note: noteId is required');
     }
 
-    return await refresh({ noteId });
+    const newContent = await refresh({ noteId });
+    
+    // Set the current content if it's different
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
+    
+    return newContent;
 }

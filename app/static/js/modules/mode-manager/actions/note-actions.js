@@ -41,7 +41,11 @@ export async function deleteNote(noteId) {
 
     ModeContext.setLoading(false);
 
-    return await refresh();
+    // No need to update content after refresh when deleting a note
+    // as we've already set it to null above
+    await refresh();
+
+    return;
 }
 
 export async function createNote() {
@@ -147,7 +151,13 @@ export async function moveNoteUp(noteId) {
         ModeContext.setLoading(false);
     }
     
-    await refresh();
+    // refresh() now returns content without setting it
+    const newContent = await refresh();
+    
+    // We handle state updates here in the action
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
 }
 
 export async function moveNoteDown(noteId) {
@@ -174,5 +184,11 @@ export async function moveNoteDown(noteId) {
         ModeContext.setLoading(false);
     }
     
-    await refresh();
+    // refresh() now returns content without setting it
+    const newContent = await refresh();
+    
+    // We handle state updates here in the action
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
 }
