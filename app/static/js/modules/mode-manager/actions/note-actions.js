@@ -250,6 +250,7 @@ export async function actionPasteNoteSibling() {
     
     // Set the new note as the current note before refreshing
     ModeContext.setCurrentNoteId(newNoteId);
+    ModeContext.setClipboardNoteId(newNoteId);  // don't make the parent refer to itself as a child
     
     ModeContext.setLoading(false);
     
@@ -291,6 +292,7 @@ export async function actionPasteNoteChild() {
     
     // Set the new note as the current note before refreshing
     ModeContext.setCurrentNoteId(newNoteId);
+    ModeContext.setClipboardNoteId(newNoteId); // don't make the parent refer to itself as a child
     
     ModeContext.setLoading(false);
     
