@@ -33,13 +33,11 @@ export const CONFIG = {
     },
     
     LOADING: {
-        // Artificial delay in milliseconds to simulate slow network (0 to disable)
+        
         ARTIFICIAL_DELAY: 0,
-        
-        // Time in milliseconds before showing the loading cursor
+
         SPINNER_DELAY: 500,
-        
-        // Whether to block user actions while loading
+
         BLOCK_ACTIONS: true
     }
 };

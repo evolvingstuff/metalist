@@ -51,7 +51,6 @@ export async function actionSaveNoteOnIdle(noteId) {
         throw new Error(`Cannot save note ${noteId} on idle - not the current note being edited (${ModeContext.currentNoteId})`);
     }
 
-    // Only save if the note is dirty
     if (!ModeContext.isDirty) {
         Logger.logDebug('Note not dirty, skipping idle save', { 
             noteId,
@@ -59,7 +58,6 @@ export async function actionSaveNoteOnIdle(noteId) {
         }, Logger.LogCategory.DEBUG);
         return Promise.resolve(); 
     }
-
 
     const noteElement = DOMUtils.getNoteById(noteId);
     const contentHTML = DOMUtils.getNoteContentHTML(noteElement);

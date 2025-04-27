@@ -195,12 +195,6 @@ export async function moveNoteDown(noteId) {
     }
 }
 
-/**
- * Copies the current note to the clipboard.
- * 
- * This sets the current note ID in the clipboard, making it available
- * for paste operations.
- */
 export function actionCopyNote() {
     const currentNoteId = ModeContext.currentNoteId;
     
@@ -209,24 +203,12 @@ export function actionCopyNote() {
         isEditing: ModeContext.isEditing,
         clipboardNoteId: ModeContext.clipboardNoteId
     });
-    
-    // ABC Pattern: Only update if changing to prevent redundant updates
+
     if (ModeContext.clipboardNoteId !== currentNoteId) {
         ModeContext.setClipboardNoteId(currentNoteId);
     }
 }
 
-/**
- * Pastes a copy of the clipboard note as a sibling after the current note.
- * 
- * Note: Event handler should validate context before calling this action.
- * This function assumes:
- * - We are in editing mode
- * - A valid current note ID is available
- * - A valid clipboard note ID is available
- * 
- * @returns {Promise<void>}
- */
 export async function actionPasteNoteSibling() {
     const currentNoteId = ModeContext.currentNoteId;
     const clipboardNoteId = ModeContext.clipboardNoteId;
@@ -237,38 +219,23 @@ export async function actionPasteNoteSibling() {
         isEditing: ModeContext.isEditing
     });
 
-    // Save any pending changes first
     if (ModeContext.isDirty) {
         await actionSaveNote(currentNoteId);
     }
 
     ModeContext.setLoading(true);
-    
-    // Call the API to paste as sibling and get the new note ID
+
     const response = await NotesAPI.pasteNoteSibling(clipboardNoteId, currentNoteId);
     const newNoteId = response.id;
-    
-    // Set the new note as the current note before refreshing
+
     ModeContext.setCurrentNoteId(newNoteId);
-    ModeContext.setClipboardNoteId(newNoteId);  // don't make the parent refer to itself as a child
+    ModeContext.setClipboardNoteId(newNoteId);  
     
     ModeContext.setLoading(false);
-    
-    // Refresh will show the pasted note and make it editable since it's the current note
+
     await actionRefreshAndMaybeSelect();
 }
 
-/**
- * Pastes a copy of the clipboard note as a child of the current note.
- * 
- * Note: Event handler should validate context before calling this action.
- * This function assumes:
- * - We are in editing mode
- * - A valid current note ID is available
- * - A valid clipboard note ID is available
- * 
- * @returns {Promise<void>}
- */
 export async function actionPasteNoteChild() {
     const currentNoteId = ModeContext.currentNoteId;
     const clipboardNoteId = ModeContext.clipboardNoteId;
@@ -279,23 +246,19 @@ export async function actionPasteNoteChild() {
         isEditing: ModeContext.isEditing
     });
 
-    // Save any pending changes first
     if (ModeContext.isDirty) {
         await actionSaveNote(currentNoteId);
     }
 
     ModeContext.setLoading(true);
-    
-    // Call the API to paste as child and get the new note ID
+
     const response = await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
     const newNoteId = response.id;
-    
-    // Set the new note as the current note before refreshing
+
     ModeContext.setCurrentNoteId(newNoteId);
-    ModeContext.setClipboardNoteId(newNoteId); // don't make the parent refer to itself as a child
+    ModeContext.setClipboardNoteId(newNoteId); 
     
     ModeContext.setLoading(false);
-    
-    // Refresh will show the pasted note and make it editable since it's the current note
+
     await actionRefreshAndMaybeSelect();
 }

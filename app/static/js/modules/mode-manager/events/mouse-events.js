@@ -25,14 +25,13 @@ function handleClick(event) {
         throw new Error('Click event missing target element');
     }
 
-    // Global check for loading state - follow ABC pattern to avoid redundant state changes
     if (ModeContext.isLoading) {
         Logger.logNoop('Click event ignored while system is loading', {
             eventType: event.type,
             targetElement: event.target.tagName,
             isLoading: true
         });
-        return; // Exit early - no action while loading
+        return; 
     }
 
     const coordinates = {
@@ -172,13 +171,13 @@ function handleClick(event) {
                 
         Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
     } else if (createButton) {
-        // Check loading state first - follow ABC pattern to avoid redundant state changes
+        
         if (ModeContext.isLoading) {
             Logger.logNoop('Create button clicked while system is loading - ignoring', {
                 coordinates,
                 isLoading: true
             });
-            return; // Exit early - no action while loading
+            return; 
         }
                 
         if (ModeContext.isSearching) {

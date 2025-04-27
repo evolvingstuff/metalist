@@ -18,8 +18,7 @@ function handleInput(event) {
     if (!event.target) {
         throw new Error('Input event missing target element');
     }
-    
-    // Block all input events during loading
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Input event ignored while system is loading', {
             targetElement: event.target.tagName,

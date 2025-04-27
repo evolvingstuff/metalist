@@ -46,7 +46,7 @@ const ModeManager = {
             initMouseEvents();
             initInputEvents();
             initFocusEvents();
-            initContentAutoSave(); // Content auto-save initialization
+            initContentAutoSave(); 
                         
             Logger.logDebug('Event handlers registered', { config });
         } catch (error) {

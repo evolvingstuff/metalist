@@ -113,28 +113,25 @@ class ModeContext {
         
         const oldValue = this._loading;
         this._loading = Boolean(value);
-        
-        // Handle loading state UI changes only - event blocking is now in handlers
+
         if (this._loading) {
-            // Add loading class to body after a delay
+            
             if (CONFIG.LOADING.SPINNER_DELAY > 0) {
-                // Clear any existing timeout to prevent multiple timers
+                
                 if (this._loadingTimeoutId) {
                     clearTimeout(this._loadingTimeoutId);
                     this._loadingTimeoutId = null;
                 }
-                
-                // Set timeout to add loading cursor after delay
+
                 this._loadingTimeoutId = setTimeout(() => {
                     document.body.classList.add(CONFIG.CLASSES.LOADING);
                     this._loadingTimeoutId = null;
                 }, CONFIG.LOADING.SPINNER_DELAY);
             } else {
-                // No delay, add loading class immediately
+                
                 document.body.classList.add(CONFIG.CLASSES.LOADING);
             }
-            
-            // Apply artificial delay if configured
+
             if (CONFIG.LOADING.ARTIFICIAL_DELAY > 0) {
                 return new Promise(resolve => {
                     setTimeout(() => {
@@ -143,10 +140,9 @@ class ModeContext {
                 });
             }
         } else {
-            // When loading is finished, remove loading class immediately
-            document.body.classList.remove(CONFIG.CLASSES.LOADING);
             
-            // Clear any pending timeout
+            document.body.classList.remove(CONFIG.CLASSES.LOADING);
+
             if (this._loadingTimeoutId) {
                 clearTimeout(this._loadingTimeoutId);
                 this._loadingTimeoutId = null;
@@ -350,23 +346,19 @@ class ModeContext {
         }
     }
 
-    /**
-     * Gets the timestamp of when content was last changed
-     */
     get lastContentChangeTime() {
         return this._lastContentChangeTime;
     }
 
     setClipboardNoteId(noteId) {
-        // Handle null - clear clipboard
+        
         if (noteId === null) {
             Logger.logAction('Clearing clipboard note ID');
             this._clipboardNoteId = null;
             this._notifyListeners('clipboardNoteId', null);
             return this;
         }
-        
-        // Only update if changing to prevent redundant updates
+
         if (this._clipboardNoteId === noteId) {
             throw new Error(`Redundant state change: clipboardNoteId is already ${noteId}`);
         }
@@ -380,15 +372,6 @@ class ModeContext {
     get clipboardNoteId() {
         return this._clipboardNoteId;
     }
-
-    // /**
-    //  * Sets the timestamp of when content was last changed
-    //  */
-    // setLastContentChangeTime(timestamp) {
-    //     this._lastContentChangeTime = timestamp;
-    //     this._notifyListeners('lastContentChangeTime', timestamp);
-    //     return this;
-    // }
 }
 
 export const ModeContextInstance = new ModeContext();

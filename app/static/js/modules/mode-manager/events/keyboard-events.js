@@ -20,7 +20,6 @@ function handleKeyDown(event) {
         throw new Error(`Invalid KeyboardEvent: missing or invalid key property: ${event.key}`);
     }
 
-    // Block all keyboard events during loading
     if (ModeContext.isLoading) {
         Logger.logNoop('Keyboard event ignored while system is loading', {
             key: event.key,
@@ -301,7 +300,7 @@ function handleUndoShortcut(event) {
     }
 
     if (ModeContext.isEditing) {
-        return;  // use regular events
+        return;  
     }
 
     Logger.logDebug('Undo shortcut triggered', {
@@ -322,7 +321,7 @@ function handleRedoShortcut(event) {
     }
 
     if (ModeContext.isEditing) {
-        return;  // use regular events
+        return;  
     }
 
     Logger.logDebug('Redo shortcut triggered', {
@@ -347,7 +346,6 @@ function handleCopyNoteShortcut(event) {
         currentNoteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    // If we're not in editing mode, there's nothing to copy
     if (!ModeContext.isEditing) {
         Logger.logNoop('Copy shortcut pressed but not in editing mode', {
             isEditing: false
@@ -364,14 +362,11 @@ function handleCopyNoteShortcut(event) {
         return;
     }
 
-    // Check if text is selected
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && document.activeElement.isContentEditable) {
-        // Text is selected, so don't use our custom copy behavior
-        // Let the default browser copy behavior handle it
+
         Logger.logDebug('Text selection detected, using default copy behavior', {}, Logger.LogCategory.EVENT);
-        
-        // Clear the clipboard note ID when doing a regular text copy
+
         if (ModeContext.clipboardNoteId) {
             Logger.logDebug('Clearing clipboard note ID due to text copy', {
                 previousClipboardNoteId: ModeContext.clipboardNoteId
@@ -382,7 +377,6 @@ function handleCopyNoteShortcut(event) {
         return;
     }
 
-    // No text is selected, just a cursor position - proceed with note copy
     event.preventDefault();
     actionCopyNote();
     
@@ -402,7 +396,6 @@ function handlePasteNoteSiblingShortcut(event) {
         clipboardNoteId: ModeContext.clipboardNoteId
     }, Logger.LogCategory.EVENT);
 
-    // Skip our handler if we're not editing or don't have required IDs
     if (!ModeContext.isEditing || !ModeContext.currentNoteId || !ModeContext.clipboardNoteId) {
         Logger.logNoop('Paste shortcut conditions not met', {
             isEditing: ModeContext.isEditing,
@@ -412,14 +405,12 @@ function handlePasteNoteSiblingShortcut(event) {
         return;
     }
 
-    // If text is selected in an editable area, use default paste
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && document.activeElement.isContentEditable) {
         Logger.logDebug('Text selection detected, using default paste', {}, Logger.LogCategory.EVENT);
         return;
     }
-    
-    // Prevent default paste and use our handler
+
     event.preventDefault();
     actionPasteNoteSibling();
 }
@@ -429,7 +420,6 @@ function handlePasteNoteChildShortcut(event) {
         throw new Error('handlePasteNoteChildShortcut called without an event object');
     }
 
-    // Always prevent default for Shift+Cmd/Ctrl+V
     event.preventDefault();
 
     Logger.logDebug('Paste note as child shortcut triggered', {
@@ -438,7 +428,6 @@ function handlePasteNoteChildShortcut(event) {
         clipboardNoteId: ModeContext.clipboardNoteId
     }, Logger.LogCategory.EVENT);
 
-    // Skip our handler if we're not editing or don't have required IDs
     if (!ModeContext.isEditing || !ModeContext.currentNoteId || !ModeContext.clipboardNoteId) {
         Logger.logNoop('Paste as child shortcut conditions not met', {
             isEditing: ModeContext.isEditing,
