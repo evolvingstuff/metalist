@@ -312,6 +312,7 @@ def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depe
     from mako.lookup import TemplateLookup
     import os
     import logging
+    from ..render.note_renderer import build_note_tree
 
     logger = logging.getLogger(__name__)
 
@@ -321,37 +322,8 @@ def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depe
         lookup = TemplateLookup(directories=[template_dir])
         template = lookup.get_template('notes_list.html')
 
-        def is_renderable(note) -> bool:
-            """Check if note should be rendered differently when not editing.
-            For now, always return False until we implement special rendering."""
-            return False
-
-        def maybe_render_content(note) -> str:
-            """Apply special rendering to content if needed.
-            For now, just return content as-is until we implement special rendering."""
-            return note.content
-
-        # Use same tree building logic as main page
-        def build_tree(parent_id=None):
-            try:
-                notes = LinkedListManager.get_ordered_child_list(db, parent_id)
-                return [{
-                    'id': note.id,
-                    'content': note.content if note.id == editing_note_id else maybe_render_content(note),
-                    'parent_id': note.parent_id or '',
-                    'children': build_tree(note.id),
-                    'flags': {
-                        'isEditing': note.id == editing_note_id,
-                        'isCollapsed': False,
-                        'isHighlighted': False,
-                        'isRendered': note.id != editing_note_id and is_renderable(note)
-                    }
-                } for note in notes]
-            except Exception as e:
-                logger.exception("Error building note tree")
-                raise
-
-        notes = build_tree(None)
+        # Use the shared note renderer to build the tree
+        notes = build_note_tree(LinkedListManager, db, None, editing_note_id)
         html = template.render(notes=notes)
         
         return html

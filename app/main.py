@@ -76,26 +76,10 @@ async def home(request: Request, db: Session = Depends(get_db)):
 
         template = templates.get_template("index.html")
         
-        def build_tree(parent_id=None):
-            try:
-                notes = LinkedListManager.get_ordered_child_list(db, parent_id)
-                return [{
-                    'id': note.id,
-                    'content': note.content,
-                    'parent_id': note.parent_id or '',
-                    'children': build_tree(note.id),
-                    'flags': {
-                        'isEditing': False,
-                        'isCollapsed': False,
-                        'isHighlighted': False,
-                        'isRendered': False
-                    }
-                } for note in notes]
-            except Exception as e:
-                logger.exception("Error building note tree")
-                raise
+        # Import and use the shared note renderer
+        from .render.note_renderer import build_note_tree
+        notes = build_note_tree(LinkedListManager, db)
         
-        notes = build_tree(None)
         return template.render(request=request, notes=notes, version=VERSION)
     except Exception as e:
         logger.exception("Error in home route")
