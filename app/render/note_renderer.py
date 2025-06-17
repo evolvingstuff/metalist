@@ -13,8 +13,10 @@ def render_read_only_mode(note) -> str:
     else:
         return note.content
 
+
 def render_editing_mode(note) -> str:
     return note.content
+
 
 def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None):
     """
@@ -38,9 +40,7 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None):
             'children': build_note_tree(db_manager, db, note.id, editing_note_id),
             'flags': {
                 'isEditing': note.id == editing_note_id,
-                'isCollapsed': False,
-                'isHighlighted': False,
-                'isRendered': note.id != editing_note_id  # All non-editing notes use rendered mode
+                'isCollapsed': False
             }
         } for note in notes]
     except Exception as e:
