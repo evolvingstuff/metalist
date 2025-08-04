@@ -5,14 +5,37 @@ Provides consistent rendering functions for notes in different modes.
 Acts as the single source of truth for note rendering across the application.
 """
 
+import re
 from app.core import config
 from app.utils.text_utils import strip_html
+
+
+def strip_comments_from_html(html_content: str) -> str:
+    """
+    Remove comment patterns like /* text */ from HTML content while preserving HTML structure.
+    Also removes empty divs that might be left behind.
+    """
+    if not html_content:
+        return html_content
+    
+    # Remove /* comment */ patterns (including any whitespace around them)
+    content = re.sub(r'/\*[^*]*\*/', '', html_content)
+    
+    # Remove empty divs that might be left behind
+    content = re.sub(r'<div>\s*</div>', '', content)
+    
+    # Clean up extra whitespace
+    content = re.sub(r'\s+', ' ', content).strip()
+    
+    return content
+
 
 def render_read_only_mode(note) -> str:
     if config.DEBUG_NOTE_RENDER_MODE:
         return note.content + " [READ ONLY]" # as a test
     else:
-        return note.content
+        # Strip comments from read-only view
+        return strip_comments_from_html(note.content)
 
 
 def render_editing_mode(note) -> str:
@@ -30,8 +53,9 @@ def note_matches_search(note_dict, search_terms):
     Returns:
         True if note or any descendant contains all search terms
     """
-    # Check the note's own content
-    plain_text = strip_html(note_dict['content']).lower()
+    # Check the note's own content using RAW content (for search) not rendered content
+    raw_content = note_dict.get('raw_content', note_dict['content'])
+    plain_text = strip_html(raw_content).lower()
     if all(term in plain_text for term in search_terms):
         return True
     
@@ -94,6 +118,7 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
         note_tree = [{
             'id': note.id,
             'content': render_editing_mode(note) if note.id == editing_note_id else render_read_only_mode(note),
+            'raw_content': note.content,  # Keep raw content for search filtering
             'parent_id': note.parent_id or '',
             'children': build_note_tree(db_manager, db, note.id, editing_note_id, search_query),
             'flags': {
