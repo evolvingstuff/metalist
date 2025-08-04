@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
+import { actionExitSearchMode } from '../actions/search-actions.js';
 
 export function initKeyboardEvents() {
         
@@ -195,6 +196,10 @@ function handleCreateNoteShortcut(event) {
 
     event.preventDefault();
 
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
     createNote();
 }
 
@@ -209,6 +214,10 @@ function handleCreateChildNoteShortcut(event) {
     }, Logger.LogCategory.EVENT);
 
     event.preventDefault();
+
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
 
     createChildNote();
 }

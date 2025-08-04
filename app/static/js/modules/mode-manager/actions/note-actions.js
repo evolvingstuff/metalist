@@ -67,18 +67,20 @@ export async function createNote() {
     if (currentNoteId) {
                 
         Logger.logDebug('Creating new sibling note after note', { 
-            currentNoteId 
+            currentNoteId,
+            searchQuery: ModeContext.searchQuery
         }, Logger.LogCategory.DEBUG);
-        data = await NotesAPI.createSibling(currentNoteId);
+        data = await NotesAPI.createSibling(currentNoteId, ModeContext.searchQuery);
     } else {
         // Find the first visible note to insert before
         const firstVisibleNote = document.querySelector('.note');
         const firstVisibleNoteId = firstVisibleNote ? firstVisibleNote.dataset.noteId : null;
                 
         Logger.logDebug('Creating new note at top of list', {
-            firstVisibleNoteId
+            firstVisibleNoteId,
+            searchQuery: ModeContext.searchQuery
         }, Logger.LogCategory.DEBUG);
-        data = await NotesAPI.createNote(firstVisibleNoteId);
+        data = await NotesAPI.createNote(firstVisibleNoteId, ModeContext.searchQuery);
     }
 
     const newNoteId = data.id;

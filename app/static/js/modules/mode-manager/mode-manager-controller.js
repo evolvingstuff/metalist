@@ -8,6 +8,7 @@ import { initMouseEvents } from './events/mouse-events.js';
 import { initInputEvents } from './events/input-events.js';
 import { initFocusEvents } from './events/focus-events.js';
 import { initContentAutoSave } from './events/inactivity-events.js';
+import { initializeSearchEvents } from './events/search-events.js';
 
 const DEFAULT_CONFIG = {};
 
@@ -46,7 +47,8 @@ const ModeManager = {
             initMouseEvents();
             initInputEvents();
             initFocusEvents();
-            initContentAutoSave(); 
+            initContentAutoSave();
+            initializeSearchEvents();
                         
             Logger.logDebug('Event handlers registered', { config });
         } catch (error) {

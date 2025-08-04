@@ -40,15 +40,18 @@ export const NotesAPI = {
         }
     },
 
-    async createNote(firstVisibleNoteId = null) {
+    async createNote(firstVisibleNoteId = null, searchQuery = null) {
         const body = {};
         if (firstVisibleNoteId) {
             body.first_visible_note_id = firstVisibleNoteId;
         }
+        if (searchQuery) {
+            body.search_query = searchQuery;
+        }
         
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
             method: 'POST',
-            body: body.first_visible_note_id ? JSON.stringify(body) : undefined
+            body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
         });
     },
 
@@ -63,9 +66,15 @@ export const NotesAPI = {
         });
     },
 
-    async createSibling(noteId) {
+    async createSibling(noteId, searchQuery = null) {
+        const body = {};
+        if (searchQuery) {
+            body.search_query = searchQuery;
+        }
+        
         return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
-            method: 'POST' 
+            method: 'POST',
+            body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
         });
     },
 
@@ -170,8 +179,21 @@ export const NotesAPI = {
         return noteElement.querySelector('.note-content');
     },
 
-    async getFragment(noteId = null) {
-        const url = `${CONFIG.API.NOTES.FRAGMENT}${noteId ? `?editing_note_id=${noteId}` : ''}`;
+    async getFragment(noteId = null, searchQuery = null) {
+        let url = CONFIG.API.NOTES.FRAGMENT;
+        const params = [];
+        
+        if (noteId) {
+            params.push(`editing_note_id=${encodeURIComponent(noteId)}`);
+        }
+        if (searchQuery) {
+            params.push(`search=${encodeURIComponent(searchQuery)}`);
+        }
+        
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+        
         return this._apiCall(url, {
             method: 'GET',
             headers: {

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class NoteService(BaseTransactionService):
     """Service for note CRUD operations with transaction tracking"""
     
-    def create_note(self, parent_id: Optional[str] = None, first_visible_note_id: Optional[str] = None) -> dict:
+    def create_note(self, parent_id: Optional[str] = None, first_visible_note_id: Optional[str] = None, search_query: Optional[str] = None) -> dict:
         """Create a new note at the top of the list (or before first visible note)"""
         self._set_operation("create_note_top")
         
@@ -30,6 +30,12 @@ class NoteService(BaseTransactionService):
         else:
             # Default behavior - create at absolute top
             LinkedListManager.create_note_top(self.db, note_id, parent_id)
+        
+        # Auto-populate with search terms if creating a root-level note during search
+        if search_query and search_query.strip() and not parent_id:
+            content = f"<div> </div><div><br></div><div>/* {search_query.strip()} */</div>"
+            LinkedListManager.update_note(self.db, note_id, content)
+            logger.info(f"Auto-populated note {note_id} with search terms: '{search_query.strip()}'")
         
         logger.info(f"Created note {note_id} with parent {parent_id} before {first_visible_note_id}")
         return {"id": note_id, "status": "created"}
@@ -96,7 +102,7 @@ class NoteService(BaseTransactionService):
         logger.info(f"Created note {note_id} at position")
         return {"id": note_id, "status": "created"}
     
-    def create_sibling_note(self, reference_note_id: str) -> dict:
+    def create_sibling_note(self, reference_note_id: str, search_query: Optional[str] = None) -> dict:
         """Create a new note as a sibling after the reference note"""
         self._set_operation("create_new_sibling")
         
@@ -117,6 +123,12 @@ class NoteService(BaseTransactionService):
             sibling_id=reference_note_id,
             position=MovePosition.AFTER
         )
+        
+        # Auto-populate with search terms if creating a root-level note during search
+        if search_query and search_query.strip() and not reference_note.parent_id:
+            content = f"<div> </div><div><br></div><div>/* {search_query.strip()} */</div>"
+            LinkedListManager.update_note(self.db, new_note_id, content)
+            logger.info(f"Auto-populated sibling note {new_note_id} with search terms: '{search_query.strip()}'")
         
         logger.info(f"Created sibling note {new_note_id} after {reference_note_id}")
         return {"id": new_note_id, "status": "created"}

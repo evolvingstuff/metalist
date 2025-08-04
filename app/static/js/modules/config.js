@@ -39,5 +39,9 @@ export const CONFIG = {
         SPINNER_DELAY: 500,
 
         BLOCK_ACTIONS: true
+    },
+    
+    SEARCH: {
+        DEBOUNCE_MS: 300  // Delay before executing search after typing stops
     }
 };

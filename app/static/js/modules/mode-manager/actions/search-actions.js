@@ -9,7 +9,9 @@ export async function actionEnterSearchMode() {
         await actionDeselectNote();
     }
 
-    ModeContext.setSearching(true);
+    if (!ModeContext.isSearching) {
+        ModeContext.setSearching(true);
+    }
 
     ModeContext.validate();
 }

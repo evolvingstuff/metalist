@@ -30,7 +30,6 @@ function handleInput(event) {
     }
         
     const noteContent = event.target.closest('.note-content');
-    const searchField = event.target.closest('#search-input');
         
     if (noteContent) {
         const noteElement = noteContent.closest('.note');
@@ -67,16 +66,6 @@ function handleInput(event) {
                 contentLength: currentHtmlContent.length
             }, Logger.LogCategory.EVENT);
         }
-    } else if (searchField) {
-        if (searchField.value === undefined) {
-            throw new Error('Search field has no value property');
-        }
-                
-        const searchQuery = searchField.value;
-        ModeContext.setSearchQuery(searchQuery);
-        ModeContext.setSearching(true);
-        ModeContext.validate();
-                
-        Logger.logDebug('Search query changed', { query: searchQuery }, Logger.LogCategory.EVENT);
-    }
+    } 
+    // Search input handling is now done by search-events.js
 }

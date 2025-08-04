@@ -72,7 +72,8 @@ async def home(request: Request, db: Session = Depends(get_db)):
         
         # Import and use the shared note renderer
         from .render.note_renderer import build_note_tree
-        notes = build_note_tree(LinkedListManager, db)
+        # For initial page load, no search query
+        notes = build_note_tree(LinkedListManager, db, search_query=None)
         
         return template.render(request=request, notes=notes, version=VERSION)
     except Exception as e:

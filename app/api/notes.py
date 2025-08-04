@@ -25,6 +25,15 @@ class MoveNoteCommand(BaseModel):
     position: Optional[str] = None  # "BEFORE" or "AFTER"
 
 
+class CreateNoteCommand(BaseModel):
+    first_visible_note_id: Optional[str] = Field(default=None)
+    search_query: Optional[str] = Field(default=None)
+
+
+class CreateSiblingCommand(BaseModel):
+    search_query: Optional[str] = Field(default=None)
+
+
 @router.post("/undo")
 def undo(
     db: Session = Depends(get_db),
@@ -51,8 +60,7 @@ def redo(
 
 @router.post("/new")
 def create_note_top(
-    parent_id: Optional[str] = None,
-    first_visible_note_id: Optional[str] = None,
+    command: CreateNoteCommand = CreateNoteCommand(),
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -60,7 +68,7 @@ def create_note_top(
     apply_delay("create_note_top")
     
     with get_note_service(db, transaction_manager) as service:
-        result = service.create_note(parent_id, first_visible_note_id)
+        result = service.create_note(None, command.first_visible_note_id, command.search_query)
         return {"id": result["id"]}
 
 
@@ -203,6 +211,7 @@ def create_note_with_position(
 @router.post("/new-sibling/{note_id}")
 def create_new_sibling(
     note_id: str,
+    command: CreateSiblingCommand = CreateSiblingCommand(),
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -210,7 +219,7 @@ def create_new_sibling(
     apply_delay("create_new_sibling")
     
     with get_note_service(db, transaction_manager) as service:
-        result = service.create_sibling_note(note_id)
+        result = service.create_sibling_note(note_id, command.search_query)
         return {"id": result["id"]}
 
 
@@ -233,10 +242,11 @@ def create_new_child(
 @router.get("/fragment")
 def get_notes_fragment(
     editing_note_id: Optional[str] = None,
+    search: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Get the HTML fragment for the notes list"""
     apply_delay("get_notes_fragment")
     
     with get_query_service(db) as service:
-        return service.get_notes_fragment(editing_note_id)
+        return service.get_notes_fragment(editing_note_id, search)

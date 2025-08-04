@@ -25,6 +25,7 @@ class ModeContext {
         this._listeners = [];
         this._savedCursorOffset = null;
         this._lastContentChangeTime = null;
+        this._searchQuery = '';
     }
 
     setEditing(value) {
@@ -60,9 +61,8 @@ class ModeContext {
             this._notifyListeners('searching', this._searching);
         }
 
-        if (!this._searching) {
-            this._searchQuery = null;
-        }
+        // Don't clear search query when exiting search mode
+        // This preserves the search context for note creation
                 
         return this;
     }
@@ -371,6 +371,22 @@ class ModeContext {
 
     get clipboardNoteId() {
         return this._clipboardNoteId;
+    }
+
+    setSearchQuery(query) {
+        // Don't trigger redundancy check for search as it's expected to change frequently
+        const oldQuery = this._searchQuery;
+        this._searchQuery = query || '';
+        
+        if (oldQuery !== this._searchQuery) {
+            this._notifyListeners('searchQuery', this._searchQuery);
+        }
+        
+        return this;
+    }
+
+    get searchQuery() {
+        return this._searchQuery;
     }
 }
 
