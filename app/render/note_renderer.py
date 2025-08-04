@@ -31,11 +31,7 @@ def strip_comments_from_html(html_content: str) -> str:
 
 
 def render_read_only_mode(note) -> str:
-    if config.DEBUG_NOTE_RENDER_MODE:
-        return note.content + " [READ ONLY]" # as a test
-    else:
-        # Strip comments from read-only view
-        return strip_comments_from_html(note.content)
+    return strip_comments_from_html(note.content)
 
 
 def render_editing_mode(note) -> str:
