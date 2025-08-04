@@ -264,6 +264,9 @@ function handleMoveNoteUpShortcut(event) {
         throw new Error('handleMoveNoteUpShortcut called without an event object');
     }
 
+    event.preventDefault();
+    event.stopPropagation();
+
     const noteId = ModeContext.currentNoteId;
     if (!noteId) {
         Logger.logNoop('Move up shortcut pressed but no note is selected', {
@@ -277,7 +280,6 @@ function handleMoveNoteUpShortcut(event) {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    event.preventDefault();
     moveNoteUp(noteId);
 }
 
@@ -285,6 +287,9 @@ function handleMoveNoteDownShortcut(event) {
     if (!event) {
         throw new Error('handleMoveNoteDownShortcut called without an event object');
     }
+
+    event.preventDefault();
+    event.stopPropagation();
 
     const noteId = ModeContext.currentNoteId;
     if (!noteId) {
@@ -299,7 +304,6 @@ function handleMoveNoteDownShortcut(event) {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    event.preventDefault();
     moveNoteDown(noteId);
 }
 

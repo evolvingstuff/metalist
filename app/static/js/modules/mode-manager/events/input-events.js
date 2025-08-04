@@ -6,6 +6,7 @@ import { CommentUtils } from '../../comment-utils.js';
 import { CONFIG } from '../../config.js';
 
 let commentHighlightTimeoutId = null;
+let lastKeyPressed = null;
 
 export function initInputEvents() {
         
@@ -82,6 +83,13 @@ function scheduleCommentHighlighting(noteContentElement) {
         return;
     }
     
+    // Don't highlight during navigation key presses
+    const lastKey = ModeContext.lastKeyPressed;
+    if (lastKey && isNavigationKey(lastKey)) {
+        Logger.logDebug('Skipping comment highlighting for navigation key', { key: lastKey });
+        return;
+    }
+    
     // Clear any existing timeout
     if (commentHighlightTimeoutId) {
         clearTimeout(commentHighlightTimeoutId);
@@ -96,6 +104,13 @@ function scheduleCommentHighlighting(noteContentElement) {
             });
         }
     }, CONFIG.COMMENT_HIGHLIGHTING.DEBOUNCE_MS);
+}
+
+function isNavigationKey(key) {
+    return key === 'ArrowUp' || key === 'ArrowDown' || 
+           key === 'ArrowLeft' || key === 'ArrowRight' ||
+           key === 'Home' || key === 'End' || 
+           key === 'PageUp' || key === 'PageDown';
 }
 
 // Export function to trigger immediate highlighting on render
