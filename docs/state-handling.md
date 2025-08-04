@@ -367,6 +367,116 @@ The example above illustrates how an action can:
 6. Handle errors
 7. Validate state consistency
 
+## Multi-Tab Extension
+
+The ModeManager architecture naturally supports extending to multi-tab search contexts without breaking the core design principles.
+
+### Tab State Integration
+
+Tabs add a **minimal layer** above the existing global ModeContext:
+
+```javascript
+// Existing global state (shared across tabs)
+ModeContext = {
+  // These remain global - never edit in background tabs
+  editing: false,
+  loading: false, 
+  isDirty: false,
+  currentNoteId: null,
+  clipboardNoteId: '456',
+  
+  // New tab management
+  activeTabId: 'work',
+  tabs: {
+    'work': { searchQuery: 'project alpha', scrollY: 150 },
+    'personal': { searchQuery: 'recipes', scrollY: 0 }
+  }
+}
+```
+
+### Event-Driven Tab Switching
+
+The event → action → state pattern handles tabs naturally:
+
+```javascript
+function handleTabSwitch(newTabId) {
+  // Event handler determines intent
+  if (ModeContext.activeTabId === newTabId) {
+    Logger.logNoop('Tab already active', {tabId: newTabId});
+    return;
+  }
+  
+  // Action orchestrates the complex operation
+  actionSwitchToTab(newTabId);
+}
+
+async function actionSwitchToTab(newTabId) {
+  // 1. Save current context
+  saveCurrentTabContext();
+  
+  // 2. Clean up current state (no background editing)
+  if (ModeContext.isEditing) {
+    await actionSaveAndDeselect();
+  }
+  
+  // 3. Switch tab context
+  ModeContext.setActiveTab(newTabId);
+  
+  // 4. Restore new context  
+  await actionRefreshView();
+  restoreTabScrollPosition();
+}
+```
+
+### Undo/Redo with Tab Context
+
+Commands capture **complete application snapshots** for time-travel debugging:
+
+```javascript
+// In BaseTransactionService (backend)
+class Command {
+  constructor(operation, changes) {
+    this.operation = operation;
+    this.changes = changes;
+    
+    // Frontend passes complete tab snapshot
+    this.tabSnapshot = frontendTabContext;
+  }
+}
+
+// Undo restores exact moment in time
+async function actionUndo() {
+  const command = UndoStack.peek();
+  
+  // Restore complete tab state from when action was taken
+  ModeContext.setActiveTab(command.tabSnapshot.activeTabId);
+  ModeContext.setTabs(command.tabSnapshot.tabs);
+  
+  // Execute undo and show user exactly what happened
+  await command.undo();
+  await actionRefreshView();
+}
+```
+
+### Design Benefits Preserved
+
+The tab extension **maintains all core ModeManager principles**:
+
+1. **Single Global State**: ModeContext remains the single source of truth
+2. **Fail-Fast Validation**: Tab switching triggers full state validation  
+3. **Event-Driven Flow**: Tab operations follow event → action → state pattern
+4. **Transparent Debugging**: All tab state visible in single object inspection
+5. **Action Composition**: Complex tab operations compose existing actions
+
+### Implementation Strategy
+
+- **Phase 1**: Add tab properties to ModeContext, localStorage persistence
+- **Phase 2**: Implement tab switching actions using existing patterns
+- **Phase 3**: Extend undo commands to capture tab snapshots  
+- **Phase 4**: Add tab UI components and keyboard shortcuts
+
+The event-driven architecture makes this extension **additive rather than disruptive** - existing code continues to work while new tab functionality layers on top.
+
 ## Future Considerations
 
 1. **Action Composition**: Complex operations can be built by composing multiple actions

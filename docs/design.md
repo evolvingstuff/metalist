@@ -392,3 +392,68 @@ This architecture provides:
    - Each step logs its actions
    - Context always valid
    - Effects track progress
+
+## Multi-Tab Search Contexts (Future Feature)
+
+### Concept
+Extend the search-based navigation model to support multiple concurrent search contexts via tabs. Each tab represents a different search query/filter combination, allowing users to maintain multiple working contexts simultaneously.
+
+### State Architecture
+The tab implementation leverages the existing global state model with minimal changes:
+
+**Shared Global State** (never changes on tab switch):
+- `loading`, `editing`, `isDirty` - Only one operation/edit at a time across all tabs
+- `clipboardNoteId` - Copy/paste works across tabs
+- `currentNoteId` - Always deselect when switching tabs (no background editing)
+
+**Per-Tab Context** (minimal state per tab):
+```javascript
+tabs: {
+  'work': { 
+    searchQuery: 'project alpha',
+    scrollY: 150
+  },
+  'personal': { 
+    searchQuery: 'recipes cooking',
+    scrollY: 0
+  }
+}
+```
+
+### Tab Switching Flow
+1. Save current scroll position to active tab
+2. If editing, auto-save and deselect current note
+3. Switch active tab ID
+4. Load new tab's search query and refresh view
+5. Restore scroll position for new tab
+
+### Undo/Redo Integration
+Commands capture complete tab state snapshots to enable time-travel debugging:
+
+```javascript
+class UndoCommand {
+  // Capture COMPLETE tab context at moment of action
+  tabSnapshot: {
+    activeTabId: 'work',
+    tabs: { work: {...}, personal: {...} }  // Full deep copy
+  }
+}
+```
+
+**Benefits:**
+- Undo operations automatically switch to the correct tab context
+- User can see exactly what they're undoing
+- Complete application state restoration for any point in time
+- No ambiguity about "where" an undone action occurred
+
+### Persistence Strategy
+- localStorage for tab state (search queries, scroll positions)
+- Session-based initially, can migrate to server storage later
+- No database schema changes required
+- Easy to reset/debug during development
+
+### Implementation Approach
+- Bolt onto existing ModeContext without breaking current API
+- Tab state becomes additional layer above current global state
+- Event-driven architecture makes tab switching straightforward
+- Minimal complexity addition due to shared state design
