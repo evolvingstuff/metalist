@@ -26,6 +26,7 @@ class ModeContext {
         this._savedCursorOffset = null;
         this._lastContentChangeTime = null;
         this._searchQuery = '';
+        this._isInitialPageLoad = true;
     }
 
     setEditing(value) {
@@ -379,6 +380,13 @@ class ModeContext {
         this._searchQuery = query || '';
         
         if (oldQuery !== this._searchQuery) {
+            // Save to localStorage for persistence across page refreshes
+            if (this._searchQuery) {
+                localStorage.setItem('metalist_search_query', this._searchQuery);
+            } else {
+                localStorage.removeItem('metalist_search_query');
+            }
+            
             this._notifyListeners('searchQuery', this._searchQuery);
         }
         
@@ -387,6 +395,24 @@ class ModeContext {
 
     get searchQuery() {
         return this._searchQuery;
+    }
+
+    restoreSearchQueryFromStorage() {
+        // Restore search query from localStorage without triggering notifications
+        const savedQuery = localStorage.getItem('metalist_search_query');
+        if (savedQuery) {
+            this._searchQuery = savedQuery;
+        }
+        return this._searchQuery;
+    }
+
+    get isInitialPageLoad() {
+        return this._isInitialPageLoad;
+    }
+
+    markInitialPageLoadComplete() {
+        this._isInitialPageLoad = false;
+        return this;
     }
 }
 

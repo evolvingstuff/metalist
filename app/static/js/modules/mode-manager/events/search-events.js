@@ -41,12 +41,26 @@ export function initializeSearchEvents() {
         // Add input event listener
         searchInput.addEventListener('input', handleSearchInput);
         
-        // Initialize with any existing value
-        if (searchInput.value) {
-            ModeContext.setSearchQuery(searchInput.value);
+        // Restore search query from localStorage
+        const savedQuery = ModeContext.restoreSearchQueryFromStorage();
+        if (savedQuery) {
+            // Update the search input field with the saved query
+            searchInput.value = savedQuery;
+            Logger.logAction('restoreSearchFromStorage', { searchQuery: savedQuery });
         }
         
-        Logger.logDebug('Search events initialized', {}, Logger.LogCategory.INIT);
+        // Always trigger initial load - either with restored query or without
+        Logger.logAction('initialPageLoad', { searchQuery: savedQuery || 'none' });
+        
+        try {
+            actionRefreshAndMaybeSelect();
+        } catch (error) {
+            Logger.logError('Failed to execute initial page load', error);
+        }
+        
+        Logger.logDebug('Search events initialized', { 
+            restoredQuery: savedQuery 
+        }, Logger.LogCategory.INIT);
     } else {
         Logger.logError('Search input element not found');
     }

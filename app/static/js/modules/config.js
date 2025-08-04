@@ -43,5 +43,10 @@ export const CONFIG = {
     
     SEARCH: {
         DEBOUNCE_MS: 300  // Delay before executing search after typing stops
+    },
+    
+    TRANSITIONS: {
+        ENABLE_INITIAL_FADE: true,  // Enable fade effect on initial page load only
+        FADE_DURATION_MS: 150       // Duration of fade effect in milliseconds
     }
 };

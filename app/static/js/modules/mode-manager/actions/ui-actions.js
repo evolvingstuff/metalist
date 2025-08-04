@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { CONFIG } from '../../config.js';
 
 export async function actionRefreshAndMaybeSelect(options = {}) {
     Logger.logAction('refresh_and_maybe_select', { 
@@ -22,8 +23,18 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     if (!notesContainer) {
         throw new Error('Notes container not found');
     }
-        
+    
+    // Update content directly - app-level fade handles the transition
     notesContainer.innerHTML = html;
+    
+    // If this is initial page load, fade in the entire app
+    if (ModeContext.isInitialPageLoad) {
+        const appContainer = document.getElementById('app');
+        if (appContainer) {
+            appContainer.classList.add('loaded');
+        }
+        ModeContext.markInitialPageLoadComplete();
+    }
 
     let contentHtml = null;
     

@@ -70,10 +70,8 @@ async def home(request: Request, db: Session = Depends(get_db)):
     try:
         template = templates.get_template("index.html")
         
-        # Import and use the shared note renderer
-        from .render.note_renderer import build_note_tree
-        # For initial page load, no search query
-        notes = build_note_tree(LinkedListManager, db, search_query=None)
+        # Start with empty notes - JavaScript will load them based on localStorage
+        notes = []
         
         return template.render(request=request, notes=notes, version=VERSION)
     except Exception as e:

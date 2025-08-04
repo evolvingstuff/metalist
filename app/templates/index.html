@@ -1,5 +1,15 @@
 <%inherit file="base.html"/>
 
+<style>
+#app {
+    opacity: 0;
+    transition: opacity 150ms ease-in-out;
+}
+#app.loaded {
+    opacity: 1;
+}
+</style>
+
 <div class="global-controls">
     <button class="menu-button interactive">≡</button>
 </div>
@@ -7,7 +17,7 @@
     <div class="container">
         <div class="controls">
             <button class="add-note interactive">+</button>
-            <input type="text" id="search-input" class="search-input interactive" placeholder='Search notes...'>
+            <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes...">
             <button id="trash-can" class="trash-can interactive" draggable="false">🗑️</button>
         </div>
         <div id="notes-container">
