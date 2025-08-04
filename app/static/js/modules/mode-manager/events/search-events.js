@@ -34,32 +34,45 @@ export function handleSearchInput(event) {
     }, CONFIG.SEARCH.DEBOUNCE_MS);
 }
 
-export function initializeSearchEvents() {
+export async function initializeSearchEvents() {
     const searchInput = document.getElementById('search-input');
     
     if (searchInput) {
         // Add input event listener
         searchInput.addEventListener('input', handleSearchInput);
         
-        // Restore search query from localStorage
-        const savedQuery = ModeContext.restoreSearchQueryFromStorage();
-        if (savedQuery) {
-            // Update the search input field with the saved query
-            searchInput.value = savedQuery;
-            Logger.logAction('restoreSearchFromStorage', { searchQuery: savedQuery });
+        // Restore tab state from localStorage (this also restores search query)
+        ModeContext.restoreTabStateFromStorage();
+        const activeTabQuery = ModeContext.searchQuery;
+        
+        if (activeTabQuery) {
+            // Update the search input field with the active tab's query
+            searchInput.value = activeTabQuery;
+            Logger.logAction('restoreTabStateFromStorage', { 
+                activeTab: ModeContext.activeTabId,
+                searchQuery: activeTabQuery 
+            });
         }
         
         // Always trigger initial load - either with restored query or without
-        Logger.logAction('initialPageLoad', { searchQuery: savedQuery || 'none' });
+        Logger.logAction('initialPageLoad', { searchQuery: activeTabQuery || 'none' });
         
         try {
-            actionRefreshAndMaybeSelect();
+            await actionRefreshAndMaybeSelect();
+            
+            // Restore scroll position for the active tab
+            const scrollY = ModeContext.getTabScrollPosition();
+            if (scrollY > 0) {
+                window.scrollTo(0, scrollY);
+                Logger.logDebug('Restored scroll position', { scrollY });
+            }
         } catch (error) {
             Logger.logError('Failed to execute initial page load', error);
         }
         
         Logger.logDebug('Search events initialized', { 
-            restoredQuery: savedQuery 
+            activeTab: ModeContext.activeTabId,
+            restoredQuery: activeTabQuery 
         }, Logger.LogCategory.INIT);
     } else {
         Logger.logError('Search input element not found');

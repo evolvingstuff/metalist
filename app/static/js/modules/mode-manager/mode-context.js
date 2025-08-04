@@ -27,6 +27,12 @@ class ModeContext {
         this._lastContentChangeTime = null;
         this._searchQuery = '';
         this._isInitialPageLoad = true;
+        
+        // Tab state management
+        this._activeTabId = '0';
+        this._tabs = {
+            '0': { searchQuery: '', scrollY: 0 }
+        };
     }
 
     setEditing(value) {
@@ -380,7 +386,13 @@ class ModeContext {
         this._searchQuery = query || '';
         
         if (oldQuery !== this._searchQuery) {
-            // Save to localStorage for persistence across page refreshes
+            // Update current tab's search query and save tab state
+            if (this._tabs[this._activeTabId]) {
+                this._tabs[this._activeTabId].searchQuery = this._searchQuery;
+                this._saveTabStateToStorage();
+            }
+            
+            // Also save to old localStorage key for backwards compatibility
             if (this._searchQuery) {
                 localStorage.setItem('metalist_search_query', this._searchQuery);
             } else {
@@ -404,6 +416,88 @@ class ModeContext {
             this._searchQuery = savedQuery;
         }
         return this._searchQuery;
+    }
+
+    // Tab management methods
+    get activeTabId() {
+        return this._activeTabId;
+    }
+
+    get tabs() {
+        return this._tabs;
+    }
+
+    switchToTab(tabId) {
+        if (tabId < '0' || tabId > '9') {
+            throw new Error(`Invalid tab ID: ${tabId}. Must be 0-9.`);
+        }
+
+        // Save current scroll position to current tab
+        this._tabs[this._activeTabId] = this._tabs[this._activeTabId] || { searchQuery: '', scrollY: 0 };
+        this._tabs[this._activeTabId].scrollY = window.scrollY;
+        this._tabs[this._activeTabId].searchQuery = this._searchQuery;
+
+        // Switch to new tab
+        const oldTabId = this._activeTabId;
+        this._activeTabId = tabId;
+
+        // Initialize tab if it doesn't exist
+        if (!this._tabs[tabId]) {
+            console.log('Initializing new tab', tabId, 'with empty query');
+            this._tabs[tabId] = { searchQuery: '', scrollY: 0 };
+        }
+
+        // Update search query to match new tab
+        const newQuery = this._tabs[tabId].searchQuery;
+        console.log('Setting search query from tab', tabId, 'query:', newQuery);
+        this._searchQuery = newQuery;
+
+        // Save tab state to localStorage
+        this._saveTabStateToStorage();
+
+        // Notify listeners of changes
+        if (oldTabId !== this._activeTabId) {
+            this._notifyListeners('activeTab', this._activeTabId);
+        }
+        this._notifyListeners('searchQuery', this._searchQuery);
+
+        return this;
+    }
+
+    _saveTabStateToStorage() {
+        const tabState = {
+            activeTabId: this._activeTabId,
+            tabs: this._tabs
+        };
+        localStorage.setItem('metalist_tab_state', JSON.stringify(tabState));
+    }
+
+    restoreTabStateFromStorage() {
+        try {
+            const savedState = localStorage.getItem('metalist_tab_state');
+            if (savedState) {
+                const tabState = JSON.parse(savedState);
+                this._activeTabId = tabState.activeTabId || '0';
+                this._tabs = tabState.tabs || { '0': { searchQuery: '', scrollY: 0 } };
+                
+                // Set search query to match active tab
+                const activeTab = this._tabs[this._activeTabId];
+                if (activeTab) {
+                    this._searchQuery = activeTab.searchQuery || '';
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to restore tab state from localStorage:', error);
+            // Fall back to defaults
+            this._activeTabId = '0';
+            this._tabs = { '0': { searchQuery: '', scrollY: 0 } };
+        }
+        return this;
+    }
+
+    getTabScrollPosition(tabId = null) {
+        const targetTabId = tabId || this._activeTabId;
+        return this._tabs[targetTabId]?.scrollY || 0;
     }
 
     get isInitialPageLoad() {

@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {};
 
 const ModeManager = {
         
-    init(config = {}) {
+    async init(config = {}) {
                 
         console.log('+++ ModeManager: init() called');
                 
@@ -26,7 +26,7 @@ const ModeManager = {
                 ...config
             };
 
-            this._registerEventListeners(mergedConfig);
+            await this._registerEventListeners(mergedConfig);
 
             ModeContext.addListener(this._handleModeChange.bind(this));
 
@@ -40,7 +40,7 @@ const ModeManager = {
         }
     },
 
-    _registerEventListeners(config) {
+    async _registerEventListeners(config) {
         try {
                         
             initKeyboardEvents();
@@ -48,7 +48,7 @@ const ModeManager = {
             initInputEvents();
             initFocusEvents();
             initContentAutoSave();
-            initializeSearchEvents();
+            await initializeSearchEvents();
                         
             Logger.logDebug('Event handlers registered', { config });
         } catch (error) {
