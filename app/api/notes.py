@@ -52,14 +52,15 @@ def redo(
 @router.post("/new")
 def create_note_top(
     parent_id: Optional[str] = None,
+    first_visible_note_id: Optional[str] = None,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
-    """Create a new note at the top of the list"""
+    """Create a new note at the top of the list (or before first visible note)"""
     apply_delay("create_note_top")
     
     with get_note_service(db, transaction_manager) as service:
-        result = service.create_note(parent_id)
+        result = service.create_note(parent_id, first_visible_note_id)
         return {"id": result["id"]}
 
 
@@ -85,13 +86,14 @@ def update_note(
 def save_note(
     note_id: str,
     command: UpdateNoteContent,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Save a note's content (same as update_note)"""
     apply_delay("save_note")
     
     # Reuse update_note logic
-    return update_note(note_id, command, db)
+    return update_note(note_id, command, db, transaction_manager)
 
 
 @router.post("/{note_id}/move")

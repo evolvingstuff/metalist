@@ -40,9 +40,15 @@ export const NotesAPI = {
         }
     },
 
-    async createNote() {
+    async createNote(firstVisibleNoteId = null) {
+        const body = {};
+        if (firstVisibleNoteId) {
+            body.first_visible_note_id = firstVisibleNoteId;
+        }
+        
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
-            method: 'POST'
+            method: 'POST',
+            body: body.first_visible_note_id ? JSON.stringify(body) : undefined
         });
     },
 

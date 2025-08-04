@@ -15,14 +15,23 @@ logger = logging.getLogger(__name__)
 class NoteService(BaseTransactionService):
     """Service for note CRUD operations with transaction tracking"""
     
-    def create_note(self, parent_id: Optional[str] = None) -> dict:
-        """Create a new note at the top of the list"""
+    def create_note(self, parent_id: Optional[str] = None, first_visible_note_id: Optional[str] = None) -> dict:
+        """Create a new note at the top of the list (or before first visible note)"""
         self._set_operation("create_note_top")
         
         note_id = str(uuid.uuid4())
-        LinkedListManager.create_note_top(self.db, note_id, parent_id)
         
-        logger.info(f"Created note {note_id} with parent {parent_id}")
+        if first_visible_note_id:
+            # Insert before the first visible note using move operations
+            LinkedListManager.create_note_top(self.db, note_id, parent_id)
+            LinkedListManager.move_note(
+                self.db, note_id, parent_id, first_visible_note_id, MovePosition.BEFORE
+            )
+        else:
+            # Default behavior - create at absolute top
+            LinkedListManager.create_note_top(self.db, note_id, parent_id)
+        
+        logger.info(f"Created note {note_id} with parent {parent_id} before {first_visible_note_id}")
         return {"id": note_id, "status": "created"}
     
     def update_note(self, note_id: str, content: str) -> dict:
