@@ -45,6 +45,12 @@ export async function initializeSearchEvents() {
         ModeContext.restoreTabStateFromStorage();
         const activeTabQuery = ModeContext.searchQuery;
         
+        // Update tab indicator on page load
+        const tabIndicator = document.getElementById('tab-indicator');
+        if (tabIndicator) {
+            tabIndicator.textContent = ModeContext.activeTabId;
+        }
+        
         if (activeTabQuery) {
             // Update the search input field with the active tab's query
             searchInput.value = activeTabQuery;

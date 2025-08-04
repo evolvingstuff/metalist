@@ -500,6 +500,12 @@ function handleTabSwitchShortcut(event) {
         console.log('Updated search input to:', ModeContext.searchQuery);
     }
     
+    // Update tab indicator
+    const tabIndicator = document.getElementById('tab-indicator');
+    if (tabIndicator) {
+        tabIndicator.textContent = tabId;
+    }
+    
     // Trigger a refresh with the new tab's search query
     // This will cause the server to clear undo stack due to context change
     import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
