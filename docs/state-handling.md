@@ -458,6 +458,49 @@ async function actionUndo() {
 }
 ```
 
+### Multi-Client Context Management
+
+The server-side undo system automatically handles multiple browser tabs and devices through context boundaries:
+
+```javascript
+// Client sends context with every operation
+async function actionCreateNote() {
+  const clientContext = {
+    tabId: ModeContext.activeTabId,
+    sessionId: browserSessionId,
+    clientId: deviceId
+  };
+  
+  await NotesAPI.createNote(parentId, { context: clientContext });
+}
+
+// Long polling for updates from other clients
+async function pollForUpdates() {
+  const response = await fetch('/api/sync', {
+    method: 'POST', 
+    body: JSON.stringify({
+      lastUpdateTime: ModeContext.lastSyncTime,
+      context: getCurrentClientContext()
+    })
+  });
+  
+  if (response.hasChanges) {
+    // Remote changes detected - server already cleared its undo stack
+    // Clear any local undo context and refresh
+    await actionRefreshView();
+    ModeContext.setLastSyncTime(response.serverTime);
+  }
+}
+```
+
+**Context Boundary Rules:**
+- **Tab switches**: Clear undo stack (new search context)
+- **Client switches**: Clear undo stack (different browser/device)  
+- **Remote operations**: Clear undo stack (changes from other client)
+- **App reload**: Clear undo stack (new session)
+
+This eliminates all undo/redo conflicts while maintaining predictable behavior - users can only undo operations from their current working context.
+
 ### Design Benefits Preserved
 
 The tab extension **maintains all core ModeManager principles**:

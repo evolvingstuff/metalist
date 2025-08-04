@@ -446,6 +446,37 @@ class UndoCommand {
 - Complete application state restoration for any point in time
 - No ambiguity about "where" an undone action occurred
 
+### Multi-Client Synchronization
+For users with multiple browser tabs or devices, the system uses context-based undo boundaries:
+
+**Server-Side Context Tracking:**
+```python
+class TransactionManager:
+    def execute_operation(self, operation, client_context):
+        # Clear undo stack if context changed
+        if self.current_context != client_context:
+            self.command_stack.clear()
+            self.current_context = client_context
+```
+
+**Client Context Information:**
+```javascript
+// Every API request includes context
+const clientContext = {
+    tabId: ModeContext.activeTabId,
+    sessionId: getSessionId(),  // Browser tab identifier  
+    clientId: getClientId()     // Device/browser identifier
+};
+```
+
+**Synchronization Strategy:**
+- **Long polling**: Clients check for updates every 5-10 seconds with minimal bandwidth
+- **Context boundaries**: Undo stacks clear when switching tabs, clients, or search contexts
+- **Automatic refresh**: Clients detecting remote changes clear local undo context and refresh
+- **No conflict resolution**: Clean context boundaries eliminate undo/redo conflicts
+
+This approach provides predictable undo behavior while supporting seamless multi-client access.
+
 ### Persistence Strategy
 - localStorage for tab state (search queries, scroll positions)
 - Session-based initially, can migrate to server storage later
