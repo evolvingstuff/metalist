@@ -1,4 +1,15 @@
 """
+## Terminology
+
+**In-App Tabs**: UI tabs within the application webpage, allowing multiple search contexts in one browser window (like browser tabs, but inside the app).
+
+**Client Instance**: A separate connection to the server, such as:
+- Different devices (laptop + iPad)
+- Multiple browser windows/tabs
+- Same user accessing from different locations
+
+**Context**: The combination of client instance, in-app tab, and search query that defines the current working environment.
+
 Core Architecture:
 - MIT licensed components only
 - Python-based (pip installable or executable)
@@ -393,10 +404,12 @@ This architecture provides:
    - Context always valid
    - Effects track progress
 
-## Multi-Tab Search Contexts (Future Feature)
+## In-App Tabs (Future Feature)
 
 ### Concept
-Extend the search-based navigation model to support multiple concurrent search contexts via tabs. Each tab represents a different search query/filter combination, allowing users to maintain multiple working contexts simultaneously.
+Add tabs within the application UI to support multiple concurrent search contexts. Each tab represents a different search query/filter combination, allowing users to maintain multiple working contexts simultaneously within a single browser window.
+
+**Note**: This is different from having multiple browser tabs/windows open (see Multi-Client Synchronization below).
 
 ### State Architecture
 The tab implementation leverages the existing global state model with minimal changes:
@@ -446,8 +459,30 @@ class UndoCommand {
 - Complete application state restoration for any point in time
 - No ambiguity about "where" an undone action occurred
 
-### Multi-Client Synchronization
-For users with multiple browser tabs or devices, the system uses context-based undo boundaries:
+### Persistence Strategy
+- localStorage for tab state (search queries, scroll positions)
+- Session-based initially, can migrate to server storage later
+- No database schema changes required
+- Easy to reset/debug during development
+
+### Implementation Approach
+- Bolt onto existing ModeContext without breaking current API
+- Tab state becomes additional layer above current global state
+- Event-driven architecture makes tab switching straightforward
+- Minimal complexity addition due to shared state design
+
+## Multi-Client Synchronization
+
+### Concept
+Support multiple simultaneous connections to the same server instance from different client instances:
+- Different devices (laptop + iPad)
+- Multiple browser windows/tabs on same device
+- Any combination of separate client connections
+
+Each client instance maintains its own connection to the server and needs synchronization to prevent conflicts.
+
+### Context-Based Undo Boundaries
+The system uses context boundaries to manage undo/redo across multiple clients:
 
 **Server-Side Context Tracking:**
 ```python
@@ -463,44 +498,34 @@ class TransactionManager:
 ```javascript
 // Every API request includes context
 const clientContext = {
-    tabId: ModeContext.activeTabId,
-    sessionId: getSessionId(),  // Browser tab identifier  
-    clientId: getClientId()     // Device/browser identifier
+    tabId: ModeContext.activeTabId,      // In-app tab identifier
+    sessionId: getSessionId(),           // Browser session identifier  
+    clientId: getClientId()              // Device/browser identifier
 };
 ```
 
-**Synchronization Strategy:**
+### Synchronization Strategy
 - **Long polling**: Clients check for updates every 5-10 seconds with minimal bandwidth
-- **Context boundaries**: Undo stacks clear when switching tabs, clients, or search contexts
+- **Context boundaries**: Undo stacks clear when switching between clients or search contexts
 - **Automatic refresh**: Clients detecting remote changes clear local undo context and refresh
 - **No conflict resolution**: Clean context boundaries eliminate undo/redo conflicts
 
-**Note-Level Locking:**
+### Note-Level Locking
+Prevents concurrent editing of the same note across different clients:
+
 ```python
 class TransactionManager:
     def acquire_note_lock(self, note_id, client_context):
         if note_id in self.locked_notes:
             if self.locked_notes[note_id] != client_context:
-                raise HTTPException(423, "Note being edited by another user")
+                raise HTTPException(423, "Note being edited by another client")
         self.locked_notes[note_id] = client_context
 ```
 
-**Edit Mode Isolation:**
+### Edit Mode Isolation
 - **Polling suspension**: Long polling stops when entering edit mode
-- **Lock protection**: Cannot edit, delete, or move notes locked by other users  
+- **Lock protection**: Cannot edit, delete, or move notes locked by other clients
 - **Stable UI**: No real-time updates during editing to prevent interface shifts
 - **Refresh on exit**: Full sync when exiting edit mode shows all changes
 
-This approach provides predictable editing with collaborative safety - multiple users can browse and work simultaneously, but editing is single-user with clear boundaries.
-
-### Persistence Strategy
-- localStorage for tab state (search queries, scroll positions)
-- Session-based initially, can migrate to server storage later
-- No database schema changes required
-- Easy to reset/debug during development
-
-### Implementation Approach
-- Bolt onto existing ModeContext without breaking current API
-- Tab state becomes additional layer above current global state
-- Event-driven architecture makes tab switching straightforward
-- Minimal complexity addition due to shared state design
+This approach provides predictable editing with safety across multiple clients - different devices can browse and work simultaneously, but editing is exclusive with clear boundaries.
