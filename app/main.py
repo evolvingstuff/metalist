@@ -68,12 +68,6 @@ async def log_requests(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
     try:
-        # TODO: remove eventually?
-        valid = LinkedListManager.validate_list(db, None)
-        if not valid:
-            logger.error("List validation failed")
-            raise HTTPException(status_code=500, detail="Database list validation failed")
-
         template = templates.get_template("index.html")
         
         # Import and use the shared note renderer
