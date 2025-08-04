@@ -2,13 +2,11 @@ from typing import List, Optional, Any
 from sqlalchemy.orm import Session
 from .enums import MovePosition
 from .database import DBNote
-from ..global_state_mod import global_state
 
 # Import the new specialized classes
 from .list_traversal import ListTraversal
 from .note_crud import NoteCRUD
 from .list_operations import ListOperations
-from .undo_redo_operations import UndoRedoOperations
 
 
 class LinkedListManager:
@@ -30,14 +28,15 @@ class LinkedListManager:
     def _would_create_cycle(db, note_id: str, new_parent_id: str) -> bool:
         return ListTraversal.would_create_cycle(db, note_id, new_parent_id)
 
-    # Delegate to UndoRedoOperations
+    # Undo/redo operations are now handled by TransactionManager via services
+    # These methods are deprecated and should not be used
     @staticmethod
     def undo(db: Session) -> bool:
-        return UndoRedoOperations.undo(db)
+        raise NotImplementedError("Use UndoRedoService instead")
 
     @staticmethod
     def redo(db: Session) -> bool:
-        return UndoRedoOperations.redo(db)
+        raise NotImplementedError("Use UndoRedoService instead")
 
     # Delegate to NoteCRUD
     @staticmethod

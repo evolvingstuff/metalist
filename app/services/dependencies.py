@@ -1,6 +1,7 @@
 from typing import Generator
 from sqlalchemy.orm import Session
 from contextlib import contextmanager
+from fastapi import Depends
 import time
 import logging
 
@@ -8,6 +9,7 @@ from ..api.dependencies import get_db
 from .note_service import NoteService
 from .query_service import NoteQueryService
 from .undo_service import UndoRedoService
+from .transaction_manager import get_transaction_manager, TransactionManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +54,9 @@ def apply_delay(operation_name: str):
 
 
 @contextmanager
-def get_note_service(db: Session) -> Generator[NoteService, None, None]:
+def get_note_service(db: Session, transaction_manager: TransactionManager) -> Generator[NoteService, None, None]:
     """Dependency injection for NoteService with transaction management"""
-    with NoteService(db) as service:
+    with NoteService(db, transaction_manager) as service:
         yield service
 
 
@@ -66,7 +68,7 @@ def get_query_service(db: Session) -> Generator[NoteQueryService, None, None]:
 
 
 @contextmanager
-def get_undo_service(db: Session) -> Generator[UndoRedoService, None, None]:
+def get_undo_service(db: Session, transaction_manager: TransactionManager) -> Generator[UndoRedoService, None, None]:
     """Dependency injection for UndoRedoService"""
-    with UndoRedoService(db) as service:
+    with UndoRedoService(db, transaction_manager) as service:
         yield service

@@ -13,6 +13,7 @@ from ..services.dependencies import (
     get_undo_service,
     apply_delay
 )
+from ..services.transaction_manager import get_transaction_manager, TransactionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -25,32 +26,39 @@ class MoveNoteCommand(BaseModel):
 
 
 @router.post("/undo")
-def undo(db: Session = Depends(get_db)):
+def undo(
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
+):
     """Undo the last operation"""
     apply_delay("undo")
     
-    with get_undo_service(db) as service:
+    with get_undo_service(db, transaction_manager) as service:
         return service.undo()
 
 
 @router.post("/redo")
-def redo(db: Session = Depends(get_db)):
+def redo(
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
+):
     """Redo the last undone operation"""
     apply_delay("redo")
     
-    with get_undo_service(db) as service:
+    with get_undo_service(db, transaction_manager) as service:
         return service.redo()
 
 
 @router.post("/new")
 def create_note_top(
     parent_id: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note at the top of the list"""
     apply_delay("create_note_top")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         result = service.create_note(parent_id)
         return {"id": result["id"]}
 
@@ -59,12 +67,13 @@ def create_note_top(
 def update_note(
     note_id: str,
     command: UpdateNoteContent,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Update a note's content"""
     apply_delay("update_note")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         try:
             result = service.update_note(note_id, command.content)
             return {"status": "success"}
@@ -89,7 +98,8 @@ def save_note(
 def move_note(
     note_id: str,
     command: MoveNoteCommand,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Move a note to a new position"""
     apply_delay("move_note")
@@ -102,7 +112,7 @@ def move_note(
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         try:
             service.move_note(
                 note_id=note_id,
@@ -119,12 +129,13 @@ def move_note(
 def paste_sibling(
     source_note_id: str,
     target_note_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Paste a copy of source_note as a sibling after target_note"""
     apply_delay("paste_sibling")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         result = service.paste_note_as_sibling(source_note_id, target_note_id)
         return {"id": result["id"]}
 
@@ -133,12 +144,13 @@ def paste_sibling(
 def paste_child(
     source_note_id: str,
     target_note_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Paste a copy of source_note as first child of target_note"""
     apply_delay("paste_child")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         result = service.paste_note_as_child(source_note_id, target_note_id)
         return {"id": result["id"]}
 
@@ -146,12 +158,13 @@ def paste_child(
 @router.delete("/{note_id}")
 def delete_note(
     note_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Delete a note and all its descendants"""
     apply_delay("delete_note")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         try:
             result = service.delete_note(note_id)
             return {"status": "success"}
@@ -162,7 +175,8 @@ def delete_note(
 @router.post("/new-drop")
 def create_note_with_position(
     command: MoveNoteCommand,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note at a specific position"""
     apply_delay("create_note_drop")
@@ -175,7 +189,7 @@ def create_note_with_position(
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         result = service.create_note_with_position(
             new_parent_id=command.new_parent_id,
             sibling_id=command.sibling_id,
@@ -187,12 +201,13 @@ def create_note_with_position(
 @router.post("/new-sibling/{note_id}")
 def create_new_sibling(
     note_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note as sibling after the specified note"""
     apply_delay("create_new_sibling")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         result = service.create_sibling_note(note_id)
         return {"id": result["id"]}
 
@@ -200,14 +215,15 @@ def create_new_sibling(
 @router.post("/new-child/{note_id}")
 def create_new_child(
     note_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note as first child of the specified note"""
     apply_delay("create_new_child")
     
     logger.debug(f"Creating new child for note {note_id}")
     
-    with get_note_service(db) as service:
+    with get_note_service(db, transaction_manager) as service:
         result = service.create_child_note(note_id)
         return {"id": result["id"]}
 

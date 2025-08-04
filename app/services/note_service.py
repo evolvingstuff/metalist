@@ -8,7 +8,6 @@ from .base_service import BaseTransactionService
 from ..models.linked_list import LinkedListManager
 from ..models.enums import MovePosition
 from ..models.utils import copy_note
-from ..global_state_mod import global_state
 
 logger = logging.getLogger(__name__)
 

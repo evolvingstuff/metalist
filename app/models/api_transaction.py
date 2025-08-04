@@ -1,17 +1,22 @@
 import uuid
 import copy
+from typing import TYPE_CHECKING
 from sqlalchemy import event
 from .database import DBNote
-from ..global_state_mod import global_state
 from ..undo_redo import Command
+
+# Avoid circular import
+if TYPE_CHECKING:
+    from ..services.transaction_manager import TransactionManager
 
 _updating_state = False
 tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
 
 
 class ApiTransaction:
-    def __init__(self):
+    def __init__(self, transaction_manager: 'TransactionManager'):
         self.uuid = str(uuid.uuid4())
+        self.transaction_manager = transaction_manager
         self.state_before_updated = {}
         self.state_current_updated = {}
         self.state_added = {}
@@ -54,9 +59,8 @@ class ApiTransaction:
         state_before, state_after = self.calculate_states()
         # Create a command with before and after states
         command = Command(state_before, state_after, action)
-        # Add the command to the transaction stack
-        global_state["command_stack"].push(command)
-        print(f"Transaction added to (global) command stack (size = {len(global_state['command_stack'].stack)})")
+        # Add the command to the transaction stack via the transaction manager
+        self.transaction_manager.add_command_to_stack(command)
 
     def log_attribute_set(self, target, value, oldvalue, initiator):
         if self._updating_state:
@@ -119,20 +123,29 @@ class ApiTransaction:
 
 # Event handler functions
 def log_attribute_set(target, value, oldvalue, initiator):
-    transaction = global_state["current_transaction"]
+    # Import here to avoid circular dependency
+    from ..services.transaction_manager import get_transaction_manager
+    transaction_manager = get_transaction_manager()
+    transaction = transaction_manager.get_current_transaction()
     if transaction:
         transaction.log_attribute_set(target, value, oldvalue, initiator)
 
 
 def log_note_after_insert(mapper, connection, target):
-    transaction = global_state["current_transaction"]
+    # Import here to avoid circular dependency
+    from ..services.transaction_manager import get_transaction_manager
+    transaction_manager = get_transaction_manager()
+    transaction = transaction_manager.get_current_transaction()
     if transaction:
         transaction.log_note_after_insert(mapper, connection, target)
 
 
  # another hack!
 def log_note_before_delete(mapper, connection, target):
-    transaction = global_state["current_transaction"]
+    # Import here to avoid circular dependency
+    from ..services.transaction_manager import get_transaction_manager
+    transaction_manager = get_transaction_manager()
+    transaction = transaction_manager.get_current_transaction()
     if transaction:
         transaction.log_note_before_delete(mapper, connection, target)
 

@@ -1,34 +1,22 @@
 from abc import ABC
 from sqlalchemy.orm import Session
-from threading import Lock
-from ..global_state_mod import global_state
-from ..models.api_transaction import ApiTransaction
 import logging
 
 logger = logging.getLogger(__name__)
-
-# Global lock for transaction management (shared across all services)
-transaction_lock = Lock()
 
 
 class BaseTransactionService(ABC):
     """Base class for services that need transaction tracking for undo/redo"""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, transaction_manager):
         self.db = db
+        self.transaction_manager = transaction_manager
         self.transaction = None
         self._operation_name = None
     
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
-        with transaction_lock:
-            if global_state["current_transaction"] is not None:
-                raise Exception("Transaction already in progress")
-            
-            self.transaction = ApiTransaction()
-            global_state["current_transaction"] = self.transaction
-            logger.debug(f"Transaction {self.transaction.uuid} started")
-        
+        self.transaction = self.transaction_manager.start_transaction()
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -42,9 +30,8 @@ class BaseTransactionService(ABC):
                 self._rollback()
                 logger.error(f"Transaction rolled back due to: {exc_val}")
         finally:
-            # Always clean up the global transaction
-            with transaction_lock:
-                global_state["current_transaction"] = None
+            # Always clean up the transaction
+            self.transaction_manager.end_transaction()
             logger.debug(f"Transaction {self.transaction.uuid if self.transaction else 'None'} cleaned up")
     
     def _commit(self):
@@ -63,8 +50,6 @@ class BaseTransactionService(ABC):
                 
                 if tot > 0:
                     self.transaction.finalize_transaction(self._operation_name)
-                    command_stack = global_state["command_stack"]
-                    logger.info(f'Command stack size: {len(command_stack.stack)}')
                 else:
                     logger.warning(f"No changes detected for operation: {self._operation_name}")
                     
