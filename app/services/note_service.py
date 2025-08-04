@@ -39,9 +39,6 @@ class NoteService(BaseTransactionService):
         """Delete a note and all its descendants"""
         self._set_operation("delete_note")
         
-        # Access transaction to set deletion metadata
-        if self.transaction:
-            self.transaction.metadata["deletion_note_id"] = note_id
         
         # Check if deleting would leave list empty (for frontend state management)
         all_notes = LinkedListManager.get_ordered_child_list(self.db, None)
