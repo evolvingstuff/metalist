@@ -499,7 +499,55 @@ async function pollForUpdates() {
 - **Remote operations**: Clear undo stack (changes from other client)
 - **App reload**: Clear undo stack (new session)
 
-This eliminates all undo/redo conflicts while maintaining predictable behavior - users can only undo operations from their current working context.
+**Note-Level Locking Integration:**
+```javascript
+// Enter edit mode with locking
+async function actionSelectNote(noteId) {
+  try {
+    // Acquire exclusive lock on note
+    await NotesAPI.acquireNoteLock(noteId, clientContext);
+    
+    // Stop background polling to prevent UI shifts
+    clearInterval(pollInterval);
+    
+    // Enter editing state
+    ModeContext.setCurrentNoteId(noteId);
+    ModeContext.setEditing(true);
+    
+  } catch (error) {
+    if (error.status === 423) {
+      showNotification("This note is being edited by another user");
+      return;
+    }
+    throw error;
+  }
+}
+
+// Exit edit mode with sync
+async function actionDeselectNote() {
+  // Save and release lock
+  await actionSaveNote(ModeContext.currentNoteId);
+  await NotesAPI.releaseNoteLock(ModeContext.currentNoteId, clientContext);
+  
+  // Refresh with all changes that happened during editing
+  await actionRefreshView();
+  
+  // Resume background polling
+  startPolling();
+  
+  // Exit editing state
+  ModeContext.setEditing(false);
+  ModeContext.setCurrentNoteId(null);
+}
+```
+
+**Lock Protection Rules:**
+- Cannot edit notes locked by other users
+- Cannot delete notes (or their children) locked by other users
+- Cannot move notes locked by other users
+- Lock timeouts handle crashed/disconnected clients
+
+This eliminates all undo/redo conflicts while maintaining predictable behavior - users can only undo operations from their current working context. The locking system ensures stable editing sessions without UI interference from concurrent users.
 
 ### Design Benefits Preserved
 

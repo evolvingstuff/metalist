@@ -475,7 +475,23 @@ const clientContext = {
 - **Automatic refresh**: Clients detecting remote changes clear local undo context and refresh
 - **No conflict resolution**: Clean context boundaries eliminate undo/redo conflicts
 
-This approach provides predictable undo behavior while supporting seamless multi-client access.
+**Note-Level Locking:**
+```python
+class TransactionManager:
+    def acquire_note_lock(self, note_id, client_context):
+        if note_id in self.locked_notes:
+            if self.locked_notes[note_id] != client_context:
+                raise HTTPException(423, "Note being edited by another user")
+        self.locked_notes[note_id] = client_context
+```
+
+**Edit Mode Isolation:**
+- **Polling suspension**: Long polling stops when entering edit mode
+- **Lock protection**: Cannot edit, delete, or move notes locked by other users  
+- **Stable UI**: No real-time updates during editing to prevent interface shifts
+- **Refresh on exit**: Full sync when exiting edit mode shows all changes
+
+This approach provides predictable editing with collaborative safety - multiple users can browse and work simultaneously, but editing is single-user with clear boundaries.
 
 ### Persistence Strategy
 - localStorage for tab state (search queries, scroll positions)
