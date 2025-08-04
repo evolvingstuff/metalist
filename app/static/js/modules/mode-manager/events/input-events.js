@@ -2,6 +2,10 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { actionSelectNote } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { CommentUtils } from '../../comment-utils.js';
+import { CONFIG } from '../../config.js';
+
+let commentHighlightTimeoutId = null;
 
 export function initInputEvents() {
         
@@ -65,7 +69,41 @@ function handleInput(event) {
                 noteId,
                 contentLength: currentHtmlContent.length
             }, Logger.LogCategory.EVENT);
+            
+            // Schedule comment highlighting with debounce
+            scheduleCommentHighlighting(noteContent);
         }
     } 
     // Search input handling is now done by search-events.js
+}
+
+function scheduleCommentHighlighting(noteContentElement) {
+    if (!CONFIG.COMMENT_HIGHLIGHTING.ENABLE) {
+        return;
+    }
+    
+    // Clear any existing timeout
+    if (commentHighlightTimeoutId) {
+        clearTimeout(commentHighlightTimeoutId);
+    }
+    
+    // Schedule highlighting after debounce period
+    commentHighlightTimeoutId = setTimeout(() => {
+        if (ModeContext.isEditing && noteContentElement) {
+            CommentUtils.highlightComments(noteContentElement);
+            Logger.logDebug('Comments highlighted after typing pause', {
+                noteId: ModeContext.currentNoteId
+            });
+        }
+    }, CONFIG.COMMENT_HIGHLIGHTING.DEBOUNCE_MS);
+}
+
+// Export function to trigger immediate highlighting on render
+export function highlightCommentsOnRender(noteContentElement) {
+    if (CONFIG.COMMENT_HIGHLIGHTING.ENABLE && ModeContext.isEditing && noteContentElement) {
+        CommentUtils.highlightComments(noteContentElement);
+        Logger.logDebug('Comments highlighted on render', {
+            noteId: ModeContext.currentNoteId
+        });
+    }
 }

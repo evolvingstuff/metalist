@@ -48,5 +48,11 @@ export const CONFIG = {
     TRANSITIONS: {
         ENABLE_INITIAL_FADE: true,  // Enable fade effect on initial page load only
         FADE_DURATION_MS: 150       // Duration of fade effect in milliseconds
+    },
+    
+    COMMENT_HIGHLIGHTING: {
+        ENABLE: true,              // Enable comment highlighting in edit mode
+        DEBOUNCE_MS: 150,         // Delay before highlighting after typing stops
+        CSS_CLASS: 'my-comment'   // CSS class for highlighted comments
     }
 };

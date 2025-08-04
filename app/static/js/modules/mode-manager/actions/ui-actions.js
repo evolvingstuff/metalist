@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
+import { highlightCommentsOnRender } from '../events/input-events.js';
 
 export async function actionRefreshAndMaybeSelect(options = {}) {
     Logger.logAction('refresh_and_maybe_select', { 
@@ -45,6 +46,10 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         if (ModeContext.isEditing) {
                         
             DOMUtils.setNoteEditable(noteElement, true);
+            
+            // Highlight comments immediately when entering edit mode
+            const noteContentElement = DOMUtils.getNoteContent(noteElement);
+            highlightCommentsOnRender(noteContentElement);
 
             let cursorOffset = 0;
                         

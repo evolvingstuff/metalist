@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { CommentUtils } from '../../comment-utils.js';
 
 export async function actionSaveNote(noteId) {
     Logger.logAction('saveNote', { noteId });
@@ -15,7 +16,8 @@ export async function actionSaveNote(noteId) {
     }
 
     const noteElement = DOMUtils.getNoteById(noteId);
-    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
+    const noteContentElement = DOMUtils.getNoteContent(noteElement);
+    const contentHTML = CommentUtils.getCleanContent(noteContentElement);
 
     if (!ModeContext.isDirty) {
         Logger.logDebug('Note not dirty, skipping save', { 
@@ -60,7 +62,8 @@ export async function actionSaveNoteOnIdle(noteId) {
     }
 
     const noteElement = DOMUtils.getNoteById(noteId);
-    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
+    const noteContentElement = DOMUtils.getNoteContent(noteElement);
+    const contentHTML = CommentUtils.getCleanContent(noteContentElement);
     
     Logger.logDebug('Auto-saving note during idle period', {
         noteId,
