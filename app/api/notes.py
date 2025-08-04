@@ -1,15 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..models.database import DBNote
-from ..models.commands import UpdateNoteContent
-from ..models.linked_list import LinkedListManager, MovePosition
-from .dependencies import get_db
-import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
-from ..decorators import api_transaction_decorator, db_transaction_decorator, delay_response_decorator
-from ..global_state_mod import global_state
+import logging
 
+from .dependencies import get_db
+from ..models.commands import UpdateNoteContent
+from ..models.enums import MovePosition
+from ..services.dependencies import (
+    get_note_service, 
+    get_query_service, 
+    get_undo_service,
+    apply_delay
+)
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -20,313 +25,200 @@ class MoveNoteCommand(BaseModel):
 
 
 @router.post("/undo")
-# no @api_decorator because we don't want to create a new Command
-@delay_response_decorator
-@db_transaction_decorator
 def undo(db: Session = Depends(get_db)):
-    undid = LinkedListManager.undo(db)
-    if undid:
-        return {"status": "success", "message": "Undo successful"}
-    else:
-        return {"status": "noop", "message": "No actions to undo"}
+    """Undo the last operation"""
+    apply_delay("undo")
+    
+    with get_undo_service(db) as service:
+        return service.undo()
+
 
 @router.post("/redo")
-# no @api_decorator because we don't want to create a new Command
-@delay_response_decorator
-@db_transaction_decorator
 def redo(db: Session = Depends(get_db)):
-    redid = LinkedListManager.redo(db)
-    if redid:
-        return {"status": "success", "message": "Redo successful"}
-    else:
-        return {"status": "noop", "message": "No actions to redo"}
+    """Redo the last undone operation"""
+    apply_delay("redo")
+    
+    with get_undo_service(db) as service:
+        return service.redo()
 
 
 @router.post("/new")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def create_note_top(db: Session = Depends(get_db), parent_id: str = None):
-    note_id = str(uuid.uuid4())
+def create_note_top(
+    parent_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Create a new note at the top of the list"""
+    apply_delay("create_note_top")
+    
+    with get_note_service(db) as service:
+        result = service.create_note(parent_id)
+        return {"id": result["id"]}
 
-    transaction = global_state["current_transaction"]
-    assert transaction is not None, "No transaction found"
-
-    LinkedListManager.create_note_top(db, note_id, parent_id)
-    return {"id": note_id}
 
 @router.put("/{note_id}")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def update_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
-    try:
-        LinkedListManager.update_note(db, note_id, command.content)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail="Note not found")
-    return {"status": "success"}
+def update_note(
+    note_id: str,
+    command: UpdateNoteContent,
+    db: Session = Depends(get_db)
+):
+    """Update a note's content"""
+    apply_delay("update_note")
+    
+    with get_note_service(db) as service:
+        try:
+            result = service.update_note(note_id, command.content)
+            return {"status": "success"}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail="Note not found")
+
 
 @router.put("/{note_id}/save")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def save_note(note_id: str, command: UpdateNoteContent, db: Session = Depends(get_db)):
-    """Save a note's content and wait for confirmation"""
-    # TODO: redundant with update_note...
-    try:
-        LinkedListManager.update_note(db, note_id, command.content)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail="Note not found")
-    return {"status": "success"}
+def save_note(
+    note_id: str,
+    command: UpdateNoteContent,
+    db: Session = Depends(get_db)
+):
+    """Save a note's content (same as update_note)"""
+    apply_delay("save_note")
+    
+    # Reuse update_note logic
+    return update_note(note_id, command, db)
+
 
 @router.post("/{note_id}/move")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
 def move_note(
-    note_id: str, 
-    command: MoveNoteCommand, 
+    note_id: str,
+    command: MoveNoteCommand,
     db: Session = Depends(get_db)
 ):
     """Move a note to a new position"""
-
-    # TODO: more of this logic should be in the LinkedListManager
-    
-    def print_tree(parent_id=None, level=0):
-        notes = LinkedListManager.get_ordered_child_list(db, parent_id)
-        result = ""
-        for note in notes:
-            result += "    " * level + f"{note.content}\n"
-            result += print_tree(note.id, level + 1)
-        return result
-    
-    # Validate notes exist
-    note = db.get(DBNote, note_id)
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
-    
-    if command.sibling_id:
-        sibling = db.get(DBNote, command.sibling_id)
-        if not sibling:
-            raise HTTPException(status_code=404, detail="Sibling note not found")
-
-        # Check if both notes will be at the same level (both root or both under same parent)
-        if command.new_parent_id != sibling.parent_id:
-            raise HTTPException(status_code=400, detail="Sibling must be at the same level")
+    apply_delay("move_note")
     
     # Convert string position to enum
+    position = None
     if command.position:
         try:
-            MovePosition[command.position.upper()]
+            position = MovePosition[command.position.upper()]
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
-
-    try:
-        LinkedListManager.move_note(
-            db=db,
-            note_id=note_id,
-            new_parent_id=command.new_parent_id,
-            sibling_id=command.sibling_id,
-            position=MovePosition[command.position] if command.position else None
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     
-    return {"status": "success"}
+    with get_note_service(db) as service:
+        try:
+            service.move_note(
+                note_id=note_id,
+                new_parent_id=command.new_parent_id,
+                sibling_id=command.sibling_id,
+                position=position
+            )
+            return {"status": "success"}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.post("/{source_note_id}/paste-sibling/{target_note_id}")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def paste_sibling(source_note_id: str, target_note_id: str, db: Session = Depends(get_db)):
-    """Paste a copy of source_note and its descendants as a sibling after target_note"""
-    # Validate notes exist
-    source_note = db.get(DBNote, source_note_id)
-    if not source_note:
-        raise HTTPException(status_code=404, detail="Source note not found")
+def paste_sibling(
+    source_note_id: str,
+    target_note_id: str,
+    db: Session = Depends(get_db)
+):
+    """Paste a copy of source_note as a sibling after target_note"""
+    apply_delay("paste_sibling")
     
-    target_note = db.get(DBNote, target_note_id)
-    if not target_note:
-        raise HTTPException(status_code=404, detail="Target note not found")
-    
-    # Import the copy_note function
-    from ..models.utils import copy_note
-    
-    # Create a deep copy of the source note and its descendants
-    new_note_id = copy_note(db, source_note_id)
-    
-    # Position the copied note as a sibling after the target note
-    LinkedListManager.move_note(
-        db=db,
-        note_id=new_note_id,
-        new_parent_id=target_note.parent_id,
-        sibling_id=target_note_id,
-        position=MovePosition.AFTER
-    )
-    
-    return {"id": new_note_id}
+    with get_note_service(db) as service:
+        result = service.paste_note_as_sibling(source_note_id, target_note_id)
+        return {"id": result["id"]}
+
 
 @router.post("/{source_note_id}/paste-child/{target_note_id}")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def paste_child(source_note_id: str, target_note_id: str, db: Session = Depends(get_db)):
-    """Paste a copy of source_note and its descendants as the first child of target_note"""
-    # Validate notes exist
-    source_note = db.get(DBNote, source_note_id)
-    if not source_note:
-        raise HTTPException(status_code=404, detail="Source note not found")
+def paste_child(
+    source_note_id: str,
+    target_note_id: str,
+    db: Session = Depends(get_db)
+):
+    """Paste a copy of source_note as first child of target_note"""
+    apply_delay("paste_child")
     
-    target_note = db.get(DBNote, target_note_id)
-    if not target_note:
-        raise HTTPException(status_code=404, detail="Target note not found")
-    
-    # Prevent circular references
-    def is_descendant(parent_id: str, potential_child_id: str) -> bool:
-        """Check if potential_child_id is a descendant of parent_id"""
-        current = db.get(DBNote, potential_child_id)
-        while current and current.parent_id:
-            if current.parent_id == parent_id:
-                return True
-            current = db.get(DBNote, current.parent_id)
-        return False
-    
-    if is_descendant(source_note_id, target_note_id):
-        raise HTTPException(status_code=400, detail="Cannot paste a note as a child of its own descendant")
-    
-    # Import the copy_note function
-    from ..models.utils import copy_note
-    
-    # Create a deep copy of the source note and its descendants
-    new_note_id = copy_note(db, source_note_id)
-    
-    # Position the copied note as a child of the target note
-    LinkedListManager.move_note(
-        db=db,
-        note_id=new_note_id,
-        new_parent_id=target_note_id,
-        sibling_id=None,
-        position=None
-    )
-    
-    return {"id": new_note_id}
+    with get_note_service(db) as service:
+        result = service.paste_note_as_child(source_note_id, target_note_id)
+        return {"id": result["id"]}
+
 
 @router.delete("/{note_id}")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def delete_note(note_id: str, db: Session = Depends(get_db)):
-
-    transaction = global_state["current_transaction"]
-    assert transaction is not None, "No transaction found"
-
-    note = db.query(DBNote).filter(DBNote.id == note_id).first()
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+def delete_note(
+    note_id: str,
+    db: Session = Depends(get_db)
+):
+    """Delete a note and all its descendants"""
+    apply_delay("delete_note")
     
-    LinkedListManager.delete_note(db, note_id)
-    return {"status": "success"}
+    with get_note_service(db) as service:
+        try:
+            result = service.delete_note(note_id)
+            return {"status": "success"}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail="Note not found")
 
 
 @router.post("/new-drop")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def create_note_with_position(command: MoveNoteCommand, db: Session = Depends(get_db)):
-    note_id = str(uuid.uuid4())
-    LinkedListManager.create_note_drop(
-        db, 
-        note_id, 
-        command.new_parent_id,
-        sibling_id=command.sibling_id,
-        position=MovePosition[command.position] if command.position else None
-    )
-    return {"id": note_id}
+def create_note_with_position(
+    command: MoveNoteCommand,
+    db: Session = Depends(get_db)
+):
+    """Create a new note at a specific position"""
+    apply_delay("create_note_drop")
+    
+    # Convert string position to enum
+    position = None
+    if command.position:
+        try:
+            position = MovePosition[command.position.upper()]
+        except KeyError:
+            raise HTTPException(status_code=400, detail="Invalid position value")
+    
+    with get_note_service(db) as service:
+        result = service.create_note_with_position(
+            new_parent_id=command.new_parent_id,
+            sibling_id=command.sibling_id,
+            position=position
+        )
+        return {"id": result["id"]}
+
 
 @router.post("/new-sibling/{note_id}")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-# @api_transaction_decorator
-def create_new_sibling(note_id: str, db: Session = Depends(get_db)):
+def create_new_sibling(
+    note_id: str,
+    db: Session = Depends(get_db)
+):
+    """Create a new note as sibling after the specified note"""
+    apply_delay("create_new_sibling")
+    
+    with get_note_service(db) as service:
+        result = service.create_sibling_note(note_id)
+        return {"id": result["id"]}
 
-    # Generate a new note ID
-    new_note_id = str(uuid.uuid4())
-    
-    # Create the new note at the top level
-    LinkedListManager.create_note_top(db, new_note_id)
-    
-    # Find the parent of the specified note
-    note = LinkedListManager.get_note(db, note_id)
-    
-    # Move the new note to be a sibling of the specified note
-    LinkedListManager.move_note(
-        db=db,
-        note_id=new_note_id,
-        new_parent_id=note.parent_id,  # Use the same parent as the sibling
-        sibling_id=note_id,
-        position=MovePosition.AFTER
-    )
-    
-    return {"id": new_note_id}
 
 @router.post("/new-child/{note_id}")
-@delay_response_decorator
-@api_transaction_decorator
-@db_transaction_decorator
-def create_new_child(note_id: str, db: Session = Depends(get_db)):
-    print(f"DEBUG Creating new child from {note_id}")
+def create_new_child(
+    note_id: str,
+    db: Session = Depends(get_db)
+):
+    """Create a new note as first child of the specified note"""
+    apply_delay("create_new_child")
+    
+    logger.debug(f"Creating new child for note {note_id}")
+    
+    with get_note_service(db) as service:
+        result = service.create_child_note(note_id)
+        return {"id": result["id"]}
 
-    # Generate a new note ID
-    new_note_id = str(uuid.uuid4())
-    
-    # Create the new note at the top level
-    LinkedListManager.create_note_top(db, new_note_id)
-    
-    # Move the new note to be a child of the specified note
-    LinkedListManager.move_note(
-        db=db,
-        note_id=new_note_id,
-        new_parent_id=note_id,
-        sibling_id=None,
-        position=None
-    )
-    
-    return {"id": new_note_id}
 
 @router.get("/fragment")
-# IMPORTANT: This endpoint must NOT use @api_transaction_decorator as it is a read-only operation.
-# The api_transaction_decorator tracks state changes and adds entries to the command stack for undo/redo.
-# Since this endpoint only reads data without modifying it, adding it to the command stack would:
-# 1. Create "empty" transactions with no actual state changes
-# 2. Pollute the undo/redo history with non-modifying operations
-# 3. Break the assumption that every command in the stack represents an actual state change
-# 
-# We still need @db_transaction_decorator for database session management, but not for undo/redo tracking.
-@delay_response_decorator
-@db_transaction_decorator
-def get_notes_fragment(editing_note_id: Optional[str] = None, db: Session = Depends(get_db)):
+def get_notes_fragment(
+    editing_note_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """Get the HTML fragment for the notes list"""
-    # This endpoint returns the notes_list.html template content for AJAX updates
-    from mako.template import Template
-    from mako.lookup import TemplateLookup
-    import os
-    import logging
-    from ..render.note_renderer import build_note_tree
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        # Set up template lookup
-        template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates')
-        lookup = TemplateLookup(directories=[template_dir])
-        template = lookup.get_template('notes_list.html')
-
-        # Use the shared note renderer to build the tree
-        notes = build_note_tree(LinkedListManager, db, None, editing_note_id)
-        html = template.render(notes=notes)
-        
-        return html
-    except Exception as e:
-        logger.exception("Error in fragment endpoint")
-        raise
+    apply_delay("get_notes_fragment")
+    
+    with get_query_service(db) as service:
+        return service.get_notes_fragment(editing_note_id)

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from mako.lookup import TemplateLookup
 from sqlalchemy.orm import Session
-from .api import notes_refactored as notes, dev
+from .api import notes, dev
 from .core.config import VERSION
 from .models.database import Base, SafeSession
 from .api.dependencies import get_db
