@@ -243,10 +243,14 @@ def create_new_child(
 def get_notes_fragment(
     editing_note_id: Optional[str] = None,
     search: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Get the HTML fragment for the notes list"""
     apply_delay("get_notes_fragment")
+    
+    # Check if search context has changed and clear undo stack if needed
+    transaction_manager.check_context_change(search)
     
     with get_query_service(db) as service:
         return service.get_notes_fragment(editing_note_id, search)

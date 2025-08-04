@@ -21,6 +21,7 @@ class TransactionManager:
         self.current_transaction: Optional[ApiTransaction] = None
         self.command_stack = CommandStack()
         self.lock = Lock()
+        self.last_search_query: Optional[str] = None
     
     def start_transaction(self) -> ApiTransaction:
         """
@@ -51,6 +52,31 @@ class TransactionManager:
         """Get the currently active transaction, if any."""
         return self.current_transaction
     
+    def check_context_change(self, current_search_query: Optional[str] = None):
+        """
+        Check if the search context has changed and clear undo stack if so.
+        
+        Args:
+            current_search_query: The current search query from the request
+        """
+        # Normalize empty strings to None for consistent comparison
+        normalized_current = current_search_query.strip() if current_search_query else None
+        normalized_current = normalized_current if normalized_current else None
+        
+        normalized_last = self.last_search_query.strip() if self.last_search_query else None
+        normalized_last = normalized_last if normalized_last else None
+        
+        if normalized_current != normalized_last:
+            if self.command_stack.stack:
+                logger.info(f"Search context changed ('{normalized_last}' → '{normalized_current}'), clearing undo stack (was {len(self.command_stack.stack)} commands)")
+                self.command_stack.clear_all()
+            else:
+                logger.debug(f"Search context changed ('{normalized_last}' → '{normalized_current}'), undo stack was already empty")
+            
+            self.last_search_query = current_search_query
+        else:
+            logger.debug(f"Search context unchanged: '{normalized_current}'")
+
     def add_command_to_stack(self, command):
         """Add a command to the undo/redo stack."""
         self.command_stack.push(command)
