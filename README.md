@@ -33,11 +33,29 @@ A minimalist note-taking application with a focus on server-side rendering and e
 
 The application uses a server-side rendering approach with minimal JavaScript. Notes are stored in a linked list structure allowing for efficient reordering operations. Content synchronization is handled through a combination of immediate operations (drag-and-drop) and polled updates (content editing).
 
+### Encrypted Single-User Design
+
+MetaList is designed as a **single-user, encrypted-at-rest** application with the following principles:
+
+- **In-Memory Operations**: All data is decrypted and loaded into memory at startup for optimal performance
+- **Encryption-First**: Database stores only encrypted data; all processing happens on decrypted in-memory state
+- **Container-Based Multi-User**: Multiple users supported via separate container instances
+- **Crash-Safe**: Process crashes simply reload from encrypted storage; no persistent state corruption possible
+- **Undo-Based Error Recovery**: Transaction failures are handled via the undo system rather than complex rollback mechanisms
+
+This design optimizes for:
+- **Privacy**: Zero plaintext data at rest
+- **Performance**: In-memory tree operations and recursive patterns
+- **Simplicity**: No complex transaction coordination or connection pooling needed
+- **Reliability**: Clean failure modes with automatic recovery
+
 Key design decisions:
 - Server-side processing
 - Minimal network traffic
 - Clean separation of concerns
 - Simple, efficient client implementation
+- In-memory data structures over database optimization
+- Undo/redo for error recovery
 
 ## Development
 

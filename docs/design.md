@@ -20,6 +20,8 @@ Data Model & Storage:
 - Must handle large numbers of notes efficiently (15,000+)
 - Per-note encryption at rest
 - Server-side encryption/decryption
+- **In-Memory Processing**: All data decrypted and loaded into memory at startup
+- **Single-User Design**: One user per container instance, optimized for encrypted personal use
 - Searchable by content or tags or a combo of both
 - Tags and other metadata parsed from note content
 - Encrypted search indexes persistent across server restarts
@@ -62,6 +64,9 @@ The application should optimize for:
 - Clean separation of concerns
 - Simple, efficient client implementation
 - Single source of truth for all relationships
+- **In-memory operations over database optimization**
+- **Undo-based error recovery over complex transaction rollbacks**
+- **Privacy through encryption-first architecture**
 
 ----
 
