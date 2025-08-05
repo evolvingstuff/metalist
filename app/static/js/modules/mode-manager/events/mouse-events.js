@@ -70,6 +70,17 @@ function handleClick(event) {
         if (!noteElement) {
             throw new Error('Found .note-content without parent .note element');
         }
+        
+        // Check if note is locked - don't allow interaction
+        if (noteElement.classList.contains('locked')) {
+            Logger.logNoop('Click on locked note ignored', {
+                noteId: noteElement.dataset.noteId,
+                reason: 'note_locked'
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
                 
         const noteId = noteElement.dataset.noteId;
         if (!noteId) {

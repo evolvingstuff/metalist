@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
+import { NotesAPI } from '../../api-client.js';
 
 export async function actionSelectNote(noteId) {
     Logger.logAction('selectNote', { 
@@ -24,6 +25,18 @@ export async function actionSelectNote(noteId) {
     }
 
     ModeContext.setCurrentNoteId(noteId);
+
+    // Try to acquire lock before entering edit mode
+    try {
+        await NotesAPI.acquireLock(noteId);
+        Logger.logDebug('Acquired lock for note', { noteId });
+    } catch (error) {
+        Logger.logError('Failed to acquire lock', error);
+        // If we can't get the lock, don't enter edit mode
+        alert('This note is being edited by another device');
+        ModeContext.setCurrentNoteId(null);
+        return;
+    }
 
     ModeContext.setEditing(true);
 
@@ -52,6 +65,16 @@ export async function actionDeselectNote() {
 
     if (isDirty) {
         await actionSaveNote(noteId);
+    }
+
+    // Release the lock when exiting edit mode
+    if (noteId) {
+        try {
+            await NotesAPI.releaseLock(noteId);
+            Logger.logDebug('Released lock for note', { noteId });
+        } catch (error) {
+            Logger.logError('Failed to release lock', error);
+        }
     }
 
     ModeContext.setEditing(false);
@@ -86,6 +109,26 @@ export async function actionSwitchNotes(newNoteId) {
 
     if (ModeContext.isDirty && currentNoteId) {
         await actionSaveNote(currentNoteId);
+    }
+
+    // Release lock on current note if switching
+    if (currentNoteId) {
+        try {
+            await NotesAPI.releaseLock(currentNoteId);
+            Logger.logDebug('Released lock when switching notes', { fromNote: currentNoteId });
+        } catch (error) {
+            Logger.logError('Failed to release lock when switching', error);
+        }
+    }
+
+    // Try to acquire lock on new note
+    try {
+        await NotesAPI.acquireLock(newNoteId);
+        Logger.logDebug('Acquired lock for new note', { noteId: newNoteId });
+    } catch (error) {
+        Logger.logError('Failed to acquire lock for new note', error);
+        alert('This note is being edited by another device');
+        return;
     }
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;

@@ -217,6 +217,8 @@ export const NotesAPI = {
         if (searchQuery) {
             params.push(`search=${encodeURIComponent(searchQuery)}`);
         }
+        // Always include client ID so server knows which locks to hide
+        params.push(`client_id=${encodeURIComponent(ModeContext.clientId)}`);
         
         if (params.length > 0) {
             url += '?' + params.join('&');
@@ -265,6 +267,20 @@ export const NotesAPI = {
     async pasteNoteChild(sourceNoteId, targetNoteId) {
         return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(sourceNoteId, targetNoteId), {
             method: 'POST'
+        });
+    },
+
+    async acquireLock(noteId) {
+        return this._apiCall('/api/notes/acquire-lock', {
+            method: 'POST',
+            body: JSON.stringify({ noteId })
+        });
+    },
+
+    async releaseLock(noteId) {
+        return this._apiCall('/api/notes/release-lock', {
+            method: 'POST', 
+            body: JSON.stringify({ noteId })
         });
     }
 };

@@ -14,7 +14,7 @@ from ..services.dependencies import (
     apply_delay
 )
 from ..services.transaction_manager import get_transaction_manager, TransactionManager
-from ..services.sync_state import get_current_sync_uuid
+from ..services.sync_state import get_current_sync_uuid, acquire_note_lock, release_note_lock, generate_new_uuid, set_server_sync_uuid
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,6 +40,12 @@ class SyncCheckRequest(BaseModel):
     lastUpdateUUID: Optional[str] = Field(default=None)
 
 
+class NoteLockRequest(BaseModel):
+    noteId: str
+    clientId: str
+    lastUpdateUUID: Optional[str] = Field(default=None)
+
+
 @router.post("/check-updates")
 def check_updates(request: SyncCheckRequest):
     """Check if client needs to refresh based on sync UUID"""
@@ -49,6 +55,39 @@ def check_updates(request: SyncCheckRequest):
     return {
         "needsUpdate": needs_update,
         "currentUpdateUUID": current_uuid
+    }
+
+
+@router.post("/acquire-lock")
+def acquire_lock(request: NoteLockRequest):
+    """Acquire an edit lock on a note"""
+    success = acquire_note_lock(request.noteId, request.clientId)
+    
+    if success:
+        # Generate sync event when lock is acquired
+        new_uuid = generate_new_uuid()
+        set_server_sync_uuid(new_uuid)
+        
+        return {
+            "success": True,
+            "updateUUID": new_uuid
+        }
+    else:
+        raise HTTPException(status_code=409, detail="Note is locked by another client")
+
+
+@router.post("/release-lock")  
+def release_lock(request: NoteLockRequest):
+    """Release an edit lock on a note"""
+    release_note_lock(request.noteId, request.clientId)
+    
+    # Generate sync event when lock is released
+    new_uuid = generate_new_uuid()
+    set_server_sync_uuid(new_uuid)
+    
+    return {
+        "success": True,
+        "updateUUID": new_uuid
     }
 
 
@@ -261,6 +300,7 @@ def create_new_child(
 def get_notes_fragment(
     editing_note_id: Optional[str] = None,
     search: Optional[str] = None,
+    client_id: Optional[str] = None,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -271,4 +311,4 @@ def get_notes_fragment(
     transaction_manager.check_context_change(search)
     
     with get_query_service(db) as service:
-        return service.get_notes_fragment(editing_note_id, search)
+        return service.get_notes_fragment(editing_note_id, search, client_id)

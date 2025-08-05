@@ -355,3 +355,25 @@ body.loading::after {
     padding: 1px 2px;
     border-radius: 2px;
 }
+
+/* Locked note styling */
+.note.locked {
+    opacity: 0.6;
+    border-left: 3px solid #ff6b6b;
+    background-color: #fff5f5;
+    cursor: not-allowed;
+}
+
+.note.locked .note-content {
+    cursor: not-allowed;
+    user-select: none;
+}
+
+.lock-icon {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 12px;
+    color: #ff6b6b;
+    z-index: 10;
+}
