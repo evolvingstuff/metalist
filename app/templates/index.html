@@ -1,27 +1,10 @@
 <%inherit file="base.html"/>
 
-<style>
-#app {
-    opacity: 0;
-    transition: opacity 150ms ease-in-out;
-}
-#app.loaded {
-    opacity: 1;
-}
-.my-comment {
-    font-family: 'Courier New', Consolas, Monaco, monospace;
-    color: #666;
-    background-color: #f5f5f5;
-    padding: 1px 2px;
-    border-radius: 2px;
-}
-</style>
-
 <div class="global-controls">
     <button class="menu-button interactive">≡</button>
 </div>
-<div id="tab-indicator" style="position: fixed; top: 24px; left: 10px; z-index: 9999; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 3px; font-family: monospace; font-size: 14px; pointer-events: none; display: none;">0</div>
-<div id="search-contexts-list" style="position: fixed; top: 67px; left: 10px; z-index: 9999; background: rgba(0,0,0,0.7); color: #ccc; padding: 8px 10px; border-radius: 3px; font-family: monospace; font-size: 12px; display: none; line-height: 1.4;"></div>
+<div id="tab-indicator">0</div>
+<div id="search-contexts-list"></div>
 <div id="app">
     <div class="container">
         <div class="controls">
