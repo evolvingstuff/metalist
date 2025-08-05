@@ -9,6 +9,7 @@ import { initInputEvents } from './events/input-events.js';
 import { initFocusEvents } from './events/focus-events.js';
 import { initContentAutoSave } from './events/inactivity-events.js';
 import { initializeSearchEvents } from './events/search-events.js';
+import { startSyncPolling } from './services/sync-service.js';
 
 const DEFAULT_CONFIG = {};
 
@@ -49,6 +50,7 @@ const ModeManager = {
             initFocusEvents();
             initContentAutoSave();
             await initializeSearchEvents();
+            startSyncPolling();
                         
             Logger.logDebug('Event handlers registered', { config });
         } catch (error) {

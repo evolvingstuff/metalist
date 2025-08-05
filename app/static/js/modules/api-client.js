@@ -1,20 +1,42 @@
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
+import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 
 export const NotesAPI = {
                 
     async _apiCall(url, options = {}) {
         try {
+            // Add sync context to request body for non-GET requests
+            let requestBody = options.body;
+            if (options.method && options.method !== 'GET') {
+                const syncContext = {
+                    clientId: ModeContext.clientId,
+                    lastUpdateUUID: ModeContext.lastUpdateUUID
+                };
+                
+                if (requestBody) {
+                    // Merge sync context with existing body
+                    const existingBody = JSON.parse(requestBody);
+                    requestBody = JSON.stringify({
+                        ...existingBody,
+                        ...syncContext
+                    });
+                } else {
+                    // Just send sync context
+                    requestBody = JSON.stringify(syncContext);
+                }
+            }
                                                 
             console.log(' [API] Request:', {
                 url: url,
                 method: options.method || 'GET',
-                body: options.body ? JSON.parse(options.body) : undefined,
+                body: requestBody ? JSON.parse(requestBody) : undefined,
                 headers: options.headers
             });
 
             const response = await fetch(url, {
                 ...options,
+                body: requestBody,
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
@@ -32,6 +54,12 @@ export const NotesAPI = {
                 status: response.status,
                 data: data
             });
+            
+            // Extract and store update UUID if present
+            if (data && data.updateUUID) {
+                ModeContext.setLastUpdateUUID(data.updateUUID);
+                console.log(' [API] Updated sync UUID:', data.updateUUID);
+            }
                                                 
             return data;
         } catch (error) {

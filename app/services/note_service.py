@@ -8,6 +8,7 @@ from .base_service import BaseTransactionService
 from ..models.linked_list import LinkedListManager
 from ..models.enums import MovePosition
 from ..models.utils import copy_note
+from .sync_state import generate_new_uuid, set_server_sync_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,12 @@ class NoteService(BaseTransactionService):
             logger.info(f"Auto-populated note {note_id} with search terms: '{search_query.strip()}'")
         
         logger.info(f"Created note {note_id} with parent {parent_id} before {first_visible_note_id}")
-        return {"id": note_id, "status": "created"}
+        
+        # Generate new UUID and update server state
+        new_uuid = generate_new_uuid()
+        set_server_sync_uuid(new_uuid)
+        
+        return {"id": note_id, "status": "created", "updateUUID": new_uuid}
     
     def update_note(self, note_id: str, content: str) -> dict:
         """Update note content"""
@@ -47,7 +53,12 @@ class NoteService(BaseTransactionService):
         LinkedListManager.update_note(self.db, note_id, content)
         
         logger.info(f"Updated note {note_id}")
-        return {"status": "updated"}
+        
+        # Generate new UUID and update server state
+        new_uuid = generate_new_uuid()
+        set_server_sync_uuid(new_uuid)
+        
+        return {"status": "updated", "updateUUID": new_uuid}
     
     def delete_note(self, note_id: str) -> dict:
         """Delete a note and all its descendants"""
@@ -62,7 +73,12 @@ class NoteService(BaseTransactionService):
         LinkedListManager.delete_note(self.db, note_id)
         
         logger.info(f"Deleted note {note_id}")
-        return {"status": "deleted", "all_deleted": all_deleted}
+        
+        # Generate new UUID and update server state
+        new_uuid = generate_new_uuid()
+        set_server_sync_uuid(new_uuid)
+        
+        return {"status": "deleted", "all_deleted": all_deleted, "updateUUID": new_uuid}
     
     def move_note(self, note_id: str, new_parent_id: Optional[str] = None,
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None) -> dict:
@@ -86,7 +102,12 @@ class NoteService(BaseTransactionService):
         )
         
         logger.info(f"Moved note {note_id} to parent={new_parent_id}, sibling={sibling_id}, position={position}")
-        return {"status": "moved"}
+        
+        # Generate new UUID and update server state
+        new_uuid = generate_new_uuid()
+        set_server_sync_uuid(new_uuid)
+        
+        return {"status": "moved", "updateUUID": new_uuid}
     
     def create_note_with_position(self, new_parent_id: Optional[str] = None,
                                  sibling_id: Optional[str] = None, 

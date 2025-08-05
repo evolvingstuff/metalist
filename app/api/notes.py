@@ -14,6 +14,7 @@ from ..services.dependencies import (
     apply_delay
 )
 from ..services.transaction_manager import get_transaction_manager, TransactionManager
+from ..services.sync_state import get_current_sync_uuid
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,6 +33,23 @@ class CreateNoteCommand(BaseModel):
 
 class CreateSiblingCommand(BaseModel):
     search_query: Optional[str] = Field(default=None)
+
+
+class SyncCheckRequest(BaseModel):
+    clientId: str
+    lastUpdateUUID: Optional[str] = Field(default=None)
+
+
+@router.post("/check-updates")
+def check_updates(request: SyncCheckRequest):
+    """Check if client needs to refresh based on sync UUID"""
+    current_uuid = get_current_sync_uuid()
+    needs_update = request.lastUpdateUUID != current_uuid
+    
+    return {
+        "needsUpdate": needs_update,
+        "currentUpdateUUID": current_uuid
+    }
 
 
 @router.post("/undo")

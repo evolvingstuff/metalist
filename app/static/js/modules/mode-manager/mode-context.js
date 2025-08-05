@@ -33,6 +33,10 @@ class ModeContext {
         this._tabs = {
             '0': { searchQuery: '', scrollY: 0 }
         };
+        
+        // Multi-device sync
+        this._clientId = this._generateClientId();
+        this._lastUpdateUUID = null;
     }
 
     setEditing(value) {
@@ -507,6 +511,30 @@ class ModeContext {
     markInitialPageLoadComplete() {
         this._isInitialPageLoad = false;
         return this;
+    }
+
+    // Multi-device sync methods
+    _generateClientId() {
+        // Get or create a unique client ID for this browser tab
+        let clientId = sessionStorage.getItem('metalist_client_id');
+        if (!clientId) {
+            clientId = crypto.randomUUID();
+            sessionStorage.setItem('metalist_client_id', clientId);
+        }
+        return clientId;
+    }
+
+    get clientId() {
+        return this._clientId;
+    }
+
+    setLastUpdateUUID(uuid) {
+        this._lastUpdateUUID = uuid;
+        return this;
+    }
+
+    get lastUpdateUUID() {
+        return this._lastUpdateUUID;
     }
 }
 
