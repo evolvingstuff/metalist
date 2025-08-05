@@ -550,8 +550,14 @@ export function updateSearchContextsList() {
                     nextTabId++;
                 }
                 
+                // Get current search query to inherit
+                const currentSearchQuery = ModeContext.searchQuery;
+                
                 // Switch to the new tab directly (this will create it automatically)
                 ModeContext.switchToTab(nextTabId.toString());
+                
+                // Set the new tab's search query to inherit from current
+                ModeContext.setSearchQuery(currentSearchQuery);
                 
                 // Update search input field to match new tab's query
                 const searchInput = document.getElementById('search-input');
@@ -617,8 +623,8 @@ export function updateSearchContextsList() {
                 // Set active tab to 0 directly
                 ModeContext._activeTabId = '0';
                 
-                // Update search query to match new tab 0
-                ModeContext._searchQuery = ModeContext._tabs['0'].searchQuery || '';
+                // Update search query to match new tab 0 (this will trigger proper updates)
+                ModeContext.setSearchQuery(ModeContext._tabs['0'].searchQuery || '');
                 
                 // Update search input field
                 const searchInput = document.getElementById('search-input');
@@ -631,6 +637,15 @@ export function updateSearchContextsList() {
                 
                 // Refresh the display
                 updateSearchContextsList();
+                
+                // Trigger a refresh to load the correct notes for the new active tab
+                import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
+                    try {
+                        await actionRefreshAndMaybeSelect();
+                    } catch (error) {
+                        console.error('Failed to refresh after tab deletion', error);
+                    }
+                });
             });
         });
         
