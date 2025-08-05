@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { CONFIG } from '../../config.js';
 import { actionRefreshAndMaybeSelect } from '../actions/ui-actions.js';
+import { updateSearchContextsList } from './keyboard-events.js';
 
 let searchTimeoutId = null;
 
@@ -15,6 +16,9 @@ export function handleSearchInput(event) {
     
     // Update context immediately for UI responsiveness
     ModeContext.setSearchQuery(searchQuery);
+    
+    // Update search contexts list display
+    updateSearchContextsList();
     
     // Clear existing timeout
     if (searchTimeoutId) {
@@ -50,6 +54,9 @@ export async function initializeSearchEvents() {
         if (tabIndicator) {
             tabIndicator.textContent = ModeContext.activeTabId;
         }
+        
+        // Initialize search contexts list
+        updateSearchContextsList();
         
         if (activeTabQuery) {
             // Update the search input field with the active tab's query

@@ -10,6 +10,9 @@ export function initKeyboardEvents() {
     document.addEventListener('keydown', handleKeyDown, { capture: true });
         
     Logger.logInit('Keyboard events handler');
+    
+    // Initialize search contexts list on startup
+    updateSearchContextsList();
 }
 
 function handleKeyDown(event) {
@@ -506,6 +509,9 @@ function handleTabSwitchShortcut(event) {
         tabIndicator.textContent = tabId;
     }
     
+    // Update search contexts list
+    updateSearchContextsList();
+    
     // Trigger a refresh with the new tab's search query
     // This will cause the server to clear undo stack due to context change
     import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
@@ -525,4 +531,63 @@ function handleTabSwitchShortcut(event) {
             Logger.logError('Failed to refresh after tab switch', error);
         }
     });
+}
+
+export function updateSearchContextsList() {
+    const searchContextsList = document.getElementById('search-contexts-list');
+    if (!searchContextsList) return;
+    
+    const tabs = ModeContext.tabs;
+    const activeTabId = ModeContext.activeTabId;
+    
+    // Build the list of search contexts
+    let contextsList = [];
+    for (let tabId in tabs) {
+        let searchQuery = tabs[tabId].searchQuery || '(empty)';
+        // Truncate long search queries
+        if (searchQuery.length > 12) {
+            searchQuery = searchQuery.substring(0, 12) + '...';
+        }
+        const isActive = tabId === activeTabId;
+        const activeStyle = isActive ? 'color: #90EE90;' : '';
+        const hoverStyle = 'cursor: pointer; padding: 2px 0;';
+        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${tabId}: ${searchQuery}</div>`);
+    }
+    
+    if (contextsList.length > 0) {
+        searchContextsList.innerHTML = contextsList.join('');
+        searchContextsList.style.display = 'block';
+        
+        // Add click handlers to each tab context item
+        searchContextsList.querySelectorAll('.tab-context-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const tabId = e.target.getAttribute('data-tab-id');
+                if (tabId && tabId !== ModeContext.activeTabId) {
+                    // Simulate the tab key press to switch tabs
+                    const event = new KeyboardEvent('keydown', {
+                        key: tabId,
+                        ctrlKey: true,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    document.dispatchEvent(event);
+                }
+            });
+            
+            // Add hover effect
+            item.addEventListener('mouseenter', (e) => {
+                if (e.target.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
+                    e.target.style.color = '#fff';
+                }
+            });
+            
+            item.addEventListener('mouseleave', (e) => {
+                if (e.target.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
+                    e.target.style.color = '#ccc';
+                }
+            });
+        });
+    } else {
+        searchContextsList.style.display = 'none';
+    }
 }
