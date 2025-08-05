@@ -4,12 +4,12 @@ import * as Logger from '../mode-logger.js';
 let syncPollingInterval = null;
 
 export function startSyncPolling() {
-    // Poll every 5 seconds when not editing
+    // Poll every 500ms when not editing
     syncPollingInterval = setInterval(() => {
         if (!ModeContext.isEditing) {  // Only poll when not editing
             checkForUpdates();
         }
-    }, 5000);
+    }, 500);
     
     Logger.logInit('Multi-device sync polling started');
 }
