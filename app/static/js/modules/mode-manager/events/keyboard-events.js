@@ -554,6 +554,9 @@ export function updateSearchContextsList() {
         contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${tabId}: ${searchQuery}</div>`);
     }
     
+    // Add the + item at the end
+    contextsList.push(`<div style="cursor: pointer; padding: 2px 0; color: #ccc;" class="add-context-item">+</div>`);
+    
     if (contextsList.length > 0) {
         searchContextsList.innerHTML = contextsList.join('');
         searchContextsList.style.display = 'block';
@@ -587,6 +590,36 @@ export function updateSearchContextsList() {
                 }
             });
         });
+        
+        // Add click handler for the + item
+        const addContextItem = searchContextsList.querySelector('.add-context-item');
+        if (addContextItem) {
+            addContextItem.addEventListener('click', () => {
+                // Find the next available tab ID
+                let nextTabId = 0;
+                while (ModeContext.tabs[nextTabId.toString()]) {
+                    nextTabId++;
+                }
+                
+                // Switch to the new tab (this will create it automatically)
+                const event = new KeyboardEvent('keydown', {
+                    key: nextTabId.toString(),
+                    ctrlKey: true,
+                    bubbles: true,
+                    cancelable: true
+                });
+                document.dispatchEvent(event);
+            });
+            
+            // Add hover effect for + item
+            addContextItem.addEventListener('mouseenter', (e) => {
+                e.target.style.color = '#fff';
+            });
+            
+            addContextItem.addEventListener('mouseleave', (e) => {
+                e.target.style.color = '#ccc';
+            });
+        }
     } else {
         searchContextsList.style.display = 'none';
     }
