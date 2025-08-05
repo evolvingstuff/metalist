@@ -542,16 +542,27 @@ export function updateSearchContextsList() {
     
     // Build the list of search contexts
     let contextsList = [];
-    for (let tabId in tabs) {
-        let searchQuery = tabs[tabId].searchQuery || '(empty)';
-        // Truncate long search queries
-        if (searchQuery.length > 12) {
-            searchQuery = searchQuery.substring(0, 12) + '...';
+    const sortedTabIds = Object.keys(tabs).map(id => parseInt(id)).sort((a, b) => a - b);
+    for (let i = 0; i < sortedTabIds.length; i++) {
+        const tabId = sortedTabIds[i].toString();
+        const originalQuery = tabs[tabId].searchQuery || '';
+        let displayQuery = originalQuery || '(empty)';
+        
+        // Truncate long search queries for display
+        if (displayQuery.length > 12 && displayQuery !== '(empty)') {
+            displayQuery = displayQuery.substring(0, 12) + '...';
         }
+        
         const isActive = tabId === activeTabId;
+        const isEmpty = !originalQuery || originalQuery.trim() === '';
         const activeStyle = isActive ? 'color: #90EE90;' : '';
         const hoverStyle = 'cursor: pointer; padding: 2px 0;';
-        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${tabId}: ${searchQuery}</div>`);
+        
+        // Add red - button for active contexts (regardless of content)
+        const deleteButton = isActive ? 
+            ` <span style="color: #ff4444; cursor: pointer;" class="delete-context" data-actual-tab-id="${tabId}">-</span>` : '';
+        
+        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i}: ${displayQuery}${deleteButton}</div>`);
     }
     
     // Add the + item at the end
@@ -620,6 +631,59 @@ export function updateSearchContextsList() {
                 e.target.style.color = '#ccc';
             });
         }
+        
+        // Add click handler for delete buttons
+        searchContextsList.querySelectorAll('.delete-context').forEach(deleteBtn => {
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent tab switching when clicking delete
+                
+                // Don't delete if there's only one tab left
+                if (Object.keys(ModeContext.tabs).length <= 1) {
+                    return;
+                }
+                
+                // Clear localStorage completely first
+                localStorage.removeItem('metalist_tab_state');
+                
+                // Get the current active tab ID to delete
+                const deleteTabId = ModeContext.activeTabId;
+                
+                // Remove the active tab
+                delete ModeContext.tabs[deleteTabId];
+                
+                // Get all remaining tabs and their data
+                const remainingData = [];
+                const sortedIds = Object.keys(ModeContext.tabs).map(id => parseInt(id)).sort((a, b) => a - b);
+                for (const id of sortedIds) {
+                    remainingData.push(ModeContext.tabs[id.toString()]);
+                }
+                
+                // Clear tabs and rebuild with consecutive numbering
+                ModeContext._tabs = {};
+                for (let i = 0; i < remainingData.length; i++) {
+                    ModeContext._tabs[i.toString()] = remainingData[i];
+                }
+                
+                // Set active tab to 0 directly
+                ModeContext._activeTabId = '0';
+                
+                // Update search query to match new tab 0
+                ModeContext._searchQuery = ModeContext._tabs['0'].searchQuery || '';
+                
+                // Update search input field
+                const searchInput = document.getElementById('search-input');
+                if (searchInput) {
+                    searchInput.value = ModeContext._searchQuery;
+                }
+                
+                // Save the updated state to localStorage
+                ModeContext._saveTabStateToStorage();
+                
+                // Refresh the display
+                updateSearchContextsList();
+            });
+        });
+        
     } else {
         searchContextsList.style.display = 'none';
     }
