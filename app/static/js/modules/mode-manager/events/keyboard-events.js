@@ -141,10 +141,6 @@ function handleKeyDown(event) {
             }
             break;
         default:
-            // Handle number keys 0-9 for tab switching
-            if (event.key >= '0' && event.key <= '9') {
-                handleTabSwitchShortcut(event);
-            }
             break;
                 
     }
@@ -462,76 +458,6 @@ function handlePasteNoteChildShortcut(event) {
     actionPasteNoteChild();
 }
 
-function handleTabSwitchShortcut(event) {
-    if (!event) {
-        throw new Error('handleTabSwitchShortcut called without an event object');
-    }
-
-    // Only handle tab switching when not editing or searching
-    if (ModeContext.isEditing || ModeContext.isSearching) {
-        return;
-    }
-
-    const tabId = event.key;
-
-    Logger.logDebug('Tab switch shortcut triggered', {
-        tabId,
-        currentTab: ModeContext.activeTabId
-    }, Logger.LogCategory.EVENT);
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    // Switch to the tab - this will trigger a context change and refresh
-    console.log('Before tab switch:', {
-        currentTab: ModeContext.activeTabId,
-        currentQuery: ModeContext.searchQuery,
-        targetTab: tabId
-    });
-    
-    ModeContext.switchToTab(tabId);
-    
-    console.log('After tab switch:', {
-        newTab: ModeContext.activeTabId,
-        newQuery: ModeContext.searchQuery
-    });
-    
-    // Update search input field to match new tab's query
-    const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.value = ModeContext.searchQuery;
-        console.log('Updated search input to:', ModeContext.searchQuery);
-    }
-    
-    // Update tab indicator
-    const tabIndicator = document.getElementById('tab-indicator');
-    if (tabIndicator) {
-        tabIndicator.textContent = tabId;
-    }
-    
-    // Update search contexts list
-    updateSearchContextsList();
-    
-    // Trigger a refresh with the new tab's search query
-    // This will cause the server to clear undo stack due to context change
-    import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
-        try {
-            await actionRefreshAndMaybeSelect();
-            
-            // Restore scroll position for the new tab
-            const scrollY = ModeContext.getTabScrollPosition();
-            if (scrollY > 0) {
-                window.scrollTo(0, scrollY);
-                Logger.logDebug('Restored scroll position after tab switch', { 
-                    tabId, 
-                    scrollY 
-                });
-            }
-        } catch (error) {
-            Logger.logError('Failed to refresh after tab switch', error);
-        }
-    });
-}
 
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
@@ -577,14 +503,9 @@ export function updateSearchContextsList() {
             item.addEventListener('click', (e) => {
                 const tabId = e.target.getAttribute('data-tab-id');
                 if (tabId && tabId !== ModeContext.activeTabId) {
-                    // Simulate the tab key press to switch tabs
-                    const event = new KeyboardEvent('keydown', {
-                        key: tabId,
-                        ctrlKey: true,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    document.dispatchEvent(event);
+                    // Switch to the tab directly
+                    ModeContext.switchToTab(tabId);
+                    updateSearchContextsList();
                 }
             });
             
@@ -612,14 +533,9 @@ export function updateSearchContextsList() {
                     nextTabId++;
                 }
                 
-                // Switch to the new tab (this will create it automatically)
-                const event = new KeyboardEvent('keydown', {
-                    key: nextTabId.toString(),
-                    ctrlKey: true,
-                    bubbles: true,
-                    cancelable: true
-                });
-                document.dispatchEvent(event);
+                // Switch to the new tab directly (this will create it automatically)
+                ModeContext.switchToTab(nextTabId.toString());
+                updateSearchContextsList();
             });
             
             // Add hover effect for + item
