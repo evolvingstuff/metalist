@@ -484,8 +484,8 @@ export function updateSearchContextsList() {
         const activeStyle = isActive ? 'color: #90EE90;' : '';
         const hoverStyle = 'cursor: pointer; padding: 2px 0;';
         
-        // Add red - button for active contexts (regardless of content)
-        const deleteButton = isActive ? 
+        // Add red - button for active contexts (only if there are multiple tabs)
+        const deleteButton = (isActive && sortedTabIds.length > 1) ? 
             ` <span style="color: #ff4444; cursor: pointer;" class="delete-context" data-actual-tab-id="${tabId}">-</span>` : '';
         
         contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i}: ${displayQuery}${deleteButton}</div>`);
