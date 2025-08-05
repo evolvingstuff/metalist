@@ -505,7 +505,24 @@ export function updateSearchContextsList() {
                 if (tabId && tabId !== ModeContext.activeTabId) {
                     // Switch to the tab directly
                     ModeContext.switchToTab(tabId);
+                    
+                    // Update search input field to match new tab's query
+                    const searchInput = document.getElementById('search-input');
+                    if (searchInput) {
+                        searchInput.value = ModeContext.searchQuery;
+                    }
+                    
+                    // Update the display and trigger refresh
                     updateSearchContextsList();
+                    
+                    // Trigger a refresh with the new tab's search query
+                    import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
+                        try {
+                            await actionRefreshAndMaybeSelect();
+                        } catch (error) {
+                            console.error('Failed to refresh after tab switch', error);
+                        }
+                    });
                 }
             });
             
@@ -535,7 +552,24 @@ export function updateSearchContextsList() {
                 
                 // Switch to the new tab directly (this will create it automatically)
                 ModeContext.switchToTab(nextTabId.toString());
+                
+                // Update search input field to match new tab's query
+                const searchInput = document.getElementById('search-input');
+                if (searchInput) {
+                    searchInput.value = ModeContext.searchQuery;
+                }
+                
+                // Update the display and trigger refresh
                 updateSearchContextsList();
+                
+                // Trigger a refresh with the new tab's search query
+                import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
+                    try {
+                        await actionRefreshAndMaybeSelect();
+                    } catch (error) {
+                        console.error('Failed to refresh after tab switch', error);
+                    }
+                });
             });
             
             // Add hover effect for + item
