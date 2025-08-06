@@ -380,6 +380,5 @@ body.loading::after {
 .search-highlight {
     background-color: #fff59d;
     color: inherit;
-    font-weight: 500;
     border-radius: 2px;
 }
