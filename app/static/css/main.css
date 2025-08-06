@@ -376,3 +376,10 @@ body.loading::after {
     color: #ff6b6b;
     z-index: 10;
 }
+
+.search-highlight {
+    background-color: #fff59d;
+    color: inherit;
+    font-weight: 500;
+    border-radius: 2px;
+}

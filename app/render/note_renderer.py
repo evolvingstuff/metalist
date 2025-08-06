@@ -8,6 +8,53 @@ Acts as the single source of truth for note rendering across the application.
 import re
 from app.core import config
 from app.utils.text_utils import strip_html
+from html import escape
+
+
+def highlight_search_terms(html_content: str, search_query: str) -> str:
+    """
+    Highlight search terms in HTML content while preserving HTML structure.
+    
+    Args:
+        html_content: HTML content to highlight terms in
+        search_query: Search query string containing terms to highlight
+        
+    Returns:
+        HTML content with search terms wrapped in highlight spans
+    """
+    if not html_content or not search_query or not search_query.strip():
+        return html_content
+    
+    # Split search query into terms
+    search_terms = [term.lower() for term in search_query.strip().split() if term]
+    if not search_terms:
+        return html_content
+    
+    # Create a regex pattern that matches any of the search terms
+    # No word boundaries - match subsequences
+    # Escape special regex characters in search terms
+    escaped_terms = [re.escape(term) for term in search_terms]
+    pattern = r'(' + '|'.join(escaped_terms) + r')'
+    
+    # Function to replace text content while preserving HTML
+    def replace_in_text_nodes(match):
+        text = match.group(0)
+        # Check if we're inside an HTML tag
+        if '<' in text or '>' in text:
+            return text
+        # Wrap matched text in highlight span
+        return f'<span class="search-highlight">{text}</span>'
+    
+    # Split content into HTML tags and text content
+    parts = re.split(r'(<[^>]+>)', html_content)
+    
+    # Process only text parts (odd indices after split)
+    for i in range(len(parts)):
+        if i % 2 == 0 and parts[i]:  # Text content
+            # Apply highlighting with case-insensitive matching
+            parts[i] = re.sub(pattern, replace_in_text_nodes, parts[i], flags=re.IGNORECASE)
+    
+    return ''.join(parts)
 
 
 def strip_comments_from_html(html_content: str) -> str:
@@ -122,7 +169,7 @@ def mark_search_relevance(notes, search_terms):
     return notes
 
 
-def apply_redacted_rendering(notes):
+def apply_redacted_rendering(notes, search_query=None):
     """
     Apply redacted rendering to notes marked as irrelevant.
     This modifies the content of notes in-place based on their search_relevance.
@@ -144,6 +191,11 @@ def apply_redacted_rendering(notes):
             raw_content = note_dict.get('raw_content', note_dict['content'])
             note_obj = SimpleNote(raw_content)
             note_dict['content'] = render_redacted_mode(note_obj)
+        elif (note_dict.get('search_relevance') in ['direct_match', 'relevant'] and 
+              not note_dict.get('flags', {}).get('isEditing', False) and
+              search_query):
+            # Apply highlighting to relevant non-editing notes
+            note_dict['content'] = highlight_search_terms(note_dict['content'], search_query)
     
     for note in notes:
         process_note(note)
@@ -230,7 +282,7 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
         if parent_id is None and search_query:
             note_tree = filter_notes_by_search(note_tree, search_query)
             # After filtering, apply redacted rendering to irrelevant notes
-            apply_redacted_rendering(note_tree)
+            apply_redacted_rendering(note_tree, search_query)
         
         return note_tree
         

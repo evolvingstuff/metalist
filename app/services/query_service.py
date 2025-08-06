@@ -29,7 +29,7 @@ class NoteQueryService(BaseQueryService):
         lookup = TemplateLookup(directories=[str(template_dir)])
         template = lookup.get_template('notes_list.html')
         
-        html = template.render(notes=notes, version=VERSION, note_locks=note_locks, current_client_id=client_id)
+        html = template.render(notes=notes, version=VERSION, note_locks=note_locks, current_client_id=client_id, search_query=search)
         
         logger.debug(f"Generated notes fragment with editing_note_id={editing_note_id}, search={search}, client_id={client_id}, locks={note_locks}")
         return html
