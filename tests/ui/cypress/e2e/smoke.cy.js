@@ -21,10 +21,14 @@ describe('Smoke Test', () => {
         const noteId = interception.response.body.id
         
         // Set up update intercept AFTER we have the note ID
-        cy.intercept('PUT', `/api/notes/${noteId}`).as('updateNote')
+        cy.intercept('PUT', `/api/notes/${noteId}/save`).as('updateNote')
+        
+        // Wait for the note to be in editing mode
+        cy.get('.note.editing', { timeout: 10000 }).should('exist')
         
         // Type in note and press Escape to save
         cy.get('.note.editing .note-content')
+          .should('have.attr', 'contenteditable', 'true')
           .type('test note')
           .type('{esc}')  // Press Escape to trigger save
         
