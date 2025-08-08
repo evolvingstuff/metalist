@@ -1,4 +1,7 @@
 from tests.unit.common import *
+from app.services.transaction_manager import get_transaction_manager
+from app.services.undo_service import UndoRedoService
+from app.services.note_service import NoteService
 
 
 def test_undo_redo_ops(db):
@@ -19,31 +22,33 @@ def test_undo_redo_ops(db):
     print("\n=== Initial State ===")
     visualize_tree(db)
 
-    # Perform assignment operations
+    # Get transaction manager
+    transaction_manager = get_transaction_manager()
+    
+    # Perform assignment operations using the service layer (which tracks transactions)
     for i in range(NODES):
-
-        with transaction_scope(db):
-             #LinkedListManager.update_note(db, str(i), f"{i}")
-             note_id = str(i)
-             new_value = f"val{i}"
-             api_transaction_decorator(lambda:
-                                       LinkedListManager.update_note(db, note_id, new_value)
-                                       )()
+        note_id = str(i)
+        new_value = f"val{i}"
+        
+        # Use the NoteService which properly tracks transactions
+        with NoteService(db, transaction_manager) as service:
+            service.update_note(note_id, new_value)
 
         print(f"\n=== State after {i+1} operations ===")
         visualize_tree(db)
 
-    command_stack = global_state["command_stack"]
+    command_stack = transaction_manager.command_stack
     print(f"Command stack: {command_stack.stack}")
     assert len(command_stack.stack) == NODES, f"Expected {NODES} operations, got {len(command_stack.stack)}"
     assert command_stack.current_index == NODES - 1, f"Expected current index {NODES - 1}, got {command_stack.current_index}"
 
     ##############################
     # UNDO
+    
+    undo_service = UndoRedoService(db, transaction_manager)
 
     for i in range(NODES):
-        with transaction_scope(db):
-            LinkedListManager.undo(db)
+        result = undo_service.undo()
         print(f"\n=== State after undo {i+1} operations ===")
         visualize_tree(db)
 
@@ -69,8 +74,7 @@ def test_undo_redo_ops(db):
 
     for i in range(NODES):
         note_id = str(i)
-        with transaction_scope(db):
-            LinkedListManager.redo(db)
+        result = undo_service.redo()
         print(f"\n=== State after redo {i+1} operations ===")
         visualize_tree(db)
         note = LinkedListManager.get_note(db, note_id)

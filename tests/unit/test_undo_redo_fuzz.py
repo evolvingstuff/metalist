@@ -1,4 +1,6 @@
 from tests.unit.common import *
+from app.services.transaction_manager import get_transaction_manager
+from app.services.undo_service import UndoRedoService
 
 UNDO_REDO_INTERVAL = 4
 
@@ -189,18 +191,23 @@ def test_fuzz_undo_redo(db):
         ### <<<<<<<<<<
         # Every few steps, perform an undo or redo
         if i % UNDO_REDO_INTERVAL == 0:
+            transaction_manager = get_transaction_manager()
+            undo_service = UndoRedoService(db, transaction_manager)
+            
             if random.choice([True, False]):
-                # raise NotImplementedError("Redo is not implemented yet")
                 print("Performing undo")
-                with transaction_scope(db):
-                    LinkedListManager.undo(db)
-                print('UNDO SUCCESSFUL')
+                result = undo_service.undo()
+                if result["status"] == "success":
+                    print('UNDO SUCCESSFUL')
+                else:
+                    print(f'UNDO: {result["message"]}')
             else:
-                # raise NotImplementedError("Redo is not implemented yet")
                 print("Performing redo")
-                with transaction_scope(db):
-                    LinkedListManager.redo(db)
-                print('REDO SUCCESSFUL')
+                result = undo_service.redo()
+                if result["status"] == "success":
+                    print('REDO SUCCESSFUL')
+                else:
+                    print(f'REDO: {result["message"]}')
             print('after undo/redo:')
             visualize_tree(db)
             # raise NotImplementedError("Redo is not implemented yet")

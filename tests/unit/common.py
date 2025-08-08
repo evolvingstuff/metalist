@@ -3,11 +3,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.models.database import Base, DBNote
-from app.models.linked_list import LinkedListManager, MovePosition
+from app.models.linked_list import LinkedListManager
+from app.models.enums import MovePosition
 import random
 import uuid
-from app.global_state_mod import global_state
-from app.decorators import api_transaction_decorator
+# from app.global_state_mod import global_state  # Module no longer exists
+# from app.decorators import api_transaction_decorator  # Module no longer exists
 
 
 @pytest.fixture
