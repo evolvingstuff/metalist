@@ -19,11 +19,11 @@ var/
 .installed.cfg
 *.egg
 .env
-notes.db
-notes.dev.db
+*.db
 .pytest_cache/
 .coverage
 .idea/
+*.log
 app/sql_app.db
 package-lock.json
 node_modules/
