@@ -37,6 +37,9 @@ class ModeContext {
         // Multi-device sync
         this._clientId = this._generateClientId();
         this._lastUpdateUUID = null;
+        
+        // Clipboard mode tracking
+        this._clipboardMode = 'system'; // 'system' for text, 'note' for note copying
     }
 
     setEditing(value) {
@@ -382,6 +385,24 @@ class ModeContext {
 
     get clipboardNoteId() {
         return this._clipboardNoteId;
+    }
+    
+    setClipboardMode(mode) {
+        if (mode !== 'system' && mode !== 'note') {
+            throw new Error(`Invalid clipboard mode: ${mode}. Must be 'system' or 'note'`);
+        }
+        
+        if (this._clipboardMode === mode) {
+            throw new Error(`Redundant state change: clipboardMode is already ${mode}`);
+        }
+        
+        Logger.logAction(`Setting clipboard mode to: ${mode}`);
+        this._clipboardMode = mode;
+        return this;
+    }
+    
+    get clipboardMode() {
+        return this._clipboardMode;
     }
 
     setSearchQuery(query) {

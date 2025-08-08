@@ -202,29 +202,35 @@ export async function moveNoteDown(noteId) {
     }
 }
 
-export function actionCopyNote() {
+export async function actionCopyNote() {
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionCopyNote', { 
         currentNoteId,
-        isEditing: ModeContext.isEditing,
-        clipboardNoteId: ModeContext.clipboardNoteId
+        isEditing: ModeContext.isEditing
     });
 
-    if (ModeContext.clipboardNoteId !== currentNoteId) {
-        ModeContext.setClipboardNoteId(currentNoteId);
+    if (!currentNoteId) {
+        throw new Error('Cannot copy note: no note selected');
     }
+
+    // Call the server to serialize the note tree to clipboard
+    await NotesAPI.copyNote(currentNoteId);
+    
+    // No need to store clipboard state client-side anymore
 }
 
 export async function actionPasteNoteSibling() {
     const currentNoteId = ModeContext.currentNoteId;
-    const clipboardNoteId = ModeContext.clipboardNoteId;
     
     Logger.logAction('actionPasteNoteSibling', { 
         currentNoteId,
-        clipboardNoteId,
         isEditing: ModeContext.isEditing
     });
+
+    if (!currentNoteId) {
+        throw new Error('Cannot paste sibling: no note selected');
+    }
 
     if (ModeContext.isDirty) {
         await actionSaveNote(currentNoteId);
@@ -232,11 +238,10 @@ export async function actionPasteNoteSibling() {
 
     ModeContext.setLoading(true);
 
-    const response = await NotesAPI.pasteNoteSibling(clipboardNoteId, currentNoteId);
+    const response = await NotesAPI.pasteNoteSibling(currentNoteId);
     const newNoteId = response.id;
 
     ModeContext.setCurrentNoteId(newNoteId);
-    ModeContext.setClipboardNoteId(newNoteId);  
     
     ModeContext.setLoading(false);
 
@@ -245,13 +250,15 @@ export async function actionPasteNoteSibling() {
 
 export async function actionPasteNoteChild() {
     const currentNoteId = ModeContext.currentNoteId;
-    const clipboardNoteId = ModeContext.clipboardNoteId;
     
     Logger.logAction('actionPasteNoteChild', { 
         currentNoteId,
-        clipboardNoteId,
         isEditing: ModeContext.isEditing
     });
+
+    if (!currentNoteId) {
+        throw new Error('Cannot paste child: no note selected');
+    }
 
     if (ModeContext.isDirty) {
         await actionSaveNote(currentNoteId);
@@ -259,11 +266,10 @@ export async function actionPasteNoteChild() {
 
     ModeContext.setLoading(true);
 
-    const response = await NotesAPI.pasteNoteChild(clipboardNoteId, currentNoteId);
+    const response = await NotesAPI.pasteNoteChild(currentNoteId);
     const newNoteId = response.id;
 
     ModeContext.setCurrentNoteId(newNoteId);
-    ModeContext.setClipboardNoteId(newNoteId); 
     
     ModeContext.setLoading(false);
 

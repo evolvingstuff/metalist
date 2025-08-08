@@ -5,6 +5,7 @@ from typing import Optional
 import logging
 
 from .dependencies import get_db
+from ..models.database import DBNote
 from ..models.commands import UpdateNoteContent
 from ..models.enums import MovePosition
 from ..services.dependencies import (
@@ -14,7 +15,10 @@ from ..services.dependencies import (
     apply_delay
 )
 from ..services.transaction_manager import get_transaction_manager, TransactionManager
-from ..services.sync_state import get_current_sync_uuid, acquire_note_lock, release_note_lock, generate_new_uuid, set_server_sync_uuid
+from ..services.sync_state import (
+    get_current_sync_uuid, acquire_note_lock, release_note_lock, generate_new_uuid, set_server_sync_uuid,
+    get_client_clipboard, set_client_clipboard
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,6 +46,11 @@ class SyncCheckRequest(BaseModel):
 
 class NoteLockRequest(BaseModel):
     noteId: str
+    clientId: str
+    lastUpdateUUID: Optional[str] = Field(default=None)
+
+
+class CopyNoteRequest(BaseModel):
     clientId: str
     lastUpdateUUID: Optional[str] = Field(default=None)
 
@@ -113,6 +122,30 @@ def redo(
     
     with get_undo_service(db, transaction_manager) as service:
         return service.redo()
+
+
+@router.post("/{note_id}/copy")
+def copy_note(
+    note_id: str,
+    request: CopyNoteRequest,
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
+):
+    """Copy a note to the server-side clipboard as serialized data"""
+    apply_delay("copy_note")
+    
+    with get_note_service(db, transaction_manager) as service:
+        try:
+            # Serialize the note tree to pure data (no database writes)
+            from ..models.utils import copy_note_in_memory
+            note_data = copy_note_in_memory(db, note_id)
+            
+            # Store the serialized data in the client's server-side clipboard
+            set_client_clipboard(request.clientId, note_data)
+            
+            return {"status": "success"}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/new")
@@ -192,34 +225,83 @@ def move_note(
             raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{source_note_id}/paste-sibling/{target_note_id}")
+class PasteRequest(BaseModel):
+    clientId: str
+    lastUpdateUUID: Optional[str] = Field(default=None)
+
+
+@router.post("/paste-sibling/{target_note_id}")
 def paste_sibling(
-    source_note_id: str,
     target_note_id: str,
+    request: PasteRequest,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
-    """Paste a copy of source_note as a sibling after target_note"""
+    """Paste clipboard content as a sibling after target_note"""
     apply_delay("paste_sibling")
     
+    # Get the current clipboard content
+    clipboard_data = get_client_clipboard(request.clientId)
+    if not clipboard_data:
+        raise HTTPException(status_code=400, detail="Nothing in clipboard to paste")
+    
     with get_note_service(db, transaction_manager) as service:
-        result = service.paste_note_as_sibling(source_note_id, target_note_id)
-        return {"id": result["id"]}
+        try:
+            # Get target note and its parent
+            from ..models.linked_list import LinkedListManager
+            target_note = LinkedListManager.get_note(db, target_note_id)
+            
+            # Deserialize clipboard data into real database notes positioned as sibling
+            from ..models.utils import paste_note_from_memory
+            new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
+            
+            # Position the new note as sibling after target using existing logic
+            LinkedListManager.move_note(db, new_note_id, target_note.parent_id, target_note_id, MovePosition.AFTER)
+            
+            return {"id": new_note_id}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{source_note_id}/paste-child/{target_note_id}")
+@router.post("/paste-child/{target_note_id}")
 def paste_child(
-    source_note_id: str,
     target_note_id: str,
+    request: PasteRequest,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
-    """Paste a copy of source_note as first child of target_note"""
+    """Paste clipboard content as first child of target_note"""
     apply_delay("paste_child")
     
+    # Get the current clipboard content
+    clipboard_data = get_client_clipboard(request.clientId)
+    if not clipboard_data:
+        raise HTTPException(status_code=400, detail="Nothing in clipboard to paste")
+    
     with get_note_service(db, transaction_manager) as service:
-        result = service.paste_note_as_child(source_note_id, target_note_id)
-        return {"id": result["id"]}
+        try:
+            # Deserialize clipboard data into real database notes as child of target
+            from ..models.utils import paste_note_from_memory
+            new_note_id = paste_note_from_memory(db, clipboard_data, target_note_id)
+            
+            # Position as first child (the paste_note_from_memory already sets the parent)
+            # We need to ensure it's positioned as the first child
+            from ..models.linked_list import LinkedListManager
+            
+            # Find existing first child of target
+            existing_first_child = db.query(DBNote).filter(
+                DBNote.parent_id == target_note_id,
+                DBNote.prev_id == None
+            ).first()
+            
+            if existing_first_child and existing_first_child.id != new_note_id:
+                new_note = db.get(DBNote, new_note_id)
+                new_note.next_id = existing_first_child.id
+                existing_first_child.prev_id = new_note_id
+            
+            return {"id": new_note_id}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/{note_id}")

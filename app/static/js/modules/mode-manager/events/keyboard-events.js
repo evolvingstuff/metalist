@@ -354,7 +354,7 @@ function handleRedoShortcut(event) {
     actionRedo();
 }
 
-function handleCopyNoteShortcut(event) {
+async function handleCopyNoteShortcut(event) {
     if (!event) {
         throw new Error('handleCopyNoteShortcut called without an event object');
     }
@@ -383,24 +383,34 @@ function handleCopyNoteShortcut(event) {
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && document.activeElement.isContentEditable) {
 
-        Logger.logDebug('Text selection detected, using default copy behavior', {}, Logger.LogCategory.EVENT);
+        Logger.logDebug('Text selection detected, using system clipboard for text copy', {}, Logger.LogCategory.EVENT);
 
-        if (ModeContext.clipboardNoteId) {
-            Logger.logDebug('Clearing clipboard note ID due to text copy', {
-                previousClipboardNoteId: ModeContext.clipboardNoteId
-            }, Logger.LogCategory.EVENT);
-            ModeContext.setClipboardNoteId(null);
+        // Set clipboard mode to system and allow default browser behavior
+        if (ModeContext.clipboardMode !== 'system') {
+            ModeContext.setClipboardMode('system');
         }
         
-        return;
+        return; // Let browser handle text copy
     }
 
+    // No text selected - do note copy
     event.preventDefault();
-    actionCopyNote();
     
-    Logger.logDebug('Note copied to clipboard', {
-        noteId: ModeContext.currentNoteId
-    }, Logger.LogCategory.EVENT);
+    try {
+        // Set clipboard mode to note and call server
+        if (ModeContext.clipboardMode !== 'note') {
+            ModeContext.setClipboardMode('note');
+        }
+        await actionCopyNote();
+        
+        Logger.logDebug('Note copied to server clipboard', {
+            noteId: ModeContext.currentNoteId
+        }, Logger.LogCategory.EVENT);
+    } catch (error) {
+        Logger.logDebug('Error copying note', {
+            error: error.message
+        }, Logger.LogCategory.EVENT);
+    }
 }
 
 function handlePasteNoteSiblingShortcut(event) {
@@ -408,27 +418,29 @@ function handlePasteNoteSiblingShortcut(event) {
         throw new Error('handlePasteNoteSiblingShortcut called without an event object');
     }
 
-    Logger.logDebug('Paste note as sibling shortcut triggered', {
+    Logger.logDebug('Paste sibling shortcut triggered', {
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
-        clipboardNoteId: ModeContext.clipboardNoteId
+        clipboardMode: ModeContext.clipboardMode
     }, Logger.LogCategory.EVENT);
 
-    if (!ModeContext.isEditing || !ModeContext.currentNoteId || !ModeContext.clipboardNoteId) {
-        Logger.logNoop('Paste shortcut conditions not met', {
+    // Check clipboard mode to determine behavior
+    if (ModeContext.clipboardMode === 'system') {
+        Logger.logDebug('System clipboard mode - allowing default paste behavior', {}, Logger.LogCategory.EVENT);
+        return; // NO preventDefault - let browser handle text paste
+    }
+
+    // Note clipboard mode - check conditions for note paste
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+        Logger.logNoop('Note paste shortcut conditions not met', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
-            clipboardNoteId: ModeContext.clipboardNoteId
+            clipboardMode: ModeContext.clipboardMode
         });
         return;
     }
 
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed && document.activeElement.isContentEditable) {
-        Logger.logDebug('Text selection detected, using default paste', {}, Logger.LogCategory.EVENT);
-        return;
-    }
-
+    // YES preventDefault - prevent browser, do note paste
     event.preventDefault();
     actionPasteNoteSibling();
 }
@@ -438,23 +450,30 @@ function handlePasteNoteChildShortcut(event) {
         throw new Error('handlePasteNoteChildShortcut called without an event object');
     }
 
-    event.preventDefault();
-
-    Logger.logDebug('Paste note as child shortcut triggered', {
+    Logger.logDebug('Paste child shortcut triggered', {
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
-        clipboardNoteId: ModeContext.clipboardNoteId
+        clipboardMode: ModeContext.clipboardMode
     }, Logger.LogCategory.EVENT);
 
-    if (!ModeContext.isEditing || !ModeContext.currentNoteId || !ModeContext.clipboardNoteId) {
-        Logger.logNoop('Paste as child shortcut conditions not met', {
+    // Check clipboard mode to determine behavior
+    if (ModeContext.clipboardMode === 'system') {
+        Logger.logDebug('System clipboard mode - allowing default paste behavior', {}, Logger.LogCategory.EVENT);
+        return; // NO preventDefault - let browser handle text paste
+    }
+
+    // Note clipboard mode - check conditions for note paste
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+        Logger.logNoop('Note paste child shortcut conditions not met', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
-            clipboardNoteId: ModeContext.clipboardNoteId
+            clipboardMode: ModeContext.clipboardMode
         });
         return;
     }
     
+    // YES preventDefault - prevent browser, do note paste
+    event.preventDefault();
     actionPasteNoteChild();
 }
 

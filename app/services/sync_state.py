@@ -1,5 +1,5 @@
 import uuid
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 # Global in-memory sync state - THIS IS MUTABLE SERVER STATE
 _current_update_uuid = str(uuid.uuid4())
@@ -7,6 +7,10 @@ _current_update_uuid = str(uuid.uuid4())
 # Global in-memory note locks - THIS IS MUTABLE SERVER STATE  
 # Format: {note_id: client_id}
 _note_locks: Dict[str, str] = {}
+
+# Global in-memory clipboard storage - THIS IS MUTABLE SERVER STATE
+# Format: {client_id: serialized_note_data} - stores the serialized note data for each client
+_client_clipboards: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
 def generate_new_uuid() -> str:
@@ -66,3 +70,21 @@ def is_note_locked_by_other_client(note_id: str, client_id: str) -> bool:
     """Check if a note is locked by a different client (read-only)."""
     lock_owner = _note_locks.get(note_id)
     return lock_owner is not None and lock_owner != client_id
+
+
+# Clipboard management functions
+def set_client_clipboard(client_id: str, note_data: Optional[Dict[str, Any]]) -> None:
+    """SIDE EFFECT: Set the clipboard content for a client."""
+    global _client_clipboards
+    _client_clipboards[client_id] = note_data
+
+
+def get_client_clipboard(client_id: str) -> Optional[Dict[str, Any]]:
+    """Get the clipboard content for a client (read-only)."""
+    return _client_clipboards.get(client_id)
+
+
+def clear_client_clipboard(client_id: str) -> None:
+    """SIDE EFFECT: Clear the clipboard for a client."""
+    global _client_clipboards
+    _client_clipboards[client_id] = None

@@ -258,14 +258,20 @@ export const NotesAPI = {
         );
     },
 
-    async pasteNoteSibling(sourceNoteId, targetNoteId) {
-        return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(sourceNoteId, targetNoteId), {
+    async copyNote(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.COPY(noteId), {
             method: 'POST'
         });
     },
 
-    async pasteNoteChild(sourceNoteId, targetNoteId) {
-        return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(sourceNoteId, targetNoteId), {
+    async pasteNoteSibling(targetNoteId) {
+        return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(targetNoteId), {
+            method: 'POST'
+        });
+    },
+
+    async pasteNoteChild(targetNoteId) {
+        return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(targetNoteId), {
             method: 'POST'
         });
     },
