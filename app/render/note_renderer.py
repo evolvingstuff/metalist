@@ -8,6 +8,8 @@ Acts as the single source of truth for note rendering across the application.
 import re
 from app.core import config
 from app.utils.text_utils import strip_html
+from app.services.content_cache import get_cached_content
+from app.utils.encryption import decrypt
 from html import escape
 
 
@@ -257,16 +259,35 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
             # Build child tree first
             children = build_note_tree(db_manager, db, note.id, editing_note_id, search_query)
             
+            # Get decrypted content from cache - MUST be there
+            decrypted_content = get_cached_content(note.id)
+            if decrypted_content is None:
+                raise RuntimeError(f"CACHE CORRUPTION: Note {note.id} not found in cache! Cache system has failed.")
+            
+            # DEBUG: Show note data
+            print(f"DEBUG: {note.id[:8]} | {note.content[:50]}... | {decrypted_content[:50]}...")
+            
+            # Create a temporary note object with decrypted content for rendering
+            class DecryptedNote:
+                def __init__(self, original_note, decrypted_content):
+                    self.id = original_note.id
+                    self.content = decrypted_content
+                    self.parent_id = original_note.parent_id
+                    self.created_at = original_note.created_at
+                    self.updated_at = original_note.updated_at
+            
+            decrypted_note = DecryptedNote(note, decrypted_content)
+            
             # Determine render mode - editing takes precedence
             if note.id == editing_note_id:
-                rendered_content = render_editing_mode(note)
+                rendered_content = render_editing_mode(decrypted_note)
             else:
-                rendered_content = render_read_only_mode(note)
+                rendered_content = render_read_only_mode(decrypted_note)
             
             note_dict = {
                 'id': note.id,
                 'content': rendered_content,
-                'raw_content': note.content,  # Keep raw content for search filtering
+                'raw_content': decrypted_content,  # Use cached decrypted content for search
                 'parent_id': note.parent_id or '',
                 'children': children,
                 'flags': {

@@ -3,6 +3,10 @@ import sys
 
 VERSION = "0.3.0"
 
+# Encryption configuration
+ENABLE_ENCRYPTION = True  # Set to False to disable encryption (passthrough mode)
+ENCRYPTION_KEY = "MetaList3_XOR_Key_2024"  # Simple XOR key for simulation
+
 # Check if running in test mode
 TEST_MODE = '--test' in sys.argv or os.environ.get('TEST_MODE') == '1'
 

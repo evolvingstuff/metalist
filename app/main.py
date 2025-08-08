@@ -9,6 +9,7 @@ from .core.config import VERSION
 from .models.database import Base, SafeSession
 from .api.dependencies import get_db
 from .models.linked_list import LinkedListManager
+from .services.content_cache import populate_cache_from_db
 import logging
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
@@ -19,6 +20,16 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 Base.metadata.create_all(bind=SafeSession.get_engine())
+
+# Populate content cache on startup
+try:
+    from .models.database import SessionLocal
+    db = SessionLocal(bind=SafeSession.get_engine())
+    populate_cache_from_db(db)
+    db.close()
+except Exception as e:
+    logger.error(f"Failed to populate content cache on startup: {e}")
+    # Continue startup even if cache population fails
 
 # Custom StaticFiles class that disables caching
 class NoCacheStaticFiles(StarletteStaticFiles):

@@ -2,6 +2,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from .database import DBNote
 from .enums import MovePosition
+from ..utils.encryption import encrypt
 
 
 class NoteCRUD:
@@ -23,7 +24,7 @@ class NoteCRUD:
             # Create new note with both linked list and position fields
             db_note = DBNote(
                 id=note_id,
-                content="",
+                content=encrypt(""),  # Encrypt empty content
                 parent_id=parent_id
             )
             db.add(db_note)
@@ -48,7 +49,7 @@ class NoteCRUD:
     @staticmethod
     def update_note(db: Session, note_id: str, content: str):
         db_note = NoteCRUD.get_note(db, note_id)
-        db_note.content = content
+        db_note.content = encrypt(content)  # Encrypt content before saving
 
     @staticmethod
     def delete_note(db: Session, note_id: str) -> None:

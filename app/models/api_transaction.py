@@ -131,6 +131,22 @@ def log_attribute_set(target, value, oldvalue, initiator):
         transaction.log_attribute_set(target, value, oldvalue, initiator)
 
 
+# Cache event handlers
+def cache_note_on_content_update(target, value, oldvalue, initiator):
+    """Update cache when note content is modified"""
+    if isinstance(target, DBNote) and initiator.key == 'content':
+        # Import here to avoid circular dependency
+        from ..services.content_cache import cache_note
+        from ..utils.encryption import decrypt
+        
+        try:
+            decrypted_content = decrypt(value)
+            cache_note(target.id, decrypted_content)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to update cache for note {target.id}: {e}")
+
+
 def log_note_after_insert(mapper, connection, target):
     # Import here to avoid circular dependency
     from ..services.transaction_manager import get_transaction_manager
@@ -138,6 +154,21 @@ def log_note_after_insert(mapper, connection, target):
     transaction = transaction_manager.get_current_transaction()
     if transaction:
         transaction.log_note_after_insert(mapper, connection, target)
+
+
+def cache_note_after_insert(mapper, connection, target):
+    """Add new note to cache after database insert"""
+    if isinstance(target, DBNote) and target.content:
+        # Import here to avoid circular dependency
+        from ..services.content_cache import cache_note
+        from ..utils.encryption import decrypt
+        
+        try:
+            decrypted_content = decrypt(target.content)
+            cache_note(target.id, decrypted_content)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to cache new note {target.id}: {e}")
 
 
  # another hack!
@@ -150,6 +181,19 @@ def log_note_before_delete(mapper, connection, target):
         transaction.log_note_before_delete(mapper, connection, target)
 
 
+def cache_note_before_delete(mapper, connection, target):
+    """Remove note from cache before database delete"""
+    if isinstance(target, DBNote):
+        # Import here to avoid circular dependency
+        from ..services.content_cache import remove_cached_note
+        
+        try:
+            remove_cached_note(target.id)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to remove cached note {target.id}: {e}")
+
+
 # Register event listeners
 event.listen(DBNote.content, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.parent_id, 'set', log_attribute_set, retval=False)
@@ -157,3 +201,8 @@ event.listen(DBNote.prev_id, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.next_id, 'set', log_attribute_set, retval=False)
 event.listen(DBNote, 'after_insert', log_note_after_insert)
 event.listen(DBNote, 'before_delete', log_note_before_delete)
+
+# Register cache event listeners
+event.listen(DBNote.content, 'set', cache_note_on_content_update, retval=False)
+event.listen(DBNote, 'after_insert', cache_note_after_insert)
+event.listen(DBNote, 'before_delete', cache_note_before_delete)

@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime, timezone
 from .database import DBNote
+from ..utils.encryption import encrypt
+from ..services.content_cache import get_cached_content
 
 
 def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:
@@ -35,9 +37,14 @@ def _serialize_note_recursive(db: Session, source_note: DBNote) -> Dict[str, Any
     Returns:
         Dictionary representation of the note and its children
     """
+    # Get decrypted content from cache - MUST be there
+    decrypted_content = get_cached_content(source_note.id)
+    if decrypted_content is None:
+        raise RuntimeError(f"CACHE CORRUPTION: Note {source_note.id} not found in cache during copy operation!")
+    
     # Serialize this note's data
     note_data = {
-        "content": source_note.content,
+        "content": decrypted_content,  # Use decrypted content from cache
         "created_at": source_note.created_at.isoformat() if source_note.created_at else None,
         "updated_at": source_note.updated_at.isoformat() if source_note.updated_at else None,
         "children": []
@@ -88,7 +95,7 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
     # Create the new note directly
     new_note = DBNote(
         id=new_id,
-        content=note_data["content"],
+        content=encrypt(note_data["content"]),  # Encrypt content before saving
         parent_id=new_parent_id,
         prev_id=None,  # Will be set later if needed
         next_id=None,  # Will be set later if needed
@@ -171,7 +178,7 @@ def _copy_note_recursive(
     # Create a new note with the same content
     new_note = DBNote(
         id=new_id,
-        content=source_note.content,
+        content=source_note.content,  # Content is already encrypted in source_note
         parent_id=new_parent_id,
         prev_id=None,  # Will be set later if needed
         next_id=None,  # Will be set later if needed
