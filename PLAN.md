@@ -1,95 +1,104 @@
-# Fix Copy/Paste Architecture
+# Fix Dead Client Lock Problem
 
-## Current Broken Architecture
+## Current Problem
 
-The copy/paste system is fundamentally broken:
+**Scenario:**
+1. Client A starts editing note 1 ’ acquires lock, note shows as locked to other clients
+2. Client A shuts down browser without properly releasing lock
+3. Server never receives lock release signal
+4. Note 1 remains locked forever, blocking all other clients
 
-1. **Copy (Cmd+C)**: Only stores original note ID in client-side clipboard (`ModeContext.clipboardNoteId`)
-2. **Paste**: Creates the actual copy with new UUIDs at paste time
-3. **Result**: After first paste, clipboard contains the newly created note ID, leading to "paste into self" cycles
+**Root Cause:**
+- Locks are only released on explicit client action (`release-lock` API call)
+- No mechanism to detect dead/disconnected clients
+- Editing clients don't send heartbeats (sync polling is disabled while editing)
 
-## Problems with Current Approach
+## Solution: Editing Client Heartbeat System
 
-1. **No actual copying on copy**: Copy operation is just client-side state management
-2. **Copy happens too late**: Actual copying with new UUIDs happens at paste time
-3. **Clipboard corruption**: After paste, clipboard points to the pasted note instead of maintaining a clean template
-4. **Edit corruption**: If original note is edited after copy, there's no independent copy to paste from
-5. **Self-paste cycles**: Trying to paste a note into itself creates infinite recursion
+### Overview
+Implement a separate heartbeat system specifically for editing clients that:
+- Sends periodic "still alive" signals while editing
+- Includes note ID to prevent lock leakage when switching notes
+- Allows server to expire locks from dead clients quickly
 
-## Target Architecture
+### Technical Design
 
-### Server-Side Clipboard Storage
-- Each client maintains server-side clipboard state (not client-side)
-- **Clipboard stores serialized note data, NOT database notes**
-- Client never stores clipboard state
+#### Server-Side Changes
 
-### Copy Operation (Cmd+C)
-1. Client sends copy request to server with source note ID
-2. **Server serializes note tree to in-memory data structure** (no database writes)
-3. Server stores this serialized data in client's server-side clipboard
-4. Copy is independent snapshot - immune to future edits of original
+1. **Enhanced Lock Storage**
+   ```typescript
+   // Current: {note_id: client_id}
+   _note_locks: Dict[str, str] = {}
+   
+   // New: {note_id: {client_id: string, timestamp: number}}
+   _note_locks: Dict[str, Dict[str, Any]] = {}
+   ```
 
-### Paste Operation (Cmd+V / Shift+Cmd+V)  
-1. Client sends paste request (no note IDs needed)
-2. Server deserializes clipboard data into fresh database notes
-3. Server positions new notes at target location with proper parent IDs
-4. **Server re-serializes original clipboard data for future pastes** (keeps clean template)
-5. Clipboard always contains the original template, not pasted notes
+2. **Lock Timestamp Tracking**
+   - Store acquisition/refresh timestamp with each lock
+   - Update timestamp on heartbeat from correct client + note combination
+
+3. **Lock Expiration Logic**
+   - Check lock age when acquiring locks
+   - Expire locks older than 5 seconds (allows for network delays)
+   - Clean up expired locks automatically
+
+4. **API Changes**
+   - Reuse existing `/api/notes/acquire-lock` for heartbeat refresh
+   - Add timestamp validation to prevent lock leakage
+
+#### Client-Side Changes
+
+1. **Editing Heartbeat Timer**
+   ```javascript
+   // Start heartbeat when entering edit mode
+   setInterval(() => {
+     if (isEditing && currentNoteId) {
+       sendEditingHeartbeat(currentNoteId);
+     }
+   }, 1000);
+   ```
+
+2. **Heartbeat Management**
+   - Start heartbeat timer on edit mode entry
+   - Stop heartbeat timer on edit mode exit
+   - Send note ID + client ID in each heartbeat
+   - Handle heartbeat failures gracefully
+
+3. **Note Switching Logic**
+   ```
+   switchToEditNote(newNoteId):
+     1. Stop current heartbeat (if any)
+     2. Release current lock (if any) 
+     3. Acquire lock on new note
+     4. Start heartbeat for new note
+   ```
+
+### Implementation Steps
+
+1. **Update server lock storage structure** with timestamps
+2. **Add lock expiration checking** to acquire-lock endpoint
+3. **Implement client-side heartbeat timer** in editing mode
+4. **Update note switching logic** to manage heartbeats properly
+5. **Add heartbeat failure handling** and user feedback
+6. **Test dead client scenarios** and lock expiration timing
 
 ### Benefits
-- **True copy semantics**: Copy creates independent snapshot immediately
-- **Multiple pastes**: Each paste gets fresh copy from stable template
-- **No cycles**: Each paste creates new UUIDs, preventing self-reference
-- **Edit immunity**: Clipboard copy immune to original note changes
-- **Server-side state**: No client-side clipboard synchronization issues
-- **No orphaned database notes**: Clipboard is pure in-memory data
 
-## Implementation Plan
+- **Fast dead client detection**: 5-second timeout vs infinite waiting
+- **Prevents lock leakage**: Note ID included in heartbeat prevents wrong locks being refreshed
+- **Minimal overhead**: 1 heartbeat/second only while editing
+- **Backwards compatible**: Existing lock acquire/release logic unchanged
+- **Self-healing**: System automatically recovers from dead clients
 
-1. **Create `copy_note_in_memory()` function** - serializes note tree without database writes
-2. **Create `paste_note_from_memory()` function** - deserializes and creates real database notes
-3. **Add server-side clipboard storage** (per client ID) for serialized data
-4. **Create `/api/notes/copy` endpoint** - uses `copy_note_in_memory()`
-5. **Update `/api/notes/paste-*` endpoints** - use `paste_note_from_memory()`
-6. **Remove client-side clipboard logic** from frontend
-7. **Update frontend copy/paste actions** to use new endpoints
+### Edge Cases Handled
 
-## Key Insight: Clipboard Must Be Pure Data
-
-**CRITICAL**: The clipboard must store serialized note data structures, not database note IDs. Creating database notes for clipboard creates orphaned records that break the tree structure constraints.
-
-## Additional Issue: Clipboard Mode Tracking
-
-**PROBLEM DISCOVERED**: When editing a note, Cmd+C/Cmd+V behavior depends on text selection:
-- **Text selected**: Should use system clipboard for text copy/paste
-- **No text selected**: Should use note clipboard for note copy/paste
-
-**SOLUTION NEEDED**: Client-side clipboard mode tracking:
-
-### Copy Behavior (Cmd+C)
-- **If text selected in editor**: 
-  - Set clipboard mode = 'system'
-  - Allow default browser text copy
-  - Do NOT call server
-- **If no text selected**: 
-  - Set clipboard mode = 'note'  
-  - Call server copy endpoint
-  - preventDefault to avoid system clipboard interference
-
-### Paste Behavior (Cmd+V)  
-- **If clipboard mode = 'system'**:
-  - Allow default browser text paste into editor
-- **If clipboard mode = 'note'**:
-  - Call server paste endpoint
-  - preventDefault to avoid system clipboard interference
-  - Trigger UI refresh (like other content-modifying operations)
-
-### Implementation Requirements
-1. Add `clipboardMode` state to ModeContext ('system' vs 'note')
-2. Update copy handler to check text selection and set mode
-3. Update paste handler to check mode and route appropriately
-4. Ensure mode resets appropriately (e.g., when switching notes)
+1. **Rapid note switching**: Each note gets its own lock lifecycle
+2. **Network interruption**: Locks expire and allow recovery
+3. **Browser crash**: Dead client locks expire automatically
+4. **Clock skew**: Use reasonable timeout window (5 seconds)
+5. **Race conditions**: Timestamp-based lock ownership prevents conflicts
 
 ## Migration Notes
 
-This is a breaking change to the copy/paste system but fixes fundamental architectural problems that made the feature unreliable. The previous attempt failed because it created real database notes for clipboard storage. The current implementation works for server-side clipboard but needs client-side mode tracking for proper text vs note distinction.
+This is an additive change that enhances the existing lock system without breaking current functionality. The heartbeat system provides a safety net for cases where the normal lock release flow fails.

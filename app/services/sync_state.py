@@ -1,12 +1,13 @@
 import uuid
+import time
 from typing import Dict, Optional, Any
 
 # Global in-memory sync state - THIS IS MUTABLE SERVER STATE
 _current_update_uuid = str(uuid.uuid4())
 
 # Global in-memory note locks - THIS IS MUTABLE SERVER STATE  
-# Format: {note_id: client_id}
-_note_locks: Dict[str, str] = {}
+# Format: {note_id: {"client_id": str, "timestamp": float}}
+_note_locks: Dict[str, Dict[str, Any]] = {}
 
 # Global in-memory clipboard storage - THIS IS MUTABLE SERVER STATE
 # Format: {client_id: serialized_note_data} - stores the serialized note data for each client
@@ -29,22 +30,60 @@ def get_current_sync_uuid() -> str:
     return _current_update_uuid
 
 
+def cleanup_expired_locks() -> bool:
+    """Remove expired locks and return True if any were removed."""
+    global _note_locks
+    
+    current_time = time.time()
+    expired_notes = []
+    
+    for note_id, lock_info in _note_locks.items():
+        if current_time - lock_info["timestamp"] >= 5.0:
+            expired_notes.append(note_id)
+    
+    for note_id in expired_notes:
+        del _note_locks[note_id]
+    
+    return len(expired_notes) > 0
+
+
 # Note locking functions
-def acquire_note_lock(note_id: str, client_id: str) -> bool:
+def acquire_note_lock(note_id: str, client_id: str) -> tuple[bool, bool]:
     """SIDE EFFECT: Try to acquire a lock on a note.
     
     Returns:
-        bool: True if lock acquired, False if already locked by different client
+        tuple[bool, bool]: (success, expired_lock_removed)
+            - success: True if lock acquired, False if already locked by different client
+            - expired_lock_removed: True if an expired lock was removed
     """
     global _note_locks
     
-    # Check if note is already locked by a different client
-    if note_id in _note_locks and _note_locks[note_id] != client_id:
-        return False
+    current_time = time.time()
+    expired_lock_removed = False
+    
+    # Check if note is already locked
+    if note_id in _note_locks:
+        lock_info = _note_locks[note_id]
         
-    # Acquire the lock
-    _note_locks[note_id] = client_id
-    return True
+        # If locked by same client, refresh timestamp
+        if lock_info["client_id"] == client_id:
+            lock_info["timestamp"] = current_time
+            return True, False
+            
+        # If locked by different client, check if lock is expired (5 second timeout)
+        if current_time - lock_info["timestamp"] < 5.0:
+            return False, False
+        
+        # Lock is expired, remove it and continue to acquire
+        del _note_locks[note_id]
+        expired_lock_removed = True
+    
+    # Acquire the lock with current timestamp
+    _note_locks[note_id] = {
+        "client_id": client_id,
+        "timestamp": current_time
+    }
+    return True, expired_lock_removed
 
 
 def release_note_lock(note_id: str, client_id: str) -> None:
@@ -52,24 +91,34 @@ def release_note_lock(note_id: str, client_id: str) -> None:
     global _note_locks
     
     # Only release if this client owns the lock
-    if _note_locks.get(note_id) == client_id:
+    lock_info = _note_locks.get(note_id)
+    if lock_info and lock_info["client_id"] == client_id:
         del _note_locks[note_id]
 
 
 def get_note_lock_owner(note_id: str) -> Optional[str]:
     """Get the client ID that owns the lock for a note (read-only)."""
-    return _note_locks.get(note_id)
+    lock_info = _note_locks.get(note_id)
+    return lock_info["client_id"] if lock_info else None
 
 
 def get_all_locks() -> Dict[str, str]:
     """Get all current note locks (read-only)."""
-    return _note_locks.copy()
+    return {note_id: lock_info["client_id"] for note_id, lock_info in _note_locks.items()}
 
 
 def is_note_locked_by_other_client(note_id: str, client_id: str) -> bool:
     """Check if a note is locked by a different client (read-only)."""
-    lock_owner = _note_locks.get(note_id)
-    return lock_owner is not None and lock_owner != client_id
+    lock_info = _note_locks.get(note_id)
+    if not lock_info:
+        return False
+    
+    # Check if lock is expired (5 second timeout)
+    current_time = time.time()
+    if current_time - lock_info["timestamp"] >= 5.0:
+        return False
+        
+    return lock_info["client_id"] != client_id
 
 
 # Clipboard management functions

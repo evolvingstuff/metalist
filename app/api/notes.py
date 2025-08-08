@@ -17,7 +17,7 @@ from ..services.dependencies import (
 from ..services.transaction_manager import get_transaction_manager, TransactionManager
 from ..services.sync_state import (
     get_current_sync_uuid, acquire_note_lock, release_note_lock, generate_new_uuid, set_server_sync_uuid,
-    get_client_clipboard, set_client_clipboard
+    get_client_clipboard, set_client_clipboard, cleanup_expired_locks
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,11 @@ class CopyNoteRequest(BaseModel):
 @router.post("/check-updates")
 def check_updates(request: SyncCheckRequest):
     """Check if client needs to refresh based on sync UUID"""
+    # Clean up any expired locks and generate new UUID if any were removed
+    if cleanup_expired_locks():
+        new_uuid = generate_new_uuid()
+        set_server_sync_uuid(new_uuid)
+    
     current_uuid = get_current_sync_uuid()
     needs_update = request.lastUpdateUUID != current_uuid
     
@@ -70,10 +75,10 @@ def check_updates(request: SyncCheckRequest):
 @router.post("/acquire-lock")
 def acquire_lock(request: NoteLockRequest):
     """Acquire an edit lock on a note"""
-    success = acquire_note_lock(request.noteId, request.clientId)
+    success, expired_lock_removed = acquire_note_lock(request.noteId, request.clientId)
     
     if success:
-        # Generate sync event when lock is acquired
+        # Generate sync event when lock is acquired or when expired lock was removed
         new_uuid = generate_new_uuid()
         set_server_sync_uuid(new_uuid)
         
