@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 import logging
 
 from .base_service import BaseQueryService
+from .sync_state import generate_new_uuid, set_server_sync_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class UndoRedoService(BaseQueryService):
         undid = self.transaction_manager.undo(self.db)
         
         if undid:
+            set_server_sync_uuid(generate_new_uuid())
             logger.info("Undo operation successful")
             return {"status": "success", "message": "Undo successful"}
         else:
@@ -30,6 +32,7 @@ class UndoRedoService(BaseQueryService):
         redid = self.transaction_manager.redo(self.db)
         
         if redid:
+            set_server_sync_uuid(generate_new_uuid())
             logger.info("Redo operation successful")
             return {"status": "success", "message": "Redo successful"}
         else:
