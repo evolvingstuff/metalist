@@ -58,6 +58,38 @@ The copy/paste system is fundamentally broken:
 
 **CRITICAL**: The clipboard must store serialized note data structures, not database note IDs. Creating database notes for clipboard creates orphaned records that break the tree structure constraints.
 
+## Additional Issue: Clipboard Mode Tracking
+
+**PROBLEM DISCOVERED**: When editing a note, Cmd+C/Cmd+V behavior depends on text selection:
+- **Text selected**: Should use system clipboard for text copy/paste
+- **No text selected**: Should use note clipboard for note copy/paste
+
+**SOLUTION NEEDED**: Client-side clipboard mode tracking:
+
+### Copy Behavior (Cmd+C)
+- **If text selected in editor**: 
+  - Set clipboard mode = 'system'
+  - Allow default browser text copy
+  - Do NOT call server
+- **If no text selected**: 
+  - Set clipboard mode = 'note'  
+  - Call server copy endpoint
+  - preventDefault to avoid system clipboard interference
+
+### Paste Behavior (Cmd+V)  
+- **If clipboard mode = 'system'**:
+  - Allow default browser text paste into editor
+- **If clipboard mode = 'note'**:
+  - Call server paste endpoint
+  - preventDefault to avoid system clipboard interference
+  - Trigger UI refresh (like other content-modifying operations)
+
+### Implementation Requirements
+1. Add `clipboardMode` state to ModeContext ('system' vs 'note')
+2. Update copy handler to check text selection and set mode
+3. Update paste handler to check mode and route appropriately
+4. Ensure mode resets appropriately (e.g., when switching notes)
+
 ## Migration Notes
 
-This is a breaking change to the copy/paste system but fixes fundamental architectural problems that made the feature unreliable. The previous attempt failed because it created real database notes for clipboard storage.
+This is a breaking change to the copy/paste system but fixes fundamental architectural problems that made the feature unreliable. The previous attempt failed because it created real database notes for clipboard storage. The current implementation works for server-side clipboard but needs client-side mode tracking for proper text vs note distinction.
