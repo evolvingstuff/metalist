@@ -1,104 +1,85 @@
-# Fix Dead Client Lock Problem
+# In-Memory Search Cache Implementation Plan
 
-## Current Problem
+## Overview
+Implement an in-memory cache system for note content to enable search functionality while supporting encrypted-at-rest storage. Uses SQLAlchemy events to maintain cache consistency automatically.
 
-**Scenario:**
-1. Client A starts editing note 1 � acquires lock, note shows as locked to other clients
-2. Client A shuts down browser without properly releasing lock
-3. Server never receives lock release signal
-4. Note 1 remains locked forever, blocking all other clients
+## Implementation Steps
 
-**Root Cause:**
-- Locks are only released on explicit client action (`release-lock` API call)
-- No mechanism to detect dead/disconnected clients
-- Editing clients don't send heartbeats (sync polling is disabled while editing)
+### 1. Create Encryption/Decryption System
+- Add `ENABLE_ENCRYPTION` config parameter to control encryption on/off
+- Implement `encrypt(content: str) -> str` function
+  - If `ENABLE_ENCRYPTION=True`: XOR-based encryption for simulation
+  - If `ENABLE_ENCRYPTION=False`: passthrough (return content unchanged)
+- Implement `decrypt(encrypted_content: str) -> str` function
+  - If `ENABLE_ENCRYPTION=True`: XOR-based decryption
+  - If `ENABLE_ENCRYPTION=False`: passthrough (return content unchanged)
+- Always call encrypt/decrypt functions regardless of config flag
 
-## Solution: Editing Client Heartbeat System
+### 2. Create In-Memory Cache System
+- Create global in-memory cache: `_search_cache: Dict[str, str] = {}`
+- Cache stores `{note_id: decrypted_content}` for fast search access
+- Add cache management functions:
+  - `populate_cache_from_db()` - scan all notes on startup
+  - `get_cached_content(note_id: str) -> str` - retrieve from cache
+  - `cache_note(note_id: str, content: str)` - add/update cache entry
+  - `remove_cached_note(note_id: str)` - remove from cache
 
-### Overview
-Implement a separate heartbeat system specifically for editing clients that:
-- Sends periodic "still alive" signals while editing
-- Includes note ID to prevent lock leakage when switching notes
-- Allows server to expire locks from dead clients quickly
+### 3. Server Startup Cache Population
+- On application startup, scan through all notes in database
+- Decrypt each note's content and populate the cache
+- Ensures cache is ready for search operations immediately
 
-### Technical Design
+### 4. SQLAlchemy Event Handlers for Cache Consistency
+Leverage existing event system in `api_transaction.py` to maintain cache:
 
-#### Server-Side Changes
+#### Insert Events
+- Hook into `after_insert` event for `DBNote`
+- When new note is created, decrypt content and add to cache
+- Reuse existing `log_note_after_insert` or create parallel handler
 
-1. **Enhanced Lock Storage**
-   ```typescript
-   // Current: {note_id: client_id}
-   _note_locks: Dict[str, str] = {}
-   
-   // New: {note_id: {client_id: string, timestamp: number}}
-   _note_locks: Dict[str, Dict[str, Any]] = {}
-   ```
+#### Update Events  
+- Hook into attribute `set` events for `DBNote.content`
+- When content changes, decrypt new value and update cache
+- Reuse existing `log_attribute_set` or create parallel handler
 
-2. **Lock Timestamp Tracking**
-   - Store acquisition/refresh timestamp with each lock
-   - Update timestamp on heartbeat from correct client + note combination
+#### Delete Events
+- Hook into `before_delete` event for `DBNote`
+- Remove note from cache when deleted from database
+- Reuse existing `log_note_before_delete` or create parallel handler
 
-3. **Lock Expiration Logic**
-   - Check lock age when acquiring locks
-   - Expire locks older than 5 seconds (allows for network delays)
-   - Clean up expired locks automatically
+### 5. Update Database Storage
+- Modify note creation/update operations to encrypt content before storing
+- Database stores encrypted content, cache stores decrypted content
+- Ensure all CRUD operations call encrypt() before DB writes
 
-4. **API Changes**
-   - Reuse existing `/api/notes/acquire-lock` for heartbeat refresh
-   - Add timestamp validation to prevent lock leakage
+### 6. Update Search System to Use Cache
+- **Current flow**: `/fragment` endpoint → `get_notes_fragment()` → `build_note_tree()` → `db_manager.get_ordered_child_list(db)`
+- **New flow**: Replace database calls with cache lookups for note content
+- **Search features to maintain**:
+  - Case-insensitive substring matching using `strip_html()` on plain text
+  - AND logic (all search terms must be present in note or descendants)  
+  - Search highlighting with `<span class="search-highlight">` 
+  - Redacted rendering for irrelevant notes (opacity 0.4, grayscale 50%)
+  - Parent/child relevance marking (ancestors and descendants of matches stay visible)
+- **Integration points**:
+  - Modify `build_note_tree()` to get content from cache instead of database
+  - Cache stores decrypted content for search operations
+  - Maintain existing `raw_content` vs `content` distinction for rendering
 
-#### Client-Side Changes
+## Benefits
+- **Automatic consistency**: SQLAlchemy events ensure cache stays in sync
+- **Minimal code changes**: Existing CRUD operations work unchanged  
+- **Performance**: Fast in-memory search without decryption overhead
+- **Flexibility**: Encryption can be toggled via config
+- **Future-ready**: Easy to swap XOR simulation for real encryption
 
-1. **Editing Heartbeat Timer**
-   ```javascript
-   // Start heartbeat when entering edit mode
-   setInterval(() => {
-     if (isEditing && currentNoteId) {
-       sendEditingHeartbeat(currentNoteId);
-     }
-   }, 1000);
-   ```
+## Implementation Details
+- **Start with encryption enabled**: Implement both encryption and cache together to ensure correct data flow
+- **Cache scope**: ALL notes are cached in memory, no size limits or LRU eviction
+- **Cache persistence**: Cache is rebuilt from database on every server restart (no persistence)
+- **No monitoring**: Cache either works or fails - no metrics or monitoring needed
 
-2. **Heartbeat Management**
-   - Start heartbeat timer on edit mode entry
-   - Stop heartbeat timer on edit mode exit
-   - Send note ID + client ID in each heartbeat
-   - Handle heartbeat failures gracefully
-
-3. **Note Switching Logic**
-   ```
-   switchToEditNote(newNoteId):
-     1. Stop current heartbeat (if any)
-     2. Release current lock (if any) 
-     3. Acquire lock on new note
-     4. Start heartbeat for new note
-   ```
-
-### Implementation Steps
-
-1. **Update server lock storage structure** with timestamps
-2. **Add lock expiration checking** to acquire-lock endpoint
-3. **Implement client-side heartbeat timer** in editing mode
-4. **Update note switching logic** to manage heartbeats properly
-5. **Add heartbeat failure handling** and user feedback
-6. **Test dead client scenarios** and lock expiration timing
-
-### Benefits
-
-- **Fast dead client detection**: 5-second timeout vs infinite waiting
-- **Prevents lock leakage**: Note ID included in heartbeat prevents wrong locks being refreshed
-- **Minimal overhead**: 1 heartbeat/second only while editing
-- **Backwards compatible**: Existing lock acquire/release logic unchanged
-- **Self-healing**: System automatically recovers from dead clients
-
-### Edge Cases Handled
-
-1. **Rapid note switching**: Each note gets its own lock lifecycle
-2. **Network interruption**: Locks expire and allow recovery
-3. **Browser crash**: Dead client locks expire automatically
-4. **Clock skew**: Use reasonable timeout window (5 seconds)
-5. **Race conditions**: Timestamp-based lock ownership prevents conflicts
-
-## Migration Notes
-
-This is an additive change that enhances the existing lock system without breaking current functionality. The heartbeat system provides a safety net for cases where the normal lock release flow fails.
+## Risk Mitigation  
+- Event-driven approach reduces places where bugs can be introduced
+- Full cache rebuild on restart ensures consistency if corruption occurs
+- Starting with encryption forces correct data source validation from day one
