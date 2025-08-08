@@ -20,21 +20,21 @@ The copy/paste system is fundamentally broken:
 
 ### Server-Side Clipboard Storage
 - Each client maintains server-side clipboard state (not client-side)
-- Clipboard stores actual independent copies with new UUIDs
+- **Clipboard stores serialized note data, NOT database notes**
 - Client never stores clipboard state
 
 ### Copy Operation (Cmd+C)
 1. Client sends copy request to server with source note ID
-2. Server creates full recursive copy with new UUIDs immediately 
-3. Server stores this copy in client's server-side clipboard
+2. **Server serializes note tree to in-memory data structure** (no database writes)
+3. Server stores this serialized data in client's server-side clipboard
 4. Copy is independent snapshot - immune to future edits of original
 
 ### Paste Operation (Cmd+V / Shift+Cmd+V)  
 1. Client sends paste request (no note IDs needed)
-2. Server uses current clipboard copy
-3. Server positions clipboard copy at target location
-4. Server creates NEW copy from original clipboard template for future pastes
-5. Server updates client clipboard with the fresh copy
+2. Server deserializes clipboard data into fresh database notes
+3. Server positions new notes at target location with proper parent IDs
+4. **Server re-serializes original clipboard data for future pastes** (keeps clean template)
+5. Clipboard always contains the original template, not pasted notes
 
 ### Benefits
 - **True copy semantics**: Copy creates independent snapshot immediately
@@ -42,15 +42,22 @@ The copy/paste system is fundamentally broken:
 - **No cycles**: Each paste creates new UUIDs, preventing self-reference
 - **Edit immunity**: Clipboard copy immune to original note changes
 - **Server-side state**: No client-side clipboard synchronization issues
+- **No orphaned database notes**: Clipboard is pure in-memory data
 
 ## Implementation Plan
 
-1. **Add server-side clipboard storage** (per client ID)
-2. **Create `/api/notes/copy` endpoint** - creates copy immediately 
-3. **Update `/api/notes/paste-*` endpoints** - use clipboard, create fresh copies
-4. **Remove client-side clipboard logic** from frontend
-5. **Update frontend copy/paste actions** to use new endpoints
+1. **Create `copy_note_in_memory()` function** - serializes note tree without database writes
+2. **Create `paste_note_from_memory()` function** - deserializes and creates real database notes
+3. **Add server-side clipboard storage** (per client ID) for serialized data
+4. **Create `/api/notes/copy` endpoint** - uses `copy_note_in_memory()`
+5. **Update `/api/notes/paste-*` endpoints** - use `paste_note_from_memory()`
+6. **Remove client-side clipboard logic** from frontend
+7. **Update frontend copy/paste actions** to use new endpoints
+
+## Key Insight: Clipboard Must Be Pure Data
+
+**CRITICAL**: The clipboard must store serialized note data structures, not database note IDs. Creating database notes for clipboard creates orphaned records that break the tree structure constraints.
 
 ## Migration Notes
 
-This is a breaking change to the copy/paste system but fixes fundamental architectural problems that made the feature unreliable.
+This is a breaking change to the copy/paste system but fixes fundamental architectural problems that made the feature unreliable. The previous attempt failed because it created real database notes for clipboard storage.
