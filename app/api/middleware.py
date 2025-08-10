@@ -18,7 +18,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/auth/status", 
         "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
-        "/",  # Main page (needs to load to show login modal)
     ]
     
     # Paths to suppress verbose logging for (frequent polling endpoints)
@@ -42,10 +41,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         
         # Skip authentication for public paths
         public_match = None
-        for public in self.PUBLIC_PATHS:
-            if path.startswith(public):
-                public_match = public
-                break
+        
+        # Handle exact root path match
+        if path == "/":
+            public_match = "/ (root)"
+        else:
+            # Check other public paths with startswith
+            for public in self.PUBLIC_PATHS:
+                if path.startswith(public):
+                    public_match = public
+                    break
                 
         if public_match:
             if not is_quiet:
