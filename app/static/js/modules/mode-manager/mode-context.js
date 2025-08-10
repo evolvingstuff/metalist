@@ -47,6 +47,9 @@ class ModeContext {
         // Connection state tracking
         this._isConnected = true;
         this._connectionErrorBannerVisible = false;
+        
+        // User activity tracking for token refresh
+        this._userActivity = false;
     }
 
     setEditing(value) {
@@ -663,6 +666,23 @@ class ModeContext {
     
     get connectionErrorBannerVisible() {
         return this._connectionErrorBannerVisible;
+    }
+    
+    setUserActivity(active) {
+        if (typeof active !== 'boolean') {
+            throw new Error('active must be a boolean');
+        }
+        
+        if (this._userActivity === active) {
+            throw new Error(`Redundant state change: userActivity is already ${active}`);
+        }
+        
+        this._userActivity = active;
+        return this;
+    }
+    
+    get userActivity() {
+        return this._userActivity;
     }
 }
 

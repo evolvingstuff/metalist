@@ -4,7 +4,7 @@ import sys
 VERSION = "0.3.0"
 
 # Authentication configuration
-TOKEN_EXPIRY_MINUTES = 60  # Token expires after 60 minutes of inactivity
+TOKEN_EXPIRY_MINUTES = 0.5  # Token expires after 30 seconds of inactivity (for testing)
 PBKDF2_ITERATIONS = 250000  # Number of iterations for password hashing
 
 # Check if running in test mode

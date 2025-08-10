@@ -27,6 +27,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/notes/release-lock"
     ]
     
+    # Background/automated paths that should NOT refresh tokens (not user activity)
+    NO_TOKEN_REFRESH_PATHS = [
+        "/api/notes/check-updates",
+        "/api/notes/acquire-lock",
+        "/api/notes/release-lock",
+        "/api/auth/status"  # ConnectivityMonitor pings this every 2 seconds
+    ]
+    
     # Note: /api/notes/* paths are NOT in this list - they require auth when password is set
     
     async def dispatch(self, request: Request, call_next):
@@ -109,8 +117,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Invalid or expired token"}
                 )
             
-            # Refresh token (sliding window)
-            token_service.refresh_token(token)
+            # Refresh token (sliding window) - but not for background/automated requests
+            should_refresh_token = not any(path.startswith(bg_path) for bg_path in self.NO_TOKEN_REFRESH_PATHS)
+            if should_refresh_token:
+                token_service.refresh_token(token)
+            elif not is_quiet:
+                print(f"[Middleware] Skipping token refresh for background path: {path}")
             
             # Set encryption key for this request
             encryption_info = token_service.get_encryption_info(token)

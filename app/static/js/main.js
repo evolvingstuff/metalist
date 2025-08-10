@@ -3,16 +3,15 @@ import { CONFIG } from './modules/config.js';
 import { DOMUtils } from './modules/dom-utils.js';
 import { Auth } from './modules/auth.js';
 import { ErrorHandler } from './modules/error-handler.js';
-import { ConnectivityMonitor } from './modules/connectivity-monitor.js';
-
+import { ActivityTracker } from './modules/activity-tracker.js';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
 
     // Make ModeManager available globally for post-login initialization
     window.ModeManager = ModeManager;
     
-    // Start connectivity monitoring (runs regardless of auth state)
-    ConnectivityMonitor.start();
+    // Start activity tracking for token refresh
+    ActivityTracker.start();
 
     // Initialize authentication first
     console.log('+++ main.js: About to initialize Auth');
