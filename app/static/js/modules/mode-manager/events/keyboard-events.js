@@ -4,6 +4,7 @@ import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, acti
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
+import { PasswordModal } from '../../modals/password-modal.js';
 
 export function initKeyboardEvents() {
         
@@ -138,6 +139,11 @@ function handleKeyDown(event) {
         case 'y':
             if (event.metaKey || event.ctrlKey) {
                 handleRedoShortcut(event);
+            }
+            break;
+        case 'p':
+            if (event.metaKey || event.ctrlKey) {
+                handlePasswordModalShortcut(event);
             }
             break;
         default:
@@ -475,6 +481,31 @@ function handlePasteNoteChildShortcut(event) {
     // YES preventDefault - prevent browser, do note paste
     event.preventDefault();
     actionPasteNoteChild();
+}
+
+function handlePasswordModalShortcut(event) {
+    if (!event) {
+        throw new Error('handlePasswordModalShortcut called without an event object');
+    }
+
+    Logger.logDebug('Password modal shortcut triggered (Cmd+P)', {}, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Exit search mode if active
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
+    // Exit editing mode if active
+    if (ModeContext.isEditing) {
+        actionDeselectNote();
+    }
+
+    // Open the password modal
+    const passwordModal = new PasswordModal();
+    passwordModal.open();
 }
 
 

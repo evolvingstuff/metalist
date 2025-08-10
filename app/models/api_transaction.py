@@ -140,7 +140,8 @@ def cache_note_on_content_update(target, value, oldvalue, initiator):
         from ..utils.encryption import decrypt
         
         try:
-            decrypted_content = decrypt(value)
+            # Use separate encryption fields for decryption
+            decrypted_content = decrypt(value, target.encryption_nonce, target.encryption_tag)
             cache_note(target.id, decrypted_content)
         except Exception as e:
             import logging
@@ -164,7 +165,8 @@ def cache_note_after_insert(mapper, connection, target):
         from ..utils.encryption import decrypt
         
         try:
-            decrypted_content = decrypt(target.content)
+            # Use separate encryption fields for decryption
+            decrypted_content = decrypt(target.content, target.encryption_nonce, target.encryption_tag)
             cache_note(target.id, decrypted_content)
         except Exception as e:
             import logging
