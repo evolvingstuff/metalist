@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from mako.lookup import TemplateLookup
 from sqlalchemy.orm import Session
-from .api import notes, dev
+from .api import notes, dev, auth
+from .api.middleware import AuthMiddleware
 from .core.config import VERSION
 from .models.database import Base, SafeSession
 from .api.dependencies import get_db
@@ -20,6 +21,19 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 Base.metadata.create_all(bind=SafeSession.get_engine())
+
+# Initialize app settings if needed
+try:
+    from .models.database import SessionLocal, AppSettings
+    db = SessionLocal(bind=SafeSession.get_engine())
+    settings = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    if not settings:
+        settings = AppSettings(id=1, encryption_enabled=False)
+        db.add(settings)
+        db.commit()
+    db.close()
+except Exception as e:
+    logger.error(f"Failed to initialize app settings: {e}")
 
 # Populate content cache on startup
 try:
@@ -50,6 +64,9 @@ class NoCacheStaticFiles(StarletteStaticFiles):
 # Add GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Add authentication middleware
+app.add_middleware(AuthMiddleware)
+
 # Mount static files with no-cache headers
 app.mount("/static", NoCacheStaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
@@ -59,6 +76,7 @@ templates = TemplateLookup(
     input_encoding="utf-8"
 )
 
+app.include_router(auth.router)
 app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
 app.include_router(dev.router, prefix="/dev", tags=["dev"])
 
