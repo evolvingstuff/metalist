@@ -19,13 +19,28 @@ export const Auth = {
      */
     async checkAuthStatus() {
         try {
-            const response = await fetch('/api/auth/status');
+            // Get stored token
+            const token = localStorage.getItem('auth_token');
+            console.log('[Auth] Checking status with token:', token ? token.substring(0, 10) + '...' : 'none');
+            
+            // Include token in request if we have one
+            const headers = {};
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            
+            const response = await fetch('/api/auth/status', { headers });
             const status = await response.json();
             
-            console.log('[Auth] Status:', status);
+            console.log('[Auth] Status response:', status);
             
             // If password is required and we're not authenticated, show login
             if (status.has_password && !status.authenticated) {
+                // Clear invalid token if we have one
+                if (token) {
+                    console.log('[Auth] Token is invalid, removing from storage');
+                    localStorage.removeItem('auth_token');
+                }
                 this.showLoginModal();
                 return false; // Block further initialization
             }
