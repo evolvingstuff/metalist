@@ -15,24 +15,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # Paths that don't require authentication
     PUBLIC_PATHS = [
         "/api/auth/login",
-        "/api/auth/status",
-        "/api/auth/settings/password/create",
-        "/api/dev/",  # Dev endpoints
-        "/static/",
+        "/api/auth/status", 
+        "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
-        "/",  # Main page
     ]
     
     async def dispatch(self, request: Request, call_next):
         """Check authentication for protected routes."""
         path = request.url.path
         
+        print(f"Middleware checking path: {path}")
+        
         # Skip authentication for public paths
         if any(path.startswith(public) for public in self.PUBLIC_PATHS):
-            return await call_next(request)
-        
-        # Skip for non-API routes (template rendering)
-        if not path.startswith("/api/"):
+            print(f"Path {path} is public, skipping auth")
             return await call_next(request)
         
         # Check if password is required
@@ -40,9 +36,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             db = next(get_db())
             auth = AuthService(db)
             
-            # If no password is set, allow access
-            if not auth.has_password():
+            # Special case: password creation endpoint is only public if no password exists
+            if path == "/api/auth/settings/password/create" and not auth.has_password():
+                print(f"Password creation allowed - no password set")
                 return await call_next(request)
+            
+            # If no password is set, allow all access
+            if not auth.has_password():
+                print(f"No password set, allowing {path}")
+                return await call_next(request)
+            
+            print(f"Password is set, checking auth for {path}")
             
             # Password is set, require authentication
             authorization = request.headers.get("authorization")

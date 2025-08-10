@@ -5,7 +5,7 @@ import json
 import os
 from typing import Optional, Dict, Any
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from app.core.config import PBKDF2_ITERATIONS
@@ -27,7 +27,7 @@ class EncryptionService:
         Returns:
             32-byte key suitable for AES-256
         """
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,  # 256 bits for AES-256
             salt=salt,

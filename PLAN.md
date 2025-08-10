@@ -170,12 +170,31 @@ class TokenService:
 - Auto-refresh token on valid requests (sliding window)
 - Return new token in response header if refreshed
 
+**CRITICAL: Public vs Protected Paths**
+When password/encryption is enabled:
+- PUBLIC paths (no auth required):
+  - `/api/auth/login` - to authenticate
+  - `/api/auth/status` - to check if password required
+  - `/api/auth/settings/password/create` - ONLY if no password exists
+  - `/static/*` - CSS/JS files for login page
+  - `/favicon.ico`
+- PROTECTED paths (auth required):
+  - ALL other API endpoints
+  - Main page `/` (should redirect to login)
+  - Any note-related endpoints
+
 ### Phase 4: Frontend Implementation
 
-#### 4.1 Login Modal
-- Create login screen for when no valid token exists
-- Simple password input field
-- Store token in localStorage on success
+#### 4.1 Login Page/Modal
+- Check `/api/auth/status` on page load
+- If `has_password: true` and `authenticated: false`:
+  - Show login modal/page
+  - Block access to notes
+- Simple password input field  
+- On successful login:
+  - Store token in localStorage
+  - Add token to all API requests as `Authorization: Bearer <token>`
+  - Reload notes with authentication
 
 #### 4.2 Password Management Modal (Cmd+P)
 - Detect current state:
@@ -274,14 +293,16 @@ PBKDF2_ITERATIONS = int(os.getenv('PBKDF2_ITERATIONS', 250000))
 
 ## Success Criteria
 
-- [ ] XOR code completely removed from codebase
-- [ ] All notes encrypted with AES-256-GCM when password is set
-- [ ] Multi-client token support with independent expiry (in-memory)
-- [ ] No password required for fresh installations
-- [ ] Password can be added, changed, or removed at any time
-- [ ] Token sliding window keeps active users logged in
+- [x] XOR code completely removed from codebase
+- [x] All notes encrypted with AES-256-GCM when password is set
+- [x] Multi-client token support with independent expiry (in-memory)
+- [x] No password required for fresh installations
+- [ ] Password can be added, changed, or removed at any time (backend done, needs UI)
+- [x] Token sliding window keeps active users logged in
 - [ ] SSE progress feedback during bulk encryption operations
-- [ ] Password strength check (stub returning len > 3)
+- [x] Password strength check (stub returning len > 3)
+- [ ] Middleware blocks all protected routes when password is set
+- [ ] Frontend shows login when authentication required
 - [ ] All tests passing
 - [ ] Security best practices followed
 
