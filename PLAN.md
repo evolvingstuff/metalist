@@ -376,12 +376,15 @@ This follows the complete modal architecture documented in `docs/modals.md`.
 - **HTTP method mismatch**: Password modal using wrong REST verbs
 
 ### 📋 REMAINING WORK:
-- **Token expiry testing**: Verify idle users are logged out after configured time
-- **SSE progress updates**: Real-time progress for bulk re-encryption (large note collections)
-- **Improved error handling**: Distinguish authentication vs network errors
-  - 401 responses (token expired, password changed elsewhere) → show login screen
-  - Network errors (server down, connectivity issues) → show error banner but keep interface visible
-  - Current partial implementation in api-client.js needs completion
+- **Token expiry behavior**: ✅ Fixed with unified polling and activity tracking
+  - Background requests don't refresh tokens (prevent false activity)
+  - User keyboard/mouse activity properly refreshes tokens
+  - Token expiry set to 30 minutes (reasonable for production)
+- **Bulk operations progress**: Maintenance mode with auto-retry instead of SSE
+  - Server redirects all requests to maintenance page during bulk operations
+  - Maintenance page auto-retries every 500ms until operation complete
+  - Simpler than SSE implementation, adequate for infrequent bulk operations
+- **Multi-client testing**: Test token expiry behavior across multiple browser sessions
 - **Documentation cleanup**: Update docs and remove obsolete references
 
 ### 🔒 SECURITY STATUS:
