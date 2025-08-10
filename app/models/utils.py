@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from .database import DBNote
 from ..utils.encryption import encrypt
-from ..services.content_cache import get_cached_content
+from ..services.content_cache import get_cached_content, cache_note
 
 
 def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:

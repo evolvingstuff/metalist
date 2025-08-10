@@ -1,5 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
+import { ErrorHandler } from '../../error-handler.js';
 
 let syncPollingInterval = null;
 
@@ -34,6 +35,9 @@ async function checkForUpdates() {
         });
         
         if (response.ok) {
+            // Connection is working - handle restoration if needed
+            ErrorHandler.handleConnectionRestored();
+            
             const data = await response.json();
             
             if (data.needsUpdate) {
@@ -49,12 +53,13 @@ async function checkForUpdates() {
                 const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
                 await actionRefreshAndMaybeSelect();
             }
+        } else {
+            // Use error handler for HTTP errors
+            ErrorHandler.handleApiError(null, response);
         }
     } catch (error) {
-        // Silently handle polling errors to avoid spam
-        // Only log unexpected errors
-        if (!error.message.includes('fetch')) {
-            Logger.logError('Sync polling error', error);
-        }
+        // Always show network errors immediately and loudly
+        ErrorHandler.handleApiError(error);
+        Logger.logError('Sync polling error', error);
     }
 }

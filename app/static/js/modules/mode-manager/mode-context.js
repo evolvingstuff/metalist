@@ -43,6 +43,10 @@ class ModeContext {
         
         // Editing heartbeat timer for dead client lock detection
         this._editingHeartbeatTimer = null;
+        
+        // Connection state tracking
+        this._isConnected = true;
+        this._connectionErrorBannerVisible = false;
     }
 
     setEditing(value) {
@@ -621,6 +625,44 @@ class ModeContext {
         } catch (error) {
             Logger.logError('Failed to send editing heartbeat', error);
         }
+    }
+    
+    // Connection state management
+    setConnected(connected) {
+        if (typeof connected !== 'boolean') {
+            throw new Error('connected must be a boolean');
+        }
+        
+        if (this._isConnected === connected) {
+            throw new Error(`Redundant state change: isConnected is already ${connected}`);
+        }
+        
+        Logger.logAction(`Connection state changed: ${connected ? 'connected' : 'disconnected'}`);
+        this._isConnected = connected;
+        this._notifyListeners('connectionState', connected);
+        
+        return this;
+    }
+    
+    get isConnected() {
+        return this._isConnected;
+    }
+    
+    setConnectionErrorBannerVisible(visible) {
+        if (typeof visible !== 'boolean') {
+            throw new Error('visible must be a boolean');
+        }
+        
+        if (this._connectionErrorBannerVisible === visible) {
+            throw new Error(`Redundant state change: connectionErrorBannerVisible is already ${visible}`);
+        }
+        
+        this._connectionErrorBannerVisible = visible;
+        return this;
+    }
+    
+    get connectionErrorBannerVisible() {
+        return this._connectionErrorBannerVisible;
     }
 }
 

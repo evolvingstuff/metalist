@@ -1,0 +1,303 @@
+/**
+ * BaseModal - Foundation class for all modal dialogs
+ * 
+ * Provides common functionality:
+ * - Clean state enforcement 
+ * - ModeContext integration
+ * - Event handling (Esc, click-outside)
+ * - Modal lifecycle management
+ */
+
+import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
+
+export class BaseModal {
+    constructor(modalName, modalElementId) {
+        if (!modalName) {
+            throw new Error('Modal name is required');
+        }
+        
+        this.modalName = modalName;
+        this.modalElementId = modalElementId || `${modalName}-modal`;
+        this.isOpen = false;
+        
+        // Bind event handlers
+        this.handleKeyDown = this.handleKeyDown.bind(this);
+        this.handleClickOutside = this.handleClickOutside.bind(this);
+    }
+    
+    /**
+     * Open the modal - validates clean state and initializes modal
+     */
+    open() {
+        if (this.isOpen) {
+            console.warn(`[BaseModal] ${this.modalName} is already open`);
+            return;
+        }
+        
+        // Enforce clean state requirement
+        this.validateCleanState();
+        
+        // Update ModeContext
+        this.addToModalStack();
+        this.initializeModalState();
+        
+        // Show modal UI
+        this.showModalElement();
+        
+        // Set up event listeners
+        this.setupEventListeners();
+        
+        // Call subclass hook
+        this.onOpen();
+        
+        this.isOpen = true;
+        console.log(`[BaseModal] ${this.modalName} opened`);
+    }
+    
+    /**
+     * Close the modal - cleanup and restore state
+     */
+    close() {
+        if (!this.isOpen) {
+            console.warn(`[BaseModal] ${this.modalName} is not open`);
+            return;
+        }
+        
+        // Call subclass hook
+        this.onClose();
+        
+        // Clean up event listeners
+        this.cleanupEventListeners();
+        
+        // Hide modal UI
+        this.hideModalElement();
+        
+        // Update ModeContext
+        this.removeModalState();
+        this.removeFromModalStack();
+        
+        this.isOpen = false;
+        console.log(`[BaseModal] ${this.modalName} closed`);
+    }
+    
+    /**
+     * Validate that application is in clean state before opening modal
+     * Throws error if dirty state detected
+     */
+    validateCleanState() {
+        const errors = [];
+        
+        // Check for editing state
+        if (ModeContext.currentNoteId) {
+            errors.push(`Cannot open modal while editing note (currentNoteId: ${ModeContext.currentNoteId})`);
+        }
+        
+        // Check for search state  
+        if (ModeContext.isSearching) {
+            errors.push('Cannot open modal while in search mode');
+        }
+        
+        // Check for loading state
+        if (ModeContext.isLoading) {
+            errors.push('Cannot open modal while application is loading');
+        }
+        
+        // Check if another modal is already open (unless we support stacking)
+        if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
+            errors.push(`Cannot open modal while ${ModeContext.modalStack[ModeContext.modalStack.length - 1]} is open`);
+        }
+        
+        if (errors.length > 0) {
+            throw new Error(`Modal opening blocked: ${errors.join(', ')}`);
+        }
+    }
+    
+    /**
+     * Add this modal to the modal stack
+     */
+    addToModalStack() {
+        if (!ModeContext.modalStack) {
+            ModeContext.modalStack = [];
+        }
+        ModeContext.modalStack.push(this.modalName);
+    }
+    
+    /**
+     * Remove this modal from the modal stack
+     */
+    removeFromModalStack() {
+        if (ModeContext.modalStack) {
+            const index = ModeContext.modalStack.indexOf(this.modalName);
+            if (index > -1) {
+                ModeContext.modalStack.splice(index, 1);
+            }
+        }
+    }
+    
+    /**
+     * Initialize modal-specific state in ModeContext
+     */
+    initializeModalState() {
+        if (!ModeContext.modalState) {
+            ModeContext.modalState = {};
+        }
+        ModeContext.modalState[this.modalName] = this.getInitialModalState();
+    }
+    
+    /**
+     * Remove modal-specific state from ModeContext
+     */
+    removeModalState() {
+        if (ModeContext.modalState && ModeContext.modalState[this.modalName]) {
+            delete ModeContext.modalState[this.modalName];
+        }
+    }
+    
+    /**
+     * Show the modal DOM element
+     */
+    showModalElement() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            throw new Error(`Modal element not found: ${this.modalElementId}`);
+        }
+        
+        modalElement.style.display = 'block';
+        
+        // Focus first focusable element
+        const firstFocusable = modalElement.querySelector('input, button, textarea, select');
+        if (firstFocusable) {
+            setTimeout(() => firstFocusable.focus(), 100);
+        }
+    }
+    
+    /**
+     * Hide the modal DOM element
+     */
+    hideModalElement() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (modalElement) {
+            modalElement.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Set up modal event listeners
+     */
+    setupEventListeners() {
+        document.addEventListener('keydown', this.handleKeyDown);
+        
+        // Click outside to close (optional, can be overridden)
+        if (this.shouldCloseOnClickOutside()) {
+            const modalElement = document.getElementById(this.modalElementId);
+            if (modalElement) {
+                modalElement.addEventListener('click', this.handleClickOutside);
+            }
+        }
+    }
+    
+    /**
+     * Clean up modal event listeners
+     */
+    cleanupEventListeners() {
+        document.removeEventListener('keydown', this.handleKeyDown);
+        
+        const modalElement = document.getElementById(this.modalElementId);
+        if (modalElement) {
+            modalElement.removeEventListener('click', this.handleClickOutside);
+        }
+    }
+    
+    /**
+     * Handle keydown events (Esc to close)
+     */
+    handleKeyDown(event) {
+        // Only handle events if this is the top modal
+        const topModal = ModeContext.modalStack?.[ModeContext.modalStack.length - 1];
+        if (topModal !== this.modalName) {
+            return;
+        }
+        
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            this.close();
+            return;
+        }
+        
+        // Pass to subclass for modal-specific handling
+        this.onKeyDown(event);
+    }
+    
+    /**
+     * Handle click outside modal content
+     */
+    handleClickOutside(event) {
+        const modalContent = event.currentTarget.querySelector('.modal-content');
+        if (modalContent && !modalContent.contains(event.target)) {
+            this.close();
+        }
+    }
+    
+    // Subclass hooks - override these in specific modals
+    
+    /**
+     * Get initial state for this modal
+     * Override in subclasses to provide modal-specific state
+     */
+    getInitialModalState() {
+        return {};
+    }
+    
+    /**
+     * Called after modal opens
+     * Override in subclasses for modal-specific initialization
+     */
+    onOpen() {
+        // Override in subclasses
+    }
+    
+    /**
+     * Called before modal closes
+     * Override in subclasses for modal-specific cleanup
+     */
+    onClose() {
+        // Override in subclasses
+    }
+    
+    /**
+     * Called for modal-specific keydown handling
+     * Override in subclasses for custom keyboard shortcuts
+     */
+    onKeyDown(event) {
+        // Override in subclasses
+    }
+    
+    /**
+     * Whether this modal should close when clicking outside
+     * Override in subclasses to disable click-outside closing
+     */
+    shouldCloseOnClickOutside() {
+        return true;
+    }
+    
+    /**
+     * Get current modal state from ModeContext
+     */
+    getModalState() {
+        return ModeContext.modalState?.[this.modalName] || {};
+    }
+    
+    /**
+     * Update modal state in ModeContext
+     */
+    updateModalState(updates) {
+        if (!ModeContext.modalState) {
+            ModeContext.modalState = {};
+        }
+        if (!ModeContext.modalState[this.modalName]) {
+            ModeContext.modalState[this.modalName] = {};
+        }
+        Object.assign(ModeContext.modalState[this.modalName], updates);
+    }
+}

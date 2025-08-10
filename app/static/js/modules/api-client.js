@@ -1,6 +1,7 @@
 import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
+import { ErrorHandler } from './error-handler.js';
 
 export const NotesAPI = {
                 
@@ -52,22 +53,22 @@ export const NotesAPI = {
             
             console.log('[API] Final headers:', headers);
 
+            // Add timeout for faster error detection
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+            
             const response = await fetch(url, {
                 ...options,
                 body: requestBody,
-                headers: headers
+                headers: headers,
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
-                // Handle 401 - show login
-                if (response.status === 401) {
-                    // Clear invalid token
-                    localStorage.removeItem('auth_token');
-                    // Show login (will be implemented)
-                    if (window.showLoginModal) {
-                        window.showLoginModal();
-                    }
-                }
+                // Use centralized error handling
+                ErrorHandler.handleApiError(null, response);
                 throw new Error(`API call failed: ${response.status} ${response.statusText}`);
             }
 
@@ -88,6 +89,13 @@ export const NotesAPI = {
             return data;
         } catch (error) {
             console.error(' [API] Error:', error);
+            
+            // Handle network errors (when fetch throws)
+            if (!error.message.includes('API call failed:')) {
+                // This is a network/connectivity error, not an HTTP error response
+                ErrorHandler.handleApiError(error);
+            }
+            
             throw error;
         }
     },

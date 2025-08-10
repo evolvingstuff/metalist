@@ -32,8 +32,17 @@ export async function actionSelectNote(noteId) {
         Logger.logDebug('Acquired lock for note', { noteId });
     } catch (error) {
         Logger.logError('Failed to acquire lock', error);
-        // If we can't get the lock, don't enter edit mode
-        alert('This note is being edited by another device');
+        // Check if it's a connection issue or an actual lock conflict
+        if (!ModeContext.isConnected) {
+            // Don't show alert - connection error banner is already visible
+            Logger.logDebug('Cannot acquire lock - server unavailable');
+        } else if (error.message && error.message.includes('409')) {
+            // Actual lock conflict
+            alert('This note is being edited by another device');
+        } else {
+            // Some other error
+            alert('Failed to acquire lock. Please try again.');
+        }
         ModeContext.setCurrentNoteId(null);
         return;
     }
@@ -127,7 +136,17 @@ export async function actionSwitchNotes(newNoteId) {
         Logger.logDebug('Acquired lock for new note', { noteId: newNoteId });
     } catch (error) {
         Logger.logError('Failed to acquire lock for new note', error);
-        alert('This note is being edited by another device');
+        // Check if it's a connection issue or an actual lock conflict
+        if (!ModeContext.isConnected) {
+            // Don't show alert - connection error banner is already visible
+            Logger.logDebug('Cannot acquire lock - server unavailable');
+        } else if (error.message && error.message.includes('409')) {
+            // Actual lock conflict
+            alert('This note is being edited by another device');
+        } else {
+            // Some other error
+            alert('Failed to acquire lock. Please try again.');
+        }
         return;
     }
 

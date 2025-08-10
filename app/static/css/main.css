@@ -3,6 +3,9 @@
     --bg-color: #ffffff;
     --text-color: #333333;
     --border-color: #dddddd;
+    --error-color: #dc3545;
+    --success-color: #28a745;
+    --info-color: #17a2b8;
 }
 
 /* Login Page Styles */
@@ -522,4 +525,77 @@ body.loading::after {
     background-color: #fff59d;
     color: inherit;
     border-radius: 2px;
+}
+
+/* Error Banner Styles */
+.error-banner {
+    position: fixed;
+    top: -100px;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    transition: transform 0.3s ease-in-out;
+    pointer-events: auto;
+}
+
+.error-banner.error-banner-visible {
+    transform: translateY(100px);
+}
+
+.error-banner-content {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    margin: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.error-banner-error .error-banner-content {
+    background-color: var(--error-color);
+    color: white;
+}
+
+.error-banner-success .error-banner-content {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.error-banner-info .error-banner-content {
+    background-color: var(--info-color);
+    color: white;
+}
+
+.error-banner-icon {
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+.error-banner-message {
+    flex: 1;
+}
+
+.error-banner-close {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-left: 12px;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    opacity: 0.8;
+}
+
+.error-banner-close:hover {
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.2);
 }

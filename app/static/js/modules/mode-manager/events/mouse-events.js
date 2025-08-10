@@ -33,6 +33,26 @@ function handleClick(event) {
         });
         return; 
     }
+    
+    // Check if we're disconnected from server
+    if (!ModeContext.isConnected) {
+        const noteContent = event.target.closest('.note-content');
+        const searchField = event.target.closest('#search-input');
+        const createButton = event.target.closest('.add-note');
+        
+        // Only allow certain actions when disconnected
+        if (noteContent || createButton) {
+            Logger.logNoop('Click event ignored while disconnected from server', {
+                eventType: event.type,
+                targetElement: event.target.tagName,
+                isConnected: false
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        // Allow clicking on search field even when disconnected
+    }
 
     const coordinates = {
         x: event.clientX,

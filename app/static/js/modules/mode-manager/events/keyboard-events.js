@@ -76,6 +76,35 @@ function handleKeyDown(event) {
             }
         }
     }
+    
+    // Check if we're disconnected from server for operations that need it
+    if (!ModeContext.isConnected) {
+        const needsServer = (
+            // Create/delete operations
+            (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
+            ((event.key === 'Backspace' || event.key === 'Delete') && (event.metaKey || event.ctrlKey)) ||
+            // Move operations
+            ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && (event.metaKey || event.ctrlKey)) ||
+            // Paste operations
+            (event.key === 'v' && (event.metaKey || event.ctrlKey)) ||
+            // Copy operations
+            (event.key === 'c' && (event.metaKey || event.ctrlKey)) ||
+            // Undo/redo
+            ((event.key === 'z' || event.key === 'y') && (event.metaKey || event.ctrlKey))
+        );
+        
+        if (needsServer) {
+            Logger.logNoop('Keyboard shortcut ignored while disconnected from server', {
+                key: event.key,
+                meta: event.metaKey || event.ctrlKey,
+                isConnected: false
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        // Allow ESC, search, and password modal even when disconnected
+    }
 
     switch (event.key) {
         case 'Escape':
