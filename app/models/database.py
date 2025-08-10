@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Integer
+from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Integer, Boolean, LargeBinary
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from datetime import datetime, timezone
 from app.core.config import DATABASE_URL
@@ -85,5 +85,21 @@ class DBNote(Base):
     prev_id = Column(String, ForeignKey('notes.id'), nullable=True)
     next_id = Column(String, ForeignKey('notes.id'), nullable=True)
     
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class AppSettings(Base):
+    __tablename__ = "app_settings"
+    
+    id = Column(Integer, primary_key=True, default=1)
+    
+    # Password/encryption settings
+    password_hash = Column(String, nullable=True)  # PBKDF2 hash of the master password (null = no password)
+    password_salt = Column(LargeBinary, nullable=True)  # Random salt for password hashing
+    encryption_enabled = Column(Boolean, default=False)  # Whether encryption is active
+    encryption_version = Column(Integer, nullable=True)  # Version of encryption algorithm (1 = AES-256-GCM)
+    
+    # Timestamps
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

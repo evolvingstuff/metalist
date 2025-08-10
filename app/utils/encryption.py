@@ -1,72 +1,119 @@
-"""Encryption utilities for note content.
+"""Compatibility layer for encryption utilities.
 
-Provides XOR-based encryption simulation for development and testing.
-Always call encrypt() and decrypt() functions regardless of config flag.
+This module provides backward compatibility for the old encryption interface.
+It now delegates to the new EncryptionService in app.services.encryption.
 """
 
-from ..core.config import ENABLE_ENCRYPTION, ENCRYPTION_KEY
+from typing import Optional
+from app.services.encryption import EncryptionService
+from app.services.auth import AuthService
+from app.models.database import get_db
+
+# Global encryption service instance
+_encryption_service: Optional[EncryptionService] = None
+
+
+def get_encryption_service() -> Optional[EncryptionService]:
+    """Get the global encryption service if password is set.
+    
+    Returns:
+        EncryptionService instance or None if no password is set
+    """
+    global _encryption_service
+    
+    if _encryption_service is None:
+        # Check if encryption is enabled in database
+        try:
+            db = next(get_db())
+            auth = AuthService(db)
+            settings = auth.get_settings()
+            
+            if settings and settings.encryption_enabled and settings.password_hash:
+                # Note: This requires the password to be set in the current session
+                # The actual key should be set when user logs in
+                _encryption_service = EncryptionService()
+        except:
+            pass
+    
+    return _encryption_service
 
 
 def encrypt(content: str) -> str:
     """Encrypt note content.
     
+    This is a compatibility function for the old interface.
+    
     Args:
         content: Plain text content to encrypt
         
     Returns:
-        Encrypted content (or passthrough if encryption disabled)
+        Encrypted content as JSON string or original if encryption not available
     """
-    if not ENABLE_ENCRYPTION:
-        return content
-        
     if not content:
         return content
-        
-    # Simple XOR encryption for simulation
-    key_bytes = ENCRYPTION_KEY.encode('utf-8')
-    content_bytes = content.encode('utf-8')
     
-    encrypted_bytes = bytearray()
-    for i, byte in enumerate(content_bytes):
-        key_byte = key_bytes[i % len(key_bytes)]
-        encrypted_bytes.append(byte ^ key_byte)
+    service = get_encryption_service()
+    if service and service.key:
+        try:
+            return service.encrypt_for_storage(content)
+        except:
+            # If encryption fails, return original
+            return content
     
-    # Convert to hex string for storage
-    return encrypted_bytes.hex()
+    # No encryption available, return as-is
+    return content
 
 
 def decrypt(encrypted_content: str) -> str:
     """Decrypt note content.
     
+    This is a compatibility function for the old interface.
+    
     Args:
         encrypted_content: Encrypted content to decrypt
         
     Returns:
-        Decrypted plain text content (or passthrough if encryption disabled)
+        Decrypted plain text content or original if decryption not available
     """
-    if not ENABLE_ENCRYPTION:
-        return encrypted_content
-        
     if not encrypted_content:
         return encrypted_content
-        
-    try:
-        # Convert from hex string back to bytes
-        encrypted_bytes = bytes.fromhex(encrypted_content)
-        
-        # Simple XOR decryption (same as encryption with XOR)
-        key_bytes = ENCRYPTION_KEY.encode('utf-8')
-        
-        decrypted_bytes = bytearray()
-        for i, byte in enumerate(encrypted_bytes):
-            key_byte = key_bytes[i % len(key_bytes)]
-            decrypted_bytes.append(byte ^ key_byte)
-        
-        return decrypted_bytes.decode('utf-8')
-        
-    except (ValueError, UnicodeDecodeError) as e:
-        # If decryption fails, log error and return original content
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Decryption failed for content: {encrypted_content[:50]}... Error: {e}")
-        return encrypted_content
+    
+    service = get_encryption_service()
+    if service and service.key:
+        try:
+            return service.decrypt_from_storage(encrypted_content)
+        except:
+            # If decryption fails, return original
+            return encrypted_content
+    
+    # No decryption available, return as-is
+    return encrypted_content
+
+
+def set_encryption_key(password: str, salt: bytes) -> None:
+    """Set the encryption key for the current session.
+    
+    This should be called after successful authentication.
+    
+    Args:
+        password: User's password
+        salt: Salt from database
+    """
+    global _encryption_service
+    
+    if _encryption_service is None:
+        _encryption_service = EncryptionService()
+    
+    _encryption_service.set_key(password, salt)
+
+
+def clear_encryption_key() -> None:
+    """Clear the encryption key from memory.
+    
+    This should be called on logout.
+    """
+    global _encryption_service
+    
+    if _encryption_service:
+        _encryption_service.clear_key()
+        _encryption_service = None
