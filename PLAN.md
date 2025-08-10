@@ -329,6 +329,27 @@ PBKDF2_ITERATIONS = int(os.getenv('PBKDF2_ITERATIONS', 250000))
 - [ ] All tests passing
 - [ ] Security best practices followed
 
+## MODAL ARCHITECTURE IMPLEMENTATION
+
+**📋 See [docs/modals.md](docs/modals.md) for complete modal architecture specification**
+
+### Password Modal Implementation Plan
+- **Three modes**: Create password / Change password / Remove password  
+- **Auto-detect mode** based on current auth status (`/api/auth/status`)
+- **Form validation** and API integration
+- **Progress indication** for bulk encryption operations
+- **Keyboard shortcut**: Cmd+P to open
+
+### Implementation Tasks
+1. Create BaseModal class with state enforcement
+2. Create PasswordModal extending BaseModal  
+3. Add Cmd+P keyboard shortcut handler
+4. Add ModeContext.modalStack and modalState support
+5. Implement three password management modes
+6. Add progress indication for bulk operations
+
+This follows the complete modal architecture documented in `docs/modals.md`.
+
 ## TESTING RESULTS (Latest)
 
 ### ✅ WORKING:
