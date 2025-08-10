@@ -58,19 +58,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Check if password is required
         try:
             db = next(get_db())
-            auth = AuthService(db)
-            
-            # Special case: password creation endpoint is only public if no password exists
-            if path == "/api/auth/settings/password/create" and not auth.has_password():
-                if not is_quiet:
-                    print(f"Password creation allowed - no password set")
-                return await call_next(request)
-            
-            # If no password is set, allow all access
-            if not auth.has_password():
-                if not is_quiet:
-                    print(f"No password set, allowing {path}")
-                return await call_next(request)
+            try:
+                auth = AuthService(db)
+                
+                # Special case: password creation endpoint is only public if no password exists
+                if path == "/api/auth/settings/password/create" and not auth.has_password():
+                    if not is_quiet:
+                        print(f"Password creation allowed - no password set")
+                    return await call_next(request)
+                
+                # If no password is set, allow all access
+                if not auth.has_password():
+                    if not is_quiet:
+                        print(f"No password set, allowing {path}")
+                    return await call_next(request)
+            finally:
+                db.close()  # Always close the database connection
             
             if not is_quiet:
                 print(f"Password is set, checking auth for {path}")

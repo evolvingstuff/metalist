@@ -92,10 +92,15 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
     # Generate a new ID for the note
     new_id = str(uuid.uuid4())
     
+    # Encrypt content before saving - get all three components
+    ciphertext, nonce, tag = encrypt(note_data["content"])
+    
     # Create the new note directly
     new_note = DBNote(
         id=new_id,
-        content=encrypt(note_data["content"]),  # Encrypt content before saving
+        content=ciphertext,  # Store only the ciphertext
+        encryption_nonce=nonce,  # Store nonce separately  
+        encryption_tag=tag,  # Store tag separately
         parent_id=new_parent_id,
         prev_id=None,  # Will be set later if needed
         next_id=None,  # Will be set later if needed
