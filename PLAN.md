@@ -378,6 +378,10 @@ This follows the complete modal architecture documented in `docs/modals.md`.
 ### 📋 REMAINING WORK:
 - **Token expiry testing**: Verify idle users are logged out after configured time
 - **SSE progress updates**: Real-time progress for bulk re-encryption (large note collections)
+- **Improved error handling**: Distinguish authentication vs network errors
+  - 401 responses (token expired, password changed elsewhere) → show login screen
+  - Network errors (server down, connectivity issues) → show error banner but keep interface visible
+  - Current partial implementation in api-client.js needs completion
 - **Documentation cleanup**: Update docs and remove obsolete references
 
 ### 🔒 SECURITY STATUS:
