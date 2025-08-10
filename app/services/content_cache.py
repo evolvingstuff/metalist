@@ -10,7 +10,7 @@ from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
 from ..models.database import DBNote
-from ..utils.encryption import decrypt
+from ..utils.encryption import get_encryption_service
 
 logger = logging.getLogger(__name__)
 
@@ -84,16 +84,80 @@ def populate_cache_from_db(db: Session) -> None:
         clear_cache()
         
         # Decrypt and cache each note's content
+        encryption_service = get_encryption_service()
+        
         for note in notes:
             if note.content:  # Skip empty content
-                decrypted_content = decrypt(note.content)
-                cache_note(note.id, decrypted_content)
+                try:
+                    # Handle both encrypted and unencrypted content
+                    if note.encryption_nonce is not None and note.encryption_tag is not None:
+                        # Encrypted content - decrypt using new separate fields approach
+                        if encryption_service and encryption_service.key:
+                            decrypted_content = encryption_service.decrypt_from_storage(
+                                note.content, note.encryption_nonce, note.encryption_tag
+                            )
+                        else:
+                            # No encryption key available, can't decrypt
+                            logger.warning(f"No encryption key available to decrypt note {note.id}")
+                            decrypted_content = f"[Encrypted content - login required]"
+                    else:
+                        # Unencrypted content
+                        decrypted_content = note.content
+                    
+                    cache_note(note.id, decrypted_content)
+                except Exception as e:
+                    logger.error(f"Failed to process note {note.id}: {e}")
+                    # Cache a placeholder for failed decryption
+                    cache_note(note.id, f"[Decryption failed: {str(e)}]")
         
         logger.info(f"Content cache populated with {len(notes)} notes")
         
     except Exception as e:
         logger.error(f"Failed to populate cache from database: {e}")
         raise
+
+
+def refresh_encrypted_cache(db: Session) -> None:
+    """Refresh cache for encrypted notes when encryption key becomes available.
+    
+    This should be called after user logs in and encryption key is set.
+    
+    Args:
+        db: Database session to read from
+    """
+    logger.info("Refreshing encrypted content in cache...")
+    
+    try:
+        encryption_service = get_encryption_service()
+        if not encryption_service or not encryption_service.key:
+            logger.warning("No encryption key available for cache refresh")
+            return
+        
+        # Get all notes that have encryption data
+        encrypted_notes = db.query(DBNote).filter(
+            DBNote.encryption_nonce.isnot(None),
+            DBNote.encryption_tag.isnot(None)
+        ).all()
+        
+        refreshed_count = 0
+        
+        for note in encrypted_notes:
+            if note.content:
+                try:
+                    # Decrypt using separate fields approach
+                    decrypted_content = encryption_service.decrypt_from_storage(
+                        note.content, note.encryption_nonce, note.encryption_tag
+                    )
+                    cache_note(note.id, decrypted_content)
+                    refreshed_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to refresh encrypted note {note.id}: {e}")
+                    cache_note(note.id, f"[Decryption failed: {str(e)}]")
+        
+        logger.info(f"Refreshed {refreshed_count} encrypted notes in cache")
+        
+    except Exception as e:
+        logger.error(f"Failed to refresh encrypted cache: {e}")
 
 
 def get_all_cached_notes() -> Dict[str, str]:

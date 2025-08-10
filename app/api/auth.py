@@ -10,6 +10,7 @@ from app.models.database import get_db
 from app.services.auth import AuthService
 from app.services.tokens import token_service
 from app.utils.encryption import set_encryption_key, clear_encryption_key
+from app.services.content_cache import refresh_encrypted_cache
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -114,9 +115,12 @@ async def login(
     # Set encryption key for this session
     set_encryption_key(login_req.password, settings.password_salt)
     
-    # Create token
+    # Refresh cache with decrypted content now that we have the key
+    refresh_encrypted_cache(db)
+    
+    # Create token with password and salt for encryption
     client_info = get_client_info(request)
-    token = token_service.create_token(client_info)
+    token = token_service.create_token(client_info, login_req.password, settings.password_salt)
     
     return LoginResponse(
         token=token,
@@ -150,7 +154,7 @@ async def auth_status(
         "authenticated": is_authenticated,
         "has_password": auth.has_password(),
         "encryption_enabled": settings.encryption_enabled if settings else False,
-        "encryption_version": settings.encryption_version if settings else None
+        "encryption_algorithm": settings.encryption_algorithm if settings else None
     }
 
 

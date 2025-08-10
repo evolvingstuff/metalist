@@ -26,10 +26,10 @@ CREATE TABLE app_settings (
     id INTEGER PRIMARY KEY,
     
     -- Password/encryption settings
-    password_hash TEXT,           -- PBKDF2 hash of the master password (null = no password)
-    password_salt BLOB,           -- Random salt for password hashing
-    encryption_enabled BOOLEAN,   -- Whether encryption is active
-    encryption_version INTEGER,   -- Version of encryption algorithm (1 = AES-256-GCM)
+    password_hash TEXT,             -- PBKDF2 hash of the master password (null = no password)
+    password_salt BLOB,             -- Random salt for password hashing
+    encryption_enabled BOOLEAN,     -- Whether encryption is active
+    encryption_algorithm TEXT,      -- Encryption algorithm (e.g., "AES-256-GCM")
     
     -- Other settings (future extensibility)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -37,8 +37,19 @@ CREATE TABLE app_settings (
 );
 ```
 
-### Notes Table Storage
-No schema changes needed - encrypted content stored as JSON in the existing `content` field.
+### Notes Table Changes
+Add separate fields for encryption data instead of JSON in content field:
+
+```sql
+ALTER TABLE notes ADD COLUMN encryption_nonce BLOB;     -- AES-GCM nonce (per note)
+ALTER TABLE notes ADD COLUMN encryption_tag BLOB;      -- AES-GCM authentication tag (per note)
+```
+
+**Storage approach:**
+- `content` field: stores either plaintext OR base64 ciphertext (no JSON)
+- `encryption_nonce`: stores the nonce for this specific note
+- `encryption_tag`: stores the authentication tag for this specific note
+- Algorithm determined by `app_settings.encryption_algorithm`
 
 ## Implementation Steps
 
@@ -185,16 +196,26 @@ When password/encryption is enabled:
 
 ### Phase 4: Frontend Implementation
 
-#### 4.1 Login Page/Modal
+#### 4.1 Login Page (NOT Modal)
 - Check `/api/auth/status` on page load
 - If `has_password: true` and `authenticated: false`:
-  - Show login modal/page
-  - Block access to notes
-- Simple password input field  
+  - Show FULL login page (not modal)
+  - Hide entire app interface until authenticated
+  - **CRITICAL**: Do NOT load any encrypted content in background
+- Simple password input field on clean page
 - On successful login:
   - Store token in localStorage
   - Add token to all API requests as `Authorization: Bearer <token>`
-  - Reload notes with authentication
+  - Initialize app and load notes
+
+**CRITICAL SECURITY REQUIREMENTS**: 
+1. **Server-side decryption ONLY**: Encrypted JSON structure must NEVER be sent to client
+2. **Authentication flow**:
+   - NOT authenticated AND password required → 401 error, no data
+   - Authenticated OR no password → plaintext content only
+3. **No encryption metadata exposure**: Client should never see nonces, tags, or any `{"ciphertext": "...", "nonce": "...", "tag": "..."}` structure
+4. **Server-side processing**: All encryption/decryption happens server-side before API response
+5. **App initialization blocking**: ModeManager blocked until authentication succeeds
 
 #### 4.2 Password Management Modal (Cmd+P)
 - Detect current state:
@@ -222,27 +243,23 @@ When password/encryption is enabled:
   - Set `encryption_enabled = false` in `app_settings`
   - No password required initially
 
-#### 5.2 Data Format Explanation
-Instead of storing just the encrypted string, store JSON with metadata in the content field:
+#### 5.2 Data Storage Approach
+Use separate database fields instead of JSON for better performance:
 
-**Why JSON format?**
-- **version**: Track encryption algorithm version for future changes
-- **algorithm**: Explicitly state which algorithm was used
-- **ciphertext**: The actual encrypted note content (base64 encoded)
-- **nonce**: The unique random value used for THIS specific note's encryption
-- **tag**: Authentication tag from AES-GCM to detect tampering
+**Notes table fields:**
+- `content`: Base64 encoded ciphertext (or plaintext if not encrypted)
+- `encryption_nonce`: Binary nonce data (unique per note)
+- `encryption_tag`: Binary authentication tag (unique per note)
 
-```json
-{
-  "version": 1,
-  "algorithm": "AES-256-GCM",
-  "ciphertext": "base64...",
-  "nonce": "base64...",
-  "tag": "base64..."
-}
-```
+**Global settings in `app_settings`:**
+- `encryption_algorithm`: Algorithm name (e.g., "AES-256-GCM") - stored once globally
+- `encryption_enabled`: Whether encryption is active
 
-This allows future algorithm changes while still being able to decrypt old notes.
+**Benefits:**
+- No JSON parsing overhead during decryption
+- More efficient storage (binary vs base64 for nonce/tag)
+- Cleaner separation of encrypted vs unencrypted content
+- Algorithm stored once globally, not repeated per note
 
 ### Phase 6: Testing & Security
 
@@ -280,16 +297,17 @@ PBKDF2_ITERATIONS = int(os.getenv('PBKDF2_ITERATIONS', 250000))
 
 ## Implementation Order
 
-1. **Install Dependencies & Config** (Phase 1)
-2. **Database Schema** (Create new tables)
-3. **Core Encryption Service** (Phase 2.1)
-4. **Auth & Token Services** (Phase 2.2, 2.3)
-5. **API Endpoints** (Phase 3)
-6. **Frontend Login Flow** (Phase 4.1, 4.3)
-7. **Password Management UI** (Phase 4.2)
-8. **SSE Progress Updates** (Phase 4.4)
-9. **Testing** (Phase 6)
-10. **Cleanup & Documentation** (Phase 7)
+1. **Install Dependencies & Config** (Phase 1) ✅
+2. **Database Schema** (Create new tables) ✅
+3. **Core Encryption Service** (Phase 2.1) ✅
+4. **Auth & Token Services** (Phase 2.2, 2.3) ✅
+5. **API Endpoints** (Phase 3) ✅
+6. **Frontend Login Flow** (Phase 4.1, 4.3) ✅
+7. **CRITICAL: Fix Server-side Decryption** - Notes API must decrypt before sending
+8. **Password Management UI** (Phase 4.2)
+9. **SSE Progress Updates** (Phase 4.4)
+10. **Testing** (Phase 6)
+11. **Cleanup & Documentation** (Phase 7)
 
 ## Success Criteria
 
@@ -301,8 +319,11 @@ PBKDF2_ITERATIONS = int(os.getenv('PBKDF2_ITERATIONS', 250000))
 - [x] Token sliding window keeps active users logged in
 - [ ] SSE progress feedback during bulk encryption operations
 - [x] Password strength check (stub returning len > 3)
-- [ ] Middleware blocks all protected routes when password is set
-- [ ] Frontend shows login when authentication required
+- [x] Middleware blocks all protected routes when password is set  
+- [x] Frontend shows FULL login page (not modal) when authentication required
+- [ ] **CRITICAL**: Server-side decryption - no encrypted JSON sent to client
+- [ ] Notes API endpoints decrypt content before sending to client
+- [x] App initialization blocked until authentication succeeds
 - [ ] All tests passing
 - [ ] Security best practices followed
 

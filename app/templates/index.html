@@ -1,19 +1,48 @@
 <%inherit file="base.html"/>
 
-<div class="global-controls">
-    <button class="menu-button interactive">≡</button>
+<!-- Login Page (full screen, not modal) -->
+<div id="login-page" class="login-page" style="display: none;">
+    <div class="login-container">
+        <h1>MetaList</h1>
+        <h2>Authentication Required</h2>
+        <form id="login-form">
+            <input type="password" id="login-password" placeholder="Enter password" autofocus>
+            <button type="submit">Login</button>
+            <div id="login-error" class="error-message" style="display: none;"></div>
+        </form>
+    </div>
 </div>
-<div id="tab-indicator">0</div>
-<div id="search-contexts-list"></div>
-<div id="app">
-    <div class="container">
-        <div class="controls">
-            <button class="add-note interactive">+</button>
-            <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes...">
-            <button id="trash-can" class="trash-can interactive" draggable="false">🗑️</button>
+
+<!-- Password Management Modal -->
+<div id="password-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2 id="password-modal-title">Password Management</h2>
+        <div id="password-modal-body">
+            <!-- Content will be dynamically inserted -->
         </div>
-        <div id="notes-container">
-            <%include file="notes_list.html"/>
+    </div>
+</div>
+
+<!-- Main App (hidden when login required) -->
+<div id="main-app" style="display: block;">
+    <div class="global-controls">
+        <button class="menu-button interactive">≡</button>
+    </div>
+    <div id="tab-indicator">0</div>
+    <div id="search-contexts-list"></div>
+    <div id="app">
+        <div class="container">
+            <div class="controls">
+                <button class="add-note interactive">+</button>
+                <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes...">
+                <button id="trash-can" class="trash-can interactive" draggable="false">🗑️</button>
+            </div>
+            <div id="notes-container">
+                % if not needs_auth and 'notes' in locals():
+                    <%include file="notes_list.html"/>
+                % endif
+            </div>
         </div>
     </div>
 </div>

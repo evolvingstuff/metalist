@@ -37,7 +37,7 @@ class AuthService:
             settings = AppSettings(
                 id=1,
                 encryption_enabled=False,
-                encryption_version=None
+                encryption_algorithm=None
             )
             self.db.add(settings)
             self.db.commit()
@@ -130,7 +130,7 @@ class AuthService:
         settings.password_salt = salt
         settings.password_hash = password_hash
         settings.encryption_enabled = True
-        settings.encryption_version = 1
+        settings.encryption_algorithm = "AES-256-GCM"
         
         # Set encryption key for this session
         self.encryption.set_key(password, salt)
@@ -140,21 +140,17 @@ class AuthService:
         encrypted_count = 0
         
         for note in notes:
-            if note.content:
-                # Only encrypt if not already encrypted
+            if note.content and note.encryption_nonce is None:
+                # Only encrypt if not already encrypted (no nonce means unencrypted)
                 try:
-                    # Check if already encrypted by trying to parse as JSON
-                    import json
-                    data = json.loads(note.content)
-                    if isinstance(data, dict) and "algorithm" in data:
-                        continue  # Already encrypted
-                except:
-                    pass  # Not JSON, needs encryption
-                
-                # Encrypt the content
-                encrypted_content = self.encryption.encrypt_for_storage(note.content)
-                note.content = encrypted_content
-                encrypted_count += 1
+                    # Encrypt the content using separate field approach
+                    ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(note.content)
+                    note.content = ciphertext_base64
+                    note.encryption_nonce = nonce_bytes
+                    note.encryption_tag = tag_bytes
+                    encrypted_count += 1
+                except Exception as e:
+                    print(f"Failed to encrypt note {note.id}: {e}")
         
         self.db.commit()
         
@@ -197,13 +193,15 @@ class AuthService:
         re_encrypted_count = 0
         
         for note in notes:
-            if note.content:
+            if note.content and note.encryption_nonce is not None:
                 try:
-                    # Decrypt with old password
-                    plaintext = self.encryption.decrypt_from_storage(note.content)
+                    # Decrypt with old password using separate fields
+                    plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
                     # Re-encrypt with new password
-                    encrypted_content = new_encryption.encrypt_for_storage(plaintext)
-                    note.content = encrypted_content
+                    ciphertext_base64, nonce_bytes, tag_bytes = new_encryption.encrypt_for_storage(plaintext)
+                    note.content = ciphertext_base64
+                    note.encryption_nonce = nonce_bytes
+                    note.encryption_tag = tag_bytes
                     re_encrypted_count += 1
                 except Exception as e:
                     # Log error but continue
@@ -246,11 +244,14 @@ class AuthService:
         decrypted_count = 0
         
         for note in notes:
-            if note.content:
+            if note.content and note.encryption_nonce is not None:
                 try:
-                    # Decrypt the content
-                    plaintext = self.encryption.decrypt_from_storage(note.content)
+                    # Decrypt the content using separate fields
+                    plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
                     note.content = plaintext
+                    # Clear encryption fields
+                    note.encryption_nonce = None
+                    note.encryption_tag = None
                     decrypted_count += 1
                 except Exception as e:
                     # Log error but continue
@@ -260,7 +261,7 @@ class AuthService:
         settings.password_salt = None
         settings.password_hash = None
         settings.encryption_enabled = False
-        settings.encryption_version = None
+        settings.encryption_algorithm = None
         
         self.db.commit()
         

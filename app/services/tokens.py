@@ -25,11 +25,13 @@ class TokenService:
         """
         return hashlib.sha256(token.encode()).hexdigest()
     
-    def create_token(self, client_info: str) -> str:
+    def create_token(self, client_info: str, password: str = None, salt: bytes = None) -> str:
         """Generate new authentication token for client.
         
         Args:
             client_info: Information about the client (user agent, IP, etc.)
+            password: User's password (stored in memory for encryption)
+            salt: Salt for key derivation (stored in memory for encryption)
             
         Returns:
             New authentication token
@@ -38,12 +40,14 @@ class TokenService:
         token = secrets.token_urlsafe(32)
         token_hash = self._hash_token(token)
         
-        # Store token info
+        # Store token info including password for encryption
         self.tokens[token_hash] = {
             "client_info": client_info,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRY_MINUTES),
-            "last_activity": datetime.now(timezone.utc)
+            "last_activity": datetime.now(timezone.utc),
+            "password": password,  # Store in memory for encryption
+            "salt": salt  # Store salt for key derivation
         }
         
         # Clean up expired tokens periodically
@@ -166,6 +170,26 @@ class TokenService:
             info = self.tokens[token_hash].copy()
             # Don't expose the hash
             return info
+        
+        return None
+    
+    def get_encryption_info(self, token: str) -> Optional[tuple[str, bytes]]:
+        """Get encryption password and salt for a valid token.
+        
+        Args:
+            token: Token to get encryption info for
+            
+        Returns:
+            Tuple of (password, salt) or None if not found/invalid
+        """
+        if not self.verify_token(token):
+            return None
+            
+        token_hash = self._hash_token(token)
+        token_info = self.tokens.get(token_hash)
+        
+        if token_info and token_info.get("password") and token_info.get("salt"):
+            return token_info["password"], token_info["salt"]
         
         return None
     

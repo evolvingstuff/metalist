@@ -1,23 +1,36 @@
 import { ModeManager } from './modules/mode-manager/mode-manager-controller.js';
 import { CONFIG } from './modules/config.js';
 import { DOMUtils } from './modules/dom-utils.js';
+import { Auth } from './modules/auth.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
 
-    console.log('+++ main.js: About to initialize ModeManager');
+    // Make ModeManager available globally for post-login initialization
+    window.ModeManager = ModeManager;
 
+    // Initialize authentication first
+    console.log('+++ main.js: About to initialize Auth');
     try {
-                                
-        if (!ModeManager) {
-            console.error('+++ main.js: ModeManager not defined!');
+        const isAuthOk = await Auth.init();
+        console.log('+++ main.js: Auth init() completed, authOk:', isAuthOk);
+        
+        // Only initialize ModeManager if auth is OK
+        if (isAuthOk) {
+            console.log('+++ main.js: About to initialize ModeManager');
+            
+            if (!ModeManager) {
+                console.error('+++ main.js: ModeManager not defined!');
+            } else {
+                console.log('+++ main.js: ModeManager exists, calling init()');
+                ModeManager.init();
+                console.log('+++ main.js: ModeManager init() completed');
+            }
         } else {
-            console.log('+++ main.js: ModeManager exists, calling init()');
-            ModeManager.init();
-            console.log('+++ main.js: ModeManager init() completed');
+            console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
         }
     } catch (error) {
-        console.error('+++ main.js: Error initializing ModeManager:', error);
+        console.error('+++ main.js: Error initializing:', error);
     }
 
     document.addEventListener('focus', (e) => {

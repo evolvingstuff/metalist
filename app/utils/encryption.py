@@ -38,39 +38,41 @@ def get_encryption_service() -> Optional[EncryptionService]:
     return _encryption_service
 
 
-def encrypt(content: str) -> str:
+def encrypt(content: str) -> tuple[str, bytes, bytes]:
     """Encrypt note content.
     
-    This is a compatibility function for the old interface.
+    This is a compatibility function for the old interface, now returning separate fields.
     
     Args:
         content: Plain text content to encrypt
         
     Returns:
-        Encrypted content as JSON string or original if encryption not available
+        Tuple of (ciphertext_base64, nonce_bytes, tag_bytes) or (content, None, None) if no encryption
     """
     if not content:
-        return content
+        return content, None, None
     
     service = get_encryption_service()
     if service and service.key:
         try:
             return service.encrypt_for_storage(content)
         except:
-            # If encryption fails, return original
-            return content
+            # If encryption fails, return original with no encryption fields
+            return content, None, None
     
     # No encryption available, return as-is
-    return content
+    return content, None, None
 
 
-def decrypt(encrypted_content: str) -> str:
+def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None) -> str:
     """Decrypt note content.
     
-    This is a compatibility function for the old interface.
+    This is a compatibility function for the old interface, now using separate fields.
     
     Args:
-        encrypted_content: Encrypted content to decrypt
+        encrypted_content: Encrypted content to decrypt or plain text
+        nonce: Nonce bytes (None if not encrypted)
+        tag: Tag bytes (None if not encrypted)
         
     Returns:
         Decrypted plain text content or original if decryption not available
@@ -78,10 +80,14 @@ def decrypt(encrypted_content: str) -> str:
     if not encrypted_content:
         return encrypted_content
     
+    # If no nonce/tag, assume unencrypted content
+    if nonce is None or tag is None:
+        return encrypted_content
+    
     service = get_encryption_service()
     if service and service.key:
         try:
-            return service.decrypt_from_storage(encrypted_content)
+            return service.decrypt_from_storage(encrypted_content, nonce, tag)
         except:
             # If decryption fails, return original
             return encrypted_content

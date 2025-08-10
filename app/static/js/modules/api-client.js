@@ -34,16 +34,40 @@ export const NotesAPI = {
                 headers: options.headers
             });
 
+            // Add auth token if it exists
+            const authToken = localStorage.getItem('auth_token');
+            console.log('[API] Auth token from localStorage:', authToken ? 'EXISTS' : 'NOT FOUND');
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+                console.log('[API] Added Authorization header');
+            } else {
+                console.log('[API] No auth token, no Authorization header added');
+            }
+            
+            console.log('[API] Final headers:', headers);
+
             const response = await fetch(url, {
                 ...options,
                 body: requestBody,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers
-                }
+                headers: headers
             });
 
             if (!response.ok) {
+                // Handle 401 - show login
+                if (response.status === 401) {
+                    // Clear invalid token
+                    localStorage.removeItem('auth_token');
+                    // Show login (will be implemented)
+                    if (window.showLoginModal) {
+                        window.showLoginModal();
+                    }
+                }
                 throw new Error(`API call failed: ${response.status} ${response.statusText}`);
             }
 

@@ -22,12 +22,20 @@ class NoteCRUD:
             ).first()
 
             # Create new note with both linked list and position fields
+            # Encrypt empty content using new separate field approach
+            ciphertext, nonce, tag = encrypt("")
             db_note = DBNote(
                 id=note_id,
-                content=encrypt(""),  # Encrypt empty content
+                content=ciphertext,
+                encryption_nonce=nonce,
+                encryption_tag=tag,
                 parent_id=parent_id
             )
             db.add(db_note)
+            
+            # Update content cache with plaintext for search
+            from ..services.content_cache import cache_note
+            cache_note(note_id, "")
 
             # Update linked list pointers if there's an existing head
             if first_note and first_note.id != note_id:
@@ -48,8 +56,18 @@ class NoteCRUD:
 
     @staticmethod
     def update_note(db: Session, note_id: str, content: str):
+        from ..services.content_cache import cache_note
+        
         db_note = NoteCRUD.get_note(db, note_id)
-        db_note.content = encrypt(content)  # Encrypt content before saving
+        
+        # Encrypt content using new separate field approach
+        ciphertext, nonce, tag = encrypt(content)
+        db_note.content = ciphertext
+        db_note.encryption_nonce = nonce
+        db_note.encryption_tag = tag
+        
+        # Update content cache with plaintext for search
+        cache_note(note_id, content)
 
     @staticmethod
     def delete_note(db: Session, note_id: str) -> None:
@@ -70,9 +88,13 @@ class NoteCRUD:
 
             # Delete all descendants first
             descendant_ids = get_all_descendant_ids(note_id)
+            from ..services.content_cache import remove_cached_note
+            
             for descendant_id in descendant_ids:
                 descendant = db.get(DBNote, descendant_id)
                 db.delete(descendant)
+                # Remove from cache
+                remove_cached_note(descendant_id)
 
             # Update links of surrounding notes at the original note's level
             if note.prev_id:
@@ -84,6 +106,8 @@ class NoteCRUD:
 
             # Delete the original note
             db.delete(note)
+            # Remove from cache
+            remove_cached_note(note_id)
         except Exception as e:
             print(e)
             raise

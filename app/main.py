@@ -97,12 +97,29 @@ async def log_requests(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
     try:
+        from .services.auth import AuthService
+        
         template = templates.get_template("index.html")
         
-        # Start with empty notes - JavaScript will load them based on localStorage
-        notes = []
+        # Check if authentication is required
+        auth = AuthService(db)
+        needs_auth = auth.has_password()
         
-        return template.render(request=request, notes=notes, version=VERSION)
+        # If authentication is required, don't send any notes data
+        if needs_auth:
+            return template.render(
+                request=request, 
+                version=VERSION,
+                needs_auth=True
+            )
+        else:
+            # No password required - send empty notes (JavaScript will load them)
+            return template.render(
+                request=request, 
+                notes=[], 
+                version=VERSION,
+                needs_auth=False
+            )
     except Exception as e:
         logger.exception("Error in home route")
         raise

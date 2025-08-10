@@ -49,19 +49,14 @@ class EncryptionService:
         """Clear the encryption key from memory."""
         self.key = None
     
-    def encrypt(self, plaintext: str) -> Dict[str, Any]:
+    def encrypt(self, plaintext: str) -> tuple[str, bytes, bytes]:
         """Encrypt plaintext using AES-256-GCM.
         
         Args:
             plaintext: Plain text content to encrypt
             
         Returns:
-            Dictionary containing encrypted data:
-                - version: Encryption version (1)
-                - algorithm: "AES-256-GCM"
-                - ciphertext: Base64 encoded encrypted content
-                - nonce: Base64 encoded nonce
-                - tag: Base64 encoded authentication tag
+            Tuple of (ciphertext_base64, nonce_bytes, tag_bytes) for separate DB storage
                 
         Raises:
             ValueError: If no encryption key is set
@@ -87,45 +82,34 @@ class EncryptionService:
         # Get the authentication tag
         tag = encryptor.tag
         
-        # Return as dictionary with base64 encoded values
-        return {
-            "version": 1,
-            "algorithm": "AES-256-GCM",
-            "ciphertext": base64.b64encode(ciphertext).decode('utf-8'),
-            "nonce": base64.b64encode(nonce).decode('utf-8'),
-            "tag": base64.b64encode(tag).decode('utf-8')
-        }
+        # Return for separate database field storage
+        return (
+            base64.b64encode(ciphertext).decode('utf-8'),  # ciphertext as base64 string
+            nonce,  # nonce as bytes
+            tag     # tag as bytes
+        )
     
-    def decrypt(self, encrypted_data: Dict[str, Any]) -> str:
-        """Decrypt AES-256-GCM encrypted data.
+    def decrypt(self, ciphertext_base64: str, nonce: bytes, tag: bytes) -> str:
+        """Decrypt AES-256-GCM encrypted data from separate database fields.
         
         Args:
-            encrypted_data: Dictionary containing encrypted data
+            ciphertext_base64: Base64 encoded ciphertext
+            nonce: Nonce bytes
+            tag: Authentication tag bytes
             
         Returns:
             Decrypted plain text content
             
         Raises:
-            ValueError: If no encryption key is set or data format is invalid
+            ValueError: If no encryption key is set
             Exception: If decryption fails (wrong password or corrupted data)
         """
         if not self.key:
             raise ValueError("No encryption key set")
             
-        # Validate data format
-        if not isinstance(encrypted_data, dict):
-            raise ValueError("Invalid encrypted data format")
-            
-        required_fields = ["ciphertext", "nonce", "tag"]
-        for field in required_fields:
-            if field not in encrypted_data:
-                raise ValueError(f"Missing required field: {field}")
-        
         try:
-            # Decode from base64
-            ciphertext = base64.b64decode(encrypted_data["ciphertext"])
-            nonce = base64.b64decode(encrypted_data["nonce"])
-            tag = base64.b64decode(encrypted_data["tag"])
+            # Decode ciphertext from base64
+            ciphertext = base64.b64decode(ciphertext_base64)
             
             # Create cipher with tag
             cipher = Cipher(
@@ -151,37 +135,31 @@ class EncryptionService:
         """
         return os.urandom(32)
     
-    def encrypt_for_storage(self, plaintext: str) -> str:
-        """Encrypt plaintext and return as JSON string for database storage.
+    def encrypt_for_storage(self, plaintext: str) -> tuple[str, bytes, bytes]:
+        """Encrypt plaintext for storage in separate database fields.
         
         Args:
             plaintext: Plain text content to encrypt
             
         Returns:
-            JSON string containing encrypted data
+            Tuple of (ciphertext_base64, nonce_bytes, tag_bytes) for separate DB storage
         """
-        encrypted_dict = self.encrypt(plaintext)
-        return json.dumps(encrypted_dict)
+        return self.encrypt(plaintext)
     
-    def decrypt_from_storage(self, stored_content: str) -> str:
+    def decrypt_from_storage(self, content: str, nonce: bytes = None, tag: bytes = None) -> str:
         """Decrypt content from database storage format.
         
         Args:
-            stored_content: JSON string or plain text from database
+            content: Base64 ciphertext or plain text from database
+            nonce: Nonce bytes (None if not encrypted)
+            tag: Tag bytes (None if not encrypted)
             
         Returns:
             Decrypted content or original if not encrypted
         """
-        try:
-            # Try to parse as JSON
-            encrypted_data = json.loads(stored_content)
+        # If no nonce/tag, assume it's unencrypted plaintext
+        if nonce is None or tag is None:
+            return content
             
-            # Check if it's our encryption format
-            if isinstance(encrypted_data, dict) and "algorithm" in encrypted_data:
-                return self.decrypt(encrypted_data)
-            else:
-                # Not our format, return as-is
-                return stored_content
-        except (json.JSONDecodeError, ValueError):
-            # Not JSON, return as-is (unencrypted content)
-            return stored_content
+        # Otherwise decrypt using separate parameters
+        return self.decrypt(content, nonce, tag)

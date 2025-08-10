@@ -80,6 +80,10 @@ class DBNote(Base):
     id = Column(String, primary_key=True)
     content = Column(String)
     
+    # Encryption fields
+    encryption_nonce = Column(LargeBinary, nullable=True)  # AES-GCM nonce (per note)
+    encryption_tag = Column(LargeBinary, nullable=True)   # AES-GCM authentication tag (per note)
+    
     # Old fields for linked list implementation
     parent_id = Column(String, ForeignKey('notes.id'), nullable=True)
     prev_id = Column(String, ForeignKey('notes.id'), nullable=True)
@@ -98,7 +102,7 @@ class AppSettings(Base):
     password_hash = Column(String, nullable=True)  # PBKDF2 hash of the master password (null = no password)
     password_salt = Column(LargeBinary, nullable=True)  # Random salt for password hashing
     encryption_enabled = Column(Boolean, default=False)  # Whether encryption is active
-    encryption_version = Column(Integer, nullable=True)  # Version of encryption algorithm (1 = AES-256-GCM)
+    encryption_algorithm = Column(String, nullable=True)  # Encryption algorithm (e.g., "AES-256-GCM")
     
     # Timestamps
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

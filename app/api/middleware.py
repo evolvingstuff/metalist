@@ -18,7 +18,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/auth/status", 
         "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
+        "/",  # Main page (needs to load to show login modal)
     ]
+    
+    # Note: /api/notes/* paths are NOT in this list - they require auth when password is set
     
     async def dispatch(self, request: Request, call_next):
         """Check authentication for protected routes."""
@@ -27,9 +30,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
         print(f"Middleware checking path: {path}")
         
         # Skip authentication for public paths
-        if any(path.startswith(public) for public in self.PUBLIC_PATHS):
-            print(f"Path {path} is public, skipping auth")
+        public_match = None
+        for public in self.PUBLIC_PATHS:
+            if path.startswith(public):
+                public_match = public
+                break
+                
+        if public_match:
+            print(f"Path {path} is public (matched '{public_match}'), skipping auth")
             return await call_next(request)
+        
+        print(f"Path {path} is NOT public, checking auth")
         
         # Check if password is required
         try:
@@ -77,12 +88,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Refresh token (sliding window)
             token_service.refresh_token(token)
             
-            # Set encryption key if not already set
-            settings = auth.get_settings()
-            if settings and settings.encryption_enabled:
-                # Note: This requires the password to be stored in token info
-                # For now, encryption key must be set at login
-                pass
+            # Set encryption key for this request
+            encryption_info = token_service.get_encryption_info(token)
+            print(f"[Middleware] Got encryption info: {encryption_info is not None}")
+            if encryption_info:
+                password, salt = encryption_info
+                print(f"[Middleware] Setting encryption key for path: {path}")
+                set_encryption_key(password, salt)
+            else:
+                print(f"[Middleware] No encryption info found for token")
             
             # Continue with request
             response = await call_next(request)
