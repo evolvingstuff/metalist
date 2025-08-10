@@ -1,10 +1,11 @@
 """Authentication middleware for API requests."""
 
 from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.services.tokens import token_service
 from app.services.auth import AuthService
+from app.services.maintenance_mode import maintenance_service
 from app.models.database import get_db
 from app.utils.encryption import set_encryption_key
 
@@ -40,6 +41,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Check authentication for protected routes."""
         path = request.url.path
+        
+        # Check if maintenance mode is active first
+        if maintenance_service.is_active():
+            # Allow access to maintenance page itself
+            if path == "/maintenance":
+                return await call_next(request)
+            
+            # Redirect all other requests to maintenance page
+            return RedirectResponse(url="/maintenance", status_code=302)
         
         # Check if this is a quiet path (suppress verbose logging)
         is_quiet = any(path.startswith(quiet) for quiet in self.QUIET_PATHS)

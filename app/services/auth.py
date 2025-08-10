@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 from app.core.config import PBKDF2_ITERATIONS
 from app.models.database import AppSettings, DBNote
+from app.services.maintenance_mode import maintenance_service
 from app.services.encryption import EncryptionService
 
 
@@ -135,24 +136,31 @@ class AuthService:
         # Set encryption key for this session
         self.encryption.set_key(password, salt)
         
-        # Encrypt all existing notes
-        notes = self.db.query(DBNote).all()
-        encrypted_count = 0
+        # Enter maintenance mode for bulk encryption
+        maintenance_service.enter_maintenance("Encrypting all notes with new password")
         
-        for note in notes:
-            if note.content and note.encryption_nonce is None:
-                # Only encrypt if not already encrypted (no nonce means unencrypted)
-                try:
-                    # Encrypt the content using separate field approach
-                    ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(note.content)
-                    note.content = ciphertext_base64
-                    note.encryption_nonce = nonce_bytes
-                    note.encryption_tag = tag_bytes
-                    encrypted_count += 1
-                except Exception as e:
-                    print(f"Failed to encrypt note {note.id}: {e}")
-        
-        self.db.commit()
+        try:
+            # Encrypt all existing notes
+            notes = self.db.query(DBNote).all()
+            encrypted_count = 0
+            
+            for note in notes:
+                if note.content and note.encryption_nonce is None:
+                    # Only encrypt if not already encrypted (no nonce means unencrypted)
+                    try:
+                        # Encrypt the content using separate field approach
+                        ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(note.content)
+                        note.content = ciphertext_base64
+                        note.encryption_nonce = nonce_bytes
+                        note.encryption_tag = tag_bytes
+                        encrypted_count += 1
+                    except Exception as e:
+                        print(f"Failed to encrypt note {note.id}: {e}")
+            
+            self.db.commit()
+        finally:
+            # Always exit maintenance mode
+            maintenance_service.exit_maintenance()
         
         return True, f"Password set successfully. Encrypted {encrypted_count} notes."
     
@@ -188,30 +196,37 @@ class AuthService:
         new_encryption = EncryptionService()
         new_encryption.set_key(new_password, new_salt)
         
-        # Re-encrypt all notes
-        notes = self.db.query(DBNote).all()
-        re_encrypted_count = 0
+        # Enter maintenance mode for bulk re-encryption
+        maintenance_service.enter_maintenance("Re-encrypting all notes with new password")
         
-        for note in notes:
-            if note.content and note.encryption_nonce is not None:
-                try:
-                    # Decrypt with old password using separate fields
-                    plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
-                    # Re-encrypt with new password
-                    ciphertext_base64, nonce_bytes, tag_bytes = new_encryption.encrypt_for_storage(plaintext)
-                    note.content = ciphertext_base64
-                    note.encryption_nonce = nonce_bytes
-                    note.encryption_tag = tag_bytes
-                    re_encrypted_count += 1
-                except Exception as e:
-                    # Log error but continue
-                    print(f"Failed to re-encrypt note {note.id}: {e}")
-        
-        # Update settings with new password
-        settings.password_salt = new_salt
-        settings.password_hash = new_password_hash
-        
-        self.db.commit()
+        try:
+            # Re-encrypt all notes
+            notes = self.db.query(DBNote).all()
+            re_encrypted_count = 0
+            
+            for note in notes:
+                if note.content and note.encryption_nonce is not None:
+                    try:
+                        # Decrypt with old password using separate fields
+                        plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
+                        # Re-encrypt with new password
+                        ciphertext_base64, nonce_bytes, tag_bytes = new_encryption.encrypt_for_storage(plaintext)
+                        note.content = ciphertext_base64
+                        note.encryption_nonce = nonce_bytes
+                        note.encryption_tag = tag_bytes
+                        re_encrypted_count += 1
+                    except Exception as e:
+                        # Log error but continue
+                        print(f"Failed to re-encrypt note {note.id}: {e}")
+            
+            # Update settings with new password
+            settings.password_salt = new_salt
+            settings.password_hash = new_password_hash
+            
+            self.db.commit()
+        finally:
+            # Always exit maintenance mode
+            maintenance_service.exit_maintenance()
         
         # Clear old key and set new one
         self.encryption.clear_key()
@@ -239,33 +254,40 @@ class AuthService:
         # Set up decryption
         self.encryption.set_key(current_password, settings.password_salt)
         
-        # Decrypt all notes
-        notes = self.db.query(DBNote).all()
-        decrypted_count = 0
+        # Enter maintenance mode for bulk decryption
+        maintenance_service.enter_maintenance("Decrypting all notes (removing password protection)")
         
-        for note in notes:
-            if note.content and note.encryption_nonce is not None:
-                try:
-                    # Decrypt the content using separate fields
-                    plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
-                    note.content = plaintext
-                    # Clear encryption fields
-                    note.encryption_nonce = None
-                    note.encryption_tag = None
-                    decrypted_count += 1
-                except Exception as e:
-                    # Log error but continue
-                    print(f"Failed to decrypt note {note.id}: {e}")
-        
-        # Clear password from settings
-        settings.password_salt = None
-        settings.password_hash = None
-        settings.encryption_enabled = False
-        settings.encryption_algorithm = None
-        
-        self.db.commit()
-        
-        # Clear encryption key
-        self.encryption.clear_key()
+        try:
+            # Decrypt all notes
+            notes = self.db.query(DBNote).all()
+            decrypted_count = 0
+            
+            for note in notes:
+                if note.content and note.encryption_nonce is not None:
+                    try:
+                        # Decrypt the content using separate fields
+                        plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
+                        note.content = plaintext
+                        # Clear encryption fields
+                        note.encryption_nonce = None
+                        note.encryption_tag = None
+                        decrypted_count += 1
+                    except Exception as e:
+                        # Log error but continue
+                        print(f"Failed to decrypt note {note.id}: {e}")
+            
+            # Clear password from settings
+            settings.password_salt = None
+            settings.password_hash = None
+            settings.encryption_enabled = False
+            settings.encryption_algorithm = None
+            
+            self.db.commit()
+            
+            # Clear encryption key
+            self.encryption.clear_key()
+        finally:
+            # Always exit maintenance mode
+            maintenance_service.exit_maintenance()
         
         return True, f"Password removed successfully. Decrypted {decrypted_count} notes."

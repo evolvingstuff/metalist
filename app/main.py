@@ -123,3 +123,31 @@ async def home(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         logger.exception("Error in home route")
         raise
+
+
+@app.get("/maintenance", response_class=HTMLResponse)
+async def maintenance_page(request: Request):
+    """Maintenance mode page shown during bulk operations."""
+    try:
+        template = templates.get_template("maintenance.html")
+        return template.render(request=request)
+    except Exception as e:
+        logger.exception("Error in maintenance route")
+        # Fallback: simple HTML response
+        return HTMLResponse(content="""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Processing...</title></head>
+        <body>
+            <div style="text-align: center; padding: 50px;">
+                <h1>Processing...</h1>
+                <p>Please wait while the operation completes.</p>
+                <script>
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 200);
+                </script>
+            </div>
+        </body>
+        </html>
+        """)
