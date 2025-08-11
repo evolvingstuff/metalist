@@ -134,18 +134,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
             elif not is_quiet:
                 print(f"[Middleware] Skipping token refresh for background path: {path}")
             
-            # Set encryption key for this request
-            encryption_info = token_service.get_encryption_info(token)
+            # Set encryption keys for this request
+            encryption_keys = token_service.get_encryption_keys(token)
             if not is_quiet:
-                print(f"[Middleware] Got encryption info: {encryption_info is not None}")
-            if encryption_info:
-                password, salt = encryption_info
+                print(f"[Middleware] Got encryption keys: {encryption_keys is not None}")
+            if encryption_keys:
+                master_key, dek = encryption_keys
                 if not is_quiet:
-                    print(f"[Middleware] Setting encryption key for path: {path}")
-                set_encryption_key(password, salt)
+                    print(f"[Middleware] Setting encryption keys for path: {path}")
+                # Set up the global encryption service with the cached keys
+                from app.utils.encryption import get_encryption_service
+                service = get_encryption_service()
+                if not service:
+                    from app.services.encryption import EncryptionService
+                    service = EncryptionService()
+                    # Set it globally for this request
+                    import app.utils.encryption
+                    app.utils.encryption._encryption_service = service
+                service.master_key = master_key
+                service.dek = dek
             else:
                 if not is_quiet:
-                    print(f"[Middleware] No encryption info found for token")
+                    print(f"[Middleware] No encryption keys found for token")
             
             # Continue with request
             response = await call_next(request)
@@ -157,8 +167,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return response
             
         except Exception as e:
-            if not is_quiet:
-                print(f"Auth middleware error: {e}")
-            # On error, allow request to continue
-            # The individual endpoints will handle auth if needed
-            return await call_next(request)
+            # FAIL FAST AND LOUD - NO GRACEFUL DEGRADATION
+            print(f"🚨 AUTH MIDDLEWARE FATAL ERROR: {e}")
+            print(f"🚨 REQUEST PATH: {request.url.path}")
+            print(f"🚨 CRASHING IMMEDIATELY - NO SILENT FAILURES")
+            raise e
