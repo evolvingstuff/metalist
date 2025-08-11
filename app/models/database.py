@@ -101,6 +101,7 @@ class AppSettings(Base):
     # Password/encryption settings
     password_hash = Column(String, nullable=True)  # PBKDF2 hash of the master password (null = no password)
     password_salt = Column(LargeBinary, nullable=True)  # Random salt for password hashing
+    password_iterations = Column(Integer, nullable=True)  # PBKDF2 iterations used for this hash
     encryption_enabled = Column(Boolean, default=False)  # Whether encryption is active
     encryption_algorithm = Column(String, nullable=True)  # Encryption algorithm (e.g., "AES-256-GCM")
     

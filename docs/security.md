@@ -9,7 +9,8 @@ This document describes the security architecture for MetaList3's password prote
 ### Key Components
 
 1. **Master Key**
-   - Derived from user's password using PBKDF2-SHA256 with 250,000 iterations
+   - Derived from user's password using PBKDF2-SHA256 with configurable iterations (currently 1,000,000)
+   - Iteration count is stored with each password hash to allow future upgrades
    - Never stored on disk - only exists in server memory during active sessions
    - Used solely to encrypt/decrypt the DEK
    - Cleared from memory on logout or session expiry
@@ -26,41 +27,43 @@ This document describes the security architecture for MetaList3's password prote
 ```
 Initial Password Setup:
 1. User sets password
-2. Password → PBKDF2 (250k iterations) → Master Key
+2. Password → PBKDF2 (current config iterations) → Master Key
 3. Generate random 256-bit DEK
 4. Encrypt DEK with Master Key → Encrypted DEK
-5. Store Encrypted DEK in database
+5. Store Encrypted DEK + iteration count in database
 6. Use DEK to encrypt all notes with AES-256-GCM
 
 Login Flow:
 1. User enters password
-2. Password → PBKDF2 (250k iterations) → Master Key
-3. Retrieve Encrypted DEK from database
-4. Decrypt DEK using Master Key
-5. Keep both keys in memory for session
-6. Use DEK for all note operations
+2. Retrieve stored iteration count from database
+3. Password → PBKDF2 (stored iterations) → Master Key
+4. Retrieve Encrypted DEK from database
+5. Decrypt DEK using Master Key
+6. Keep both keys in memory for session
+7. Use DEK for all note operations
 
 Password Change Flow:
-1. Verify old password and derive old Master Key
+1. Verify old password using stored iteration count
 2. Decrypt DEK using old Master Key
-3. Derive new Master Key from new password (250k iterations)
+3. Derive new Master Key from new password (current config iterations)
 4. Re-encrypt DEK with new Master Key
-5. Store newly encrypted DEK in database
+5. Store newly encrypted DEK + new iteration count in database
 6. Notes remain unchanged (still encrypted with same DEK)
 ```
 
 ### Performance Benefits
 
-- **Login**: One expensive PBKDF2 operation (250k iterations)
+- **Login**: One expensive PBKDF2 operation (stored iteration count)
 - **Note Operations**: Fast AES-256-GCM encryption/decryption using cached DEK
 - **Bulk Operations**: No PBKDF2 iterations per note, just fast AES operations
 - **Password Changes**: Only need to re-encrypt the DEK, not all notes
+- **Iteration Upgrades**: Automatic upgrade to stronger iterations on password changes
 
 ## Cryptographic Details
 
 ### PBKDF2 Configuration
 - **Algorithm**: PBKDF2-HMAC-SHA256
-- **Iterations**: 250,000 for Master Key derivation
+- **Iterations**: Configurable (currently 1,000,000), stored per password hash
 - **Salt**: 32 bytes, randomly generated per password
 - **Output**: 256-bit key
 
@@ -74,8 +77,9 @@ Password Change Flow:
 
 ```sql
 app_settings table:
-- password_hash: PBKDF2 hash for authentication (250k iterations)
+- password_hash: PBKDF2 hash for authentication
 - password_salt: Salt for password hashing
+- password_iterations: PBKDF2 iteration count used for this hash
 - encrypted_dek: DEK encrypted with Master Key
 - dek_nonce: Nonce used for DEK encryption
 - dek_tag: Authentication tag for DEK encryption
@@ -91,7 +95,8 @@ notes table:
 ## Security Properties
 
 ### Strengths
-- **Strong Key Derivation**: 250,000 PBKDF2 iterations protects against brute force
+- **Strong Key Derivation**: Configurable PBKDF2 iterations (currently 1M) protects against brute force
+- **Future-Proof**: Iteration count stored with hash allows seamless security upgrades
 - **Authenticated Encryption**: AES-GCM prevents tampering and ensures integrity
 - **Memory-Only Master Key**: Master Key never touches disk
 - **Unique Nonces**: Each encryption uses a fresh random nonce
@@ -101,10 +106,11 @@ notes table:
 
 **Protected Against:**
 - Database theft (encrypted notes, strong PBKDF2)
-- Brute force attacks (250k iterations)
+- Brute force attacks (configurable high iteration count)
 - Tampering (GCM authentication)
 - Rainbow tables (random salts)
 - Replay attacks (unique nonces)
+- Security obsolescence (upgradeable iterations)
 
 **Not Protected Against:**
 - Memory dumps while server is running (keys in RAM)

@@ -44,21 +44,25 @@ class AuthService:
             self.db.commit()
         return settings
     
-    def hash_password(self, password: str, salt: bytes) -> str:
+    def hash_password(self, password: str, salt: bytes, iterations: int = None) -> str:
         """Create PBKDF2 hash for storage.
         
         Args:
             password: Plain text password
             salt: Random salt
+            iterations: Number of PBKDF2 iterations (defaults to config value)
             
         Returns:
             Hex string of password hash
         """
+        if iterations is None:
+            iterations = PW_PBKDF2_ITERATIONS
+            
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=PW_PBKDF2_ITERATIONS,
+            iterations=iterations,
             backend=default_backend()
         )
         key = kdf.derive(password.encode('utf-8'))
@@ -77,8 +81,10 @@ class AuthService:
         if not settings or not settings.password_hash:
             return False
             
-        # Hash the provided password with stored salt
-        password_hash = self.hash_password(password, settings.password_salt)
+        # Hash the provided password with stored salt and iterations
+        # Use stored iterations if available, otherwise fall back to old default (250k)
+        stored_iterations = settings.password_iterations or 250_000
+        password_hash = self.hash_password(password, settings.password_salt, stored_iterations)
         
         # Use constant-time comparison
         return secrets.compare_digest(password_hash, settings.password_hash)
@@ -135,6 +141,7 @@ class AuthService:
         # Update settings with password and encrypted DEK
         settings.password_salt = salt
         settings.password_hash = password_hash
+        settings.password_iterations = PW_PBKDF2_ITERATIONS  # Store current iteration count
         settings.encrypted_dek = encrypted_dek
         settings.dek_nonce = dek_nonce
         settings.dek_tag = dek_tag
@@ -220,6 +227,7 @@ class AuthService:
         # Update settings with new password and re-encrypted DEK
         settings.password_salt = new_salt
         settings.password_hash = new_password_hash
+        settings.password_iterations = PW_PBKDF2_ITERATIONS  # Upgrade to current iteration count
         settings.encrypted_dek = encrypted_dek
         settings.dek_nonce = dek_nonce
         settings.dek_tag = dek_tag
@@ -288,6 +296,7 @@ class AuthService:
             # Clear password and DEK from settings
             settings.password_salt = None
             settings.password_hash = None
+            settings.password_iterations = None
             settings.encrypted_dek = None
             settings.dek_nonce = None
             settings.dek_tag = None
