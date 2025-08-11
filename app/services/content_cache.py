@@ -106,9 +106,11 @@ def populate_cache_from_db(db: Session) -> None:
                     
                     cache_note(note.id, decrypted_content)
                 except Exception as e:
-                    logger.error(f"Failed to process note {note.id}: {e}")
-                    # Cache a placeholder for failed decryption
-                    cache_note(note.id, f"[Decryption failed: {str(e)}]")
+                    # FAIL FAST AND LOUD - NO SILENT FAILURES
+                    logger.error(f"🚨 FATAL: Failed to process note {note.id} during cache population: {e}")
+                    logger.error(f"🚨 Cache system integrity compromised!")
+                    logger.error(f"🚨 CRASHING IMMEDIATELY")
+                    raise RuntimeError(f"Cache population failed: Could not process note {note.id}: {e}") from e
         
         logger.info(f"Content cache populated with {len(notes)} notes")
         
@@ -151,8 +153,11 @@ def refresh_encrypted_cache(db: Session) -> None:
                     cache_note(note.id, decrypted_content)
                     refreshed_count += 1
                 except Exception as e:
-                    logger.error(f"Failed to refresh encrypted note {note.id}: {e}")
-                    cache_note(note.id, f"[Decryption failed: {str(e)}]")
+                    # FAIL FAST AND LOUD - NO SILENT FAILURES
+                    logger.error(f"🚨 FATAL: Failed to refresh encrypted note {note.id}: {e}")
+                    logger.error(f"🚨 Cache refresh system integrity compromised!")
+                    logger.error(f"🚨 CRASHING IMMEDIATELY")
+                    raise RuntimeError(f"Cache refresh failed: Could not process note {note.id}: {e}") from e
         
         logger.info(f"Refreshed {refreshed_count} encrypted notes in cache")
         

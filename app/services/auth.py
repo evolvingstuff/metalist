@@ -164,7 +164,11 @@ class AuthService:
                         note.encryption_tag = tag_bytes
                         encrypted_count += 1
                     except Exception as e:
-                        print(f"Failed to encrypt note {note.id}: {e}")
+                        # FAIL FAST AND LOUD - NO SILENT FAILURES
+                        print(f"🚨 FATAL: Failed to encrypt note {note.id}: {e}")
+                        print(f"🚨 Cannot continue password setup with broken encryption!")
+                        print(f"🚨 CRASHING IMMEDIATELY")
+                        raise RuntimeError(f"Password setup failed: Could not encrypt note {note.id}: {e}") from e
             
             self.db.commit()
         finally:
@@ -275,8 +279,11 @@ class AuthService:
                         note.encryption_tag = None
                         decrypted_count += 1
                     except Exception as e:
-                        # Log error but continue
-                        print(f"Failed to decrypt note {note.id}: {e}")
+                        # FAIL FAST AND LOUD - NO SILENT FAILURES  
+                        print(f"🚨 FATAL: Failed to decrypt note {note.id}: {e}")
+                        print(f"🚨 Cannot remove password protection with broken decryption!")
+                        print(f"🚨 CRASHING IMMEDIATELY")
+                        raise RuntimeError(f"Password removal failed: Could not decrypt note {note.id}: {e}") from e
             
             # Clear password and DEK from settings
             settings.password_salt = None

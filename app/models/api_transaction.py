@@ -144,8 +144,13 @@ def cache_note_on_content_update(target, value, oldvalue, initiator):
             decrypted_content = decrypt(value, target.encryption_nonce, target.encryption_tag)
             cache_note(target.id, decrypted_content)
         except Exception as e:
+            # FAIL FAST AND LOUD - NO SILENT FAILURES
             import logging
-            logging.getLogger(__name__).error(f"Failed to update cache for note {target.id}: {e}")
+            logger = logging.getLogger(__name__)
+            logger.error(f"🚨 FATAL: Failed to update cache for note {target.id}: {e}")
+            logger.error(f"🚨 Cache system integrity compromised!")
+            logger.error(f"🚨 CRASHING IMMEDIATELY")
+            raise RuntimeError(f"Cache update failed for note {target.id}: {e}") from e
 
 
 def log_note_after_insert(mapper, connection, target):
@@ -169,8 +174,13 @@ def cache_note_after_insert(mapper, connection, target):
             decrypted_content = decrypt(target.content, target.encryption_nonce, target.encryption_tag)
             cache_note(target.id, decrypted_content)
         except Exception as e:
+            # FAIL FAST AND LOUD - NO SILENT FAILURES
             import logging
-            logging.getLogger(__name__).error(f"Failed to cache new note {target.id}: {e}")
+            logger = logging.getLogger(__name__)
+            logger.error(f"🚨 FATAL: Failed to cache new note {target.id}: {e}")
+            logger.error(f"🚨 Cache system integrity compromised!")
+            logger.error(f"🚨 CRASHING IMMEDIATELY")
+            raise RuntimeError(f"Cache creation failed for new note {target.id}: {e}") from e
 
 
  # another hack!
@@ -192,8 +202,13 @@ def cache_note_before_delete(mapper, connection, target):
         try:
             remove_cached_note(target.id)
         except Exception as e:
+            # FAIL FAST AND LOUD - NO SILENT FAILURES
             import logging
-            logging.getLogger(__name__).error(f"Failed to remove cached note {target.id}: {e}")
+            logger = logging.getLogger(__name__)
+            logger.error(f"🚨 FATAL: Failed to remove cached note {target.id}: {e}")
+            logger.error(f"🚨 Cache system integrity compromised!")
+            logger.error(f"🚨 CRASHING IMMEDIATELY")
+            raise RuntimeError(f"Cache removal failed for note {target.id}: {e}") from e
 
 
 # Register event listeners

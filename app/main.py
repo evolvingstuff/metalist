@@ -33,7 +33,11 @@ try:
         db.commit()
     db.close()
 except Exception as e:
-    logger.error(f"Failed to initialize app settings: {e}")
+    # FAIL FAST AND LOUD - NO SILENT FAILURES
+    logger.error(f"🚨 FATAL: Failed to initialize app settings: {e}")
+    logger.error(f"🚨 Cannot start application with broken settings!")
+    logger.error(f"🚨 CRASHING IMMEDIATELY")
+    raise RuntimeError(f"Application startup failed: Could not initialize app settings: {e}") from e
 
 # Populate content cache on startup
 try:
@@ -42,8 +46,11 @@ try:
     populate_cache_from_db(db)
     db.close()
 except Exception as e:
-    logger.error(f"Failed to populate content cache on startup: {e}")
-    # Continue startup even if cache population fails
+    # FAIL FAST AND LOUD - NO SILENT FAILURES
+    logger.error(f"🚨 FATAL: Failed to populate content cache on startup: {e}")
+    logger.error(f"🚨 Cannot start application with broken cache system!")
+    logger.error(f"🚨 CRASHING IMMEDIATELY")
+    raise RuntimeError(f"Application startup failed: Could not populate content cache: {e}") from e
 
 # Custom StaticFiles class that disables caching
 class NoCacheStaticFiles(StarletteStaticFiles):
@@ -88,11 +95,11 @@ async def log_requests(request: Request, call_next):
             logger.error(f"Request failed: {request.method} {request.url} - Status: {response.status_code}")
         return response
     except Exception as e:
-        logger.exception(f"Unhandled error in request: {request.method} {request.url}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": str(e)}
-        )
+        # FAIL FAST AND LOUD - NO SILENT FAILURES
+        logger.error(f"🚨 FATAL: Unhandled error in request: {request.method} {request.url}")
+        logger.error(f"🚨 Request processing failed catastrophically!")
+        logger.error(f"🚨 CRASHING IMMEDIATELY")
+        raise RuntimeError(f"Request processing failed: {request.method} {request.url}: {e}") from e
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
@@ -132,22 +139,8 @@ async def maintenance_page(request: Request):
         template = templates.get_template("maintenance.html")
         return template.render(request=request)
     except Exception as e:
-        logger.exception("Error in maintenance route")
-        # Fallback: simple HTML response
-        return HTMLResponse(content="""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Processing...</title></head>
-        <body>
-            <div style="text-align: center; padding: 50px;">
-                <h1>Processing...</h1>
-                <p>Please wait while the operation completes.</p>
-                <script>
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 200);
-                </script>
-            </div>
-        </body>
-        </html>
-        """)
+        # FAIL FAST AND LOUD - NO SILENT FAILURES
+        logger.error(f"🚨 FATAL: Failed to render maintenance template: {e}")
+        logger.error(f"🚨 Cannot display maintenance page!")
+        logger.error(f"🚨 CRASHING IMMEDIATELY")
+        raise RuntimeError(f"Maintenance page failed: Could not render template: {e}") from e
