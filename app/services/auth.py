@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
-from app.core.config import PBKDF2_ITERATIONS
+from app.core.config import PW_PBKDF2_ITERATIONS
 from app.models.database import AppSettings, DBNote
 from app.services.maintenance_mode import maintenance_service
 from app.services.encryption import EncryptionService
@@ -58,7 +58,7 @@ class AuthService:
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=PBKDF2_ITERATIONS,
+            iterations=PW_PBKDF2_ITERATIONS,
             backend=default_backend()
         )
         key = kdf.derive(password.encode('utf-8'))

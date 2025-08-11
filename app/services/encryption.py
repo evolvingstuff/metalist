@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
-from app.core.config import PBKDF2_ITERATIONS
+from app.core.config import NOTE_PBKDF2_ITERATIONS
 
 
 class EncryptionService:
@@ -31,7 +31,7 @@ class EncryptionService:
             algorithm=hashes.SHA256(),
             length=32,  # 256 bits for AES-256
             salt=salt,
-            iterations=PBKDF2_ITERATIONS,
+            iterations=NOTE_PBKDF2_ITERATIONS,
             backend=default_backend()
         )
         return kdf.derive(password.encode('utf-8'))
