@@ -104,6 +104,11 @@ class AppSettings(Base):
     encryption_enabled = Column(Boolean, default=False)  # Whether encryption is active
     encryption_algorithm = Column(String, nullable=True)  # Encryption algorithm (e.g., "AES-256-GCM")
     
+    # DEK (Data Encryption Key) fields
+    encrypted_dek = Column(LargeBinary, nullable=True)  # DEK encrypted with master key
+    dek_nonce = Column(LargeBinary, nullable=True)  # Nonce for DEK encryption
+    dek_tag = Column(LargeBinary, nullable=True)  # Authentication tag for DEK encryption
+    
     # Timestamps
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

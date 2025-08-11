@@ -25,13 +25,13 @@ class TokenService:
         """
         return hashlib.sha256(token.encode()).hexdigest()
     
-    def create_token(self, client_info: str, password: str = None, salt: bytes = None) -> str:
+    def create_token(self, client_info: str, master_key: bytes = None, dek: bytes = None) -> str:
         """Generate new authentication token for client.
         
         Args:
             client_info: Information about the client (user agent, IP, etc.)
-            password: User's password (stored in memory for encryption)
-            salt: Salt for key derivation (stored in memory for encryption)
+            master_key: Master key derived from password (stored in memory)
+            dek: Data Encryption Key (stored in memory for note encryption)
             
         Returns:
             New authentication token
@@ -40,14 +40,14 @@ class TokenService:
         token = secrets.token_urlsafe(32)
         token_hash = self._hash_token(token)
         
-        # Store token info including password for encryption
+        # Store token info including keys for encryption
         self.tokens[token_hash] = {
             "client_info": client_info,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRY_MINUTES),
             "last_activity": datetime.now(timezone.utc),
-            "password": password,  # Store in memory for encryption
-            "salt": salt  # Store salt for key derivation
+            "master_key": master_key,  # Store master key in memory
+            "dek": dek  # Store DEK for note encryption
         }
         
         # Clean up expired tokens periodically
@@ -173,14 +173,14 @@ class TokenService:
         
         return None
     
-    def get_encryption_info(self, token: str) -> Optional[tuple[str, bytes]]:
-        """Get encryption password and salt for a valid token.
+    def get_encryption_keys(self, token: str) -> Optional[tuple[bytes, bytes]]:
+        """Get encryption keys (master key and DEK) for a valid token.
         
         Args:
-            token: Token to get encryption info for
+            token: Token to get encryption keys for
             
         Returns:
-            Tuple of (password, salt) or None if not found/invalid
+            Tuple of (master_key, dek) or None if not found/invalid
         """
         if not self.verify_token(token):
             return None
@@ -188,8 +188,8 @@ class TokenService:
         token_hash = self._hash_token(token)
         token_info = self.tokens.get(token_hash)
         
-        if token_info and token_info.get("password") and token_info.get("salt"):
-            return token_info["password"], token_info["salt"]
+        if token_info and token_info.get("master_key") and token_info.get("dek"):
+            return token_info["master_key"], token_info["dek"]
         
         return None
     

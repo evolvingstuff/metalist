@@ -107,20 +107,33 @@ async def login(
     if not auth.verify_password(login_req.password):
         raise HTTPException(status_code=401, detail="Invalid password")
     
-    # Get settings for salt
+    # Get settings for salt and encrypted DEK
     settings = auth.get_settings()
     if not settings:
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
     
-    # Set encryption key for this session
-    set_encryption_key(login_req.password, settings.password_salt)
+    # Derive master key from password
+    from app.services.encryption import EncryptionService
+    encryption = EncryptionService()
+    master_key = encryption.derive_master_key(login_req.password, settings.password_salt)
+    
+    # Decrypt the DEK
+    dek = encryption.decrypt_dek(
+        settings.encrypted_dek,
+        settings.dek_nonce,
+        settings.dek_tag,
+        master_key
+    )
+    
+    # Set encryption keys for this session
+    set_encryption_key(login_req.password, settings.password_salt)  # TODO: Update this to use DEK
     
     # Refresh cache with decrypted content now that we have the key
     refresh_encrypted_cache(db)
     
-    # Create token with password and salt for encryption
+    # Create token with master key and DEK for encryption
     client_info = get_client_info(request)
-    token = token_service.create_token(client_info, login_req.password, settings.password_salt)
+    token = token_service.create_token(client_info, master_key, dek)
     
     return LoginResponse(
         token=token,

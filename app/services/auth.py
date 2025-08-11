@@ -127,14 +127,23 @@ class AuthService:
         salt = self.encryption.generate_salt()
         password_hash = self.hash_password(password, salt)
         
-        # Update settings
+        # Generate DEK and encrypt it with master key
+        dek = self.encryption.generate_dek()
+        master_key = self.encryption.derive_master_key(password, salt)
+        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, master_key)
+        
+        # Update settings with password and encrypted DEK
         settings.password_salt = salt
         settings.password_hash = password_hash
+        settings.encrypted_dek = encrypted_dek
+        settings.dek_nonce = dek_nonce
+        settings.dek_tag = dek_tag
         settings.encryption_enabled = True
         settings.encryption_algorithm = "AES-256-GCM"
         
-        # Set encryption key for this session
-        self.encryption.set_key(password, salt)
+        # Set master key and DEK for this session
+        self.encryption.master_key = master_key
+        self.encryption.dek = dek
         
         # Enter maintenance mode for bulk encryption
         maintenance_service.enter_maintenance("Encrypting all notes with new password")
@@ -185,54 +194,39 @@ class AuthService:
         
         settings = self.get_settings()
         
-        # Set up decryption with old password
-        self.encryption.set_key(current_password, settings.password_salt)
+        # Derive old master key to decrypt DEK
+        old_master_key = self.encryption.derive_master_key(current_password, settings.password_salt)
         
-        # Generate new salt and hash
+        # Decrypt the DEK using old master key
+        dek = self.encryption.decrypt_dek(
+            settings.encrypted_dek,
+            settings.dek_nonce, 
+            settings.dek_tag,
+            old_master_key
+        )
+        
+        # Generate new salt and hash for new password
         new_salt = self.encryption.generate_salt()
         new_password_hash = self.hash_password(new_password, new_salt)
         
-        # Create new encryption service for re-encryption
-        new_encryption = EncryptionService()
-        new_encryption.set_key(new_password, new_salt)
+        # Derive new master key and re-encrypt the same DEK
+        new_master_key = self.encryption.derive_master_key(new_password, new_salt)
+        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_master_key)
         
-        # Enter maintenance mode for bulk re-encryption
-        maintenance_service.enter_maintenance("Re-encrypting all notes with new password")
+        # Update settings with new password and re-encrypted DEK
+        settings.password_salt = new_salt
+        settings.password_hash = new_password_hash
+        settings.encrypted_dek = encrypted_dek
+        settings.dek_nonce = dek_nonce
+        settings.dek_tag = dek_tag
         
-        try:
-            # Re-encrypt all notes
-            notes = self.db.query(DBNote).all()
-            re_encrypted_count = 0
-            
-            for note in notes:
-                if note.content and note.encryption_nonce is not None:
-                    try:
-                        # Decrypt with old password using separate fields
-                        plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
-                        # Re-encrypt with new password
-                        ciphertext_base64, nonce_bytes, tag_bytes = new_encryption.encrypt_for_storage(plaintext)
-                        note.content = ciphertext_base64
-                        note.encryption_nonce = nonce_bytes
-                        note.encryption_tag = tag_bytes
-                        re_encrypted_count += 1
-                    except Exception as e:
-                        # Log error but continue
-                        print(f"Failed to re-encrypt note {note.id}: {e}")
-            
-            # Update settings with new password
-            settings.password_salt = new_salt
-            settings.password_hash = new_password_hash
-            
-            self.db.commit()
-        finally:
-            # Always exit maintenance mode
-            maintenance_service.exit_maintenance()
+        self.db.commit()
         
-        # Clear old key and set new one
-        self.encryption.clear_key()
-        self.encryption = new_encryption
+        # Update encryption service with new keys for this session
+        self.encryption.master_key = new_master_key
+        self.encryption.dek = dek
         
-        return True, f"Password changed successfully. Re-encrypted {re_encrypted_count} notes."
+        return True, "Password changed successfully. Notes remain encrypted with the same key."
     
     def remove_password(self, current_password: str) -> Tuple[bool, str]:
         """Remove password protection (decrypts all notes).
@@ -251,8 +245,16 @@ class AuthService:
         
         settings = self.get_settings()
         
-        # Set up decryption
-        self.encryption.set_key(current_password, settings.password_salt)
+        # Set up decryption with DEK
+        master_key = self.encryption.derive_master_key(current_password, settings.password_salt)
+        dek = self.encryption.decrypt_dek(
+            settings.encrypted_dek,
+            settings.dek_nonce,
+            settings.dek_tag,
+            master_key
+        )
+        self.encryption.master_key = master_key
+        self.encryption.dek = dek
         
         # Enter maintenance mode for bulk decryption
         maintenance_service.enter_maintenance("Decrypting all notes (removing password protection)")
@@ -276,16 +278,19 @@ class AuthService:
                         # Log error but continue
                         print(f"Failed to decrypt note {note.id}: {e}")
             
-            # Clear password from settings
+            # Clear password and DEK from settings
             settings.password_salt = None
             settings.password_hash = None
+            settings.encrypted_dek = None
+            settings.dek_nonce = None
+            settings.dek_tag = None
             settings.encryption_enabled = False
             settings.encryption_algorithm = None
             
             self.db.commit()
             
-            # Clear encryption key
-            self.encryption.clear_key()
+            # Clear encryption keys
+            self.encryption.clear_keys()
         finally:
             # Always exit maintenance mode
             maintenance_service.exit_maintenance()

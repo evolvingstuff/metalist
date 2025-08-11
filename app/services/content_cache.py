@@ -92,7 +92,7 @@ def populate_cache_from_db(db: Session) -> None:
                     # Handle both encrypted and unencrypted content
                     if note.encryption_nonce is not None and note.encryption_tag is not None:
                         # Encrypted content - decrypt using new separate fields approach
-                        if encryption_service and encryption_service.key:
+                        if encryption_service and encryption_service.dek:
                             decrypted_content = encryption_service.decrypt_from_storage(
                                 note.content, note.encryption_nonce, note.encryption_tag
                             )
@@ -129,7 +129,7 @@ def refresh_encrypted_cache(db: Session) -> None:
     
     try:
         encryption_service = get_encryption_service()
-        if not encryption_service or not encryption_service.key:
+        if not encryption_service or not encryption_service.dek:
             logger.warning("No encryption key available for cache refresh")
             return
         
