@@ -114,6 +114,9 @@ export const Auth = {
         }
         
         try {
+            // Show waiting cursor
+            document.body.classList.add('loading');
+            
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: {
@@ -150,10 +153,14 @@ export const Auth = {
             } else {
                 const error = await response.json();
                 this.showLoginError(error.detail || 'Login failed');
+                // Remove waiting cursor on error
+                document.body.classList.remove('loading');
             }
         } catch (error) {
             console.error('[Auth] Login error:', error);
             this.showLoginError('Network error. Please try again.');
+            // Remove waiting cursor on error
+            document.body.classList.remove('loading');
         }
     },
     

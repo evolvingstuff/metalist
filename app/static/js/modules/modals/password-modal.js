@@ -355,6 +355,9 @@ export class PasswordModal extends BaseModal {
             this.updateModalState({ isProcessing: true, error: null });
             this.showProcessingState();
             
+            // Show waiting cursor
+            document.body.classList.add('loading');
+            
             const formData = this.collectFormData();
             
             // Validate form data
@@ -374,6 +377,10 @@ export class PasswordModal extends BaseModal {
             
         } catch (error) {
             console.error('Password operation failed:', error);
+            
+            // Remove waiting cursor on error
+            document.body.classList.remove('loading');
+            
             this.updateModalState({ 
                 error: error.message || 'Password operation failed. Please try again.',
                 isProcessing: false 
