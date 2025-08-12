@@ -207,11 +207,17 @@ export async function actionCopyNote() {
     
     Logger.logAction('actionCopyNote', { 
         currentNoteId,
-        isEditing: ModeContext.isEditing
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty
     });
 
     if (!currentNoteId) {
         throw new Error('Cannot copy note: no note selected');
+    }
+
+    // Save the note first if it's dirty to ensure we copy the current edited content
+    if (ModeContext.isDirty) {
+        await actionSaveNote(currentNoteId);
     }
 
     // Call the server to serialize the note tree to clipboard
