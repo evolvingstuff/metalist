@@ -168,22 +168,22 @@ export class PasswordModal extends BaseModal {
         return `
             <div class="modal-content">
                 <h3>Change Password</h3>
-                <p>Enter your current password and choose a new one. All notes will be re-encrypted.</p>
+                <p>Enter your current password and choose a new one.</p>
                 
-                <form id="password-form">
+                <form id="password-form" autocomplete="off">
                     <div class="form-group">
                         <label for="current-password">Current Password:</label>
-                        <input type="password" id="current-password" required>
+                        <input type="password" id="current-password" autocomplete="current-password" required>
                     </div>
                     
                     <div class="form-group">
                         <label for="new-password">New Password:</label>
-                        <input type="password" id="new-password" required>
+                        <input type="password" id="new-password" autocomplete="new-password" required>
                     </div>
                     
                     <div class="form-group">
                         <label for="confirm-password">Confirm New Password:</label>
-                        <input type="password" id="confirm-password" required>
+                        <input type="password" id="confirm-password" autocomplete="new-password" required>
                     </div>
                     
                     <div class="form-actions">
@@ -197,7 +197,7 @@ export class PasswordModal extends BaseModal {
                     <div class="progress-bar">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p id="progress-text">Re-encrypting notes...</p>
+                    <p id="progress-text">Updating password...</p>
                 </div>
             </div>
         `;
@@ -269,12 +269,53 @@ export class PasswordModal extends BaseModal {
         const closeBtn = document.getElementById('close-btn');
         const removePasswordBtn = document.getElementById('remove-password-btn');
         const changePasswordBtn = document.getElementById('change-password-btn');
+        const newPasswordInput = document.getElementById('new-password');
+        const confirmPasswordInput = document.getElementById('confirm-password');
         
         if (form) {
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.handleSubmit();
             });
+        }
+        
+        // Real-time password matching validation
+        if (newPasswordInput && confirmPasswordInput) {
+            const checkPasswordMatch = () => {
+                const newPw = newPasswordInput.value;
+                const confirmPw = confirmPasswordInput.value;
+                
+                // Only check if confirm field has content
+                if (confirmPw) {
+                    let isMatch = false;
+                    
+                    if (confirmPw.length < newPw.length) {
+                        // Check if newPw starts with confirmPw (still typing)
+                        isMatch = newPw.startsWith(confirmPw);
+                    } else if (confirmPw.length === newPw.length) {
+                        // Same length - must be exact match
+                        isMatch = (newPw === confirmPw);
+                    } else {
+                        // confirmPw is longer than newPw - always wrong
+                        isMatch = false;
+                    }
+                    
+                    if (!isMatch) {
+                        confirmPasswordInput.style.borderColor = 'var(--error-color)';
+                        confirmPasswordInput.style.backgroundColor = '#ffebee';
+                    } else {
+                        confirmPasswordInput.style.borderColor = '';
+                        confirmPasswordInput.style.backgroundColor = '';
+                    }
+                } else {
+                    // Reset styles if confirm field is empty
+                    confirmPasswordInput.style.borderColor = '';
+                    confirmPasswordInput.style.backgroundColor = '';
+                }
+            };
+            
+            confirmPasswordInput.addEventListener('input', checkPasswordMatch);
+            newPasswordInput.addEventListener('input', checkPasswordMatch);
         }
         
         if (cancelBtn) {
@@ -415,7 +456,7 @@ export class PasswordModal extends BaseModal {
                 endpoint = this.apiEndpoints.change;
                 body = { 
                     current_password: formData.currentPassword,
-                    new_password: formData.newPassword 
+                    new_password: formData.newPassword
                 };
                 method = 'PUT';
                 break;

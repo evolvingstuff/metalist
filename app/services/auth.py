@@ -184,12 +184,13 @@ class AuthService:
         
         return True, f"Password set successfully. Encrypted {encrypted_count} notes."
     
-    def change_password(self, current_password: str, new_password: str) -> Tuple[bool, str]:
-        """Change existing password (re-encrypts all notes).
+    def change_password(self, current_password: str, new_password: str, iterations: int = None) -> Tuple[bool, str]:
+        """Change existing password (re-encrypts DEK with new iterations).
         
         Args:
             current_password: Current password for verification
             new_password: New password to set
+            iterations: Custom PBKDF2 iterations (defaults to config value)
             
         Returns:
             Tuple of (success, message)
@@ -216,18 +217,26 @@ class AuthService:
             old_master_key
         )
         
+        # Use custom iterations or fall back to config default
+        if iterations is None:
+            iterations = PW_PBKDF2_ITERATIONS
+            
+        # Validate iterations range
+        if not (100_000 <= iterations <= 10_000_000):
+            return False, "Iterations must be between 100,000 and 10,000,000"
+        
         # Generate new salt and hash for new password
         new_salt = self.encryption.generate_salt()
-        new_password_hash = self.hash_password(new_password, new_salt)
+        new_password_hash = self.hash_password(new_password, new_salt, iterations)
         
-        # Derive new master key and re-encrypt the same DEK
-        new_master_key = self.encryption.derive_master_key(new_password, new_salt)
+        # Derive new master key with custom iterations and re-encrypt the same DEK
+        new_master_key = self.encryption.derive_master_key(new_password, new_salt, iterations)
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_master_key)
         
         # Update settings with new password and re-encrypted DEK
         settings.password_salt = new_salt
         settings.password_hash = new_password_hash
-        settings.password_iterations = PW_PBKDF2_ITERATIONS  # Upgrade to current iteration count
+        settings.password_iterations = iterations  # Use custom or config iterations
         settings.encrypted_dek = encrypted_dek
         settings.dek_nonce = dek_nonce
         settings.dek_tag = dek_tag

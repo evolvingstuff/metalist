@@ -157,9 +157,24 @@ export class BaseModal {
      * Show the modal DOM element
      */
     showModalElement() {
-        const modalElement = document.getElementById(this.modalElementId);
+        let modalElement = document.getElementById(this.modalElementId);
+        
+        // Create modal element if it doesn't exist
         if (!modalElement) {
-            throw new Error(`Modal element not found: ${this.modalElementId}`);
+            modalElement = document.createElement('div');
+            modalElement.id = this.modalElementId;
+            modalElement.className = 'modal';
+            modalElement.style.display = 'none';
+            modalElement.innerHTML = `
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h2 id="${this.modalElementId}-title">Password Management</h2>
+                    <div id="${this.modalElementId}-body">
+                        <!-- Content will be dynamically inserted -->
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modalElement);
         }
         
         modalElement.style.display = 'block';

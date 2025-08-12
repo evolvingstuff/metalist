@@ -5,10 +5,10 @@ Replace the current XOR-based encryption with industry-standard AES-256-GCM encr
 
 ## Key Technologies
 - **Encryption**: AES-256-GCM (authenticated encryption with authentication tags)
-- **Key Derivation**: PBKDF2-HMAC-SHA256 (250,000 iterations, configurable)
+- **Key Derivation**: PBKDF2-HMAC-SHA256 (1M iterations, configurable per password)
 - **Library**: `cryptography` (BSD-3-Clause license, MIT-compatible)
 - **Token Storage**: In-memory dictionary with client-specific tokens
-- **Password Storage**: Salted and hashed using PBKDF2
+- **Password Storage**: Salted and hashed using PBKDF2 with stored iteration count
 - **Progress Updates**: Server-Sent Events (SSE) for real-time feedback
 
 ## Encryption Concepts
@@ -341,6 +341,12 @@ PBKDF2_ITERATIONS = int(os.getenv('PBKDF2_ITERATIONS', 250000))
 - **Form validation** and API integration
 - **Progress indication** for bulk encryption operations
 - **Keyboard shortcut**: Cmd+P to open
+- **Advanced Settings** (Future Enhancement):
+  - Toggle to show/hide advanced options in password change mode
+  - Custom PBKDF2 iterations input (100k - 10M range)
+  - Real-time login delay estimation
+  - Defaults to current config value (1M) but allows override
+  - API parameter: `PUT /api/auth/settings/password/change` accepts `iterations` field
 
 ### Implementation Tasks
 1. Create BaseModal class with state enforcement

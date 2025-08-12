@@ -18,21 +18,25 @@ class EncryptionService:
         self.master_key: Optional[bytes] = None  # Derived from password, used to encrypt DEK
         self.dek: Optional[bytes] = None  # Data Encryption Key, used for note encryption
         
-    def derive_master_key(self, password: str, salt: bytes) -> bytes:
-        """Derive master key from password using PBKDF2 with high iteration count.
+    def derive_master_key(self, password: str, salt: bytes, iterations: int = None) -> bytes:
+        """Derive master key from password using PBKDF2 with configurable iteration count.
         
         Args:
             password: User's password
             salt: Random salt for key derivation
+            iterations: Number of PBKDF2 iterations (defaults to config value)
             
         Returns:
             32-byte master key
         """
+        if iterations is None:
+            iterations = PW_PBKDF2_ITERATIONS
+            
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,  # 256 bits for AES-256
             salt=salt,
-            iterations=PW_PBKDF2_ITERATIONS,  # High iteration count (250k)
+            iterations=iterations,
             backend=default_backend()
         )
         return kdf.derive(password.encode('utf-8'))

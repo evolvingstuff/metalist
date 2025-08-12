@@ -178,6 +178,11 @@ All endpoints except login require authentication token when password protection
 
 ## Future Enhancements
 
+- **Advanced UI Controls**: Add UI option to customize PBKDF2 iterations during password changes
+  - Toggle for "Advanced Settings" in password change modal
+  - Input field for custom iteration count with validation (100k - 10M range)
+  - Real-time estimate of login delay impact
+  - Default to current config value but allow override
 - **Key Rotation**: Periodically generate new DEK and re-encrypt notes
 - **Hardware Security Module (HSM)**: Store DEK in HSM for additional protection
 - **Client-Side Encryption**: End-to-end encryption with client-side keys

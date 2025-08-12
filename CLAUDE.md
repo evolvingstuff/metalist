@@ -27,3 +27,7 @@ I want you to rollback all the changes made on that branch.
 # Build Philosophy
 
 FAIL FAST AND LOUD: If anything fails during build processes, it should fail as fast and as loudly as possible. No error recovery, no graceful degradation, no silent failures. The build should stop immediately with clear error messages so issues can be identified and fixed quickly.
+
+# Testing Philosophy
+
+NEVER commit untested code. Always wait for user confirmation that changes have been tested and work correctly before committing. If I ask to commit, ask me first: "Have you tested these changes?"

@@ -32,6 +32,7 @@ class PasswordCreateRequest(BaseModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+    iterations: Optional[int] = None  # Custom PBKDF2 iterations (optional)
 
 
 class PasswordRemoveRequest(BaseModel):
@@ -207,7 +208,8 @@ async def change_password(
     # Change the password
     success, message = auth.change_password(
         password_req.current_password,
-        password_req.new_password
+        password_req.new_password,
+        password_req.iterations
     )
     
     if not success:
