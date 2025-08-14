@@ -11,6 +11,7 @@ export const CONFIG = {
             MOVE: (noteId) => `/api/notes/${noteId}/move`,
             DELETE: (noteId) => `/api/notes/${noteId}`,
             COPY: (noteId) => `/api/notes/${noteId}/copy`,
+            EXPORT_HTML: (noteId) => `/api/notes/${noteId}/export-html`,
             PASTE_SIBLING: (targetNoteId) => `/api/notes/paste-sibling/${targetNoteId}`,
             PASTE_CHILD: (targetNoteId) => `/api/notes/paste-child/${targetNoteId}`,
             UNDO: '/api/notes/undo',

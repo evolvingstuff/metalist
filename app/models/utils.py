@@ -221,3 +221,102 @@ def _copy_note_recursive(
             previous_copied_id = new_child_id
     
     return new_id
+
+
+def note_data_to_html(note_data: Dict[str, Any]) -> str:
+    """
+    Convert serialized note data to HTML using table structure for reliable indentation.
+    Uses nested tables which create indentation that works across all applications.
+    
+    Args:
+        note_data: Dictionary containing note content and children
+        
+    Returns:
+        HTML string representation with guaranteed indentation
+    """
+    def render_note(note, depth=0):
+        """Render note using table structure for reliable indentation"""
+        html_parts = []
+        
+        # Create indentation using table with spacer cell
+        if depth > 0:
+            spacer_width = depth * 32  # 32px per level
+            html_parts.append('<table style="width: 100%; border-collapse: collapse; margin: 2px 0;"><tr>')
+            html_parts.append(f'<td style="width: {spacer_width}px;"></td>')
+            html_parts.append('<td>')
+        
+        # Add the note content with border
+        content = note.get("content", "")
+        note_style = """
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+            padding: 8px 15px;
+            margin: 2px 0;
+            background: white;
+        """
+        html_parts.append(f'<div style="{note_style}">{content}</div>')
+        
+        # Close the table cell if indented
+        if depth > 0:
+            html_parts.append('</td></tr></table>')
+        
+        # Add children with increased depth
+        children = note.get("children", [])
+        for child in children:
+            html_parts.append(render_note(child, depth + 1))
+        
+        return ''.join(html_parts)
+    
+    # Container with basic styling
+    container_css = """
+        font-family: system-ui, -apple-system, sans-serif;
+        line-height: 1.5;
+        color: #333333;
+    """
+    
+    html = f'<div style="{container_css}">'
+    html += render_note(note_data, 0)
+    html += '</div>'
+    
+    return html
+
+
+def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
+    """
+    Convert serialized note data to plain text with 4-space indentation.
+    
+    Args:
+        note_data: Dictionary containing note content and children
+        
+    Returns:
+        Plain text string with proper indentation
+    """
+    def render_note_text(note, depth=0):
+        """Recursively render a note and its children as plain text"""
+        lines = []
+        indent = "    " * depth  # 4 spaces per level
+        
+        # Get content and strip HTML tags
+        content = note.get("content", "").strip()
+        if content:
+            # Strip HTML tags but preserve text
+            import re
+            plain_content = re.sub(r'<[^>]+>', '', content)
+            # Convert HTML entities
+            import html
+            plain_content = html.unescape(plain_content)
+            # Handle line breaks
+            plain_content = plain_content.replace('\n', f'\n{indent}')
+            
+            lines.append(f"{indent}{plain_content}")
+        
+        # Add children with increased depth
+        children = note.get("children", [])
+        for child in children:
+            child_lines = render_note_text(child, depth + 1)
+            lines.extend(child_lines)
+        
+        return lines
+    
+    all_lines = render_note_text(note_data, 0)
+    return '\n'.join(all_lines)

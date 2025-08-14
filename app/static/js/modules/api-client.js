@@ -296,6 +296,12 @@ export const NotesAPI = {
         });
     },
 
+    async exportNoteAsHtml(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.EXPORT_HTML(noteId), {
+            method: 'GET'
+        });
+    },
+
     async pasteNoteSibling(targetNoteId) {
         return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(targetNoteId), {
             method: 'POST'

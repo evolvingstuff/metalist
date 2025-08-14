@@ -153,6 +153,32 @@ def copy_note(
             raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/{note_id}/export-html")
+def export_note_as_html(
+    note_id: str,
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
+):
+    """Export a note and all its children as HTML"""
+    apply_delay("export_note_html")
+    
+    with get_note_service(db, transaction_manager) as service:
+        try:
+            # Serialize the note tree to pure data
+            from ..models.utils import copy_note_in_memory, note_data_to_html, note_data_to_plain_text
+            note_data = copy_note_in_memory(db, note_id)
+            
+            # Convert to HTML
+            html = note_data_to_html(note_data)
+            
+            # Also create plain text version
+            plain_text = note_data_to_plain_text(note_data)
+            
+            return {"html": html, "plain_text": plain_text}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/new")
 def create_note_top(
     command: CreateNoteCommand = CreateNoteCommand(),
