@@ -27,11 +27,27 @@ Building the next evolutionary step in human-information interaction - not just 
 - 2019-2024: 5 years designing the grammar/language
 - 2025: Q1 target for MVP release to first 100 free users
 
+## Business Philosophy & Goals
+**Target: Lifestyle Business ($5-10M lifetime)**
+- Small, focused team: Solo or 4-5 core devs max
+- No traditional company structure - more like profit sharing collective
+- No VC funding or growth-at-all-costs pressure
+- Build at sustainable pace with full creative control
+- Financial independence (~$5M) is enough - beyond that isn't worth added complexity
+- Focus on building the best tool, not the biggest company
+- Use modern tools (LLMs, automation) to minimize operational overhead
+
 ## Monetization Strategy
-- First 100 users: Completely free (advisors/evangelists)
+- First 100 users: Completely free forever (advisors/evangelists)
 - Users 101-1000: $19 early bird
 - Users 1001-5000: $29 standard
 - 5000+: $39-49 final price
+
+### Alternative Premium Pricing
+For power users (8+ hours daily use):
+- Professional: $99-199/year
+- Teams/Enterprise: $200-500/year
+- Could reach goals with just 10,000 committed users vs 100,000 casual users
 
 ## What Makes This Different
 - Built by someone who's been living in the future for 8 years
@@ -73,6 +89,8 @@ THE way people will interact with LLMs in their notes:
 - Not building a startup - building life's infrastructure and letting others use it
 - The moat isn't code - it's a decade of lived experience informing every decision
 - Grammar/language design takes years to get right (5 years of mental design for current version)
+- No pivot pressure, no committee decisions - pure vision from a single power user
+- Better to have 1,000 true fans than 1 million casual users
 
 ## Unique Positioning
 - Creator has track record of being right about the future:
