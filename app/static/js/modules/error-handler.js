@@ -85,18 +85,22 @@ export const ErrorHandler = {
      * Handle successful connection - hide error banner if showing
      */
     handleConnectionRestored() {
-        console.log('[ErrorHandler] Connection restored');
-        
-        if (!ModeContext.isConnected) {
-            ModeContext.setConnected(true);
+        // Only process if we were actually disconnected
+        if (!ModeContext.isConnected || ModeContext.connectionErrorBannerVisible) {
+            console.log('[ErrorHandler] Connection restored');
+            
+            if (!ModeContext.isConnected) {
+                ModeContext.setConnected(true);
+            }
+            
+            if (ModeContext.connectionErrorBannerVisible) {
+                ModeContext.setConnectionErrorBannerVisible(false);
+                this.hideErrorBanner();
+                this.showSuccessBanner('Connection restored', 3000);
+                this.enableEditingUI();
+            }
         }
-        
-        if (ModeContext.connectionErrorBannerVisible) {
-            ModeContext.setConnectionErrorBannerVisible(false);
-            this.hideErrorBanner();
-            this.showSuccessBanner('Connection restored', 3000);
-            this.enableEditingUI();
-        }
+        // If already connected, do nothing silently
     },
     
     /**

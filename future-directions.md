@@ -25,29 +25,57 @@ Building the next evolutionary step in human-information interaction - not just 
 - 2014-2016: Building foundation
 - 2016-2024: 8 years of daily dogfooding and refinement
 - 2019-2024: 5 years designing the grammar/language
-- 2025: Q1 target for MVP release to first 100 free users
+- 2025 Q2-Q3: Complete rewrite for better architecture and mobile support
+- 2025 November: Target to fully transition to new version (personal use)
+- 2026 Q1: Potential MVP release to first users (if commercialization pursued)
 
 ## Business Philosophy & Goals
-**Target: Lifestyle Business ($5-10M lifetime)**
-- Small, focused team: Solo or 4-5 core devs max
-- No traditional company structure - more like profit sharing collective
+
+**Important Note**: Commercialization is a very recent consideration (August 2025). The rewrite was initiated purely for personal use - to enable features the old architecture couldn't support. Monetization strategy below is exploratory.
+
+**Primary Target: Sustainable Lifestyle Business**
+- Initial goal: $150k/year (job replacement income)
+- Long-term potential: $5-10M lifetime (but not required)
+- Solo or very small team (max 4-5 people)
 - No VC funding or growth-at-all-costs pressure
 - Build at sustainable pace with full creative control
-- Financial independence (~$5M) is enough - beyond that isn't worth added complexity
 - Focus on building the best tool, not the biggest company
 - Use modern tools (LLMs, automation) to minimize operational overhead
 
 ## Monetization Strategy
-- First 100 users: Completely free forever (advisors/evangelists)
-- Users 101-1000: $19 early bird
-- Users 1001-5000: $29 standard
-- 5000+: $39-49 final price
 
-### Alternative Premium Pricing
-For power users (8+ hours daily use):
-- Professional: $99-199/year
-- Teams/Enterprise: $200-500/year
-- Could reach goals with just 10,000 committed users vs 100,000 casual users
+### Desktop + Cloud Hybrid Model
+**Free Tier: Electron Desktop App**
+- Full-featured local app (download and use forever)
+- Local SQLite database on user's machine
+- Gentle nag/reminder about cloud benefits (like Sublime Text)
+- No artificial limitations, respects user ownership of data
+- Serves as extended trial and funnel to paid tier
+
+**Paid Tier: Cloud Subscription ($5-10/month)**
+- Sync across all devices (desktop, web, mobile, tablet)
+- Automatic encrypted backups
+- Access from anywhere via web
+- Share notes/collaborate (future feature)
+- Priority support
+
+### Pricing Structure
+- $5-8/month ($60-96/year) - Sweet spot for note-taking apps
+- $10/month ($120/year) - If significant unique value demonstrated
+- Early bird discount for first 1,000 subscribers
+- Annual payment discount (e.g., 10 months for price of 12)
+
+### Revenue Targets
+**Minimum Viable Success**: $150k/year
+- At $5/month: 2,500 subscribers
+- At $8/month: 1,563 subscribers  
+- At $10/month: 1,250 subscribers
+
+**Long-term Potential**:
+- 10,000 free desktop users → 15% conversion = 1,500 paid subscribers
+- 1,500 × $8/month = $144k/year (achieves primary goal)
+- 5,000 subscribers = $480k/year (comfortable lifestyle business)
+- 10,000 subscribers = $960k/year (upper bound realistic target)
 
 ## What Makes This Different
 - Built by someone who's been living in the future for 8 years
@@ -63,21 +91,22 @@ THE way people will interact with LLMs in their notes:
 - Transparent RAG with visual search results
 - The semantic layer between human knowledge and AI
 
-## Next 3 Months (MVP Sprint)
-**Month 1**: Core infrastructure
-- Basic note CRUD with hierarchy
-- Import existing data
-- Minimal viable tag system
+## Next 3 Months (Personal Dogfooding Focus)
+**August-September 2025**: Core infrastructure
+- Complete encryption implementation
+- Multi-tab/device sync
+- Basic note operations working reliably
 
-**Month 2**: Make it usable
-- Top 5 innovations (implications, search viz)
-- Daily driver capable
-- Fix migration issues
+**October 2025**: Critical features
+- Tag implications (THE core innovation)
+- Import existing data from old system
+- Other essential features for daily use
 
-**Month 3**: Polish for others
-- Clean up worst bugs
-- Basic onboarding
-- Launch to first 100 free users
+**November 2025**: Personal transition
+- Achieve stability for daily driver use
+- Complete migration from old system
+- Begin using exclusively
+- THEN evaluate commercialization potential
 
 ## Long-term Roadmap
 - Years 1-2: Roll out innovations in waves, keeping some in reserve
