@@ -618,7 +618,7 @@ class ModeContext {
             if (response.ok) {
                 const data = await response.json();
                 this._lastUpdateUUID = data.updateUUID;
-                Logger.logDebug('Editing heartbeat sent successfully');
+                // Logger.logDebug('Editing heartbeat sent successfully');
             } else if (response.status === 409) {
                 // Lock was taken by another client - exit edit mode
                 Logger.logDebug('Lost edit lock to another client');

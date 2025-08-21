@@ -3,7 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { actionSaveNoteOnIdle } from '../actions/content-actions.js';
 
 const CHECK_INTERVAL = 500;
-const CONTENT_INACTIVITY_THRESHOLD = 10000; 
+const CONTENT_INACTIVITY_THRESHOLD = 60000;  // 60 seconds for debugging 
 
 let contentCheckTimer = null;
 

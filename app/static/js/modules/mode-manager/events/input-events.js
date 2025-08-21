@@ -24,6 +24,9 @@ function handleInput(event) {
         throw new Error('Input event missing target element');
     }
 
+    console.log('[InputEvents] Input event fired, last key:', ModeContext.lastKeyPressed, 
+        'inputType:', event.inputType, 'data:', event.data);
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Input event ignored while system is loading', {
             targetElement: event.target.tagName,
@@ -72,7 +75,7 @@ function handleInput(event) {
             }, Logger.LogCategory.EVENT);
             
             // Schedule comment highlighting with debounce
-            scheduleCommentHighlighting(noteContent);
+            // scheduleCommentHighlighting(noteContent);  // DISABLED - cursor bug with Enter key
         }
     } 
     // Search input handling is now done by search-events.js
@@ -116,7 +119,7 @@ function isNavigationKey(key) {
 // Export function to trigger immediate highlighting on render
 export function highlightCommentsOnRender(noteContentElement) {
     if (CONFIG.COMMENT_HIGHLIGHTING.ENABLE && ModeContext.isEditing && noteContentElement) {
-        CommentUtils.highlightComments(noteContentElement);
+        // CommentUtils.highlightComments(noteContentElement);  // DISABLED - cursor bug with Enter key
         Logger.logDebug('Comments highlighted on render', {
             noteId: ModeContext.currentNoteId
         });
