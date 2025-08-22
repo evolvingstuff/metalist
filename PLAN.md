@@ -1,67 +1,48 @@
-# Enhanced Copy Functionality - HTML Export to System Clipboard
+# Smart Paste Detection Feature
 
-## Feature Overview
-Enhance the Cmd+C functionality to copy the entire note hierarchy (including children) as HTML to the system clipboard when no text is selected, while maintaining the existing server-side clipboard functionality.
+## Problem
+When a user copies a note (Cmd+C), it goes to both server clipboard and system clipboard. If they then copy something externally (e.g., an image from Google), the app doesn't know the system clipboard has changed. On Cmd+V, it may paste the old note instead of the new content.
 
-## Current Behavior
-When pressing Cmd+C with no text selected:
-1. Saves current note content to server
-2. Adds note to server-side clipboard (for internal paste operations)
-3. System clipboard is not used
-
-## Desired Behavior
-When pressing Cmd+C with no text selected:
-1. Saves current note content to server (unchanged)
-2. Adds note to server-side clipboard (unchanged)
-3. **NEW**: Also copies the entire note hierarchy as HTML to system clipboard
-   - Includes the selected note and all its children
-   - Formatted as HTML that can be pasted into Gmail, Word, etc.
-   - Preserves hierarchy structure visually
+## Solution
+Add intelligent paste detection by inspecting clipboard contents at paste time.
 
 ## Implementation Plan
 
-### 1. Server-Side Changes
-- Create new API endpoint: `/api/notes/{id}/export-html`
-  - Returns the note and all children as formatted HTML
-  - Includes proper indentation/nesting for hierarchy
-  - Returns clean HTML suitable for external applications
+### 1. Add Paste Event Listener
+- Add a `paste` event listener alongside the existing keydown handler
+- This gives us access to clipboard contents at paste time
 
-### 2. Client-Side Changes
-- Modify `handleCopyNoteShortcut` in `keyboard-events.js`:
-  - After successful server clipboard copy
-  - Fetch HTML version from new endpoint
-  - Copy HTML to system clipboard using Clipboard API
-  
-### 3. HTML Format Structure
-```html
-<div class="metalist-note-export">
-  <div class="note-content">Main note content here</div>
-  <div class="note-children" style="margin-left: 20px;">
-    <div class="note-content">Child 1 content</div>
-    <div class="note-children" style="margin-left: 20px;">
-      <div class="note-content">Grandchild content</div>
-    </div>
-    <div class="note-content">Child 2 content</div>
-  </div>
-</div>
-```
+### 2. Inspect Clipboard Contents
+When paste event fires, check the clipboard data:
+- Extract HTML content from `event.clipboardData`
+- Look for our signature: the `note-content` class
 
-### 4. Technical Considerations
-- Use browser Clipboard API for writing HTML
-- Fall back to execCommand('copy') if Clipboard API unavailable
-- Ensure HTML is sanitized but preserves formatting
-- Handle both plain text and HTML MIME types
+### 3. Smart Routing Logic
+- **If HTML contains `class="note-content"`**: This is our note HTML from earlier
+  - Prevent default paste behavior  
+  - Call the server clipboard paste functions (preserves structure/hierarchy)
+- **Otherwise**: External content (text, images, other HTML)
+  - Allow default paste behavior
+  - Let browser handle it naturally
 
-### 5. Testing Requirements
-- Test copying single notes without children
-- Test copying notes with deep hierarchy
-- Test pasting into various applications (Gmail, Word, etc.)
-- Verify server-side clipboard still works for internal operations
-- Test with various content types (lists, formatting, etc.)
+### 4. Clean Up State Tracking
+- Remove `clipboardMode` state variable (no longer needed)
+- Remove related state management code
+- Simplify the copy/paste flow
 
-## Success Criteria
-- [ ] Cmd+C with no selection copies HTML to system clipboard
-- [ ] HTML can be pasted into Gmail and renders correctly
-- [ ] Hierarchy is visually preserved in pasted content
-- [ ] Server-side clipboard functionality remains unchanged
-- [ ] No regression in existing copy/paste behavior
+### 5. Update Copy Behavior  
+- Keep current copy behavior (copies to both server and system)
+- Ensure HTML includes `note-content` class naturally (already does)
+
+## Benefits
+- No new keyboard shortcuts to learn
+- Works with images, text, and any external content
+- Preserves note structure when appropriate
+- No permission prompts needed (paste event provides access)
+
+## Testing Scenarios
+1. Copy note → Paste in app (should use server clipboard)
+2. Copy note → Copy external text → Paste in app (should paste external text)  
+3. Copy note → Copy image → Paste in app (should paste image)
+4. Copy note → Paste in Gmail (should paste HTML correctly)
+5. Copy text from note → Paste elsewhere (should work normally)
