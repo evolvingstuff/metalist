@@ -38,6 +38,31 @@ export const CommentUtils = {
         if (selection.rangeCount > 0) {
             const range = selection.getRangeAt(0);
             if (element.contains(range.startContainer)) {
+                // CRITICAL: Check if cursor is in an empty element (e.g., empty div after Enter key)
+                // 
+                // When contentEditable creates empty block elements (divs), the cursor can be positioned
+                // inside them even though they contain no text nodes. Our text-offset-based cursor 
+                // preservation logic cannot handle these cases because:
+                // 1. TreeWalker with SHOW_TEXT filter cannot find cursors in elements with no text
+                // 2. _getTextOffsetInElement would return incorrect fallback values
+                // 3. After DOM manipulation, _setTextOffsetInElement would place cursor at wrong position
+                //
+                // This caused the "cursor jump" bug where pressing Enter would briefly show cursor on 
+                // new line, then jump to end of content after highlighting ran.
+                //
+                // Solution: Skip highlighting entirely when cursor is in empty element because:
+                // - There's no text to highlight anyway (empty element = no comment patterns)
+                // - Avoiding DOM manipulation preserves cursor position naturally
+                // - Highlighting will resume once user types text into the empty element
+                const container = range.startContainer;
+                const isInEmptyElement = 
+                    (container.nodeType === Node.ELEMENT_NODE && !container.textContent) ||
+                    (container.nodeType === Node.TEXT_NODE && container.parentNode && !container.parentNode.textContent);
+                
+                if (isInEmptyElement) {
+                    return;
+                }
+                
                 cursorOffset = this._getTextOffsetInElement(element, range.startContainer, range.startOffset);
             }
         }

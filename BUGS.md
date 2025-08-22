@@ -2,9 +2,10 @@
 
 ## Comment Highlighting - Cursor Jump on Enter Key
 
-**Status:** Open  
+**Status:** Fixed  
 **Severity:** Medium  
 **Date Discovered:** 2025-08-21  
+**Date Fixed:** 2025-08-21  
 
 ### Description
 When comment highlighting is enabled and the user presses Enter in the middle or at the end of a line, the cursor jumps to an incorrect position instead of staying on the new line. This makes editing with Enter key unusable when comment highlighting is active.

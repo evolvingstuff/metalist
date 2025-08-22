@@ -221,6 +221,7 @@ function handleEnterKey(event) {
         inEditor: ModeContext.isEditing,
         noteId: ModeContext.currentNoteId
     });
+
 }
 
 function handleCreateNoteShortcut(event) {

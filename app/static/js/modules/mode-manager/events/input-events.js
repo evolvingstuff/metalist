@@ -75,7 +75,7 @@ function handleInput(event) {
             }, Logger.LogCategory.EVENT);
             
             // Schedule comment highlighting with debounce
-            // scheduleCommentHighlighting(noteContent);  // DISABLED - cursor bug with Enter key
+            scheduleCommentHighlighting(noteContent);
         }
     } 
     // Search input handling is now done by search-events.js
@@ -119,7 +119,7 @@ function isNavigationKey(key) {
 // Export function to trigger immediate highlighting on render
 export function highlightCommentsOnRender(noteContentElement) {
     if (CONFIG.COMMENT_HIGHLIGHTING.ENABLE && ModeContext.isEditing && noteContentElement) {
-        // CommentUtils.highlightComments(noteContentElement);  // DISABLED - cursor bug with Enter key
+        CommentUtils.highlightComments(noteContentElement);
         Logger.logDebug('Comments highlighted on render', {
             noteId: ModeContext.currentNoteId
         });
