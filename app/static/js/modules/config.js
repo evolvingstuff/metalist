@@ -56,5 +56,9 @@ export const CONFIG = {
         ENABLE: true,              // Enable comment highlighting in edit mode
         DEBOUNCE_MS: 150,         // Delay before highlighting after typing stops
         CSS_CLASS: 'my-comment'   // CSS class for highlighted comments
+    },
+    
+    EDITOR: {
+        DEFAULT_CURSOR_POSITION: 'START'  // Where to place cursor when entering edit mode ('START' or 'END')
     }
 };

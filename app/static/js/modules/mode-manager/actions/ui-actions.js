@@ -64,9 +64,14 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
                     cursorOffset
                 }, Logger.LogCategory.DEBUG);
             } else {
-                                
+                // Use configured default cursor position when no saved offset
                 const contentElement = DOMUtils.getNoteContent(noteElement);
-                cursorOffset = contentElement.textContent.length || 0;
+                if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'END') {
+                    cursorOffset = contentElement.textContent.length || 0;
+                } else {
+                    // Default to START
+                    cursorOffset = 0;
+                }
             }
 
             DOMUtils.focusNote(noteElement, cursorOffset);

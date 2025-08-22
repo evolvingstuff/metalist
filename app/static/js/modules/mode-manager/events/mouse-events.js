@@ -136,28 +136,9 @@ function handleClick(event) {
             }
 
             if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
-
-                const cursorOffset = DOMUtils.getCursorOffsetFromClick(noteElement, coordinates);
-
-                const content = DOMUtils.getNoteContent(noteElement);
-                Logger.logDebug('Note content structure:', { 
-                    html: content.innerHTML,
-                    text: content.textContent,
-                    cursorOffset,
-                    coordinates,
-                    childNodes: Array.from(content.childNodes).map(node => ({
-                        type: node.nodeType,
-                        name: node.nodeName,
-                        text: node.textContent?.substring(0, 20)
-                    }))
-                }, Logger.LogCategory.DEBUG);
-
-                ModeContext.setSavedCursorOffset(noteId, cursorOffset);
-                                
-                Logger.logDebug('Stored cursor offset before fragment load', { 
-                    cursorOffset, 
-                    noteId 
-                }, Logger.LogCategory.EVENT);
+                // Don't calculate or save cursor position when entering edit mode
+                // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully 
+                // to cursor position in source text
 
                 if (ModeContext.currentNoteId) {
                     actionSwitchNotes(noteId);
