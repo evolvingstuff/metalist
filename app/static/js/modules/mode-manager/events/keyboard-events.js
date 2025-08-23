@@ -9,6 +9,7 @@ import { PasswordModal } from '../../modals/password-modal.js';
 export function initKeyboardEvents() {
         
     document.addEventListener('keydown', handleKeyDown, { capture: true });
+    document.addEventListener('paste', handlePasteEvent, { capture: false });
         
     Logger.logInit('Keyboard events handler');
     
