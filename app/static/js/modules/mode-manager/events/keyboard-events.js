@@ -587,6 +587,52 @@ function handlePasswordModalShortcut(event) {
 }
 
 
+function handlePasteEvent(event) {
+    if (!event || !event.clipboardData) {
+        Logger.logDebug('Paste event without clipboard data - allowing default behavior', {}, Logger.LogCategory.EVENT);
+        return;
+    }
+
+    // Get HTML from clipboard if available
+    const html = event.clipboardData.getData('text/html');
+    
+    Logger.logDebug('Paste event detected', {
+        hasHtml: !!html,
+        htmlLength: html ? html.length : 0,
+        isEditing: ModeContext.isEditing
+    }, Logger.LogCategory.EVENT);
+
+    // Check if this is our note HTML (contains note-content class)
+    if (html && html.includes('class="note-content"')) {
+        Logger.logDebug('Detected note HTML in clipboard - using server clipboard', {}, Logger.LogCategory.EVENT);
+        
+        // This is our note HTML - prevent default and use server clipboard
+        if (ModeContext.isEditing && ModeContext.currentNoteId) {
+            event.preventDefault();
+            
+            // Determine if shift is held for child paste
+            if (event.shiftKey) {
+                actionPasteNoteChild();
+            } else {
+                actionPasteNoteSibling();
+            }
+        }
+    } else {
+        // External content - allow default paste behavior
+        Logger.logDebug('External content detected - using browser default paste', {
+            hasHtml: !!html
+        }, Logger.LogCategory.EVENT);
+        
+        // Mark content as dirty since we're pasting external content
+        if (ModeContext.isEditing && !ModeContext.isDirty) {
+            ModeContext.setDirty(true);
+            Logger.logDebug('Content marked as dirty due to paste', {
+                noteId: ModeContext.currentNoteId
+            }, Logger.LogCategory.STATE);
+        }
+    }
+}
+
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
     if (!searchContextsList) return;
