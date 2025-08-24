@@ -9,7 +9,7 @@ from ..undo_redo import Command
 if TYPE_CHECKING:
     from ..services.transaction_manager import TransactionManager
 
-_updating_state = False
+_global_blocking_capture = False
 tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
 
 
@@ -22,7 +22,7 @@ class ApiTransaction:
         self.state_current_updated = {}
         self.state_added = {}
         self.state_deleted = {}
-        self._updating_state = False
+        self._prevent_deepcopy_loop = False
         print(f'@ New transaction created with ID: {self.uuid} for client {client_id}')
 
     def calculate_states(self):
@@ -56,18 +56,35 @@ class ApiTransaction:
         return state_before, state_after
 
     def finalize_transaction(self, action: str):
-        print(f'@ Finalizing transaction with ID: {self.uuid}')
+        print(f'@ Finalizing transaction with ID: {self.uuid} for action "{action}"')
         state_before, state_after = self.calculate_states()
+        print(f'@ Transaction {self.uuid}: state_before has {len(state_before)} notes, state_after has {len(state_after)} notes')
+        
+        if action == "paste_child" or action == "paste_sibling":
+            print(f'@ PASTE TRANSACTION DEBUG:')
+            print(f'  state_added: {list(self.state_added.keys())}')
+            print(f'  state_before_updated: {list(self.state_before_updated.keys())}')
+            print(f'  state_current_updated: {list(self.state_current_updated.keys())}')
+            print(f'  state_deleted: {list(self.state_deleted.keys())}')
+        
         # Create a command with before and after states
         command = Command(state_before, state_after, action)
         # Add the command to the transaction stack via the transaction manager
         if not self.client_id:
             raise RuntimeError(f"🚨 FATAL: Transaction {self.uuid} finalized without client_id! This breaks undo functionality and indicates a critical bug in the API layer. ALL write operations MUST include client_id.")
         
-        self.transaction_manager.add_command_to_stack(command, self.client_id)
+        # Only add commands that have actual state changes
+        if len(state_before) > 0 or len(state_after) > 0:
+            self.transaction_manager.add_command_to_stack(command, self.client_id)
+        else:
+            print(f'@ Transaction {self.uuid}: No state changes detected, skipping command creation for action "{action}"')
 
     def log_attribute_set(self, target, value, oldvalue, initiator):
-        if self._updating_state:
+        if _global_blocking_capture:
+            print(f"!!! BLOCKING: Global flag is True, skipping capture for {target.id[:8] if hasattr(target, 'id') else 'unknown'}")
+            return
+        if self._prevent_deepcopy_loop:
+            print(f"!!! BLOCKING: Deepcopy prevention flag is True, skipping capture")
             return
         if isinstance(target, DBNote):
             # Check if the changed attribute is one of the tracked attributes
@@ -92,9 +109,9 @@ class ApiTransaction:
             # This is a bit of a hack, but otherwise when we update the value
             # we trigger the event listener again, which causes an infinite loop...
             # ... and we do not like infinite loops :(
-            self._updating_state = True
+            self._prevent_deepcopy_loop = True
             setattr(self.state_current_updated[note_id], initiator.key, value)
-            self._updating_state = False
+            self._prevent_deepcopy_loop = False
             ############################################################
 
     def log_note_after_insert(self, mapper, connection, target):

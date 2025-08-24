@@ -106,6 +106,14 @@ class TransactionManager:
         self.command_stack.push(command)
         logger.info(f"🔧 UNDO STACK: Command added to stack for client {client_id}")
         logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
+        
+        # Print current stack contents with indentation
+        logger.info("🔧 UNDO STACK CONTENTS:")
+        for i, cmd in enumerate(self.command_stack.stack):
+            indent = "    " * (i + 1)
+            is_current = i == self.command_stack.current_index
+            marker = " <-- CURRENT" if is_current else ""
+            logger.info(f"{indent}{cmd.func_name} (depth {i + 1}){marker}")
     
     def undo(self, db, client_id: str = None) -> bool:
         """Perform an undo operation."""

@@ -287,8 +287,9 @@ def paste_sibling(
         raise HTTPException(status_code=400, detail="Nothing in clipboard to paste")
     
     with get_note_service(db, transaction_manager, request.clientId) as service:
+        service._set_operation("paste_sibling")
         try:
-            # Get target note and its parent
+            # Get target note first
             from ..models.linked_list import LinkedListManager
             target_note = LinkedListManager.get_note(db, target_note_id)
             
@@ -296,8 +297,18 @@ def paste_sibling(
             from ..models.utils import paste_note_from_memory
             new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
             
-            # Position the new note as sibling after target using existing logic
-            LinkedListManager.move_note(db, new_note_id, target_note.parent_id, target_note_id, MovePosition.AFTER)
+            # Position the new note as sibling after target
+            new_note = db.get(DBNote, new_note_id)
+            
+            # Insert new note between target and target's next
+            target_next = target_note.next_id
+            new_note.prev_id = target_note_id
+            new_note.next_id = target_next
+            target_note.next_id = new_note_id
+            
+            if target_next:
+                next_note = db.get(DBNote, target_next)
+                next_note.prev_id = new_note_id
             
             return {"id": new_note_id}
         except ValueError as e:
@@ -320,6 +331,7 @@ def paste_child(
         raise HTTPException(status_code=400, detail="Nothing in clipboard to paste")
     
     with get_note_service(db, transaction_manager, request.clientId) as service:
+        service._set_operation("paste_child")
         try:
             # Deserialize clipboard data into real database notes as child of target
             from ..models.utils import paste_note_from_memory
@@ -345,9 +357,14 @@ def paste_child(
             raise HTTPException(status_code=404, detail=str(e))
 
 
+class DeleteNoteRequest(BaseModel):
+    clientId: str
+
+
 @router.delete("/{note_id}")
 def delete_note(
     note_id: str,
+    request: DeleteNoteRequest,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
