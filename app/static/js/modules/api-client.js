@@ -297,7 +297,10 @@ export const NotesAPI = {
     },
 
     async exportNoteAsHtml(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.EXPORT_HTML(noteId), {
+        let url = CONFIG.API.NOTES.EXPORT_HTML(noteId);
+        url += `?client_id=${encodeURIComponent(ModeContext.clientId)}`;
+        
+        return this._apiCall(url, {
             method: 'GET'
         });
     },

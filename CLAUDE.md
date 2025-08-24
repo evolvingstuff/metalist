@@ -50,6 +50,19 @@ THE RULE IS SIMPLE:
 
 Error handling is a code smell. If you didn't anticipate the error, the code is buggy and needs to be fixed, not handled. The crash tells you exactly what to fix.
 
+## CRITICAL: NO OPTIONAL FIELDS
+
+Claude: ALMOST NEVER use Optional[T] fields in request/response models. Use required fields instead.
+
+Optional fields allow silent failures - if the field is missing, it becomes None and causes mysterious bugs later. Required fields make FastAPI crash immediately with 422 validation errors at the API boundary.
+
+BEFORE using Optional[T], you MUST:
+1. Ask for explicit human approval
+2. Explain WHY you think Optional is appropriate for this specific case
+3. Get confirmation before proceeding
+
+Default assumption: If a field might be missing, that's a BUG that should crash immediately, not be handled gracefully with Optional.
+
 # Testing Philosophy
 
 NEVER commit untested code. Always wait for user confirmation that changes have been tested and work correctly before committing. If I ask to commit, ask me first: "Have you tested these changes?"

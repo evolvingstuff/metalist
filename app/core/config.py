@@ -3,6 +3,9 @@ import sys
 
 VERSION = "0.3.0"
 
+# Development settings - CRASH SERVER ON ANY ERROR
+CRASH_SERVER_ON_FAIL = True
+
 # Authentication configuration
 TOKEN_EXPIRY_MINUTES = 30  # Token expires after 30 minutes of inactivity
 PW_PBKDF2_ITERATIONS = 1_000_000  # Number of iterations for app password hashing

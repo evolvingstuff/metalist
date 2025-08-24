@@ -28,18 +28,22 @@ class MoveNoteCommand(BaseModel):
     new_parent_id: Optional[str] = Field(default=None)
     sibling_id: Optional[str] = None
     position: Optional[str] = None  # "BEFORE" or "AFTER"
-    clientId: Optional[str] = None
+    clientId: str
 
 
 class CreateNoteCommand(BaseModel):
     first_visible_note_id: Optional[str] = Field(default=None)
     search_query: Optional[str] = Field(default=None)
-    clientId: Optional[str] = None
+    clientId: str
 
 
 class CreateSiblingCommand(BaseModel):
     search_query: Optional[str] = Field(default=None)
-    clientId: Optional[str] = None
+    clientId: str
+
+
+class CreateChildCommand(BaseModel):
+    clientId: str
 
 
 class SyncCheckRequest(BaseModel):
@@ -161,13 +165,14 @@ def copy_note(
 @router.get("/{note_id}/export-html")
 def export_note_as_html(
     note_id: str,
+    client_id: str,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Export a note and all its children as HTML"""
     apply_delay("export_note_html")
     
-    with get_note_service(db, transaction_manager, request.clientId) as service:
+    with get_note_service(db, transaction_manager, client_id) as service:
         try:
             # Serialize the note tree to pure data
             from ..models.utils import copy_note_in_memory, note_data_to_html, note_data_to_plain_text
@@ -186,7 +191,7 @@ def export_note_as_html(
 
 @router.post("/new")
 def create_note_top(
-    command: CreateNoteCommand = CreateNoteCommand(),
+    command: CreateNoteCommand,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -386,7 +391,7 @@ def create_note_with_position(
 @router.post("/new-sibling/{note_id}")
 def create_new_sibling(
     note_id: str,
-    command: CreateSiblingCommand = CreateSiblingCommand(),
+    command: CreateSiblingCommand,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -401,6 +406,7 @@ def create_new_sibling(
 @router.post("/new-child/{note_id}")
 def create_new_child(
     note_id: str,
+    command: CreateChildCommand,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -409,7 +415,7 @@ def create_new_child(
     
     logger.debug(f"Creating new child for note {note_id}")
     
-    with get_note_service(db, transaction_manager, request.clientId) as service:
+    with get_note_service(db, transaction_manager, command.clientId) as service:
         result = service.create_child_note(note_id)
         return {"id": result["id"]}
 

@@ -4,4 +4,4 @@ from typing import Optional
 
 class UpdateNoteContent(BaseModel):
     content: str
-    clientId: Optional[str] = None
+    clientId: str

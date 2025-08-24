@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from mako.lookup import TemplateLookup
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from .models.database import Base, SafeSession
 from .api.dependencies import get_db
 from .models.linked_list import LinkedListManager
 from .services.content_cache import populate_cache_from_db
+from .core.config import CRASH_SERVER_ON_FAIL
 import logging
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
@@ -19,6 +21,18 @@ import mimetypes
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
+@app.exception_handler(RequestValidationError)
+async def crash_on_validation_error(request: Request, exc: RequestValidationError):
+    if CRASH_SERVER_ON_FAIL:
+        logger.error(f"🚨 FATAL: Validation error on {request.method} {request.url}")
+        logger.error(f"🚨 Validation errors: {exc.errors()}")
+        logger.error(f"🚨 CRASHING SERVER IMMEDIATELY")
+        raise RuntimeError(f"VALIDATION FAILED - CRASHING: {request.method} {request.url}: {exc.errors()}") from exc
+    else:
+        # Normal behavior - return 422
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 Base.metadata.create_all(bind=SafeSession.get_engine())
 
