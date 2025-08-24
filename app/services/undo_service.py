@@ -15,9 +15,10 @@ class UndoRedoService(BaseQueryService):
         super().__init__(db)
         self.transaction_manager = transaction_manager
     
-    def undo(self) -> dict:
+    def undo(self, client_id: str = None) -> dict:
         """Perform an undo operation"""
-        undid = self.transaction_manager.undo(self.db)
+        logger.info(f"🔧 UNDO SERVICE: undo() called for client {client_id}")
+        undid = self.transaction_manager.undo(self.db, client_id)
         
         if undid:
             set_server_sync_uuid(generate_new_uuid())
@@ -27,9 +28,9 @@ class UndoRedoService(BaseQueryService):
             logger.info("No operations to undo")
             return {"status": "noop", "message": "No actions to undo"}
     
-    def redo(self) -> dict:
+    def redo(self, client_id: str = None) -> dict:
         """Perform a redo operation"""
-        redid = self.transaction_manager.redo(self.db)
+        redid = self.transaction_manager.redo(self.db, client_id)
         
         if redid:
             set_server_sync_uuid(generate_new_uuid())

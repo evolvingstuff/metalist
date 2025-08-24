@@ -28,6 +28,28 @@ I want you to rollback all the changes made on that branch.
 
 FAIL FAST AND LOUD: If anything fails during build processes, it should fail as fast and as loudly as possible. No error recovery, no graceful degradation, no silent failures. The build should stop immediately with clear error messages so issues can be identified and fixed quickly.
 
+## CRITICAL: NO SOFT FAILURES - CLAUDE READ THIS
+
+Claude: You have a persistent anti-pattern where you add "helpful" error handling that masks bugs:
+- try/except blocks that log warnings instead of crashing
+- Fallback values like `if not x: x = "default"`  
+- "This shouldn't happen" comments with graceful degradation
+- Warning logs instead of raising exceptions
+
+THIS PATTERN HAS COST 100+ HOURS OF DEBUGGING TIME. Every soft failure you add:
+1. Hides the real bug for hours/days
+2. Makes debugging exponentially harder  
+3. Directly violates the FAIL FAST AND LOUD principle
+4. Wastes massive amounts of time
+
+THE RULE IS SIMPLE: 
+- If there's ANY error condition → CRASH IMMEDIATELY with clear error message
+- If you think "this shouldn't happen" → CRASH IMMEDIATELY  
+- If you want to add a fallback → CRASH IMMEDIATELY instead
+- If you want to log a warning → CRASH IMMEDIATELY instead
+
+Error handling is a code smell. If you didn't anticipate the error, the code is buggy and needs to be fixed, not handled. The crash tells you exactly what to fix.
+
 # Testing Philosophy
 
 NEVER commit untested code. Always wait for user confirmation that changes have been tested and work correctly before committing. If I ask to commit, ask me first: "Have you tested these changes?"

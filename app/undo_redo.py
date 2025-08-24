@@ -104,8 +104,10 @@ class CommandStack:
     def undo(self, db: Session):
         if self.current_index >= 0:
             command = self.stack[self.current_index]
+            print(f"🔧 COMMAND STACK: Undoing command at index {self.current_index}")
             command.undo(db)
             self.current_index -= 1
+            print(f"🔧 COMMAND STACK: After undo, current_index = {self.current_index}")
         else:
             print("No command to undo")
 

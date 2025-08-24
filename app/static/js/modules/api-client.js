@@ -216,11 +216,11 @@ export const NotesAPI = {
     },
 
     async undo() {
-        return this._apiCall(CONFIG.API.NOTES.UNDO, { method: 'POST' });
+        return this._apiCall(`${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}`, { method: 'POST' });
     },
 
     async redo() {
-        return this._apiCall(CONFIG.API.NOTES.REDO, { method: 'POST' });
+        return this._apiCall(`${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}`, { method: 'POST' });
     },
 
     getNoteElement(noteId) {

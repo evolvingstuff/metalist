@@ -15,6 +15,9 @@ class TransactionManager:
     This class replaces the global state dictionary with proper dependency injection.
     It maintains the same singleton behavior - only one transaction can be active
     at a time across the entire application.
+    
+    The undo/redo stack is owned by a single client at a time. When a different
+    client performs an operation, the stack is cleared and ownership transfers.
     """
     
     def __init__(self):
@@ -22,10 +25,14 @@ class TransactionManager:
         self.command_stack = CommandStack()
         self.lock = Lock()
         self.last_search_query: Optional[str] = None
+        self.active_client_id: Optional[str] = None
     
-    def start_transaction(self) -> ApiTransaction:
+    def start_transaction(self, client_id: str = None) -> ApiTransaction:
         """
         Start a new transaction.
+        
+        Args:
+            client_id: The ID of the client starting the transaction
         
         Raises:
             Exception: If a transaction is already in progress
@@ -37,8 +44,8 @@ class TransactionManager:
             if self.current_transaction is not None:
                 raise Exception("Transaction already in progress")
             
-            self.current_transaction = ApiTransaction(transaction_manager=self)
-            logger.debug(f"Transaction {self.current_transaction.uuid} started")
+            self.current_transaction = ApiTransaction(transaction_manager=self, client_id=client_id)
+            logger.debug(f"Transaction {self.current_transaction.uuid} started for client {client_id}")
             return self.current_transaction
     
     def end_transaction(self):
@@ -77,24 +84,64 @@ class TransactionManager:
         else:
             logger.debug(f"Search context unchanged: '{normalized_current}'")
 
-    def add_command_to_stack(self, command):
+    def check_client_ownership(self, client_id: str):
+        """
+        Check if the client owns the undo stack. If not, clear the stack and transfer ownership.
+        
+        Args:
+            client_id: The ID of the client performing an operation
+        """
+        if self.active_client_id != client_id:
+            if self.command_stack.stack:
+                logger.info(f"🔧 UNDO STACK: Client ownership changed from {self.active_client_id} to {client_id}, clearing stack (was {len(self.command_stack.stack)} commands)")
+                self.command_stack.clear_all()
+            else:
+                logger.info(f"🔧 UNDO STACK: Client ownership set to {client_id} (stack was empty)")
+            
+            self.active_client_id = client_id
+
+    def add_command_to_stack(self, command, client_id: str):
         """Add a command to the undo/redo stack."""
+        self.check_client_ownership(client_id)
         self.command_stack.push(command)
-        logger.info(f"Command added to stack (size = {len(self.command_stack.stack)})")
+        logger.info(f"🔧 UNDO STACK: Command added to stack for client {client_id}")
+        logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
     
-    def undo(self, db) -> bool:
+    def undo(self, db, client_id: str = None) -> bool:
         """Perform an undo operation."""
+        logger.info(f"🔧 UNDO STACK: Undo requested by client {client_id} (size = {len(self.command_stack.stack)}, index = {self.command_stack.current_index}, owner = {self.active_client_id})")
+        
+        # Check if client owns the stack or if no ownership is set
+        if self.active_client_id and client_id and self.active_client_id != client_id:
+            logger.info(f"🔧 UNDO STACK: Undo denied - client {client_id} does not own stack (owned by {self.active_client_id})")
+            return False
+            
         if self.command_stack.current_index >= 0:
             self.command_stack.undo(db)
+            logger.info(f"🔧 UNDO STACK: Undo executed")
+            logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
             return True
-        return False
+        else:
+            logger.info(f"🔧 UNDO STACK: No operations to undo")
+            logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
+            return False
     
-    def redo(self, db) -> bool:
+    def redo(self, db, client_id: str = None) -> bool:
         """Perform a redo operation."""
+        logger.info(f"🔧 UNDO STACK: Redo requested by client {client_id} (size = {len(self.command_stack.stack)}, index = {self.command_stack.current_index}, owner = {self.active_client_id})")
+        
+        # Check if client owns the stack or if no ownership is set
+        if self.active_client_id and client_id and self.active_client_id != client_id:
+            logger.info(f"🔧 UNDO STACK: Redo denied - client {client_id} does not own stack (owned by {self.active_client_id})")
+            return False
+            
         if self.command_stack.current_index < len(self.command_stack.stack) - 1:
             self.command_stack.redo(db)
+            logger.info(f"🔧 UNDO STACK: After redo (size = {len(self.command_stack.stack)}, index = {self.command_stack.current_index})")
             return True
-        return False
+        else:
+            logger.info(f"🔧 UNDO STACK: No operations to redo")
+            return False
 
 
 # Global singleton instance - this is the only global state we need

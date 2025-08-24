@@ -54,9 +54,9 @@ def apply_delay(operation_name: str):
 
 
 @contextmanager
-def get_note_service(db: Session, transaction_manager: TransactionManager) -> Generator[NoteService, None, None]:
+def get_note_service(db: Session, transaction_manager: TransactionManager, client_id: str = None) -> Generator[NoteService, None, None]:
     """Dependency injection for NoteService with transaction management"""
-    with NoteService(db, transaction_manager) as service:
+    with NoteService(db, transaction_manager, client_id) as service:
         yield service
 
 

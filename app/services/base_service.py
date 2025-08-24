@@ -8,15 +8,16 @@ logger = logging.getLogger(__name__)
 class BaseTransactionService(ABC):
     """Base class for services that need transaction tracking for undo/redo"""
     
-    def __init__(self, db: Session, transaction_manager):
+    def __init__(self, db: Session, transaction_manager, client_id: str = None):
         self.db = db
         self.transaction_manager = transaction_manager
+        self.client_id = client_id
         self.transaction = None
         self._operation_name = None
     
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
-        self.transaction = self.transaction_manager.start_transaction()
+        self.transaction = self.transaction_manager.start_transaction(self.client_id)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -36,27 +37,21 @@ class BaseTransactionService(ABC):
     
     def _commit(self):
         """Commit the database transaction and finalize command tracking"""
-        try:
-            # Commit database changes
-            self.db.commit()
+        # Commit database changes
+        self.db.commit()
+        
+        # Finalize the transaction for undo/redo
+        if self.transaction and self._operation_name:
+            # Check if any changes were actually made
+            tot = (len(self.transaction.state_before_updated) + 
+                  len(self.transaction.state_current_updated) + 
+                  len(self.transaction.state_added) + 
+                  len(self.transaction.state_deleted))
             
-            # Finalize the transaction for undo/redo
-            if self.transaction and self._operation_name:
-                # Check if any changes were actually made
-                tot = (len(self.transaction.state_before_updated) + 
-                      len(self.transaction.state_current_updated) + 
-                      len(self.transaction.state_added) + 
-                      len(self.transaction.state_deleted))
-                
-                if tot > 0:
-                    self.transaction.finalize_transaction(self._operation_name)
-                else:
-                    logger.warning(f"No changes detected for operation: {self._operation_name}")
-                    
-        except Exception as e:
-            self.db.rollback()
-            logger.exception(f"Error during commit: {e}")
-            raise
+            if tot > 0:
+                self.transaction.finalize_transaction(self._operation_name)
+            else:
+                logger.warning(f"No changes detected for operation: {self._operation_name}")
     
     def _rollback(self):
         """Rollback the database transaction"""

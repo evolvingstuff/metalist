@@ -28,15 +28,18 @@ class MoveNoteCommand(BaseModel):
     new_parent_id: Optional[str] = Field(default=None)
     sibling_id: Optional[str] = None
     position: Optional[str] = None  # "BEFORE" or "AFTER"
+    clientId: Optional[str] = None
 
 
 class CreateNoteCommand(BaseModel):
     first_visible_note_id: Optional[str] = Field(default=None)
     search_query: Optional[str] = Field(default=None)
+    clientId: Optional[str] = None
 
 
 class CreateSiblingCommand(BaseModel):
     search_query: Optional[str] = Field(default=None)
+    clientId: Optional[str] = None
 
 
 class SyncCheckRequest(BaseModel):
@@ -107,6 +110,7 @@ def release_lock(request: NoteLockRequest):
 
 @router.post("/undo")
 def undo(
+    client_id: Optional[str] = None,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -114,11 +118,12 @@ def undo(
     apply_delay("undo")
     
     with get_undo_service(db, transaction_manager) as service:
-        return service.undo()
+        return service.undo(client_id)
 
 
 @router.post("/redo")
 def redo(
+    client_id: Optional[str] = None,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
@@ -126,7 +131,7 @@ def redo(
     apply_delay("redo")
     
     with get_undo_service(db, transaction_manager) as service:
-        return service.redo()
+        return service.redo(client_id)
 
 
 @router.post("/{note_id}/copy")
@@ -139,7 +144,7 @@ def copy_note(
     """Copy a note to the server-side clipboard as serialized data"""
     apply_delay("copy_note")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             # Serialize the note tree to pure data (no database writes)
             from ..models.utils import copy_note_in_memory
@@ -162,7 +167,7 @@ def export_note_as_html(
     """Export a note and all its children as HTML"""
     apply_delay("export_note_html")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             # Serialize the note tree to pure data
             from ..models.utils import copy_note_in_memory, note_data_to_html, note_data_to_plain_text
@@ -188,7 +193,7 @@ def create_note_top(
     """Create a new note at the top of the list (or before first visible note)"""
     apply_delay("create_note_top")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, command.clientId) as service:
         result = service.create_note(None, command.first_visible_note_id, command.search_query)
         return {"id": result["id"]}
 
@@ -203,7 +208,7 @@ def update_note(
     """Update a note's content"""
     apply_delay("update_note")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, command.clientId) as service:
         try:
             result = service.update_note(note_id, command.content)
             return {"status": "success"}
@@ -243,7 +248,7 @@ def move_note(
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, command.clientId) as service:
         try:
             service.move_note(
                 note_id=note_id,
@@ -276,7 +281,7 @@ def paste_sibling(
     if not clipboard_data:
         raise HTTPException(status_code=400, detail="Nothing in clipboard to paste")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             # Get target note and its parent
             from ..models.linked_list import LinkedListManager
@@ -309,7 +314,7 @@ def paste_child(
     if not clipboard_data:
         raise HTTPException(status_code=400, detail="Nothing in clipboard to paste")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             # Deserialize clipboard data into real database notes as child of target
             from ..models.utils import paste_note_from_memory
@@ -344,7 +349,7 @@ def delete_note(
     """Delete a note and all its descendants"""
     apply_delay("delete_note")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             result = service.delete_note(note_id)
             return {"status": "success"}
@@ -369,7 +374,7 @@ def create_note_with_position(
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         result = service.create_note_with_position(
             new_parent_id=command.new_parent_id,
             sibling_id=command.sibling_id,
@@ -388,7 +393,7 @@ def create_new_sibling(
     """Create a new note as sibling after the specified note"""
     apply_delay("create_new_sibling")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, command.clientId) as service:
         result = service.create_sibling_note(note_id, command.search_query)
         return {"id": result["id"]}
 
@@ -404,7 +409,7 @@ def create_new_child(
     
     logger.debug(f"Creating new child for note {note_id}")
     
-    with get_note_service(db, transaction_manager) as service:
+    with get_note_service(db, transaction_manager, request.clientId) as service:
         result = service.create_child_note(note_id)
         return {"id": result["id"]}
 

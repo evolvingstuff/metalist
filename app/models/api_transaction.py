@@ -14,15 +14,16 @@ tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
 
 
 class ApiTransaction:
-    def __init__(self, transaction_manager: 'TransactionManager'):
+    def __init__(self, transaction_manager: 'TransactionManager', client_id: str = None):
         self.uuid = str(uuid.uuid4())
         self.transaction_manager = transaction_manager
+        self.client_id = client_id
         self.state_before_updated = {}
         self.state_current_updated = {}
         self.state_added = {}
         self.state_deleted = {}
         self._updating_state = False
-        print(f'@ New transaction created with ID: {self.uuid}')
+        print(f'@ New transaction created with ID: {self.uuid} for client {client_id}')
 
     def calculate_states(self):
 
@@ -60,7 +61,10 @@ class ApiTransaction:
         # Create a command with before and after states
         command = Command(state_before, state_after, action)
         # Add the command to the transaction stack via the transaction manager
-        self.transaction_manager.add_command_to_stack(command)
+        if not self.client_id:
+            raise RuntimeError(f"🚨 FATAL: Transaction {self.uuid} finalized without client_id! This breaks undo functionality and indicates a critical bug in the API layer. ALL write operations MUST include client_id.")
+        
+        self.transaction_manager.add_command_to_stack(command, self.client_id)
 
     def log_attribute_set(self, target, value, oldvalue, initiator):
         if self._updating_state:
