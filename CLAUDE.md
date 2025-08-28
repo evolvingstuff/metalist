@@ -12,12 +12,33 @@ feature description
 
 I can then test it and we can interactively try to fix any issues.
 
-If I say:
+## Testing and Commits
 
-COMMIT
+### If Testing Fails
+If I test your code and say it failed, you should:
+1. Suggest doing a `git reset --hard HEAD` to undo the changes
+2. Ask if I want to proceed with the reset before doing it
 
-I want you to commit the changes to that branch, merge the branch into main, and delete that feature branch
+### If Testing Succeeds
+If the code works, you should suggest doing a commit. There are two types:
 
+**COMMIT CHECKPOINT**
+- We aren't done with the feature yet
+- But we've made visible progress we want to capture
+- Commit to the feature branch but stay on it
+- Don't merge to main yet
+
+**COMMIT FEATURE**
+- The entire feature has been tested and is working as expected
+- Commit the changes to the feature branch
+- Merge the branch into main
+- Delete the feature branch
+
+**COMMIT** (without qualifier)
+- If I just say COMMIT, ask me to clarify:
+  - "Is this a checkpoint (partial progress) or is the feature complete?"
+
+### Rollback
 If I say:
 
 ROLLBACK
@@ -50,6 +71,26 @@ THE RULE IS SIMPLE:
 
 Error handling is a code smell. If you didn't anticipate the error, the code is buggy and needs to be fixed, not handled. The crash tells you exactly what to fix.
 
+## CRITICAL: NO SOFT FAILURES IN JAVASCRIPT
+
+Claude: The same FAIL FAST AND LOUD principle applies to JavaScript:
+- NEVER use console.error() or console.warn() → throw new Error() instead
+- NEVER use try/catch blocks unless absolutely necessary
+- NEVER use optional chaining (?.) or nullish coalescing (??)
+- NEVER use OR operator (||) for fallback values
+- NEVER use .catch() on promises without re-throwing
+
+If something goes wrong in JavaScript:
+- throw new Error('Clear description of what failed')
+- Let it crash the browser console
+- The stack trace shows exactly what to fix
+
+Example transformations:
+- console.error('Failed to load') → throw new Error('Failed to load')
+- value || 'default' → if (!value) throw new Error('value is required')
+- obj?.property → if (!obj) throw new Error('obj is required'); obj.property
+- try { ... } catch(e) { console.error(e) } → just remove the try/catch entirely
+
 ## CRITICAL: NO OPTIONAL FIELDS
 
 Claude: ALMOST NEVER use Optional[T] fields in request/response models. Use required fields instead.
@@ -62,6 +103,16 @@ BEFORE using Optional[T], you MUST:
 3. Get confirmation before proceeding
 
 Default assumption: If a field might be missing, that's a BUG that should crash immediately, not be handled gracefully with Optional.
+
+# MANDATORY: Check for Error Handling After Every Code Change
+
+After EVERY file edit that contains Python code, you MUST run:
+```
+python check_errors.py
+```
+
+If this finds any soft error handling, FIX IT IMMEDIATELY before proceeding.
+DO NOT continue with other tasks until all error handling is removed.
 
 # Testing Philosophy
 
