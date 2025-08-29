@@ -45,13 +45,18 @@ ROLLBACK
 
 I want you to rollback all the changes made on that branch.
 
-# Build Philosophy
+# Make errors obvious, immediately
 
-FAIL FAST AND LOUD: If anything fails during build processes, it should fail as fast and as loudly as possible. No error recovery, no graceful degradation, no silent failures. The build should stop immediately with clear error messages so issues can be identified and fixed quickly.
+FAIL FAST AND LOUDLY: If anything fails during build processes or at runtime, 
+it should fail as fast and as loudly as possible. No error recovery, no graceful 
+degradation, no silent failures. The build should stop immediately with clear 
+error messages so issues can be identified and fixed quickly. UI should give 
+alerts to the user, not just console.error messages.
 
 ## CRITICAL: NO SOFT FAILURES - CLAUDE READ THIS
 
-Claude: You have a persistent anti-pattern where you add "helpful" error handling that masks bugs:
+Claude: You have a persistent anti-pattern where you add "helpful" error handling 
+that masks bugs:
 - try/except blocks that log warnings instead of crashing
 - Fallback values like `if not x: x = "default"`  
 - "This shouldn't happen" comments with graceful degradation
@@ -60,7 +65,7 @@ Claude: You have a persistent anti-pattern where you add "helpful" error handlin
 THIS PATTERN HAS COST 100+ HOURS OF DEBUGGING TIME. Every soft failure you add:
 1. Hides the real bug for hours/days
 2. Makes debugging exponentially harder  
-3. Directly violates the FAIL FAST AND LOUD principle
+3. Directly violates the FAIL FAST AND LOUDLY principle
 4. Wastes massive amounts of time
 
 THE RULE IS SIMPLE: 
@@ -71,9 +76,40 @@ THE RULE IS SIMPLE:
 
 Error handling is a code smell. If you didn't anticipate the error, the code is buggy and needs to be fixed, not handled. The crash tells you exactly what to fix.
 
+## CRITICAL: USE ASSERTIONS LIBERALLY
+
+Assertions should make up about 5% of the code, if not more. Every function should validate its assumptions:
+- Assert preconditions at function entry
+- Assert postconditions before return
+- Assert invariants throughout the code
+- Assert that "impossible" states are actually impossible
+
+Python example:
+```python
+def move_note(note_id: str, parent_id: str):
+    assert note_id, "note_id is required"
+    assert note_id != parent_id, "Cannot move note to itself"
+    note = db.get(Note, note_id)
+    assert note, f"Note {note_id} not found"
+    # ... do the move ...
+    assert note.parent_id == parent_id, "Move failed"
+```
+
+JavaScript example:
+```javascript
+function moveNote(noteId, parentId) {
+    if (!noteId) throw new Error("noteId is required");
+    if (noteId === parentId) throw new Error("Cannot move note to itself");
+    const note = getNote(noteId);
+    if (!note) throw new Error(`Note ${noteId} not found`);
+    // ... do the move ...
+    if (note.parentId !== parentId) throw new Error("Move failed");
+}
+```
+
 ## CRITICAL: NO SOFT FAILURES IN JAVASCRIPT
 
-Claude: The same FAIL FAST AND LOUD principle applies to JavaScript:
+Claude: The same FAIL FAST AND LOUDLY principle applies to JavaScript:
 - NEVER use console.error() or console.warn() → throw new Error() instead
 - NEVER use try/catch blocks unless absolutely necessary
 - NEVER use optional chaining (?.) or nullish coalescing (??)
