@@ -27,3 +27,5 @@ var/
 app/sql_app.db
 package-lock.json
 node_modules/
+# Symlinked Claude config
+CLAUDE.md
