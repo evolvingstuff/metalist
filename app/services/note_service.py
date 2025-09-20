@@ -60,19 +60,26 @@ class NoteService(BaseTransactionService):
         
         return {"status": "updated", "updateUUID": new_uuid}
 
-    def toggle_note_collapse(self, note_id: str) -> dict:
-        """Toggle the collapsed state of a note"""
-        self._set_operation("toggle_note_collapse")
+    def set_note_collapse(self, note_id: str, collapsed: bool) -> dict:
+        """Set the collapsed state of a note"""
 
         note = LinkedListManager.get_note(self.db, note_id)
-        note.is_collapsed = not bool(getattr(note, 'is_collapsed', False))
+        desired_state = bool(collapsed)
+        current_state = bool(getattr(note, 'is_collapsed', False))
 
-        logger.info(f"Toggled collapse state for note {note_id} to {note.is_collapsed}")
+        if current_state == desired_state:
+            logger.info(f"Collapse state for note {note_id} already {desired_state}")
+            return {"status": "unchanged", "isCollapsed": current_state}
+
+        self._set_operation("set_note_collapse")
+        note.is_collapsed = desired_state
+
+        logger.info(f"Set collapse state for note {note_id} to {desired_state}")
 
         new_uuid = generate_new_uuid()
         set_server_sync_uuid(new_uuid)
 
-        return {"status": "updated", "isCollapsed": note.is_collapsed, "updateUUID": new_uuid}
+        return {"status": "updated", "isCollapsed": desired_state, "updateUUID": new_uuid}
 
     def delete_note(self, note_id: str) -> dict:
         """Delete a note and all its descendants"""

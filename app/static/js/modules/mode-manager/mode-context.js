@@ -208,7 +208,7 @@ class ModeContext {
         const normalized = noteId || null;
 
         if (this._hoveredNoteId === normalized) {
-            return this;
+            throw new Error(`Redundant state change: hoveredNoteId is already ${normalized}`);
         }
 
         this._hoveredNoteId = normalized;

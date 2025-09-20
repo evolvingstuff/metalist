@@ -24,7 +24,7 @@ API_DELAY = {
     "ENDPOINTS": {
         "undo": 1.5,
         "redo": 1.5,
-        "get_notes_fragment": 1.0
+        "get_notes_view": 1.0
     }
 }
 

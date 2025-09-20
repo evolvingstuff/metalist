@@ -215,10 +215,15 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE' });
     },
 
-    async toggleCollapse(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.TOGGLE_COLLAPSE, {
-            method: 'POST',
-            body: JSON.stringify({ noteId })
+    async collapseNote(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.COLLAPSE(noteId), {
+            method: 'POST'
+        });
+    },
+
+    async expandNote(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.EXPAND(noteId), {
+            method: 'POST'
         });
     },
 
@@ -246,8 +251,8 @@ export const NotesAPI = {
         return noteElement.querySelector('.note-content');
     },
 
-    async getFragment(noteId = null, searchQuery = null) {
-        let url = CONFIG.API.NOTES.FRAGMENT;
+    async fetchView(noteId = null, searchQuery = null) {
+        let url = CONFIG.API.NOTES.VIEW;
         const params = [];
         
         if (noteId) {

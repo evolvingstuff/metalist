@@ -13,7 +13,7 @@ def reset_transaction_manager(transaction_manager):
     transaction_manager.end_transaction()
 
 
-def test_toggle_collapse_tracks_undo(db):
+def test_collapse_expand_tracks_undo(db):
     transaction_manager = get_transaction_manager()
     reset_transaction_manager(transaction_manager)
 
@@ -23,7 +23,7 @@ def test_toggle_collapse_tracks_undo(db):
         db.add(DBNote(id=note_id, content=""))
 
     with NoteService(db, transaction_manager, client_id="client-1") as service:
-        service.toggle_note_collapse(note_id)
+        service.set_note_collapse(note_id, True)
 
     note = LinkedListManager.get_note(db, note_id)
     assert note.is_collapsed is True

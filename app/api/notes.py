@@ -62,8 +62,7 @@ class CopyNoteRequest(BaseModel):
     lastUpdateUUID: Optional[str] = Field(default=None)
 
 
-class ToggleCollapseRequest(BaseModel):
-    noteId: str
+class NoteStateCommand(BaseModel):
     clientId: str
     lastUpdateUUID: Optional[str] = Field(default=None)
 
@@ -363,18 +362,36 @@ def paste_child(
             raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/toggle_collapse")
-def toggle_collapse(
-    request: ToggleCollapseRequest,
+@router.post("/{note_id}/collapse")
+def collapse_note(
+    note_id: str,
+    request: NoteStateCommand,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
-    """Toggle note collapsed state"""
-    apply_delay("toggle_collapse")
+    """Set a note's collapsed state to true"""
+    apply_delay("collapse_note")
 
     with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
-            return service.toggle_note_collapse(request.noteId)
+            return service.set_note_collapse(note_id, True)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{note_id}/expand")
+def expand_note(
+    note_id: str,
+    request: NoteStateCommand,
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
+):
+    """Set a note's collapsed state to false"""
+    apply_delay("expand_note")
+
+    with get_note_service(db, transaction_manager, request.clientId) as service:
+        try:
+            return service.set_note_collapse(note_id, False)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
@@ -459,19 +476,19 @@ def create_new_child(
         return {"id": result["id"]}
 
 
-@router.get("/fragment")
-def get_notes_fragment(
+@router.get("/view")
+def get_notes_view(
     editing_note_id: Optional[str] = None,
     search: Optional[str] = None,
     client_id: Optional[str] = None,
     db: Session = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
-    """Get the HTML fragment for the notes list"""
-    apply_delay("get_notes_fragment")
+    """Render the HTML view for the notes list"""
+    apply_delay("get_notes_view")
     
     # Check if search context has changed and clear undo stack if needed
     transaction_manager.check_context_change(search)
     
     with get_query_service(db) as service:
-        return service.get_notes_fragment(editing_note_id, search, client_id)
+        return service.render_notes_view(editing_note_id, search, client_id)

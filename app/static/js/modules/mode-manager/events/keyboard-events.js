@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, toggleNoteCollapse, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
+import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -200,11 +200,16 @@ function handleToggleCollapseShortcut(event) {
     }
 
     let hoveredNoteId = ModeContext.hoveredNoteId;
+    let hoveredElement = null;
+
     if (!hoveredNoteId) {
-        const noteElementFromEvent = typeof event.target?.closest === 'function' ? event.target.closest('.note') : null;
-        if (noteElementFromEvent && noteElementFromEvent.dataset.noteId) {
-            hoveredNoteId = noteElementFromEvent.dataset.noteId;
-            ModeContext.setHoveredNoteId(hoveredNoteId);
+        const elementFromEvent = typeof event.target?.closest === 'function' ? event.target.closest('.note') : null;
+        if (elementFromEvent && elementFromEvent.dataset.noteId) {
+            hoveredElement = elementFromEvent;
+            hoveredNoteId = elementFromEvent.dataset.noteId;
+            if (ModeContext.hoveredNoteId !== hoveredNoteId) {
+                ModeContext.setHoveredNoteId(hoveredNoteId);
+            }
         }
     }
 
@@ -213,8 +218,11 @@ function handleToggleCollapseShortcut(event) {
         if (hoveredCandidates.length > 0) {
             const deepest = hoveredCandidates[hoveredCandidates.length - 1];
             if (deepest && deepest.dataset.noteId) {
+                hoveredElement = deepest;
                 hoveredNoteId = deepest.dataset.noteId;
-                ModeContext.setHoveredNoteId(hoveredNoteId);
+                if (ModeContext.hoveredNoteId !== hoveredNoteId) {
+                    ModeContext.setHoveredNoteId(hoveredNoteId);
+                }
             }
         }
     }
@@ -226,14 +234,25 @@ function handleToggleCollapseShortcut(event) {
         return;
     }
 
+    if (!hoveredElement) {
+        hoveredElement = document.querySelector(`[data-note-id="${hoveredNoteId}"]`);
+    }
+
+    const isCurrentlyCollapsed = hoveredElement?.dataset?.isCollapsed === 'true';
+
     Logger.logDebug('Toggle collapse shortcut triggered', {
-        hoveredNoteId
+        hoveredNoteId,
+        isCurrentlyCollapsed
     }, Logger.LogCategory.EVENT);
 
     event.preventDefault();
     event.stopPropagation();
 
-    toggleNoteCollapse(hoveredNoteId);
+    if (isCurrentlyCollapsed) {
+        expandNote(hoveredNoteId);
+    } else {
+        collapseNote(hoveredNoteId);
+    }
 }
 
 function handleEscapeKey() {

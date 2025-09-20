@@ -18,7 +18,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         ModeContext.setLoading(true);
     }
 
-    const html = await NotesAPI.getFragment(noteId, ModeContext.searchQuery);
+    const html = await NotesAPI.fetchView(noteId, ModeContext.searchQuery);
 
     const notesContainer = document.getElementById('notes-container');
     if (!notesContainer) {
