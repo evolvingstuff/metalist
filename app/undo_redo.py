@@ -61,7 +61,8 @@ class Command:
             prev_id=note.prev_id,
             next_id=note.next_id,
             created_at=note.created_at,
-            updated_at=note.updated_at
+            updated_at=note.updated_at,
+            is_collapsed=getattr(note, 'is_collapsed', False)
         )
         db.add(new_note)
         # db.commit()
@@ -74,6 +75,8 @@ class Command:
             existing_note.prev_id = note.prev_id
             existing_note.next_id = note.next_id
             existing_note.updated_at = note.updated_at
+            if hasattr(existing_note, 'is_collapsed'):
+                existing_note.is_collapsed = getattr(note, 'is_collapsed', False)
             # db.commit()
 
     def _delete_note_from_db(self, note, db: Session):
@@ -129,4 +132,3 @@ class CommandStack:
             self.stack = self.stack[:self.current_index + 1]
         else:
             print("No command to clear after current")
-

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from ..services.transaction_manager import TransactionManager
 
 _global_blocking_capture = False
-tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id'}
+tracked_attributes = {'content', 'parent_id', 'prev_id', 'next_id', 'is_collapsed'}
 
 
 class ApiTransaction:
@@ -237,6 +237,7 @@ event.listen(DBNote.content, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.parent_id, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.prev_id, 'set', log_attribute_set, retval=False)
 event.listen(DBNote.next_id, 'set', log_attribute_set, retval=False)
+event.listen(DBNote.is_collapsed, 'set', log_attribute_set, retval=False)
 event.listen(DBNote, 'after_insert', log_note_after_insert)
 event.listen(DBNote, 'before_delete', log_note_before_delete)
 
