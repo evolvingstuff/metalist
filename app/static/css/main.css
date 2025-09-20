@@ -222,6 +222,7 @@ body {
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 2px;
+    background-color: #ffffff;
 }
 
 .note.collapsed {
