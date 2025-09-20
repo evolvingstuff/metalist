@@ -10,6 +10,7 @@ class ModeContext {
         this._dirty = false;       
         this._loading = false;     
         this._loadingTimeoutId = null;
+        this._loadingNotifyTimeoutId = null;
 
         this._currentNoteId = null;     
         this._lastSavedContent = null;  
@@ -108,13 +109,14 @@ class ModeContext {
     }
 
     setActive(value) {
-        const oldValue = this._active;
-        this._active = Boolean(value);
                 
-        if (oldValue !== this._active) {
-            this._notifyListeners('active', this._active);
+        const normalized = Boolean(value);
+        if (this._active === normalized) {
+            throw new Error(`Redundant state change: active is already ${normalized}`);
         }
-                
+
+        this._active = normalized;
+        this._notifyListeners('active', this._active);
         return this;
     }
 
@@ -143,13 +145,10 @@ class ModeContext {
             throw new Error(`Redundant state change: loading is already ${value}`);
         }
         
-        const oldValue = this._loading;
         this._loading = Boolean(value);
 
         if (this._loading) {
-            
             if (CONFIG.LOADING.SPINNER_DELAY > 0) {
-                
                 if (this._loadingTimeoutId) {
                     clearTimeout(this._loadingTimeoutId);
                     this._loadingTimeoutId = null;
@@ -160,19 +159,9 @@ class ModeContext {
                     this._loadingTimeoutId = null;
                 }, CONFIG.LOADING.SPINNER_DELAY);
             } else {
-                
                 document.body.classList.add(CONFIG.CLASSES.LOADING);
             }
-
-            if (CONFIG.LOADING.ARTIFICIAL_DELAY > 0) {
-                return new Promise(resolve => {
-                    setTimeout(() => {
-                        resolve(this);
-                    }, CONFIG.LOADING.ARTIFICIAL_DELAY);
-                });
-            }
         } else {
-            
             document.body.classList.remove(CONFIG.CLASSES.LOADING);
 
             if (this._loadingTimeoutId) {
@@ -180,8 +169,19 @@ class ModeContext {
                 this._loadingTimeoutId = null;
             }
         }
-        
-        this._notifyListeners('loading', this._loading);
+
+        if (CONFIG.LOADING.ARTIFICIAL_DELAY > 0) {
+            if (this._loadingNotifyTimeoutId) {
+                clearTimeout(this._loadingNotifyTimeoutId);
+            }
+            this._loadingNotifyTimeoutId = setTimeout(() => {
+                this._loadingNotifyTimeoutId = null;
+                this._notifyListeners('loading', this._loading);
+            }, CONFIG.LOADING.ARTIFICIAL_DELAY);
+        } else {
+            this._notifyListeners('loading', this._loading);
+        }
+
         return this;
     }
 
