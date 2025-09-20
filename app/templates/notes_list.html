@@ -15,10 +15,13 @@
             css_classes += ' interactive'
         if is_editing_by_me:
             css_classes += ' editing'
+        if note['flags'].get('isCollapsed'):
+            css_classes += ' collapsed'
     %>
     <div class="${css_classes}" 
          data-note-id="${note['id']}" 
-         data-parent-id="${note.get('parent_id', '')}">
+         data-parent-id="${note.get('parent_id', '')}"
+         data-is-collapsed="${'true' if note['flags'].get('isCollapsed') else 'false'}">
         % if locked_by_other:
             <span class="lock-icon">🔒</span>
         % endif

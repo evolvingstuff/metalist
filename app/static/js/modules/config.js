@@ -9,6 +9,7 @@ export const CONFIG = {
             UPDATE: (noteId) => `/api/notes/${noteId}`,
             SAVE: (noteId) => `/api/notes/${noteId}/save`,
             MOVE: (noteId) => `/api/notes/${noteId}/move`,
+            TOGGLE_COLLAPSE: '/api/notes/toggle_collapse',
             DELETE: (noteId) => `/api/notes/${noteId}`,
             COPY: (noteId) => `/api/notes/${noteId}/copy`,
             EXPORT_HTML: (noteId) => `/api/notes/${noteId}/export-html`,

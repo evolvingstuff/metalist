@@ -275,7 +275,8 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
                     self.parent_id = original_note.parent_id
                     self.created_at = original_note.created_at
                     self.updated_at = original_note.updated_at
-            
+                    self.is_collapsed = getattr(original_note, 'is_collapsed', False)
+
             decrypted_note = DecryptedNote(note, decrypted_content)
             
             # Determine render mode - editing takes precedence
@@ -292,7 +293,7 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
                 'children': children,
                 'flags': {
                     'isEditing': note.id == editing_note_id,
-                    'isCollapsed': False
+                    'isCollapsed': bool(getattr(note, 'is_collapsed', False))
                 }
             }
             note_tree.append(note_dict)

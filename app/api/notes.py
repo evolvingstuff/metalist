@@ -62,6 +62,12 @@ class CopyNoteRequest(BaseModel):
     lastUpdateUUID: Optional[str] = Field(default=None)
 
 
+class ToggleCollapseRequest(BaseModel):
+    noteId: str
+    clientId: str
+    lastUpdateUUID: Optional[str] = Field(default=None)
+
+
 @router.post("/check-updates")
 def check_updates(request: SyncCheckRequest):
     """Check if client needs to refresh based on sync UUID"""
@@ -353,6 +359,22 @@ def paste_child(
                 existing_first_child.prev_id = new_note_id
             
             return {"id": new_note_id}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/toggle_collapse")
+def toggle_collapse(
+    request: ToggleCollapseRequest,
+    db: Session = Depends(get_db),
+    transaction_manager: TransactionManager = Depends(get_transaction_manager)
+):
+    """Toggle note collapsed state"""
+    apply_delay("toggle_collapse")
+
+    with get_note_service(db, transaction_manager, request.clientId) as service:
+        try:
+            return service.toggle_note_collapse(request.noteId)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 

@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
+import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, toggleNoteCollapse, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -152,6 +152,11 @@ function handleKeyDown(event) {
                 }
             }
             break;
+        case ' ':
+        case 'Space':
+        case 'Spacebar':
+            handleToggleCollapseShortcut(event);
+            break;
         case 'z':
             if (event.metaKey || event.ctrlKey) {
                 if (event.shiftKey) {
@@ -180,6 +185,55 @@ function handleKeyDown(event) {
             break;
                 
     }
+}
+
+function handleToggleCollapseShortcut(event) {
+    if (!event) {
+        throw new Error('handleToggleCollapseShortcut called without an event object');
+    }
+
+    if (ModeContext.isEditing) {
+        Logger.logNoop('Toggle collapse shortcut ignored while editing', {
+            currentNoteId: ModeContext.currentNoteId
+        });
+        return;
+    }
+
+    let hoveredNoteId = ModeContext.hoveredNoteId;
+    if (!hoveredNoteId) {
+        const noteElementFromEvent = typeof event.target?.closest === 'function' ? event.target.closest('.note') : null;
+        if (noteElementFromEvent && noteElementFromEvent.dataset.noteId) {
+            hoveredNoteId = noteElementFromEvent.dataset.noteId;
+            ModeContext.setHoveredNoteId(hoveredNoteId);
+        }
+    }
+
+    if (!hoveredNoteId) {
+        const hoveredCandidates = Array.from(document.querySelectorAll('.note:hover'));
+        if (hoveredCandidates.length > 0) {
+            const deepest = hoveredCandidates[hoveredCandidates.length - 1];
+            if (deepest && deepest.dataset.noteId) {
+                hoveredNoteId = deepest.dataset.noteId;
+                ModeContext.setHoveredNoteId(hoveredNoteId);
+            }
+        }
+    }
+
+    if (!hoveredNoteId) {
+        Logger.logNoop('Toggle collapse shortcut ignored: no hovered note', {
+            isEditing: ModeContext.isEditing
+        });
+        return;
+    }
+
+    Logger.logDebug('Toggle collapse shortcut triggered', {
+        hoveredNoteId
+    }, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    toggleNoteCollapse(hoveredNoteId);
 }
 
 function handleEscapeKey() {

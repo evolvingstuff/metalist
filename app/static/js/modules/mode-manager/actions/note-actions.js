@@ -202,6 +202,33 @@ export async function moveNoteDown(noteId) {
     }
 }
 
+export async function toggleNoteCollapse(noteId) {
+    Logger.logAction('toggleNoteCollapse', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        hoveredNoteId: ModeContext.hoveredNoteId
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot toggle collapse: noteId is required');
+    }
+
+    if (ModeContext.isEditing) {
+        throw new Error(`Programming error: Attempted to toggle collapse for ${noteId} while editing`);
+    }
+
+    ModeContext.setLoading(true);
+
+    try {
+        await NotesAPI.toggleCollapse(noteId);
+        await actionRefreshAndMaybeSelect({ skipLoadingState: true });
+    } finally {
+        if (ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+        }
+    }
+}
+
 export async function actionCopyNote() {
     const currentNoteId = ModeContext.currentNoteId;
     

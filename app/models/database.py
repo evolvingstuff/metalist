@@ -79,6 +79,8 @@ class DBNote(Base):
     
     id = Column(String, primary_key=True)
     content = Column(String)
+
+    is_collapsed = Column(Boolean, default=False, nullable=False)
     
     # Encryption fields
     encryption_nonce = Column(LargeBinary, nullable=True)  # AES-GCM nonce (per note)

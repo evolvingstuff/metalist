@@ -8,6 +8,8 @@ import { DOMUtils } from '../../dom-utils.js';
 export function initMouseEvents() {
         
     document.addEventListener('click', handleClick, { capture: true });
+    document.addEventListener('mouseover', handleMouseOver, { capture: true });
+    document.addEventListener('mouseout', handleMouseOut, { capture: true });
 
     Logger.logInit('Mouse events handler');
 }
@@ -232,4 +234,72 @@ function handleClick(event) {
             });
         }
     }
+}
+
+function handleMouseOver(event) {
+    if (!event) {
+        throw new Error('handleMouseOver called without an event object');
+    }
+
+    const target = event.target;
+    if (!target) {
+        throw new Error('Mouseover event missing target element');
+    }
+
+    const noteElement = target.closest('.note');
+    if (!noteElement) {
+        return;
+    }
+
+    const noteId = noteElement.dataset.noteId;
+    if (!noteId) {
+        throw new Error('Note element missing data-note-id attribute in handleMouseOver');
+    }
+
+    if (ModeContext.hoveredNoteId === noteId) {
+        return;
+    }
+
+    ModeContext.setHoveredNoteId(noteId);
+
+    Logger.logDebug('Pointer entered note', {
+        noteId,
+        isEditing: ModeContext.isEditing
+    }, Logger.LogCategory.EVENT);
+}
+
+function handleMouseOut(event) {
+    if (!event) {
+        throw new Error('handleMouseOut called without an event object');
+    }
+
+    const target = event.target;
+    if (!target) {
+        throw new Error('Mouseout event missing target element');
+    }
+
+    const noteElement = target.closest('.note');
+    if (!noteElement) {
+        return;
+    }
+
+    const noteId = noteElement.dataset.noteId;
+    if (!noteId) {
+        throw new Error('Note element missing data-note-id attribute in handleMouseOut');
+    }
+
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget && noteElement.contains(relatedTarget)) {
+        return;
+    }
+
+    if (ModeContext.hoveredNoteId !== noteId) {
+        return;
+    }
+
+    ModeContext.setHoveredNoteId(null);
+
+    Logger.logDebug('Pointer left note', {
+        noteId
+    }, Logger.LogCategory.EVENT);
 }

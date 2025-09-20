@@ -21,6 +21,7 @@ class ModeContext {
         this._lastClickTarget = null;   
         this._metaKeyPressed = false;   
         this._shiftKeyPressed = false;  
+        this._hoveredNoteId = null;
 
         this._listeners = [];
         this._savedCursorOffset = null;
@@ -201,6 +202,22 @@ class ModeContext {
 
     get currentNoteId() {
         return this._currentNoteId;
+    }
+
+    setHoveredNoteId(noteId) {
+        const normalized = noteId || null;
+
+        if (this._hoveredNoteId === normalized) {
+            return this;
+        }
+
+        this._hoveredNoteId = normalized;
+        this._notifyListeners('hoveredNoteId', this._hoveredNoteId);
+        return this;
+    }
+
+    get hoveredNoteId() {
+        return this._hoveredNoteId;
     }
 
     setLastSavedContent(content) {

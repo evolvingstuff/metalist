@@ -5,6 +5,7 @@ from typing import Optional
 class Note(BaseModel):
     id: str
     content: str
+    is_collapsed: bool = False
     
     # Old fields for linked list implementation
     parent_id: Optional[str] = None

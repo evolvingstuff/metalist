@@ -215,6 +215,13 @@ export const NotesAPI = {
         return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE' });
     },
 
+    async toggleCollapse(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_COLLAPSE, {
+            method: 'POST',
+            body: JSON.stringify({ noteId })
+        });
+    },
+
     async undo() {
         return this._apiCall(`${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}`, { method: 'POST' });
     },
