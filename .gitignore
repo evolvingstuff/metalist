@@ -27,5 +27,7 @@ var/
 app/sql_app.db
 package-lock.json
 node_modules/
-# Symlinked Claude config
+# Symlinked agents config
+AGENTS.md
+# Symlinked claude compatibility stub
 CLAUDE.md
