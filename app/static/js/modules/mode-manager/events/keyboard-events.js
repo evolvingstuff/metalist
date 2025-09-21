@@ -78,6 +78,17 @@ function handleKeyDown(event) {
         }
     }
     
+    const hoveredDetails = getHoveredNoteDetails(event);
+
+    const isArrowKey = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    const intendsHoverMove = (
+        isArrowKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !ModeContext.isEditing &&
+        Boolean(hoveredDetails.noteId)
+    );
+
     // Check if we're disconnected from server for operations that need it
     if (!ModeContext.isConnected) {
         const needsServer = (
@@ -85,7 +96,7 @@ function handleKeyDown(event) {
             (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
             ((event.key === 'Backspace' || event.key === 'Delete') && (event.metaKey || event.ctrlKey)) ||
             // Move operations
-            ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && (event.metaKey || event.ctrlKey)) ||
+            (isArrowKey && ((event.metaKey || event.ctrlKey) || intendsHoverMove)) ||
             // Paste operations
             (event.key === 'v' && (event.metaKey || event.ctrlKey)) ||
             // Copy operations
@@ -136,11 +147,15 @@ function handleKeyDown(event) {
         case 'ArrowUp':
             if (event.metaKey || event.ctrlKey) {
                 handleMoveNoteUpShortcut(event);
+            } else if (!ModeContext.isEditing && hoveredDetails.noteId) {
+                handleMoveHoveredNote(event, 'up', hoveredDetails);
             }
             break;
         case 'ArrowDown':
             if (event.metaKey || event.ctrlKey) {
                 handleMoveNoteDownShortcut(event);
+            } else if (!ModeContext.isEditing && hoveredDetails.noteId) {
+                handleMoveHoveredNote(event, 'down', hoveredDetails);
             }
             break;
         case 'v':
@@ -184,6 +199,85 @@ function handleKeyDown(event) {
         default:
             break;
                 
+    }
+}
+
+function getHoveredNoteDetails(event) {
+    const safeEvent = event || {};
+
+    const currentHoveredId = ModeContext.hoveredNoteId;
+    if (currentHoveredId) {
+        const existingElement = document.querySelector(`[data-note-id="${currentHoveredId}"]`);
+        if (existingElement) {
+            return { noteId: currentHoveredId, element: existingElement };
+        }
+    }
+
+    if (typeof safeEvent.target?.closest === 'function') {
+        const elementFromEvent = safeEvent.target.closest('.note');
+        if (elementFromEvent && elementFromEvent.dataset?.noteId) {
+            return {
+                noteId: elementFromEvent.dataset.noteId,
+                element: elementFromEvent
+            };
+        }
+    }
+
+    const hoveredCandidates = Array.from(document.querySelectorAll('.note:hover'));
+    if (hoveredCandidates.length > 0) {
+        const deepest = hoveredCandidates[hoveredCandidates.length - 1];
+        if (deepest && deepest.dataset?.noteId) {
+            return {
+                noteId: deepest.dataset.noteId,
+                element: deepest
+            };
+        }
+    }
+
+    return { noteId: null, element: null };
+}
+
+function handleMoveHoveredNote(event, direction, prefetchedDetails = null) {
+    if (!event) {
+        throw new Error('handleMoveHoveredNote called without an event object');
+    }
+
+    if (ModeContext.isEditing) {
+        return;
+    }
+
+    const { noteId: hoveredNoteId } = prefetchedDetails ?? getHoveredNoteDetails(event);
+    if (!hoveredNoteId) {
+        Logger.logNoop('Move note shortcut ignored: no hovered note', {
+            direction
+        });
+        return;
+    }
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Move note shortcut ignored while disconnected from server', {
+            direction,
+            hoveredNoteId
+        });
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    Logger.logDebug(
+        direction === 'up' ? 'Move hovered note up shortcut triggered' : 'Move hovered note down shortcut triggered',
+        {
+            hoveredNoteId,
+            currentNoteId: ModeContext.currentNoteId
+        },
+        Logger.LogCategory.EVENT
+    );
+
+    if (direction === 'up') {
+        moveNoteUp(hoveredNoteId);
+    } else {
+        moveNoteDown(hoveredNoteId);
     }
 }
 
