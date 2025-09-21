@@ -229,7 +229,7 @@ body {
     background-color: #f2f2f2;
 }
 
-.note.collapsed .note-content {
+.note.collapsed:not(.editing) .note-content {
     max-height: 1.6em;
     overflow: hidden;
     display: -webkit-box;
@@ -237,11 +237,11 @@ body {
     -webkit-box-orient: vertical;
 }
 
-.note.collapsed .note-children {
+.note.collapsed:not(.editing) .note-children {
     display: none;
 }
 
-.note.collapsed .note-content img {
+.note.collapsed:not(.editing) .note-content img {
     height: 1.5em;
     max-width: 2.5em;
     width: auto;
