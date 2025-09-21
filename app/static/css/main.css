@@ -229,6 +229,18 @@ body {
     background-color: #f2f2f2;
 }
 
+.note.collapsed .note-content {
+    max-height: 1.6em;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.note.collapsed .note-children {
+    display: none;
+}
+
 .note.editing {
     border-color: #333333;  /* Almost black border for editing state */
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);  /* Stronger drop shadow */
