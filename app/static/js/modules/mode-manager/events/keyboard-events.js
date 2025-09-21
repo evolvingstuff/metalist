@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
+import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -88,13 +88,21 @@ function handleKeyDown(event) {
         !ModeContext.isEditing &&
         Boolean(hoveredDetails.noteId)
     );
+    const isDeleteKey = event.key === 'Backspace' || event.key === 'Delete';
+    const intendsHoverDelete = (
+        isDeleteKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !ModeContext.isEditing &&
+        Boolean(hoveredDetails.noteId)
+    );
 
     // Check if we're disconnected from server for operations that need it
     if (!ModeContext.isConnected) {
         const needsServer = (
             // Create/delete operations
             (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
-            ((event.key === 'Backspace' || event.key === 'Delete') && (event.metaKey || event.ctrlKey)) ||
+            ((event.key === 'Backspace' || event.key === 'Delete') && ((event.metaKey || event.ctrlKey) || intendsHoverDelete)) ||
             // Move operations
             (isArrowKey && ((event.metaKey || event.ctrlKey) || intendsHoverMove)) ||
             // Paste operations
@@ -137,6 +145,8 @@ function handleKeyDown(event) {
                 handleDeleteNoteShortcut(event);
             } else if (event.ctrlKey) {
                 handleDeleteNoteShortcut(event);
+            } else if (!ModeContext.isEditing && hoveredDetails.noteId) {
+                handleDeleteHoveredNote(event, hoveredDetails);
             }
             break;
         case '/':
@@ -279,6 +289,39 @@ function handleMoveHoveredNote(event, direction, prefetchedDetails = null) {
     } else {
         moveNoteDown(hoveredNoteId);
     }
+}
+
+function handleDeleteHoveredNote(event, prefetchedDetails = null) {
+    if (!event) {
+        throw new Error('handleDeleteHoveredNote called without an event object');
+    }
+
+    if (ModeContext.isEditing) {
+        return;
+    }
+
+    const { noteId: hoveredNoteId } = prefetchedDetails ?? getHoveredNoteDetails(event);
+    if (!hoveredNoteId) {
+        Logger.logNoop('Delete shortcut ignored: no hovered note');
+        return;
+    }
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Delete shortcut ignored while disconnected from server', {
+            hoveredNoteId
+        });
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    Logger.logDebug('Delete hovered note shortcut triggered', {
+        hoveredNoteId,
+        currentNoteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+    deleteNoteOutsideEdit(hoveredNoteId);
 }
 
 function handleToggleCollapseShortcut(event) {
