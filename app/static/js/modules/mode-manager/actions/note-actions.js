@@ -46,6 +46,46 @@ export async function deleteNote(noteId) {
     return;
 }
 
+export async function deleteNoteOutsideEdit(noteId) {
+    Logger.logAction('deleteNoteOutsideEdit', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isLoading: ModeContext.isLoading
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot delete note: noteId is required');
+    }
+
+    if (ModeContext.isEditing) {
+        throw new Error(`Programming error: deleteNoteOutsideEdit called while editing note ${ModeContext.currentNoteId}`);
+    }
+
+    const shouldManageLoading = !ModeContext.isLoading;
+    if (shouldManageLoading) {
+        ModeContext.setLoading(true);
+    }
+
+    try {
+        await NotesAPI.deleteNote(noteId);
+
+        if (ModeContext.currentNoteId === noteId) {
+            ModeContext.setCurrentNoteId(null);
+        }
+
+        if (ModeContext.currentContent !== null) {
+            ModeContext.setCurrentContent(null);
+        }
+
+        await actionRefreshAndMaybeSelect({ skipLoadingState: true });
+    } finally {
+        if (shouldManageLoading && ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+        }
+    }
+}
+
 export async function createNote() {
     Logger.logAction('createNote', {
         currentNoteId: ModeContext.currentNoteId,
