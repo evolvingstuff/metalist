@@ -225,6 +225,10 @@ body {
     background-color: #ffffff;
 }
 
+.note:hover:not(:has(.note:hover)) {
+    border-color: #999999;
+}
+
 .note.collapsed {
     background-color: #f2f2f2;
 }
