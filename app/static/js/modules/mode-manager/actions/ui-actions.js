@@ -4,6 +4,7 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { highlightCommentsOnRender } from '../events/input-events.js';
+import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 
 export async function actionRefreshAndMaybeSelect(options = {}) {
     Logger.logAction('refresh_and_maybe_select', { 
@@ -27,6 +28,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     
     // Update content directly - app-level fade handles the transition
     notesContainer.innerHTML = html;
+    requestAnimationFrame(() => updateCollapseAffordances(notesContainer));
     
     // If this is initial page load, fade in the entire app
     if (ModeContext.isInitialPageLoad) {

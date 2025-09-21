@@ -239,10 +239,12 @@ function handleToggleCollapseShortcut(event) {
     }
 
     const isCurrentlyCollapsed = hoveredElement?.dataset?.isCollapsed === 'true';
+    const canCollapse = hoveredElement?.dataset?.canCollapse !== 'false';
 
     Logger.logDebug('Toggle collapse shortcut triggered', {
         hoveredNoteId,
-        isCurrentlyCollapsed
+        isCurrentlyCollapsed,
+        canCollapse
     }, Logger.LogCategory.EVENT);
 
     event.preventDefault();
@@ -251,6 +253,12 @@ function handleToggleCollapseShortcut(event) {
     if (isCurrentlyCollapsed) {
         expandNote(hoveredNoteId);
     } else {
+        if (!canCollapse) {
+            Logger.logNoop('Toggle collapse shortcut ignored: note cannot collapse', {
+                hoveredNoteId
+            });
+            return;
+        }
         collapseNote(hoveredNoteId);
     }
 }
