@@ -180,6 +180,11 @@ body {
     display: flex;
     justify-content: space-between;
     margin-bottom: 0.15rem;
+    position: sticky;
+    top: 1.5rem;
+    z-index: 100;
+    background: var(--bg-color);
+    padding: 0.15rem 0;
 }
 
 #notes-container {
