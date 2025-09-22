@@ -101,7 +101,7 @@ function handleKeyDown(event) {
     if (!ModeContext.isConnected) {
         const needsServer = (
             // Create/delete operations
-            (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
+            (event.key === 'Enter' && ((event.metaKey || event.ctrlKey) || !ModeContext.isEditing)) ||
             ((event.key === 'Backspace' || event.key === 'Delete') && ((event.metaKey || event.ctrlKey) || intendsHoverDelete)) ||
             // Move operations
             (isArrowKey && ((event.metaKey || event.ctrlKey) || intendsHoverMove)) ||
@@ -441,6 +441,18 @@ function handleEnterKey(event) {
         noteId: ModeContext.currentNoteId
     });
 
+    if (ModeContext.isEditing) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
+    createNote();
 }
 
 function handleCreateNoteShortcut(event) {
