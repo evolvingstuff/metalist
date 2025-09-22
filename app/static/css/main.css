@@ -179,12 +179,16 @@ body {
 .controls {
     display: flex;
     justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: -6px;
     margin-bottom: 0.15rem;
     position: sticky;
-    top: 1.5rem;
+    top: calc(1.5rem - 6px);
     z-index: 100;
-    background: var(--bg-color);
-    padding: 0.15rem 0;
+    background: #000000;
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
 }
 
 #notes-container {
@@ -420,25 +424,35 @@ body {
     pointer-events: none; /* Ensures the tooltip doesn't interfere with mouse events */
 }
 
-.search-input {
-    width: 500px;  /* Fixed width instead of flex: 1 */
-    margin: 0 auto;  /* Auto margins for centering */
-    padding: 5px 10px;
+
+.controls .search-input {
+    width: 500px;
+    margin: 0 auto;
+    padding: 0 12px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 14px;
     outline: none;
+    height: 30px;
+    line-height: 30px;
+    box-sizing: border-box;
+    background-color: #ffffff;
+    color: var(--text-color);
 }
 
-.search-input:focus {
+.controls .search-input:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+}
+
+.controls .search-input::placeholder {
+    color: rgba(0, 0, 0, 0.5);
 }
 
 /* Global Controls */
 .global-controls {
     position: fixed;
-    top: 1rem;
+    top: calc(1.5rem - 6px + 0.35rem);
     right: 1rem;
     display: flex;
     gap: 0.5rem;
@@ -491,7 +505,7 @@ body.loading::after {
 /* Tab indicator and search contexts */
 #tab-indicator {
     position: fixed;
-    top: 24px;
+    top: calc(1.5rem - 6px);
     left: 10px;
     z-index: 9999;
     background: rgba(0,0,0,0.7);
@@ -506,7 +520,7 @@ body.loading::after {
 
 #search-contexts-list {
     position: fixed;
-    top: 67px;
+    top: calc(1.5rem - 6px);
     left: 10px;
     z-index: 9999;
     background: rgba(0,0,0,0.7);
