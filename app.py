@@ -2,8 +2,15 @@ import uvicorn
 import logging
 
 class FilterCheckUpdates(logging.Filter):
+    NOISY_PATTERNS = (
+        'POST /api/notes/check-updates',
+        'POST /api/notes/acquire-lock',
+        'GET /api/auth/sessions',
+    )
+
     def filter(self, record):
-        return 'POST /api/notes/check-updates' not in record.getMessage()
+        message = record.getMessage()
+        return not any(pattern in message for pattern in self.NOISY_PATTERNS)
 
 if __name__ == "__main__":
     # Configure logging to filter out check-updates

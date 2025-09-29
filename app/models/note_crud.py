@@ -62,9 +62,11 @@ class NoteCRUD:
         
         # Encrypt content using new separate field approach
         ciphertext, nonce, tag = encrypt(content)
-        db_note.content = ciphertext
+
+        # Update encryption metadata before content so event listeners see a consistent trio
         db_note.encryption_nonce = nonce
         db_note.encryption_tag = tag
+        db_note.content = ciphertext
         
         # Update content cache with plaintext for search
         cache_note(note_id, content)

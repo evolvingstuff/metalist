@@ -36,6 +36,10 @@
    - Throttle `/api/auth/sessions` refreshes so we only hit the endpoint after real activity with a minimum interval.
    - Confirm background sync (`/api/notes/check-updates`) still runs as expected.
 
+8. **Fix Auth Headers on Note Lock Heartbeat**
+   - Send the bearer token with `/api/notes/acquire-lock` requests so authenticated sessions don’t get 401s while editing.
+   - Handle 401 responses by exiting edit mode and surfacing an auth warning.
+
 ## Deliverables
 - Updated code reflecting the fixes above.
 - Test results or rationale for any skipped tests.

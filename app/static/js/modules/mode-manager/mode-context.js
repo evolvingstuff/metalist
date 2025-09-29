@@ -622,9 +622,15 @@ class ModeContext {
         }
         
         try {
+            const headers = { 'Content-Type': 'application/json' };
+            const authToken = localStorage.getItem('auth_token');
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
             const response = await fetch('/api/notes/acquire-lock', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     noteId: this._currentNoteId,
                     clientId: this._clientId,
@@ -641,6 +647,11 @@ class ModeContext {
                 Logger.logDebug('Lost edit lock to another client');
                 this.setEditing(false);
                 // TODO: Show user notification that they lost the lock
+            } else if (response.status === 401) {
+                Logger.logError('Editing heartbeat unauthorized - exiting edit mode', response.statusText);
+                this.setEditing(false);
+                // Trigger global auth required handler if available
+                window.dispatchEvent(new CustomEvent('metalist-auth-required'));
             }
         } catch (error) {
             Logger.logError('Failed to send editing heartbeat', error);
