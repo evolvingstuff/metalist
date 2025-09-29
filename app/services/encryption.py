@@ -185,8 +185,14 @@ class EncryptionService:
             raise ValueError("No DEK set - ensure password has been provided")
             
         try:
+            # Normalize padding for base64 strings
+            normalized = ciphertext_base64.strip()
+            missing_padding = (-len(normalized)) % 4
+            if missing_padding:
+                normalized += "=" * missing_padding
+
             # Decode ciphertext from base64
-            ciphertext = base64.b64decode(ciphertext_base64)
+            ciphertext = base64.b64decode(normalized)
             
             # Create cipher with tag using DEK
             cipher = Cipher(

@@ -289,11 +289,17 @@ class AuthService:
                 if note.content and note.encryption_nonce is not None:
                     try:
                         # Decrypt the content using separate fields
-                        plaintext = self.encryption.decrypt_from_storage(note.content, note.encryption_nonce, note.encryption_tag)
-                        note.content = plaintext
-                        # Clear encryption fields
+                        plaintext = self.encryption.decrypt_from_storage(
+                            note.content,
+                            note.encryption_nonce,
+                            note.encryption_tag,
+                        )
+                        # Clear encryption metadata before writing plaintext so event listeners treat it as unencrypted
                         note.encryption_nonce = None
                         note.encryption_tag = None
+                        note.content = plaintext
+                        from app.services.content_cache import cache_note
+                        cache_note(note.id, plaintext)
                         decrypted_count += 1
                     except Exception as e:
                         # FAIL FAST AND LOUD - NO SILENT FAILURES  
