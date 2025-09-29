@@ -1,10 +1,12 @@
 from typing import Dict, List, Optional, Any
+from types import SimpleNamespace
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime, timezone
 from .database import DBNote
 from ..utils.encryption import encrypt
 from ..services.content_cache import get_cached_content, cache_note
+from ..render.note_renderer import render_read_only_mode
 
 
 def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:
@@ -329,3 +331,23 @@ def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
     
     all_lines = render_note_text(note_data, 0)
     return '\n'.join(all_lines)
+
+
+def render_note_data_read_only(note_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a deep-copied note tree rendered in read-only mode."""
+
+    def _render_node(node: Dict[str, Any]) -> Dict[str, Any]:
+        content = node.get("content", "")
+        note_obj = SimpleNamespace(content=content)
+        rendered_content = render_read_only_mode(note_obj)
+
+        rendered_children = []
+        for child in node.get("children", []) or []:
+            rendered_children.append(_render_node(child))
+
+        rendered = dict(node)
+        rendered["content"] = rendered_content
+        rendered["children"] = rendered_children
+        return rendered
+
+    return _render_node(note_data)

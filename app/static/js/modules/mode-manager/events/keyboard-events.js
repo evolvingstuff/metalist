@@ -694,56 +694,53 @@ async function handleCopyNoteShortcut(event) {
         }
         
         // Copy to server clipboard
-        await actionCopyNote();
-        
+        const copyResult = await actionCopyNote();
+
         Logger.logDebug('Note copied to server clipboard', {
             noteId: ModeContext.currentNoteId
         }, Logger.LogCategory.EVENT);
-        
-        // Also copy HTML to system clipboard
+
+        const renderedHtml = copyResult?.html;
+        const renderedPlainText = copyResult?.plain_text;
+
+        if (!renderedHtml && !renderedPlainText) {
+            Logger.logDebug('Copy endpoint returned no rendered content', {}, Logger.LogCategory.EVENT);
+            return;
+        }
+
         try {
-            // Import the API module
-            const { NotesAPI } = await import('../../api-client.js');
-            
-            // Get HTML export of the note
-            const htmlResponse = await NotesAPI.exportNoteAsHtml(currentNoteId);
-            
-            if (htmlResponse && htmlResponse.html) {
-                // Copy HTML to system clipboard
-                if (navigator.clipboard && navigator.clipboard.write) {
-                    // Modern clipboard API with HTML support
-                    const htmlBlob = new Blob([htmlResponse.html], { type: 'text/html' });
-                    const plainTextBlob = new Blob([htmlResponse.plain_text], { type: 'text/plain' });
-                    
-                    const clipboardItem = new ClipboardItem({
-                        'text/html': htmlBlob,
-                        'text/plain': plainTextBlob
-                    });
-                    
-                    await navigator.clipboard.write([clipboardItem]);
-                    Logger.logDebug('HTML copied to system clipboard using Clipboard API', {}, Logger.LogCategory.EVENT);
-                } else if (navigator.clipboard && navigator.clipboard.writeText) {
-                    // Fallback to plain text if HTML not supported
-                    await navigator.clipboard.writeText(htmlResponse.plain_text);
-                    Logger.logDebug('Plain text copied to system clipboard', {}, Logger.LogCategory.EVENT);
-                } else {
-                    // Legacy fallback using execCommand
-                    const textarea = document.createElement('textarea');
-                    textarea.value = htmlResponse.plain_text;
-                    textarea.style.position = 'fixed';
-                    textarea.style.opacity = '0';
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    Logger.logDebug('Text copied to system clipboard using legacy method', {}, Logger.LogCategory.EVENT);
-                }
+            if (renderedHtml && navigator.clipboard && navigator.clipboard.write) {
+                const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+                const plainTextBlob = new Blob([
+                    renderedPlainText ?? ''
+                ], { type: 'text/plain' });
+
+                const clipboardItem = new ClipboardItem({
+                    'text/html': htmlBlob,
+                    'text/plain': plainTextBlob
+                });
+
+                await navigator.clipboard.write([clipboardItem]);
+                Logger.logDebug('Rendered HTML copied to system clipboard', {}, Logger.LogCategory.EVENT);
+            } else if (renderedPlainText && navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(renderedPlainText);
+                Logger.logDebug('Rendered plain text copied to system clipboard', {}, Logger.LogCategory.EVENT);
+            } else if (renderedPlainText) {
+                const textarea = document.createElement('textarea');
+                textarea.value = renderedPlainText;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                Logger.logDebug('Rendered text copied to system clipboard via legacy fallback', {}, Logger.LogCategory.EVENT);
             }
-        } catch (htmlError) {
-            Logger.logDebug('Error copying HTML to system clipboard', {
-                error: htmlError.message
+        } catch (clipboardError) {
+            Logger.logDebug('Error copying rendered content to system clipboard', {
+                error: clipboardError.message
             }, Logger.LogCategory.EVENT);
-            // Continue even if HTML copy fails - server clipboard still works
+            // Continue even if clipboard write fails - server clipboard still works
         }
     } catch (error) {
         Logger.logDebug('Error copying note', {

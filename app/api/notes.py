@@ -19,7 +19,13 @@ from ..services.sync_state import (
     get_current_sync_uuid, acquire_note_lock, release_note_lock, generate_new_uuid, set_server_sync_uuid,
     get_client_clipboard, set_client_clipboard, cleanup_expired_locks
 )
-from ..models.utils import count_serialized_note_tree
+from ..models.utils import (
+    copy_note_in_memory,
+    count_serialized_note_tree,
+    note_data_to_html,
+    note_data_to_plain_text,
+    render_note_data_read_only,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -157,13 +163,21 @@ def copy_note(
     with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             # Serialize the note tree to pure data (no database writes)
-            from ..models.utils import copy_note_in_memory
             note_data = copy_note_in_memory(db, note_id)
-            
+
             # Store the serialized data in the client's server-side clipboard
             set_client_clipboard(request.clientId, note_data)
-            
-            return {"status": "success"}
+
+            # Produce rendered variants for the system clipboard
+            rendered_tree = render_note_data_read_only(note_data)
+            rendered_html = note_data_to_html(rendered_tree)
+            rendered_plain_text = note_data_to_plain_text(rendered_tree)
+
+            return {
+                "status": "success",
+                "html": rendered_html,
+                "plain_text": rendered_plain_text
+            }
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
@@ -181,14 +195,11 @@ def export_note_as_html(
     with get_note_service(db, transaction_manager, client_id) as service:
         try:
             # Serialize the note tree to pure data
-            from ..models.utils import copy_note_in_memory, note_data_to_html, note_data_to_plain_text
             note_data = copy_note_in_memory(db, note_id)
             
-            # Convert to HTML
-            html = note_data_to_html(note_data)
-            
-            # Also create plain text version
-            plain_text = note_data_to_plain_text(note_data)
+            rendered_tree = render_note_data_read_only(note_data)
+            html = note_data_to_html(rendered_tree)
+            plain_text = note_data_to_plain_text(rendered_tree)
             
             return {"html": html, "plain_text": plain_text}
         except ValueError as e:

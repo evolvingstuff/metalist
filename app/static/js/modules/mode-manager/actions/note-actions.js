@@ -301,9 +301,10 @@ export async function actionCopyNote() {
     }
 
     // Call the server to serialize the note tree to clipboard
-    await NotesAPI.copyNote(currentNoteId);
-    
+    const response = await NotesAPI.copyNote(currentNoteId);
+
     // No need to store clipboard state client-side anymore
+    return response;
 }
 
 export async function actionPasteNoteSibling() {
