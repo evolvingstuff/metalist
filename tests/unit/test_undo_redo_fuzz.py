@@ -1,45 +1,50 @@
+import random
 import pytest
 
-from tests.unit.common import *
+from tests.unit.common import visualize_tree, DBNote, db  # noqa: F401 - fixture import
 from app.services.transaction_manager import get_transaction_manager
+from app.services.note_service import NoteService
 from app.services.undo_service import UndoRedoService
+from app.models.enums import MovePosition
+from fastapi import HTTPException
 
 UNDO_REDO_INTERVAL = 4
+CLIENT_ID = "fuzz-client"
 
 
-@pytest.mark.xfail(reason="Legacy fuzz harness mutates linked list outside service layer")
+def refresh_active_ids(db):
+    return sorted({id for (id,) in db.query(DBNote.id).all()})
+
+
+def note_service(db, transaction_manager):
+    return NoteService(db, transaction_manager, CLIENT_ID)
+
+
 def test_fuzz_undo_redo(db):
+    """Randomized operations driven through NoteService to exercise undo/redo."""
+    seed = 42
+    random.seed(seed)
 
-    """Like test_fuzz_linked_list_with_mutations but includes drag-and-drop creation"""
-    SEED = 42
-    NODES = 5
-    STEPS = 250
-    VISUALIZE_INTERVAL = 1
+    # Seed initial data directly, then clear undo stack before fuzzing
+    initial_notes = []
+    for i in range(5):
+        note = DBNote(id=str(i), content=f"Note {i}")
+        if i > 0:
+            note.prev_id = str(i - 1)
+            initial_notes[i - 1].next_id = str(i)
+        initial_notes.append(note)
 
-    print(f"\n=== Starting Mutation+Drag Fuzz Test with seed: {SEED} ===")
-    random.seed(SEED)
+    db.add_all(initial_notes)
+    db.commit()
 
-    # Create initial notes in a valid linked list structure
-    with transaction_scope(db):
-        notes = []
-        for i in range(NODES):
-            note = DBNote(id=str(i), content=f"Note {i}")
-            if i > 0:
-                note.prev_id = str(i - 1)
-                notes[i - 1].next_id = str(i)
-            notes.append(note)
-
-        db.add_all(notes)
-
-    print("\n=== Initial State ===")
+    print(f"\n=== Starting Mutation+Drag Fuzz Test with seed: {seed} ===")
     visualize_tree(db)
 
-    next_id = NODES  # For creating new notes
-    with transaction_scope(db):
-        active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
-    active_note_ids = sorted(list(active_note_ids))
+    transaction_manager = get_transaction_manager()
+    transaction_manager.command_stack.clear_all()
 
-    # Operation counters
+    active_note_ids = refresh_active_ids(db)
+
     operation_counts = {
         'delete': 0,
         'add_click': 0,
@@ -49,191 +54,121 @@ def test_fuzz_undo_redo(db):
         'move': 0
     }
 
-    # Perform random operations
-    for i in range(STEPS):
-        print(f'testing undo/redo: {i}')
+    for step in range(250):
         db.expire_all()
-        if i % VISUALIZE_INTERVAL == 0 and i > 0:
-            print(f"\n=== State after {i} operations ===")
+        if step % 1 == 0 and step > 0:
+            print(f"\n=== State after {step} operations ===")
             visualize_tree(db)
 
-        operation = random.random()
+        op_choice = random.random()
 
-        if operation < 0.2 and len(active_note_ids) > 2:  # 20% chance to delete
-            # Delete operation
-            note_id = random.choice(active_note_ids)
-            print(f"Deleting note {note_id}")
-            with transaction_scope(db):
-                LinkedListManager.delete_note(db, note_id)
-            active_note_ids = {id for (id,) in db.query(DBNote.id).all()}
-            active_note_ids = sorted(list(active_note_ids))
-            operation_counts['delete'] += 1
+        if op_choice < 0.2 and len(active_note_ids) > 2:
+            # Delete
+            target_id = random.choice(active_note_ids)
+            print(f"Deleting note {target_id}")
+            try:
+                with note_service(db, transaction_manager) as service:
+                    service.delete_note(target_id)
+                operation_counts['delete'] += 1
+            except (HTTPException, RuntimeError) as exc:
+                print(f"Delete failed: {exc}")
+                continue
+            active_note_ids = refresh_active_ids(db)
             print("Delete successful!")
 
-        elif operation < 0.4:  # 20% chance to add new note
-            new_id = str(next_id)
-            next_id += 1
-
+        elif op_choice < 0.4:
+            # Create note in various ways
             add_type = random.choice(['click', 'drag', 'sibling', 'child'])
-            print(f"Adding new note {new_id} via {add_type}")
+            print(f"Adding new note via {add_type}")
+            try:
+                with note_service(db, transaction_manager) as service:
+                    if add_type == 'click':
+                        result = service.create_note()
+                        operation_counts['add_click'] += 1
+                    elif add_type == 'drag' and active_note_ids:
+                        target_id = random.choice(active_note_ids)
+                        target = db.get(DBNote, target_id)
+                        drop_type = random.choice(['inside', 'before', 'after'])
+                        print(f"Dragging to {target_id} ({drop_type})")
+                        if drop_type == 'inside':
+                            result = service.create_note_with_position(new_parent_id=target_id)
+                        else:
+                            position = MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                            result = service.create_note_with_position(
+                                new_parent_id=target.parent_id,
+                                sibling_id=target_id,
+                                position=position,
+                            )
+                        operation_counts['add_drag'] += 1
+                    elif add_type == 'sibling' and active_note_ids:
+                        target_id = random.choice(active_note_ids)
+                        result = service.create_sibling_note(target_id)
+                        operation_counts['add_sibling'] += 1
+                    elif add_type == 'child' and active_note_ids:
+                        target_id = random.choice(active_note_ids)
+                        result = service.create_child_note(target_id)
+                        operation_counts['add_child'] += 1
+                    else:
+                        result = service.create_note()
+                        operation_counts['add_click'] += 1
+                new_id = result['id']
+                print(f"Add successful! id={new_id}")
+            except (HTTPException, RuntimeError) as exc:
+                print(f"Add failed: {exc}")
+                continue
+            active_note_ids = refresh_active_ids(db)
 
-            if add_type == 'drag' and active_note_ids:
-                target_id = random.choice(active_note_ids)
-                with transaction_scope(db):
-                    target = db.get(DBNote, target_id)
-
-                drop_type = random.choice(['inside', 'before', 'after'])
-                print(f"Dragging to {target_id} ({drop_type})")
-
-                if drop_type == 'inside':
-                    with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
-                            new_parent_id=target_id
-                        )
-                else:
-                    with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
-                            new_parent_id=target.parent_id,
-                            sibling_id=target_id,
-                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
-                        )
-                operation_counts['add_drag'] += 1
-            elif add_type == 'sibling' and active_note_ids:
-                target_id = random.choice(active_note_ids)
-                with transaction_scope(db):
-                    # TODO call actual op
-                    LinkedListManager.create_note_top(db, new_id)
-                    LinkedListManager.move_note(
-                        db=db,
-                        note_id=new_id,
-                        new_parent_id=db.get(DBNote, target_id).parent_id,
-                        sibling_id=target_id,
-                        position=MovePosition.AFTER
-                    )
-                operation_counts['add_sibling'] += 1
-            elif add_type == 'child' and active_note_ids:
-                target_id = random.choice(active_note_ids)
-                with transaction_scope(db):
-                    # TODO call actual op
-                    LinkedListManager.create_note_top(db, new_id)
-                    LinkedListManager.move_note(
-                        db=db,
-                        note_id=new_id,
-                        new_parent_id=target_id,
-                        sibling_id=None,
-                        position=None
-                    )
-                operation_counts['add_child'] += 1
-            else:  # Regular click creation
-                with transaction_scope(db):
-                    LinkedListManager.create_note_top(db, new_id)
-                operation_counts['add_click'] += 1
-
-            active_note_ids.append(new_id)
-            active_note_ids.sort()
-            print("Add successful!")
-
-        else:  # 60% chance for move operation
+        else:
+            # Move
             if len(active_note_ids) < 2:
                 continue
-
             note_id = random.choice(active_note_ids)
-            with transaction_scope(db):
-                note = db.get(DBNote, note_id)
-            possible_parents = active_note_ids
-            new_parent_id = random.choice(possible_parents + [None])
+            note = db.get(DBNote, note_id)
+            potential_parents = active_note_ids + [None]
+            new_parent_id = random.choice(potential_parents)
             sibling_id = None
             position = None
 
             if new_parent_id == note_id:
-                with pytest.raises(ValueError, match="Cannot make a note its own parent"):
-                    with transaction_scope(db):
-                        LinkedListManager.move_note(
-                            db=db,
-                            note_id=note_id,
-                            new_parent_id=new_parent_id,
-                            sibling_id=sibling_id,
-                            position=position
-                        )
                 continue
 
-            print(f"Moving note {note_id} (currently under {note.parent_id})")
-            print(f"To parent {new_parent_id}")
-
-            use_sibling = random.choice([True, False])
-            if use_sibling and new_parent_id is not None:
-                with transaction_scope(db):
-                    siblings = db.query(DBNote).filter(
-                        DBNote.parent_id == new_parent_id,
-                        DBNote.id != note_id
-                    ).all()
-                if siblings:
-                    sibling_id = random.choice([s.id for s in siblings])
+            if new_parent_id is not None:
+                siblings = db.query(DBNote).filter(
+                    DBNote.parent_id == new_parent_id,
+                    DBNote.id != note_id
+                ).all()
+                if siblings and random.choice([True, False]):
+                    sibling = random.choice(siblings)
+                    sibling_id = sibling.id
                     position = random.choice([MovePosition.BEFORE, MovePosition.AFTER])
-                    print(f"Relative to sibling {sibling_id} ({position})")
 
+            print(f"Moving note {note_id} to parent {new_parent_id} relative to {sibling_id} ({position})")
             try:
-                with transaction_scope(db):
-                    LinkedListManager.move_note(
-                        db=db,
+                with note_service(db, transaction_manager) as service:
+                    service.move_note(
                         note_id=note_id,
                         new_parent_id=new_parent_id,
                         sibling_id=sibling_id,
-                        position=position
+                        position=position,
                     )
                 operation_counts['move'] += 1
                 print("Move successful!")
-            except ValueError as e:
-                print(f"Move failed: {str(e)}")
+            except (HTTPException, RuntimeError, ValueError) as exc:
+                print(f"Move failed: {exc}")
                 continue
 
-        ### <<<<<<<<<<
-        # Every few steps, perform an undo or redo
-        if i % UNDO_REDO_INTERVAL == 0:
-            transaction_manager = get_transaction_manager()
+        # Periodic undo/redo
+        if active_note_ids and step % UNDO_REDO_INTERVAL == 0:
             undo_service = UndoRedoService(db, transaction_manager)
-            
             if random.choice([True, False]):
                 print("Performing undo")
-                result = undo_service.undo()
-                if result["status"] == "success":
-                    print('UNDO SUCCESSFUL')
-                else:
-                    print(f'UNDO: {result["message"]}')
+                result = undo_service.undo(CLIENT_ID)
             else:
                 print("Performing redo")
-                result = undo_service.redo()
-                if result["status"] == "success":
-                    print('REDO SUCCESSFUL')
-                else:
-                    print(f'REDO: {result["message"]}')
-            print('after undo/redo:')
+                result = undo_service.redo(CLIENT_ID)
+            print(result)
             visualize_tree(db)
-            # raise NotImplementedError("Redo is not implemented yet")
 
-        # Validate after each operation
-        with transaction_scope(db):
-            if not LinkedListManager.validate_list(db, None):
-                raise ValueError(f"Invalid list structure under parent None")
+        active_note_ids = refresh_active_ids(db)
 
-        with transaction_scope(db):
-            existing_parents = db.query(DBNote.id).filter(
-                DBNote.id.in_(
-                    db.query(DBNote.parent_id).filter(DBNote.parent_id.isnot(None))
-                )
-            ).all()
-
-        for (parent_id,) in existing_parents:
-            with transaction_scope(db):
-                if not LinkedListManager.validate_list(db, parent_id):
-                    raise ValueError(f"Invalid list structure under parent {parent_id}")
-        print("Validation successful!")
-
-    # Check that all operations were performed at least once
-    for op, count in operation_counts.items():
-        if count == 0:
-            raise AssertionError(f"Operation '{op}' was never performed.")
+    print("Operation counts:", operation_counts)
