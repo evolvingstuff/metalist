@@ -98,7 +98,15 @@ Enable integrity assertions when debugging data issues:
 DEV_ENFORCE_INTEGRITY_CHECKS=1 python -m pytest tests/unit
 ```
 
-Integration tests: TODO
+Generate coverage (creates coverage.xml):
+```
+python -m pytest --cov=app --cov=tests --cov-report=term-missing --cov-report=xml
+```
+
+Integration tests (FastAPI TestClient):
+```
+python -m pytest tests/integration
+```
 
 #### Frontend tests:
 
