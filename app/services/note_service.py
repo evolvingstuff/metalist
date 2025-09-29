@@ -37,9 +37,10 @@ class NoteService(BaseTransactionService):
         
         # Auto-populate with search terms if creating a root-level note during search
         if search_query and search_query.strip() and not parent_id:
-            content = f"<div> </div><div><br></div><div>/* {search_query.strip()} */</div>"
+            trimmed_query = search_query.strip()
+            content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed_query}\" */</div>"
             LinkedListManager.update_note(self.db, note_id, content)
-            logger.info(f"Auto-populated note {note_id} with search terms: '{search_query.strip()}'")
+            logger.info(f"Auto-populated note {note_id} with search terms: '{trimmed_query}'")
         
         logger.info(f"Created note {note_id} with parent {parent_id} before {first_visible_note_id}")
         
@@ -185,9 +186,10 @@ class NoteService(BaseTransactionService):
         
         # Auto-populate with search terms if creating a root-level note during search
         if search_query and search_query.strip() and not reference_note.parent_id:
-            content = f"<div> </div><div><br></div><div>/* {search_query.strip()} */</div>"
+            trimmed_query = search_query.strip()
+            content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed_query}\" */</div>"
             LinkedListManager.update_note(self.db, new_note_id, content)
-            logger.info(f"Auto-populated sibling note {new_note_id} with search terms: '{search_query.strip()}'")
+            logger.info(f"Auto-populated sibling note {new_note_id} with search terms: '{trimmed_query}'")
         
         logger.info(f"Created sibling note {new_note_id} after {reference_note_id}")
         return {"id": new_note_id, "status": "created"}
