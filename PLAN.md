@@ -1,54 +1,45 @@
 # Memory Mode Feature Plan
 
 ## Goals
-- Introduce a "memory" study mode triggered by the `m` key when the app is idle (not editing/searching).
-- Display a modal that cycles through read-only notes from the current search view, highlighting the targeted node and showing its root context.
-- Capture user feedback (-1/0/+1) per note and bias subsequent note selection via a temperature-controlled softmax over note scores.
+- Provide a "memory" mode activated with the `m` key when idle (not editing/searching).
+- Show a modal that cycles through read-only notes from the current search view, highlighting the chosen node and full root context.
+- Capture user feedback where "more often" increments a positive counter, "less often" increments a negative counter, and "same" leaves counters untouched.
 
 ## Deliverables
-- FastAPI `/memory` endpoint that records feedback and returns the next note (HTML) plus metadata.
-- In-memory score tracker keyed by note UUID to prototype feedback capture/selection; later swap to persistent storage once flow is validated.
-- Frontend modal implementation with keyboard shortcut, fetch loop, and UI for note display + feedback buttons.
-- Styling updates for the modal (overlay, background blur, scroll area, highlight styling) and UX polish.
+- FastAPI `/memory` endpoint that tracks per-note feedback in-memory using Laplace-smoothed counts and returns the next note HTML plus metadata.
+- Frontend modal with keyboard shortcut, fetch loop, and buttons wired to the endpoint, reflecting updated stats (pos/neg and derived ratio).
+- Styling/UX polish for the modal overlay and highlighted note.
 
 ## Task Breakdown
-1. **Backend Prototype Layer**
-   - Add an in-memory singleton (module-level dict) to track `{note_uuid: {score, count}}` with timestamps for debugging.
-   - Provide helper functions to record feedback and fetch current aggregates, ensuring thread safety within the FastAPI process.
+1. **Backend Tracking Updates**
+   - Replace score accumulator with `{pos, neg}` counts, initialize unseen notes with `pos = 1, neg = 0` (Laplace smoothing) so ratios stay positive.
+   - Treat feedback `+1` as incrementing `pos`, `-1` as incrementing `neg`, and `0` as a no-op.
+   - Compute selection ratios as `pos / (pos + neg)`; with smoothing every note starts at 1.0 and adjusts as feedback arrives.
+   - Simplify selection logic to use these ratios directly (no softmax); choose the note with highest ratio or weighted by ratio depending on user preference (default: highest ratio for now?).
 
-2. **Memory Selection Logic**
-   - Determine candidate notes for the given search context via `build_note_tree`, flattening to capture individual note IDs plus their root context HTML.
-   - Compute score aggregates from the tracker (`sum(outcome)` and `count` per note, defaulting to zero score/zero count when unseen).
-   - Apply a numerically stable softmax with a low temperature (≈0.25) over the scores (subtract max before exponentiating) so probabilities naturally converge to uniform when scores are equal.
-   - Inject highlight styling (e.g., `memory-highlight` class) into rendered HTML for the selected note and include ratio summaries for display.
+2. **Candidate Selection Logic**
+   - Produce flattened list of `(node, root)` pairs to evaluate each note while keeping rendered context.
+   - Decide tie-breaking strategy (e.g., random choice among top ratios) and document behaviour.
+   - Continue applying highlight flags so templates render selected note with green outline and read-only state.
 
-3. **API Endpoint**
-   - Create request/response Pydantic models covering `searchQuery`, optional `previousNoteId`, and optional `feedback` (-1/0/+1).
-   - On each call: optionally record feedback for the prior note, rebuild candidate pool, softmax-select the next note, and respond with HTML + metadata (score, count, average).
-   - Ensure fail-fast behavior for invalid inputs (missing search context, unknown UUIDs, etc.).
+3. **API Response & Metadata**
+   - Adjust response payload to include `pos`, `neg`, and computed ratio `pos / (pos + neg)` instead of score/count.
+   - Ensure Pydantic models serialize aliases correctly (`noteId`, `rootNoteId`, etc.).
+   - Maintain existing failure modes (422 for missing search query, 404 when no candidates).
 
-4. **Frontend Modal Infrastructure**
-   - Implement `MemoryModal` extending `BaseModal`, rendering: header (ratio display), scrollable note area (read-only), footer with three feedback buttons.
-   - Ensure modal closes via ESC, click-outside, or close icon; cancel pending fetch when closing.
-   - Present loading state while waiting for server responses and gracefully handle empty candidate sets.
+4. **Frontend Modal Adjustments**
+   - Update display to show positive/negative counts and ratio.
+   - Ensure `Same` button skips sending feedback (or sends `0` and backend ignores it).
+   - Preserve loading/error states, abort handling, and modal exit behaviours.
 
-5. **Keyboard & Mode Integration**
-   - Update keyboard handler to open `MemoryModal` on `m` when not editing, not searching, and no other modal active.
-   - Track modal state in `ModeContext` as needed (e.g., `modalStack`) to disable conflicting interactions while open.
-   - Support continuous loop: button press → POST feedback → display next note until modal exit.
+5. **Styling & UX**
+   - Keep modal overlay, blur, and highlight styles; adjust header text for new statistics if necessary.
 
-6. **Styling & UX**
-   - Add CSS for modal overlay (viewport-sized, blurred backdrop), fixed modal dimensions with internal scrolling, and button row styling.
-   - Define `memory-highlight` class for the selected note (e.g., green outline or tinted background) without altering base note layout.
-   - Make base page visually blurred/inactive while modal is active.
+6. **Validation**
+   - Manual QA: open modal with different search contexts, press each feedback button, inspect stats updates.
+   - Note follow-up for potential persistence layer once logic is finalized.
 
-7. **Validation & Migration Prep**
-   - Backend tests for feedback accumulation and softmax weighting (mocked random seed) to guard logic.
-   - Manual QA checklist: open modal, ensure note renders, submit each feedback button, verify loop and exit paths.
-   - Document follow-up work: replace in-memory tracker with persistent `memory` table (model + migration) once functionality confirmed.
-
-## Dependencies / Open Questions
-- Confirm search context string availability on the client; identify how to pass it alongside requests.
-- Decide how to clamp/normalize scores before softmax to avoid runaway exponentials (e.g., min/max bounds, optional score decay).
-- Evaluate whether `build_note_tree`'s current debug logging needs suppression to keep `/memory` responses lightweight.
+## Dependencies / Questions
+- Confirm selection strategy (highest ratio vs. weighted random by ratio); revisit if behaviour feels repetitive.
+- Validate `build_note_tree` output includes collapsed children as needed; if not, consider expanding or tracking collapse state.
 
