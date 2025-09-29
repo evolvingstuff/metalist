@@ -48,10 +48,10 @@ class MemoryRequest(BaseModel):
 class MemoryStatsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
 
-    score: float
-    count: int
-    average: float
-    ratio: str
+    positive: float
+    negative: float
+    ratio: float
+    total: float
 
 
 class MemoryResponse(BaseModel):
@@ -90,12 +90,11 @@ def fetch_memory_note(payload: MemoryRequest, db: Session = Depends(get_db)) -> 
         search_query=payload.search_query,
     )
 
-    ratio = f"{int(stats.score)}:{stats.count}" if stats.count > 0 else "0:0"
     stats_response = MemoryStatsResponse(
-        score=stats.score,
-        count=stats.count,
-        average=stats.average,
-        ratio=ratio,
+        positive=stats.pos,
+        negative=stats.neg,
+        ratio=stats.ratio,
+        total=stats.total,
     )
 
     return MemoryResponse(

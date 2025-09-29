@@ -76,7 +76,7 @@ export class MemoryModal extends BaseModal {
                 <header class="memory-modal-header">
                     <div class="memory-meta">
                         <span id="memory-modal-ratio">Loading…</span>
-                        <span id="memory-modal-average"></span>
+                        <span id="memory-modal-counts"></span>
                         <span id="memory-modal-probability"></span>
                     </div>
                 </header>
@@ -205,9 +205,9 @@ export class MemoryModal extends BaseModal {
         if (ratio) {
             ratio.textContent = 'Loading…';
         }
-        const avg = modalElement.querySelector('#memory-modal-average');
-        if (avg) {
-            avg.textContent = '';
+        const counts = modalElement.querySelector('#memory-modal-counts');
+        if (counts) {
+            counts.textContent = '';
         }
         const prob = modalElement.querySelector('#memory-modal-probability');
         if (prob) {
@@ -236,14 +236,15 @@ export class MemoryModal extends BaseModal {
             noteTarget.innerHTML = `<div class="memory-note-wrapper">${payload.html}</div>`;
         }
 
-        const ratio = modalElement.querySelector('#memory-modal-ratio');
-        if (ratio) {
-            ratio.textContent = `Score: ${payload.stats.ratio}`;
+        const ratioEl = modalElement.querySelector('#memory-modal-ratio');
+        if (ratioEl) {
+            const ratioPercent = (payload.stats.ratio * 100).toFixed(1);
+            ratioEl.textContent = `Ratio: ${ratioPercent}%`;
         }
 
-        const avg = modalElement.querySelector('#memory-modal-average');
-        if (avg) {
-            avg.textContent = `Avg: ${payload.stats.average.toFixed(2)}`;
+        const counts = modalElement.querySelector('#memory-modal-counts');
+        if (counts) {
+            counts.textContent = `Pos: ${payload.stats.positive.toFixed(0)} | Neg: ${payload.stats.negative.toFixed(0)}`;
         }
 
         const prob = modalElement.querySelector('#memory-modal-probability');
