@@ -6,8 +6,10 @@ import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
+import { HelpModal } from '../../modals/help-modal.js';
 
 const memoryModal = new MemoryModal();
+const helpModal = new HelpModal();
 
 export function initKeyboardEvents() {
         
@@ -229,6 +231,11 @@ function handleKeyDown(event) {
         case 'm':
             if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
                 handleMemoryModalShortcut(event);
+            }
+            break;
+        case '?':
+            if (!event.metaKey && !event.ctrlKey) {
+                handleHelpModalShortcut(event);
             }
             break;
         default:
@@ -870,6 +877,38 @@ function handleMemoryModalShortcut(event) {
         }, Logger.LogCategory.EVENT);
     } catch (error) {
         Logger.logError('Unable to open memory modal', error);
+    }
+}
+
+function handleHelpModalShortcut(event) {
+    if (!event) {
+        throw new Error('handleHelpModalShortcut called without an event object');
+    }
+
+    if (ModeContext.isEditing || ModeContext.isSearching || ModeContext.isLoading) {
+        Logger.logNoop('Help modal shortcut ignored: not in idle state', {
+            isEditing: ModeContext.isEditing,
+            isSearching: ModeContext.isSearching,
+            isLoading: ModeContext.isLoading
+        });
+        return;
+    }
+
+    if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
+        Logger.logNoop('Help modal shortcut ignored: another modal already open', {
+            stackDepth: ModeContext.modalStack.length
+        });
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+        helpModal.open();
+        Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
+    } catch (error) {
+        Logger.logError('Unable to open help modal', error);
     }
 }
 

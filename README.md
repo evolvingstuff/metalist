@@ -7,7 +7,7 @@ A minimalist note-taking application with a focus on server-side rendering and e
 - Rich text editing with image support
 - Drag-and-drop note reordering
 - Real-time content saving
-- Keyboard shortcuts
+- Keyboard shortcuts (press `?` in the app for a live reference)
 - Server-side rendering for fast initial load
 - Linked list data structure for efficient ordering
 
