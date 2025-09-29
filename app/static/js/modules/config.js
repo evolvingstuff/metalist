@@ -61,6 +61,6 @@ export const CONFIG = {
     },
     
     EDITOR: {
-        DEFAULT_CURSOR_POSITION: 'START'  // Where to place cursor when entering edit mode ('START' or 'END')
+        DEFAULT_CURSOR_POSITION: 'END'    // Where to place cursor when entering edit mode ('START' or 'END')
     }
 };
