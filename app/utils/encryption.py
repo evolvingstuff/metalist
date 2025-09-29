@@ -4,7 +4,9 @@ This module provides backward compatibility for the old encryption interface.
 It now uses the token-based DEK system for encryption operations.
 """
 
+import logging
 from typing import Optional, Tuple
+
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.auth import AuthService
@@ -13,6 +15,8 @@ from app.models.database import get_db
 # Global encryption service instance (per-request)
 _encryption_service: Optional[EncryptionService] = None
 _current_token: Optional[str] = None
+
+logger = logging.getLogger(__name__)
 
 
 def get_encryption_service_with_token(token: str = None) -> Optional[EncryptionService]:
@@ -118,6 +122,15 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
         try:
             return service.decrypt_from_storage(encrypted_content, nonce, tag)
         except Exception as e:
+            nonce_preview = nonce.hex()[:16] if nonce else 'None'
+            tag_preview = tag.hex()[:16] if tag else 'None'
+            logger.error(
+                "Decrypt failed for content len=%s nonce=%s tag=%s: %s",
+                len(encrypted_content) if encrypted_content else 0,
+                nonce_preview,
+                tag_preview,
+                e,
+            )
             raise RuntimeError(f"Decryption failed: {e}") from e
 
     raise RuntimeError("Encrypted content provided but no encryption key is available")

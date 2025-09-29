@@ -8,6 +8,7 @@ from .base_service import BaseTransactionService
 from ..models.linked_list import LinkedListManager
 from ..models.enums import MovePosition
 from ..models.utils import copy_note
+from .integrity import count_subtree
 from .sync_state import generate_new_uuid, set_server_sync_uuid
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,8 @@ class NoteService(BaseTransactionService):
     def create_note(self, parent_id: Optional[str] = None, first_visible_note_id: Optional[str] = None, search_query: Optional[str] = None) -> dict:
         """Create a new note at the top of the list (or before first visible note)"""
         self._set_operation("create_note_top")
+        assert self.client_id, "create_note requires client_id"
+        self.expect_note_delta(1)
         
         note_id = str(uuid.uuid4())
         
@@ -49,6 +52,9 @@ class NoteService(BaseTransactionService):
     def update_note(self, note_id: str, content: str) -> dict:
         """Update note content"""
         self._set_operation("update_note")
+        assert self.client_id, "update_note requires client_id"
+        assert isinstance(content, str), "content must be a string"
+        self.expect_note_delta(0)
         
         LinkedListManager.update_note(self.db, note_id, content)
         
@@ -72,6 +78,8 @@ class NoteService(BaseTransactionService):
             return {"status": "unchanged", "isCollapsed": current_state}
 
         self._set_operation("set_note_collapse")
+        assert self.client_id, "set_note_collapse requires client_id"
+        self.expect_note_delta(0)
         note.is_collapsed = desired_state
 
         logger.info(f"Set collapse state for note {note_id} to {desired_state}")
@@ -84,6 +92,9 @@ class NoteService(BaseTransactionService):
     def delete_note(self, note_id: str) -> dict:
         """Delete a note and all its descendants"""
         self._set_operation("delete_note")
+        assert self.client_id, "delete_note requires client_id"
+        subtree_total = count_subtree(self.db, note_id)
+        self.expect_note_delta(-subtree_total)
         
         
         # Check if deleting would leave list empty (for frontend state management)
@@ -105,6 +116,8 @@ class NoteService(BaseTransactionService):
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None) -> dict:
         """Move a note to a new position"""
         self._set_operation("move_note")
+        assert self.client_id, "move_note requires client_id"
+        self.expect_note_delta(0)
         
         # Validate parent exists if specified
         if new_parent_id:
@@ -135,6 +148,8 @@ class NoteService(BaseTransactionService):
                                  position: Optional[MovePosition] = None) -> dict:
         """Create a new note at a specific position"""
         self._set_operation("create_note_drop")
+        assert self.client_id, "create_note_with_position requires client_id"
+        self.expect_note_delta(1)
         
         note_id = str(uuid.uuid4())
         LinkedListManager.create_note_drop(
@@ -147,6 +162,8 @@ class NoteService(BaseTransactionService):
     def create_sibling_note(self, reference_note_id: str, search_query: Optional[str] = None) -> dict:
         """Create a new note as a sibling after the reference note"""
         self._set_operation("create_new_sibling")
+        assert self.client_id, "create_sibling_note requires client_id"
+        self.expect_note_delta(1)
         
         # Get reference note to find its parent
         reference_note = LinkedListManager.get_note(self.db, reference_note_id)
@@ -178,6 +195,8 @@ class NoteService(BaseTransactionService):
     def create_child_note(self, parent_note_id: str) -> dict:
         """Create a new note as the first child of the parent note"""
         self._set_operation("create_new_child")
+        assert self.client_id, "create_child_note requires client_id"
+        self.expect_note_delta(1)
         
         # Validate parent exists
         parent_note = LinkedListManager.get_note(self.db, parent_note_id)
@@ -194,6 +213,7 @@ class NoteService(BaseTransactionService):
     def paste_note_as_sibling(self, source_note_id: str, target_note_id: str) -> dict:
         """Copy a note and paste it as a sibling after the target note"""
         self._set_operation("paste_sibling")
+        assert self.client_id, "paste_note_as_sibling requires client_id"
         
         # Validate notes exist
         source_note = LinkedListManager.get_note(self.db, source_note_id)
@@ -205,6 +225,8 @@ class NoteService(BaseTransactionService):
             raise HTTPException(status_code=404, detail=f"Target note {target_note_id} not found")
         
         # Copy the source note tree
+        subtree_total = count_subtree(self.db, source_note_id)
+        self.expect_note_delta(subtree_total)
         new_note_id = copy_note(self.db, source_note_id, target_note.parent_id)
         
         # Move the copied tree to be after the target
@@ -222,6 +244,7 @@ class NoteService(BaseTransactionService):
     def paste_note_as_child(self, source_note_id: str, target_note_id: str) -> dict:
         """Copy a note and paste it as the first child of the target note"""
         self._set_operation("paste_child")
+        assert self.client_id, "paste_note_as_child requires client_id"
         
         # Validate notes exist
         source_note = LinkedListManager.get_note(self.db, source_note_id)
@@ -233,6 +256,8 @@ class NoteService(BaseTransactionService):
             raise HTTPException(status_code=404, detail=f"Target note {target_note_id} not found")
         
         # Copy the source note tree as child of target
+        subtree_total = count_subtree(self.db, source_note_id)
+        self.expect_note_delta(subtree_total)
         new_note_id = copy_note(self.db, source_note_id, target_note_id)
         
         logger.info(f"Pasted note {new_note_id} (copy of {source_note_id}) as child of {target_note_id}")

@@ -1,6 +1,15 @@
 from abc import ABC
+from typing import Optional
+
 from sqlalchemy.orm import Session
 import logging
+
+from app.services.integrity import (
+    should_run_integrity_checks,
+    snapshot_note_count,
+    assert_note_count,
+    assert_linked_list_integrity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +23,14 @@ class BaseTransactionService(ABC):
         self.client_id = client_id
         self.transaction = None
         self._operation_name = None
+        self._note_count_snapshot: Optional[int] = None
+        self._expected_note_delta: Optional[int] = None
     
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
         self.transaction = self.transaction_manager.start_transaction(self.client_id)
+        if should_run_integrity_checks():
+            self._note_count_snapshot = snapshot_note_count(self.db)
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -34,11 +47,23 @@ class BaseTransactionService(ABC):
             # Always clean up the transaction
             self.transaction_manager.end_transaction()
             logger.debug(f"Transaction {self.transaction.uuid if self.transaction else 'None'} cleaned up")
+            self._note_count_snapshot = None
+            self._expected_note_delta = None
     
     def _commit(self):
         """Commit the database transaction and finalize command tracking"""
         # Commit database changes
         self.db.commit()
+
+        if should_run_integrity_checks():
+            op_name = self._operation_name or "unspecified_operation"
+            assert_note_count(
+                self.db,
+                self._note_count_snapshot,
+                self._expected_note_delta,
+                op_name,
+            )
+            assert_linked_list_integrity(self.db, op_name)
         
         # Finalize the transaction for undo/redo
         if self.transaction and self._operation_name:
@@ -60,6 +85,10 @@ class BaseTransactionService(ABC):
     def _set_operation(self, name: str):
         """Set the operation name for command tracking"""
         self._operation_name = name
+
+    def expect_note_delta(self, delta: Optional[int]) -> None:
+        """Record expected change in note count (dev-only integrity checks)."""
+        self._expected_note_delta = delta
 
 
 class BaseQueryService(ABC):

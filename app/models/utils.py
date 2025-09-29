@@ -156,6 +156,15 @@ def copy_note(db: Session, note_id: str, new_parent_id: Optional[str] = None) ->
     return new_root_id
 
 
+def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
+    if not note_data:
+        return 0
+    total = 1
+    for child in note_data.get("children", []) or []:
+        total += count_serialized_note_tree(child)
+    return total
+
+
 def _copy_note_recursive(
     db: Session, 
     source_note: DBNote, 

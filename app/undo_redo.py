@@ -1,8 +1,22 @@
 import uuid
 from sqlalchemy.orm import Session
+
 from .models.database import DBNote
+from .models.linked_list import LinkedListManager
+from .utils.encryption import encrypt, decrypt
+from .services.content_cache import cache_note
 
 
+def _decrypt_content(note) -> str:
+    nonce = getattr(note, 'encryption_nonce', None)
+    tag = getattr(note, 'encryption_tag', None)
+    content = getattr(note, 'content', '') or ''
+    if nonce and tag:
+        try:
+            return decrypt(content, nonce, tag)
+        except Exception:
+            return content
+    return content
 class Command:
     def __init__(self, pre_state: dict, post_state: dict, func_name:str):
         self.uuid = str(uuid.uuid4())
@@ -54,23 +68,30 @@ class Command:
                 self._delete_note_from_db(reference_state[note_id], db)
 
     def _create_note_in_db(self, note, db: Session):
+        plaintext = _decrypt_content(note)
+        ciphertext, nonce, tag = encrypt(plaintext)
+
         new_note = DBNote(
             id=note.id,
-            content=note.content,
+            content=ciphertext,
             parent_id=note.parent_id,
             prev_id=note.prev_id,
             next_id=note.next_id,
             created_at=note.created_at,
             updated_at=note.updated_at,
-            is_collapsed=getattr(note, 'is_collapsed', False)
+            is_collapsed=getattr(note, 'is_collapsed', False),
+            encryption_nonce=nonce,
+            encryption_tag=tag,
         )
         db.add(new_note)
-        # db.commit()
+        cache_note(note.id, plaintext)
 
     def _update_note_in_db(self, note, db: Session):
         existing_note = db.get(DBNote, note.id)
         if existing_note:
-            existing_note.content = note.content
+            plaintext = _decrypt_content(note)
+            LinkedListManager.update_note(db, note.id, plaintext)
+            existing_note = db.get(DBNote, note.id)
             existing_note.parent_id = note.parent_id
             existing_note.prev_id = note.prev_id
             existing_note.next_id = note.next_id

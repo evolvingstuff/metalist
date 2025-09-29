@@ -19,6 +19,7 @@ from ..services.sync_state import (
     get_current_sync_uuid, acquire_note_lock, release_note_lock, generate_new_uuid, set_server_sync_uuid,
     get_client_clipboard, set_client_clipboard, cleanup_expired_locks
 )
+from ..models.utils import count_serialized_note_tree
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -293,6 +294,7 @@ def paste_sibling(
     
     with get_note_service(db, transaction_manager, request.clientId) as service:
         service._set_operation("paste_sibling")
+        service.expect_note_delta(count_serialized_note_tree(clipboard_data))
         try:
             # Get target note first
             from ..models.linked_list import LinkedListManager
@@ -337,6 +339,7 @@ def paste_child(
     
     with get_note_service(db, transaction_manager, request.clientId) as service:
         service._set_operation("paste_child")
+        service.expect_note_delta(count_serialized_note_tree(clipboard_data))
         try:
             # Deserialize clipboard data into real database notes as child of target
             from ..models.utils import paste_note_from_memory

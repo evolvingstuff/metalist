@@ -39,9 +39,13 @@ async function refreshTokenOnActivity() {
         if (response.ok) {
             lastTokenRefreshAt = Date.now();
             Logger.logDebug('Token refreshed due to user activity');
+        } else {
+            Logger.logError('Token refresh request failed', response.statusText);
+            ErrorHandler.handleApiError(null, response);
         }
     } catch (error) {
         Logger.logError('Failed to refresh token on activity', error);
+        ErrorHandler.handleApiError(error);
     }
 }
 
