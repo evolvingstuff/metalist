@@ -166,79 +166,122 @@ body.memory-modal-open #memory-modal {
     margin: 3vh auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    background-color: rgba(18, 18, 18, 0.95);
-    backdrop-filter: blur(12px);
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(25, 25, 35, 0.98), rgba(18, 18, 28, 0.98));
+    backdrop-filter: blur(16px);
     color: var(--text-color);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .memory-modal-controls {
     display: flex;
     gap: 12px;
-    justify-content: space-between;
+    justify-content: stretch;
+    padding: 0 4px;
 }
 
 .memory-modal-note {
     flex: 1;
     overflow-y: auto;
-    padding: 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background-color: rgba(0, 0, 0, 0.35);
+    padding: 20px 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.3));
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.memory-modal-note .note {
+    background-color: #ffffff !important;
 }
 
 .memory-modal-footer {
     display: flex;
-    gap: 16px;
-    justify-content: flex-end;
+    gap: 20px;
+    justify-content: space-between;
+    align-items: center;
     font-size: 0.9rem;
-    color: var(--muted-text-color, #a0a0a0);
+    color: rgba(255, 255, 255, 0.5);
+    padding: 0 4px 4px 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 12px;
 }
 
 .memory-btn {
     flex: 1;
-    padding: 10px 16px;
+    padding: 14px 20px;
     border: none;
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 1rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: transform 0.1s ease, opacity 0.1s ease;
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.memory-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent);
+    opacity: 0;
+    transition: opacity 0.15s ease;
 }
 
 .memory-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
     transform: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .memory-btn:not(:disabled):hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.memory-btn:not(:disabled):hover::before {
+    opacity: 1;
+}
+
+.memory-btn:not(:disabled):active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .memory-btn-less {
-    background-color: #4a5568;
+    background: linear-gradient(135deg, #5a6575, #4a5568);
     color: #fff;
 }
 
 .memory-btn-same {
-    background-color: #718096;
+    background: linear-gradient(135deg, #8494a8, #718096);
     color: #fff;
 }
 
 .memory-btn-more {
-    background-color: #2f855a;
+    background: linear-gradient(135deg, #38a169, #2f855a);
     color: #fff;
 }
 
 .memory-modal-placeholder,
 .memory-modal-error {
     text-align: center;
-    padding: 24px 12px;
-    color: var(--muted-text-color, #a0a0a0);
+    padding: 48px 24px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 1.05rem;
 }
 
 .memory-modal-error {
-    color: #f56565;
+    color: #fc8181;
+    background: rgba(245, 101, 101, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(245, 101, 101, 0.2);
 }
 
 .help-modal-content {
@@ -307,6 +350,7 @@ body.memory-modal-open #memory-modal {
 .note.memory-selected {
     border: 2px solid #48bb78;
     box-shadow: 0 0 12px rgba(72, 187, 120, 0.4);
+    background-color: rgba(72, 187, 120, 0.18);
 }
 
 body {
