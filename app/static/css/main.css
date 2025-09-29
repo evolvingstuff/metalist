@@ -172,16 +172,10 @@ body.memory-modal-open #memory-modal {
     color: var(--text-color);
 }
 
-.memory-modal-header {
+.memory-modal-controls {
     display: flex;
-    justify-content: flex-end;
-    gap: 16px;
-    font-size: 0.9rem;
-    color: var(--muted-text-color, #a0a0a0);
-}
-
-.memory-meta span {
-    margin-left: 8px;
+    gap: 12px;
+    justify-content: space-between;
 }
 
 .memory-modal-note {
@@ -195,8 +189,10 @@ body.memory-modal-open #memory-modal {
 
 .memory-modal-footer {
     display: flex;
-    gap: 12px;
-    justify-content: space-between;
+    gap: 16px;
+    justify-content: flex-end;
+    font-size: 0.9rem;
+    color: var(--muted-text-color, #a0a0a0);
 }
 
 .memory-btn {

@@ -73,20 +73,18 @@ export class MemoryModal extends BaseModal {
         modalElement.innerHTML = `
             <div class="modal-content memory-modal">
                 <button class="close memory-modal-close" aria-label="Close memory mode">&times;</button>
-                <header class="memory-modal-header">
-                    <div class="memory-meta">
-                        <span id="memory-modal-ratio">Loading…</span>
-                        <span id="memory-modal-counts"></span>
-                        <span id="memory-modal-probability"></span>
-                    </div>
-                </header>
+                <div class="memory-modal-controls">
+                    <button class="memory-btn memory-btn-less" data-outcome="-1">Less Often</button>
+                    <button class="memory-btn memory-btn-same" data-outcome="0">Same</button>
+                    <button class="memory-btn memory-btn-more" data-outcome="1">More Often</button>
+                </div>
                 <section class="memory-modal-note" id="memory-modal-note">
                     <div class="memory-modal-placeholder">Fetching note…</div>
                 </section>
                 <footer class="memory-modal-footer">
-                    <button class="memory-btn memory-btn-less" data-outcome="-1">Less Often</button>
-                    <button class="memory-btn memory-btn-same" data-outcome="0">Same</button>
-                    <button class="memory-btn memory-btn-more" data-outcome="1">More Often</button>
+                    <span id="memory-modal-ratio">Ratio: --%</span>
+                    <span id="memory-modal-counts">Pos: -- | Neg: --</span>
+                    <span id="memory-modal-probability">Prob: --%</span>
                 </footer>
             </div>
         `;
@@ -234,6 +232,12 @@ export class MemoryModal extends BaseModal {
         const noteTarget = modalElement.querySelector('#memory-modal-note');
         if (noteTarget) {
             noteTarget.innerHTML = `<div class="memory-note-wrapper">${payload.html}</div>`;
+            const highlighted = noteTarget.querySelector('.memory-selected');
+            if (highlighted) {
+                highlighted.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            } else {
+                noteTarget.scrollTop = 0;
+            }
         }
 
         const ratioEl = modalElement.querySelector('#memory-modal-ratio');
