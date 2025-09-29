@@ -54,6 +54,11 @@ function handleKeyDown(event) {
     }, Logger.LogCategory.EVENT);
 
     if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
+        const targetElement = event.target instanceof HTMLElement ? event.target.closest('.modal') : null;
+        if (targetElement) {
+            return;
+        }
+
         if (event.key !== 'Escape') {
             Logger.logNoop('Keyboard event ignored while a modal is open', {
                 key: event.key,

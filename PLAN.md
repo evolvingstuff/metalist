@@ -5,6 +5,7 @@
 - Ensure encryption utilities fail fast instead of silently degrading security.
 - Correct API bugs uncovered in the review (e.g., undefined `request`).
 - Keep cache refresh and related flows crash-on-failure compliant.
+- Restore password modal usability so users can type credentials.
 - Validate the fixes with targeted tests.
 
 ## Tasks
@@ -26,6 +27,14 @@
 5. **Regression Checks**
    - Run targeted unit tests (`tests/unit`) and adjust as needed.
    - Perform quick manual reasoning around login and note creation flows if automated coverage is lacking.
+
+6. **Fix Password Modal Input Handling**
+   - Allow keyboard events to reach password modal form fields instead of being globally blocked.
+   - Verify typing works in the modal while shortcuts remain suppressed elsewhere.
+
+7. **Reduce Idle Auth Polling Noise**
+   - Throttle `/api/auth/sessions` refreshes so we only hit the endpoint after real activity with a minimum interval.
+   - Confirm background sync (`/api/notes/check-updates`) still runs as expected.
 
 ## Deliverables
 - Updated code reflecting the fixes above.

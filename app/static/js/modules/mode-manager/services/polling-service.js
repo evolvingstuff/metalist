@@ -3,6 +3,9 @@ import * as Logger from '../mode-logger.js';
 import { ErrorHandler } from '../../error-handler.js';
 
 let pollingInterval = null;
+let lastTokenRefreshAt = 0;
+
+const TOKEN_REFRESH_INTERVAL_MS = 60_000; // minimum time between auth refresh calls
 
 export function startPolling() {
     // Unified polling: check connectivity and updates
@@ -23,16 +26,18 @@ export function stopPolling() {
 
 async function refreshTokenOnActivity() {
     const authToken = localStorage.getItem('auth_token');
-    if (!authToken) return;
-    
+    if (!authToken) {
+        return;
+    }
+
     try {
-        // Use /api/auth/sessions endpoint which DOES refresh tokens (not in NO_TOKEN_REFRESH_PATHS)
         const response = await fetch('/api/auth/sessions', {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        
+
         if (response.ok) {
+            lastTokenRefreshAt = Date.now();
             Logger.logDebug('Token refreshed due to user activity');
         }
     } catch (error) {
@@ -44,8 +49,15 @@ async function checkConnectivityAndUpdates() {
     try {
         // Check if user has been active and refresh token if needed
         if (ModeContext.userActivity) {
-            await refreshTokenOnActivity();
-            // Reset activity flag after handling it
+            const now = Date.now();
+            if (now - lastTokenRefreshAt >= TOKEN_REFRESH_INTERVAL_MS) {
+                await refreshTokenOnActivity();
+            } else {
+                Logger.logDebug('User activity detected but token refresh throttled', {
+                    timeSinceLastRefresh: now - lastTokenRefreshAt
+                });
+            }
+
             ModeContext.setUserActivity(false);
         }
         

@@ -24,6 +24,7 @@ def test_undo_redo_ops(db):
 
     # Get transaction manager
     transaction_manager = get_transaction_manager()
+    client_id = "test-client"
     
     # Perform assignment operations using the service layer (which tracks transactions)
     for i in range(NODES):
@@ -31,7 +32,7 @@ def test_undo_redo_ops(db):
         new_value = f"val{i}"
         
         # Use the NoteService which properly tracks transactions
-        with NoteService(db, transaction_manager) as service:
+        with NoteService(db, transaction_manager, client_id) as service:
             service.update_note(note_id, new_value)
 
         print(f"\n=== State after {i+1} operations ===")
@@ -96,4 +97,3 @@ def test_undo_redo_ops(db):
             raise ValueError(f"Invalid list structure under parent None")
 
     print("Validation successful!")
-

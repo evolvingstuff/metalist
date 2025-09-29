@@ -163,6 +163,7 @@ def refresh_encrypted_cache(db: Session) -> None:
         
     except Exception as e:
         logger.error(f"Failed to refresh encrypted cache: {e}")
+        raise
 
 
 def get_all_cached_notes() -> Dict[str, str]:

@@ -83,9 +83,7 @@ def encrypt(content: str, token: str = None) -> Tuple[str, Optional[bytes], Opti
         try:
             return service.encrypt_for_storage(content)
         except Exception as e:
-            print(f"Encryption failed: {e}")
-            # If encryption fails, return original with no encryption fields
-            return content, None, None
+            raise RuntimeError(f"Encryption failed: {e}") from e
     
     # No encryption available, return as-is
     return content, None, None
@@ -120,12 +118,9 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
         try:
             return service.decrypt_from_storage(encrypted_content, nonce, tag)
         except Exception as e:
-            print(f"Decryption failed: {e}")
-            # If decryption fails, return original
-            return encrypted_content
-    
-    # No decryption available, return as-is
-    return encrypted_content
+            raise RuntimeError(f"Decryption failed: {e}") from e
+
+    raise RuntimeError("Encrypted content provided but no encryption key is available")
 
 
 def set_encryption_key(password: str, salt: bytes) -> None:
@@ -142,28 +137,33 @@ def set_encryption_key(password: str, salt: bytes) -> None:
     
     # For backward compatibility, create a service and derive master key
     # But we can't get the DEK without the database settings
+    db_gen = get_db()
+    db = next(db_gen)
     try:
-        db = next(get_db())
         auth = AuthService(db)
         settings = auth.get_settings()
-        
+
         if settings and settings.encrypted_dek:
             _encryption_service = EncryptionService()
-            master_key = _encryption_service.derive_master_key(password, salt)
-            dek = _encryption_service.decrypt_dek(
-                settings.encrypted_dek,
-                settings.dek_nonce,
-                settings.dek_tag,
-                master_key
-            )
+            try:
+                master_key = _encryption_service.derive_master_key(password, salt)
+                dek = _encryption_service.decrypt_dek(
+                    settings.encrypted_dek,
+                    settings.dek_nonce,
+                    settings.dek_tag,
+                    master_key
+                )
+            except Exception as e:
+                _encryption_service = None
+                raise RuntimeError(f"Failed to set encryption key: {e}") from e
+
             _encryption_service.master_key = master_key
             _encryption_service.dek = dek
         else:
             # Legacy mode - no DEK in database yet
             _encryption_service = None
-    except Exception as e:
-        print(f"Failed to set encryption key: {e}")
-        _encryption_service = None
+    finally:
+        db_gen.close()
 
 
 def clear_encryption_key() -> None:
@@ -201,21 +201,17 @@ def get_encryption_status() -> dict:
     Returns:
         Dictionary with encryption status information
     """
+    db_gen = get_db()
+    db = next(db_gen)
     try:
-        db = next(get_db())
         auth = AuthService(db)
         settings = auth.get_settings()
-        
+
         return {
             "encryption_enabled": settings.encryption_enabled if settings else False,
             "has_dek": bool(settings and settings.encrypted_dek),
             "algorithm": settings.encryption_algorithm if settings else None,
             "global_service_active": _encryption_service is not None and _encryption_service.dek is not None
         }
-    except:
-        return {
-            "encryption_enabled": False,
-            "has_dek": False,
-            "algorithm": None,
-            "global_service_active": False
-        }
+    finally:
+        db_gen.close()
