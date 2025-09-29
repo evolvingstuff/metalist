@@ -1,3 +1,5 @@
+import { NotesAPI } from '../../api-client.js';
+
 const NOTE_SELECTOR = '.note';
 const NOTE_CONTENT_SELECTOR = '.note-content';
 const COLLAPSED_DATA_KEY = 'isCollapsed';
@@ -57,4 +59,24 @@ export function updateCollapseAffordances(root = document) {
             note.classList.remove('collapsed');
         }
     });
+}
+
+export async function ensureNoteExpanded(noteId) {
+    if (!noteId) {
+        throw new Error('ensureNoteExpanded requires a noteId');
+    }
+
+    const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+    if (!noteElement) {
+        throw new Error(`Cannot ensure expanded state: note ${noteId} not found`);
+    }
+
+    const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
+    if (!isCollapsed) {
+        return;
+    }
+
+    await NotesAPI.expandNote(noteId);
+    noteElement.dataset[COLLAPSED_DATA_KEY] = 'false';
+    noteElement.classList.remove('collapsed');
 }

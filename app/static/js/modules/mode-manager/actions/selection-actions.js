@@ -4,6 +4,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { NotesAPI } from '../../api-client.js';
+import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 
 export async function actionSelectNote(noteId) {
     Logger.logAction('selectNote', { 
@@ -48,6 +49,12 @@ export async function actionSelectNote(noteId) {
     }
 
     ModeContext.setEditing(true);
+
+    try {
+        await ensureNoteExpanded(noteId);
+    } catch (error) {
+        Logger.logError('Failed to ensure note expanded before editing', error);
+    }
 
     const newContent = await actionRefreshAndMaybeSelect();
 
