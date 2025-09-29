@@ -72,7 +72,6 @@ export class MemoryModal extends BaseModal {
 
         modalElement.innerHTML = `
             <div class="modal-content memory-modal">
-                <button class="close memory-modal-close" aria-label="Close memory mode">&times;</button>
                 <div class="memory-modal-controls">
                     <button class="memory-btn memory-btn-less" data-outcome="-1">Less Often</button>
                     <button class="memory-btn memory-btn-same" data-outcome="0">Same</button>
@@ -82,15 +81,11 @@ export class MemoryModal extends BaseModal {
                     <div class="memory-modal-placeholder">Fetching note…</div>
                 </section>
                 <footer class="memory-modal-footer">
-                    <span id="memory-modal-ratio">Ratio: --%</span>
-                    <span id="memory-modal-counts">Pos: -- | Neg: --</span>
+                    <span id="memory-modal-counts">Less: -- | More: --</span>
                     <span id="memory-modal-probability">Prob: --%</span>
                 </footer>
             </div>
         `;
-
-        const closeButton = modalElement.querySelector('.memory-modal-close');
-        closeButton.addEventListener('click', () => this.close());
 
         modalElement.querySelectorAll('.memory-btn').forEach(button => {
             button.addEventListener('click', (event) => {
@@ -199,13 +194,9 @@ export class MemoryModal extends BaseModal {
         if (noteTarget) {
             noteTarget.innerHTML = '<div class="memory-modal-placeholder">Fetching note…</div>';
         }
-        const ratio = modalElement.querySelector('#memory-modal-ratio');
-        if (ratio) {
-            ratio.textContent = 'Loading…';
-        }
         const counts = modalElement.querySelector('#memory-modal-counts');
         if (counts) {
-            counts.textContent = '';
+            counts.textContent = 'Less: -- | More: --';
         }
         const prob = modalElement.querySelector('#memory-modal-probability');
         if (prob) {
@@ -240,15 +231,9 @@ export class MemoryModal extends BaseModal {
             }
         }
 
-        const ratioEl = modalElement.querySelector('#memory-modal-ratio');
-        if (ratioEl) {
-            const ratioPercent = (payload.stats.ratio * 100).toFixed(1);
-            ratioEl.textContent = `Ratio: ${ratioPercent}%`;
-        }
-
         const counts = modalElement.querySelector('#memory-modal-counts');
         if (counts) {
-            counts.textContent = `Pos: ${payload.stats.positive.toFixed(0)} | Neg: ${payload.stats.negative.toFixed(0)}`;
+            counts.textContent = `Less: ${payload.stats.negative.toFixed(0)} | More: ${payload.stats.positive.toFixed(0)}`;
         }
 
         const prob = modalElement.querySelector('#memory-modal-probability');
