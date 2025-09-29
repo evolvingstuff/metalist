@@ -153,18 +153,31 @@ class MemoryService:
 
 
 def apply_memory_flags(root_node: dict, selected_id: str) -> None:
-    """Highlight the selected node for memory mode."""
-    def _apply(node: dict) -> None:
+    """Highlight selection and collapse branches outside the selected subtree."""
+
+    def _apply(node: dict, within_selected: bool = False) -> bool:
         flags = node.setdefault('flags', {})
-        if flags.get('isCollapsed'):
-            flags['isCollapsed'] = False
         flags['memoryMode'] = True
-        if node['id'] == selected_id:
+
+        is_selected = node['id'] == selected_id
+        contains_selected = is_selected
+
+        for child in node.get('children', []):
+            if _apply(child, within_selected or is_selected):
+                contains_selected = True
+
+        if is_selected:
             flags['memorySelected'] = True
         else:
             flags.pop('memorySelected', None)
-        for child in node.get('children', []):
-            _apply(child)
+
+        is_in_selected_path = contains_selected or within_selected
+        if is_in_selected_path:
+            flags['isCollapsed'] = False
+        else:
+            flags['isCollapsed'] = True
+
+        return contains_selected or within_selected
 
     _apply(root_node)
 
