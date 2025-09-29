@@ -17,6 +17,10 @@
             css_classes += ' editing'
         if note['flags'].get('isCollapsed'):
             css_classes += ' collapsed'
+        if note['flags'].get('memoryMode'):
+            css_classes += ' memory-mode'
+        if note['flags'].get('memorySelected'):
+            css_classes += ' memory-selected'
     %>
     <div class="${css_classes}" 
          data-note-id="${note['id']}" 
@@ -25,7 +29,7 @@
         % if locked_by_other:
             <span class="lock-icon">🔒</span>
         % endif
-        <div class="note-content" contenteditable="${'false' if locked_by_other else 'true'}">${note['content'] | n}</div>
+        <div class="note-content" contenteditable="${'false' if (locked_by_other or note['flags'].get('memoryMode')) else 'true'}">${note['content'] | n}</div>
         % if note.get('children'):
             <div class="note-children">
                 % for child in note['children']:

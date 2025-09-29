@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from mako.lookup import TemplateLookup
 from sqlalchemy.orm import Session
-from .api import notes, dev, auth
+from .api import notes, dev, auth, memory
 from .api.middleware import AuthMiddleware
 from .core.config import VERSION
 from .models.database import Base, SafeSession
@@ -100,6 +100,7 @@ templates = TemplateLookup(
 app.include_router(auth.router)
 app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
 app.include_router(dev.router, prefix="/dev", tags=["dev"])
+app.include_router(memory.router, prefix="/api")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

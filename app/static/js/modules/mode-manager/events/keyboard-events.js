@@ -5,6 +5,9 @@ import { actionDeselectNote } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
+import { MemoryModal } from '../../modals/memory-modal.js';
+
+const memoryModal = new MemoryModal();
 
 export function initKeyboardEvents() {
         
@@ -49,6 +52,18 @@ function handleKeyDown(event) {
         meta: event.metaKey || event.ctrlKey,
         shift: event.shiftKey
     }, Logger.LogCategory.EVENT);
+
+    if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
+        if (event.key !== 'Escape') {
+            Logger.logNoop('Keyboard event ignored while a modal is open', {
+                key: event.key,
+                modalStack: ModeContext.modalStack.slice()
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+    }
 
     if (ModeContext.isEditing) {
                 
@@ -204,6 +219,11 @@ function handleKeyDown(event) {
         case 'p':
             if (event.metaKey || event.ctrlKey) {
                 handlePasswordModalShortcut(event);
+            }
+            break;
+        case 'm':
+            if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+                handleMemoryModalShortcut(event);
             }
             break;
         default:
@@ -814,6 +834,41 @@ function handlePasswordModalShortcut(event) {
     // Open the password modal
     const passwordModal = new PasswordModal();
     passwordModal.open();
+}
+
+function handleMemoryModalShortcut(event) {
+    if (!event) {
+        throw new Error('handleMemoryModalShortcut called without an event object');
+    }
+
+    if (ModeContext.isEditing || ModeContext.isSearching || ModeContext.isLoading) {
+        Logger.logNoop('Memory modal shortcut ignored: not in idle state', {
+            isEditing: ModeContext.isEditing,
+            isSearching: ModeContext.isSearching,
+            isLoading: ModeContext.isLoading
+        });
+        return;
+    }
+
+    if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
+        Logger.logNoop('Memory modal shortcut ignored: another modal already open', {
+            stackDepth: ModeContext.modalStack.length
+        });
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const searchQuery = ModeContext.searchQuery || '';
+    try {
+        memoryModal.openWithSearch(searchQuery);
+        Logger.logDebug('Memory modal opened via keyboard shortcut', {
+            searchQuery
+        }, Logger.LogCategory.EVENT);
+    } catch (error) {
+        Logger.logError('Unable to open memory modal', error);
+    }
 }
 
 
