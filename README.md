@@ -108,7 +108,12 @@ cd tests/ui
 npx cypress open
 ```
 
-Run tests headlessly
+Run tests headlessly (spins up the FastAPI test server automatically)
+```
+bash run_cypress_tests.sh
+```
+
+If you already have the server running and just need Cypress, you can still run it manually:
 ```
 cd tests/ui
 npx cypress run
