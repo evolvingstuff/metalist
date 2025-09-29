@@ -77,15 +77,25 @@ npm install cypress --save-dev
 ```
 python app.py
 ```
-2. Visit http://localhost:5000 in your browser
+2. Visit http://localhost:8000 in your browser
 
 ### Running Tests
 
 #### Backend tests:
 
-Unit tests:
+Unit tests (standard suite):
 ```
 python -m pytest tests/unit
+```
+
+Run only the service-driven undo/redo fuzzers (helpful after workflow changes):
+```
+python -m pytest tests/unit/test_undo_redo_fuzz.py tests/unit/test_undo_redo_fuzz_encrypted.py
+```
+
+Enable integrity assertions when debugging data issues:
+```
+DEV_ENFORCE_INTEGRITY_CHECKS=1 python -m pytest tests/unit
 ```
 
 Integration tests: TODO
@@ -101,5 +111,5 @@ npx cypress open
 Run tests headlessly
 ```
 cd tests/ui
-npx cypress open
+npx cypress run
 ```
