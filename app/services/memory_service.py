@@ -33,10 +33,12 @@ class MemoryStats:
 
     @property
     def ratio(self) -> float:
-        # Laplace smoothing baked in: pretend we always have one prior positive vote
+        # Symmetric Laplace smoothing keeps a neutral baseline while rewarding extra positives.
         smoothed_pos = self.pos + 1.0
-        smoothed_total = smoothed_pos + self.neg
-        return smoothed_pos / smoothed_total if smoothed_total else 0.0
+        smoothed_neg = self.neg + 1.0
+        smoothed_total = smoothed_pos + smoothed_neg
+        assert smoothed_total > 0.0
+        return smoothed_pos / smoothed_total
 
     def as_tuple(self) -> Tuple[float, float]:
         return self.pos, self.neg
