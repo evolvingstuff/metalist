@@ -96,7 +96,11 @@ class MemoryService:
         """Return the rendered note tree for the current search context."""
         return build_note_tree(LinkedListManager, self.db, None, None, search_query)
 
-    def choose_note(self, notes: List[dict]) -> Tuple[dict, dict, MemoryStats, float]:
+    def choose_note(
+        self,
+        notes: List[dict],
+        previous_note_id: str | None = None,
+    ) -> Tuple[dict, dict, MemoryStats, float]:
         """Select the note with the strongest positive feedback ratio.
 
         Returns (selected_note_dict, root_note_dict, stats, ratio).
@@ -119,6 +123,13 @@ class MemoryService:
 
         note_ids = [node['id'] for node, _ in flattened]
         stats_map = _tracker.bulk_stats(note_ids)
+
+        if previous_note_id and len(flattened) > 1:
+            filtered = [
+                (node, root) for node, root in flattened if node['id'] != previous_note_id
+            ]
+            if filtered:
+                flattened = filtered
 
         weights: List[float] = []
         for node, _ in flattened:

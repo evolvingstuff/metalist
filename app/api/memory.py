@@ -78,7 +78,10 @@ def fetch_memory_note(payload: MemoryRequest, db: Session = Depends(get_db)) -> 
     if not notes:
         raise HTTPException(status_code=404, detail="No notes available for the current search context")
 
-    selected_note, root_note, stats, probability = service.choose_note(notes)
+    selected_note, root_note, stats, probability = service.choose_note(
+        notes,
+        payload.previous_note_id,
+    )
     apply_memory_flags(root_note, selected_note['id'])
 
     template = _template_lookup.get_template('notes_list.html')
