@@ -108,6 +108,11 @@ Integration tests (FastAPI TestClient):
 python -m pytest tests/integration
 ```
 
+Property-based linked list fuzzing:
+```
+python -m pytest tests/unit/test_linked_list_hypothesis.py
+```
+
 #### Frontend tests:
 
 Open Cypress Test Runner

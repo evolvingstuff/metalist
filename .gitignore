@@ -21,6 +21,7 @@ var/
 .env
 *.db
 .pytest_cache/
+.hypothesis/
 .coverage
 .idea/
 *.log
