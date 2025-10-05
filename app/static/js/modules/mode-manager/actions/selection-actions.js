@@ -171,6 +171,8 @@ export async function actionSwitchNotes(newNoteId) {
 
     ModeContext.setCurrentNoteId(newNoteId);
 
+    await ensureNoteExpanded(newNoteId);
+
     const newContent = await actionRefreshAndMaybeSelect();
     
     ModeContext.setCurrentContent(newContent);
