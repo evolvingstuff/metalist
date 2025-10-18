@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from .database import DBNote
 from ..utils.encryption import encrypt
 from ..services.content_cache import get_cached_content, cache_note
+from ..services.note_store import store as note_store
 from ..render.note_renderer import render_read_only_mode
 
 
@@ -111,6 +112,9 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
     db.flush()
 
     cache_note(new_id, note_data["content"])
+
+    if note_store.loaded:
+        note_store.add_note_from_db(new_note, note_data["content"])
     
     # Deserialize children if any
     children_data = note_data.get("children", [])
@@ -128,6 +132,9 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
 
                 new_child.prev_id = previous_child_id
                 previous_child.next_id = new_child_id
+                if note_store.loaded:
+                    note_store.update_metadata_from_db(new_child)
+                    note_store.update_metadata_from_db(previous_child)
             
             previous_child_id = new_child_id
     
