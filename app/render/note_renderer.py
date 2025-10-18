@@ -264,8 +264,8 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
             if decrypted_content is None:
                 raise RuntimeError(f"CACHE CORRUPTION: Note {note.id} not found in cache! Cache system has failed.")
             
-            # DEBUG: Show note data
-            print(f"DEBUG: {note.id[:8]} | {note.content[:50]}... | {decrypted_content[:50]}...")
+            # DEBUG: Show note data asdf
+            # print(f"DEBUG: {note.id[:8]} | {note.content[:50]}... | {decrypted_content[:50]}...")
             
             # Create a temporary note object with decrypted content for rendering
             class DecryptedNote:
