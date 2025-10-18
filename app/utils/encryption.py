@@ -74,9 +74,9 @@ def encrypt(content: str, token: str = None) -> Tuple[str, Optional[bytes], Opti
     Returns:
         Tuple of (ciphertext_base64, nonce_bytes, tag_bytes) or (content, None, None) if no encryption
     """
-    if not content:
-        return content, None, None
-    
+    if content is None:
+        raise ValueError("Cannot encrypt None content")
+
     # Try to get service with token first
     if token:
         service = get_encryption_service_with_token(token)
@@ -105,9 +105,9 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
     Returns:
         Decrypted plain text content or original if decryption not available
     """
-    if not encrypted_content:
+    if encrypted_content is None:
         return encrypted_content
-    
+
     # If no nonce/tag, assume unencrypted content
     if nonce is None or tag is None:
         return encrypted_content
