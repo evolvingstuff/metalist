@@ -12,6 +12,13 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
 ## Plan
 1. **Inventory & Design**
    - Catalogue current ORM usage (Query, `.get()`, event hooks, flush semantics, session lifecycle).
+     - **Current ORM surface area (2024-?? audit):**
+       - `app/models/database.py`: owns `SafeSession` subclass, `SessionLocal`, declarative models (`DBNote`, `AppSettings`), guard-aware `Session.execute`, startup helpers (`Base.metadata.create_all`).
+       - `app/models/api_transaction.py`: registers global SQLAlchemy event listeners to capture undo/redo + cache hooks; relies on ORM instrumentation and `DBNote` instances.
+       - Linked-list stack (`app/models/note_crud.py`, `list_operations.py`, `list_traversal.py`, `linked_list.py`, `note_crud` fallbacks, `models/utils.py`, `undo_redo.py`): heavy use of `db.query`, `db.get`, `db.add/delete`, `flush`, and direct attribute mutation on ORM entities for CRUD/move/copy/undo flows.
+       - Service layer (`app/services/note_service.py`, `query_service.py`, `undo_service.py`, `integrity.py`, `auth.py`, `content_cache.py`, `note_store.py`, `memory_service.py`): depends on ORM sessions for reads, writes, guard snapshots, cache hydration, password flows, and render pipelines.
+       - API/startup (`app/api/dependencies.py`, `app/api/notes.py`, `app/api/auth.py`, `app/api/dev.py`, `app/main.py`): inject `Session`, call `.query()`, `db.get()`, and rely on ORM metadata during app boot and admin utilities.
+       - Tests/tooling (`tests/**`, `lorem_ipsum.py` helpers): create engines, call `.query()/.delete()`, and expect ORM semantics during fixtures and fuzzers.
    - Decide on helper abstractions (e.g. `db_select`, `db_update_links`, `db_insert_note`). Document them next to `NoteStore`.
    - Outline undo/redo state capture using `NoteStore` snapshots instead of SQLAlchemy events.
 
