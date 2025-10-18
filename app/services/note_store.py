@@ -12,8 +12,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
 from typing import Dict, List, Optional
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
+
+from app.db import connect_reader
+from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import DBNote
 from app.services.content_cache import get_cached_content
@@ -56,14 +60,24 @@ class NoteStore:
     def loaded(self) -> bool:
         return self._loaded
 
-    def load_from_db(self, db: Session) -> None:
-        """Populate the store by reading all notes from the database once."""
+    def load_from_db(self, db: Session | None) -> None:
+        """Populate the store by reading all notes from the database once.
+
+        When ``db`` is provided, we use its connection so uncommitted writes
+        from the active transaction are visible (needed during paste flows).
+        """
 
         with self._lock:
-            notes: List[DBNote] = list(db.query(DBNote).all())
+            if db is not None:
+                rows = fetch_all_for_cache(db.connection())
+            else:
+                with connect_reader("note_store:load") as connection:
+                    rows = fetch_all_for_cache(connection)
+
             note_map: Dict[str, NoteRecord] = {}
 
-            for note in notes:
+            for row in rows:
+                note = SimpleNamespace(**row)
                 plaintext = get_cached_content(note.id)
                 if plaintext is None:
                     raise RuntimeError(
@@ -82,6 +96,21 @@ class NoteStore:
                     updated_at=getattr(note, "updated_at", None),
                     variants=variants,
                 )
+
+            known_ids = set(note_map.keys())
+            for record in note_map.values():
+                if record.prev_id and record.prev_id not in known_ids:
+                    raise RuntimeError(
+                        f"Integrity failure: note {record.id} references prev_id {record.prev_id} that does not exist"
+                    )
+                if record.next_id and record.next_id not in known_ids:
+                    raise RuntimeError(
+                        f"Integrity failure: note {record.id} references next_id {record.next_id} that does not exist"
+                    )
+                if record.parent_id and record.parent_id not in known_ids:
+                    raise RuntimeError(
+                        f"Integrity failure: note {record.id} references parent_id {record.parent_id} that does not exist"
+                    )
 
             self._note_map = note_map
             self._rebuild_indexes_locked()
@@ -253,10 +282,12 @@ class NoteStore:
 
     def get_note(self, note_id: str) -> NoteRecord:
         with self._lock:
-            try:
-                return self._note_map[note_id]
-            except KeyError as exc:
-                raise KeyError(f"Note {note_id} not present in NoteStore") from exc
+            record = self._note_map.get(note_id)
+
+        if record is None:
+            raise KeyError(f"Note {note_id} not present in NoteStore")
+
+        return record
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:

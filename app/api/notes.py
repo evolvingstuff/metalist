@@ -316,29 +316,39 @@ def paste_sibling(
 
             # Deserialize clipboard data into real database notes positioned as sibling
             from ..models.utils import paste_note_from_memory
-            with SafeSession.allow_reads("paste_sibling:deserialize"):
-                new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
-            
-            # Position the new note as sibling after target
-            with SafeSession.allow_reads("paste_sibling:new_note"):
-                new_note = db.get(DBNote, new_note_id)
-            
-            # Insert new note between target and target's next
-            target_next = target_note.next_id
-            new_note.prev_id = target_note_id
-            new_note.next_id = target_next
-            target_note.next_id = new_note_id
-            
-            if target_next:
-                with SafeSession.allow_reads("paste_sibling:next"):
-                    next_note = db.get(DBNote, target_next)
-                next_note.prev_id = new_note_id
-            
+            new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
+
             from ..services.note_store import store as note_store
             if note_store.loaded:
-                # TODO: Replace with targeted store update once ORM sunset is complete.
+                with SafeSession.allow_reads("paste_sibling:refresh_store_before_move"):
+                    note_store.load_from_db(db)
+                try:
+                    note_store.get_note(new_note_id)
+                except KeyError as exc:
+                    raise RuntimeError(
+                        f"NoteStore failed to register new sibling {new_note_id} before move: {exc}"
+                    ) from exc
+
+            # Reuse linked list manager to position after the target
+            from ..models.enums import MovePosition
+            LinkedListManager.move_note(
+                db,
+                note_id=new_note_id,
+                new_parent_id=target_note.parent_id,
+                sibling_id=target_note_id,
+                position=MovePosition.AFTER,
+            )
+            
+            if note_store.loaded:
                 with SafeSession.allow_reads("paste_sibling:refresh_store"):
                     note_store.load_from_db(db)
+
+                try:
+                    note_store.get_note(new_note_id)
+                except KeyError as exc:
+                    raise RuntimeError(
+                        f"NoteStore did not load newly pasted note {new_note_id}: {exc}"
+                    ) from exc
 
             return {"id": new_note_id}
         except ValueError as e:
@@ -391,6 +401,13 @@ def paste_child(
                 # TODO: Replace with targeted store update once ORM sunset is complete.
                 with SafeSession.allow_reads("paste_child:refresh_store"):
                     note_store.load_from_db(db)
+
+                try:
+                    note_store.get_note(new_note_id)
+                except KeyError as exc:
+                    raise RuntimeError(
+                        f"NoteStore did not load newly pasted child {new_note_id}: {exc}"
+                    ) from exc
 
             return {"id": new_note_id}
         except ValueError as e:

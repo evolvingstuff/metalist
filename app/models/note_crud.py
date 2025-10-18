@@ -2,10 +2,17 @@ from typing import Optional, Iterable
 from types import SimpleNamespace
 from datetime import datetime, timezone
 
-from sqlalchemy import update as sa_update, delete as sa_delete
 from sqlalchemy.orm import Session
 
-from .database import DBNote
+from app.db.notes_sql import (
+    delete_notes,
+    fetch_children_ordered,
+    fetch_note,
+    insert_note,
+    update_links,
+    update_note_content,
+)
+from app.models.database import SafeSession, DBNote
 from .enums import MovePosition
 from ..utils.encryption import encrypt
 from ..services.note_store import store as note_store
@@ -26,38 +33,55 @@ class NoteCRUD:
                 siblings = note_store.get_children(parent_id)
                 next_id = siblings[0] if siblings else None
             else:
-                first_note = db.query(DBNote).filter(
-                    DBNote.prev_id.is_(None),
-                    DBNote.parent_id == parent_id
-                ).first()
-                next_id = first_note.id if first_note else None
+                with SafeSession.allow_reads("notecrud:create_note_top:first_sibling"):
+                    ordered = fetch_children_ordered(db.connection(), parent_id)
+                next_id = ordered[0]["id"] if ordered else None
 
             plaintext = ""
             ciphertext, nonce, tag = encrypt(plaintext)
-            db_note = DBNote(
-                id=note_id,
+            timestamp = datetime.now(timezone.utc)
+
+            insert_note(
+                db.connection(),
+                note_id=note_id,
                 content=ciphertext,
                 encryption_nonce=nonce,
                 encryption_tag=tag,
                 parent_id=parent_id,
                 prev_id=None,
                 next_id=next_id,
+                is_collapsed=False,
+                created_at=timestamp,
+                updated_at=timestamp,
             )
-            db.add(db_note)
-            db.flush()
 
             from ..services.content_cache import cache_note
             cache_note(note_id, plaintext)
 
             if next_id:
-                db.execute(
-                    sa_update(DBNote)
-                    .where(DBNote.id == next_id)
-                    .values(prev_id=note_id)
+                update_links(
+                    db.connection(),
+                    next_id,
+                    prev_id=note_id,
+                    updated_at=timestamp,
                 )
 
             if note_store.loaded:
-                note_store.add_note_from_db(db_note, plaintext)
+                note_store.add_note_from_db(
+                    SimpleNamespace(
+                        id=note_id,
+                        content=ciphertext,
+                        encryption_nonce=nonce,
+                        encryption_tag=tag,
+                        parent_id=parent_id,
+                        prev_id=None,
+                        next_id=next_id,
+                        is_collapsed=False,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    ),
+                    plaintext,
+                )
                 if next_id:
                     sibling_record = note_store.get_note(next_id)
                     note_store.update_metadata_from_db(
@@ -96,10 +120,22 @@ class NoteCRUD:
                 encryption_tag=None,
             )
 
-        db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
-        if not db_note:
+        with SafeSession.allow_reads("notecrud:get_note"):
+            row = fetch_note(db.connection(), note_id)
+        if not row:
             raise ValueError(f"Note with id {note_id} not found")
-        return db_note
+        return SimpleNamespace(
+            id=row["id"],
+            content=row["content"],
+            parent_id=row["parent_id"],
+            prev_id=row["prev_id"],
+            next_id=row["next_id"],
+            is_collapsed=row.get("is_collapsed", False),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+            encryption_nonce=row.get("encryption_nonce"),
+            encryption_tag=row.get("encryption_tag"),
+        )
 
     @staticmethod
     def update_note(db: Session, note_id: str, content: str):
@@ -114,15 +150,13 @@ class NoteCRUD:
         ciphertext, nonce, tag = encrypt(content)
         timestamp = datetime.now(timezone.utc)
 
-        db.execute(
-            sa_update(DBNote)
-            .where(DBNote.id == note_id)
-            .values(
-                content=ciphertext,
-                encryption_nonce=nonce,
-                encryption_tag=tag,
-                updated_at=timestamp,
-            )
+        update_note_content(
+            db.connection(),
+            note_id,
+            content=ciphertext,
+            encryption_nonce=nonce,
+            encryption_tag=tag,
+            updated_at=timestamp,
         )
 
         cache_note(note_id, content)
@@ -156,10 +190,10 @@ class NoteCRUD:
                 ids_to_delete = _collect_descendants_from_store(note_id)
 
                 if record.prev_id:
-                    db.execute(
-                        sa_update(DBNote)
-                        .where(DBNote.id == record.prev_id)
-                        .values(next_id=record.next_id)
+                    update_links(
+                        db.connection(),
+                        record.prev_id,
+                        next_id=record.next_id,
                     )
                     prev_record = note_store.get_note(record.prev_id)
                     note_store.update_metadata_from_db(
@@ -175,10 +209,10 @@ class NoteCRUD:
                     )
 
                 if record.next_id:
-                    db.execute(
-                        sa_update(DBNote)
-                        .where(DBNote.id == record.next_id)
-                        .values(prev_id=record.prev_id)
+                    update_links(
+                        db.connection(),
+                        record.next_id,
+                        prev_id=record.prev_id,
                     )
                     next_record = note_store.get_note(record.next_id)
                     note_store.update_metadata_from_db(
@@ -193,9 +227,7 @@ class NoteCRUD:
                         )
                     )
 
-                db.execute(
-                    sa_delete(DBNote).where(DBNote.id.in_(ids_to_delete))
-                )
+                delete_notes(db.connection(), ids_to_delete)
 
                 for to_remove in ids_to_delete:
                     remove_cached_note(to_remove)
@@ -203,32 +235,43 @@ class NoteCRUD:
                 note_store.remove_note(note_id)
                 return
 
-            note = db.get(DBNote, note_id)
+            with SafeSession.allow_reads("notecrud:delete_note:root"):
+                note = fetch_note(db.connection(), note_id)
             if not note:
                 raise ValueError(f"Note {note_id} not found")
 
             def get_all_descendant_ids(parent_id: str) -> set[str]:
                 descendants = set()
-                children = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
+                with SafeSession.allow_reads("notecrud:delete_note:children"):
+                    children = fetch_children_ordered(db.connection(), parent_id)
                 for child in children:
-                    descendants.add(child.id)
-                    descendants.update(get_all_descendant_ids(child.id))
+                    child_id = child["id"]
+                    descendants.add(child_id)
+                    descendants.update(get_all_descendant_ids(child_id))
                 return descendants
 
             descendant_ids = get_all_descendant_ids(note_id)
             for descendant_id in descendant_ids:
-                descendant = db.get(DBNote, descendant_id)
-                db.delete(descendant)
+                delete_notes(db.connection(), [descendant_id])
                 remove_cached_note(descendant_id)
 
-            if note.prev_id:
-                prev_note = db.get(DBNote, note.prev_id)
-                prev_note.next_id = note.next_id
-            if note.next_id:
-                next_note = db.get(DBNote, note.next_id)
-                next_note.prev_id = note.prev_id
+            prev_id = note["prev_id"]
+            next_id = note["next_id"]
 
-            db.delete(note)
+            if prev_id:
+                update_links(
+                    db.connection(),
+                    prev_id,
+                    next_id=next_id,
+                )
+            if next_id:
+                update_links(
+                    db.connection(),
+                    next_id,
+                    prev_id=prev_id,
+                )
+
+            delete_notes(db.connection(), [note_id])
             remove_cached_note(note_id)
         except Exception as e:
             print(e)
