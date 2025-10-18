@@ -87,30 +87,34 @@ def populate_cache_from_db(db: Session) -> None:
         encryption_service = get_encryption_service()
         
         for note in notes:
-            if note.content:  # Skip empty content
-                try:
-                    # Handle both encrypted and unencrypted content
-                    if note.encryption_nonce is not None and note.encryption_tag is not None:
-                        # Encrypted content - decrypt using new separate fields approach
-                        if encryption_service and encryption_service.dek:
-                            decrypted_content = encryption_service.decrypt_from_storage(
-                                note.content, note.encryption_nonce, note.encryption_tag
-                            )
-                        else:
-                            # No encryption key available, can't decrypt
-                            logger.warning(f"No encryption key available to decrypt note {note.id}")
-                            decrypted_content = f"[Encrypted content - login required]"
+            if note.content is None:
+                raise RuntimeError(
+                    f"Cache population failed: Note {note.id} has NULL content."
+                )
+
+            try:
+                # Handle both encrypted and unencrypted content
+                if note.encryption_nonce is not None and note.encryption_tag is not None:
+                    # Encrypted content - decrypt using new separate fields approach
+                    if encryption_service and encryption_service.dek:
+                        decrypted_content = encryption_service.decrypt_from_storage(
+                            note.content, note.encryption_nonce, note.encryption_tag
+                        )
                     else:
-                        # Unencrypted content
-                        decrypted_content = note.content
-                    
-                    cache_note(note.id, decrypted_content)
-                except Exception as e:
-                    # FAIL FAST AND LOUD - NO SILENT FAILURES
-                    logger.error(f"🚨 FATAL: Failed to process note {note.id} during cache population: {e}")
-                    logger.error(f"🚨 Cache system integrity compromised!")
-                    logger.error(f"🚨 CRASHING IMMEDIATELY")
-                    raise RuntimeError(f"Cache population failed: Could not process note {note.id}: {e}") from e
+                        # No encryption key available, can't decrypt
+                        logger.warning(f"No encryption key available to decrypt note {note.id}")
+                        decrypted_content = f"[Encrypted content - login required]"
+                else:
+                    # Unencrypted content, including empty string which must still be cached
+                    decrypted_content = note.content
+
+                cache_note(note.id, decrypted_content)
+            except Exception as e:
+                # FAIL FAST AND LOUD - NO SILENT FAILURES
+                logger.error(f"🚨 FATAL: Failed to process note {note.id} during cache population: {e}")
+                logger.error(f"🚨 Cache system integrity compromised!")
+                logger.error(f"🚨 CRASHING IMMEDIATELY")
+                raise RuntimeError(f"Cache population failed: Could not process note {note.id}: {e}") from e
         
         logger.info(f"Content cache populated with {len(notes)} notes")
         
@@ -144,20 +148,24 @@ def refresh_encrypted_cache(db: Session) -> None:
         refreshed_count = 0
         
         for note in encrypted_notes:
-            if note.content:
-                try:
-                    # Decrypt using separate fields approach
-                    decrypted_content = encryption_service.decrypt_from_storage(
-                        note.content, note.encryption_nonce, note.encryption_tag
-                    )
-                    cache_note(note.id, decrypted_content)
-                    refreshed_count += 1
-                except Exception as e:
-                    # FAIL FAST AND LOUD - NO SILENT FAILURES
-                    logger.error(f"🚨 FATAL: Failed to refresh encrypted note {note.id}: {e}")
-                    logger.error(f"🚨 Cache refresh system integrity compromised!")
-                    logger.error(f"🚨 CRASHING IMMEDIATELY")
-                    raise RuntimeError(f"Cache refresh failed: Could not process note {note.id}: {e}") from e
+            if note.content is None:
+                raise RuntimeError(
+                    f"Cache refresh failed: Encrypted note {note.id} has NULL content."
+                )
+
+            try:
+                # Decrypt using separate fields approach
+                decrypted_content = encryption_service.decrypt_from_storage(
+                    note.content, note.encryption_nonce, note.encryption_tag
+                )
+                cache_note(note.id, decrypted_content)
+                refreshed_count += 1
+            except Exception as e:
+                # FAIL FAST AND LOUD - NO SILENT FAILURES
+                logger.error(f"🚨 FATAL: Failed to refresh encrypted note {note.id}: {e}")
+                logger.error(f"🚨 Cache refresh system integrity compromised!")
+                logger.error(f"🚨 CRASHING IMMEDIATELY")
+                raise RuntimeError(f"Cache refresh failed: Could not process note {note.id}: {e}") from e
         
         logger.info(f"Refreshed {refreshed_count} encrypted notes in cache")
         
