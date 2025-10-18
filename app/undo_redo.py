@@ -1,10 +1,13 @@
 import uuid
+
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
 from .models.database import DBNote
 from .models.linked_list import LinkedListManager
 from .utils.encryption import encrypt, decrypt
 from .services.content_cache import cache_note
+from .services.note_store import store as note_store
 
 
 def _decrypt_content(note) -> str:
@@ -84,7 +87,10 @@ class Command:
             encryption_tag=tag,
         )
         db.add(new_note)
+        db.flush()
         cache_note(note.id, plaintext)
+        if note_store.loaded:
+            note_store.add_note_from_db(new_note, plaintext)
 
     def _update_note_in_db(self, note, db: Session):
         existing_note = db.get(DBNote, note.id)
@@ -98,11 +104,34 @@ class Command:
             existing_note.updated_at = note.updated_at
             if hasattr(existing_note, 'is_collapsed'):
                 existing_note.is_collapsed = getattr(note, 'is_collapsed', False)
+            if note_store.loaded:
+                note_store.update_metadata_from_db(existing_note)
+                note_store.set_collapsed(existing_note.id, bool(getattr(existing_note, 'is_collapsed', False)))
             # db.commit()
 
     def _delete_note_from_db(self, note, db: Session):
         existing_note = db.get(DBNote, note.id)
         if existing_note:
+            if note_store.loaded:
+                record = note_store.get_note(note.id)
+
+                if record.prev_id:
+                    from sqlalchemy import update as sa_update
+                    db.execute(
+                        sa_update(DBNote)
+                        .where(DBNote.id == record.prev_id)
+                        .values(next_id=record.next_id)
+                    )
+                if record.next_id:
+                    from sqlalchemy import update as sa_update
+                    db.execute(
+                        sa_update(DBNote)
+                        .where(DBNote.id == record.next_id)
+                        .values(prev_id=record.prev_id)
+                    )
+
+                note_store.remove_note(note.id)
+
             db.delete(existing_note)
             # db.commit()
 

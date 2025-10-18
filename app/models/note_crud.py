@@ -1,5 +1,10 @@
-from typing import Optional
+from typing import Optional, Iterable
+from types import SimpleNamespace
+from datetime import datetime, timezone
+
+from sqlalchemy import update as sa_update, delete as sa_delete
 from sqlalchemy.orm import Session
+
 from .database import DBNote
 from .enums import MovePosition
 from ..utils.encryption import encrypt
@@ -16,45 +21,81 @@ class NoteCRUD:
             if note_id is None:
                 raise ValueError("Note ID must be specified")
 
-            # Get the first note at this level to determine position
-            first_note = db.query(DBNote).filter(
-                DBNote.prev_id == None, 
-                DBNote.parent_id == parent_id
-            ).first()
+            next_id = None
+            if note_store.loaded:
+                siblings = note_store.get_children(parent_id)
+                next_id = siblings[0] if siblings else None
+            else:
+                first_note = db.query(DBNote).filter(
+                    DBNote.prev_id.is_(None),
+                    DBNote.parent_id == parent_id
+                ).first()
+                next_id = first_note.id if first_note else None
 
-            # Create new note with both linked list and position fields
-            # Encrypt empty content using new separate field approach
-            ciphertext, nonce, tag = encrypt("")
+            plaintext = ""
+            ciphertext, nonce, tag = encrypt(plaintext)
             db_note = DBNote(
                 id=note_id,
                 content=ciphertext,
                 encryption_nonce=nonce,
                 encryption_tag=tag,
-                parent_id=parent_id
+                parent_id=parent_id,
+                prev_id=None,
+                next_id=next_id,
             )
             db.add(db_note)
-            
-            # Update content cache with plaintext for search
-            from ..services.content_cache import cache_note
-            cache_note(note_id, "")
-
-            # Update linked list pointers if there's an existing head
-            if first_note and first_note.id != note_id:
-                first_note.prev_id = note_id
-                db_note.next_id = first_note.id
-
             db.flush()
 
+            from ..services.content_cache import cache_note
+            cache_note(note_id, plaintext)
+
+            if next_id:
+                db.execute(
+                    sa_update(DBNote)
+                    .where(DBNote.id == next_id)
+                    .values(prev_id=note_id)
+                )
+
             if note_store.loaded:
-                note_store.add_note_from_db(db_note, "")
-                if first_note and first_note.id != note_id:
-                    note_store.update_metadata_from_db(first_note)
+                note_store.add_note_from_db(db_note, plaintext)
+                if next_id:
+                    sibling_record = note_store.get_note(next_id)
+                    note_store.update_metadata_from_db(
+                        SimpleNamespace(
+                            id=next_id,
+                            parent_id=sibling_record.parent_id,
+                            prev_id=note_id,
+                            next_id=sibling_record.next_id,
+                            created_at=sibling_record.created_at,
+                            updated_at=sibling_record.updated_at,
+                            is_collapsed=sibling_record.is_collapsed,
+                        )
+                    )
         except Exception as e:
             print(e)
             raise
 
     @staticmethod
     def get_note(db: Session, note_id: str) -> DBNote:
+        if note_store.loaded:
+            try:
+                record = note_store.get_note(note_id)
+            except KeyError as exc:
+                raise ValueError(f"Note with id {note_id} not found") from exc
+
+            return SimpleNamespace(
+                id=record.id,
+                content=record.content,
+                parent_id=record.parent_id,
+                prev_id=record.prev_id,
+                next_id=record.next_id,
+                is_collapsed=record.is_collapsed,
+                created_at=record.created_at,
+                updated_at=record.updated_at,
+                encryption_nonce=None,
+                encryption_tag=None,
+            )
+
         db_note = db.query(DBNote).filter(DBNote.id == note_id).first()
         if not db_note:
             raise ValueError(f"Note with id {note_id} not found")
@@ -63,33 +104,110 @@ class NoteCRUD:
     @staticmethod
     def update_note(db: Session, note_id: str, content: str):
         from ..services.content_cache import cache_note
-        
-        db_note = NoteCRUD.get_note(db, note_id)
-        
-        # Encrypt content using new separate field approach
-        ciphertext, nonce, tag = encrypt(content)
 
-        # Update encryption metadata before content so event listeners see a consistent trio
-        db_note.encryption_nonce = nonce
-        db_note.encryption_tag = tag
-        db_note.content = ciphertext
-        
-        # Update content cache with plaintext for search
+        record = None
+        if note_store.loaded:
+            record = note_store.get_note(note_id)
+        else:
+            record = NoteCRUD.get_note(db, note_id)
+
+        ciphertext, nonce, tag = encrypt(content)
+        timestamp = datetime.now(timezone.utc)
+
+        db.execute(
+            sa_update(DBNote)
+            .where(DBNote.id == note_id)
+            .values(
+                content=ciphertext,
+                encryption_nonce=nonce,
+                encryption_tag=tag,
+                updated_at=timestamp,
+            )
+        )
+
         cache_note(note_id, content)
 
         if note_store.loaded:
-            note_store.update_note_from_db(db_note, content)
+            note_store.update_note_from_db(
+                SimpleNamespace(
+                    id=record.id,
+                    parent_id=record.parent_id,
+                    prev_id=record.prev_id,
+                    next_id=record.next_id,
+                    is_collapsed=record.is_collapsed,
+                    created_at=record.created_at,
+                    updated_at=timestamp,
+                ),
+                content,
+            )
 
     @staticmethod
     def delete_note(db: Session, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
         try:
+            from ..services.content_cache import remove_cached_note
+
+            if note_store.loaded:
+                try:
+                    record = note_store.get_note(note_id)
+                except KeyError as exc:
+                    raise ValueError(f"Note {note_id} not found") from exc
+
+                ids_to_delete = _collect_descendants_from_store(note_id)
+
+                if record.prev_id:
+                    db.execute(
+                        sa_update(DBNote)
+                        .where(DBNote.id == record.prev_id)
+                        .values(next_id=record.next_id)
+                    )
+                    prev_record = note_store.get_note(record.prev_id)
+                    note_store.update_metadata_from_db(
+                        SimpleNamespace(
+                            id=prev_record.id,
+                            parent_id=prev_record.parent_id,
+                            prev_id=prev_record.prev_id,
+                            next_id=record.next_id,
+                            created_at=prev_record.created_at,
+                            updated_at=prev_record.updated_at,
+                            is_collapsed=prev_record.is_collapsed,
+                        )
+                    )
+
+                if record.next_id:
+                    db.execute(
+                        sa_update(DBNote)
+                        .where(DBNote.id == record.next_id)
+                        .values(prev_id=record.prev_id)
+                    )
+                    next_record = note_store.get_note(record.next_id)
+                    note_store.update_metadata_from_db(
+                        SimpleNamespace(
+                            id=next_record.id,
+                            parent_id=next_record.parent_id,
+                            prev_id=record.prev_id,
+                            next_id=next_record.next_id,
+                            created_at=next_record.created_at,
+                            updated_at=next_record.updated_at,
+                            is_collapsed=next_record.is_collapsed,
+                        )
+                    )
+
+                db.execute(
+                    sa_delete(DBNote).where(DBNote.id.in_(ids_to_delete))
+                )
+
+                for to_remove in ids_to_delete:
+                    remove_cached_note(to_remove)
+
+                note_store.remove_note(note_id)
+                return
+
             note = db.get(DBNote, note_id)
             if not note:
                 raise ValueError(f"Note {note_id} not found")
 
             def get_all_descendant_ids(parent_id: str) -> set[str]:
-                """Recursively get IDs of all descendants"""
                 descendants = set()
                 children = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
                 for child in children:
@@ -97,20 +215,12 @@ class NoteCRUD:
                     descendants.update(get_all_descendant_ids(child.id))
                 return descendants
 
-            # Delete all descendants first
             descendant_ids = get_all_descendant_ids(note_id)
-            from ..services.content_cache import remove_cached_note
-            
-            if note_store.loaded:
-                note_store.remove_note(note_id)
-
             for descendant_id in descendant_ids:
                 descendant = db.get(DBNote, descendant_id)
                 db.delete(descendant)
-                # Remove from cache
                 remove_cached_note(descendant_id)
 
-            # Update links of surrounding notes at the original note's level
             if note.prev_id:
                 prev_note = db.get(DBNote, note.prev_id)
                 prev_note.next_id = note.next_id
@@ -118,9 +228,7 @@ class NoteCRUD:
                 next_note = db.get(DBNote, note.next_id)
                 next_note.prev_id = note.prev_id
 
-            # Delete the original note
             db.delete(note)
-            # Remove from cache
             remove_cached_note(note_id)
         except Exception as e:
             print(e)
@@ -143,3 +251,13 @@ class NoteCRUD:
             sibling_id=sibling_id,
             position=position
         )
+
+
+def _collect_descendants_from_store(root_id: str) -> list[str]:
+    stack = [root_id]
+    result = []
+    while stack:
+        current = stack.pop()
+        result.append(current)
+        stack.extend(note_store.get_children(current))
+    return result

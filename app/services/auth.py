@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 from app.core.config import PW_PBKDF2_ITERATIONS
-from app.models.database import AppSettings, DBNote
+from app.models.database import AppSettings, DBNote, SafeSession
 from app.services.maintenance_mode import maintenance_service
 from app.services.encryption import EncryptionService
 
@@ -21,11 +21,12 @@ class AuthService:
     
     def get_settings(self) -> Optional[AppSettings]:
         """Get the app settings from database.
-        
+
         Returns:
             AppSettings object or None if not exists
         """
-        return self.db.query(AppSettings).filter(AppSettings.id == 1).first()
+        with SafeSession.allow_reads("auth:get_settings"):
+            return self.db.query(AppSettings).filter(AppSettings.id == 1).first()
     
     def initialize_settings(self) -> AppSettings:
         """Initialize app settings if they don't exist.
@@ -157,7 +158,8 @@ class AuthService:
         
         try:
             # Encrypt all existing notes
-            notes = self.db.query(DBNote).all()
+            with SafeSession.allow_reads("auth:set_password"):
+                notes = self.db.query(DBNote).all()
             encrypted_count = 0
             
             for note in notes:
@@ -282,7 +284,8 @@ class AuthService:
         
         try:
             # Decrypt all notes
-            notes = self.db.query(DBNote).all()
+            with SafeSession.allow_reads("auth:remove_password"):
+                notes = self.db.query(DBNote).all()
             decrypted_count = 0
             
             for note in notes:

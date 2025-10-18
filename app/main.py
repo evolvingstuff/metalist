@@ -60,6 +60,7 @@ try:
     db = SessionLocal(bind=SafeSession.get_engine())
     populate_cache_from_db(db)
     note_store.load_from_db(db)
+    SafeSession.enable_read_guard()
     db.close()
 except Exception as e:
     # FAIL FAST AND LOUD - NO SILENT FAILURES
