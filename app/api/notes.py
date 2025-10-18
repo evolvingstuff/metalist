@@ -336,6 +336,7 @@ def paste_sibling(
             
             from ..services.note_store import store as note_store
             if note_store.loaded:
+                # TODO: Replace with targeted store update once ORM sunset is complete.
                 with SafeSession.allow_reads("paste_sibling:refresh_store"):
                     note_store.load_from_db(db)
 
@@ -387,6 +388,7 @@ def paste_child(
             
             from ..services.note_store import store as note_store
             if note_store.loaded:
+                # TODO: Replace with targeted store update once ORM sunset is complete.
                 with SafeSession.allow_reads("paste_child:refresh_store"):
                     note_store.load_from_db(db)
 
