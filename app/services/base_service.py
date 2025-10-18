@@ -28,7 +28,7 @@ class BaseTransactionService(ABC):
     
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
-        self.transaction = self.transaction_manager.start_transaction(self.client_id)
+        self.transaction = self.transaction_manager.start_transaction(self.db, self.client_id)
         if should_run_integrity_checks():
             self._note_count_snapshot = snapshot_note_count(self.db)
         return self
@@ -67,15 +67,7 @@ class BaseTransactionService(ABC):
         
         # Finalize the transaction for undo/redo
         if self.transaction and self._operation_name:
-            # Check if any changes were actually made
-            tot = (len(self.transaction.state_before_updated) + 
-                  len(self.transaction.state_current_updated) + 
-                  len(self.transaction.state_added) + 
-                  len(self.transaction.state_deleted))
-            
-            if tot > 0:
-                self.transaction.finalize_transaction(self._operation_name)
-            else:
+            if not self.transaction.finalize_transaction(self._operation_name):
                 logger.warning(f"No changes detected for operation: {self._operation_name}")
     
     def _rollback(self):

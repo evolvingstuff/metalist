@@ -27,7 +27,7 @@ class TransactionManager:
         self.last_search_query: Optional[str] = None
         self.active_client_id: Optional[str] = None
     
-    def start_transaction(self, client_id: str = None) -> ApiTransaction:
+    def start_transaction(self, db, client_id: str = None) -> ApiTransaction:
         """
         Start a new transaction.
         
@@ -44,7 +44,11 @@ class TransactionManager:
             if self.current_transaction is not None:
                 raise Exception("Transaction already in progress")
             
-            self.current_transaction = ApiTransaction(transaction_manager=self, client_id=client_id)
+            self.current_transaction = ApiTransaction(
+                db=db,
+                transaction_manager=self,
+                client_id=client_id,
+            )
             logger.debug(f"Transaction {self.current_transaction.uuid} started for client {client_id}")
             return self.current_transaction
     

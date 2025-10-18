@@ -64,13 +64,9 @@ def test_move_note_with_store_after_paste():
         with SafeSession.allow_reads("test:paste"):
             new_note_id = paste_note_from_memory(session, clipboard_data, None)
 
-        # Manually seed cache for the new notes so the store can hydrate
-        content_cache.cache_note(new_note_id, clipboard_data["content"])
         with SafeSession.allow_reads("test:fetch_children"):
             new_children = fetch_children_ordered(session.connection(), new_note_id)
         assert len(new_children) == 1
-        child_id = new_children[0]["id"]
-        content_cache.cache_note(child_id, clipboard_data["children"][0]["content"])
 
         store.load_from_db(session)
         assert new_note_id in store.get_children(None)

@@ -82,6 +82,7 @@ def update_links(
     parent_id: Optional[str] = _UNSET,
     prev_id: Optional[str] = _UNSET,
     next_id: Optional[str] = _UNSET,
+    is_collapsed: Optional[bool] = _UNSET,
     updated_at: Optional[datetime] = None,
 ) -> None:
     values = {
@@ -93,6 +94,8 @@ def update_links(
         values["prev_id"] = prev_id
     if next_id is not _UNSET:
         values["next_id"] = next_id
+    if is_collapsed is not _UNSET:
+        values["is_collapsed"] = is_collapsed
 
     stmt = update(notes_table).where(notes_table.c.id == note_id).values(**values)
     _conn(connection).execute(stmt)

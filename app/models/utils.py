@@ -109,6 +109,8 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
     )
     db.add(new_note)
     db.flush()
+
+    cache_note(new_id, note_data["content"])
     
     # Deserialize children if any
     children_data = note_data.get("children", [])
@@ -123,7 +125,7 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
             if previous_child_id:
                 new_child = db.get(DBNote, new_child_id)
                 previous_child = db.get(DBNote, previous_child_id)
-                
+
                 new_child.prev_id = previous_child_id
                 previous_child.next_id = new_child_id
             

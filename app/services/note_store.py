@@ -116,6 +116,11 @@ class NoteStore:
             self._rebuild_indexes_locked()
             self._loaded = True
 
+    def snapshot(self) -> Dict[str, NoteRecord]:
+        """Return a shallow copy of the current note map."""
+        with self._lock:
+            return dict(self._note_map)
+
     def _compute_hash(
         self,
         note_id: str,
