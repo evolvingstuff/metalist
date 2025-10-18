@@ -9,6 +9,9 @@ import logging
 from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
+from app.db import connect_reader
+from app.db.notes_sql import fetch_all_for_cache
+
 from ..models.database import DBNote
 from ..utils.encryption import get_encryption_service
 
@@ -68,17 +71,18 @@ def clear_cache() -> None:
     logger.info("Cache cleared")
 
 
-def populate_cache_from_db(db: Session) -> None:
+def populate_cache_from_db(db: Session | None = None) -> None:
     """Populate cache with all notes from database on startup.
-    
-    Args:
-        db: Database session to read from
+
+    The optional ``db`` parameter is retained for backwards compatibility but
+    is no longer used now that the helper layer opens its own read
+    connections.
     """
     logger.info("Populating content cache from database...")
     
     try:
-        # Get all notes from database
-        notes = db.query(DBNote).all()
+        with connect_reader("cache:populate") as connection:
+            notes = fetch_all_for_cache(connection)
         
         # Clear existing cache
         clear_cache()
@@ -87,34 +91,39 @@ def populate_cache_from_db(db: Session) -> None:
         encryption_service = get_encryption_service()
         
         for note in notes:
-            if note.content is None:
+            note_id = note["id"]
+            content = note["content"]
+            nonce = note["encryption_nonce"]
+            tag = note["encryption_tag"]
+
+            if content is None:
                 raise RuntimeError(
-                    f"Cache population failed: Note {note.id} has NULL content."
+                    f"Cache population failed: Note {note_id} has NULL content."
                 )
 
             try:
                 # Handle both encrypted and unencrypted content
-                if note.encryption_nonce is not None and note.encryption_tag is not None:
+                if nonce is not None and tag is not None:
                     # Encrypted content - decrypt using new separate fields approach
                     if encryption_service and encryption_service.dek:
                         decrypted_content = encryption_service.decrypt_from_storage(
-                            note.content, note.encryption_nonce, note.encryption_tag
+                            content, nonce, tag
                         )
                     else:
                         # No encryption key available, can't decrypt
-                        logger.warning(f"No encryption key available to decrypt note {note.id}")
+                        logger.warning(f"No encryption key available to decrypt note {note_id}")
                         decrypted_content = f"[Encrypted content - login required]"
                 else:
                     # Unencrypted content, including empty string which must still be cached
-                    decrypted_content = note.content
+                    decrypted_content = content
 
-                cache_note(note.id, decrypted_content)
+                cache_note(note_id, decrypted_content)
             except Exception as e:
                 # FAIL FAST AND LOUD - NO SILENT FAILURES
-                logger.error(f"🚨 FATAL: Failed to process note {note.id} during cache population: {e}")
+                logger.error(f"🚨 FATAL: Failed to process note {note_id} during cache population: {e}")
                 logger.error(f"🚨 Cache system integrity compromised!")
                 logger.error(f"🚨 CRASHING IMMEDIATELY")
-                raise RuntimeError(f"Cache population failed: Could not process note {note.id}: {e}") from e
+                raise RuntimeError(f"Cache population failed: Could not process note {note_id}: {e}") from e
         
         logger.info(f"Content cache populated with {len(notes)} notes")
         

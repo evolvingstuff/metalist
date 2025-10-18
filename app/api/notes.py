@@ -5,7 +5,7 @@ from typing import Optional
 import logging
 
 from .dependencies import get_db
-from ..models.database import DBNote
+from ..models.database import DBNote, SafeSession
 from ..models.commands import UpdateNoteContent
 from ..models.enums import MovePosition
 from ..services.dependencies import (
@@ -163,7 +163,8 @@ def copy_note(
     with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
             # Serialize the note tree to pure data (no database writes)
-            note_data = copy_note_in_memory(db, note_id)
+            with SafeSession.allow_reads("copy_note"):
+                note_data = copy_note_in_memory(db, note_id)
 
             # Store the serialized data in the client's server-side clipboard
             set_client_clipboard(request.clientId, note_data)
@@ -195,7 +196,8 @@ def export_note_as_html(
     with get_note_service(db, transaction_manager, client_id) as service:
         try:
             # Serialize the note tree to pure data
-            note_data = copy_note_in_memory(db, note_id)
+            with SafeSession.allow_reads("export_note"):
+                note_data = copy_note_in_memory(db, note_id)
             
             rendered_tree = render_note_data_read_only(note_data)
             html = note_data_to_html(rendered_tree)
@@ -309,14 +311,17 @@ def paste_sibling(
         try:
             # Get target note first
             from ..models.linked_list import LinkedListManager
-            target_note = LinkedListManager.get_note(db, target_note_id)
-            
+            with SafeSession.allow_reads("paste_sibling:target"):
+                target_note = LinkedListManager.get_note(db, target_note_id)
+
             # Deserialize clipboard data into real database notes positioned as sibling
             from ..models.utils import paste_note_from_memory
-            new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
+            with SafeSession.allow_reads("paste_sibling:deserialize"):
+                new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
             
             # Position the new note as sibling after target
-            new_note = db.get(DBNote, new_note_id)
+            with SafeSession.allow_reads("paste_sibling:new_note"):
+                new_note = db.get(DBNote, new_note_id)
             
             # Insert new note between target and target's next
             target_next = target_note.next_id
@@ -325,9 +330,15 @@ def paste_sibling(
             target_note.next_id = new_note_id
             
             if target_next:
-                next_note = db.get(DBNote, target_next)
+                with SafeSession.allow_reads("paste_sibling:next"):
+                    next_note = db.get(DBNote, target_next)
                 next_note.prev_id = new_note_id
             
+            from ..services.note_store import store as note_store
+            if note_store.loaded:
+                with SafeSession.allow_reads("paste_sibling:refresh_store"):
+                    note_store.load_from_db(db)
+
             return {"id": new_note_id}
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
@@ -354,23 +365,31 @@ def paste_child(
         try:
             # Deserialize clipboard data into real database notes as child of target
             from ..models.utils import paste_note_from_memory
-            new_note_id = paste_note_from_memory(db, clipboard_data, target_note_id)
+            with SafeSession.allow_reads("paste_child:deserialize"):
+                new_note_id = paste_note_from_memory(db, clipboard_data, target_note_id)
             
             # Position as first child (the paste_note_from_memory already sets the parent)
             # We need to ensure it's positioned as the first child
             from ..models.linked_list import LinkedListManager
             
             # Find existing first child of target
-            existing_first_child = db.query(DBNote).filter(
-                DBNote.parent_id == target_note_id,
-                DBNote.prev_id == None
-            ).first()
+            with SafeSession.allow_reads("paste_child:first_child"):
+                existing_first_child = db.query(DBNote).filter(
+                    DBNote.parent_id == target_note_id,
+                    DBNote.prev_id == None
+                ).first()
             
             if existing_first_child and existing_first_child.id != new_note_id:
-                new_note = db.get(DBNote, new_note_id)
+                with SafeSession.allow_reads("paste_child:new_note"):
+                    new_note = db.get(DBNote, new_note_id)
                 new_note.next_id = existing_first_child.id
                 existing_first_child.prev_id = new_note_id
             
+            from ..services.note_store import store as note_store
+            if note_store.loaded:
+                with SafeSession.allow_reads("paste_child:refresh_store"):
+                    note_store.load_from_db(db)
+
             return {"id": new_note_id}
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))

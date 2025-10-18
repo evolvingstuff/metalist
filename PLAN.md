@@ -26,6 +26,16 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
    - Introduce a thin SQL helper module using SQLAlchemy Core or raw SQL with parameter binding.
    - Provide explicit transaction wrappers where needed (mirroring current service contexts).
    - Ensure helpers respect the read guard (read helpers call `SafeSession.allow_reads`).
+   - **Proposed helper layout:**
+     - `app/db/engine.py`: owns Engines (file + memory), exposes `get_writer()` / `get_reader()` yielding a guard-aware `Connection` wrapper that blocks `SELECT` unless inside `allow_reads`. Replaces `SafeSession`/`SessionLocal` with `GuardedConnection` context managers (“begin_write”, “allow_reads”).
+     - `app/db/schema.py`: defines SQLAlchemy Core `MetaData`, `notes_table`, `app_settings_table`, and any reusable column lists so services stop importing ORM models.
+     - `app/db/notes_sql.py`: focused write helpers (`insert_note`, `update_note_content`, `update_links`, `delete_notes`, `bulk_fetch_for_cache`) built on `Connection.execute` with compiled Core expressions; returns plain dicts/tuples.
+     - `app/db/settings_sql.py`: read/write helpers for `AppSettings`, PBKDF2 metadata, maintenance toggles, etc. Uses `allow_reads` to fetch and explicit `update` / `insert` for writes.
+     - Testing utilities extend `tests/unit/common.py` to use `engine.begin()` instead of ORM Session.
+   - **Undo/redo capture design:**
+     - Replace ORM event listeners with service-level snapshots. Each transactional service (e.g., `NoteService`) calls `transaction_manager.capture_before(note_ids)` to clone affected `NoteStore` nodes (content + linkage) before mutation, and `capture_after(note_ids)` right after helper calls.
+     - `ApiTransaction` evolves into a lightweight dataclass storing lists of `NoteState` records (simple dicts) rather than ORM copies; `Command` operates purely on helper functions (`insert_note`, `update_note_links`, `delete_notes`) plus `NoteStore` mutations.
+     - `TransactionManager` finalizes by diffing the pre/post snapshots (via `NoteStore` or captured dicts) instead of relying on SQLAlchemy’s identity map.
 
 3. **Read Paths**
    - Replace remaining ORM reads with store lookups or explicit SQL helpers (e.g., auth settings, maintenance jobs).

@@ -1,9 +1,10 @@
 from fastapi import APIRouter
 from ..models.database import SafeSession, Base
 from fastapi import HTTPException
-from ..models.linked_list import LinkedListManager
-from sqlalchemy import inspect, text
+from sqlalchemy import delete, inspect
 import logging
+
+from app.db import begin_writer, get_engine, notes_table
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -13,19 +14,15 @@ async def use_dev_db():
     try:
         logger.info("Switching to dev DB")
         SafeSession.use_memory_db()
-        engine = SafeSession.get_engine()
+        engine = get_engine()
         
         # Create all tables
         Base.metadata.create_all(bind=engine)
         
         # Clear all data from notes table
-        session = SafeSession(bind=engine)
-        try:
-            session.execute(text("DELETE FROM notes"))
-            session.commit()
+        with begin_writer() as connection:
+            connection.execute(delete(notes_table))
             logger.info("Cleared all notes from test DB")
-        finally:
-            session.close()
         
         # Log schema details
         inspector = inspect(engine)
