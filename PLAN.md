@@ -27,6 +27,7 @@ Identify and prioritize the factors making note operations sluggish after seedin
    - Capture requirements for server-maintained view state so diffs can be computed without hitting the database.
    - Design hierarchical hash trees (parent → ordered children with hashes) plus multi-variant note payloads so nested updates patch granular DOM regions without rerendering roots.
    - Account for fire-and-forget expand/collapse toggles (client updates UI instantly, server just records state) and define minimal consistency checks for occasional drift.
+   - Document sanctioned exceptions (e.g., undo/redo transactions temporarily re-enable DB reads) so the "write-only after startup" guard doesn't break command replay.
 
 5. **Integrity & Dev-Mode Overheads**
    - Audit dev-only checks, assertions, and logging for runtime impact.
