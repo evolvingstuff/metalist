@@ -316,7 +316,8 @@ def paste_sibling(
 
             # Deserialize clipboard data into real database notes positioned as sibling
             from ..models.utils import paste_note_from_memory
-            new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
+            with SafeSession.allow_reads("paste_sibling:deserialize"):
+                new_note_id = paste_note_from_memory(db, clipboard_data, target_note.parent_id)
 
             from ..services.note_store import store as note_store
             if note_store.loaded:

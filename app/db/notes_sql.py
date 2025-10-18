@@ -72,23 +72,26 @@ def update_note_content(
     _conn(connection).execute(stmt)
 
 
+_UNSET = object()
+
+
 def update_links(
     connection: GuardedConnection | Connection,
     note_id: str,
     *,
-    parent_id: Optional[str] = None,
-    prev_id: Optional[str] = None,
-    next_id: Optional[str] = None,
+    parent_id: Optional[str] = _UNSET,
+    prev_id: Optional[str] = _UNSET,
+    next_id: Optional[str] = _UNSET,
     updated_at: Optional[datetime] = None,
 ) -> None:
     values = {
         "updated_at": updated_at or datetime.now(timezone.utc),
     }
-    if parent_id is not None:
+    if parent_id is not _UNSET:
         values["parent_id"] = parent_id
-    if prev_id is not None:
+    if prev_id is not _UNSET:
         values["prev_id"] = prev_id
-    if next_id is not None:
+    if next_id is not _UNSET:
         values["next_id"] = next_id
 
     stmt = update(notes_table).where(notes_table.c.id == note_id).values(**values)

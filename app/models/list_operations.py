@@ -1,10 +1,10 @@
 from typing import Optional
 from types import SimpleNamespace
 
-from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
-from .database import DBNote
+from app.db.notes_sql import fetch_children_ordered, fetch_note, update_links
+from app.models.database import SafeSession
 from .enums import MovePosition
 from ..services.note_store import store as note_store
 
@@ -22,16 +22,19 @@ class ListOperations:
                 return
 
             # Fallback path when store is not available (legacy behavior)
-            note = db.get(DBNote, note_id)
-            if not note:
-                raise ValueError(f"Note {note_id} not found")
-
             if sibling_id and position is None:
                 raise ValueError("Position must be specified when sibling_id is provided")
             if position and not sibling_id:
                 raise ValueError("Position cannot be specified without a sibling_id")
             if sibling_id == note_id:
                 raise ValueError("Cannot move note relative to itself")
+
+            with SafeSession.allow_reads("list_ops:move_note:target"):
+                note_row = fetch_note(db.connection(), note_id)
+            if not note_row:
+                raise ValueError(f"Note {note_id} not found")
+
+            note = SimpleNamespace(**note_row)
             if new_parent_id == note.parent_id and sibling_id is None:
                 raise ValueError("Note is already at this position")
 
@@ -39,11 +42,15 @@ class ListOperations:
             old_next_id = note.next_id
 
             def is_descendant(parent_id: str, potential_child_id: str) -> bool:
-                current = db.get(DBNote, potential_child_id)
+                with SafeSession.allow_reads("list_ops:is_descendant"):
+                    current_row = fetch_note(db.connection(), potential_child_id)
+                current = SimpleNamespace(**current_row) if current_row else None
                 while current and current.parent_id:
                     if current.parent_id == parent_id:
                         return True
-                    current = db.get(DBNote, current.parent_id)
+                    with SafeSession.allow_reads("list_ops:is_descendant:up"):
+                        row = fetch_note(db.connection(), current.parent_id)
+                    current = SimpleNamespace(**row) if row else None
                 return False
 
             if new_parent_id and is_descendant(note_id, new_parent_id):
@@ -51,50 +58,42 @@ class ListOperations:
             if new_parent_id == note_id:
                 raise ValueError("Cannot make a note its own parent")
 
-            target_notes = db.query(DBNote).filter(DBNote.parent_id == new_parent_id).all()
+            with SafeSession.allow_reads("list_ops:target_notes"):
+                target_rows = fetch_children_ordered(db.connection(), new_parent_id)
+            target_notes = [SimpleNamespace(**row) for row in target_rows]
 
             if old_prev_id:
-                prev_note = db.get(DBNote, old_prev_id)
-                if prev_note:
-                    prev_note.next_id = old_next_id
+                update_links(db.connection(), old_prev_id, next_id=old_next_id)
             if old_next_id:
-                next_note = db.get(DBNote, old_next_id)
-                if next_note:
-                    next_note.prev_id = old_prev_id
+                update_links(db.connection(), old_next_id, prev_id=old_prev_id)
 
-            note.prev_id = None
-            note.next_id = None
-            note.parent_id = new_parent_id
+            update_links(db.connection(), note_id, parent_id=new_parent_id, prev_id=None, next_id=None)
 
             if sibling_id is None:
                 existing_head = next((n for n in target_notes if n.prev_id is None), None)
                 if existing_head:
-                    existing_head.prev_id = note_id
-                    note.next_id = existing_head.id
+                    update_links(db.connection(), existing_head.id, prev_id=note_id)
+                    update_links(db.connection(), note_id, next_id=existing_head.id)
                 return
 
-            sibling = db.get(DBNote, sibling_id)
-            if not sibling:
+            with SafeSession.allow_reads("list_ops:sibling"):
+                sibling_row = fetch_note(db.connection(), sibling_id)
+            if not sibling_row:
                 raise ValueError(f"Sibling note {sibling_id} not found")
+            sibling = SimpleNamespace(**sibling_row)
             if sibling.parent_id != new_parent_id:
                 raise ValueError("Sibling must have the same parent")
 
             if position == MovePosition.BEFORE:
-                note.next_id = sibling_id
-                note.prev_id = sibling.prev_id
-                sibling.prev_id = note_id
-                if note.prev_id:
-                    prev_note = db.get(DBNote, note.prev_id)
-                    if prev_note:
-                        prev_note.next_id = note_id
+                update_links(db.connection(), note_id, prev_id=sibling.prev_id, next_id=sibling_id)
+                update_links(db.connection(), sibling_id, prev_id=note_id)
+                if sibling.prev_id:
+                    update_links(db.connection(), sibling.prev_id, next_id=note_id)
             else:
-                note.prev_id = sibling_id
-                note.next_id = sibling.next_id
-                sibling.next_id = note_id
-                if note.next_id:
-                    next_note = db.get(DBNote, note.next_id)
-                    if next_note:
-                        next_note.prev_id = note_id
+                update_links(db.connection(), note_id, prev_id=sibling_id, next_id=sibling.next_id)
+                update_links(db.connection(), sibling_id, next_id=note_id)
+                if sibling.next_id:
+                    update_links(db.connection(), sibling.next_id, prev_id=note_id)
         except Exception as e:
             print(e)
             raise
@@ -105,7 +104,8 @@ def _move_note_with_store(db: Session, note_id: str, new_parent_id: Optional[str
     try:
         record = note_store.get_note(note_id)
     except KeyError:
-        note_store.load_from_db(db)
+        with SafeSession.allow_reads("list_ops:reload_store"):
+            note_store.load_from_db(db)
         record = note_store.get_note(note_id)
 
     if sibling_id and position is None:
@@ -158,19 +158,14 @@ def _apply_order_with_store(db: Session, parent_id: Optional[str], order: list[s
         prev_id = order[index - 1] if index > 0 else None
         next_id = order[index + 1] if index < len(order) - 1 else None
 
-        values = {
-            'prev_id': prev_id,
-            'next_id': next_id,
-        }
-
         record = note_store.get_note(current_id)
-        if record.parent_id != parent_id:
-            values['parent_id'] = parent_id
 
-        db.execute(
-            sa_update(DBNote)
-            .where(DBNote.id == current_id)
-            .values(**values)
+        update_links(
+            db.connection(),
+            current_id,
+            parent_id=parent_id,
+            prev_id=prev_id,
+            next_id=next_id,
         )
 
         note_store.update_metadata_from_db(
