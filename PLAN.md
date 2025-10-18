@@ -12,16 +12,21 @@ Identify and prioritize the factors making note operations sluggish after seedin
    - Inspect FastAPI middleware/logs for per-request timing and payload sizes.
    - Review `NoteService` / linked list operations (including integrity checks) for hot paths.
    - Confirm whether responses send full tree vs. diffs and measure payload size.
+   - Map all code paths that rebuild note state from the DB and outline the switch to serving reads from resident in-memory structures.
 
 3. **Database Analysis**
    - Measure query counts and execution time for representative operations using SQLAlchemy instrumentation.
    - Check index coverage and potential N+1 patterns.
    - Evaluate cost of integrity checks and cache updates.
+   - Enumerate remaining read-time queries after startup cache warm-up and plan to eliminate them.
 
 4. **Client Sync Flow Evaluation**
    - Examine `/api/notes/check-updates`, sync UUID churn, and how delta vs. full payloads are handled.
    - Evaluate state-tracking strategies (e.g., per-note hashes / queryable deltas, server-held snapshots) to enable thin diff responses; avoid event-log approach for now.
    - Trace clipboard/lock management for potential bottlenecks.
+   - Capture requirements for server-maintained view state so diffs can be computed without hitting the database.
+   - Design hierarchical hash trees (parent → ordered children with hashes) plus multi-variant note payloads so nested updates patch granular DOM regions without rerendering roots.
+   - Account for fire-and-forget expand/collapse toggles (client updates UI instantly, server just records state) and define minimal consistency checks for occasional drift.
 
 5. **Integrity & Dev-Mode Overheads**
    - Audit dev-only checks, assertions, and logging for runtime impact.
