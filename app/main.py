@@ -12,6 +12,7 @@ from .models.database import Base, SafeSession
 from .api.dependencies import get_db
 from .models.linked_list import LinkedListManager
 from .services.content_cache import populate_cache_from_db
+from .services.note_store import store as note_store
 from .core.config import CRASH_SERVER_ON_FAIL
 import logging
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
@@ -58,6 +59,7 @@ try:
     from .models.database import SessionLocal
     db = SessionLocal(bind=SafeSession.get_engine())
     populate_cache_from_db(db)
+    note_store.load_from_db(db)
     db.close()
 except Exception as e:
     # FAIL FAST AND LOUD - NO SILENT FAILURES

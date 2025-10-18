@@ -2,6 +2,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from .database import DBNote
 from .enums import MovePosition
+from ..services.note_store import store as note_store
 
 
 class ListOperations:
@@ -69,6 +70,16 @@ class ListOperations:
             note.next_id = None
             note.parent_id = new_parent_id
 
+            if note_store.loaded:
+                if old_prev_id:
+                    prev_note = db.get(DBNote, old_prev_id)
+                    if prev_note:
+                        note_store.update_metadata_from_db(prev_note)
+                if old_next_id:
+                    next_note = db.get(DBNote, old_next_id)
+                    if next_note:
+                        note_store.update_metadata_from_db(next_note)
+
             if sibling_id is None:
                 # Case 1: Find existing head at this level
                 existing_head = next((n for n in target_notes if n.prev_id is None), None)
@@ -76,6 +87,10 @@ class ListOperations:
                     # Make existing head point to our note
                     existing_head.prev_id = note_id
                     note.next_id = existing_head.id
+                if note_store.loaded:
+                    note_store.update_metadata_from_db(note)
+                    for candidate in target_notes:
+                        note_store.update_metadata_from_db(candidate)
                 return
 
             # Case 2: Positioning relative to a sibling
@@ -102,6 +117,19 @@ class ListOperations:
                     next_note = db.get(DBNote, note.next_id)
                     if next_note:
                         next_note.prev_id = note_id
+            if note_store.loaded:
+                note_store.update_metadata_from_db(note)
+                note_store.update_metadata_from_db(sibling)
+                if note.prev_id and note.prev_id != sibling_id:
+                    prev_note = db.get(DBNote, note.prev_id)
+                    if prev_note:
+                        note_store.update_metadata_from_db(prev_note)
+                if note.next_id:
+                    next_note = db.get(DBNote, note.next_id)
+                    if next_note:
+                        note_store.update_metadata_from_db(next_note)
+                for candidate in target_notes:
+                    note_store.update_metadata_from_db(candidate)
         except Exception as e:
             print(e)
             raise

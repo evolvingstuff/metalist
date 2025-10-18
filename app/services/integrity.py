@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import integrity_checks_enabled
 from app.models.database import DBNote
 from app.models.linked_list import LinkedListManager
+from app.services.note_store import store as note_store
 from app.models.list_traversal import ListTraversal
 
 
@@ -51,6 +52,20 @@ def assert_linked_list_integrity(db: Session, operation: str) -> None:
 
 
 def count_subtree(db: Session, note_id: str) -> int:
+    if note_store.loaded:
+        try:
+            note_store.get_note(note_id)
+        except KeyError as exc:
+            raise ValueError(f"Note {note_id} not found") from exc
+
+        def _count_store(current_id: str) -> int:
+            total = 1
+            for child_id in note_store.get_children(current_id):
+                total += _count_store(child_id)
+            return total
+
+        return _count_store(note_id)
+
     node = LinkedListManager.get_note(db, note_id)
     if not node:
         raise ValueError(f"Note {note_id} not found")

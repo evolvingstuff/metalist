@@ -1,3 +1,6 @@
+from contextlib import contextmanager
+from threading import RLock
+
 from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Integer, Boolean, LargeBinary
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from datetime import datetime, timezone
@@ -9,6 +12,8 @@ class SafeSession(Session):
     _engine = create_engine(DATABASE_URL)
     _memory_engine = None
     _current_session = None
+    _reads_enabled = True
+    _read_guard_lock = RLock()
 
     @classmethod
     def use_memory_db(cls):
@@ -53,6 +58,28 @@ class SafeSession(Session):
     def get_engine(cls):
         return cls._memory_engine if cls._memory_engine else cls._engine
 
+    @classmethod
+    def enable_read_guard(cls):
+        with cls._read_guard_lock:
+            cls._reads_enabled = False
+
+    @classmethod
+    def disable_read_guard(cls):
+        with cls._read_guard_lock:
+            cls._reads_enabled = True
+
+    @classmethod
+    @contextmanager
+    def allow_reads(cls, reason: str = ""):
+        with cls._read_guard_lock:
+            previous = cls._reads_enabled
+            cls._reads_enabled = True
+        try:
+            yield
+        finally:
+            with cls._read_guard_lock:
+                cls._reads_enabled = previous
+
     def commit(self):
         """Override commit to check for corruption in dev mode"""
         try:
@@ -60,6 +87,11 @@ class SafeSession(Session):
         except Exception as e:
             self.rollback()
             raise e
+
+    def execute(self, statement, *args, **kwargs):
+        if not type(self)._reads_enabled and _is_select(statement):
+            raise RuntimeError("Post-startup DB read forbidden")
+        return super().execute(statement, *args, **kwargs)
 
 
 Base = declarative_base()
@@ -115,3 +147,33 @@ class AppSettings(Base):
     # Timestamps
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+def _is_select(statement) -> bool:
+    try:
+        from sqlalchemy.sql import Select
+        if isinstance(statement, Select):
+            return True
+    except ImportError:
+        pass
+
+    try:
+        flag = getattr(statement, "is_select")
+    except AttributeError:
+        flag = None
+    except Exception:
+        flag = None
+    if flag:
+        return True
+
+    try:
+        from sqlalchemy.sql.elements import TextClause
+        if isinstance(statement, TextClause):
+            return statement.text.lstrip().lower().startswith("select")
+    except ImportError:
+        pass
+
+    if isinstance(statement, str):
+        return statement.lstrip().lower().startswith("select")
+
+    return False

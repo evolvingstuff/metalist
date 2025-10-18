@@ -83,6 +83,10 @@ class NoteService(BaseTransactionService):
         self.expect_note_delta(0)
         note.is_collapsed = desired_state
 
+        from .note_store import store as note_store
+        if note_store.loaded:
+            note_store.set_collapsed(note_id, desired_state)
+
         logger.info(f"Set collapse state for note {note_id} to {desired_state}")
 
         new_uuid = generate_new_uuid()

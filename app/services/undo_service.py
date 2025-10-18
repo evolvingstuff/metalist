@@ -3,6 +3,7 @@ import logging
 
 from .base_service import BaseQueryService
 from .sync_state import generate_new_uuid, set_server_sync_uuid
+from ..models.database import SafeSession
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ class UndoRedoService(BaseQueryService):
     def undo(self, client_id: str = None) -> dict:
         """Perform an undo operation"""
         logger.info(f"🔧 UNDO SERVICE: undo() called for client {client_id}")
-        undid = self.transaction_manager.undo(self.db, client_id)
+        with SafeSession.allow_reads("undo"):
+            undid = self.transaction_manager.undo(self.db, client_id)
         
         if undid:
             set_server_sync_uuid(generate_new_uuid())
@@ -30,7 +32,8 @@ class UndoRedoService(BaseQueryService):
     
     def redo(self, client_id: str = None) -> dict:
         """Perform a redo operation"""
-        redid = self.transaction_manager.redo(self.db, client_id)
+        with SafeSession.allow_reads("redo"):
+            redid = self.transaction_manager.redo(self.db, client_id)
         
         if redid:
             set_server_sync_uuid(generate_new_uuid())

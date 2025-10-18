@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from .database import DBNote
 from .enums import MovePosition
 from ..utils.encryption import encrypt
+from ..services.note_store import store as note_store
 
 
 class NoteCRUD:
@@ -43,6 +44,11 @@ class NoteCRUD:
                 db_note.next_id = first_note.id
 
             db.flush()
+
+            if note_store.loaded:
+                note_store.add_note_from_db(db_note, "")
+                if first_note and first_note.id != note_id:
+                    note_store.update_metadata_from_db(first_note)
         except Exception as e:
             print(e)
             raise
@@ -71,6 +77,9 @@ class NoteCRUD:
         # Update content cache with plaintext for search
         cache_note(note_id, content)
 
+        if note_store.loaded:
+            note_store.update_note_from_db(db_note, content)
+
     @staticmethod
     def delete_note(db: Session, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
@@ -92,6 +101,9 @@ class NoteCRUD:
             descendant_ids = get_all_descendant_ids(note_id)
             from ..services.content_cache import remove_cached_note
             
+            if note_store.loaded:
+                note_store.remove_note(note_id)
+
             for descendant_id in descendant_ids:
                 descendant = db.get(DBNote, descendant_id)
                 db.delete(descendant)

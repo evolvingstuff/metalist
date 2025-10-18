@@ -9,6 +9,7 @@ import re
 from app.core import config
 from app.utils.text_utils import strip_html
 from app.services.content_cache import get_cached_content
+from app.services.note_store import store as note_store
 from app.utils.encryption import decrypt
 from html import escape
 
@@ -236,79 +237,107 @@ def filter_notes_by_search(notes, search_query):
     return filtered_notes
 
 
-def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search_query=None):
-    """
-    Build a hierarchical tree of notes with proper rendering applied.
-    
-    Args:
-        db_manager: The database manager (LinkedListManager) with methods to get notes
-        db: Database session
-        parent_id: Optional ID of parent note to build tree from
-        editing_note_id: Optional ID of note currently being edited
-        search_query: Optional search string to filter notes
-        
-    Returns:
-        List of note dictionaries with properly rendered content and nested children
-    """
-    try:
-        notes = db_manager.get_ordered_child_list(db, parent_id)
-        
-        # Build the complete tree first, including all descendants
-        note_tree = []
-        for note in notes:
-            # Build child tree first
-            children = build_note_tree(db_manager, db, note.id, editing_note_id, search_query)
-            
-            # Get decrypted content from cache - MUST be there
-            decrypted_content = get_cached_content(note.id)
-            if decrypted_content is None:
-                raise RuntimeError(f"CACHE CORRUPTION: Note {note.id} not found in cache! Cache system has failed.")
-            
-            # DEBUG: Show note data asdf
-            # print(f"DEBUG: {note.id[:8]} | {note.content[:50]}... | {decrypted_content[:50]}...")
-            
-            # Create a temporary note object with decrypted content for rendering
-            class DecryptedNote:
-                def __init__(self, original_note, decrypted_content):
-                    self.id = original_note.id
-                    self.content = decrypted_content
-                    self.parent_id = original_note.parent_id
-                    self.created_at = original_note.created_at
-                    self.updated_at = original_note.updated_at
-                    self.is_collapsed = getattr(original_note, 'is_collapsed', False)
+EMPTY_EDIT_PLACEHOLDER = "<div><br></div>"
 
-            decrypted_note = DecryptedNote(note, decrypted_content)
-            
-            # Determine render mode - editing takes precedence
-            if note.id == editing_note_id:
-                rendered_content = render_editing_mode(decrypted_note)
-            else:
-                rendered_content = render_read_only_mode(decrypted_note)
-            
-            note_dict = {
-                'id': note.id,
-                'content': rendered_content,
-                'raw_content': decrypted_content,  # Use cached decrypted content for search
-                'parent_id': note.parent_id or '',
-                'children': children,
-                'flags': {
-                    'isEditing': note.id == editing_note_id,
-                    'isCollapsed': bool(getattr(note, 'is_collapsed', False))
-                }
-            }
-            note_tree.append(note_dict)
-        
-        # Apply search filtering only when building the top-level tree (parent_id is None)
-        # This ensures we filter complete note trees based on whether ANY note in the tree
-        # (parent or any descendant) contains ALL the search terms
+
+def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search_query=None):
+    """Build a hierarchical tree, preferring the in-memory store when loaded."""
+
+    try:
+        if note_store.loaded:
+            note_tree = _build_tree_from_store(parent_id, editing_note_id)
+        else:
+            note_tree = _build_tree_from_db(db_manager, db, parent_id, editing_note_id)
+
         if parent_id is None and search_query:
             note_tree = filter_notes_by_search(note_tree, search_query)
-            # After filtering, apply redacted rendering to irrelevant notes
             apply_redacted_rendering(note_tree, search_query)
-        
+
         return note_tree
-        
+
     except Exception as e:
         import logging
         logging.getLogger(__name__).exception("Error building note tree")
         raise
+
+
+def _build_tree_from_store(parent_id, editing_note_id):
+    """Recursively construct the note tree using the in-memory store."""
+
+    note_tree = []
+    child_ids = note_store.get_children(parent_id)
+
+    for note_id in child_ids:
+        record = note_store.get_note(note_id)
+        children = _build_tree_from_store(note_id, editing_note_id)
+        is_editing = note_id == editing_note_id
+
+        rendered = record.variants.edit_html if is_editing else record.variants.expanded_html
+        if is_editing and (not rendered or not rendered.strip()):
+            rendered = EMPTY_EDIT_PLACEHOLDER
+
+        note_tree.append(
+            {
+                'id': record.id,
+                'content': rendered,
+                'raw_content': record.content,
+                'parent_id': record.parent_id or '',
+                'children': children,
+                'flags': {
+                    'isEditing': is_editing,
+                    'isCollapsed': bool(record.is_collapsed),
+                },
+            }
+        )
+
+    return note_tree
+
+
+def _build_tree_from_db(db_manager, db, parent_id, editing_note_id):
+    """Fallback tree construction that queries the database."""
+
+    note_tree = []
+    notes = db_manager.get_ordered_child_list(db, parent_id)
+
+    for note in notes:
+        children = _build_tree_from_db(db_manager, db, note.id, editing_note_id)
+
+        decrypted_content = get_cached_content(note.id)
+        if decrypted_content is None:
+            raise RuntimeError(
+                f"CACHE CORRUPTION: Note {note.id} not found in cache! Cache system has failed."
+            )
+
+        class DecryptedNote:
+            def __init__(self, original_note, decrypted_content):
+                self.id = original_note.id
+                self.content = decrypted_content
+                self.parent_id = original_note.parent_id
+                self.created_at = original_note.created_at
+                self.updated_at = original_note.updated_at
+                self.is_collapsed = getattr(original_note, 'is_collapsed', False)
+
+        decrypted_note = DecryptedNote(note, decrypted_content)
+        rendered_content = (
+            render_editing_mode(decrypted_note)
+            if note.id == editing_note_id
+            else render_read_only_mode(decrypted_note)
+        )
+        if note.id == editing_note_id and (not rendered_content or not rendered_content.strip()):
+            rendered_content = EMPTY_EDIT_PLACEHOLDER
+
+        note_tree.append(
+            {
+                'id': note.id,
+                'content': rendered_content,
+                'raw_content': decrypted_content,
+                'parent_id': note.parent_id or '',
+                'children': children,
+                'flags': {
+                    'isEditing': note.id == editing_note_id,
+                    'isCollapsed': bool(getattr(note, 'is_collapsed', False)),
+                },
+            }
+        )
+
+    return note_tree

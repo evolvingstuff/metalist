@@ -50,16 +50,19 @@ export async function actionSelectNote(noteId) {
 
     ModeContext.setEditing(true);
 
-    try {
-        await ensureNoteExpanded(noteId);
-    } catch (error) {
-        Logger.logError('Failed to ensure note expanded before editing', error);
-    }
-
     const newContent = await actionRefreshAndMaybeSelect();
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
+    }
+
+    try {
+        await ensureNoteExpanded(noteId);
+    } catch (error) {
+        Logger.logDebug('Note not present during ensureExpanded after refresh', {
+            noteId,
+            error: error.message
+        }, Logger.LogCategory.DEBUG);
     }
 
     ModeContext.validate();
@@ -171,11 +174,18 @@ export async function actionSwitchNotes(newNoteId) {
 
     ModeContext.setCurrentNoteId(newNoteId);
 
-    await ensureNoteExpanded(newNoteId);
-
     const newContent = await actionRefreshAndMaybeSelect();
     
     ModeContext.setCurrentContent(newContent);
+
+    try {
+        await ensureNoteExpanded(newNoteId);
+    } catch (error) {
+        Logger.logDebug('Note not present during ensureExpanded after refresh', {
+            noteId: newNoteId,
+            error: error.message
+        }, Logger.LogCategory.DEBUG);
+    }
   
     ModeContext.validate();
 }

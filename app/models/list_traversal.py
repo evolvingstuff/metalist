@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from sqlalchemy.orm import Session
 from .database import DBNote
+from app.services.note_store import store as note_store
 
 
 class ListTraversal:
@@ -9,6 +10,30 @@ class ListTraversal:
     @staticmethod
     def validate_list(db: Session, parent_id: Optional[str] = None) -> bool:
         """Validate the linked list structure"""
+
+        if note_store.loaded:
+            child_ids = note_store.get_children(parent_id)
+            if not child_ids:
+                return True
+
+            records = [note_store.get_note(note_id) for note_id in child_ids]
+
+            for index, record in enumerate(records):
+                expected_prev = records[index - 1].id if index > 0 else None
+                expected_next = records[index + 1].id if index < len(records) - 1 else None
+
+                prev_id = record.prev_id or None
+                next_id = record.next_id or None
+
+                if prev_id != expected_prev:
+                    return False
+                if next_id != expected_next:
+                    return False
+                if record.parent_id != parent_id:
+                    return False
+
+            return True
+
         db.expire_all()  # TODO useful?
         notes = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
         
@@ -62,8 +87,13 @@ class ListTraversal:
                 current.parent_id == parent_id)  # Tail has correct parent
 
     @staticmethod
-    def get_ordered_child_list(db: Session, parent_id: Optional[str] = None) -> List[DBNote]:
+    def get_ordered_child_list(db: Session, parent_id: Optional[str] = None) -> List[Any]:
         """Get an ordered list of child notes for the given parent_id"""
+
+        if note_store.loaded:
+            ordered_ids = note_store.get_children(parent_id)
+            return [_NoteProxy(note_store.get_note(note_id)) for note_id in ordered_ids]
+
         query = db.query(DBNote)
         if parent_id is None:
             # When getting root notes, we need ALL notes that have no parent
@@ -125,3 +155,26 @@ class ListTraversal:
                 break
             current = parent.parent_id
         return False
+
+
+class _NoteProxy:
+    """Lightweight stand-in for DBNote when serving from the in-memory store."""
+
+    __slots__ = (
+        'id',
+        'parent_id',
+        'prev_id',
+        'next_id',
+        'is_collapsed',
+        'created_at',
+        'updated_at',
+    )
+
+    def __init__(self, record) -> None:
+        self.id = record.id
+        self.parent_id = record.parent_id
+        self.prev_id = record.prev_id
+        self.next_id = record.next_id
+        self.is_collapsed = record.is_collapsed
+        self.created_at = record.created_at
+        self.updated_at = record.updated_at
