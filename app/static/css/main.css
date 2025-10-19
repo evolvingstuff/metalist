@@ -736,7 +736,8 @@ body.loading::after {
     z-index: 9999;
     background: rgba(0,0,0,0.7);
     color: #ccc;
-    padding: 8px 10px;
+    padding: 8px 12px;
+    min-width: 195px;
     border-radius: 3px;
     font-family: monospace;
     font-size: 12px;
