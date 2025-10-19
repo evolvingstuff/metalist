@@ -1,66 +1,42 @@
-# Infinite Scroll Plan
+# VDOM Optimization Plan
 
-## Goals
-- Lazily load root notes so the client initially renders only the first 50 visible roots and fetches more when the user scrolls near the bottom.
-- Preserve existing diff-based reconciliation (structure + payload hashes) while avoiding duplicate work for already loaded notes.
-- Ensure collapsed branches remain hidden and editable notes still include their descendants even when outside the current viewport.
+## Objective
+- Reduce unnecessary DOM mutations during note updates so selecting or editing a note only touches the affected elements instead of triggering reorder operations across the tree.
 
-## Assumptions
-- The client can report the lowest root note currently visible on screen; collapsed notes cannot be visible.
-- Requests already include all hashes the client knows about via `clientNoteUuidHashes`, so the server does not need to track prior window state.
-- Infinite scroll focuses exclusively on root notes; descendants continue to be delivered with their parent root as today (subject to collapse/edit rules).
+## Current Pain Points to Validate
+- `differential-view-service.js` appends every child during each payload, generating redundant "reordered note" logs even when order is unchanged.
+- Potential double-work elsewhere (e.g., hash syncing, parent container creation) that may cascade into needless DOM churn.
 
-## High-Level Approach
-1. **Request Contract** – Extend `/api/notes/view` to accept `clientSeenRootIds` so the server knows which delivered roots have actually entered the viewport.
-2. **Server Windowing** – Modify `NoteQueryService.build_view_snapshot` to page root notes:
-   - Determine the ordered list of root ids.
-   - Compute the window to include: start at the top, include 50 roots initially; when the newest root the client has actually seen falls within 25 of the current tail, append the next chunk of 50.
-   - Retrieve all descendants for the selected root subset (respecting collapsed/editing logic).
-3. **Client Scroll Logic** – Maintain two root-note sets (`knownRoots`, `seenRoots`) so the client understands which delivered roots have actually entered the viewport. A lightweight polling loop (e.g., every 500 ms) inspects visible root ids, moves any newly visible ones from `knownRoots` to `seenRoots`, and when the count of unseen-but-known roots drops below the buffer threshold, we refresh `/view`.
-4. **Hash / Diff Handling** – The server will continue returning all previously delivered roots in `structure`, simply appending new ones as the window expands, so existing hashes remain valid.
-5. **Testing & Instrumentation** – Add targeted unit coverage around the server windowing logic and exercise client behaviour manually (scrolling, editing, collapse toggles) to confirm seamless loading.
+## Proposed Strategy
+1. **Understand Payload Semantics**
+   - Confirm how `payload.structure` expresses ordering (likely DFS with `prevId`/`nextId` semantics) and whether stable IDs already match desired DOM positions.
+   - Identify cases that truly require reordering: new note creation, move operations, collapse/expand, undo/redo.
 
-## Detailed Tasks
+2. **Refine DOM Reconciliation**
+   - Rework child-order handling per parent: compare desired order with existing DOM siblings and perform minimal moves.
+   - Reuse or revise the existing `positionNote` helper (currently unused) so we only move nodes when their parent or adjacent siblings differ.
+   - Ensure new elements are inserted once at creation and avoid redundant `appendChild` calls for already correctly placed nodes.
 
-### 1. API & Server Updates
-- Update `ViewDiffRequest` to accept `client_seen_root_ids` (list/set) alongside existing hashes.
-- In `NoteQueryService.build_view_snapshot`:
-- In `NoteQueryService.build_view_snapshot`:
-  - Fetch ordered root ids (likely via `note_store.get_children(parent_id=None)`).
-  - Introduce helper to slice root list according to window rules (`CHUNK_SIZE = 50`, `BUFFER = 25`).
-  - Use `client_seen_root_ids` to decide when the buffer threshold has been reached; fall back to editing note or prior known roots to guarantee continuity.
-  - Always include roots up to the determined window end; never trim earlier ones so existing DOM nodes stay valid.
-  - For each included root, emit descendants with existing recursion logic (respecting collapsed/editing flags).
-- Ensure payloads include hashes/content for any newly emitted notes.
+3. **Hash & Content Updates**
+   - Double-check content update guard (`shouldUpdateContent`) so editing notes aren't overwritten but non-edited notes still refresh when hashes change.
+   - Evaluate whether hash syncing or dataset mutations cause unintended DOM writes; prune any redundant attribute toggles while keeping state accurate.
 
-### 2. Client Adjustments
-- Maintain two sets in ModeContext (or a dedicated scroll state module):
-  - `knownRootIds`: roots delivered in the latest snapshot.
-  - `seenRootIds`: subset of those roots that have actually appeared in the viewport.
-- Add a lightweight poller (≈500 ms) that:
-  - Collects the root ids currently visible in the DOM.
-  - Adds newly visible ids to `seenRootIds` (set semantics prevent duplicates).
-  - Removes the same ids from `knownRootIds`’ “unseen” subset.
-  - If the number of unseen-but-known roots falls below the buffer threshold (25), fire a `/view` refresh (carrying the usual hash payload plus the updated `clientSeenRootIds`).
-- Reset or adjust these sets when structural mutations occur (collapse/expand/delete) so the polling loop reassesses visibility without spamming requests.
-- Whenever the active search context (or tab) actually changes its search query (not just focusing the field), clear `seenRootIds` and rebuild `knownRootIds` from the fresh snapshot to avoid stale visibility assumptions.
+4. **Safety Nets**
+   - Maintain fail-fast behaviour: throw when expected DOM elements are missing, but add targeted assertions to catch logic drift during refactor.
+   - Add lightweight instrumentation (counts or debug logs) during development to confirm DOM moves drop significantly; remove or gate them behind existing VDOM logging flag before shipping.
 
-### 3. Hash Management
-- Confirm ModeContext’s hash map can safely retain entries for roots that remain in the DOM; only new roots should append hashes. Avoid removing hashes when the server omits roots (since it no longer will once emitted).
-- Verify differential updates still function when the server sends additional roots without re-sending earlier ones.
+5. **Validation Plan**
+   - Manual QA:
+     - Select different notes, toggle collapse, create/delete/move notes, undo/redo, and confirm only relevant elements log mutations.
+     - Observe real DOM via browser devtools to ensure structure stays correct.
+   - Automated checks:
+     - Run existing frontend/unit tests (if any) and backend suites to ensure no regressions.
 
-### 4. Testing & Verification
-- Add unit tests for the new windowing helper to cover scenarios:
-  - Initial load (no lowest visible root id)
-  - Scroll within buffer triggers expansion
-  - Repeated requests without new scroll keep window stable
-  - Editing within a collapsed root still includes descendants
-- Manual QA checklist:
-  - Scroll to bottom repeatedly and confirm new roots append smoothly.
-  - Collapse/expand roots near window boundaries.
-  - Edit a deep note and ensure children load.
-  - Undo/redo or remote updates don’t duplicate or skip roots.
+6. **Documentation & Follow-up**
+   - Update any developer notes (e.g., `docs/frontend.md` if applicable) describing the leaner diff algorithm and expectations for payload order.
+   - Capture open questions for future optimization (e.g., potential virtualization) in TODO or docs once core fix lands.
 
-### 5. Cleanup & Documentation
-- Update developer docs (possibly `docs/state-handling.md`) with new scroll state handling.
-- Consider adding logging/metrics on server for window calculations to aid future tuning.
+## Deliverables
+- Updated `app/static/js/modules/mode-manager/services/differential-view-service.js` implementing minimal DOM diffing.
+- Optional documentation snippet summarizing reconciliation rules.
+- Testing notes/results from manual verification.
