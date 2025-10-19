@@ -1,13 +1,23 @@
 """Authentication and password management service."""
 
 import secrets
+from types import SimpleNamespace
 from typing import Optional, Tuple
+
 from sqlalchemy.orm import Session
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
+
 from app.core.config import PW_PBKDF2_ITERATIONS
-from app.models.database import AppSettings, DBNote, SafeSession
+from app.db.notes_sql import fetch_all_for_cache, update_note_content
+from app.db.settings_sql import (
+    clear_password_settings,
+    fetch_settings,
+    insert_default_settings,
+    update_password_settings,
+)
+from app.models.database import SafeSession
 from app.services.maintenance_mode import maintenance_service
 from app.services.encryption import EncryptionService
 
@@ -19,16 +29,19 @@ class AuthService:
         self.db = db
         self.encryption = EncryptionService()
     
-    def get_settings(self) -> Optional[AppSettings]:
+    def get_settings(self) -> Optional[SimpleNamespace]:
         """Get the app settings from database.
 
         Returns:
             AppSettings object or None if not exists
         """
         with SafeSession.allow_reads("auth:get_settings"):
-            return self.db.query(AppSettings).filter(AppSettings.id == 1).first()
-    
-    def initialize_settings(self) -> AppSettings:
+            row = fetch_settings(self.db.connection())
+        if not row:
+            return None
+        return SimpleNamespace(**row)
+
+    def initialize_settings(self) -> SimpleNamespace:
         """Initialize app settings if they don't exist.
         
         Returns:
@@ -36,13 +49,11 @@ class AuthService:
         """
         settings = self.get_settings()
         if not settings:
-            settings = AppSettings(
-                id=1,
-                encryption_enabled=False,
-                encryption_algorithm=None
-            )
-            self.db.add(settings)
+            insert_default_settings(self.db.connection())
             self.db.commit()
+            settings = self.get_settings()
+            if not settings:
+                raise RuntimeError("App settings initialization failed")
         return settings
     
     def hash_password(self, password: str, salt: bytes, iterations: int = None) -> str:
@@ -128,62 +139,82 @@ class AuthService:
             return False, "Password is too weak (must be > 3 characters)"
         
         # Initialize settings if needed
-        settings = self.initialize_settings()
-        
+        self.initialize_settings()
+
         # Generate salt and hash password
         salt = self.encryption.generate_salt()
         password_hash = self.hash_password(password, salt)
-        
+
         # Generate DEK and encrypt it with master key
         dek = self.encryption.generate_dek()
         master_key = self.encryption.derive_master_key(password, salt)
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, master_key)
-        
-        # Update settings with password and encrypted DEK
-        settings.password_salt = salt
-        settings.password_hash = password_hash
-        settings.password_iterations = PW_PBKDF2_ITERATIONS  # Store current iteration count
-        settings.encrypted_dek = encrypted_dek
-        settings.dek_nonce = dek_nonce
-        settings.dek_tag = dek_tag
-        settings.encryption_enabled = True
-        settings.encryption_algorithm = "AES-256-GCM"
-        
+
         # Set master key and DEK for this session
         self.encryption.master_key = master_key
         self.encryption.dek = dek
-        
-        # Enter maintenance mode for bulk encryption
+
         maintenance_service.enter_maintenance("Encrypting all notes with new password")
-        
+
+        connection = self.db.connection()
+        encrypted_count = 0
         try:
-            # Encrypt all existing notes
-            with SafeSession.allow_reads("auth:set_password"):
-                notes = self.db.query(DBNote).all()
-            encrypted_count = 0
-            
+            with SafeSession.allow_reads("auth:set_password:fetch_notes"):
+                notes = fetch_all_for_cache(connection)
+
+            from app.services.content_cache import cache_note
+
             for note in notes:
-                if note.content and note.encryption_nonce is None:
-                    # Only encrypt if not already encrypted (no nonce means unencrypted)
-                    try:
-                        # Encrypt the content using separate field approach
-                        ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(note.content)
-                        note.content = ciphertext_base64
-                        note.encryption_nonce = nonce_bytes
-                        note.encryption_tag = tag_bytes
-                        encrypted_count += 1
-                    except Exception as e:
-                        # FAIL FAST AND LOUD - NO SILENT FAILURES
-                        print(f"🚨 FATAL: Failed to encrypt note {note.id}: {e}")
-                        print(f"🚨 Cannot continue password setup with broken encryption!")
-                        print(f"🚨 CRASHING IMMEDIATELY")
-                        raise RuntimeError(f"Password setup failed: Could not encrypt note {note.id}: {e}") from e
-            
+                note_id = note["id"]
+                content = note["content"]
+                if content is None:
+                    raise RuntimeError(
+                        f"Password setup failed: Note {note_id} has NULL content."
+                    )
+
+                if note.get("encryption_nonce") is not None:
+                    continue
+
+                try:
+                    ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(content)
+                    update_note_content(
+                        connection,
+                        note_id,
+                        content=ciphertext_base64,
+                        encryption_nonce=nonce_bytes,
+                        encryption_tag=tag_bytes,
+                    )
+                    cache_note(note_id, content)
+                    encrypted_count += 1
+                except Exception as e:
+                    print(f"🚨 FATAL: Failed to encrypt note {note_id}: {e}")
+                    print("🚨 Cannot continue password setup with broken encryption!")
+                    print("🚨 CRASHING IMMEDIATELY")
+                    raise RuntimeError(
+                        f"Password setup failed: Could not encrypt note {note_id}: {e}"
+                    ) from e
+
+            update_password_settings(
+                connection,
+                password_hash=password_hash,
+                password_salt=salt,
+                password_iterations=PW_PBKDF2_ITERATIONS,
+                encrypted_dek=encrypted_dek,
+                dek_nonce=dek_nonce,
+                dek_tag=dek_tag,
+                encryption_algorithm="AES-256-GCM",
+            )
+
             self.db.commit()
         finally:
-            # Always exit maintenance mode
             maintenance_service.exit_maintenance()
-        
+
+        from app.services.note_store import store as note_store
+
+        if note_store.loaded:
+            with SafeSession.allow_reads("auth:set_password:refresh_store"):
+                note_store.load_from_db(self.db)
+
         return True, f"Password set successfully. Encrypted {encrypted_count} notes."
     
     def change_password(self, current_password: str, new_password: str, iterations: int = None) -> Tuple[bool, str]:
@@ -235,14 +266,19 @@ class AuthService:
         new_master_key = self.encryption.derive_master_key(new_password, new_salt, iterations)
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_master_key)
         
-        # Update settings with new password and re-encrypted DEK
-        settings.password_salt = new_salt
-        settings.password_hash = new_password_hash
-        settings.password_iterations = iterations  # Use custom or config iterations
-        settings.encrypted_dek = encrypted_dek
-        settings.dek_nonce = dek_nonce
-        settings.dek_tag = dek_tag
-        
+        connection = self.db.connection()
+
+        update_password_settings(
+            connection,
+            password_hash=new_password_hash,
+            password_salt=new_salt,
+            password_iterations=iterations,
+            encrypted_dek=encrypted_dek,
+            dek_nonce=dek_nonce,
+            dek_tag=dek_tag,
+            encryption_algorithm=settings.encryption_algorithm or "AES-256-GCM",
+        )
+
         self.db.commit()
         
         # Update encryption service with new keys for this session
@@ -282,51 +318,53 @@ class AuthService:
         # Enter maintenance mode for bulk decryption
         maintenance_service.enter_maintenance("Decrypting all notes (removing password protection)")
         
+        connection = self.db.connection()
+
         try:
-            # Decrypt all notes
-            with SafeSession.allow_reads("auth:remove_password"):
-                notes = self.db.query(DBNote).all()
+            with SafeSession.allow_reads("auth:remove_password:fetch_notes"):
+                notes = fetch_all_for_cache(connection)
             decrypted_count = 0
-            
+
+            from app.services.content_cache import cache_note
+
             for note in notes:
-                if note.content and note.encryption_nonce is not None:
+                note_id = note["id"]
+                content = note["content"]
+                nonce = note.get("encryption_nonce")
+                tag = note.get("encryption_tag")
+
+                if content and nonce is not None:
                     try:
-                        # Decrypt the content using separate fields
-                        plaintext = self.encryption.decrypt_from_storage(
-                            note.content,
-                            note.encryption_nonce,
-                            note.encryption_tag,
+                        plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
+                        update_note_content(
+                            connection,
+                            note_id,
+                            content=plaintext,
+                            encryption_nonce=None,
+                            encryption_tag=None,
                         )
-                        # Clear encryption metadata before writing plaintext so event listeners treat it as unencrypted
-                        note.encryption_nonce = None
-                        note.encryption_tag = None
-                        note.content = plaintext
-                        from app.services.content_cache import cache_note
-                        cache_note(note.id, plaintext)
+                        cache_note(note_id, plaintext)
                         decrypted_count += 1
                     except Exception as e:
-                        # FAIL FAST AND LOUD - NO SILENT FAILURES  
-                        print(f"🚨 FATAL: Failed to decrypt note {note.id}: {e}")
-                        print(f"🚨 Cannot remove password protection with broken decryption!")
-                        print(f"🚨 CRASHING IMMEDIATELY")
-                        raise RuntimeError(f"Password removal failed: Could not decrypt note {note.id}: {e}") from e
-            
-            # Clear password and DEK from settings
-            settings.password_salt = None
-            settings.password_hash = None
-            settings.password_iterations = None
-            settings.encrypted_dek = None
-            settings.dek_nonce = None
-            settings.dek_tag = None
-            settings.encryption_enabled = False
-            settings.encryption_algorithm = None
-            
+                        print(f"🚨 FATAL: Failed to decrypt note {note_id}: {e}")
+                        print("🚨 Cannot remove password protection with broken decryption!")
+                        print("🚨 CRASHING IMMEDIATELY")
+                        raise RuntimeError(
+                            f"Password removal failed: Could not decrypt note {note_id}: {e}"
+                        ) from e
+
+            clear_password_settings(connection)
             self.db.commit()
-            
-            # Clear encryption keys
+
             self.encryption.clear_keys()
         finally:
             # Always exit maintenance mode
             maintenance_service.exit_maintenance()
-        
+
+        from app.services.note_store import store as note_store
+
+        if note_store.loaded:
+            with SafeSession.allow_reads("auth:remove_password:refresh_store"):
+                note_store.load_from_db(self.db)
+
         return True, f"Password removed successfully. Decrypted {decrypted_count} notes."

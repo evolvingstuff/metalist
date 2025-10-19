@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
-from ..models.database import DBNote
+from ..models.database import SafeSession
 from ..utils.encryption import get_encryption_service
 
 logger = logging.getLogger(__name__)
@@ -148,33 +148,43 @@ def refresh_encrypted_cache(db: Session) -> None:
             logger.warning("No encryption key available for cache refresh")
             return
         
-        # Get all notes that have encryption data
-        encrypted_notes = db.query(DBNote).filter(
-            DBNote.encryption_nonce.isnot(None),
-            DBNote.encryption_tag.isnot(None)
-        ).all()
+        with SafeSession.allow_reads("cache:refresh_encrypted"):
+            rows = fetch_all_for_cache(db.connection())
+
+        encrypted_notes = [
+            row
+            for row in rows
+            if row.get("encryption_nonce") is not None and row.get("encryption_tag") is not None
+        ]
         
         refreshed_count = 0
         
         for note in encrypted_notes:
-            if note.content is None:
+            content = note["content"]
+            nonce = note["encryption_nonce"]
+            tag = note["encryption_tag"]
+            note_id = note["id"]
+
+            if content is None:
                 raise RuntimeError(
-                    f"Cache refresh failed: Encrypted note {note.id} has NULL content."
+                    f"Cache refresh failed: Encrypted note {note_id} has NULL content."
                 )
 
             try:
                 # Decrypt using separate fields approach
                 decrypted_content = encryption_service.decrypt_from_storage(
-                    note.content, note.encryption_nonce, note.encryption_tag
+                    content,
+                    nonce,
+                    tag,
                 )
-                cache_note(note.id, decrypted_content)
+                cache_note(note_id, decrypted_content)
                 refreshed_count += 1
             except Exception as e:
                 # FAIL FAST AND LOUD - NO SILENT FAILURES
-                logger.error(f"🚨 FATAL: Failed to refresh encrypted note {note.id}: {e}")
+                logger.error(f"🚨 FATAL: Failed to refresh encrypted note {note_id}: {e}")
                 logger.error(f"🚨 Cache refresh system integrity compromised!")
                 logger.error(f"🚨 CRASHING IMMEDIATELY")
-                raise RuntimeError(f"Cache refresh failed: Could not process note {note.id}: {e}") from e
+                raise RuntimeError(f"Cache refresh failed: Could not process note {note_id}: {e}") from e
         
         logger.info(f"Refreshed {refreshed_count} encrypted notes in cache")
         

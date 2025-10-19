@@ -1,13 +1,20 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from types import SimpleNamespace
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime, timezone
-from .database import DBNote
+
 from ..utils.encryption import encrypt
 from ..services.content_cache import get_cached_content, cache_note
 from ..services.note_store import store as note_store
 from ..render.note_renderer import render_read_only_mode
+from app.db.notes_sql import (
+    fetch_children_ordered,
+    fetch_note,
+    insert_note,
+    update_links,
+)
+from app.models.database import SafeSession
 
 
 def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:
@@ -22,14 +29,16 @@ def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:
         Dictionary representation of the note tree (no database writes)
     """
     # Get the original note
-    source_note = db.get(DBNote, note_id)
-    if not source_note:
+    with SafeSession.allow_reads("copy_note_in_memory:source"):
+        source_row = fetch_note(db.connection(), note_id)
+    if not source_row:
         raise ValueError(f"Source note with ID {note_id} not found")
+    source_note = SimpleNamespace(**source_row)
     
     return _serialize_note_recursive(db, source_note)
 
 
-def _serialize_note_recursive(db: Session, source_note: DBNote) -> Dict[str, Any]:
+def _serialize_note_recursive(db: Session, source_note: Any) -> Dict[str, Any]:
     """
     Recursively serializes a note and all its descendants to pure data.
     
@@ -92,29 +101,44 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
     Returns:
         ID of the new note
     """
-    # Generate a new ID for the note
+    # Generate a new ID for the note and encrypt its content
     new_id = str(uuid.uuid4())
-    
-    # Encrypt content before saving - get all three components
     ciphertext, nonce, tag = encrypt(note_data["content"])
-    
-    # Create the new note directly
-    new_note = DBNote(
-        id=new_id,
-        content=ciphertext,  # Store only the ciphertext
-        encryption_nonce=nonce,  # Store nonce separately  
-        encryption_tag=tag,  # Store tag separately
+    timestamp = datetime.now(timezone.utc)
+    is_collapsed = bool(note_data.get("is_collapsed", False))
+
+    insert_note(
+        db.connection(),
+        note_id=new_id,
+        content=ciphertext,
+        encryption_nonce=nonce,
+        encryption_tag=tag,
         parent_id=new_parent_id,
-        prev_id=None,  # Will be set later if needed
-        next_id=None,  # Will be set later if needed
+        prev_id=None,
+        next_id=None,
+        is_collapsed=is_collapsed,
+        created_at=timestamp,
+        updated_at=timestamp,
     )
-    db.add(new_note)
-    db.flush()
 
     cache_note(new_id, note_data["content"])
 
     if note_store.loaded:
-        note_store.add_note_from_db(new_note, note_data["content"])
+        note_store.add_note_from_db(
+            SimpleNamespace(
+                id=new_id,
+                content=ciphertext,
+                encryption_nonce=nonce,
+                encryption_tag=tag,
+                parent_id=new_parent_id,
+                prev_id=None,
+                next_id=None,
+                is_collapsed=is_collapsed,
+                created_at=timestamp,
+                updated_at=timestamp,
+            ),
+            note_data["content"],
+        )
     
     # Deserialize children if any
     children_data = note_data.get("children", [])
@@ -127,14 +151,41 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
             
             # Update prev_id and next_id to maintain sibling order
             if previous_child_id:
-                new_child = db.get(DBNote, new_child_id)
-                previous_child = db.get(DBNote, previous_child_id)
-
-                new_child.prev_id = previous_child_id
-                previous_child.next_id = new_child_id
+                update_links(
+                    db.connection(),
+                    new_child_id,
+                    prev_id=previous_child_id,
+                )
+                update_links(
+                    db.connection(),
+                    previous_child_id,
+                    next_id=new_child_id,
+                )
                 if note_store.loaded:
-                    note_store.update_metadata_from_db(new_child)
-                    note_store.update_metadata_from_db(previous_child)
+                    new_child_record = note_store.get_note(new_child_id)
+                    prev_record = note_store.get_note(previous_child_id)
+                    note_store.update_metadata_from_db(
+                        SimpleNamespace(
+                            id=new_child_record.id,
+                            parent_id=new_child_record.parent_id,
+                            prev_id=previous_child_id,
+                            next_id=new_child_record.next_id,
+                            created_at=new_child_record.created_at,
+                            updated_at=new_child_record.updated_at,
+                            is_collapsed=new_child_record.is_collapsed,
+                        )
+                    )
+                    note_store.update_metadata_from_db(
+                        SimpleNamespace(
+                            id=prev_record.id,
+                            parent_id=prev_record.parent_id,
+                            prev_id=prev_record.prev_id,
+                            next_id=new_child_id,
+                            created_at=prev_record.created_at,
+                            updated_at=prev_record.updated_at,
+                            is_collapsed=prev_record.is_collapsed,
+                        )
+                    )
             
             previous_child_id = new_child_id
     
@@ -142,29 +193,15 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
 
 
 def copy_note(db: Session, note_id: str, new_parent_id: Optional[str] = None) -> str:
-    """
-    Creates a deep copy of a note and all its descendants.
-    
-    Args:
-        db: Database session
-        note_id: ID of the note to copy
-        new_parent_id: Optional parent ID for the copied note
-        
-    Returns:
-        ID of the new copied root note
-    """
-    # Get the original note
-    source_note = db.get(DBNote, note_id)
-    if not source_note:
+    """Create a deep copy of ``note_id`` and its descendants."""
+
+    with SafeSession.allow_reads("copy_note:source"):
+        source_row = fetch_note(db.connection(), note_id)
+
+    if not source_row:
         raise ValueError(f"Source note with ID {note_id} not found")
-    
-    # Create a mapping of original IDs to new IDs
-    id_mapping = {}
-    
-    # Recursively copy the note and all its descendants
-    new_root_id = _copy_note_recursive(db, source_note, id_mapping, new_parent_id)
-    
-    return new_root_id
+
+    return _copy_note_recursive(db, source_row, new_parent_id)
 
 
 def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
@@ -177,69 +214,104 @@ def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
 
 
 def _copy_note_recursive(
-    db: Session, 
-    source_note: DBNote, 
-    id_mapping: Dict[str, str], 
-    new_parent_id: Optional[str] = None
+    db: Session,
+    source_row: Dict[str, Any],
+    new_parent_id: Optional[str] = None,
 ) -> str:
-    """
-    Recursively copies a note and all its descendants.
-    
-    Args:
-        db: Database session
-        source_note: The source note to copy
-        id_mapping: Mapping from original note IDs to new note IDs
-        new_parent_id: Optional parent ID for the new note
-        
-    Returns:
-        ID of the new note
-    """
-    # Generate a new ID for the note
+    """Recursively duplicate ``source_row`` into a new subtree."""
+
     new_id = str(uuid.uuid4())
-    
-    # Add to mapping
-    id_mapping[source_note.id] = new_id
-    
-    # Create a new note with the same content
-    new_note = DBNote(
-        id=new_id,
-        content=source_note.content,  # Content is already encrypted in source_note
+    timestamp = datetime.now(timezone.utc)
+    is_collapsed = bool(source_row.get("is_collapsed", False))
+
+    insert_note(
+        db.connection(),
+        note_id=new_id,
+        content=source_row["content"],
+        encryption_nonce=source_row.get("encryption_nonce"),
+        encryption_tag=source_row.get("encryption_tag"),
         parent_id=new_parent_id,
-        prev_id=None,  # Will be set later if needed
-        next_id=None,  # Will be set later if needed
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc)
+        prev_id=None,
+        next_id=None,
+        is_collapsed=is_collapsed,
+        created_at=timestamp,
+        updated_at=timestamp,
     )
-    
-    # Add to database
-    db.add(new_note)
-    db.flush()  # Ensure the note is persisted
-    
-    # Get all children of the source note
-    children = db.query(DBNote).filter(DBNote.parent_id == source_note.id).all()
-    
-    # Copy children if any
-    if children:
-        # First get the ordered child list to preserve order
-        from .linked_list import LinkedListManager
-        ordered_children = LinkedListManager.get_ordered_child_list(db, source_note.id)
-        
-        # Copy each child recursively
-        previous_copied_id = None
-        for child in ordered_children:
-            # Copy the child with the new parent ID
-            new_child_id = _copy_note_recursive(db, child, id_mapping, new_id)
-            
-            # Update prev_id and next_id to maintain sibling order
-            if previous_copied_id:
-                new_child = db.get(DBNote, new_child_id)
-                previous_child = db.get(DBNote, previous_copied_id)
-                
-                new_child.prev_id = previous_copied_id
-                previous_child.next_id = new_child_id
-            
-            previous_copied_id = new_child_id
-    
+
+    plaintext = get_cached_content(source_row["id"])
+    if plaintext is None:
+        if source_row.get("encryption_nonce") is not None:
+            raise RuntimeError(
+                f"Cache missing plaintext for encrypted note {source_row['id']} during copy operation"
+            )
+        plaintext = source_row.get("content", "")
+
+    cache_note(new_id, plaintext)
+
+    if note_store.loaded:
+        note_store.add_note_from_db(
+            SimpleNamespace(
+                id=new_id,
+                content=source_row["content"],
+                encryption_nonce=source_row.get("encryption_nonce"),
+                encryption_tag=source_row.get("encryption_tag"),
+                parent_id=new_parent_id,
+                prev_id=None,
+                next_id=None,
+                is_collapsed=is_collapsed,
+                created_at=timestamp,
+                updated_at=timestamp,
+            ),
+            plaintext,
+        )
+
+    with SafeSession.allow_reads("copy_note:children"):
+        children = fetch_children_ordered(db.connection(), source_row["id"])
+
+    previous_child_id: Optional[str] = None
+    for child_row in children:
+        new_child_id = _copy_note_recursive(db, child_row, new_id)
+
+        if previous_child_id:
+            update_links(
+                db.connection(),
+                new_child_id,
+                prev_id=previous_child_id,
+            )
+            update_links(
+                db.connection(),
+                previous_child_id,
+                next_id=new_child_id,
+            )
+
+            if note_store.loaded:
+                new_child_record = note_store.get_note(new_child_id)
+                prev_record = note_store.get_note(previous_child_id)
+                note_store.update_metadata_from_db(
+                    SimpleNamespace(
+                        id=new_child_record.id,
+                        parent_id=new_child_record.parent_id,
+                        prev_id=previous_child_id,
+                        next_id=new_child_record.next_id,
+                        created_at=new_child_record.created_at,
+                        updated_at=new_child_record.updated_at,
+                        is_collapsed=new_child_record.is_collapsed,
+                    )
+                )
+                note_store.update_metadata_from_db(
+                    SimpleNamespace(
+                        id=prev_record.id,
+                        parent_id=prev_record.parent_id,
+                        prev_id=prev_record.prev_id,
+                        next_id=new_child_id,
+                        created_at=prev_record.created_at,
+                        updated_at=prev_record.updated_at,
+                        is_collapsed=prev_record.is_collapsed,
+                    )
+                )
+
+        previous_child_id = new_child_id
+
     return new_id
 
 

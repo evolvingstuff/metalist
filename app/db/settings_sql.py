@@ -36,7 +36,7 @@ def insert_default_settings(connection: GuardedConnection | Connection) -> None:
 def update_password_settings(
     connection: GuardedConnection | Connection,
     *,
-    password_hash: bytes,
+    password_hash: str,
     password_salt: bytes,
     password_iterations: int,
     encrypted_dek: bytes,
@@ -57,6 +57,26 @@ def update_password_settings(
             dek_tag=dek_tag,
             encryption_enabled=True,
             encryption_algorithm=encryption_algorithm,
+            updated_at=now,
+        )
+    )
+    _conn(connection).execute(stmt)
+
+
+def clear_password_settings(connection: GuardedConnection | Connection) -> None:
+    now = datetime.now(timezone.utc)
+    stmt = (
+        update(app_settings_table)
+        .where(app_settings_table.c.id == 1)
+        .values(
+            password_hash=None,
+            password_salt=None,
+            password_iterations=None,
+            encrypted_dek=None,
+            dek_nonce=None,
+            dek_tag=None,
+            encryption_enabled=False,
+            encryption_algorithm=None,
             updated_at=now,
         )
     )

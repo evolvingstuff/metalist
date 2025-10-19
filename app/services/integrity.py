@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Optional
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import integrity_checks_enabled
-from app.models.database import DBNote
+from app.db.schema import notes_table
+from app.models.database import SafeSession
 from app.models.linked_list import LinkedListManager
 from app.services.note_store import store as note_store
 from app.models.list_traversal import ListTraversal
@@ -18,7 +20,10 @@ def should_run_integrity_checks() -> bool:
 
 
 def snapshot_note_count(db: Session) -> int:
-    return db.query(DBNote).count()
+    with SafeSession.allow_reads("integrity:snapshot"):
+        stmt = select(func.count()).select_from(notes_table)
+        value = db.connection().execute(stmt).scalar_one()
+    return int(value)
 
 
 def assert_note_count(
@@ -41,7 +46,9 @@ def assert_note_count(
 def assert_linked_list_integrity(db: Session, operation: str) -> None:
     # Validate every parent scope (root + each note)
     parent_ids = [None]
-    parent_ids.extend(id_ for (id_,) in db.query(DBNote.id))
+    with SafeSession.allow_reads("integrity:parent_ids"):
+        rows = db.connection().execute(select(notes_table.c.id)).scalars().all()
+    parent_ids.extend(rows)
 
     for parent_id in parent_ids:
         if not ListTraversal.validate_list(db, parent_id):

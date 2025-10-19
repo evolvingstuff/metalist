@@ -1,6 +1,12 @@
 from typing import Any, List, Optional
+from types import SimpleNamespace
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .database import DBNote
+
+from app.db.notes_sql import fetch_note
+from app.db.schema import notes_table
+from app.models.database import SafeSession
 from app.services.note_store import store as note_store
 
 
@@ -34,14 +40,18 @@ class ListTraversal:
 
             return True
 
-        db.expire_all()  # TODO useful?
-        notes = db.query(DBNote).filter(DBNote.parent_id == parent_id).all()
-        
-        if not notes:
+        with SafeSession.allow_reads("list_traversal:validate"):
+            connection = db.connection()
+            if parent_id is None:
+                stmt = select(notes_table).where(notes_table.c.parent_id.is_(None))
+            else:
+                stmt = select(notes_table).where(notes_table.c.parent_id == parent_id)
+            rows = connection.execute(stmt).mappings().all()
+
+        if not rows:
             return True
 
-        for note in notes:
-            db.refresh(note)
+        notes = [SimpleNamespace(**row) for row in rows]
 
         # Single note case
         if len(notes) == 1:
@@ -94,18 +104,18 @@ class ListTraversal:
             ordered_ids = note_store.get_children(parent_id)
             return [_NoteProxy(note_store.get_note(note_id)) for note_id in ordered_ids]
 
-        query = db.query(DBNote)
-        if parent_id is None:
-            # When getting root notes, we need ALL notes that have no parent
-            query = query.filter(DBNote.parent_id.is_(None))
-        else:
-            query = query.filter(DBNote.parent_id == parent_id)
-        
-        # Get all notes for this level
-        all_notes = query.all()
+        with SafeSession.allow_reads("list_traversal:children"):
+            connection = db.connection()
+            if parent_id is None:
+                stmt = select(notes_table).where(notes_table.c.parent_id.is_(None))
+            else:
+                stmt = select(notes_table).where(notes_table.c.parent_id == parent_id)
+            rows = connection.execute(stmt).mappings().all()
+
+        all_notes = [SimpleNamespace(**row) for row in rows]
         if not all_notes:
             return []
-        
+
         # Find notes with no prev_id
         first_notes = [note for note in all_notes if note.prev_id is None]
         if len(first_notes) > 1:
@@ -144,16 +154,31 @@ class ListTraversal:
         if not new_parent_id:
             return False
 
+        if note_store.loaded:
+            current = new_parent_id
+            seen = set()
+            while current and current not in seen:
+                if current == note_id:
+                    return True
+                seen.add(current)
+                try:
+                    parent_record = note_store.get_note(current)
+                except KeyError:
+                    break
+                current = parent_record.parent_id
+            return False
+
         current = new_parent_id
         seen = set()
         while current and current not in seen:
             if current == note_id:
                 return True
             seen.add(current)
-            parent = db.get(DBNote, current)
+            with SafeSession.allow_reads("list_traversal:cycle"):
+                parent = fetch_note(db.connection(), current)
             if not parent:
                 break
-            current = parent.parent_id
+            current = parent.get("parent_id")
         return False
 
 

@@ -1,10 +1,10 @@
 from fastapi import APIRouter
-from ..models.database import SafeSession, Base
+from ..models.database import SafeSession
 from fastapi import HTTPException
 from sqlalchemy import delete, inspect
 import logging
 
-from app.db import begin_writer, get_engine, notes_table
+from app.db import begin_writer, get_engine, metadata, notes_table
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,7 +17,7 @@ async def use_dev_db():
         engine = get_engine()
         
         # Create all tables
-        Base.metadata.create_all(bind=engine)
+        metadata.create_all(bind=engine)
         
         # Clear all data from notes table
         with begin_writer() as connection:

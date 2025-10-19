@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from .api import notes, dev, auth, memory
 from .api.middleware import AuthMiddleware
 from .core.config import VERSION
-from .models.database import Base, SafeSession
+from .db.engine import enable_read_guard, get_engine
+from .db.schema import metadata
+from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.dependencies import get_db
 from .models.linked_list import LinkedListManager
 from .services.content_cache import populate_cache_from_db
@@ -35,18 +37,14 @@ async def crash_on_validation_error(request: Request, exc: RequestValidationErro
         # Normal behavior - return 422
         return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
-Base.metadata.create_all(bind=SafeSession.get_engine())
+metadata.create_all(bind=get_engine())
 
 # Initialize app settings if needed
 try:
-    from .models.database import SessionLocal, AppSettings
-    db = SessionLocal(bind=SafeSession.get_engine())
-    settings = db.query(AppSettings).filter(AppSettings.id == 1).first()
-    if not settings:
-        settings = AppSettings(id=1, encryption_enabled=False)
-        db.add(settings)
-        db.commit()
-    db.close()
+    with get_engine().begin() as connection:
+        settings = fetch_settings(connection)
+        if not settings:
+            insert_default_settings(connection)
 except Exception as e:
     # FAIL FAST AND LOUD - NO SILENT FAILURES
     logger.error(f"🚨 FATAL: Failed to initialize app settings: {e}")
@@ -56,12 +54,9 @@ except Exception as e:
 
 # Populate content cache on startup
 try:
-    from .models.database import SessionLocal
-    db = SessionLocal(bind=SafeSession.get_engine())
-    populate_cache_from_db(db)
-    note_store.load_from_db(db)
-    SafeSession.enable_read_guard()
-    db.close()
+    populate_cache_from_db()
+    note_store.load_from_db(None)
+    enable_read_guard()
 except Exception as e:
     # FAIL FAST AND LOUD - NO SILENT FAILURES
     logger.error(f"🚨 FATAL: Failed to populate content cache on startup: {e}")
