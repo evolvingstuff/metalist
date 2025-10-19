@@ -7,7 +7,7 @@ import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 
-function updatePerfOverlay(roundtripMs, renderMs) {
+function updatePerfOverlay(roundtripMs, renderMs, totalMs) {
     let overlay = document.getElementById('perf-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -27,7 +27,34 @@ function updatePerfOverlay(roundtripMs, renderMs) {
 
     const roundtrip = Number(roundtripMs.toFixed(2));
     const render = Number(renderMs.toFixed(2));
-    overlay.textContent = `notes.view RT ${roundtrip}ms | render ${render}ms`;
+    const total = Number(totalMs.toFixed(2));
+
+    const rowStyle = 'padding-top: 2px; padding-bottom: 2px;';
+    const labelStyle = 'padding: 0 14px 0 6px; white-space: nowrap;';
+    const valueStyle = 'text-align: right; min-width: 70px; padding: 0 14px;';
+    const dividerColor = 'rgba(255, 255, 255, 0.25)';
+    const labelCellBaseStyle = `${labelStyle} ${rowStyle} border-right: 1px solid ${dividerColor};`;
+    const valueCellBaseStyle = `${valueStyle} ${rowStyle};`;
+    const bottomBorderStyle = `border-bottom: 1px solid ${dividerColor};`;
+
+    overlay.innerHTML = `
+        <table style="border-collapse: collapse;">
+            <tbody>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">server trip</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${roundtrip}ms</td>
+                </tr>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">client render</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${render}ms</td>
+                </tr>
+                <tr>
+                    <td style="${labelCellBaseStyle}">total</td>
+                    <td style="${valueCellBaseStyle}">${total}ms</td>
+                </tr>
+            </tbody>
+        </table>
+    `;
 }
 
 export async function actionRefreshAndMaybeSelect(options = {}) {
@@ -129,11 +156,13 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         result = null;
     }
 
-    const renderMs = performance.now() - renderStartedAt;
+    const renderEndedAt = performance.now();
+    const renderMs = renderEndedAt - renderStartedAt;
+    const totalMs = renderEndedAt - requestStartedAt;
     console.log(' [PERF] notes.view render:', {
         ms: Number(renderMs.toFixed(2))
     });
-    updatePerfOverlay(roundtripMs, renderMs);
+    updatePerfOverlay(roundtripMs, renderMs, totalMs);
 
     return result;
 }
