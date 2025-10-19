@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import List, Optional, Tuple
 import logging
 import time
 
@@ -28,6 +28,7 @@ from ..models.utils import (
     note_data_to_plain_text,
     render_note_data_read_only,
 )
+from ..core.config import VERSION
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,6 +75,16 @@ class CopyNoteRequest(BaseModel):
 class NoteStateCommand(BaseModel):
     clientId: str
     lastUpdateUUID: Optional[str] = Field(default=None)
+
+
+class ViewDiffRequest(BaseModel):
+    client_id: Optional[str] = Field(default=None, alias="clientId")
+    editing_note_id: Optional[str] = Field(default=None, alias="editingNoteId")
+    search: Optional[str] = None
+    client_note_uuid_hashes: List[Tuple[str, str]] = Field(default_factory=list, alias="clientNoteUuidHashes")
+
+    class Config:
+        populate_by_name = True
 
 
 @router.post("/check-updates")
@@ -544,24 +555,61 @@ def create_new_child(
         return {"id": result["id"]}
 
 
-@router.get("/view")
-def get_notes_view(
-    editing_note_id: Optional[str] = None,
-    search: Optional[str] = None,
-    client_id: Optional[str] = None,
+@router.post("/view")
+def get_notes_view_diff(
+    request: ViewDiffRequest,
     db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
-    """Render the HTML view for the notes list"""
+    """Return structural deltas for the notes view."""
     start_time = time.perf_counter()
     apply_delay("get_notes_view")
 
-    # Check if search context has changed and clear undo stack if needed
-    transaction_manager.check_context_change(search)
+    transaction_manager.check_context_change(request.search)
+
+    client_hashes = {
+        note_id: note_hash
+        for note_id, note_hash in request.client_note_uuid_hashes
+        if note_id
+    }
 
     with get_query_service(db) as service:
-        result = service.render_notes_view(editing_note_id, search, client_id)
+        html = service.render_notes_view(
+            editing_note_id=request.editing_note_id,
+            search=request.search,
+            client_id=request.client_id,
+        )
+        structure, payloads, locks = service.build_view_snapshot(
+            editing_note_id=request.editing_note_id,
+            search=request.search,
+            client_id=request.client_id,
+        )
+
+    updated_notes = [
+        [note_id, payload]
+        for note_id, payload in payloads.items()
+        if client_hashes.get(note_id) != payload['hash']
+    ]
+
+    update_uuid = get_current_sync_uuid()
+    response = {
+        "html": html,
+        "snapshot": {
+            "structure": [
+                [note_id, parent_id, prev_id, next_id]
+                for note_id, parent_id, prev_id, next_id in structure
+            ],
+            "updatedNotes": updated_notes,
+            "locks": locks,
+            "updateUUID": update_uuid,
+            "version": VERSION,
+            "currentClientId": request.client_id,
+            "searchQuery": request.search,
+            "editingNoteId": request.editing_note_id,
+        },
+        "updateUUID": update_uuid,
+    }
 
     duration_ms = (time.perf_counter() - start_time) * 1000
     print(f"[notes.view] response_time_ms={duration_ms:.2f}")
-    return result
+    return response

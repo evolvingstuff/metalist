@@ -43,11 +43,19 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     }
 
     const requestStartedAt = performance.now();
-    const html = await NotesAPI.fetchView(noteId, ModeContext.searchQuery);
+    const viewResponse = await NotesAPI.fetchView(noteId, ModeContext.searchQuery);
+    if (!viewResponse || typeof viewResponse.html !== 'string' || !viewResponse.snapshot) {
+        throw new Error('notes.view response missing html or snapshot payload');
+    }
+    const { html, snapshot } = viewResponse;
     const roundtripMs = performance.now() - requestStartedAt;
     console.log(' [PERF] notes.view roundtrip:', {
         ms: Number(roundtripMs.toFixed(2))
     });
+
+    if (snapshot) {
+        console.log(' [SNAPSHOT] notes.view payload:', snapshot);
+    }
 
     const notesContainer = document.getElementById('notes-container');
     if (!notesContainer) {

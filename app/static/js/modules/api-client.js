@@ -252,28 +252,18 @@ export const NotesAPI = {
     },
 
     async fetchView(noteId = null, searchQuery = null) {
-        let url = CONFIG.API.NOTES.VIEW;
-        const params = [];
-        
-        if (noteId) {
-            params.push(`editing_note_id=${encodeURIComponent(noteId)}`);
-        }
-        if (searchQuery) {
-            params.push(`search=${encodeURIComponent(searchQuery)}`);
-        }
-        // Always include client ID so server knows which locks to hide
-        params.push(`client_id=${encodeURIComponent(ModeContext.clientId)}`);
-        
-        if (params.length > 0) {
-            url += '?' + params.join('&');
-        }
-        
-        return this._apiCall(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'text/html'
-            }
+        const payload = {
+            editingNoteId: noteId || null,
+            search: searchQuery || null,
+            clientNoteUuidHashes: []
+        };
+
+        const response = await this._apiCall(CONFIG.API.NOTES.VIEW, {
+            method: 'POST',
+            body: JSON.stringify(payload)
         });
+
+        return response;
     },
 
     async moveNoteUp(noteId) {

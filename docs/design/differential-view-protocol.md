@@ -26,6 +26,7 @@
 ## Response Shape
 ```json
 {
+  "html": "<div>existing SSR output…</div>",
   "structure": [
     ["note-uuid-1", null, null, "note-uuid-2"],
     ["note-uuid-2", null, "note-uuid-1", null]
@@ -56,6 +57,7 @@
 ```
 
 ### Notes
+- `html` is temporarily included for compatibility with the legacy DOM refresh path while the client migrates to the pure diff workflow.
 - `structure` is preorder, each entry is `[id, parentId|null, prevId|null, nextId|null]`. Include every visible node so the client can reorder DOM as needed.
 - `updatedNotes` lists only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each entry is `[id, payload]` where `payload` includes the rendered expanded HTML, flags, and the server’s latest expanded hash. The hash incorporates both the expanded HTML and the note’s flag state (e.g., `isCollapsed`, `isEditing`, `memoryMode`).
 - Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
