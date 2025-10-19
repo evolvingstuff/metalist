@@ -3,7 +3,6 @@ import pytest
 from app.core import config
 from app.services.transaction_manager import get_transaction_manager
 from app.services.note_service import NoteService
-from app.services.integrity import should_run_integrity_checks
 from app.models.database import DBNote
 from tests.unit.common import db  # noqa: F401
 
@@ -24,7 +23,7 @@ def transaction_manager():
 
 
 def test_create_note_respects_integrity_guards(db, transaction_manager, enable_integrity_checks):
-    assert should_run_integrity_checks()
+    assert config.DEV_ENFORCE_INTEGRITY_CHECKS
     with NoteService(db, transaction_manager, "client-123") as service:
         result = service.create_note()
         assert result["status"] == "created"

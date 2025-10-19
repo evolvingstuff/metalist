@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.core.config import integrity_checks_enabled
 from app.db.schema import NOTES_TABLE
 from app.models.database import SafeSession
 from app.models.linked_list import LinkedListManager
 from app.services.note_store import store as note_store
 from app.models.list_traversal import ListTraversal
-
-
-def should_run_integrity_checks() -> bool:
-    return integrity_checks_enabled()
 
 
 def snapshot_note_count(db: SafeSession) -> int:

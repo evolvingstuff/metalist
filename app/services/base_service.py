@@ -2,8 +2,8 @@ from abc import ABC
 from typing import Optional
 import logging
 
+from app.core import config
 from app.services.integrity import (
-    should_run_integrity_checks,
     snapshot_note_count,
     assert_note_count,
     assert_linked_list_integrity,
@@ -28,7 +28,8 @@ class BaseTransactionService(ABC):
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
         self.transaction = self.transaction_manager.start_transaction(self.db, self.client_id)
-        if should_run_integrity_checks():
+        if config.DEV_ENFORCE_INTEGRITY_CHECKS:
+            print('DEBUG: enforcing integrity checks')
             self._note_count_snapshot = snapshot_note_count(self.db)
         return self
     
@@ -54,7 +55,8 @@ class BaseTransactionService(ABC):
         # Commit database changes
         self.db.commit()
 
-        if should_run_integrity_checks():
+        if config.DEV_ENFORCE_INTEGRITY_CHECKS:
+            print('DEBUG: enforcing integrity checks')
             op_name = self._operation_name or "unspecified_operation"
             assert_note_count(
                 self.db,
