@@ -33,6 +33,10 @@ from app.models.linked_list import LinkedListManager
 from app.services.content_cache import clear_cache
 from app.services.note_store import store as note_store
 
+
+default_root_count = 200
+default_child_probability = 0.3
+
 # Static lorem ipsum blocks to keep seeded notes varied
 _LOREM_PARAGRAPHS: Sequence[str] = (
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
@@ -70,8 +74,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--root-count",
         type=int,
-        default=25,
-        help="Number of root-level notes to create (default: 25)",
+        default=default_root_count,
+        help=f"Number of root-level notes to create (default: {default_root_count})",
     )
     parser.add_argument(
         "--max-depth",
@@ -88,8 +92,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--child-probability",
         type=float,
-        default=0.65,
-        help="Likelihood (0-1) that a note will spawn children when depth allows (default: 0.65)",
+        default=default_child_probability,
+        help="fLikelihood (0-1) that a note will spawn children when depth allows (default: {default_child_probability})",
     )
     parser.add_argument(
         "--image-probability",
