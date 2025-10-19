@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence
 
+from tqdm import tqdm
+
 from app.core.config import DATABASE_URL
 from app.db.notes_sql import update_links
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
@@ -34,7 +36,7 @@ from app.services.content_cache import clear_cache
 from app.services.note_store import store as note_store
 
 
-default_root_count = 200
+default_root_count = 1000
 default_child_probability = 0.3
 
 # Static lorem ipsum blocks to keep seeded notes varied
@@ -309,7 +311,13 @@ def seed_notes(args: argparse.Namespace) -> SeedStats:
     order_map: Dict[str, List[str]] = {}
 
     try:
-        for _ in range(args.root_count):
+        progress = tqdm(
+            range(args.root_count),
+            total=args.root_count,
+            desc="Seeding root notes",
+            unit="root",
+        )
+        for _ in progress:
             create_note(
                 db_session=db,
                 rng=rng,
