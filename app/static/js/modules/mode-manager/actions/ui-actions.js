@@ -9,7 +9,7 @@ import { applyDifferentialView } from '../services/differential-view-service.js'
 
 function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
                            rootNotesKnown, rootNotesSeen, updatedNotes,
-                           context) {
+                           context, vdom_ops) {
     let overlay = document.getElementById('perf-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -73,6 +73,10 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
                 <tr>
                     <td style="${labelCellBaseStyle} ${bottomBorderStyle}">client render</td>
                     <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${render}ms</td>
+                </tr>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">vdom ops</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${vdom_ops}</td>
                 </tr>
                 <tr>
                     <td style="${labelCellBaseStyle}">total</td>
@@ -196,13 +200,14 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         const renderMs = renderEndedAt - renderStartedAt;
         const totalMs = renderEndedAt - options.startedAt;
         const context = options.context ? options.context : '???';
-        console.log('BUGZ GETTING ' + context + ' options.startedAt:' + options.startedAt);
+
+        const vdom_ops = 666; //TODO asdf asdf asdf
 
         console.log(' [PERF] notes.view render:', {
             ms: Number(renderMs.toFixed(2))
         });
         updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
-            rootNotesKnown, rootNotesSeen, updatedNotesCount, context);
+            rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
     }
 
     return result;

@@ -127,7 +127,7 @@ async function maybeFetchMore(previousKnownCount) {
     }
 }
 
-//TODO: asdf asdf do we need this?
+//TODO: this is hacky but apparently we need it
 export function refreshOverlayMetrics() {
     const overlay = document.getElementById('perf-overlay');
     if (!overlay) {

@@ -7,7 +7,6 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
 export async function deleteNote(noteId) {
     let startedAt = performance.now();
-    console.log('BUGZ deleteNote setting startedAt: ' + startedAt)
 
     Logger.logAction('deleteNote', {
         noteId,
@@ -49,7 +48,6 @@ export async function deleteNote(noteId) {
 
 export async function deleteNoteOutsideEdit(noteId) {
     let startedAt = performance.now();
-    console.log('BUGZ deleteNoteOutsideEdit setting startedAt: ' + startedAt)
 
     Logger.logAction('deleteNoteOutsideEdit', {
         noteId,
@@ -142,7 +140,6 @@ export async function createNote() {
 
 export async function createChildNote() {
     let startedAt = performance.now();
-    console.log('BUGZ createChildNote setting startedAt: ' + startedAt)
 
     Logger.logAction('createChildNote', {
         currentNoteId: ModeContext.currentNoteId,
@@ -183,7 +180,6 @@ export async function createChildNote() {
 
 export async function moveNoteUp(noteId) {
     let startedAt = performance.now();
-    console.log('BUGZ moveNoteUp setting startedAt: ' + startedAt)
 
     Logger.logAction('moveNoteUp', {
         noteId,
@@ -221,7 +217,6 @@ export async function moveNoteUp(noteId) {
 
 export async function moveNoteDown(noteId) {
     let startedAt = performance.now();
-    console.log('BUGZ moveNoteDown setting startedAt: ' + startedAt)
 
     Logger.logAction('moveNoteDown', {
         noteId,
@@ -259,7 +254,6 @@ export async function moveNoteDown(noteId) {
 
 async function setNoteCollapse(noteId, collapsed) {
     let startedAt = performance.now();
-    console.log('BUGZ setNoteCollapse setting startedAt: ' + startedAt)
 
     Logger.logAction('setNoteCollapse', {
         noteId,
@@ -302,7 +296,6 @@ export async function expandNote(noteId) {
 
 export async function actionCopyNote() {
     ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ actionCopyNote setting startedAt: ' + startedAt)
 
     const currentNoteId = ModeContext.currentNoteId;
     
@@ -330,7 +323,6 @@ export async function actionCopyNote() {
 
 export async function actionPasteNoteSibling() {
     let startedAt = performance.now();
-    console.log('BUGZ actionPasteNoteSibling setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
 
     const currentNoteId = ModeContext.currentNoteId;
     
@@ -361,7 +353,6 @@ export async function actionPasteNoteSibling() {
 
 export async function actionPasteNoteChild() {
     let startedAt = performance.now();
-    console.log('BUGZ actionPasteNoteSibling setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionPasteNoteChild', { 

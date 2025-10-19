@@ -64,8 +64,6 @@ class ModeContext {
 
         // asdf hack
         this._requestStartedAt = null;
-
-        console.log('BUGZ initialized constructor for context')
     }
 
     hasNoteHash(noteId) {
@@ -267,21 +265,6 @@ class ModeContext {
             }
             const durationMs = performance.now() - this._loadingStartedAt;
             this._loadingStartedAt = null;
-
-            const overlay = document.getElementById('perf-overlay');
-            if (overlay) {
-                const rows = overlay.querySelectorAll('tbody tr');
-                for (const row of rows) {
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length !== 2) {
-                        continue;
-                    }
-                    if (cells[0].textContent.trim().toLowerCase() === 'total') {
-                        cells[1].textContent = `${durationMs.toFixed(1)}ms`;
-                        break;
-                    }
-                }
-            }
         }
 
         if (CONFIG.LOADING.ARTIFICIAL_DELAY > 0) {
