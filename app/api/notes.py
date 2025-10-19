@@ -84,8 +84,10 @@ def check_updates(request: SyncCheckRequest):
         set_server_sync_uuid(new_uuid)
     
     current_uuid = get_current_sync_uuid()
-    needs_update = request.lastUpdateUUID != current_uuid
-    
+    previous_uuid = request.lastUpdateUUID
+
+    needs_update = bool(previous_uuid) and previous_uuid != current_uuid
+
     return {
         "needsUpdate": needs_update,
         "currentUpdateUUID": current_uuid

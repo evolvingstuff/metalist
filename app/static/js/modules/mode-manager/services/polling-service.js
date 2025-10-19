@@ -80,21 +80,22 @@ async function checkConnectivityAndUpdates() {
             })
         });
         
-        if (response.ok) {
+       if (response.ok) {
             // Connection is working - handle restoration if needed
             ErrorHandler.handleConnectionRestored();
             
             const data = await response.json();
+
+            if (data && data.currentUpdateUUID) {
+                ModeContext.setLastUpdateUUID(data.currentUpdateUUID);
+            }
             
             if (data.needsUpdate) {
                 Logger.logDebug('Update detected, refreshing view', {
                     currentUUID: data.currentUpdateUUID,
                     lastKnown: ModeContext.lastUpdateUUID
                 });
-                
-                // Update our UUID before refresh
-                ModeContext.setLastUpdateUUID(data.currentUpdateUUID);
-                
+
                 // Trigger refresh
                 const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
                 await actionRefreshAndMaybeSelect();
