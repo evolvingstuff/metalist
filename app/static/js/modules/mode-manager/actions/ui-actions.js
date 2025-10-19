@@ -7,7 +7,7 @@ import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 
-function updatePerfOverlay(roundtripMs, renderMs, totalMs) {
+function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, updatedNotes) {
     let overlay = document.getElementById('perf-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -28,6 +28,8 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs) {
     const roundtrip = Number(roundtripMs.toFixed(2));
     const render = Number(renderMs.toFixed(2));
     const total = Number(totalMs.toFixed(2));
+    const notesCount = Number.isInteger(totalNotes) && totalNotes >= 0 ? totalNotes : 0;
+    const updatedCount = Number.isInteger(updatedNotes) && updatedNotes >= 0 ? updatedNotes : 0;
 
     const rowStyle = 'padding-top: 2px; padding-bottom: 2px;';
     const labelStyle = 'padding: 0 14px 0 6px; white-space: nowrap;';
@@ -40,6 +42,14 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs) {
     overlay.innerHTML = `
         <table style="border-collapse: collapse;">
             <tbody>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">notes</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${notesCount}</td>
+                </tr>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">updated</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${updatedCount}</td>
+                </tr>
                 <tr>
                     <td style="${labelCellBaseStyle} ${bottomBorderStyle}">server trip</td>
                     <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${roundtrip}ms</td>
@@ -77,6 +87,13 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     }
     const { snapshot } = viewResponse;
     ModeContext.syncNoteHashesFromSnapshot(snapshot);
+    if (!Array.isArray(snapshot.structure)) {
+        throw new Error('notes.view snapshot missing structure array');
+    }
+    const totalNotesCount = snapshot.structure.length;
+    const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'
+        ? Object.keys(snapshot.notes).length
+        : 0;
     const roundtripMs = performance.now() - requestStartedAt;
     console.log(' [PERF] notes.view roundtrip:', {
         ms: Number(roundtripMs.toFixed(2))
@@ -162,7 +179,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     console.log(' [PERF] notes.view render:', {
         ms: Number(renderMs.toFixed(2))
     });
-    updatePerfOverlay(roundtripMs, renderMs, totalMs);
+    updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount, updatedNotesCount);
 
     return result;
 }
