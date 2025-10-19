@@ -55,6 +55,11 @@ class ModeContext {
 
         // Diff protocol cache
         this._noteHashes = new Map();
+
+        // Infinite scroll tracking
+        this._knownRootIds = new Set();
+        this._seenRootIds = new Set();
+        this._lowestVisibleRootId = null;
     }
 
     hasNoteHash(noteId) {
@@ -129,6 +134,8 @@ class ModeContext {
                 this._noteHashes.delete(noteId);
             }
         }
+
+        this._updateRootTracking(snapshot.structure);
 
         return this;
     }
@@ -344,16 +351,6 @@ class ModeContext {
         return this._savedCursorOffset;
     }
 
-    setSearchQuery(query) {
-        this._searchQuery = query;
-        this._notifyListeners('searchQuery', query);
-        return this;
-    }
-
-    get searchQuery() {
-        return this._searchQuery;
-    }
-
     setCurrentContent(content) {
                 
         if (this._currentContent === content) {
@@ -524,6 +521,7 @@ class ModeContext {
         this._searchQuery = query || '';
         
         if (oldQuery !== this._searchQuery) {
+            this.resetRootTracking();
             // Update current tab's search query and save tab state
             if (this._tabs[this._activeTabId]) {
                 this._tabs[this._activeTabId].searchQuery = this._searchQuery;
@@ -554,6 +552,90 @@ class ModeContext {
             this._searchQuery = savedQuery;
         }
         return this._searchQuery;
+    }
+
+    // Infinite scroll helpers ------------------------------------------------
+
+    _updateRootTracking(structure) {
+        const nextKnown = new Set();
+        if (Array.isArray(structure)) {
+            for (const entry of structure) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const { id, parentId } = entry;
+                if (typeof id !== 'string' || !id) {
+                    continue;
+                }
+                if (parentId === null || parentId === undefined || parentId === '') {
+                    nextKnown.add(id);
+                }
+            }
+        }
+
+        this._knownRootIds = nextKnown;
+
+        const intersectedSeen = new Set();
+        for (const rootId of this._seenRootIds) {
+            if (nextKnown.has(rootId)) {
+                intersectedSeen.add(rootId);
+            }
+        }
+        this._seenRootIds = intersectedSeen;
+
+        queueMicrotask(async () => {
+            const module = await import('./services/infinite-scroll-service.js');
+            module.refreshOverlayMetrics();
+        });
+    }
+
+    resetRootTracking() {
+        this._knownRootIds.clear();
+        this._seenRootIds.clear();
+        queueMicrotask(async () => {
+            const module = await import('./services/infinite-scroll-service.js');
+            module.resetInfiniteScrollState();
+        });
+        return this;
+    }
+
+    markRootsAsSeen(rootIds) {
+        if (!Array.isArray(rootIds)) {
+            return false;
+        }
+        let changed = false;
+        for (const id of rootIds) {
+            if (typeof id !== 'string' || !this._knownRootIds.has(id)) {
+                continue;
+            }
+            const before = this._seenRootIds.size;
+            this._seenRootIds.add(id);
+            if (this._seenRootIds.size !== before) {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    clearSeenRoots() {
+        this._seenRootIds.clear();
+        return this;
+    }
+
+    getUnseenRootCount() {
+        return Math.max(0, this._knownRootIds.size - this._seenRootIds.size);
+    }
+
+    get seenRootCount() {
+        return this._seenRootIds.size;
+    }
+
+    get knownRootCount() {
+        return this._knownRootIds.size;
+    }
+
+    getSeenRootIds() {
+        return Array.from(this._seenRootIds);
     }
 
     // Tab management methods
@@ -589,6 +671,7 @@ class ModeContext {
         const newQuery = this._tabs[tabId].searchQuery;
         console.log('Setting search query from tab', tabId, 'query:', newQuery);
         this._searchQuery = newQuery;
+        this.resetRootTracking();
 
         // Save tab state to localStorage
         this._saveTabStateToStorage();

@@ -7,7 +7,7 @@ import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 
-function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, updatedNotes) {
+function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, rootNotesKnown, rootNotesSeen, updatedNotes) {
     let overlay = document.getElementById('perf-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -29,6 +29,8 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, updatedNo
     const render = Number(renderMs.toFixed(2));
     const total = Number(totalMs.toFixed(2));
     const notesCount = Number.isInteger(totalNotes) && totalNotes >= 0 ? totalNotes : 0;
+    const rootsKnown = Number.isInteger(rootNotesKnown) && rootNotesKnown >= 0 ? rootNotesKnown : 0;
+    const rootsSeen = Number.isInteger(rootNotesSeen) && rootNotesSeen >= 0 ? rootNotesSeen : 0;
     const updatedCount = Number.isInteger(updatedNotes) && updatedNotes >= 0 ? updatedNotes : 0;
 
     const rowStyle = 'padding-top: 2px; padding-bottom: 2px;';
@@ -43,12 +45,20 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, updatedNo
         <table style="border-collapse: collapse;">
             <tbody>
                 <tr>
-                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">notes</td>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">all notes known</td>
                     <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${notesCount}</td>
                 </tr>
                 <tr>
-                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">updated</td>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">all notes updated</td>
                     <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${updatedCount}</td>
+                </tr>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">root notes known</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${rootsKnown}</td>
+                </tr>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">root notes seen</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${rootsSeen}</td>
                 </tr>
                 <tr>
                     <td style="${labelCellBaseStyle} ${bottomBorderStyle}">server trip</td>
@@ -91,6 +101,8 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         throw new Error('notes.view snapshot missing structure array');
     }
     const totalNotesCount = snapshot.structure.length;
+    const rootNotesKnown = ModeContext.knownRootCount;
+    const rootNotesSeen = ModeContext.seenRootCount;
     const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'
         ? Object.keys(snapshot.notes).length
         : 0;
@@ -179,7 +191,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     console.log(' [PERF] notes.view render:', {
         ms: Number(renderMs.toFixed(2))
     });
-    updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount, updatedNotesCount);
+    updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount, rootNotesKnown, rootNotesSeen, updatedNotesCount);
 
     return result;
 }

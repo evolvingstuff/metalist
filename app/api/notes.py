@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 import logging
 import time
 
@@ -82,6 +82,7 @@ class ViewDiffRequest(BaseModel):
     editing_note_id: Optional[str] = Field(default=None, alias="editingNoteId")
     search: Optional[str] = None
     client_note_uuid_hashes: Dict[str, str] = Field(default_factory=dict, alias="clientNoteUuidHashes")
+    client_seen_root_ids: List[str] = Field(default_factory=list, alias="clientSeenRootIds")
 
     class Config:
         populate_by_name = True
@@ -573,11 +574,15 @@ def get_notes_view_diff(
         if note_id
     }
 
+    seen_roots: Set[str] = set(request.client_seen_root_ids or [])
+
     with get_query_service(db) as service:
         structure, payloads, locks = service.build_view_snapshot(
             editing_note_id=request.editing_note_id,
             search=request.search,
             client_id=request.client_id,
+            client_known_note_ids=set(client_hashes.keys()),
+            client_seen_root_ids=seen_roots,
         )
 
     updated_notes = {

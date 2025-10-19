@@ -11,6 +11,7 @@
   "clientId": "client-uuid",
   "editingNoteId": null,
   "search": "optional query",
+  "clientSeenRootIds": ["root-uuid-1", "root-uuid-2"],
   "clientNoteUuidHashes": {
     "note-uuid-1": "sha256hash1",
     "note-uuid-2": "sha256hash2"
@@ -19,6 +20,7 @@
 ```
 
 ### Notes
+- `clientSeenRootIds` identifies which root notes have actually been visible in the viewport; the server uses this to decide when to append additional root batches.
 - `clientNoteUuidHashes` is a map of `noteId -> expandedHashWithFlags` representing the client’s current cache. Omit entries the client does not have (they will be treated as additions).
 - `clientId`, `editingNoteId`, and `search` retain their current semantics.
 - The client issues the diff request whenever it needs to reconcile with the server: after detecting a changed `updateUUID` from `/api/notes/check-updates`, or immediately after local mutations (save, move, collapse toggles, exiting edit mode) to pick up server-side side effects.
@@ -66,7 +68,7 @@
 ```
 
 ### Notes
-- `structure` is preorder; each entry includes `id`, `parentId`, `prevId`, `nextId`, and the authoritative `hash`. Include every visible node so the client can reorder DOM as needed.
+- `structure` is preorder; each entry includes `id`, `parentId`, `prevId`, `nextId`, and the authoritative `hash`. Include every visible node so the client can reorder DOM as needed. When infinite scrolling is enabled, the server appends new root nodes as the window expands but keeps previously delivered roots present so clients never drop hashes.
 - `notes` maps only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each value contains the rendered expanded HTML, normalized flags, and the latest hash. The hash incorporates expanded HTML, normalized flags (e.g., `isCollapsed`, `isEditing`, `memoryMode`, `memorySelected`), and the parent/prev/next pointers so structural changes trigger updates.
 - Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
 - Locks, version, search info, and `updateUUID` mirror the existing HTML response so downstream code keeps working.
