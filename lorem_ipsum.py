@@ -24,11 +24,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence
 
-from sqlalchemy.engine import make_url
-
-from app.models.database import Base, SafeSession, SessionLocal, AppSettings
+from app.core.config import DATABASE_URL
+from app.db.notes_sql import update_links
+from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
+from app.db.settings_sql import fetch_settings, insert_default_settings
+from app.models.database import SafeSession
 from app.models.linked_list import LinkedListManager
 from app.services.content_cache import clear_cache
+from app.services.note_store import store as note_store
 
 # Static lorem ipsum blocks to keep seeded notes varied
 _LOREM_PARAGRAPHS: Sequence[str] = (
@@ -115,30 +118,36 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def ensure_sqlite_file(engine_url: str) -> None:
-    url = make_url(engine_url)
-    if url.get_backend_name() != "sqlite":
-        raise RuntimeError(f"This seeder only supports SQLite, got: {engine_url}")
-    database_path = url.database
-    if not database_path:
-        raise RuntimeError("SQLite URL did not include a database path")
-    db_file = Path(database_path)
-    db_file.parent.mkdir(parents=True, exist_ok=True)
+def ensure_sqlite_file() -> Path:
+    if not DATABASE_URL.startswith("sqlite///") and not DATABASE_URL.startswith("sqlite:///"):
+        raise RuntimeError(f"This seeder only supports SQLite, got: {DATABASE_URL}")
+
+    relative = DATABASE_URL.replace("sqlite:///", "", 1)
+    db_path = Path(relative)
+    if not db_path.is_absolute():
+        db_path = Path.cwd() / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return db_path
 
 
 def reset_schema() -> None:
-    engine = SafeSession.get_engine()
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-
-def ensure_default_settings(session_factory: SessionLocal) -> None:
-    db = session_factory(bind=SafeSession.get_engine())
+    session = SafeSession()
     try:
-        settings = db.get(AppSettings, 1)
-        if settings is None:
-            settings = AppSettings(id=1, encryption_enabled=False)
-            db.add(settings)
+        conn = session.connection()
+        conn.execute(f"DROP TABLE IF EXISTS {NOTES_TABLE}")
+        conn.execute(f"DROP TABLE IF EXISTS {APP_SETTINGS_TABLE}")
+        initialize_schema(conn)
+        session.commit()
+    finally:
+        session.close()
+
+
+def ensure_default_settings() -> None:
+    db = SafeSession()
+    try:
+        settings = fetch_settings(db.connection())
+        if not settings:
+            insert_default_settings(db.connection())
             db.commit()
     finally:
         db.close()
@@ -218,12 +227,17 @@ def register_note_order(
     return bucket
 
 
-def apply_order(db_session, parent_id: str | None, ordered_ids: List[str]) -> None:
+def apply_order(db_session: SafeSession, parent_id: str | None, ordered_ids: List[str]) -> None:
     for idx, current_id in enumerate(ordered_ids):
-        note = LinkedListManager.get_note(db_session, current_id)
-        note.parent_id = parent_id
-        note.prev_id = ordered_ids[idx - 1] if idx > 0 else None
-        note.next_id = ordered_ids[idx + 1] if idx < len(ordered_ids) - 1 else None
+        prev_id = ordered_ids[idx - 1] if idx > 0 else None
+        next_id = ordered_ids[idx + 1] if idx < len(ordered_ids) - 1 else None
+        update_links(
+            db_session.connection(),
+            current_id,
+            parent_id=parent_id,
+            prev_id=prev_id,
+            next_id=next_id,
+        )
 
 
 def create_note(
@@ -249,8 +263,8 @@ def create_note(
     content, image_count = build_note_content(rng, images, image_probability, max_images)
     LinkedListManager.update_note(db_session, note_id, content)
 
-    db_note = LinkedListManager.get_note(db_session, note_id)
-    db_note.is_collapsed = rng.random() < collapse_probability
+    if rng.random() < collapse_probability:
+        update_links(db_session.connection(), note_id, is_collapsed=True)
 
     ordered_ids = register_note_order(order_map, parent_id, note_id, rng)
     apply_order(db_session, parent_id, ordered_ids)
@@ -286,8 +300,7 @@ def create_note(
 def seed_notes(args: argparse.Namespace) -> SeedStats:
     rng = random.Random(args.seed)
     images = load_sample_images()
-    session_factory = SessionLocal
-    db = session_factory(bind=SafeSession.get_engine())
+    db = SafeSession()
     stats = SeedStats()
     order_map: Dict[str, List[str]] = {}
 
@@ -316,13 +329,18 @@ def seed_notes(args: argparse.Namespace) -> SeedStats:
 
 def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
-    ensure_sqlite_file(str(SafeSession.get_engine().url))
+    db_path = ensure_sqlite_file()
+    print(f"Reinitializing database at {db_path}")
+
+    SafeSession.use_file_db()
 
     clear_cache()
     reset_schema()
-    ensure_default_settings(SessionLocal)
+    ensure_default_settings()
 
     stats = seed_notes(args)
+
+    note_store.load_from_db(None)
 
     print(
         "Seed complete:\n"
