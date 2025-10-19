@@ -59,7 +59,12 @@ class NoteQueryService(BaseQueryService):
                 }
 
                 children = note.get('children') or []
-                traverse(children, note_id)
+                should_include_children = (
+                    not normalized_flags.get('isCollapsed', False)
+                    or normalized_flags.get('isEditing', False)
+                )
+                if should_include_children:
+                    traverse(children, note_id)
 
         traverse(notes, None)
 
