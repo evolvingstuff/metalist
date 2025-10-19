@@ -14,7 +14,7 @@ function createNoteElement(noteId) {
 
     const contentElement = document.createElement('div');
     contentElement.classList.add(CONFIG.CLASSES.NOTE_CONTENT);
-    contentElement.setAttribute('contenteditable', 'true');
+    contentElement.setAttribute('contenteditable', 'false');
     noteElement.appendChild(contentElement);
 
     return noteElement;
@@ -236,8 +236,10 @@ export function applyDifferentialView(payload) {
             throw new Error(`Note ${noteId} missing content element`);
         }
 
-        const contentEditable = lockedByOther || Boolean(flags.memoryMode) ? 'false' : 'true';
+        const shouldBeEditable = Boolean(flags.isEditing) && !lockedByOther && !Boolean(flags.memoryMode);
+        const contentEditable = shouldBeEditable ? 'true' : 'false';
         contentElement.setAttribute('contenteditable', contentEditable);
+        contentElement.contentEditable = contentEditable;
 
         if (noteData && shouldUpdateContent(noteId, entry.hash, editingByCurrentClient)) {
             contentElement.innerHTML = noteData.content;

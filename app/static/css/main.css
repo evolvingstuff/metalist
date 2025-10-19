@@ -491,6 +491,14 @@ body {
     padding-right: 15px; /* Matching right padding for symmetry */
 }
 
+.note:not(.editing) .note-content {
+    cursor: default;
+}
+
+.note.editing .note-content {
+    cursor: text;
+}
+
 .note-children {
     flex-basis: 100%;
     margin-left: 2rem;
