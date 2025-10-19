@@ -574,12 +574,6 @@ def get_notes_view_diff(
     }
 
     with get_query_service(db) as service:
-        # Retain renderer call to ensure template path stays warm even as client uses JSON diff.
-        service.render_notes_view(
-            editing_note_id=request.editing_note_id,
-            search=request.search,
-            client_id=request.client_id,
-        )
         structure, payloads, locks = service.build_view_snapshot(
             editing_note_id=request.editing_note_id,
             search=request.search,

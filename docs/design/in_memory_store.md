@@ -80,7 +80,7 @@ Supporting containers:
 - Provide `@contextmanager allow_reads(reason)` to temporarily permit selects (undo/redo).
 
 ## Rendering / Sync Changes
-- `NoteQueryService.render_notes_view` uses `NoteStore` to fetch ordered roots and their variants.
+- `NoteQueryService.build_view_snapshot` uses `NoteStore` to fetch ordered roots and their variants.
 - Diff protocol can leverage `hash_tree` and per-note hashes to send only changed nodes + their triple renderings.
 - expand/collapse toggles update `NoteStore` state immediately; client receives precomputed HTML.
 

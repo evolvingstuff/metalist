@@ -2,7 +2,7 @@
 
 ## Overview
 - `/api/notes/view` accepts JSON `POST` requests in “diff mode”.
-- The server always renders the full note tree with the existing renderer, then emits only the delta relative to hashes supplied by the client.
+- The server builds a snapshot from the in-memory `NoteStore` and emits only the delta relative to hashes supplied by the client.
 - HTML fallback is removed; clients that do not send the diff payload should continue to use the legacy HTML endpoint (handled separately).
 
 ## Request Shape
