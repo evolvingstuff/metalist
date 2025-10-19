@@ -4,18 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from mako.lookup import TemplateLookup
-from sqlalchemy.orm import Session
 from .api import notes, dev, auth, memory
 from .api.middleware import AuthMiddleware
 from .core.config import VERSION
-from .db.engine import enable_read_guard, get_engine
-from .db.schema import metadata
+from .db.engine import begin_writer, enable_read_guard
+from .db.schema import initialize_schema
 from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.dependencies import get_db
-from .models.linked_list import LinkedListManager
 from .services.content_cache import populate_cache_from_db
 from .services.note_store import store as note_store
 from .core.config import CRASH_SERVER_ON_FAIL
+from .models.database import SafeSession
 import logging
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
@@ -37,11 +36,9 @@ async def crash_on_validation_error(request: Request, exc: RequestValidationErro
         # Normal behavior - return 422
         return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
-metadata.create_all(bind=get_engine())
-
-# Initialize app settings if needed
 try:
-    with get_engine().begin() as connection:
+    with begin_writer() as connection:
+        initialize_schema(connection.raw_connection)
         settings = fetch_settings(connection)
         if not settings:
             insert_default_settings(connection)
@@ -115,7 +112,7 @@ async def log_requests(request: Request, call_next):
         raise RuntimeError(f"Request processing failed: {request.method} {request.url}: {e}") from e
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, db: Session = Depends(get_db)):
+async def home(request: Request, db: SafeSession = Depends(get_db)):
     try:
         from .services.auth import AuthService
         

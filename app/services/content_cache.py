@@ -2,12 +2,11 @@
 
 Provides fast search access to decrypted note content while maintaining
 encrypted-at-rest storage. Cache is populated on startup and maintained
-automatically via SQLAlchemy events.
+manually by the sqlite helper layer and service hooks.
 """
 
 import logging
 from typing import Dict, Optional
-from sqlalchemy.orm import Session
 
 from app.db import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
@@ -71,7 +70,7 @@ def clear_cache() -> None:
     logger.info("Cache cleared")
 
 
-def populate_cache_from_db(db: Session | None = None) -> None:
+def populate_cache_from_db(db: SafeSession | None = None) -> None:
     """Populate cache with all notes from database on startup.
 
     The optional ``db`` parameter is retained for backwards compatibility but
@@ -132,7 +131,7 @@ def populate_cache_from_db(db: Session | None = None) -> None:
         raise
 
 
-def refresh_encrypted_cache(db: Session) -> None:
+def refresh_encrypted_cache(db: SafeSession) -> None:
     """Refresh cache for encrypted notes when encryption key becomes available.
     
     This should be called after user logs in and encryption key is set.

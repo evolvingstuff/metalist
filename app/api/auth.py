@@ -2,11 +2,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel
 
-from app.models.database import get_db
+from app.models.database import SafeSession
+from .dependencies import get_db
 from app.services.auth import AuthService
 from app.services.tokens import token_service
 from app.utils.encryption import set_encryption_key, clear_encryption_key
@@ -95,7 +95,7 @@ def require_auth(authorization: Optional[str] = Header(None)) -> str:
 async def login(
     request: Request,
     login_req: LoginRequest,
-    db: Session = Depends(get_db)
+    db: SafeSession = Depends(get_db)
 ):
     """Login with password and receive authentication token."""
     auth = AuthService(db)
@@ -153,7 +153,7 @@ async def logout(token: str = Depends(require_auth)):
 
 @router.get("/status")
 async def auth_status(
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     authorization: Optional[str] = Header(None)
 ):
     """Check authentication status and encryption configuration."""
@@ -175,7 +175,7 @@ async def auth_status(
 @router.post("/settings/password/create")
 async def create_password(
     password_req: PasswordCreateRequest,
-    db: Session = Depends(get_db)
+    db: SafeSession = Depends(get_db)
 ):
     """Set initial password when none exists."""
     auth = AuthService(db)
@@ -199,7 +199,7 @@ async def create_password(
 @router.put("/settings/password/change")
 async def change_password(
     password_req: PasswordChangeRequest,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     token: str = Depends(require_auth)
 ):
     """Change existing password."""
@@ -224,7 +224,7 @@ async def change_password(
 @router.delete("/settings/password/remove")
 async def remove_password(
     password_req: PasswordRemoveRequest,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     token: str = Depends(require_auth)
 ):
     """Remove password protection."""

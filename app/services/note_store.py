@@ -14,12 +14,10 @@ from threading import RLock
 from typing import Dict, List, Optional
 from types import SimpleNamespace
 
-from sqlalchemy.orm import Session
-
 from app.db import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
-from app.models.database import DBNote
+from app.models.database import SafeSession
 from app.services.content_cache import get_cached_content
 
 
@@ -60,7 +58,7 @@ class NoteStore:
     def loaded(self) -> bool:
         return self._loaded
 
-    def load_from_db(self, db: Session | None) -> None:
+    def load_from_db(self, db: SafeSession | None) -> None:
         """Populate the store by reading all notes from the database once.
 
         When ``db`` is provided, we use its connection so uncommitted writes
@@ -146,7 +144,7 @@ class NoteStore:
 
     # Mutation helpers --------------------------------------------------------
 
-    def add_note_from_db(self, note: DBNote, plaintext: str) -> None:
+    def add_note_from_db(self, note: SimpleNamespace, plaintext: str) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -164,7 +162,7 @@ class NoteStore:
             )
             self._rebuild_indexes_locked()
 
-    def update_note_from_db(self, note: DBNote, plaintext: str) -> None:
+    def update_note_from_db(self, note: SimpleNamespace, plaintext: str) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -184,7 +182,7 @@ class NoteStore:
             )
             self._rebuild_indexes_locked()
 
-    def update_metadata_from_db(self, note: DBNote) -> None:
+    def update_metadata_from_db(self, note: SimpleNamespace) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -306,13 +304,13 @@ class NoteStore:
                 raise KeyError(f"Hash for note {note_id} not computed") from exc
 
 
-def _build_render_variants(note: DBNote, plaintext: str) -> NoteRenderVariants:
+def _build_render_variants(note: SimpleNamespace, plaintext: str) -> NoteRenderVariants:
     """Produce render variants and hashes for a single note."""
 
     from app.render import note_renderer
 
     class _Temp:
-        def __init__(self, base: DBNote, content: str) -> None:
+        def __init__(self, base: SimpleNamespace, content: str) -> None:
             self.id = base.id
             self.content = content
             self.parent_id = base.parent_id

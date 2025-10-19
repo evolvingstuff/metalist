@@ -5,7 +5,7 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
 
 ## Objectives
 1. Remove ORM dependencies from request handlers, services, and undo/redo.
-2. Provide a minimal SQL helper layer (using SQLAlchemy Core or raw SQL) that the services call explicitly.
+2. Provide a minimal sqlite helper layer that the services call explicitly.
 3. Preserve existing behaviour (CRUD, move, collapse, undo/redo) while keeping the read guard active.
 4. Clean up legacy event hooks and session usage so the codebase no longer relies on ORM side effects.
 
@@ -13,7 +13,7 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
 1. **Inventory & Design**
    - Catalogue current ORM usage (Query, `.get()`, event hooks, flush semantics, session lifecycle).
      - **Current ORM surface area (2024-?? audit):**
-       - `app/models/database.py`: owns `SafeSession` subclass, `SessionLocal`, declarative models (`DBNote`, `AppSettings`), guard-aware `Session.execute`, startup helpers (`Base.metadata.create_all`).
+       - `app/models/database.py`: owns `SafeSession` subclass, legacy compatibility shims (`SessionLocal`, `DBNote`, `AppSettings`), guard-aware connection helpers, startup schema creation.
        - `app/models/api_transaction.py`: registers global SQLAlchemy event listeners to capture undo/redo + cache hooks; relies on ORM instrumentation and `DBNote` instances.
        - Linked-list stack (`app/models/note_crud.py`, `list_operations.py`, `list_traversal.py`, `linked_list.py`, `note_crud` fallbacks, `models/utils.py`, `undo_redo.py`): heavy use of `db.query`, `db.get`, `db.add/delete`, `flush`, and direct attribute mutation on ORM entities for CRUD/move/copy/undo flows.
        - Service layer (`app/services/note_service.py`, `query_service.py`, `undo_service.py`, `integrity.py`, `auth.py`, `content_cache.py`, `note_store.py`, `memory_service.py`): depends on ORM sessions for reads, writes, guard snapshots, cache hydration, password flows, and render pipelines.
@@ -23,14 +23,14 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
    - Outline undo/redo state capture using `NoteStore` snapshots instead of SQLAlchemy events.
 
 2. **Infrastructure**
-   - Introduce a thin SQL helper module using SQLAlchemy Core or raw SQL with parameter binding.
+   - Introduce a thin sqlite helper module with parameter binding.
    - Provide explicit transaction wrappers where needed (mirroring current service contexts).
    - Ensure helpers respect the read guard (read helpers call `SafeSession.allow_reads`).
    - **Proposed helper layout:**
-     - `app/db/engine.py`: owns Engines (file + memory), exposes `get_writer()` / `get_reader()` yielding a guard-aware `Connection` wrapper that blocks `SELECT` unless inside `allow_reads`. Replaces `SafeSession`/`SessionLocal` with `GuardedConnection` context managers (“begin_write”, “allow_reads”).
-     - `app/db/schema.py`: defines SQLAlchemy Core `MetaData`, `notes_table`, `app_settings_table`, and any reusable column lists so services stop importing ORM models.
-     - `app/db/notes_sql.py`: focused write helpers (`insert_note`, `update_note_content`, `update_links`, `delete_notes`, `bulk_fetch_for_cache`) built on `Connection.execute` with compiled Core expressions; returns plain dicts/tuples.
-     - `app/db/settings_sql.py`: read/write helpers for `AppSettings`, PBKDF2 metadata, maintenance toggles, etc. Uses `allow_reads` to fetch and explicit `update` / `insert` for writes.
+     - `app/db/engine.py`: owns sqlite guard helpers (memory/file), exposes context managers (`begin_writer`, `connect_reader`, `allow_reads`).
+     - `app/db/schema.py`: defines raw DDL helpers (`initialize_schema`) and table name constants.
+     - `app/db/notes_sql.py`: focused write helpers (`insert_note`, `update_note_content`, `update_links`, `delete_notes`, `fetch_children_ordered`) built on parameterized sqlite statements; returns plain dicts/tuples.
+     - `app/db/settings_sql.py`: read/write helpers for `AppSettings`, PBKDF2 metadata, maintenance toggles. Uses `allow_reads` to fetch and explicit `update` / `insert` for writes.
      - Testing utilities extend `tests/unit/common.py` to use `engine.begin()` instead of ORM Session.
    - **Undo/redo capture design:**
      - Replace ORM event listeners with service-level snapshots. Each transactional service (e.g., `NoteService`) calls `transaction_manager.capture_before(note_ids)` to clone affected `NoteStore` nodes (content + linkage) before mutation, and `capture_after(note_ids)` right after helper calls.

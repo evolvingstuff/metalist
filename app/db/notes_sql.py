@@ -1,24 +1,40 @@
-"""Composable SQL helpers for the notes table."""
+"""Composable sqlite helpers for the notes table."""
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
-from sqlalchemy import delete, insert, select, update
-from sqlalchemy.engine import Connection
-from sqlalchemy.sql import Select
-
 from .engine import GuardedConnection
-from .schema import notes_table
+from .schema import NOTES_TABLE
 
 
-def _conn(connection: GuardedConnection | Connection) -> Connection:
+def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
     return connection.raw_connection if isinstance(connection, GuardedConnection) else connection
 
 
+def _serialize_datetime(value: Optional[datetime]) -> str:
+    return (value or datetime.now(timezone.utc)).isoformat()
+
+
+def _deserialize_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "content": row["content"],
+        "encryption_nonce": row["encryption_nonce"],
+        "encryption_tag": row["encryption_tag"],
+        "parent_id": row["parent_id"],
+        "prev_id": row["prev_id"],
+        "next_id": row["next_id"],
+        "is_collapsed": bool(row["is_collapsed"]),
+        "created_at": datetime.fromisoformat(row["created_at"]),
+        "updated_at": datetime.fromisoformat(row["updated_at"]),
+    }
+
+
 def insert_note(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     *,
     note_id: str,
     content: str,
@@ -31,27 +47,39 @@ def insert_note(
     created_at: Optional[datetime] = None,
     updated_at: Optional[datetime] = None,
 ) -> None:
-    now = datetime.now(timezone.utc)
-    stmt = (
-        insert(notes_table)
-        .values(
-            id=note_id,
-            content=content,
-            encryption_nonce=encryption_nonce,
-            encryption_tag=encryption_tag,
-            parent_id=parent_id,
-            prev_id=prev_id,
-            next_id=next_id,
-            is_collapsed=is_collapsed,
-            created_at=created_at or now,
-            updated_at=updated_at or now,
-        )
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        INSERT INTO {NOTES_TABLE} (
+            id,
+            content,
+            encryption_nonce,
+            encryption_tag,
+            parent_id,
+            prev_id,
+            next_id,
+            is_collapsed,
+            created_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            note_id,
+            content,
+            encryption_nonce,
+            encryption_tag,
+            parent_id,
+            prev_id,
+            next_id,
+            int(is_collapsed),
+            _serialize_datetime(created_at),
+            _serialize_datetime(updated_at),
+        ),
     )
-    _conn(connection).execute(stmt)
 
 
 def update_note_content(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     note_id: str,
     *,
     content: str,
@@ -59,24 +87,31 @@ def update_note_content(
     encryption_tag: Optional[bytes],
     updated_at: Optional[datetime] = None,
 ) -> None:
-    stmt = (
-        update(notes_table)
-        .where(notes_table.c.id == note_id)
-        .values(
-            content=content,
-            encryption_nonce=encryption_nonce,
-            encryption_tag=encryption_tag,
-            updated_at=updated_at or datetime.now(timezone.utc),
-        )
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {NOTES_TABLE}
+        SET content = ?,
+            encryption_nonce = ?,
+            encryption_tag = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            content,
+            encryption_nonce,
+            encryption_tag,
+            _serialize_datetime(updated_at),
+            note_id,
+        ),
     )
-    _conn(connection).execute(stmt)
 
 
 _UNSET = object()
 
 
 def update_links(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     note_id: str,
     *,
     parent_id: Optional[str] = _UNSET,
@@ -85,64 +120,82 @@ def update_links(
     is_collapsed: Optional[bool] = _UNSET,
     updated_at: Optional[datetime] = None,
 ) -> None:
-    values = {
-        "updated_at": updated_at or datetime.now(timezone.utc),
-    }
-    if parent_id is not _UNSET:
-        values["parent_id"] = parent_id
-    if prev_id is not _UNSET:
-        values["prev_id"] = prev_id
-    if next_id is not _UNSET:
-        values["next_id"] = next_id
-    if is_collapsed is not _UNSET:
-        values["is_collapsed"] = is_collapsed
+    fields: list[str] = ["updated_at = ?"]
+    values: list = [_serialize_datetime(updated_at)]
 
-    stmt = update(notes_table).where(notes_table.c.id == note_id).values(**values)
-    _conn(connection).execute(stmt)
+    if parent_id is not _UNSET:
+        fields.append("parent_id = ?")
+        values.append(parent_id)
+    if prev_id is not _UNSET:
+        fields.append("prev_id = ?")
+        values.append(prev_id)
+    if next_id is not _UNSET:
+        fields.append("next_id = ?")
+        values.append(next_id)
+    if is_collapsed is not _UNSET:
+        fields.append("is_collapsed = ?")
+        values.append(int(is_collapsed))
+
+    values.append(note_id)
+
+    conn = _conn(connection)
+    sql = f"UPDATE {NOTES_TABLE} SET " + ", ".join(fields) + " WHERE id = ?"
+    conn.execute(sql, tuple(values))
 
 
 def delete_notes(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     note_ids: Iterable[str],
 ) -> None:
     identifiers = list(note_ids)
     if not identifiers:
         return
-    stmt = delete(notes_table).where(notes_table.c.id.in_(identifiers))
-    _conn(connection).execute(stmt)
+    placeholders = ",".join(["?"] * len(identifiers))
+    sql = f"DELETE FROM {NOTES_TABLE} WHERE id IN ({placeholders})"
+    conn = _conn(connection)
+    conn.execute(sql, tuple(identifiers))
 
 
 def fetch_note(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     note_id: str,
 ) -> Optional[dict]:
-    stmt = select(notes_table).where(notes_table.c.id == note_id)
-    result = _conn(connection).execute(stmt).mappings().first()
-    return dict(result) if result else None
+    conn = _conn(connection)
+    row = conn.execute(
+        f"SELECT * FROM {NOTES_TABLE} WHERE id = ?",
+        (note_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return _deserialize_row(row)
 
 
 def fetch_children_ordered(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     parent_id: Optional[str],
 ) -> list[dict]:
-    stmt: Select
+    conn = _conn(connection)
     if parent_id is None:
-        stmt = select(notes_table).where(notes_table.c.parent_id.is_(None))
+        rows = conn.execute(
+            f"SELECT * FROM {NOTES_TABLE} WHERE parent_id IS NULL",
+        ).fetchall()
     else:
-        stmt = select(notes_table).where(notes_table.c.parent_id == parent_id)
+        rows = conn.execute(
+            f"SELECT * FROM {NOTES_TABLE} WHERE parent_id = ?",
+            (parent_id,),
+        ).fetchall()
 
-    rows = _conn(connection).execute(stmt).mappings().all()
     if not rows:
         return []
 
-    # Preserve linked-list ordering by chasing prev pointers.
-    by_id = {row["id"]: dict(row) for row in rows}
-    head = next((row for row in rows if row["prev_id"] is None), None)
+    notes = [_deserialize_row(row) for row in rows]
+    by_id = {note["id"]: note for note in notes}
+    head = next((note for note in notes if note["prev_id"] is None), None)
     if not head:
-        return list(by_id.values())
+        return list(notes)
 
     ordered: list[dict] = []
-    current = dict(head)
+    current = head
     seen: set[str] = set()
     while current["id"] not in seen:
         ordered.append(current)
@@ -150,14 +203,13 @@ def fetch_children_ordered(
         next_id = current.get("next_id")
         if next_id is None:
             break
-        next_row = by_id.get(next_id)
-        if not next_row:
+        current = by_id.get(next_id)
+        if current is None:
             break
-        current = next_row
     return ordered
 
 
-def fetch_all_for_cache(connection: GuardedConnection | Connection) -> list[dict]:
-    stmt = select(notes_table)
-    rows = _conn(connection).execute(stmt).mappings().all()
-    return [dict(row) for row in rows]
+def fetch_all_for_cache(connection: GuardedConnection | sqlite3.Connection) -> list[dict]:
+    conn = _conn(connection)
+    rows = conn.execute(f"SELECT * FROM {NOTES_TABLE}").fetchall()
+    return [_deserialize_row(row) for row in rows]

@@ -3,8 +3,6 @@
 import secrets
 from types import SimpleNamespace
 from typing import Optional, Tuple
-
-from sqlalchemy.orm import Session
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
@@ -25,7 +23,7 @@ from app.services.encryption import EncryptionService
 class AuthService:
     """Service for managing passwords and authentication."""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: SafeSession):
         self.db = db
         self.encryption = EncryptionService()
     

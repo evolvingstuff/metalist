@@ -1,7 +1,5 @@
 from abc import ABC
 from typing import Optional
-
-from sqlalchemy.orm import Session
 import logging
 
 from app.services.integrity import (
@@ -10,6 +8,7 @@ from app.services.integrity import (
     assert_note_count,
     assert_linked_list_integrity,
 )
+from app.models.database import SafeSession
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class BaseTransactionService(ABC):
     """Base class for services that need transaction tracking for undo/redo"""
     
-    def __init__(self, db: Session, transaction_manager, client_id: str = None):
+    def __init__(self, db: SafeSession, transaction_manager, client_id: str = None):
         self.db = db
         self.transaction_manager = transaction_manager
         self.client_id = client_id
@@ -86,7 +85,7 @@ class BaseTransactionService(ABC):
 class BaseQueryService(ABC):
     """Base class for read-only services that don't need transaction tracking"""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: SafeSession):
         self.db = db
     
     def __enter__(self):

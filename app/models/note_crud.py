@@ -2,8 +2,6 @@ from typing import Optional, Iterable
 from types import SimpleNamespace
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
-
 from app.db.notes_sql import (
     delete_notes,
     fetch_children_ordered,
@@ -12,7 +10,7 @@ from app.db.notes_sql import (
     update_links,
     update_note_content,
 )
-from app.models.database import SafeSession, DBNote
+from app.models.database import SafeSession
 from .enums import MovePosition
 from ..utils.encryption import encrypt
 from ..services.note_store import store as note_store
@@ -22,7 +20,7 @@ class NoteCRUD:
     """Handles CRUD operations for notes"""
     
     @staticmethod
-    def create_note_top(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
+    def create_note_top(db: SafeSession, note_id: str, parent_id: Optional[str] = None) -> None:
         """Create a new note and insert it as the new head of the linked list"""
         try:
             if note_id is None:
@@ -100,7 +98,7 @@ class NoteCRUD:
             raise
 
     @staticmethod
-    def get_note(db: Session, note_id: str) -> DBNote:
+    def get_note(db: SafeSession, note_id: str) -> SimpleNamespace:
         if note_store.loaded:
             try:
                 record = note_store.get_note(note_id)
@@ -138,7 +136,7 @@ class NoteCRUD:
         )
 
     @staticmethod
-    def update_note(db: Session, note_id: str, content: str):
+    def update_note(db: SafeSession, note_id: str, content: str):
         from ..services.content_cache import cache_note
 
         record = None
@@ -176,7 +174,7 @@ class NoteCRUD:
             )
 
     @staticmethod
-    def delete_note(db: Session, note_id: str) -> None:
+    def delete_note(db: SafeSession, note_id: str) -> None:
         """Delete a note and ALL its descendants, updating surrounding links"""
         try:
             from ..services.content_cache import remove_cached_note
@@ -278,7 +276,7 @@ class NoteCRUD:
             raise
 
     @staticmethod
-    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
+    def create_note_drop(db: SafeSession, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
         # First create the note at root level
         NoteCRUD.create_note_top(db, note_id)
 

@@ -6,7 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.services.tokens import token_service
 from app.services.auth import AuthService
 from app.services.maintenance_mode import maintenance_service
-from app.models.database import get_db
+from app.models.database import SafeSession
 from app.utils.encryption import set_encryption_key
 
 
@@ -80,16 +80,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         
         # Check if password is required
         try:
-            db = next(get_db())
+            db = SafeSession()
             try:
                 auth = AuthService(db)
-                
+
                 # Special case: password creation endpoint is only public if no password exists
                 if path == "/api/auth/settings/password/create" and not auth.has_password():
                     if not is_quiet:
                         print(f"Password creation allowed - no password set")
                     return await call_next(request)
-                
+
                 # If no password is set, allow all access
                 if not auth.has_password():
                     if not is_quiet:

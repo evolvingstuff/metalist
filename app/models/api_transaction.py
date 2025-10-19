@@ -3,8 +3,6 @@ from __future__ import annotations
 import uuid
 from typing import Dict
 
-from sqlalchemy.orm import Session
-
 from app.db.notes_sql import fetch_all_for_cache
 from app.services.content_cache import get_cached_content
 from app.services.note_store import store as note_store
@@ -43,7 +41,7 @@ def _row_to_state(row: dict) -> SnapshotRecord:
     )
 
 
-def _capture_snapshot(db: Session) -> Dict[str, SnapshotRecord]:
+def _capture_snapshot(db: SafeSession) -> Dict[str, SnapshotRecord]:
     if note_store.loaded:
         snapshot = {}
         for record in note_store.snapshot().values():
@@ -81,7 +79,7 @@ def _diff_snapshots(
 
 
 class ApiTransaction:
-    def __init__(self, db: Session, transaction_manager, client_id: str | None):
+    def __init__(self, db: SafeSession, transaction_manager, client_id: str | None):
         self.uuid = str(uuid.uuid4())
         self.db = db
         self.transaction_manager = transaction_manager

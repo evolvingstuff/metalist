@@ -2,7 +2,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Dict, Iterable
 
-from sqlalchemy.orm import Session
+from app.models.database import SafeSession
 
 from app.db.notes_sql import (
     delete_notes,
@@ -93,15 +93,15 @@ class Command:
             f"\tpost_state:\n\t\t{poststates}\n"
         )
 
-    def undo(self, db: Session):
+    def undo(self, db: SafeSession):
         # Revert to the pre_state
         self._apply_state(self.pre_state, self.post_state, db)
 
-    def redo(self, db: Session):
+    def redo(self, db: SafeSession):
         # Reapply the post_state
         self._apply_state(self.post_state, self.pre_state, db)
 
-    def _apply_state(self, target_state, reference_state, db: Session):
+    def _apply_state(self, target_state, reference_state, db: SafeSession):
         """Apply the target_state to the database."""
 
         for note in _sorted_records(target_state.values(), reference_state):
@@ -123,7 +123,7 @@ class Command:
 
         note_store.load_from_db(db)
 
-    def _create_note(self, note: SnapshotRecord, db: Session):
+    def _create_note(self, note: SnapshotRecord, db: SafeSession):
         ciphertext, nonce, tag = encrypt(note.content)
         insert_note(
             db.connection(),
@@ -140,7 +140,7 @@ class Command:
         )
         content_cache.cache_note(note.id, note.content)
 
-    def _update_note(self, note: SnapshotRecord, db: Session):
+    def _update_note(self, note: SnapshotRecord, db: SafeSession):
         ciphertext, nonce, tag = encrypt(note.content)
         update_note_content(
             db.connection(),
@@ -180,7 +180,7 @@ class CommandStack:
         self.stack.append(command)
         self.current_index += 1
 
-    def undo(self, db: Session):
+    def undo(self, db: SafeSession):
         if self.current_index >= 0:
             command = self.stack[self.current_index]
             print(f"🔧 COMMAND STACK: Undoing command at index {self.current_index}")
@@ -190,7 +190,7 @@ class CommandStack:
         else:
             print("No command to undo")
 
-    def redo(self, db: Session):
+    def redo(self, db: SafeSession):
         if self.current_index < len(self.stack) - 1:
             self.current_index += 1
             command = self.stack[self.current_index]

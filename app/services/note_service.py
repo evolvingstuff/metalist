@@ -1,18 +1,15 @@
 from typing import Optional
-
-from sqlalchemy import update as sa_update
-from sqlalchemy.orm import Session
 from fastapi import HTTPException
 import uuid
 import logging
 
 from .base_service import BaseTransactionService
-from ..models.database import DBNote
 from ..models.linked_list import LinkedListManager
 from ..models.enums import MovePosition
 from ..models.utils import copy_note
 from .integrity import count_subtree
 from .sync_state import generate_new_uuid, set_server_sync_uuid
+from app.db.notes_sql import update_links
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +81,7 @@ class NoteService(BaseTransactionService):
         self._set_operation("set_note_collapse")
         assert self.client_id, "set_note_collapse requires client_id"
         self.expect_note_delta(0)
-        self.db.execute(
-            sa_update(DBNote)
-            .where(DBNote.id == note_id)
-            .values(is_collapsed=desired_state)
-        )
+        update_links(self.db.connection(), note_id, is_collapsed=desired_state)
 
         from .note_store import store as note_store
         if note_store.loaded:

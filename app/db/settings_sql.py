@@ -1,40 +1,68 @@
-"""SQL helpers for the app_settings table."""
+"""SQLite helpers for the app_settings table."""
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import insert, select, update
-from sqlalchemy.engine import Connection
-
 from .engine import GuardedConnection
-from .schema import app_settings_table
+from .schema import APP_SETTINGS_TABLE
 
 
-def _conn(connection: GuardedConnection | Connection) -> Connection:
+def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
     return connection.raw_connection if isinstance(connection, GuardedConnection) else connection
 
 
-def fetch_settings(connection: GuardedConnection | Connection) -> Optional[dict]:
-    stmt = select(app_settings_table).where(app_settings_table.c.id == 1)
-    row = _conn(connection).execute(stmt).mappings().first()
-    return dict(row) if row else None
+def _serialize_datetime(value: Optional[datetime]) -> str:
+    return (value or datetime.now(timezone.utc)).isoformat()
 
 
-def insert_default_settings(connection: GuardedConnection | Connection) -> None:
+def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Optional[dict]:
+    conn = _conn(connection)
+    row = conn.execute(
+        f"SELECT * FROM {APP_SETTINGS_TABLE} WHERE id = 1",
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "password_hash": row["password_hash"],
+        "password_salt": row["password_salt"],
+        "password_iterations": row["password_iterations"],
+        "encryption_enabled": bool(row["encryption_enabled"]),
+        "encryption_algorithm": row["encryption_algorithm"],
+        "encrypted_dek": row["encrypted_dek"],
+        "dek_nonce": row["dek_nonce"],
+        "dek_tag": row["dek_tag"],
+        "created_at": datetime.fromisoformat(row["created_at"]),
+        "updated_at": datetime.fromisoformat(row["updated_at"]),
+    }
+
+
+def insert_default_settings(connection: GuardedConnection | sqlite3.Connection) -> None:
+    conn = _conn(connection)
     now = datetime.now(timezone.utc)
-    stmt = insert(app_settings_table).values(
-        id=1,
-        encryption_enabled=False,
-        created_at=now,
-        updated_at=now,
+    conn.execute(
+        f"""
+        INSERT OR IGNORE INTO {APP_SETTINGS_TABLE} (
+            id,
+            encryption_enabled,
+            created_at,
+            updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        (
+            1,
+            0,
+            _serialize_datetime(now),
+            _serialize_datetime(now),
+        ),
     )
-    _conn(connection).execute(stmt)
 
 
 def update_password_settings(
-    connection: GuardedConnection | Connection,
+    connection: GuardedConnection | sqlite3.Connection,
     *,
     password_hash: str,
     password_salt: bytes,
@@ -44,40 +72,51 @@ def update_password_settings(
     dek_tag: bytes,
     encryption_algorithm: str,
 ) -> None:
-    now = datetime.now(timezone.utc)
-    stmt = (
-        update(app_settings_table)
-        .where(app_settings_table.c.id == 1)
-        .values(
-            password_hash=password_hash,
-            password_salt=password_salt,
-            password_iterations=password_iterations,
-            encrypted_dek=encrypted_dek,
-            dek_nonce=dek_nonce,
-            dek_tag=dek_tag,
-            encryption_enabled=True,
-            encryption_algorithm=encryption_algorithm,
-            updated_at=now,
-        )
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET password_hash = ?,
+            password_salt = ?,
+            password_iterations = ?,
+            encrypted_dek = ?,
+            dek_nonce = ?,
+            dek_tag = ?,
+            encryption_enabled = 1,
+            encryption_algorithm = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            password_hash,
+            password_salt,
+            password_iterations,
+            encrypted_dek,
+            dek_nonce,
+            dek_tag,
+            encryption_algorithm,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
     )
-    _conn(connection).execute(stmt)
 
 
-def clear_password_settings(connection: GuardedConnection | Connection) -> None:
-    now = datetime.now(timezone.utc)
-    stmt = (
-        update(app_settings_table)
-        .where(app_settings_table.c.id == 1)
-        .values(
-            password_hash=None,
-            password_salt=None,
-            password_iterations=None,
-            encrypted_dek=None,
-            dek_nonce=None,
-            dek_tag=None,
-            encryption_enabled=False,
-            encryption_algorithm=None,
-            updated_at=now,
-        )
+def clear_password_settings(connection: GuardedConnection | sqlite3.Connection) -> None:
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET password_hash = NULL,
+            password_salt = NULL,
+            password_iterations = NULL,
+            encrypted_dek = NULL,
+            dek_nonce = NULL,
+            dek_tag = NULL,
+            encryption_enabled = 0,
+            encryption_algorithm = NULL,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
     )
-    _conn(connection).execute(stmt)

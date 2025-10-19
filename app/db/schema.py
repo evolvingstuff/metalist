@@ -1,72 +1,51 @@
-"""SQLAlchemy Core metadata used by the helper layer."""
+"""SQLite schema helpers for MetaList."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from sqlite3 import Connection
 
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    LargeBinary,
-    MetaData,
-    String,
-    Table,
-)
+NOTES_TABLE = "notes"
+APP_SETTINGS_TABLE = "app_settings"
 
-metadata = MetaData()
+_CREATE_NOTES_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    is_collapsed INTEGER NOT NULL DEFAULT 0,
+    encryption_nonce BLOB,
+    encryption_tag BLOB,
+    parent_id TEXT REFERENCES {NOTES_TABLE}(id) ON DELETE SET NULL,
+    prev_id TEXT REFERENCES {NOTES_TABLE}(id) ON DELETE SET NULL,
+    next_id TEXT REFERENCES {NOTES_TABLE}(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
 
-notes_table = Table(
-    "notes",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("content", String, nullable=False),
-    Column("is_collapsed", Boolean, nullable=False, default=False),
-    Column("encryption_nonce", LargeBinary, nullable=True),
-    Column("encryption_tag", LargeBinary, nullable=True),
-    Column("parent_id", String, ForeignKey("notes.id"), nullable=True),
-    Column("prev_id", String, ForeignKey("notes.id"), nullable=True),
-    Column("next_id", String, ForeignKey("notes.id"), nullable=True),
-    Column(
-        "created_at",
-        DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    ),
-    Column(
-        "updated_at",
-        DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    ),
-)
+_CREATE_NOTES_PARENT_INDEX = f"""
+CREATE INDEX IF NOT EXISTS idx_{NOTES_TABLE}_parent ON {NOTES_TABLE}(parent_id);
+"""
 
-app_settings_table = Table(
-    "app_settings",
-    metadata,
-    Column("id", Integer, primary_key=True, default=1),
-    Column("password_hash", String, nullable=True),
-    Column("password_salt", LargeBinary, nullable=True),
-    Column("password_iterations", Integer, nullable=True),
-    Column("encryption_enabled", Boolean, nullable=False, default=False),
-    Column("encryption_algorithm", String, nullable=True),
-    Column("encrypted_dek", LargeBinary, nullable=True),
-    Column("dek_nonce", LargeBinary, nullable=True),
-    Column("dek_tag", LargeBinary, nullable=True),
-    Column(
-        "created_at",
-        DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    ),
-    Column(
-        "updated_at",
-        DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    ),
-)
+_CREATE_APP_SETTINGS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
+    id INTEGER PRIMARY KEY,
+    password_hash TEXT,
+    password_salt BLOB,
+    password_iterations INTEGER,
+    encryption_enabled INTEGER NOT NULL DEFAULT 0,
+    encryption_algorithm TEXT,
+    encrypted_dek BLOB,
+    dek_nonce BLOB,
+    dek_tag BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
 
-__all__ = ["metadata", "notes_table", "app_settings_table"]
+
+def initialize_schema(connection: Connection) -> None:
+    """Create tables and indexes if they do not already exist."""
+
+    connection.execute(_CREATE_NOTES_TABLE)
+    connection.execute(_CREATE_APP_SETTINGS_TABLE)
+    connection.execute(_CREATE_NOTES_PARENT_INDEX)

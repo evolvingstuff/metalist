@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional
 import logging
 
 from .dependencies import get_db
-from ..models.database import DBNote, SafeSession
+from ..models.database import SafeSession
 from ..db.notes_sql import fetch_children_ordered, update_links
 from types import SimpleNamespace
 from ..models.commands import UpdateNoteContent
@@ -129,7 +128,7 @@ def release_lock(request: NoteLockRequest):
 @router.post("/undo")
 def undo(
     client_id: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Undo the last operation"""
@@ -142,7 +141,7 @@ def undo(
 @router.post("/redo")
 def redo(
     client_id: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Redo the last undone operation"""
@@ -156,7 +155,7 @@ def redo(
 def copy_note(
     note_id: str,
     request: CopyNoteRequest,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Copy a note to the server-side clipboard as serialized data"""
@@ -189,7 +188,7 @@ def copy_note(
 def export_note_as_html(
     note_id: str,
     client_id: str,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Export a note and all its children as HTML"""
@@ -213,7 +212,7 @@ def export_note_as_html(
 @router.post("/new")
 def create_note_top(
     command: CreateNoteCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note at the top of the list (or before first visible note)"""
@@ -228,7 +227,7 @@ def create_note_top(
 def update_note(
     note_id: str,
     command: UpdateNoteContent,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Update a note's content"""
@@ -246,7 +245,7 @@ def update_note(
 def save_note(
     note_id: str,
     command: UpdateNoteContent,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Save a note's content (same as update_note)"""
@@ -260,7 +259,7 @@ def save_note(
 def move_note(
     note_id: str,
     command: MoveNoteCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Move a note to a new position"""
@@ -296,7 +295,7 @@ class PasteRequest(BaseModel):
 def paste_sibling(
     target_note_id: str,
     request: PasteRequest,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Paste clipboard content as a sibling after target_note"""
@@ -362,7 +361,7 @@ def paste_sibling(
 def paste_child(
     target_note_id: str,
     request: PasteRequest,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Paste clipboard content as first child of target_note"""
@@ -432,7 +431,7 @@ def paste_child(
 def collapse_note(
     note_id: str,
     request: NoteStateCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Set a note's collapsed state to true"""
@@ -449,7 +448,7 @@ def collapse_note(
 def expand_note(
     note_id: str,
     request: NoteStateCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Set a note's collapsed state to false"""
@@ -470,7 +469,7 @@ class DeleteNoteRequest(BaseModel):
 def delete_note(
     note_id: str,
     request: DeleteNoteRequest,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Delete a note and all its descendants"""
@@ -487,7 +486,7 @@ def delete_note(
 @router.post("/new-drop")
 def create_note_with_position(
     command: MoveNoteCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note at a specific position"""
@@ -500,8 +499,8 @@ def create_note_with_position(
             position = MovePosition[command.position.upper()]
         except KeyError:
             raise HTTPException(status_code=400, detail="Invalid position value")
-    
-    with get_note_service(db, transaction_manager, request.clientId) as service:
+
+    with get_note_service(db, transaction_manager, command.clientId) as service:
         result = service.create_note_with_position(
             new_parent_id=command.new_parent_id,
             sibling_id=command.sibling_id,
@@ -514,7 +513,7 @@ def create_note_with_position(
 def create_new_sibling(
     note_id: str,
     command: CreateSiblingCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note as sibling after the specified note"""
@@ -529,7 +528,7 @@ def create_new_sibling(
 def create_new_child(
     note_id: str,
     command: CreateChildCommand,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Create a new note as first child of the specified note"""
@@ -547,7 +546,7 @@ def get_notes_view(
     editing_note_id: Optional[str] = None,
     search: Optional[str] = None,
     client_id: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: SafeSession = Depends(get_db),
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Render the HTML view for the notes list"""

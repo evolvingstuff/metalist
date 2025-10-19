@@ -15,7 +15,7 @@ Core Architecture:
 - Python-based (pip installable or executable)
 - Single user per instance (containerization planned for multi-user future)
 - FastAPI backend with Pydantic models
-- SQLite3 database / SQLAlchemy ORM
+- SQLite3 database via custom helper layer (no ORM)
 - Mako for server-side templating
 
 Data Model & Storage:
@@ -114,7 +114,7 @@ This approach provides intuitive undo/redo for content operations while avoiding
 ## Implementation Details
 
 ### State Capture Approach
-- Wrap SQLAlchemy updates to capture note states before any changes
+- Wrap sqlite helper updates to capture note states before any changes
 - Maintain in-memory dictionary of original states keyed by transaction UUID
 - Only capture first change to each note within a transaction
 - After transaction completes, capture final states of all affected notes

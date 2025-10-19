@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.auth import AuthService
-from app.models.database import get_db
+from app.models.database import SafeSession
 
 # Global encryption service instance (per-request)
 _encryption_service: Optional[EncryptionService] = None
@@ -150,8 +150,7 @@ def set_encryption_key(password: str, salt: bytes) -> None:
     
     # For backward compatibility, create a service and derive master key
     # But we can't get the DEK without the database settings
-    db_gen = get_db()
-    db = next(db_gen)
+    db = SafeSession()
     try:
         auth = AuthService(db)
         settings = auth.get_settings()
@@ -176,7 +175,7 @@ def set_encryption_key(password: str, salt: bytes) -> None:
             # Legacy mode - no DEK in database yet
             _encryption_service = None
     finally:
-        db_gen.close()
+        db.close()
 
 
 def clear_encryption_key() -> None:
@@ -214,8 +213,7 @@ def get_encryption_status() -> dict:
     Returns:
         Dictionary with encryption status information
     """
-    db_gen = get_db()
-    db = next(db_gen)
+    db = SafeSession()
     try:
         auth = AuthService(db)
         settings = auth.get_settings()
@@ -227,4 +225,4 @@ def get_encryption_status() -> dict:
             "global_service_active": _encryption_service is not None and _encryption_service.dek is not None
         }
     finally:
-        db_gen.close()
+        db.close()

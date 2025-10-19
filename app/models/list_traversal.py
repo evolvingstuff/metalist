@@ -1,11 +1,7 @@
 from typing import Any, List, Optional
 from types import SimpleNamespace
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from app.db.notes_sql import fetch_note
-from app.db.schema import notes_table
+from app.db.notes_sql import fetch_children_ordered, fetch_note
 from app.models.database import SafeSession
 from app.services.note_store import store as note_store
 
@@ -14,7 +10,7 @@ class ListTraversal:
     """Handles traversal and validation of linked list structures"""
     
     @staticmethod
-    def validate_list(db: Session, parent_id: Optional[str] = None) -> bool:
+    def validate_list(db: SafeSession, parent_id: Optional[str] = None) -> bool:
         """Validate the linked list structure"""
 
         if note_store.loaded:
@@ -41,12 +37,7 @@ class ListTraversal:
             return True
 
         with SafeSession.allow_reads("list_traversal:validate"):
-            connection = db.connection()
-            if parent_id is None:
-                stmt = select(notes_table).where(notes_table.c.parent_id.is_(None))
-            else:
-                stmt = select(notes_table).where(notes_table.c.parent_id == parent_id)
-            rows = connection.execute(stmt).mappings().all()
+            rows = fetch_children_ordered(db.connection(), parent_id)
 
         if not rows:
             return True
@@ -97,7 +88,7 @@ class ListTraversal:
                 current.parent_id == parent_id)  # Tail has correct parent
 
     @staticmethod
-    def get_ordered_child_list(db: Session, parent_id: Optional[str] = None) -> List[Any]:
+    def get_ordered_child_list(db: SafeSession, parent_id: Optional[str] = None) -> List[Any]:
         """Get an ordered list of child notes for the given parent_id"""
 
         if note_store.loaded:
@@ -105,12 +96,7 @@ class ListTraversal:
             return [_NoteProxy(note_store.get_note(note_id)) for note_id in ordered_ids]
 
         with SafeSession.allow_reads("list_traversal:children"):
-            connection = db.connection()
-            if parent_id is None:
-                stmt = select(notes_table).where(notes_table.c.parent_id.is_(None))
-            else:
-                stmt = select(notes_table).where(notes_table.c.parent_id == parent_id)
-            rows = connection.execute(stmt).mappings().all()
+            rows = fetch_children_ordered(db.connection(), parent_id)
 
         all_notes = [SimpleNamespace(**row) for row in rows]
         if not all_notes:
@@ -149,7 +135,7 @@ class ListTraversal:
         return ordered
 
     @staticmethod
-    def would_create_cycle(db: Session, note_id: str, new_parent_id: str) -> bool:
+    def would_create_cycle(db: SafeSession, note_id: str, new_parent_id: str) -> bool:
         """Check if moving note to new_parent would create a parent-child cycle"""
         if not new_parent_id:
             return False

@@ -22,7 +22,7 @@ Startup
 
 ### Core Components
 - `NoteStore`: central in-memory data structure holding notes, orderings, and pre-rendered variants.
-- `ReadGuard`: global flag enforced via SQLAlchemy session hooks; raises on SELECT once enabled.
+- `ReadGuard`: global flag enforced inside `SafeSession.execute`; raises on SELECT once enabled.
 - `LinkedListManager` / `ListTraversal`: refactored to operate on `NoteStore` instead of issuing queries.
 - `NoteRenderer`: produces three render variants (collapsed, expanded, edit) stored per note.
 
@@ -65,12 +65,12 @@ Supporting containers:
   - Add/remove note IDs from `children`/`note_map`.
   - Update linked-list pointers in memory.
   - Recompute render variants + hashes.
-- Persist change to DB via SQLAlchemy (write-through).
+- Persist change to DB via sqlite helpers (write-through).
 - Existing cache listeners remain to keep `_search_cache` synced.
 
 ## Undo/Redo Exception
 - `UndoRedoService` wraps replay operations in `ReadGuard.allow_reads("undo"/"redo")` context.
-- During this window SQLAlchemy can fetch/compare DBNote states without raising.
+- During this window the sqlite helpers can fetch/compare DBNote states without raising.
 - After replay, guard re-enables automatically.
 
 ## Guard Implementation

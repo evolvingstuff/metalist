@@ -7,10 +7,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from sqlalchemy.orm import Session
 from mako.lookup import TemplateLookup
 
 from .dependencies import get_db
+from ..models.database import SafeSession
 from ..core.config import VERSION
 from ..services.memory_service import MemoryService, apply_memory_flags
 
@@ -65,7 +65,7 @@ class MemoryResponse(BaseModel):
 
 
 @router.post("", response_model=MemoryResponse)
-def fetch_memory_note(payload: MemoryRequest, db: Session = Depends(get_db)) -> MemoryResponse:
+def fetch_memory_note(payload: MemoryRequest, db: SafeSession = Depends(get_db)) -> MemoryResponse:
     if payload.search_query is None:
         raise HTTPException(status_code=422, detail="searchQuery is required for memory mode")
 

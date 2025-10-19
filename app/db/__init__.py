@@ -1,9 +1,4 @@
-"""Utility layer for direct SQL access.
-
-This package exposes guard-aware connection helpers and composable SQL
-functions so higher-level services can bypass the ORM while keeping the
-post-startup read guard enforced.
-"""
+"""Utility layer for direct sqlite access."""
 
 from .engine import (
     GuardedConnection,
@@ -12,9 +7,12 @@ from .engine import (
     allow_reads,
     enable_read_guard,
     disable_read_guard,
-    get_engine,
 )
-from .schema import metadata, notes_table, app_settings_table
+from .schema import (
+    APP_SETTINGS_TABLE,
+    NOTES_TABLE,
+    initialize_schema,
+)
 
 __all__ = [
     "GuardedConnection",
@@ -23,8 +21,7 @@ __all__ = [
     "allow_reads",
     "enable_read_guard",
     "disable_read_guard",
-    "get_engine",
-    "metadata",
-    "notes_table",
-    "app_settings_table",
+    "APP_SETTINGS_TABLE",
+    "NOTES_TABLE",
+    "initialize_schema",
 ]

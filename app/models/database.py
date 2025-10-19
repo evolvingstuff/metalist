@@ -1,76 +1,140 @@
+from __future__ import annotations
+
+import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from threading import RLock
+from typing import Iterator, Optional
 
-from sqlalchemy import create_engine, Column, String, DateTime, ForeignKey, Integer, Boolean, LargeBinary
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from datetime import datetime, timezone
 from app.core.config import DATABASE_URL
-from sqlalchemy.pool import StaticPool
+from app.db.schema import initialize_schema
+
+_MEMORY_URI = "file:metalist_memory?mode=memory&cache=shared"
 
 
-class SafeSession(Session):
-    _engine = create_engine(DATABASE_URL)
-    _memory_engine = None
-    _current_session = None
-    _reads_enabled = True
+def _resolve_db_path(url: str) -> Path:
+    if not url.startswith("sqlite:///"):
+        raise ValueError(f"Unsupported DATABASE_URL: {url}")
+    raw_path = url.replace("sqlite:///", "", 1)
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path
+
+
+def _is_select(statement: str) -> bool:
+    snippet = statement.lstrip().lower()
+    return snippet.startswith("select")
+
+
+class SafeSession:
+    _db_path = _resolve_db_path(DATABASE_URL)
     _read_guard_lock = RLock()
+    _reads_enabled = True
+    _use_memory = False
+    _memory_anchor: Optional[sqlite3.Connection] = None
+
+    def __init__(self) -> None:
+        self._connection = self._create_connection()
+        self._closed = False
+
+    @classmethod
+    def _create_connection(cls) -> sqlite3.Connection:
+        if cls._use_memory:
+            conn = sqlite3.connect(
+                _MEMORY_URI,
+                uri=True,
+                check_same_thread=False,
+                isolation_level="DEFERRED",
+            )
+        else:
+            cls._db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(
+                str(cls._db_path),
+                check_same_thread=False,
+                isolation_level="DEFERRED",
+            )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        initialize_schema(conn)
+        conn.commit()
+        return conn
 
     @classmethod
     def use_memory_db(cls):
-        if cls._current_session:
-            cls._current_session.close()
-        print("\n" + "="*50)
-        print("""
+        if cls._memory_anchor:
+            cls._memory_anchor.close()
+            cls._memory_anchor = None
+        cls._use_memory = True
+        anchor = sqlite3.connect(
+            _MEMORY_URI,
+            uri=True,
+            check_same_thread=False,
+            isolation_level="DEFERRED",
+        )
+        anchor.row_factory = sqlite3.Row
+        anchor.execute("PRAGMA foreign_keys = ON")
+        initialize_schema(anchor)
+        anchor.commit()
+        cls._memory_anchor = anchor
+        print("\n" + "=" * 50)
+        print(
+            """
 🧪 SWITCHING TO TEST MODE 🧪
 ┌──────────────────────────┐
 │   IN-MEMORY DATABASE     │
 │  *All Data is Temporary  │
 └──────────────────────────┘
-        """)
-        print("="*50 + "\n")
-        # Use StaticPool and connect_args for thread safety
-        cls._memory_engine = create_engine(
-            'sqlite:///:memory:',
-            connect_args={'check_same_thread': False},
-            poolclass=StaticPool
+        """
         )
-        Base.metadata.create_all(cls._memory_engine)
-        return {'status': 'ok', 'message': 'Using in-memory database'}
+        print("=" * 50 + "\n")
+        return {"status": "ok", "message": "Using in-memory database"}
 
     @classmethod
     def use_file_db(cls):
-        if cls._current_session:
-            cls._current_session.close()
-        print("\n" + "="*50)
-        print("""
+        cls._use_memory = False
+        if cls._memory_anchor:
+            cls._memory_anchor.close()
+            cls._memory_anchor = None
+        cls._db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(
+            str(cls._db_path),
+            check_same_thread=False,
+            isolation_level="DEFERRED",
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        initialize_schema(conn)
+        conn.commit()
+        conn.close()
+        print("\n" + "=" * 50)
+        print(
+            """
 📝 RETURNING TO PRODUCTION MODE 📝
 ┌──────────────────────────┐
 │      PROD DATABASE       │
 │                          │
 └──────────────────────────┘
-        """)
-        print("="*50 + "\n")
-        cls._memory_engine = None
-        Base.metadata.create_all(cls._engine)
-        return {'status': 'ok', 'message': 'Using file database'}
+        """
+        )
+        print("=" * 50 + "\n")
+        return {"status": "ok", "message": "Using file database"}
 
     @classmethod
-    def get_engine(cls):
-        return cls._memory_engine if cls._memory_engine else cls._engine
-
-    @classmethod
-    def enable_read_guard(cls):
+    def enable_read_guard(cls) -> None:
         with cls._read_guard_lock:
             cls._reads_enabled = False
 
     @classmethod
-    def disable_read_guard(cls):
+    def disable_read_guard(cls) -> None:
         with cls._read_guard_lock:
             cls._reads_enabled = True
 
     @classmethod
     @contextmanager
-    def allow_reads(cls, reason: str = ""):
+    def allow_reads(cls, reason: str = "") -> Iterator[None]:
         with cls._read_guard_lock:
             previous = cls._reads_enabled
             cls._reads_enabled = True
@@ -80,100 +144,62 @@ class SafeSession(Session):
             with cls._read_guard_lock:
                 cls._reads_enabled = previous
 
-    def commit(self):
-        """Override commit to check for corruption in dev mode"""
-        try:
-            super().commit()
-        except Exception as e:
-            self.rollback()
-            raise e
+    def commit(self) -> None:
+        self._connection.commit()
 
-    def execute(self, statement, *args, **kwargs):
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def execute(self, statement: str, parameters: Optional[tuple] = None):
         if not type(self)._reads_enabled and _is_select(statement):
             raise RuntimeError("Post-startup DB read forbidden")
-        return super().execute(statement, *args, **kwargs)
+        if parameters is None:
+            return self._connection.execute(statement)
+        return self._connection.execute(statement, parameters)
+
+    def connection(self) -> sqlite3.Connection:
+        return self._connection
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._connection.close()
+        self._closed = True
 
 
-Base = declarative_base()
+def SessionLocal(*_args, **_kwargs) -> SafeSession:
+    """Backwards compatible factory returning a new SafeSession."""
 
-SessionLocal = sessionmaker(class_=SafeSession, autocommit=False, autoflush=False)
-
-def get_db():
-    db = SessionLocal(bind=SafeSession.get_engine())
-    try:
-        yield db
-    finally:
-        db.close()
+    return SafeSession()
 
 
-class DBNote(Base):
-    __tablename__ = "notes"
-    
-    id = Column(String, primary_key=True)
-    content = Column(String)
-
-    is_collapsed = Column(Boolean, default=False, nullable=False)
-    
-    # Encryption fields
-    encryption_nonce = Column(LargeBinary, nullable=True)  # AES-GCM nonce (per note)
-    encryption_tag = Column(LargeBinary, nullable=True)   # AES-GCM authentication tag (per note)
-    
-    # Old fields for linked list implementation
-    parent_id = Column(String, ForeignKey('notes.id'), nullable=True)
-    prev_id = Column(String, ForeignKey('notes.id'), nullable=True)
-    next_id = Column(String, ForeignKey('notes.id'), nullable=True)
-    
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+@dataclass
+class DBNote:
+    id: str
+    content: str
+    parent_id: Optional[str] = None
+    prev_id: Optional[str] = None
+    next_id: Optional[str] = None
+    is_collapsed: bool = False
+    encryption_nonce: Optional[bytes] = None
+    encryption_tag: Optional[bytes] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
-class AppSettings(Base):
-    __tablename__ = "app_settings"
-    
-    id = Column(Integer, primary_key=True, default=1)
-    
-    # Password/encryption settings
-    password_hash = Column(String, nullable=True)  # PBKDF2 hash of the master password (null = no password)
-    password_salt = Column(LargeBinary, nullable=True)  # Random salt for password hashing
-    password_iterations = Column(Integer, nullable=True)  # PBKDF2 iterations used for this hash
-    encryption_enabled = Column(Boolean, default=False)  # Whether encryption is active
-    encryption_algorithm = Column(String, nullable=True)  # Encryption algorithm (e.g., "AES-256-GCM")
-    
-    # DEK (Data Encryption Key) fields
-    encrypted_dek = Column(LargeBinary, nullable=True)  # DEK encrypted with master key
-    dek_nonce = Column(LargeBinary, nullable=True)  # Nonce for DEK encryption
-    dek_tag = Column(LargeBinary, nullable=True)  # Authentication tag for DEK encryption
-    
-    # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+@dataclass
+class AppSettings:
+    id: int = 1
+    password_hash: Optional[str] = None
+    password_salt: Optional[bytes] = None
+    password_iterations: Optional[int] = None
+    encryption_enabled: bool = False
+    encryption_algorithm: Optional[str] = None
+    encrypted_dek: Optional[bytes] = None
+    dek_nonce: Optional[bytes] = None
+    dek_tag: Optional[bytes] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
-def _is_select(statement) -> bool:
-    try:
-        from sqlalchemy.sql import Select
-        if isinstance(statement, Select):
-            return True
-    except ImportError:
-        pass
-
-    try:
-        flag = getattr(statement, "is_select")
-    except AttributeError:
-        flag = None
-    except Exception:
-        flag = None
-    if flag:
-        return True
-
-    try:
-        from sqlalchemy.sql.elements import TextClause
-        if isinstance(statement, TextClause):
-            return statement.text.lstrip().lower().startswith("select")
-    except ImportError:
-        pass
-
-    if isinstance(statement, str):
-        return statement.lstrip().lower().startswith("select")
-
-    return False
+__all__ = ["SafeSession", "SessionLocal", "DBNote", "AppSettings"]

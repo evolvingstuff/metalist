@@ -10,10 +10,9 @@ import random
 from threading import Lock
 from typing import Dict, Iterable, List, Tuple
 
-from sqlalchemy.orm import Session
-
 from ..models.linked_list import LinkedListManager
 from ..render.note_renderer import build_note_tree
+from ..models.database import SafeSession
 
 
 class MemoryStats:
@@ -83,7 +82,7 @@ _tracker = _MemoryTracker()
 class MemoryService:
     """High-level helper for memory mode operations."""
 
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: SafeSession) -> None:
         self.db = db
 
     def record_feedback(self, note_id: str, outcome: int) -> MemoryStats:

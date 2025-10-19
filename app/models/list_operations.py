@@ -1,8 +1,6 @@
 from typing import Optional
 from types import SimpleNamespace
 
-from sqlalchemy.orm import Session
-
 from app.db.notes_sql import fetch_children_ordered, fetch_note, update_links
 from app.models.database import SafeSession
 from .enums import MovePosition
@@ -13,7 +11,7 @@ class ListOperations:
     """Handles linked list manipulation operations"""
     
     @staticmethod
-    def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
+    def move_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None,
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
         """Move a note to a new position"""
         try:
@@ -99,7 +97,7 @@ class ListOperations:
             raise
 
 
-def _move_note_with_store(db: Session, note_id: str, new_parent_id: Optional[str],
+def _move_note_with_store(db: SafeSession, note_id: str, new_parent_id: Optional[str],
                           sibling_id: Optional[str], position: Optional[MovePosition]) -> None:
     try:
         record = note_store.get_note(note_id)
@@ -153,7 +151,7 @@ def _move_note_with_store(db: Session, note_id: str, new_parent_id: Optional[str
         _apply_order_with_store(db, new_parent_id, new_order)
 
 
-def _apply_order_with_store(db: Session, parent_id: Optional[str], order: list[str]) -> None:
+def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: list[str]) -> None:
     for index, current_id in enumerate(order):
         prev_id = order[index - 1] if index > 0 else None
         next_id = order[index + 1] if index < len(order) - 1 else None

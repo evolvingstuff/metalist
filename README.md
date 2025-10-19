@@ -15,7 +15,7 @@ A minimalist note-taking application with a focus on server-side rendering and e
 
 ### Backend
 - FastAPI - Modern Python web framework
-- SQLAlchemy - SQL toolkit and ORM
+- sqlite3 (stdlib) - persistent storage with guard-aware wrapper
 - Mako - Server-side templating
 - SQLite - Database storage
 

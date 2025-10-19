@@ -1,4 +1,3 @@
-from sqlalchemy.orm import Session
 import logging
 
 from .base_service import BaseQueryService
@@ -12,7 +11,7 @@ class UndoRedoService(BaseQueryService):
     """Service for undo/redo operations - uses BaseQueryService since these
     operations manage their own transaction state"""
     
-    def __init__(self, db: Session, transaction_manager):
+    def __init__(self, db: SafeSession, transaction_manager):
         super().__init__(db)
         self.transaction_manager = transaction_manager
     

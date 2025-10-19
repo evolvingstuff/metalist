@@ -1,7 +1,7 @@
 from typing import List, Optional, Any
-from sqlalchemy.orm import Session
+
 from .enums import MovePosition
-from .database import DBNote
+from .database import SafeSession
 
 # Import the new specialized classes
 from .list_traversal import ListTraversal
@@ -17,50 +17,50 @@ class LinkedListManager:
 
     # Delegate to ListTraversal
     @staticmethod
-    def validate_list(db: Session, parent_id: Optional[str] = None) -> bool:
+    def validate_list(db: SafeSession, parent_id: Optional[str] = None) -> bool:
         return ListTraversal.validate_list(db, parent_id)
 
     @staticmethod
-    def get_ordered_child_list(db: Session, parent_id: Optional[str] = None) -> List[Any]:
+    def get_ordered_child_list(db: SafeSession, parent_id: Optional[str] = None) -> List[Any]:
         return ListTraversal.get_ordered_child_list(db, parent_id)
 
     @staticmethod
-    def _would_create_cycle(db, note_id: str, new_parent_id: str) -> bool:
+    def _would_create_cycle(db: SafeSession, note_id: str, new_parent_id: str) -> bool:
         return ListTraversal.would_create_cycle(db, note_id, new_parent_id)
 
     # Undo/redo operations are now handled by TransactionManager via services
     # These methods are deprecated and should not be used
     @staticmethod
-    def undo(db: Session) -> bool:
+    def undo(db: SafeSession) -> bool:
         raise NotImplementedError("Use UndoRedoService instead")
 
     @staticmethod
-    def redo(db: Session) -> bool:
+    def redo(db: SafeSession) -> bool:
         raise NotImplementedError("Use UndoRedoService instead")
 
     # Delegate to NoteCRUD
     @staticmethod
-    def create_note_top(db: Session, note_id: str, parent_id: Optional[str] = None) -> None:
+    def create_note_top(db: SafeSession, note_id: str, parent_id: Optional[str] = None) -> None:
         return NoteCRUD.create_note_top(db, note_id, parent_id)
 
     @staticmethod
-    def get_note(db: Session, note_id: str) -> DBNote:
+    def get_note(db: SafeSession, note_id: str):
         return NoteCRUD.get_note(db, note_id)
 
     @staticmethod
-    def update_note(db: Session, note_id: str, content: str):
+    def update_note(db: SafeSession, note_id: str, content: str):
         return NoteCRUD.update_note(db, note_id, content)
 
     @staticmethod
-    def delete_note(db: Session, note_id: str) -> None:
+    def delete_note(db: SafeSession, note_id: str) -> None:
         return NoteCRUD.delete_note(db, note_id)
 
     @staticmethod
-    def create_note_drop(db: Session, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
+    def create_note_drop(db: SafeSession, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
         return NoteCRUD.create_note_drop(db, note_id, new_parent_id, sibling_id, position)
 
     # Delegate to ListOperations
     @staticmethod
-    def move_note(db: Session, note_id: str, new_parent_id: Optional[str] = None,
+    def move_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None,
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
         return ListOperations.move_note(db, note_id, new_parent_id, sibling_id, position)

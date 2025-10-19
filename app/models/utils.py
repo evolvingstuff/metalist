@@ -1,6 +1,5 @@
 from typing import Dict, Optional, Any
 from types import SimpleNamespace
-from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime, timezone
 
@@ -17,7 +16,7 @@ from app.db.notes_sql import (
 from app.models.database import SafeSession
 
 
-def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:
+def copy_note_in_memory(db: SafeSession, note_id: str) -> Dict[str, Any]:
     """
     Serializes a note and all its descendants to a pure data structure.
     
@@ -38,7 +37,7 @@ def copy_note_in_memory(db: Session, note_id: str) -> Dict[str, Any]:
     return _serialize_note_recursive(db, source_note)
 
 
-def _serialize_note_recursive(db: Session, source_note: Any) -> Dict[str, Any]:
+def _serialize_note_recursive(db: SafeSession, source_note: Any) -> Dict[str, Any]:
     """
     Recursively serializes a note and all its descendants to pure data.
     
@@ -74,7 +73,7 @@ def _serialize_note_recursive(db: Session, source_note: Any) -> Dict[str, Any]:
     return note_data
 
 
-def paste_note_from_memory(db: Session, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
+def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
     """
     Deserializes clipboard data into real database notes with new UUIDs.
     
@@ -89,7 +88,7 @@ def paste_note_from_memory(db: Session, note_data: Dict[str, Any], new_parent_id
     return _deserialize_note_recursive(db, note_data, new_parent_id)
 
 
-def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
+def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
     """
     Recursively deserializes note data into real database notes.
     
@@ -192,7 +191,7 @@ def _deserialize_note_recursive(db: Session, note_data: Dict[str, Any], new_pare
     return new_id
 
 
-def copy_note(db: Session, note_id: str, new_parent_id: Optional[str] = None) -> str:
+def copy_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None) -> str:
     """Create a deep copy of ``note_id`` and its descendants."""
 
     with SafeSession.allow_reads("copy_note:source"):
@@ -214,7 +213,7 @@ def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
 
 
 def _copy_note_recursive(
-    db: Session,
+    db: SafeSession,
     source_row: Dict[str, Any],
     new_parent_id: Optional[str] = None,
 ) -> str:
