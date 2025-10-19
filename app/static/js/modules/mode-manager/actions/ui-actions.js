@@ -6,6 +6,29 @@ import { CONFIG } from '../../config.js';
 import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 
+function updatePerfOverlay(roundtripMs, renderMs) {
+    let overlay = document.getElementById('perf-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'perf-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.bottom = '8px';
+        overlay.style.right = '8px';
+        overlay.style.padding = '4px 8px';
+        overlay.style.borderRadius = '4px';
+        overlay.style.background = 'rgba(0, 0, 0, 0.7)';
+        overlay.style.color = '#fff';
+        overlay.style.fontSize = '12px';
+        overlay.style.fontFamily = 'monospace';
+        overlay.style.zIndex = '9999';
+        document.body.appendChild(overlay);
+    }
+
+    const roundtrip = Number(roundtripMs.toFixed(2));
+    const render = Number(renderMs.toFixed(2));
+    overlay.textContent = `notes.view RT ${roundtrip}ms | render ${render}ms`;
+}
+
 export async function actionRefreshAndMaybeSelect(options = {}) {
     Logger.logAction('refresh_and_maybe_select', { 
         noteId: ModeContext.currentNoteId,
@@ -19,17 +42,23 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         ModeContext.setLoading(true);
     }
 
+    const requestStartedAt = performance.now();
     const html = await NotesAPI.fetchView(noteId, ModeContext.searchQuery);
+    const roundtripMs = performance.now() - requestStartedAt;
+    console.log(' [PERF] notes.view roundtrip:', {
+        ms: Number(roundtripMs.toFixed(2))
+    });
 
     const notesContainer = document.getElementById('notes-container');
     if (!notesContainer) {
         throw new Error('Notes container not found');
     }
-    
+
+    const renderStartedAt = performance.now();
     // Update content directly - app-level fade handles the transition
     notesContainer.innerHTML = html;
     requestAnimationFrame(() => updateCollapseAffordances(notesContainer));
-    
+
     // If this is initial page load, fade in the entire app
     if (ModeContext.isInitialPageLoad) {
         const appContainer = document.getElementById('app');
@@ -40,7 +69,8 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     }
 
     let contentHtml = null;
-    
+    let result;
+
     if (noteId) {
         const noteElement = DOMUtils.getNoteById(noteId);
         contentHtml = DOMUtils.getNoteContentHTML(noteElement);
@@ -82,14 +112,20 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         if (shouldManageLoading && ModeContext.isLoading) {
             ModeContext.setLoading(false);
         }
-                
-        return contentHtml;
+        result = contentHtml;
     } else {
                 
         if (shouldManageLoading && ModeContext.isLoading) {
             ModeContext.setLoading(false);
         }
-                
-        return html;
+        result = html;
     }
+
+    const renderMs = performance.now() - renderStartedAt;
+    console.log(' [PERF] notes.view render:', {
+        ms: Number(renderMs.toFixed(2))
+    });
+    updatePerfOverlay(roundtripMs, renderMs);
+
+    return result;
 }

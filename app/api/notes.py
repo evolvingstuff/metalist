@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 import logging
+import time
 
 from .dependencies import get_db
 from ..models.database import SafeSession
@@ -552,10 +553,15 @@ def get_notes_view(
     transaction_manager: TransactionManager = Depends(get_transaction_manager)
 ):
     """Render the HTML view for the notes list"""
+    start_time = time.perf_counter()
     apply_delay("get_notes_view")
-    
+
     # Check if search context has changed and clear undo stack if needed
     transaction_manager.check_context_change(search)
-    
+
     with get_query_service(db) as service:
-        return service.render_notes_view(editing_note_id, search, client_id)
+        result = service.render_notes_view(editing_note_id, search, client_id)
+
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    print(f"[notes.view] response_time_ms={duration_ms:.2f}")
+    return result
