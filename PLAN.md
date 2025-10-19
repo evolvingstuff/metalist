@@ -60,6 +60,7 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
 8. **Documentation & Cleanup**
    - Update developer docs / design notes describing the new data access approach.
    - Remove legacy files or comments referencing ORM event hooks (**next**).
+   - Document the pytest harness migration path (`docs/testing/harness.md`).
 
 ## Risks / Watchouts
 - Undo/redo correctness must be revalidated after the new diff mechanism.
