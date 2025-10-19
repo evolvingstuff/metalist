@@ -6,6 +6,8 @@ import logging
 
 from .dependencies import get_db
 from ..models.database import DBNote, SafeSession
+from ..db.notes_sql import fetch_children_ordered, update_links
+from types import SimpleNamespace
 from ..models.commands import UpdateNoteContent
 from ..models.enums import MovePosition
 from ..services.dependencies import (
@@ -382,21 +384,32 @@ def paste_child(
             
             # Position as first child (the paste_note_from_memory already sets the parent)
             # We need to ensure it's positioned as the first child
-            from ..models.linked_list import LinkedListManager
-            
             # Find existing first child of target
             with SafeSession.allow_reads("paste_child:first_child"):
-                existing_first_child = db.query(DBNote).filter(
-                    DBNote.parent_id == target_note_id,
-                    DBNote.prev_id == None
-                ).first()
-            
-            if existing_first_child and existing_first_child.id != new_note_id:
-                with SafeSession.allow_reads("paste_child:new_note"):
-                    new_note = db.get(DBNote, new_note_id)
-                new_note.next_id = existing_first_child.id
-                existing_first_child.prev_id = new_note_id
-            
+                existing_children = fetch_children_ordered(db.connection(), target_note_id)
+            existing_first_child = existing_children[0] if existing_children else None
+
+            if existing_first_child and existing_first_child["id"] != new_note_id:
+                update_links(
+                    db.connection(),
+                    new_note_id,
+                    parent_id=target_note_id,
+                    prev_id=None,
+                    next_id=existing_first_child["id"],
+                )
+                update_links(
+                    db.connection(),
+                    existing_first_child["id"],
+                    prev_id=new_note_id,
+                )
+            else:
+                update_links(
+                    db.connection(),
+                    new_note_id,
+                    parent_id=target_note_id,
+                    prev_id=None,
+                )
+
             from ..services.note_store import store as note_store
             if note_store.loaded:
                 # TODO: Replace with targeted store update once ORM sunset is complete.
