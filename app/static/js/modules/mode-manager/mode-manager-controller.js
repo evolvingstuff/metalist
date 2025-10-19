@@ -10,6 +10,7 @@ import { initFocusEvents } from './events/focus-events.js';
 import { initContentAutoSave } from './events/inactivity-events.js';
 import { initializeSearchEvents } from './events/search-events.js';
 import { startPolling } from './services/polling-service.js';
+import { startInfiniteScrollMonitor, resetInfiniteScrollState } from './services/infinite-scroll-service.js';
 
 const DEFAULT_CONFIG = {};
 
@@ -51,6 +52,7 @@ const ModeManager = {
             initContentAutoSave();
             await initializeSearchEvents();
             startPolling();
+            startInfiniteScrollMonitor();
                         
             Logger.logDebug('Event handlers registered', { config });
         } catch (error) {
@@ -65,6 +67,9 @@ const ModeManager = {
 
     _handleModeChange(property, newValue) {
         Logger.logDebug(`Mode change: ${property}`, { [property]: newValue });
+        if (property === 'searchQuery') {
+            resetInfiniteScrollState();
+        }
     },
 
     debugState() {

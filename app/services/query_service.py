@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 import hashlib
 import json
 
@@ -6,6 +6,10 @@ from .base_service import BaseQueryService
 from ..models.linked_list import LinkedListManager
 from ..render.note_renderer import build_note_tree
 from .sync_state import get_all_locks
+from .note_store import store as note_store
+
+ROOT_CHUNK_SIZE = 50
+ROOT_BUFFER_THRESHOLD = 25
 
 
 class NoteQueryService(BaseQueryService):
@@ -16,17 +20,43 @@ class NoteQueryService(BaseQueryService):
         editing_note_id: Optional[str] = None,
         search: Optional[str] = None,
         client_id: Optional[str] = None,
+        client_known_note_ids: Optional[Set[str]] = None,
+        client_seen_root_ids: Set[str] = frozenset(),
     ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
         """Produce structure entries and note payloads for differential updates."""
 
+        client_known_note_ids = client_known_note_ids or set()
+        client_seen_root_ids = set(client_seen_root_ids)
         notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
         locks = get_all_locks()
 
         structure: List[Dict[str, object]] = []
         payloads: Dict[str, Dict[str, object]] = {}
+        visited_note_ids: Set[str] = set()
+
+        ordered_root_ids = [note['id'] for note in notes]
+        root_index_map = {note_id: index for index, note_id in enumerate(ordered_root_ids)}
+
+        seen_root_indices = {
+            root_index_map[root_id]
+            for root_id in client_seen_root_ids
+            if root_id in root_index_map
+        }
+
+        window_end_index = self._determine_root_window_end(
+            ordered_root_ids,
+            root_index_map,
+            client_known_note_ids,
+            seen_root_indices,
+            editing_note_id,
+        )
+
+        allowed_root_ids = set(ordered_root_ids[: window_end_index + 1]) if window_end_index >= 0 else set()
 
         def traverse(nodes: List[dict], parent_id: Optional[str] = None) -> None:
             for index, note in enumerate(nodes):
+                if parent_id is None and allowed_root_ids and note['id'] not in allowed_root_ids:
+                    continue
                 note_id = note['id']
                 prev_id = nodes[index - 1]['id'] if index > 0 else None
                 next_id = nodes[index + 1]['id'] if index + 1 < len(nodes) else None
@@ -57,6 +87,7 @@ class NoteQueryService(BaseQueryService):
                     'flags': normalized_flags,
                     'hash': hash_value,
                 }
+                visited_note_ids.add(note_id)
 
                 children = note.get('children') or []
                 should_include_children = (
@@ -68,7 +99,45 @@ class NoteQueryService(BaseQueryService):
 
         traverse(notes, None)
 
+        if visited_note_ids:
+            locks = {note_id: owner for note_id, owner in locks.items() if note_id in visited_note_ids}
+        else:
+            locks = {}
+
         return structure, payloads, locks
+
+    def _determine_root_window_end(
+        self,
+        ordered_root_ids: List[str],
+        root_index_map: Dict[str, int],
+        client_known_note_ids: Set[str],
+        seen_root_indices: Set[int],
+        editing_note_id: Optional[str],
+    ) -> int:
+        if not ordered_root_ids:
+            return -1
+
+        window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
+
+        for note_id in client_known_note_ids:
+            index = root_index_map.get(note_id)
+            if index is not None:
+                window_end = max(window_end, index)
+
+        if editing_note_id:
+            editing_root_id = _find_root_id(editing_note_id)
+            if editing_root_id:
+                index = root_index_map.get(editing_root_id)
+                if index is not None:
+                    window_end = max(window_end, index)
+
+        highest_seen_index = max(seen_root_indices) if seen_root_indices else None
+
+        if highest_seen_index is not None:
+            while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
+                window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
+
+        return window_end
 
 
 def _compute_note_hash(
@@ -98,3 +167,18 @@ def _normalize_flags(flags: Dict[str, object]) -> Dict[str, object]:
     normalized['memoryMode'] = bool(flags.get('memoryMode', False))
     normalized['memorySelected'] = bool(flags.get('memorySelected', False))
     return normalized
+
+
+def _find_root_id(note_id: str) -> Optional[str]:
+    try:
+        record = note_store.get_note(note_id)
+    except KeyError:
+        return None
+
+    current = record
+    while current.parent_id:
+        try:
+            current = note_store.get_note(current.parent_id)
+        except KeyError:
+            return None
+    return current.id

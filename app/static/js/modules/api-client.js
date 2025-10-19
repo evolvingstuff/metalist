@@ -256,7 +256,8 @@ export const NotesAPI = {
             clientId: ModeContext.clientId,
             editingNoteId: noteId || null,
             search: searchQuery || null,
-            clientNoteUuidHashes: ModeContext.getNoteHashPayload()
+            clientNoteUuidHashes: ModeContext.getNoteHashPayload(),
+            clientSeenRootIds: ModeContext.getSeenRootIds()
         };
 
         const response = await this._apiCall(CONFIG.API.NOTES.VIEW, {
