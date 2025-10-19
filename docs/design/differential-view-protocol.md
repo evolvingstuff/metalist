@@ -1,83 +1,82 @@
 # Differential View Protocol
 
 ## Overview
-- `/api/notes/view` now supports JSON responses when the client sends `Accept: application/json` (or `?format=json`).
-- The server reuses the in-memory `NoteStore` to build a preorder structure snapshot plus render variants and hashes for each visible note.
-- Clients retain HTML fallback automatically if JSON negotiation fails or is disabled.
+- `/api/notes/view` accepts JSON `POST` requests in “diff mode”.
+- The server always renders the full note tree with the existing renderer, then emits only the delta relative to hashes supplied by the client.
+- HTML fallback is removed; clients that do not send the diff payload should continue to use the legacy HTML endpoint (handled separately).
 
-## Payload Shape
+## Request Shape
 ```json
 {
-  "structure": [
-    {
-      "id": "note-id",
-      "parentId": null,
-      "prevId": null,
-      "nextId": "sibling-id",
-      "hash": "sha256"
-    }
-  ],
-  "notes": {
-    "note-id": {
-      "content": "<div>rendered html</div>",
-      "rawContent": "<div>plaintext</div>",
-      "flags": {
-        "isEditing": false,
-        "isCollapsed": false
-      },
-      "variants": {
-        "collapsed": "<div>…",
-        "expanded": "<div>…",
-        "edit": "<div>…"
-      },
-      "hashes": {
-        "collapsed": "sha256",
-        "expanded": "sha256",
-        "edit": "sha256"
-      },
-      "metadata": {
-        "parentId": null,
-        "prevId": null,
-        "nextId": "sibling-id",
-        "isCollapsed": false,
-        "createdAt": "2024-01-01T00:00:00",
-        "updatedAt": "2024-01-01T00:00:00"
-      }
-    }
-  },
-  "locks": {
-    "note-id": "client-id"
-  },
-  "version": "app-version",
-  "updateUUID": "sync-token",
-  "treeHash": "sha256",
-  "editingNoteId": "note-id",
-  "searchQuery": "term",
-  "currentClientId": "client-id"
+  "clientId": "client-uuid",
+  "editingNoteId": null,
+  "search": "optional query",
+  "clientNoteUuidHashes": [
+    ["note-uuid-1", "sha256hash1"],
+    ["note-uuid-2", "sha256hash2"]
+  ]
 }
 ```
 
 ### Notes
-- `structure` is preorder; `prevId`/`nextId` reference visible siblings for deterministic ordering and hash calculation.
-- `hash` derives from the expanded variant plus children, so hash changes capture content or structural edits.
-- `variants` supply the rendered HTML for collapsed/expanded/edit modes so the client can swap without re-templating.
-- `treeHash` is a convenient checksum (id + parent/prev/next/hash) used by the client for coarse equality checks.
-- Requests fail fast if the `NoteStore` is not hydrated (server bug) instead of silently degrading.
+- `clientNoteUuidHashes` is a list of `[noteId, expandedHashWithFlags]` tuples representing the client’s current cache. Omit entries the client does not have (they will be treated as additions).
+- `clientId`, `editingNoteId`, and `search` retain their current semantics.
+- The client issues the diff request whenever it needs to reconcile with the server: after detecting a changed `updateUUID` from `/api/notes/check-updates`, or immediately after local mutations (save, move, collapse toggles, exiting edit mode) to pick up server-side side effects.
+
+## Response Shape
+```json
+{
+  "structure": [
+    ["note-uuid-1", null, null, "note-uuid-2"],
+    ["note-uuid-2", null, "note-uuid-1", null]
+  ],
+  "updatedNotes": [
+    [
+      "note-uuid-2",
+      {
+        "content": "<div>rendered html</div>",
+        "flags": {
+          "isEditing": false,
+          "isCollapsed": false,
+          "memoryMode": false
+        },
+        "hash": "sha256hash2"
+      }
+    ]
+  ],
+  "locks": {
+    "note-uuid-1": "client-uuid"
+  },
+  "updateUUID": "sync-token",
+  "version": "app-version",
+  "currentClientId": "client-uuid",
+  "searchQuery": "optional query",
+  "editingNoteId": null
+}
+```
+
+### Notes
+- `structure` is preorder, each entry is `[id, parentId|null, prevId|null, nextId|null]`. Include every visible node so the client can reorder DOM as needed.
+- `updatedNotes` lists only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each entry is `[id, payload]` where `payload` includes the rendered expanded HTML, flags, and the server’s latest expanded hash. The hash incorporates both the expanded HTML and the note’s flag state (e.g., `isCollapsed`, `isEditing`, `memoryMode`).
+- Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
+- Locks, version, search info, and `updateUUID` mirror the existing HTML response so downstream code keeps working.
 
 ## Client Reconciliation
-- Feature flag `CONFIG.FEATURE_FLAGS.DIFFERENTIAL_VIEW` toggles JSON negotiation.
-- `NotesAPI.fetchView` saves the latest `updateUUID` when JSON is returned; HTML fallback remains intact.
-- The diff service removes DOM nodes missing from `structure`, moves existing ones to match parent order, and creates new nodes using the payload.
-- `ModeContext` tracks per-note hashes and the `treeHash` to short-circuit redundant DOM writes. Editing notes held by the current client skip content replacement unless their hash changes to avoid clobbering unsaved work.
-- Lock state, collapse flags, and memory-mode styling are applied directly from `flags` + `locks`.
+- Maintain a cache of `[id, hash]` tuples in `ModeContext`; convert the response `updatedNotes` list into map form when updating the DOM.
+- Walk `structure` to ensure DOM order matches the server. Insert new nodes when they appear, reposition existing nodes based on `prevId/nextId`, and establish child containers as today.
+- For each entry in `updatedNotes`, update content/flags and refresh the stored hash.
+- Remove DOM nodes that are not present in the latest `structure`; also drop their hashes from local cache.
+- Persist `updateUUID` for continued sync polling.
 
 ## Manual Verification Checklist
-- Exercise note CRUD (create, edit, delete) and confirm only changed nodes rerender.
-- Move notes across parents/siblings and ensure DOM order updates without full redraw.
-- Toggle collapse/expand and verify children remain intact; run `updateCollapseAffordances` once per refresh.
-- Perform undo/redo flows; the structure should reconcile cleanly, and sync UUIDs advance.
-- Run search filtering (including clearing the query) to confirm filtered structures diff correctly and hashes realign.
+- CRUD sequences: create, edit, delete and confirm only changed nodes rerender.
+- Structural mutations: move notes across parents/siblings and verify DOM order updates without full redraw.
+- Collapse/expand toggles: ensure child containers and flags stay accurate.
+- Undo/redo flows: structure diff should realign with no stale nodes.
+- Search filtering: filtered structures should diff correctly; stale hashes should trigger payload updates.
+- Lock acquisition/release: verify lock icons/styling update without full refresh.
 
 ## Follow-ups
+- Investigate compression/streaming for large `clientNoteUuidHashes` payloads if needed.
 - Extend automated tests once the pytest harness migrates to the sqlite helpers (current suite still pending).
-- Consider persisting `variants` client-side for future mode transitions (e.g., inline collapse) without another payload.
+- Explore caching rendered variants server-side if diff CPU becomes material after the protocol change.
