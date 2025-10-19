@@ -7,7 +7,9 @@ import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 
-function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, rootNotesKnown, rootNotesSeen, updatedNotes) {
+function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
+                           rootNotesKnown, rootNotesSeen, updatedNotes,
+                           context) {
     let overlay = document.getElementById('perf-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -44,6 +46,10 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes, rootNotes
     overlay.innerHTML = `
         <table style="border-collapse: collapse;">
             <tbody>
+                <tr>
+                    <td style="${labelCellBaseStyle} ${bottomBorderStyle}">context</td>
+                    <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${context}</td>
+                </tr>
                 <tr>
                     <td style="${labelCellBaseStyle} ${bottomBorderStyle}">all notes known</td>
                     <td style="${valueCellBaseStyle} ${bottomBorderStyle}">${notesCount}</td>
@@ -185,17 +191,18 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         result = null;
     }
 
-    if (ModeContext._requestStartedAt) {
+    if (options.startedAt) {  //otherwise called by ending editing polling?
         const renderEndedAt = performance.now();
         const renderMs = renderEndedAt - renderStartedAt;
-        const totalMs = renderEndedAt - ModeContext._requestStartedAt;
-        console.log('BUGZ GETTING ModeContext._requestStartedAt:' + ModeContext._requestStartedAt);
+        const totalMs = renderEndedAt - options.startedAt;
+        const context = options.context ? options.context : '???';
+        console.log('BUGZ GETTING ' + context + ' options.startedAt:' + options.startedAt);
 
         console.log(' [PERF] notes.view render:', {
             ms: Number(renderMs.toFixed(2))
         });
-        updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount, rootNotesKnown, rootNotesSeen, updatedNotesCount);
-        ModeContext._requestStartedAt = null;
+        updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
+            rootNotesKnown, rootNotesSeen, updatedNotesCount, context);
     }
 
     return result;

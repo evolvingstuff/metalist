@@ -7,6 +7,7 @@ import { CONFIG } from '../../config.js';
 import { DOMUtils } from '../../dom-utils.js';
 
 export async function actionUndo() {
+    let startedAt = performance.now();
     Logger.logAction('undo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -60,7 +61,7 @@ export async function actionUndo() {
         throw new Error(`Undo failed: ${result.message || 'Unknown error'}`);
     }
 
-    const newContent = await actionRefreshAndMaybeSelect();
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionUndo'});
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);
@@ -70,6 +71,7 @@ export async function actionUndo() {
 }
 
 export async function actionRedo() {
+    let startedAt = performance.now();
     Logger.logAction('redo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -123,7 +125,7 @@ export async function actionRedo() {
         throw new Error(`Redo failed: ${result.message || 'Unknown error'}`);
     }
 
-    const newContent = await actionRefreshAndMaybeSelect();
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionRedo'});
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);

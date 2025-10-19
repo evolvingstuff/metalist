@@ -6,8 +6,8 @@ import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
 export async function deleteNote(noteId) {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ deleteNote setting startedAt: ' + startedAt)
 
     Logger.logAction('deleteNote', {
         noteId,
@@ -44,12 +44,12 @@ export async function deleteNote(noteId) {
 
     ModeContext.setLoading(false);
 
-    await actionRefreshAndMaybeSelect();
+    await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'deleteNote'});
 }
 
 export async function deleteNoteOutsideEdit(noteId) {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ deleteNoteOutsideEdit setting startedAt: ' + startedAt)
 
     Logger.logAction('deleteNoteOutsideEdit', {
         noteId,
@@ -82,7 +82,7 @@ export async function deleteNoteOutsideEdit(noteId) {
             ModeContext.setCurrentContent(null);
         }
 
-        await actionRefreshAndMaybeSelect({ skipLoadingState: true });
+        await actionRefreshAndMaybeSelect({ skipLoadingState: true, startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
     } finally {
         if (shouldManageLoading && ModeContext.isLoading) {
             ModeContext.setLoading(false);
@@ -91,8 +91,7 @@ export async function deleteNoteOutsideEdit(noteId) {
 }
 
 export async function createNote() {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
 
     Logger.logAction('createNote', {
         currentNoteId: ModeContext.currentNoteId,
@@ -135,15 +134,15 @@ export async function createNote() {
     ModeContext.setLoading(false);
 
     if (ModeContext.isEditing) {
-        return await actionSwitchNotes(newNoteId);
+        return await actionSwitchNotes(newNoteId);  //asdf asdf
     } else {
-        return await actionSelectNote(newNoteId);
+        return await actionSelectNote(newNoteId);  //asdf asdf
     }
 }
 
 export async function createChildNote() {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ createChildNote setting startedAt: ' + startedAt)
 
     Logger.logAction('createChildNote', {
         currentNoteId: ModeContext.currentNoteId,
@@ -176,15 +175,15 @@ export async function createChildNote() {
     ModeContext.setLoading(false);
 
     if (ModeContext.isEditing) {
-        return await actionSwitchNotes(newNoteId);
+        return await actionSwitchNotes(newNoteId); //asdf asdf
     } else {
-        return await actionSelectNote(newNoteId);
+        return await actionSelectNote(newNoteId);  //asdf asdf
     }
 }
 
 export async function moveNoteUp(noteId) {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ moveNoteUp setting startedAt: ' + startedAt)
 
     Logger.logAction('moveNoteUp', {
         noteId,
@@ -213,7 +212,7 @@ export async function moveNoteUp(noteId) {
         ModeContext.setLoading(false);
     }
 
-    const newContent = await actionRefreshAndMaybeSelect();
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'moveNoteUp'});
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -221,8 +220,8 @@ export async function moveNoteUp(noteId) {
 }
 
 export async function moveNoteDown(noteId) {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ moveNoteDown setting startedAt: ' + startedAt)
 
     Logger.logAction('moveNoteDown', {
         noteId,
@@ -251,7 +250,7 @@ export async function moveNoteDown(noteId) {
         ModeContext.setLoading(false);
     }
 
-    const newContent = await actionRefreshAndMaybeSelect();
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'moveNoteDown'});
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -259,8 +258,8 @@ export async function moveNoteDown(noteId) {
 }
 
 async function setNoteCollapse(noteId, collapsed) {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ setNoteCollapse setting startedAt: ' + startedAt)
 
     Logger.logAction('setNoteCollapse', {
         noteId,
@@ -285,7 +284,7 @@ async function setNoteCollapse(noteId, collapsed) {
         } else {
             await NotesAPI.expandNote(noteId);
         }
-        await actionRefreshAndMaybeSelect({ skipLoadingState: true });
+        await actionRefreshAndMaybeSelect({ skipLoadingState: true, startedAt: startedAt, context: 'setNoteCollapse'});
     } finally {
         if (ModeContext.isLoading) {
             ModeContext.setLoading(false);
@@ -303,7 +302,7 @@ export async function expandNote(noteId) {
 
 export async function actionCopyNote() {
     ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    console.log('BUGZ actionCopyNote setting startedAt: ' + startedAt)
 
     const currentNoteId = ModeContext.currentNoteId;
     
@@ -330,8 +329,8 @@ export async function actionCopyNote() {
 }
 
 export async function actionPasteNoteSibling() {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ actionPasteNoteSibling setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
 
     const currentNoteId = ModeContext.currentNoteId;
     
@@ -357,12 +356,12 @@ export async function actionPasteNoteSibling() {
     
     ModeContext.setLoading(false);
 
-    await actionRefreshAndMaybeSelect();
+    await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionPasteNoteSibling'});
 }
 
 export async function actionPasteNoteChild() {
-    ModeContext._requestStartedAt = performance.now();
-    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+    let startedAt = performance.now();
+    console.log('BUGZ actionPasteNoteSibling setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionPasteNoteChild', { 
@@ -387,5 +386,5 @@ export async function actionPasteNoteChild() {
     
     ModeContext.setLoading(false);
 
-    await actionRefreshAndMaybeSelect();
+    await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionPasteNoteChild'});
 }

@@ -5,6 +5,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { CommentUtils } from '../../comment-utils.js';
 
 export async function actionSaveNote(noteId) {
+    console.log('BUGZ actionSaveNote')
     Logger.logAction('saveNote', { noteId });
 
     if (!noteId) {
@@ -40,6 +41,7 @@ export async function actionSaveNote(noteId) {
 }
 
 export async function actionSaveNoteOnIdle(noteId) {
+    console.log('BUGZ actionSaveNoteOnIdle')
     Logger.logAction('saveNoteOnIdle', { 
         noteId,
         idle: !ModeContext.isActive

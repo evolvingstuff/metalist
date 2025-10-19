@@ -112,7 +112,7 @@ async function maybeFetchMore(previousKnownCount) {
 
     try {
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-        await actionRefreshAndMaybeSelect();
+        await actionRefreshAndMaybeSelect();  //asdf asdf
         const currentKnown = ModeContext.knownRootCount;
         if (currentKnown <= previousKnownCount) {
             noMoreRoots = true;
@@ -127,6 +127,7 @@ async function maybeFetchMore(previousKnownCount) {
     }
 }
 
+//TODO: asdf asdf do we need this?
 export function refreshOverlayMetrics() {
     const overlay = document.getElementById('perf-overlay');
     if (!overlay) {

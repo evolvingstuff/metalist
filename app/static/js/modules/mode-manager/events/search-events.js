@@ -39,9 +39,10 @@ export function handleSearchInput(event) {
 }
 
 export async function initializeSearchEvents() {
+    let startedAt = performance.now();
     const searchInput = document.getElementById('search-input');
     
-    if (searchInput) {
+    if (searchInput) {  //BS
         // Add input event listener
         searchInput.addEventListener('input', handleSearchInput);
         
@@ -71,7 +72,7 @@ export async function initializeSearchEvents() {
         Logger.logAction('initialPageLoad', { searchQuery: activeTabQuery || 'none' });
         
         try {
-            await actionRefreshAndMaybeSelect();
+            await actionRefreshAndMaybeSelect({startedAt: startedAt, context: "init search"});
             
             // Restore scroll position for the active tab
             const scrollY = ModeContext.getTabScrollPosition();

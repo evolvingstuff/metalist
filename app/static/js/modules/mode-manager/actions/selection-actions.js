@@ -7,6 +7,7 @@ import { NotesAPI } from '../../api-client.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 
 export async function actionSelectNote(noteId) {
+    let startedAt = performance.now();
     Logger.logAction('selectNote', { 
         noteId, 
         currentNoteId: ModeContext.currentNoteId 
@@ -50,7 +51,7 @@ export async function actionSelectNote(noteId) {
 
     ModeContext.setEditing(true);
 
-    const newContent = await actionRefreshAndMaybeSelect();
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
@@ -69,6 +70,7 @@ export async function actionSelectNote(noteId) {
 }
 
 export async function actionDeselectNote() {
+    let startedAt = performance.now();
     Logger.logAction('deselectNote', { 
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -102,12 +104,13 @@ export async function actionDeselectNote() {
 
     ModeContext.setCurrentContent(null);
 
-    await actionRefreshAndMaybeSelect();
+    await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
     ModeContext.validate();
 }
 
 export async function actionSwitchNotes(newNoteId) {
+    let startedAt = performance.now();
     Logger.logAction('switchNotes', { 
         currentNoteId: ModeContext.currentNoteId,
         newNoteId,
@@ -174,7 +177,7 @@ export async function actionSwitchNotes(newNoteId) {
 
     ModeContext.setCurrentNoteId(newNoteId);
 
-    const newContent = await actionRefreshAndMaybeSelect();
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
     
     ModeContext.setCurrentContent(newContent);
 
