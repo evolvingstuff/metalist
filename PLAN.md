@@ -49,18 +49,17 @@ We now maintain an authoritative in-memory `NoteStore`, emit direct SQL for writ
    - Build note-diff snapshots directly from `NoteStore` before/after each operation.
    - Update `Command` objects to replay mutations via the helper functions and store APIs (no ORM events).
 
-6. **Session & Guard Cleanup**
-   - Strip ORM-specific configuration (`sessionmaker`, events) that are no longer needed.
-   - Simplify `SafeSession` to handle connection management for the helper layer.
+6. **Session & Guard Cleanup** ✅
+   - Safe session now orchestrates guard-aware Core connections only; ORM event listeners removed.
 
 7. **Testing & Validation**
    - Regression test manual flows (CRUD, move, collapse, undo/redo, auth password flows).
    - Verify guard behaviour by attempting to execute raw SELECTs outside `allow_reads`.
-   - Add targeted unit/integration tests for the SQL helper functions and undo diff logic.
+   - Add targeted unit/integration tests for the SQL helper functions and undo diff logic (**in progress**).
 
 8. **Documentation & Cleanup**
    - Update developer docs / design notes describing the new data access approach.
-   - Remove legacy files or comments referencing ORM event hooks.
+   - Remove legacy files or comments referencing ORM event hooks (**next**).
 
 ## Risks / Watchouts
 - Undo/redo correctness must be revalidated after the new diff mechanism.
