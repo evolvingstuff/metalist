@@ -28,23 +28,33 @@
 {
   "html": "<div>existing SSR output…</div>",
   "structure": [
-    ["note-uuid-1", null, null, "note-uuid-2"],
-    ["note-uuid-2", null, "note-uuid-1", null]
+    {
+      "id": "note-uuid-1",
+      "parentId": null,
+      "prevId": null,
+      "nextId": "note-uuid-2",
+      "hash": "sha256hash1"
+    },
+    {
+      "id": "note-uuid-2",
+      "parentId": null,
+      "prevId": "note-uuid-1",
+      "nextId": null,
+      "hash": "sha256hash2"
+    }
   ],
-  "updatedNotes": [
-    [
-      "note-uuid-2",
-      {
-        "content": "<div>rendered html</div>",
-        "flags": {
-          "isEditing": false,
-          "isCollapsed": false,
-          "memoryMode": false
-        },
-        "hash": "sha256hash2"
-      }
-    ]
-  ],
+  "notes": {
+    "note-uuid-2": {
+      "content": "<div>rendered html</div>",
+      "flags": {
+        "isEditing": false,
+        "isCollapsed": false,
+        "memoryMode": false,
+        "memorySelected": false
+      },
+      "hash": "sha256hash2"
+    }
+  },
   "locks": {
     "note-uuid-1": "client-uuid"
   },
@@ -58,15 +68,15 @@
 
 ### Notes
 - `html` is temporarily included for compatibility with the legacy DOM refresh path while the client migrates to the pure diff workflow.
-- `structure` is preorder, each entry is `[id, parentId|null, prevId|null, nextId|null]`. Include every visible node so the client can reorder DOM as needed.
-- `updatedNotes` lists only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each entry is `[id, payload]` where `payload` includes the rendered expanded HTML, flags, and the server’s latest expanded hash. The hash incorporates expanded HTML, normalized flags (e.g., `isCollapsed`, `isEditing`, `memoryMode`), and the parent/prev/next pointers so structural changes trigger updates.
+- `structure` is preorder; each entry includes `id`, `parentId`, `prevId`, `nextId`, and the authoritative `hash`. Include every visible node so the client can reorder DOM as needed.
+- `notes` maps only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each value contains the rendered expanded HTML, normalized flags, and the latest hash. The hash incorporates expanded HTML, normalized flags (e.g., `isCollapsed`, `isEditing`, `memoryMode`, `memorySelected`), and the parent/prev/next pointers so structural changes trigger updates.
 - Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
 - Locks, version, search info, and `updateUUID` mirror the existing HTML response so downstream code keeps working.
 
 ## Client Reconciliation
-- Maintain a cache of `[id, hash]` tuples in `ModeContext`; convert the response `updatedNotes` list into map form when updating the DOM.
+- Maintain a map of `id -> hash` in `ModeContext`; populate it from `structure` hashes each response and drop entries for ids no longer present.
 - Walk `structure` to ensure DOM order matches the server. Insert new nodes when they appear, reposition existing nodes based on `prevId/nextId`, and establish child containers as today.
-- For each entry in `updatedNotes`, update content/flags and refresh the stored hash.
+- For each entry in `notes`, update content/flags and refresh the stored hash. Nodes absent from `notes` retain their existing content/flags but may still move according to the structure.
 - Remove DOM nodes that are not present in the latest `structure`; also drop their hashes from local cache.
 - Persist `updateUUID` for continued sync polling.
 

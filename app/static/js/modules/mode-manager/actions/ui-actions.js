@@ -5,6 +5,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
+import { applyDifferentialView } from '../services/differential-view-service.js';
 
 function updatePerfOverlay(roundtripMs, renderMs) {
     let overlay = document.getElementById('perf-overlay');
@@ -44,10 +45,10 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
 
     const requestStartedAt = performance.now();
     const viewResponse = await NotesAPI.fetchView(noteId, ModeContext.searchQuery);
-    if (!viewResponse || typeof viewResponse.html !== 'string' || !viewResponse.snapshot) {
-        throw new Error('notes.view response missing html or snapshot payload');
+    if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
+        throw new Error('notes.view response missing snapshot payload');
     }
-    const { html, snapshot } = viewResponse;
+    const { snapshot } = viewResponse;
     ModeContext.syncNoteHashesFromSnapshot(snapshot);
     const roundtripMs = performance.now() - requestStartedAt;
     console.log(' [PERF] notes.view roundtrip:', {
@@ -58,14 +59,12 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         console.log(' [SNAPSHOT] notes.view payload:', snapshot);
     }
 
-    const notesContainer = document.getElementById('notes-container');
-    if (!notesContainer) {
-        throw new Error('Notes container not found');
-    }
-
     const renderStartedAt = performance.now();
-    // Update content directly - app-level fade handles the transition
-    notesContainer.innerHTML = html;
+    const diffResult = applyDifferentialView(snapshot);
+    const notesContainer = diffResult.notesContainer;
+    if (!notesContainer) {
+        throw new Error('Notes container not found after diff application');
+    }
     requestAnimationFrame(() => updateCollapseAffordances(notesContainer));
 
     // If this is initial page load, fade in the entire app
@@ -78,7 +77,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     }
 
     let contentHtml = null;
-    let result;
+    let result = null;
 
     if (noteId) {
         const noteElement = DOMUtils.getNoteById(noteId);
@@ -127,7 +126,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         if (shouldManageLoading && ModeContext.isLoading) {
             ModeContext.setLoading(false);
         }
-        result = html;
+        result = null;
     }
 
     const renderMs = performance.now() - renderStartedAt;

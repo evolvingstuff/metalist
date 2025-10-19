@@ -46,7 +46,7 @@ class NoteQueryService(BaseQueryService):
         notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
         locks = get_all_locks()
 
-        structure: List[Tuple[str, Optional[str], Optional[str], Optional[str]]] = []
+        structure: List[Dict[str, object]] = []
         payloads: Dict[str, Dict[str, object]] = {}
 
         def traverse(nodes: List[dict], parent_id: Optional[str] = None) -> None:
@@ -55,12 +55,26 @@ class NoteQueryService(BaseQueryService):
                 prev_id = nodes[index - 1]['id'] if index > 0 else None
                 next_id = nodes[index + 1]['id'] if index + 1 < len(nodes) else None
 
-                structure.append((note_id, parent_id, prev_id, next_id))
-
                 content = note.get('content') or ''
                 flags = dict(note.get('flags') or {})
                 normalized_flags = _normalize_flags(flags)
-                hash_value = _compute_note_hash(content, normalized_flags, parent_id, prev_id, next_id)
+                hash_value = _compute_note_hash(
+                    content=content,
+                    flags=normalized_flags,
+                    parent_id=parent_id,
+                    prev_id=prev_id,
+                    next_id=next_id,
+                )
+
+                structure.append(
+                    {
+                        'id': note_id,
+                        'parentId': parent_id,
+                        'prevId': prev_id,
+                        'nextId': next_id,
+                        'hash': hash_value,
+                    }
+                )
 
                 payloads[note_id] = {
                     'content': content,

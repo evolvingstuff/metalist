@@ -113,28 +113,21 @@ class ModeContext {
 
         const validIds = new Set();
         for (const entry of snapshot.structure) {
-            if (!Array.isArray(entry) || entry.length === 0 || typeof entry[0] !== 'string') {
+            if (!entry || typeof entry !== 'object') {
                 throw new Error('Malformed structure entry in snapshot');
             }
-            validIds.add(entry[0]);
+            const { id, hash } = entry;
+            if (typeof id !== 'string' || typeof hash !== 'string' || !hash) {
+                throw new Error('Structure entry missing id/hash');
+            }
+            validIds.add(id);
+            this._noteHashes.set(id, hash);
         }
 
         for (const noteId of Array.from(this._noteHashes.keys())) {
             if (!validIds.has(noteId)) {
                 this._noteHashes.delete(noteId);
             }
-        }
-
-        const updates = snapshot.updatedNotes || [];
-        for (const update of updates) {
-            if (!Array.isArray(update) || update.length !== 2) {
-                throw new Error('Malformed updatedNotes entry in snapshot');
-            }
-            const [noteId, payload] = update;
-            if (typeof noteId !== 'string' || !payload || typeof payload.hash !== 'string') {
-                throw new Error('Invalid updated note payload');
-            }
-            this._noteHashes.set(noteId, payload.hash);
         }
 
         return this;

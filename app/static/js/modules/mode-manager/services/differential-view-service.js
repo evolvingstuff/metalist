@@ -1,6 +1,10 @@
 import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 
+function logVDOM(action, details) {
+    console.log(` [VDOM] ${action}`, details);
+}
+
 function createNoteElement(noteId) {
     const noteElement = document.createElement('div');
     noteElement.classList.add(CONFIG.CLASSES.NOTE);
@@ -50,6 +54,7 @@ function removeStaleNotes(notesContainer, visibleIds) {
         const noteId = element.dataset.noteId;
         if (!visibleIds.has(noteId)) {
             element.remove();
+            logVDOM('removed note', { noteId });
             if (ModeContext.hasNoteHash(noteId)) {
                 ModeContext.removeNoteHash(noteId);
             }
@@ -75,11 +80,21 @@ function positionNote(noteElement, parentContainer, prevId, nextId) {
     const referenceNode = nextId ? findChildById(parentContainer, nextId) : null;
     if (noteElement.parentElement !== parentContainer) {
         parentContainer.insertBefore(noteElement, referenceNode);
+        logVDOM('moved note parent', {
+            noteId: noteElement.dataset.noteId,
+            newParentId: parentContainer.closest('[data-note-id]')?.dataset?.noteId || null
+        });
         return;
     }
 
     if (referenceNode) {
-        parentContainer.insertBefore(noteElement, referenceNode);
+        if (noteElement.nextElementSibling !== referenceNode) {
+            parentContainer.insertBefore(noteElement, referenceNode);
+            logVDOM('reordered note (before nextId)', {
+                noteId: noteElement.dataset.noteId,
+                nextId,
+            });
+        }
         return;
     }
 
@@ -87,11 +102,19 @@ function positionNote(noteElement, parentContainer, prevId, nextId) {
         const prevSibling = findChildById(parentContainer, prevId);
         if (prevSibling && prevSibling.nextElementSibling !== noteElement) {
             parentContainer.insertBefore(noteElement, prevSibling.nextElementSibling);
+            logVDOM('reordered note (after prevId)', {
+                noteId: noteElement.dataset.noteId,
+                prevId,
+            });
             return;
         }
     }
 
     parentContainer.appendChild(noteElement);
+    logVDOM('appended note', {
+        noteId: noteElement.dataset.noteId,
+        parentId: parentContainer.closest('[data-note-id]')?.dataset?.noteId || null,
+    });
 }
 
 function cleanupChildContainers(notesContainer, parentsWithChildren) {
@@ -147,10 +170,7 @@ export function applyDifferentialView(payload) {
     for (const entry of payload.structure) {
         const noteId = entry.id;
         const parentId = entry.parentId || null;
-        const noteData = payload.notes?.[noteId];
-        if (!noteData) {
-            throw new Error(`Missing payload for note ${noteId}`);
-        }
+        const noteData = payload.notes?.[noteId] || null;
 
         if (parentId) {
             parentsWithChildren.add(parentId);
@@ -162,27 +182,42 @@ export function applyDifferentialView(payload) {
         if (!noteElement) {
             noteElement = createNoteElement(noteId);
             parentContainer.insertBefore(noteElement, entry.nextId ? findChildById(parentContainer, entry.nextId) : null);
+            logVDOM('created note element', { noteId, parentId });
+            if (!noteData) {
+                throw new Error(`New note ${noteId} missing payload data`);
+            }
         } else {
+            const originalParentId = noteElement.parentElement?.closest('[data-note-id]')?.dataset?.noteId || null;
             positionNote(noteElement, parentContainer, entry.prevId, entry.nextId);
+            if (originalParentId !== (parentId || null)) {
+                logVDOM('updated note parent', { noteId, parentId, previousParentId: originalParentId });
+            }
         }
 
         elementsById.set(noteId, noteElement);
 
         const lockOwner = noteLocks[noteId];
         const lockedByOther = Boolean(lockOwner) && lockOwner !== payload.currentClientId;
-        const isEditing = Boolean(noteData.flags?.isEditing);
+        const flags = noteData?.flags || {
+            isEditing: noteElement.classList.contains(CONFIG.CLASSES.EDITING),
+            isCollapsed: noteElement.dataset.isCollapsed === 'true',
+            memoryMode: noteElement.classList.contains('memory-mode'),
+            memorySelected: noteElement.classList.contains('memory-selected'),
+        };
+
+        const isEditing = Boolean(flags.isEditing);
         const editingByCurrentClient = isEditing && lockOwner === payload.currentClientId;
 
         noteElement.classList.add(CONFIG.CLASSES.NOTE);
         noteElement.classList.toggle('locked', lockedByOther);
         noteElement.classList.toggle('interactive', !lockedByOther);
         noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditing && !lockedByOther);
-        noteElement.classList.toggle('collapsed', Boolean(noteData.flags?.isCollapsed));
-        noteElement.classList.toggle('memory-mode', Boolean(noteData.flags?.memoryMode));
-        noteElement.classList.toggle('memory-selected', Boolean(noteData.flags?.memorySelected));
+        noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
+        noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
+        noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
 
         noteElement.dataset.parentId = parentId || '';
-        noteElement.dataset.isCollapsed = noteData.flags?.isCollapsed ? 'true' : 'false';
+        noteElement.dataset.isCollapsed = flags.isCollapsed ? 'true' : 'false';
 
         updateLockIcon(noteElement, lockedByOther);
 
@@ -191,14 +226,16 @@ export function applyDifferentialView(payload) {
             throw new Error(`Note ${noteId} missing content element`);
         }
 
-        const contentEditable = lockedByOther || Boolean(noteData.flags?.memoryMode) ? 'false' : 'true';
+        const contentEditable = lockedByOther || Boolean(flags.memoryMode) ? 'false' : 'true';
         contentElement.setAttribute('contenteditable', contentEditable);
 
-        if (shouldUpdateContent(noteId, entry.hash, editingByCurrentClient)) {
+        if (noteData && shouldUpdateContent(noteId, entry.hash, editingByCurrentClient)) {
             contentElement.innerHTML = noteData.content;
+            logVDOM('replaced note content', { noteId });
         }
 
         syncNoteHash(noteId, entry.hash);
+        logVDOM('synced note hash', { noteId, hash: entry.hash });
     }
 
     cleanupChildContainers(notesContainer, parentsWithChildren);

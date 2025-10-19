@@ -585,21 +585,18 @@ def get_notes_view_diff(
             client_id=request.client_id,
         )
 
-    updated_notes = [
-        [note_id, payload]
+    updated_notes = {
+        note_id: payload
         for note_id, payload in payloads.items()
         if client_hashes.get(note_id) != payload['hash']
-    ]
+    }
 
     update_uuid = get_current_sync_uuid()
     response = {
         "html": html,
         "snapshot": {
-            "structure": [
-                [note_id, parent_id, prev_id, next_id]
-                for note_id, parent_id, prev_id, next_id in structure
-            ],
-            "updatedNotes": updated_notes,
+            "structure": structure,
+            "notes": updated_notes,
             "locks": locks,
             "updateUUID": update_uuid,
             "version": VERSION,
