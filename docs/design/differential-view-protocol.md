@@ -26,7 +26,6 @@
 ## Response Shape
 ```json
 {
-  "html": "<div>existing SSR output…</div>",
   "structure": [
     {
       "id": "note-uuid-1",
@@ -67,7 +66,6 @@
 ```
 
 ### Notes
-- `html` is temporarily included for compatibility with the legacy DOM refresh path while the client migrates to the pure diff workflow.
 - `structure` is preorder; each entry includes `id`, `parentId`, `prevId`, `nextId`, and the authoritative `hash`. Include every visible node so the client can reorder DOM as needed.
 - `notes` maps only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each value contains the rendered expanded HTML, normalized flags, and the latest hash. The hash incorporates expanded HTML, normalized flags (e.g., `isCollapsed`, `isEditing`, `memoryMode`, `memorySelected`), and the parent/prev/next pointers so structural changes trigger updates.
 - Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
