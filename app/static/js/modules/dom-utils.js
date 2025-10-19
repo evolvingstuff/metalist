@@ -25,7 +25,9 @@ export const DOMUtils = {
         if (!content) {
             throw new Error('Note missing content element');
         }
-        content.contentEditable = isEditable;
+        const editableValue = isEditable ? 'true' : 'false';
+        content.setAttribute('contenteditable', editableValue);
+        content.contentEditable = editableValue;
         noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditable);
     },
 

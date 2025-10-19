@@ -29,7 +29,7 @@
         % if locked_by_other:
             <span class="lock-icon">🔒</span>
         % endif
-        <div class="note-content" contenteditable="${'false' if (locked_by_other or note['flags'].get('memoryMode')) else 'true'}">${note['content'] | n}</div>
+        <div class="note-content" contenteditable="${'true' if is_editing_by_me else 'false'}">${note['content'] | n}</div>
         % if note.get('children'):
             <div class="note-children">
                 % for child in note['children']:
