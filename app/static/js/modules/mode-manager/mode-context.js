@@ -11,6 +11,7 @@ class ModeContext {
         this._loading = false;     
         this._loadingTimeoutId = null;
         this._loadingNotifyTimeoutId = null;
+        this._loadingStartedAt = null;
 
         this._currentNoteId = null;     
         this._lastSavedContent = null;  
@@ -60,6 +61,11 @@ class ModeContext {
         this._knownRootIds = new Set();
         this._seenRootIds = new Set();
         this._lowestVisibleRootId = null;
+
+        // asdf hack
+        this._requestStartedAt = null;
+
+        console.log('BUGZ initialized constructor for context')
     }
 
     hasNoteHash(noteId) {
@@ -234,6 +240,7 @@ class ModeContext {
         this._loading = Boolean(value);
 
         if (this._loading) {
+            this._loadingStartedAt = performance.now();
             if (CONFIG.LOADING.SPINNER_DELAY > 0) {
                 if (this._loadingTimeoutId) {
                     clearTimeout(this._loadingTimeoutId);
@@ -253,6 +260,27 @@ class ModeContext {
             if (this._loadingTimeoutId) {
                 clearTimeout(this._loadingTimeoutId);
                 this._loadingTimeoutId = null;
+            }
+
+            if (this._loadingStartedAt === null) {
+                throw new Error('setLoading(false) called without a prior setLoading(true)');
+            }
+            const durationMs = performance.now() - this._loadingStartedAt;
+            this._loadingStartedAt = null;
+
+            const overlay = document.getElementById('perf-overlay');
+            if (overlay) {
+                const rows = overlay.querySelectorAll('tbody tr');
+                for (const row of rows) {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length !== 2) {
+                        continue;
+                    }
+                    if (cells[0].textContent.trim().toLowerCase() === 'total') {
+                        cells[1].textContent = `${durationMs.toFixed(1)}ms`;
+                        break;
+                    }
+                }
             }
         }
 

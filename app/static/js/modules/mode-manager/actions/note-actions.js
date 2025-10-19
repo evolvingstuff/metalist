@@ -6,7 +6,10 @@ import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
 export async function deleteNote(noteId) {
-    Logger.logAction('deleteNote', { 
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
+    Logger.logAction('deleteNote', {
         noteId,
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId
@@ -42,11 +45,12 @@ export async function deleteNote(noteId) {
     ModeContext.setLoading(false);
 
     await actionRefreshAndMaybeSelect();
-
-    return;
 }
 
 export async function deleteNoteOutsideEdit(noteId) {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
     Logger.logAction('deleteNoteOutsideEdit', {
         noteId,
         isEditing: ModeContext.isEditing,
@@ -87,6 +91,9 @@ export async function deleteNoteOutsideEdit(noteId) {
 }
 
 export async function createNote() {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
     Logger.logAction('createNote', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -135,6 +142,9 @@ export async function createNote() {
 }
 
 export async function createChildNote() {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
     Logger.logAction('createChildNote', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -173,7 +183,10 @@ export async function createChildNote() {
 }
 
 export async function moveNoteUp(noteId) {
-    Logger.logAction('moveNoteUp', { 
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
+    Logger.logAction('moveNoteUp', {
         noteId,
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
@@ -208,7 +221,10 @@ export async function moveNoteUp(noteId) {
 }
 
 export async function moveNoteDown(noteId) {
-    Logger.logAction('moveNoteDown', { 
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
+    Logger.logAction('moveNoteDown', {
         noteId,
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
@@ -243,6 +259,9 @@ export async function moveNoteDown(noteId) {
 }
 
 async function setNoteCollapse(noteId, collapsed) {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
     Logger.logAction('setNoteCollapse', {
         noteId,
         collapsed,
@@ -283,6 +302,9 @@ export async function expandNote(noteId) {
 }
 
 export async function actionCopyNote() {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionCopyNote', { 
@@ -308,6 +330,9 @@ export async function actionCopyNote() {
 }
 
 export async function actionPasteNoteSibling() {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
+
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionPasteNoteSibling', { 
@@ -336,6 +361,8 @@ export async function actionPasteNoteSibling() {
 }
 
 export async function actionPasteNoteChild() {
+    ModeContext._requestStartedAt = performance.now();
+    console.log('BUGZ setting ModeContext._requestStartedAt to ' + ModeContext._requestStartedAt)
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionPasteNoteChild', { 

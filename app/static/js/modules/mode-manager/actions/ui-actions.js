@@ -185,13 +185,18 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         result = null;
     }
 
-    const renderEndedAt = performance.now();
-    const renderMs = renderEndedAt - renderStartedAt;
-    const totalMs = renderEndedAt - requestStartedAt;
-    console.log(' [PERF] notes.view render:', {
-        ms: Number(renderMs.toFixed(2))
-    });
-    updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount, rootNotesKnown, rootNotesSeen, updatedNotesCount);
+    if (ModeContext._requestStartedAt) {
+        const renderEndedAt = performance.now();
+        const renderMs = renderEndedAt - renderStartedAt;
+        const totalMs = renderEndedAt - ModeContext._requestStartedAt;
+        console.log('BUGZ GETTING ModeContext._requestStartedAt:' + ModeContext._requestStartedAt);
+
+        console.log(' [PERF] notes.view render:', {
+            ms: Number(renderMs.toFixed(2))
+        });
+        updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount, rootNotesKnown, rootNotesSeen, updatedNotesCount);
+        ModeContext._requestStartedAt = null;
+    }
 
     return result;
 }
