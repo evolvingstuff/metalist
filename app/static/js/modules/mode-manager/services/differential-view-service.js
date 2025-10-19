@@ -152,19 +152,32 @@ export function applyDifferentialView(payload) {
     removeStaleNotes(notesContainer, visibleIds);
 
     const elementsById = new Map();
+    const parentContainers = new Map();
+    const childrenByParent = new Map();
     const parentsWithChildren = new Set();
     const noteLocks = payload.locks || {};
 
+    const containerKey = (parentId) => parentId || '__root__';
+
     const parentContainerFor = (parentId) => {
+        const key = containerKey(parentId);
+        if (parentContainers.has(key)) {
+            return parentContainers.get(key);
+        }
+
         if (!parentId) {
+            parentContainers.set(key, notesContainer);
             return notesContainer;
         }
+
         const parentElement = elementsById.get(parentId) || document.querySelector(`[data-note-id="${parentId}"]`);
         if (!parentElement) {
             throw new Error(`Parent note ${parentId} missing from DOM`);
         }
         elementsById.set(parentId, parentElement);
-        return ensureChildContainer(parentElement);
+        const container = ensureChildContainer(parentElement);
+        parentContainers.set(key, container);
+        return container;
     };
 
     for (const entry of payload.structure) {
@@ -181,17 +194,14 @@ export function applyDifferentialView(payload) {
         let noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
         if (!noteElement) {
             noteElement = createNoteElement(noteId);
-            parentContainer.insertBefore(noteElement, entry.nextId ? findChildById(parentContainer, entry.nextId) : null);
+            parentContainer.appendChild(noteElement);
             logVDOM('created note element', { noteId, parentId });
             if (!noteData) {
                 throw new Error(`New note ${noteId} missing payload data`);
             }
-        } else {
-            const originalParentId = noteElement.parentElement?.closest('[data-note-id]')?.dataset?.noteId || null;
-            positionNote(noteElement, parentContainer, entry.prevId, entry.nextId);
-            if (originalParentId !== (parentId || null)) {
-                logVDOM('updated note parent', { noteId, parentId, previousParentId: originalParentId });
-            }
+        } else if (!parentContainer.contains(noteElement)) {
+            parentContainer.appendChild(noteElement);
+            logVDOM('moved note to parent', { noteId, parentId });
         }
 
         elementsById.set(noteId, noteElement);
@@ -200,7 +210,7 @@ export function applyDifferentialView(payload) {
         const lockedByOther = Boolean(lockOwner) && lockOwner !== payload.currentClientId;
         const flags = noteData?.flags || {
             isEditing: noteElement.classList.contains(CONFIG.CLASSES.EDITING),
-            isCollapsed: noteElement.dataset.isCollapsed === 'true',
+            isCollapsed: noteElement.classList.contains('collapsed'),
             memoryMode: noteElement.classList.contains('memory-mode'),
             memorySelected: noteElement.classList.contains('memory-selected'),
         };
@@ -217,7 +227,7 @@ export function applyDifferentialView(payload) {
         noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
 
         noteElement.dataset.parentId = parentId || '';
-        noteElement.dataset.isCollapsed = flags.isCollapsed ? 'true' : 'false';
+        noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
 
         updateLockIcon(noteElement, lockedByOther);
 
@@ -236,6 +246,27 @@ export function applyDifferentialView(payload) {
 
         syncNoteHash(noteId, entry.hash);
         logVDOM('synced note hash', { noteId, hash: entry.hash });
+
+        const key = containerKey(parentId);
+        if (!childrenByParent.has(key)) {
+            childrenByParent.set(key, []);
+        }
+        childrenByParent.get(key).push(noteId);
+    }
+
+    for (const [key, orderedIds] of childrenByParent.entries()) {
+        const parentId = key === '__root__' ? null : key;
+        const parentContainer = parentContainerFor(parentId);
+        for (const noteId of orderedIds) {
+            const element = elementsById.get(noteId);
+            if (!element) {
+                throw new Error(`Unable to reorder note ${noteId}: element missing`);
+            }
+            if (parentContainer.lastElementChild !== element) {
+                parentContainer.appendChild(element);
+                logVDOM('reordered note', { noteId, parentId });
+            }
+        }
     }
 
     cleanupChildContainers(notesContainer, parentsWithChildren);
