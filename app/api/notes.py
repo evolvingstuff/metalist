@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional
 import logging
 import time
 
@@ -81,7 +81,7 @@ class ViewDiffRequest(BaseModel):
     client_id: Optional[str] = Field(default=None, alias="clientId")
     editing_note_id: Optional[str] = Field(default=None, alias="editingNoteId")
     search: Optional[str] = None
-    client_note_uuid_hashes: List[Tuple[str, str]] = Field(default_factory=list, alias="clientNoteUuidHashes")
+    client_note_uuid_hashes: Dict[str, str] = Field(default_factory=dict, alias="clientNoteUuidHashes")
 
     class Config:
         populate_by_name = True
@@ -569,7 +569,7 @@ def get_notes_view_diff(
 
     client_hashes = {
         note_id: note_hash
-        for note_id, note_hash in request.client_note_uuid_hashes
+        for note_id, note_hash in request.client_note_uuid_hashes.items()
         if note_id
     }
 

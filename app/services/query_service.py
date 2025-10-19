@@ -59,11 +59,12 @@ class NoteQueryService(BaseQueryService):
 
                 content = note.get('content') or ''
                 flags = dict(note.get('flags') or {})
-                hash_value = _compute_note_hash(content, flags)
+                normalized_flags = _normalize_flags(flags)
+                hash_value = _compute_note_hash(content, normalized_flags, parent_id, prev_id, next_id)
 
                 payloads[note_id] = {
                     'content': content,
-                    'flags': flags,
+                    'flags': normalized_flags,
                     'hash': hash_value,
                 }
 
@@ -75,11 +76,30 @@ class NoteQueryService(BaseQueryService):
         return structure, payloads, locks
 
 
-def _compute_note_hash(content: str, flags: Dict[str, object]) -> str:
-    """Hash note content together with its flag state to detect UI-impacting changes."""
+def _compute_note_hash(
+    content: str,
+    flags: Dict[str, object],
+    parent_id: Optional[str],
+    prev_id: Optional[str],
+    next_id: Optional[str],
+) -> str:
+    """Hash note content, flags, and sibling/parent relationships."""
     flags_json = json.dumps(flags, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
     sha = hashlib.sha256()
     sha.update(content.encode('utf-8'))
     sha.update(b'|FLAGS|')
     sha.update(flags_json.encode('utf-8'))
+    sha.update(b'|STRUCT|')
+    struct_descriptor = [parent_id or '', prev_id or '', next_id or '']
+    sha.update('::'.join(struct_descriptor).encode('utf-8'))
     return sha.hexdigest()
+
+
+def _normalize_flags(flags: Dict[str, object]) -> Dict[str, object]:
+    """Ensure expected boolean flags are present for hashing consistency."""
+    normalized = dict(flags)
+    normalized['isCollapsed'] = bool(flags.get('isCollapsed', False))
+    normalized['isEditing'] = bool(flags.get('isEditing', False))
+    normalized['memoryMode'] = bool(flags.get('memoryMode', False))
+    normalized['memorySelected'] = bool(flags.get('memorySelected', False))
+    return normalized

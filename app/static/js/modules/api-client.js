@@ -253,9 +253,10 @@ export const NotesAPI = {
 
     async fetchView(noteId = null, searchQuery = null) {
         const payload = {
+            clientId: ModeContext.clientId,
             editingNoteId: noteId || null,
             search: searchQuery || null,
-            clientNoteUuidHashes: []
+            clientNoteUuidHashes: ModeContext.getNoteHashPayload()
         };
 
         const response = await this._apiCall(CONFIG.API.NOTES.VIEW, {

@@ -11,15 +11,15 @@
   "clientId": "client-uuid",
   "editingNoteId": null,
   "search": "optional query",
-  "clientNoteUuidHashes": [
-    ["note-uuid-1", "sha256hash1"],
-    ["note-uuid-2", "sha256hash2"]
-  ]
+  "clientNoteUuidHashes": {
+    "note-uuid-1": "sha256hash1",
+    "note-uuid-2": "sha256hash2"
+  }
 }
 ```
 
 ### Notes
-- `clientNoteUuidHashes` is a list of `[noteId, expandedHashWithFlags]` tuples representing the client’s current cache. Omit entries the client does not have (they will be treated as additions).
+- `clientNoteUuidHashes` is a map of `noteId -> expandedHashWithFlags` representing the client’s current cache. Omit entries the client does not have (they will be treated as additions).
 - `clientId`, `editingNoteId`, and `search` retain their current semantics.
 - The client issues the diff request whenever it needs to reconcile with the server: after detecting a changed `updateUUID` from `/api/notes/check-updates`, or immediately after local mutations (save, move, collapse toggles, exiting edit mode) to pick up server-side side effects.
 
@@ -59,7 +59,7 @@
 ### Notes
 - `html` is temporarily included for compatibility with the legacy DOM refresh path while the client migrates to the pure diff workflow.
 - `structure` is preorder, each entry is `[id, parentId|null, prevId|null, nextId|null]`. Include every visible node so the client can reorder DOM as needed.
-- `updatedNotes` lists only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each entry is `[id, payload]` where `payload` includes the rendered expanded HTML, flags, and the server’s latest expanded hash. The hash incorporates both the expanded HTML and the note’s flag state (e.g., `isCollapsed`, `isEditing`, `memoryMode`).
+- `updatedNotes` lists only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each entry is `[id, payload]` where `payload` includes the rendered expanded HTML, flags, and the server’s latest expanded hash. The hash incorporates expanded HTML, normalized flags (e.g., `isCollapsed`, `isEditing`, `memoryMode`), and the parent/prev/next pointers so structural changes trigger updates.
 - Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
 - Locks, version, search info, and `updateUUID` mirror the existing HTML response so downstream code keeps working.
 

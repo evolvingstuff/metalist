@@ -48,6 +48,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         throw new Error('notes.view response missing html or snapshot payload');
     }
     const { html, snapshot } = viewResponse;
+    ModeContext.syncNoteHashesFromSnapshot(snapshot);
     const roundtripMs = performance.now() - requestStartedAt;
     console.log(' [PERF] notes.view roundtrip:', {
         ms: Number(roundtripMs.toFixed(2))

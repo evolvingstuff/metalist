@@ -52,6 +52,92 @@ class ModeContext {
         
         // User activity tracking for token refresh
         this._userActivity = false;
+
+        // Diff protocol cache
+        this._noteHashes = new Map();
+    }
+
+    hasNoteHash(noteId) {
+        if (!noteId) {
+            throw new Error('noteId is required for hasNoteHash');
+        }
+        return this._noteHashes.has(noteId);
+    }
+
+    getNoteHash(noteId) {
+        if (!noteId) {
+            throw new Error('noteId is required for getNoteHash');
+        }
+        if (!this._noteHashes.has(noteId)) {
+            throw new Error(`Hash for note ${noteId} is not cached`);
+        }
+        return this._noteHashes.get(noteId);
+    }
+
+    setNoteHash(noteId, hash) {
+        if (!noteId) {
+            throw new Error('noteId is required for setNoteHash');
+        }
+        if (typeof hash !== 'string' || hash.length === 0) {
+            throw new Error('hash must be a non-empty string');
+        }
+        this._noteHashes.set(noteId, hash);
+        return this;
+    }
+
+    removeNoteHash(noteId) {
+        if (!noteId) {
+            throw new Error('noteId is required for removeNoteHash');
+        }
+        this._noteHashes.delete(noteId);
+        return this;
+    }
+
+    clearNoteHashes() {
+        this._noteHashes.clear();
+        return this;
+    }
+
+    getNoteHashPayload() {
+        const payload = {};
+        for (const [noteId, hash] of this._noteHashes.entries()) {
+            payload[noteId] = hash;
+        }
+        return payload;
+    }
+
+    syncNoteHashesFromSnapshot(snapshot) {
+        if (!snapshot || !Array.isArray(snapshot.structure)) {
+            throw new Error('Invalid snapshot payload');
+        }
+
+        const validIds = new Set();
+        for (const entry of snapshot.structure) {
+            if (!Array.isArray(entry) || entry.length === 0 || typeof entry[0] !== 'string') {
+                throw new Error('Malformed structure entry in snapshot');
+            }
+            validIds.add(entry[0]);
+        }
+
+        for (const noteId of Array.from(this._noteHashes.keys())) {
+            if (!validIds.has(noteId)) {
+                this._noteHashes.delete(noteId);
+            }
+        }
+
+        const updates = snapshot.updatedNotes || [];
+        for (const update of updates) {
+            if (!Array.isArray(update) || update.length !== 2) {
+                throw new Error('Malformed updatedNotes entry in snapshot');
+            }
+            const [noteId, payload] = update;
+            if (typeof noteId !== 'string' || !payload || typeof payload.hash !== 'string') {
+                throw new Error('Invalid updated note payload');
+            }
+            this._noteHashes.set(noteId, payload.hash);
+        }
+
+        return this;
     }
 
     setEditing(value) {
