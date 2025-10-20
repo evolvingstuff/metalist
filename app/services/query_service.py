@@ -27,14 +27,16 @@ class NoteQueryService(BaseQueryService):
 
         client_known_note_ids = client_known_note_ids or set()
         client_seen_root_ids = set(client_seen_root_ids)
-        notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
-        locks = get_all_locks()
 
-        structure: List[Dict[str, object]] = []
-        payloads: Dict[str, Dict[str, object]] = {}
-        visited_note_ids: Set[str] = set()
+        search_active = bool(search and search.strip())
 
-        ordered_root_ids = [note['id'] for note in notes]
+        notes: List[Dict[str, object]] = []
+        if note_store.loaded:
+            ordered_root_ids = note_store.get_children(None)
+        else:
+            notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
+            ordered_root_ids = [note['id'] for note in notes]
+
         root_index_map = {note_id: index for index, note_id in enumerate(ordered_root_ids)}
 
         seen_root_indices = {
@@ -51,11 +53,31 @@ class NoteQueryService(BaseQueryService):
             editing_note_id,
         )
 
-        allowed_root_ids = set(ordered_root_ids[: window_end_index + 1]) if window_end_index >= 0 else set()
+        limit_roots: Optional[Set[str]] = None
+        if not search_active:
+            limit_roots = set(ordered_root_ids[: window_end_index + 1]) if window_end_index >= 0 else set()
+
+        if note_store.loaded:
+            notes = build_note_tree(
+                LinkedListManager,
+                self.db,
+                None,
+                editing_note_id,
+                search,
+                allowed_root_ids=limit_roots,
+            )
+        elif limit_roots is not None:
+            notes = [note for note in notes if note['id'] in limit_roots]
+
+        locks = get_all_locks()
+
+        structure: List[Dict[str, object]] = []
+        payloads: Dict[str, Dict[str, object]] = {}
+        visited_note_ids: Set[str] = set()
 
         def traverse(nodes: List[dict], parent_id: Optional[str] = None) -> None:
             for index, note in enumerate(nodes):
-                if parent_id is None and allowed_root_ids and note['id'] not in allowed_root_ids:
+                if parent_id is None and limit_roots is not None and note['id'] not in limit_roots:
                     continue
                 note_id = note['id']
                 prev_id = nodes[index - 1]['id'] if index > 0 else None

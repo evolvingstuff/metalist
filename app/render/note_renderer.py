@@ -240,14 +240,34 @@ def filter_notes_by_search(notes, search_query):
 EMPTY_EDIT_PLACEHOLDER = "<div><br></div>"
 
 
-def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search_query=None):
+def build_note_tree(
+    db_manager,
+    db,
+    parent_id=None,
+    editing_note_id=None,
+    search_query=None,
+    allowed_root_ids=None,
+):
     """Build a hierarchical tree, preferring the in-memory store when loaded."""
 
     try:
+        search_active = bool(search_query and str(search_query).strip())
+        constrained_roots = allowed_root_ids if not search_active else None
+
         if note_store.loaded:
-            note_tree = _build_tree_from_store(parent_id, editing_note_id)
+            note_tree = _build_tree_from_store(
+                parent_id,
+                editing_note_id,
+                constrained_roots,
+            )
         else:
-            note_tree = _build_tree_from_db(db_manager, db, parent_id, editing_note_id)
+            note_tree = _build_tree_from_db(
+                db_manager,
+                db,
+                parent_id,
+                editing_note_id,
+                constrained_roots,
+            )
 
         if parent_id is None and search_query:
             note_tree = filter_notes_by_search(note_tree, search_query)
@@ -261,18 +281,25 @@ def build_note_tree(db_manager, db, parent_id=None, editing_note_id=None, search
         raise
 
 
-def _build_tree_from_store(parent_id, editing_note_id):
+def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
     """Recursively construct the note tree using the in-memory store."""
 
     note_tree = []
     child_ids = note_store.get_children(parent_id)
 
+    if parent_id is None and allowed_root_ids is not None:
+        if not allowed_root_ids:
+            return []
+        if not isinstance(allowed_root_ids, set):
+            allowed_root_ids = set(allowed_root_ids)
+        child_ids = [note_id for note_id in child_ids if note_id in allowed_root_ids]
+
     for note_id in child_ids:
         record = note_store.get_note(note_id)
-        children = _build_tree_from_store(note_id, editing_note_id)
+        children = _build_tree_from_store(note_id, editing_note_id, allowed_root_ids)
         is_editing = note_id == editing_note_id
 
-        rendered = record.variants.edit_html if is_editing else record.variants.expanded_html
+        rendered = render_editing_mode(record) if is_editing else render_read_only_mode(record)
         if is_editing and (not rendered or not rendered.strip()):
             rendered = EMPTY_EDIT_PLACEHOLDER
 
@@ -293,14 +320,21 @@ def _build_tree_from_store(parent_id, editing_note_id):
     return note_tree
 
 
-def _build_tree_from_db(db_manager, db, parent_id, editing_note_id):
+def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root_ids):
     """Fallback tree construction that queries the database."""
 
     note_tree = []
     notes = db_manager.get_ordered_child_list(db, parent_id)
 
+    if parent_id is None and allowed_root_ids is not None:
+        if not allowed_root_ids:
+            return []
+        if not isinstance(allowed_root_ids, set):
+            allowed_root_ids = set(allowed_root_ids)
+        notes = [note for note in notes if note.id in allowed_root_ids]
+
     for note in notes:
-        children = _build_tree_from_db(db_manager, db, note.id, editing_note_id)
+        children = _build_tree_from_db(db_manager, db, note.id, editing_note_id, allowed_root_ids)
 
         decrypted_content = get_cached_content(note.id)
         if decrypted_content is None:

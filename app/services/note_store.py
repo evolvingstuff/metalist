@@ -1,13 +1,12 @@
 """In-memory snapshot of the note hierarchy.
 
 The store is responsible for eagerly loading the note table at startup and
-providing fast, read-only access to decrypted content, ordering metadata, and
-pre-rendered variants that future diff-based APIs can consume.
+providing fast, read-only access to decrypted content plus linked-list
+metadata that the rest of the application relies on.
 """
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
@@ -22,16 +21,6 @@ from app.services.content_cache import get_cached_content
 
 
 @dataclass(frozen=True)
-class NoteRenderVariants:
-    collapsed_html: str
-    expanded_html: str
-    edit_html: str
-    hash_collapsed: str
-    hash_expanded: str
-    hash_edit: str
-
-
-@dataclass(frozen=True)
 class NoteRecord:
     id: str
     parent_id: Optional[str]
@@ -41,7 +30,6 @@ class NoteRecord:
     content: str
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
-    variants: NoteRenderVariants
 
 
 class NoteStore:
@@ -51,7 +39,6 @@ class NoteStore:
         self._lock = RLock()
         self._note_map: Dict[str, NoteRecord] = {}
         self._children: Dict[Optional[str], List[str]] = {}
-        self._hash_tree: Dict[str, str] = {}
         self._loaded = False
 
     @property
@@ -82,7 +69,6 @@ class NoteStore:
                         f"Cache missing plaintext for note {note.id}; store hydration failed"
                     )
 
-                variants = _build_render_variants(note, plaintext)
                 note_map[note.id] = NoteRecord(
                     id=note.id,
                     parent_id=note.parent_id,
@@ -92,7 +78,6 @@ class NoteStore:
                     content=plaintext,
                     created_at=getattr(note, "created_at", None),
                     updated_at=getattr(note, "updated_at", None),
-                    variants=variants,
                 )
 
             known_ids = set(note_map.keys())
@@ -119,36 +104,12 @@ class NoteStore:
         with self._lock:
             return dict(self._note_map)
 
-    def _compute_hash(
-        self,
-        note_id: str,
-        note_map: Dict[str, NoteRecord],
-        children: Dict[Optional[str], List[str]],
-        hash_tree: Dict[str, str],
-    ) -> str:
-        if note_id in hash_tree:
-            return hash_tree[note_id]
-
-        record = note_map[note_id]
-        child_ids = children.get(note_id, [])
-        child_hashes = [self._compute_hash(child_id, note_map, children, hash_tree) for child_id in child_ids]
-
-        sha = hashlib.sha256()
-        sha.update(record.variants.hash_expanded.encode("utf-8"))
-        for child_hash in child_hashes:
-            sha.update(child_hash.encode("utf-8"))
-
-        digest = sha.hexdigest()
-        hash_tree[note_id] = digest
-        return digest
-
     # Mutation helpers --------------------------------------------------------
 
     def add_note_from_db(self, note: SimpleNamespace, plaintext: str) -> None:
         if not self._loaded:
             return
         with self._lock:
-            variants = _build_render_variants(note, plaintext)
             self._note_map[note.id] = NoteRecord(
                 id=note.id,
                 parent_id=note.parent_id,
@@ -158,7 +119,6 @@ class NoteStore:
                 content=plaintext,
                 created_at=getattr(note, "created_at", None),
                 updated_at=getattr(note, "updated_at", None),
-                variants=variants,
             )
             self._rebuild_indexes_locked()
 
@@ -168,7 +128,6 @@ class NoteStore:
         with self._lock:
             if note.id not in self._note_map:
                 return
-            variants = _build_render_variants(note, plaintext)
             self._note_map[note.id] = NoteRecord(
                 id=note.id,
                 parent_id=note.parent_id,
@@ -178,7 +137,6 @@ class NoteStore:
                 content=plaintext,
                 created_at=getattr(note, "created_at", None),
                 updated_at=getattr(note, "updated_at", None),
-                variants=variants,
             )
             self._rebuild_indexes_locked()
 
@@ -198,7 +156,6 @@ class NoteStore:
                 content=record.content,
                 created_at=getattr(note, "created_at", record.created_at),
                 updated_at=getattr(note, "updated_at", record.updated_at),
-                variants=record.variants,
             )
             self._rebuild_indexes_locked()
 
@@ -226,7 +183,6 @@ class NoteStore:
                     content=record.content,
                     created_at=record.created_at,
                     updated_at=getattr(note, "updated_at", record.updated_at),
-                    variants=record.variants,
                 )
 
             if rebuild:
@@ -260,7 +216,6 @@ class NoteStore:
                 content=record.content,
                 created_at=record.created_at,
                 updated_at=record.updated_at,
-                variants=record.variants,
             )
             self._rebuild_indexes_locked()
 
@@ -273,11 +228,6 @@ class NoteStore:
             children[parent_id] = self._order_ids(ids)
 
         self._children = children
-
-        hash_tree: Dict[str, str] = {}
-        for note_id in self._note_map:
-            self._compute_hash(note_id, self._note_map, self._children, hash_tree)
-        self._hash_tree = hash_tree
 
     def _order_ids(self, ids: List[str]) -> List[str]:
         if not ids:
@@ -326,50 +276,7 @@ class NoteStore:
         with self._lock:
             return list(self._children.get(parent_id, []))
 
-    def get_hash(self, note_id: str) -> str:
-        with self._lock:
-            try:
-                return self._hash_tree[note_id]
-            except KeyError as exc:
-                raise KeyError(f"Hash for note {note_id} not computed") from exc
-
-
-def _build_render_variants(note: SimpleNamespace, plaintext: str) -> NoteRenderVariants:
-    """Produce render variants and hashes for a single note."""
-
-    from app.render import note_renderer
-
-    class _Temp:
-        def __init__(self, base: SimpleNamespace, content: str) -> None:
-            self.id = base.id
-            self.content = content
-            self.parent_id = base.parent_id
-            self.created_at = base.created_at
-            self.updated_at = base.updated_at
-            self.is_collapsed = getattr(base, "is_collapsed", False)
-
-    temp = _Temp(note, plaintext)
-
-    expanded_html = note_renderer.render_read_only_mode(temp)
-    edit_html = note_renderer.render_editing_mode(temp)
-    # For now collapsed representation reuses the read-only view; layout logic lives client-side.
-    collapsed_html = expanded_html
-
-    return NoteRenderVariants(
-        collapsed_html=collapsed_html,
-        expanded_html=expanded_html,
-        edit_html=edit_html,
-        hash_collapsed=_hash_text(collapsed_html),
-        hash_expanded=_hash_text(expanded_html),
-        hash_edit=_hash_text(edit_html),
-    )
-
-
-def _hash_text(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
 store = NoteStore()
 
 
-__all__ = ["NoteStore", "NoteRecord", "NoteRenderVariants", "store"]
+__all__ = ["NoteStore", "NoteRecord", "store"]
