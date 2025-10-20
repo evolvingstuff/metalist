@@ -279,6 +279,9 @@ def move_note(
 ):
     """Move a note to a new position"""
     apply_delay("move_note")
+
+    # t1 = time.perf_counter()
+    # print(f'\tDEBUG: cp1')
     
     # Convert string position to enum
     position = None
@@ -290,12 +293,16 @@ def move_note(
     
     with get_note_service(db, transaction_manager, command.clientId) as service:
         try:
+            t1 = time.perf_counter()
+            print(f'\tDEBUG: cp1')
             service.move_note(
                 note_id=note_id,
                 new_parent_id=command.new_parent_id,
                 sibling_id=command.sibling_id,
                 position=position
             )
+            t2 = time.perf_counter()
+            print(f"\tDEBUG: cp2 {(t2-t1):.6f} seconds")
             return {"status": "success"}
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
