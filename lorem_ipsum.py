@@ -20,23 +20,26 @@ import html
 import mimetypes
 import random
 import sys
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Sequence
+from types import SimpleNamespace
 
 from tqdm import tqdm
 
 from app.core.config import DATABASE_URL
-from app.db.notes_sql import update_links
+from app.db.notes_sql import insert_note, update_links
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
 from app.db.settings_sql import fetch_settings, insert_default_settings
 from app.models.database import SafeSession
-from app.models.linked_list import LinkedListManager
-from app.services.content_cache import clear_cache
+from app.services.content_cache import cache_note, clear_cache
 from app.services.note_store import store as note_store
+from app.utils.encryption import encrypt
 
 
-default_root_count = 1000
+default_root_count = 5000  # 1000
 default_child_probability = 0.3
 
 # Static lorem ipsum blocks to keep seeded notes varied
@@ -225,12 +228,19 @@ def register_note_order(
     parent_id: str | None,
     note_id: str,
     rng: random.Random,
-) -> List[str]:
+) -> None:
     key = _parent_key(parent_id)
     bucket = order_map.setdefault(key, [])
     insert_at = rng.randint(0, len(bucket))
     bucket.insert(insert_at, note_id)
-    return bucket
+
+
+def apply_all_orders(db_session: SafeSession, order_map: Dict[str, List[str]]) -> None:
+    for key, ordered_ids in order_map.items():
+        if not ordered_ids:
+            continue
+        parent_id = None if key == ROOT_KEY else key
+        apply_order(db_session, parent_id, ordered_ids)
 
 
 def apply_order(db_session: SafeSession, parent_id: str | None, ordered_ids: List[str]) -> None:
@@ -261,19 +271,48 @@ def create_note(
     max_children: int,
     order_map: Dict[str, List[str]],
 ) -> None:
-    import uuid
 
     note_id = str(uuid.uuid4())
-    LinkedListManager.create_note_top(db_session, note_id, parent_id)
-
     content, image_count = build_note_content(rng, images, image_probability, max_images)
-    LinkedListManager.update_note(db_session, note_id, content)
 
-    if rng.random() < collapse_probability:
-        update_links(db_session.connection(), note_id, is_collapsed=True)
+    ciphertext, nonce, tag = encrypt(content)
+    timestamp = datetime.now(timezone.utc)
+    is_collapsed = rng.random() < collapse_probability
 
-    ordered_ids = register_note_order(order_map, parent_id, note_id, rng)
-    apply_order(db_session, parent_id, ordered_ids)
+    insert_note(
+        db_session.connection(),
+        note_id=note_id,
+        content=ciphertext,
+        encryption_nonce=nonce,
+        encryption_tag=tag,
+        parent_id=parent_id,
+        prev_id=None,
+        next_id=None,
+        is_collapsed=is_collapsed,
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+
+    cache_note(note_id, content)
+
+    if note_store.loaded:
+        note_store.add_note_from_db(
+            SimpleNamespace(
+                id=note_id,
+                content=ciphertext,
+                encryption_nonce=nonce,
+                encryption_tag=tag,
+                parent_id=parent_id,
+                prev_id=None,
+                next_id=None,
+                is_collapsed=is_collapsed,
+                created_at=timestamp,
+                updated_at=timestamp,
+            ),
+            content,
+        )
+
+    register_note_order(order_map, parent_id, note_id, rng)
 
     stats.record_note(level)
     stats.record_images(image_count)
@@ -292,14 +331,14 @@ def create_note(
             images=images,
             image_probability=image_probability,
             max_images=max_images,
-                collapse_probability=collapse_probability,
-                parent_id=note_id,
-                level=level + 1,
-                stats=stats,
-                child_probability=child_probability,
-                max_depth=max_depth,
-                max_children=max_children,
-                order_map=order_map,
+            collapse_probability=collapse_probability,
+            parent_id=note_id,
+            level=level + 1,
+            stats=stats,
+            child_probability=child_probability,
+            max_depth=max_depth,
+            max_children=max_children,
+            order_map=order_map,
         )
 
 
@@ -333,6 +372,7 @@ def seed_notes(args: argparse.Namespace) -> SeedStats:
                 max_children=args.max_children,
                 order_map=order_map,
             )
+        apply_all_orders(db, order_map)
         db.commit()
     finally:
         db.close()
