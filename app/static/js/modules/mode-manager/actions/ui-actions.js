@@ -106,6 +106,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         throw new Error('notes.view response missing snapshot payload');
     }
     const { snapshot } = viewResponse;
+    const previousHashes = ModeContext.getNoteHashPayload();
     ModeContext.syncNoteHashesFromSnapshot(snapshot);
     if (!Array.isArray(snapshot.structure)) {
         throw new Error('notes.view snapshot missing structure array');
@@ -126,7 +127,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     }
 
     const renderStartedAt = performance.now();
-    const diffResult = applyDifferentialView(snapshot);
+    const diffResult = applyDifferentialView(snapshot, { previousHashes });
     const notesContainer = diffResult.notesContainer;
     if (!notesContainer) {
         throw new Error('Notes container not found after diff application');
@@ -201,7 +202,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         const totalMs = renderEndedAt - options.startedAt;
         const context = options.context ? options.context : '???';
 
-        const vdom_ops = 666; //TODO asdf asdf asdf
+        const vdom_ops = Number.isInteger(diffResult.vdomOperations) ? diffResult.vdomOperations : 0;
 
         console.log(' [PERF] notes.view render:', {
             ms: Number(renderMs.toFixed(2))
