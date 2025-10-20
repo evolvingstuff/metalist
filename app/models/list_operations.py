@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 from types import SimpleNamespace
 
@@ -145,38 +146,51 @@ def _move_note_with_store(db: SafeSession, note_id: str, new_parent_id: Optional
             new_order.insert(index + 1, note_id)
 
     if new_parent_id == old_parent:
-        _apply_order_with_store(db, new_parent_id, new_order)
+        _apply_order_with_store(db, new_parent_id, new_order, rebuild=True)
     else:
-        _apply_order_with_store(db, old_parent, old_order)
-        _apply_order_with_store(db, new_parent_id, new_order)
+        _apply_order_with_store(db, old_parent, old_order, rebuild=False)
+        _apply_order_with_store(db, new_parent_id, new_order, rebuild=True)
 
 
-def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: list[str]) -> None:
+def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: list[str], *, rebuild: bool) -> None:
+    updates: list[SimpleNamespace] = []
+
     for index, current_id in enumerate(order):
         prev_id = order[index - 1] if index > 0 else None
         next_id = order[index + 1] if index < len(order) - 1 else None
 
         record = note_store.get_note(current_id)
 
-        update_links(
-            db.connection(),
-            current_id,
-            parent_id=parent_id,
-            prev_id=prev_id,
-            next_id=next_id,
-        )
+        changed_parent = record.parent_id != parent_id
+        changed_prev = record.prev_id != prev_id
+        changed_next = record.next_id != next_id
 
-        note_store.update_metadata_from_db(
+        if not (changed_parent or changed_prev or changed_next):
+            continue
+
+        updated_at = datetime.now(timezone.utc)
+        kwargs = {"updated_at": updated_at}
+        if changed_parent:
+            kwargs["parent_id"] = parent_id
+        if changed_prev:
+            kwargs["prev_id"] = prev_id
+        if changed_next:
+            kwargs["next_id"] = next_id
+
+        update_links(db.connection(), current_id, **kwargs)
+
+        updates.append(
             SimpleNamespace(
-                id=record.id,
+                id=current_id,
                 parent_id=parent_id,
                 prev_id=prev_id,
                 next_id=next_id,
-                created_at=record.created_at,
-                updated_at=record.updated_at,
-                is_collapsed=record.is_collapsed,
+                updated_at=updated_at,
             )
         )
+
+    if updates:
+        note_store.bulk_update_metadata(updates, rebuild=rebuild)
 
 
 def _collect_descendants_from_store(root_id: str) -> list[str]:

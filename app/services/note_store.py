@@ -11,7 +11,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 from types import SimpleNamespace
 
 from app.db import connect_reader
@@ -201,6 +201,36 @@ class NoteStore:
                 variants=record.variants,
             )
             self._rebuild_indexes_locked()
+
+    def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool = True) -> None:
+        """Apply pointer metadata for multiple notes without repeated rebuilds."""
+        if not self._loaded:
+            return
+
+        payload = list(notes)
+        if not payload:
+            return
+
+        with self._lock:
+            for note in payload:
+                record = self._note_map.get(note.id)
+                if not record:
+                    continue
+
+                self._note_map[note.id] = NoteRecord(
+                    id=record.id,
+                    parent_id=getattr(note, "parent_id", record.parent_id),
+                    prev_id=getattr(note, "prev_id", record.prev_id),
+                    next_id=getattr(note, "next_id", record.next_id),
+                    is_collapsed=record.is_collapsed,
+                    content=record.content,
+                    created_at=record.created_at,
+                    updated_at=getattr(note, "updated_at", record.updated_at),
+                    variants=record.variants,
+                )
+
+            if rebuild:
+                self._rebuild_indexes_locked()
 
     def remove_note(self, note_id: str) -> None:
         if not self._loaded:
