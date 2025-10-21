@@ -150,6 +150,7 @@ def _move_note_with_store(db: SafeSession, note_id: str, new_parent_id: Optional
     else:
         _apply_order_with_store(db, old_parent, old_order, rebuild=False)
         _apply_order_with_store(db, new_parent_id, new_order, rebuild=True)
+    note_store.debug_validate_links(note_id, sibling_id, new_parent_id, old_parent)
 
 
 def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: list[str], *, rebuild: bool) -> None:
@@ -191,6 +192,7 @@ def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: li
 
     if updates:
         note_store.bulk_update_metadata(updates, rebuild=rebuild)
+        note_store.debug_validate_links(*[u.id for u in updates])
 
 
 def _collect_descendants_from_store(root_id: str) -> list[str]:

@@ -2,6 +2,7 @@ from typing import Optional
 from fastapi import HTTPException
 import uuid
 import logging
+import time
 
 from .base_service import BaseTransactionService
 from ..models.linked_list import LinkedListManager
@@ -98,24 +99,58 @@ class NoteService(BaseTransactionService):
         """Delete a note and all its descendants"""
         self._set_operation("delete_note")
         assert self.client_id, "delete_note requires client_id"
+        timings: dict[str, float] = {}
+
+        logger.info("notes.delete.start", extra={"note_id": note_id, "client": self.client_id})
+        print(f"[notes.delete] start note_id={note_id} client={self.client_id}")
+
+        t0 = time.perf_counter()
         subtree_total = count_subtree(self.db, note_id)
+        timings["count_subtree_ms"] = (time.perf_counter() - t0) * 1000
         self.expect_note_delta(-subtree_total)
-        
-        
+
         # Check if deleting would leave list empty (for frontend state management)
-        all_notes = LinkedListManager.get_ordered_child_list(self.db, None)
-        notes_left = len([n for n in all_notes if n.id != note_id])
+        t1 = time.perf_counter()
+        from .note_store import store as note_store
+
+        t1 = time.perf_counter()
+        if note_store.loaded:
+            root_ids = note_store.get_children(None)
+            notes_left = len([root_id for root_id in root_ids if root_id != note_id])
+        else:
+            all_notes = LinkedListManager.get_ordered_child_list(self.db, None)
+            notes_left = len([n for n in all_notes if n.id != note_id])
         all_deleted = (notes_left == 0)
-        
+        timings["load_roots_ms"] = (time.perf_counter() - t1) * 1000
+
+        print(f'DEBUG: inner get tree: {time.perf_counter() - t1} seconds')
+
+        # Execute delete
+        t2 = time.perf_counter()
         LinkedListManager.delete_note(self.db, note_id)
-        
+        timings["linked_list_delete_ms"] = (time.perf_counter() - t2) * 1000
+
         logger.info(f"Deleted note {note_id}")
-        
+
         # Generate new UUID and update server state
         new_uuid = generate_new_uuid()
         set_server_sync_uuid(new_uuid)
-        
-        return {"status": "deleted", "all_deleted": all_deleted, "updateUUID": new_uuid}
+
+        timings["total_ms"] = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "notes.delete.finish",
+            extra={"note_id": note_id, "client": self.client_id, "metrics": timings},
+        )
+        print(
+            f"[notes.delete] timings note_id={note_id} client={self.client_id} metrics={timings}"
+        )
+
+        return {
+            "status": "deleted",
+            "all_deleted": all_deleted,
+            "updateUUID": new_uuid,
+            "metrics": timings,
+        }
     
     def move_note(self, note_id: str, new_parent_id: Optional[str] = None,
                   sibling_id: Optional[str] = None, position: Optional[MovePosition] = None) -> dict:

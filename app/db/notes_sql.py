@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
@@ -152,8 +153,12 @@ def delete_notes(
         return
     placeholders = ",".join(["?"] * len(identifiers))
     sql = f"DELETE FROM {NOTES_TABLE} WHERE id IN ({placeholders})"
+    print('DEBUG CHECKPOINT 1')
+    t1 = time.perf_counter()
     conn = _conn(connection)
     conn.execute(sql, tuple(identifiers))
+    t2 = time.perf_counter()
+    print(f'DEBUG CHECKPOINT 2 took {(t2-t1)} seconds')
 
 
 def fetch_note(

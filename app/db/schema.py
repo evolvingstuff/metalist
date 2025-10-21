@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
     is_collapsed INTEGER NOT NULL DEFAULT 0,
     encryption_nonce BLOB,
     encryption_tag BLOB,
-    parent_id TEXT REFERENCES {NOTES_TABLE}(id) ON DELETE SET NULL,
-    prev_id TEXT REFERENCES {NOTES_TABLE}(id) ON DELETE SET NULL,
-    next_id TEXT REFERENCES {NOTES_TABLE}(id) ON DELETE SET NULL,
+    parent_id TEXT,
+    prev_id TEXT,
+    next_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
 
 _CREATE_NOTES_PARENT_INDEX = f"""
 CREATE INDEX IF NOT EXISTS idx_{NOTES_TABLE}_parent ON {NOTES_TABLE}(parent_id);
+"""
+
+_CREATE_NOTES_PREV_INDEX = f"""
+CREATE INDEX IF NOT EXISTS idx_{NOTES_TABLE}_prev ON {NOTES_TABLE}(prev_id);
+"""
+
+_CREATE_NOTES_NEXT_INDEX = f"""
+CREATE INDEX IF NOT EXISTS idx_{NOTES_TABLE}_next ON {NOTES_TABLE}(next_id);
 """
 
 _CREATE_APP_SETTINGS_TABLE = f"""
@@ -49,3 +57,5 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_NOTES_TABLE)
     connection.execute(_CREATE_APP_SETTINGS_TABLE)
     connection.execute(_CREATE_NOTES_PARENT_INDEX)
+    connection.execute(_CREATE_NOTES_PREV_INDEX)
+    connection.execute(_CREATE_NOTES_NEXT_INDEX)

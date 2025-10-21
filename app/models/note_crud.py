@@ -1,4 +1,5 @@
 from typing import Optional, Iterable
+import time
 from types import SimpleNamespace
 from datetime import datetime, timezone
 
@@ -180,13 +181,18 @@ class NoteCRUD:
             from ..services.content_cache import remove_cached_note
 
             if note_store.loaded:
+                print(f"[notes.delete] store branch note_id={note_id}")
                 try:
                     record = note_store.get_note(note_id)
                 except KeyError as exc:
                     raise ValueError(f"Note {note_id} not found") from exc
 
                 ids_to_delete = _collect_descendants_from_store(note_id)
+                print(f"[notes.delete] ids_to_delete count={len(ids_to_delete)}")
 
+                timings: dict[str, float] = {}
+
+                neighbor_start = time.perf_counter()
                 if record.prev_id:
                     update_links(
                         db.connection(),
@@ -203,7 +209,8 @@ class NoteCRUD:
                             created_at=prev_record.created_at,
                             updated_at=prev_record.updated_at,
                             is_collapsed=prev_record.is_collapsed,
-                        )
+                        ),
+                        rebuild=False,
                     )
 
                 if record.next_id:
@@ -222,15 +229,28 @@ class NoteCRUD:
                             created_at=next_record.created_at,
                             updated_at=next_record.updated_at,
                             is_collapsed=next_record.is_collapsed,
-                        )
+                        ),
+                        rebuild=False,
                     )
+                timings["neighbor_updates_ms"] = (time.perf_counter() - neighbor_start) * 1000
+                note_store.debug_validate_links(record.prev_id, record.next_id, record.parent_id)
 
+                delete_start = time.perf_counter()
                 delete_notes(db.connection(), ids_to_delete)
+                timings["delete_notes_ms"] = (time.perf_counter() - delete_start) * 1000
+                print("[notes.delete] delete_notes complete")
 
                 for to_remove in ids_to_delete:
                     remove_cached_note(to_remove)
 
+                remove_start = time.perf_counter()
                 note_store.remove_note(note_id)
+                timings["store_remove_ms"] = (time.perf_counter() - remove_start) * 1000
+                print("[notes.delete] note_store.remove_note complete")
+                print(
+                    f"[notes.delete] store timings note_id={note_id} metrics={timings}"
+                )
+                note_store.debug_validate_links(record.prev_id, record.next_id, record.parent_id)
                 return
 
             with SafeSession.allow_reads("notecrud:delete_note:root"):

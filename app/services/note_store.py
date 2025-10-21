@@ -13,6 +13,7 @@ from threading import RLock
 from typing import Dict, Iterable, List, Optional, Sequence, Mapping
 from types import SimpleNamespace
 import time
+import logging
 
 from app.db import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
@@ -37,6 +38,7 @@ class NoteStore:
     """Thread-safe, read-optimized cache of note metadata."""
 
     def __init__(self) -> None:
+        self._logger = logging.getLogger(__name__)
         self._lock = RLock()
         self._note_map: Dict[str, NoteRecord] = {}
         self._children: Dict[Optional[str], List[str]] = {}
@@ -183,7 +185,7 @@ class NoteStore:
             )
             self._rebuild_indexes_locked()
 
-    def update_metadata_from_db(self, note: SimpleNamespace) -> None:
+    def update_metadata_from_db(self, note: SimpleNamespace, *, rebuild: bool = True) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -200,7 +202,8 @@ class NoteStore:
                 created_at=getattr(note, "created_at", record.created_at),
                 updated_at=getattr(note, "updated_at", record.updated_at),
             )
-            self._rebuild_indexes_locked()
+            if rebuild:
+                self._rebuild_indexes_locked()
 
     def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool = True) -> None:
         """Apply pointer metadata for multiple notes without repeated rebuilds."""
@@ -318,6 +321,52 @@ class NoteStore:
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:
             return list(self._children.get(parent_id, []))
+
+    # Debug helpers -----------------------------------------------------------
+
+    def debug_validate_links(self, *note_ids: Optional[str]) -> None:
+        if not note_ids:
+            return
+
+        with self._lock:
+            for note_id in note_ids:
+                if not note_id:
+                    continue
+                record = self._note_map.get(note_id)
+                if not record:
+                    continue
+
+                if record.prev_id:
+                    prev = self._note_map.get(record.prev_id)
+                    if not prev:
+                        raise RuntimeError(
+                            f"Integrity failure: note {note_id} prev_id {record.prev_id} missing"
+                        )
+                    elif prev.next_id != record.id:
+                        raise RuntimeError(
+                            "Integrity failure: prev/next mismatch: "
+                            f"prev {record.prev_id} next={prev.next_id} expected {record.id}"
+                        )
+
+                if record.next_id:
+                    nxt = self._note_map.get(record.next_id)
+                    if not nxt:
+                        raise RuntimeError(
+                            f"Integrity failure: note {note_id} next_id {record.next_id} missing"
+                        )
+                    elif nxt.prev_id != record.id:
+                        raise RuntimeError(
+                            "Integrity failure: next/prev mismatch: "
+                            f"next {record.next_id} prev={nxt.prev_id} expected {record.id}"
+                        )
+
+                if record.parent_id is not None:
+                    children = self._children.get(record.parent_id, [])
+                    if record.id not in children:
+                        raise RuntimeError(
+                            "Integrity failure: parent/child mismatch: "
+                            f"note {note_id} parent {record.parent_id} missing from children list"
+                        )
 
 store = NoteStore()
 

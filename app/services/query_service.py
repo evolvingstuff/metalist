@@ -31,9 +31,12 @@ class NoteQueryService(BaseQueryService):
         search_active = bool(search and search.strip())
 
         notes: List[Dict[str, object]] = []
-        if note_store.loaded:
+        store_available = note_store.loaded
+        if store_available:
             ordered_root_ids = note_store.get_children(None)
-        else:
+            if not ordered_root_ids:
+                store_available = False
+        if not store_available:
             notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
             ordered_root_ids = [note['id'] for note in notes]
 
@@ -57,7 +60,7 @@ class NoteQueryService(BaseQueryService):
         if not search_active:
             limit_roots = set(ordered_root_ids[: window_end_index + 1]) if window_end_index >= 0 else set()
 
-        if note_store.loaded:
+        if store_available:
             notes = build_note_tree(
                 LinkedListManager,
                 self.db,
@@ -69,6 +72,38 @@ class NoteQueryService(BaseQueryService):
         elif limit_roots is not None:
             notes = [note for note in notes if note['id'] in limit_roots]
 
+        if notes:
+            presented_roots = [note['id'] for note in notes]
+            if limit_roots is not None:
+                available_roots = set(presented_roots)
+                intersection = available_roots.intersection(limit_roots)
+                if intersection:
+                    limit_roots = intersection
+                    notes = [note for note in notes if note['id'] in limit_roots]
+                elif not search_active:
+                    ordered_root_ids = presented_roots
+                    root_index_map = {note_id: index for index, note_id in enumerate(ordered_root_ids)}
+                    seen_root_indices = {
+                        root_index_map[root_id]
+                        for root_id in client_seen_root_ids
+                        if root_id in root_index_map
+                    }
+                    window_end_index = self._determine_root_window_end(
+                        ordered_root_ids,
+                        root_index_map,
+                        client_known_note_ids,
+                        seen_root_indices,
+                        editing_note_id,
+                    )
+                    limit_roots = (
+                        set(ordered_root_ids[: window_end_index + 1])
+                        if window_end_index >= 0
+                        else set()
+                    )
+                    notes = [note for note in notes if note['id'] in limit_roots]
+                else:
+                    limit_roots = None
+
         locks = get_all_locks()
 
         structure: List[Dict[str, object]] = []
@@ -77,7 +112,8 @@ class NoteQueryService(BaseQueryService):
 
         def traverse(nodes: List[dict], parent_id: Optional[str] = None) -> None:
             for index, note in enumerate(nodes):
-                if parent_id is None and limit_roots is not None and note['id'] not in limit_roots:
+                is_root = parent_id is None or parent_id == ''
+                if is_root and limit_roots is not None and note['id'] not in limit_roots:
                     continue
                 note_id = note['id']
                 prev_id = nodes[index - 1]['id'] if index > 0 else None

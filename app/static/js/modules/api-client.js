@@ -53,18 +53,11 @@ export const NotesAPI = {
             
             console.log('[API] Final headers:', headers);
 
-            // Add timeout for faster error detection
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-            
             const response = await fetch(url, {
                 ...options,
                 body: requestBody,
-                headers: headers,
-                signal: controller.signal
+                headers: headers
             });
-            
-            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 // Use centralized error handling

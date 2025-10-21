@@ -1,8 +1,11 @@
 from abc import ABC
 from typing import Optional
 import logging
+import time
 
 from app.core import config
+from app.models.database import SafeSession
+import sqlite3
 from app.services.integrity import (
     snapshot_note_count,
     assert_note_count,
@@ -27,12 +30,19 @@ class BaseTransactionService(ABC):
     
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
+        logger.debug(
+            "Service entering transaction",
+            extra={
+                "service": type(self).__name__,
+                "client": self.client_id,
+            },
+        )
         self.transaction = self.transaction_manager.start_transaction(self.db, self.client_id)
         if config.DEV_ENFORCE_INTEGRITY_CHECKS:
             print('DEBUG: enforcing integrity checks')
             self._note_count_snapshot = snapshot_note_count(self.db)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - handles commit/rollback and cleanup"""
         try:
@@ -46,6 +56,14 @@ class BaseTransactionService(ABC):
         finally:
             # Always clean up the transaction
             self.transaction_manager.end_transaction()
+            logger.debug(
+                "Service exited transaction",
+                extra={
+                    "service": type(self).__name__,
+                    "client": self.client_id,
+                    "exception": exc_val,
+                },
+            )
             logger.debug(f"Transaction {self.transaction.uuid if self.transaction else 'None'} cleaned up")
             self._note_count_snapshot = None
             self._expected_note_delta = None
@@ -53,7 +71,34 @@ class BaseTransactionService(ABC):
     def _commit(self):
         """Commit the database transaction and finalize command tracking"""
         # Commit database changes
+        commit_start = time.perf_counter()
         self.db.commit()
+        commit_ms = (time.perf_counter() - commit_start) * 1000
+        logger.info(
+            "db.commit",
+            extra={
+                "service": type(self).__name__,
+                "client": self.client_id,
+                "duration_ms": commit_ms,
+            },
+        )
+
+        # Flush WAL to avoid large pause on next write
+        try:
+            self.db.connection().execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except sqlite3.OperationalError:
+            try:
+                with sqlite3.connect(str(SafeSession._db_path)) as temp_conn:
+                    temp_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception as checkpoint_exc:
+                logger.warning(
+                    "db.checkpoint_failed",
+                    extra={
+                        "service": type(self).__name__,
+                        "client": self.client_id,
+                        "error": str(checkpoint_exc),
+                    },
+                )
 
         if config.DEV_ENFORCE_INTEGRITY_CHECKS:
             print('DEBUG: enforcing integrity checks')

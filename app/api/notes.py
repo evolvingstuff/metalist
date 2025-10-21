@@ -499,7 +499,10 @@ def delete_note(
     
     with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
-            result = service.delete_note(note_id)
+            t1 = time.perf_counter()
+            _ = service.delete_note(note_id)
+            t2 = time.perf_counter()
+            print(f'DEBUG: delete took {t2 - t1} seconds')
             return {"status": "success"}
         except ValueError as e:
             raise HTTPException(status_code=404, detail="Note not found")

@@ -42,8 +42,16 @@ class TransactionManager:
         """
         with self.lock:
             if self.current_transaction is not None:
+                active = self.current_transaction
+                logger.error(
+                    "Transaction already in progress", extra={
+                        "active_transaction": getattr(active, "uuid", None),
+                        "active_client": getattr(active, "client_id", None),
+                        "requesting_client": client_id,
+                    }
+                )
                 raise Exception("Transaction already in progress")
-            
+
             self.current_transaction = ApiTransaction(
                 db=db,
                 transaction_manager=self,
@@ -56,7 +64,13 @@ class TransactionManager:
         """End the current transaction and clean up."""
         with self.lock:
             if self.current_transaction:
-                logger.debug(f"Transaction {self.current_transaction.uuid} ended")
+                logger.debug(
+                    "Transaction ended",
+                    extra={
+                        "transaction": self.current_transaction.uuid,
+                        "client": self.current_transaction.client_id,
+                    },
+                )
             self.current_transaction = None
     
     def get_current_transaction(self) -> Optional[ApiTransaction]:
