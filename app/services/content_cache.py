@@ -6,6 +6,7 @@ manually by the sqlite helper layer and service hooks.
 """
 
 import logging
+import time
 from typing import Dict, Optional
 
 from app.db import connect_reader
@@ -18,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Global in-memory cache: {note_id: decrypted_content}
 _search_cache: Dict[str, str] = {}
+
+_CACHE_TIMING_ENABLED = True
 
 
 def get_cached_content(note_id: str) -> Optional[str]:
@@ -80,15 +83,27 @@ def populate_cache_from_db(db: SafeSession | None = None) -> None:
     logger.info("Populating content cache from database...")
     
     try:
+        fetch_start = time.perf_counter()
         with connect_reader("cache:populate") as connection:
             notes = fetch_all_for_cache(connection)
-        
+        if _CACHE_TIMING_ENABLED:
+            fetch_duration = time.perf_counter() - fetch_start
+            print(f"[startup] cache query returned {len(notes)} rows in {fetch_duration:.2f}s")
+            logger.info(
+                "[startup] cache query returned %d rows in %.2fs",
+                len(notes),
+                fetch_duration,
+            )
+
         # Clear existing cache
         clear_cache()
-        
+
         # Decrypt and cache each note's content
         encryption_service = get_encryption_service()
-        
+
+        loop_started = time.perf_counter()
+        processed = 0
+        last_checkpoint = loop_started
         for note in notes:
             note_id = note["id"]
             content = note["content"]
@@ -123,7 +138,34 @@ def populate_cache_from_db(db: SafeSession | None = None) -> None:
                 logger.error(f"🚨 Cache system integrity compromised!")
                 logger.error(f"🚨 CRASHING IMMEDIATELY")
                 raise RuntimeError(f"Cache population failed: Could not process note {note_id}: {e}") from e
-        
+
+            processed += 1
+            if _CACHE_TIMING_ENABLED and processed % 1000 == 0:
+                now = time.perf_counter()
+                batch_elapsed = now - last_checkpoint
+                total_elapsed = now - loop_started
+                print(
+                    f"[startup] cache decrypted {processed} notes | last 1000 in {batch_elapsed:.2f}s | total {total_elapsed:.2f}s"
+                )
+                logger.info(
+                    "[startup] cache decrypted %d notes | last 1000 in %.2fs | total %.2fs",
+                    processed,
+                    batch_elapsed,
+                    total_elapsed,
+                )
+                last_checkpoint = now
+
+        if _CACHE_TIMING_ENABLED:
+            total_loop = time.perf_counter() - loop_started
+            print(
+                f"[startup] cache decrypt loop processed {len(notes)} notes in {total_loop:.2f}s"
+            )
+            logger.info(
+                "[startup] cache decrypt loop processed %d notes in %.2fs",
+                len(notes),
+                total_loop,
+            )
+
         logger.info(f"Content cache populated with {len(notes)} notes")
         
     except Exception as e:

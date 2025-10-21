@@ -12,6 +12,7 @@ from datetime import datetime
 from threading import RLock
 from typing import Dict, Iterable, List, Optional
 from types import SimpleNamespace
+import time
 
 from app.db import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
@@ -40,6 +41,7 @@ class NoteStore:
         self._note_map: Dict[str, NoteRecord] = {}
         self._children: Dict[Optional[str], List[str]] = {}
         self._loaded = False
+        self._timing_enabled = True
 
     @property
     def loaded(self) -> bool:
@@ -53,13 +55,24 @@ class NoteStore:
         """
 
         with self._lock:
+            fetch_start = time.perf_counter()
             if db is not None:
                 rows = fetch_all_for_cache(db.connection())
             else:
                 with connect_reader("note_store:load") as connection:
                     rows = fetch_all_for_cache(connection)
 
+            if self._timing_enabled:
+                fetch_duration = time.perf_counter() - fetch_start
+                print(
+                    f"[startup] note_store query returned {len(rows)} rows in {fetch_duration:.2f}s"
+                )
+
             note_map: Dict[str, NoteRecord] = {}
+
+            loop_start = time.perf_counter()
+            processed = 0
+            last_checkpoint = loop_start
 
             for row in rows:
                 note = SimpleNamespace(**row)
@@ -80,6 +93,16 @@ class NoteStore:
                     updated_at=getattr(note, "updated_at", None),
                 )
 
+                processed += 1
+                if self._timing_enabled and processed % 1000 == 0:
+                    now = time.perf_counter()
+                    batch_elapsed = now - last_checkpoint
+                    total_elapsed = now - loop_start
+                    print(
+                        f"[startup] note_store hydrated {processed} notes | last 1000 in {batch_elapsed:.2f}s | total {total_elapsed:.2f}s"
+                    )
+                    last_checkpoint = now
+
             known_ids = set(note_map.keys())
             for record in note_map.values():
                 if record.prev_id and record.prev_id not in known_ids:
@@ -98,6 +121,12 @@ class NoteStore:
             self._note_map = note_map
             self._rebuild_indexes_locked()
             self._loaded = True
+
+            if self._timing_enabled:
+                total_elapsed = time.perf_counter() - loop_start
+                print(
+                    f"[startup] note_store hydration loop processed {processed} notes in {total_elapsed:.2f}s"
+                )
 
     def snapshot(self) -> Dict[str, NoteRecord]:
         """Return a shallow copy of the current note map."""
