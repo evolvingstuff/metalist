@@ -16,6 +16,7 @@ from .services.note_store import store as note_store
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
 import logging
+import time
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 import mimetypes
@@ -36,12 +37,27 @@ async def crash_on_validation_error(request: Request, exc: RequestValidationErro
         # Normal behavior - return 422
         return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
+_startup_timing_enabled = True
+
+
+def _log_startup_step(step: str, elapsed: float) -> None:
+    if not _startup_timing_enabled:
+        return
+    message = f"[startup] {step} took {elapsed:.2f}s"
+    print(message)
+    logger.info(message)
+
+
 try:
+    overall_start = time.perf_counter()
+
+    schema_start = time.perf_counter()
     with begin_writer() as connection:
         initialize_schema(connection.raw_connection)
         settings = fetch_settings(connection)
         if not settings:
             insert_default_settings(connection)
+    _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 except Exception as e:
     # FAIL FAST AND LOUD - NO SILENT FAILURES
     logger.error(f"🚨 FATAL: Failed to initialize app settings: {e}")
@@ -51,9 +67,19 @@ except Exception as e:
 
 # Populate content cache on startup
 try:
+    cache_start = time.perf_counter()
     populate_cache_from_db()
+    _log_startup_step("cache population", time.perf_counter() - cache_start)
+
+    store_start = time.perf_counter()
     note_store.load_from_db(None)
+    _log_startup_step("note store hydration", time.perf_counter() - store_start)
+
+    guard_start = time.perf_counter()
     enable_read_guard()
+    _log_startup_step("read guard enable", time.perf_counter() - guard_start)
+
+    _log_startup_step("total startup", time.perf_counter() - overall_start)
 except Exception as e:
     # FAIL FAST AND LOUD - NO SILENT FAILURES
     logger.error(f"🚨 FATAL: Failed to populate content cache on startup: {e}")
