@@ -7,7 +7,7 @@ manually by the sqlite helper layer and service hooks.
 
 import logging
 import time
-from typing import Dict, Optional
+from typing import Dict, Mapping, Optional, Sequence
 
 from app.db import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
@@ -73,7 +73,7 @@ def clear_cache() -> None:
     logger.info("Cache cleared")
 
 
-def populate_cache_from_db(db: SafeSession | None = None) -> None:
+def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[str, object]]:
     """Populate cache with all notes from database on startup.
 
     The optional ``db`` parameter is retained for backwards compatibility but
@@ -85,7 +85,7 @@ def populate_cache_from_db(db: SafeSession | None = None) -> None:
     try:
         fetch_start = time.perf_counter()
         with connect_reader("cache:populate") as connection:
-            notes = fetch_all_for_cache(connection)
+            notes = list(fetch_all_for_cache(connection))
         if _CACHE_TIMING_ENABLED:
             fetch_duration = time.perf_counter() - fetch_start
             print(f"[startup] cache query returned {len(notes)} rows in {fetch_duration:.2f}s")
@@ -167,7 +167,9 @@ def populate_cache_from_db(db: SafeSession | None = None) -> None:
             )
 
         logger.info(f"Content cache populated with {len(notes)} notes")
-        
+
+        return notes
+
     except Exception as e:
         logger.error(f"Failed to populate cache from database: {e}")
         raise

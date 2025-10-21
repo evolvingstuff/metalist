@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Sequence, Mapping
 from types import SimpleNamespace
 import time
 
@@ -47,7 +47,12 @@ class NoteStore:
     def loaded(self) -> bool:
         return self._loaded
 
-    def load_from_db(self, db: SafeSession | None) -> None:
+    def load_from_db(
+        self,
+        db: SafeSession | None,
+        *,
+        prefetched_rows: Optional[Sequence[Mapping[str, object]]] = None,
+    ) -> None:
         """Populate the store by reading all notes from the database once.
 
         When ``db`` is provided, we use its connection so uncommitted writes
@@ -55,18 +60,27 @@ class NoteStore:
         """
 
         with self._lock:
-            fetch_start = time.perf_counter()
-            if db is not None:
-                rows = fetch_all_for_cache(db.connection())
-            else:
-                with connect_reader("note_store:load") as connection:
-                    rows = fetch_all_for_cache(connection)
+            timing_enabled = self._timing_enabled and db is None
 
-            if self._timing_enabled:
-                fetch_duration = time.perf_counter() - fetch_start
-                print(
-                    f"[startup] note_store query returned {len(rows)} rows in {fetch_duration:.2f}s"
-                )
+            if prefetched_rows is not None:
+                rows = list(prefetched_rows)
+                if timing_enabled:
+                    print(
+                        f"[startup] note_store reused {len(rows)} prefetched rows (no query)"
+                    )
+            else:
+                fetch_start = time.perf_counter()
+                if db is not None:
+                    rows = list(fetch_all_for_cache(db.connection()))
+                else:
+                    with connect_reader("note_store:load") as connection:
+                        rows = list(fetch_all_for_cache(connection))
+
+                if timing_enabled:
+                    fetch_duration = time.perf_counter() - fetch_start
+                    print(
+                        f"[startup] note_store query returned {len(rows)} rows in {fetch_duration:.2f}s"
+                    )
 
             note_map: Dict[str, NoteRecord] = {}
 
@@ -94,7 +108,7 @@ class NoteStore:
                 )
 
                 processed += 1
-                if self._timing_enabled and processed % 1000 == 0:
+                if timing_enabled and processed % 1000 == 0:
                     now = time.perf_counter()
                     batch_elapsed = now - last_checkpoint
                     total_elapsed = now - loop_start
@@ -122,7 +136,7 @@ class NoteStore:
             self._rebuild_indexes_locked()
             self._loaded = True
 
-            if self._timing_enabled:
+            if timing_enabled:
                 total_elapsed = time.perf_counter() - loop_start
                 print(
                     f"[startup] note_store hydration loop processed {processed} notes in {total_elapsed:.2f}s"

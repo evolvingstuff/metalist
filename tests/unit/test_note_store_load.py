@@ -22,7 +22,6 @@ def test_note_store_loads_core_inserted_note():
     with store._lock:
         store._note_map.clear()
         store._children.clear()
-        store._hash_tree.clear()
         store._loaded = False
 
     content_cache.clear_cache()
@@ -56,7 +55,7 @@ def test_note_store_loads_core_inserted_note():
     content_cache.cache_note(note_id, "<div>hello</div>")
     content_cache.cache_note(child_id, "<div>child</div>")
 
-    session = SafeSession(bind=SafeSession.get_engine())
+    session = SafeSession()
     try:
         store.load_from_db(session)
     finally:

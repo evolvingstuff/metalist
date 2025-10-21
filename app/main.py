@@ -68,11 +68,11 @@ except Exception as e:
 # Populate content cache on startup
 try:
     cache_start = time.perf_counter()
-    populate_cache_from_db()
+    prefetched_rows = populate_cache_from_db()
     _log_startup_step("cache population", time.perf_counter() - cache_start)
 
     store_start = time.perf_counter()
-    note_store.load_from_db(None)
+    note_store.load_from_db(None, prefetched_rows=prefetched_rows)
     _log_startup_step("note store hydration", time.perf_counter() - store_start)
 
     guard_start = time.perf_counter()

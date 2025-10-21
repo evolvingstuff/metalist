@@ -23,7 +23,6 @@ def reset_store_and_cache():
     with store._lock:
         store._note_map.clear()
         store._children.clear()
-        store._hash_tree.clear()
         store._loaded = False
     content_cache.clear_cache()
 
@@ -47,7 +46,7 @@ def test_move_note_with_store_after_paste():
 
     content_cache.cache_note(root_id, "<div>root</div>")
 
-    session = SafeSession(bind=SafeSession.get_engine())
+    session = SafeSession()
     try:
         store.load_from_db(session)
 
