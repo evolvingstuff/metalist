@@ -8,6 +8,8 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 export async function deleteNote(noteId) {
     let startedAt = performance.now();
 
+    let t1 = performance.now();
+
     Logger.logAction('deleteNote', {
         noteId,
         isEditing: ModeContext.isEditing,
@@ -39,11 +41,21 @@ export async function deleteNote(noteId) {
 
     ModeContext.setLoading(true);
 
+    let t2 = performance.now();
+
     await NotesAPI.deleteNote(noteId);
+
+    let t3 = performance.now()
 
     ModeContext.setLoading(false);
 
     await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'deleteNote'});
+
+    let t4 = performance.now();
+    console.log(`DEBUGZ: deleteNote t2 - t1 ${(t2-t1)} ms`)
+    console.log(`DEBUGZ: deleteNote t3 - t2 ${(t3-t2)} ms`)
+    console.log(`DEBUGZ: deleteNote t4 - t3 ${(t4-t3)} ms`)
+    console.log(`DEBUGZ: deleteNote t4 - t1 ${(t4-t1)} ms`)
 }
 
 export async function deleteNoteOutsideEdit(noteId) {
@@ -79,6 +91,7 @@ export async function deleteNoteOutsideEdit(noteId) {
         if (ModeContext.currentContent !== null) {
             ModeContext.setCurrentContent(null);
         }
+
 
         await actionRefreshAndMaybeSelect({ skipLoadingState: true, startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
     } finally {
