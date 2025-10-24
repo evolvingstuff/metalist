@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
 from server_v2.endpoints.view import CmdView
+from server_v2.snapshot import build_view_snapshot
 from server_v2.endpoints.create_note import CmdCreateNote
 from server_v2.endpoints.create_drop import CmdCreateDrop
 from server_v2.endpoints.create_sibling import CmdCreateSibling
@@ -38,11 +39,29 @@ def view_diff(payload: dict):
     _ = payload["clientSeenRootIds"]
 
     cmd = CmdView(client_id=client_id, editing_note_id=editing_note_id or None, search=search or None)
-    structure, notes, locks = cmd.execute()
+    # Known hashes and seen roots from client to drive windowing + diff
+    client_hashes = {
+        k: v for k, v in (payload.get("clientNoteUuidHashes") or {}).items() if k
+    }
+    seen_roots = set(payload.get("clientSeenRootIds") or [])
+    structure, notes, locks = build_view_snapshot(
+        editing_note_id=editing_note_id or None,
+        search=search or None,
+        client_known_note_ids=set(client_hashes.keys()),
+        client_seen_root_ids=seen_roots,
+    )
+
+    # Send only changed notes: compare client hashes to computed hashes
+    filtered_notes = {
+        note_id: data
+        for note_id, data in notes.items()
+        if client_hashes.get(note_id) != data.get("hash")
+    }
+
     response = {
         "snapshot": {
             "structure": structure,
-            "notes": notes,
+            "notes": filtered_notes,
             "locks": locks,
             "updateUUID": "",
             "version": VERSION,
