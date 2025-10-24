@@ -228,6 +228,55 @@ class InMemoryStore:
                     prev_id=rec.prev_id,
                 )
 
+    def move_note(self, note_id: str, new_parent_id: Optional[str], prev_id: Optional[str]) -> None:
+        with self._lock:
+            rec = self._notes.get(note_id)
+            if rec is None:
+                raise KeyError(f"Note {note_id} not present in v2 store")
+
+            # Unlink from old parent
+            old_parent = rec.parent_id
+            old_links = self._links.get(old_parent) or {}
+            link = old_links.get(note_id, {})
+            old_prev = link.get('prev')
+            old_next = link.get('next')
+            if old_prev is not None and old_prev in old_links:
+                old_links[old_prev]['next'] = old_next
+            else:
+                self._heads[old_parent] = old_next
+            if old_next is not None and old_next in old_links:
+                old_links[old_next]['prev'] = old_prev
+            else:
+                self._tails[old_parent] = old_prev
+            old_links.pop(note_id, None)
+
+            # Insert into new parent
+            links = self._ensure_parent_structures(new_parent_id)
+            if prev_id and prev_id not in links:
+                prev_id = None
+            next_id = links.get(prev_id, {}).get('next') if prev_id is not None else self._heads.get(new_parent_id)
+
+            links[note_id] = {'prev': prev_id, 'next': next_id}
+            if prev_id is not None:
+                links[prev_id]['next'] = note_id
+            else:
+                self._heads[new_parent_id] = note_id
+            if next_id is not None:
+                links[next_id]['prev'] = note_id
+            else:
+                self._tails[new_parent_id] = note_id
+
+            self._notes[note_id] = NodeRecord(
+                id=rec.id,
+                parent_id=new_parent_id,
+                prev_id=prev_id,
+                next_id=next_id,
+                is_collapsed=rec.is_collapsed,
+                content=rec.content,
+                created_at=rec.created_at,
+                updated_at=rec.updated_at,
+            )
+
 
 store = InMemoryStore()
 

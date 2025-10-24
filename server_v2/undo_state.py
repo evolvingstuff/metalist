@@ -5,6 +5,10 @@ from typing import Dict, List, Optional
 
 from server_v2.endpoints.update_content import apply_update_content
 from server_v2.endpoints.delete_subtree import apply_delete_subtree, apply_restore_records
+from server_v2.endpoints.move import apply_move
+from server_v2.store import store
+import os
+import logging
 from server_v2.sync import generate_new_uuid
 
 
@@ -53,6 +57,45 @@ def record_delete(client_id: str, records: List[NodeRecord]) -> None:
     ctx.redo.clear()
 
 
+def record_move(
+    client_id: str,
+    note_id: str,
+    *,
+    before_parent: Optional[str],
+    before_prev: Optional[str],
+    before_next: Optional[str],
+    after_parent: Optional[str],
+    after_prev: Optional[str],
+    after_next: Optional[str],
+) -> None:
+    ctx = _ctx(client_id)
+    ctx.history.append({
+        "type": "move",
+        "note_id": note_id,
+        "before_parent": before_parent,
+        "before_prev": before_prev,
+        "before_next": before_next,
+        "after_parent": after_parent,
+        "after_prev": after_prev,
+        "after_next": after_next,
+    })
+    ctx.redo.clear()
+
+
+def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optional[str], exp_next: Optional[str]) -> None:
+    parent_id = store.get(note_id).parent_id
+    links = store._links.get(parent_id) or {}  # type: ignore[attr-defined]
+    cur = links.get(note_id, {})
+    prev_id = cur.get('prev')
+    next_id = cur.get('next')
+    if parent_id != exp_parent or prev_id != exp_prev or next_id != exp_next:
+        logging.error(
+            "FATAL: undo/redo move invariant failed for %s | expected parent=%s prev=%s next=%s | actual parent=%s prev=%s next=%s",
+            note_id, exp_parent, exp_prev, exp_next, parent_id, prev_id, next_id,
+        )
+        os._exit(1)
+
+
 def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
     ctx = _ctx(client_id)
     sc = search_context or ""
@@ -84,6 +127,17 @@ def undo(client_id: str) -> bool:
         ctx.redo.append(op)
         generate_new_uuid()
         return True
+    if op.get("type") == "move":
+        apply_move(
+            op["note_id"],
+            op["before_parent"],
+            op["before_prev"],
+            op["before_next"],
+        )
+        _assert_neighbors(op["note_id"], op["before_parent"], op["before_prev"], op["before_next"]) 
+        ctx.redo.append(op)
+        generate_new_uuid()
+        return True
     raise RuntimeError(f"Unsupported undo op: {op.get('type')}")
 
 
@@ -109,6 +163,17 @@ def redo(client_id: str) -> bool:
         # re-delete
         first = op["records"][0]
         apply_delete_subtree(first.id)
+        ctx.history.append(op)
+        generate_new_uuid()
+        return True
+    if op.get("type") == "move":
+        apply_move(
+            op["note_id"],
+            op["after_parent"],
+            op["after_prev"],
+            op["after_next"],
+        )
+        _assert_neighbors(op["note_id"], op["after_parent"], op["after_prev"], op["after_next"]) 
         ctx.history.append(op)
         generate_new_uuid()
         return True

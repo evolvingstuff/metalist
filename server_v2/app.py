@@ -82,7 +82,7 @@ def check_updates(payload: dict):
 
 @router.post("/notes/acquire-lock")
 def acquire_lock(payload: dict):
-    cmd = CmdAcquireLock(note_id=payload["noteId"], client_id=payload.get("clientId") or "")
+    cmd = CmdAcquireLock(note_id=payload["noteId"], client_id=payload["clientId"]) 
     result = cmd.execute()
     if not result.get("success") and result.get("conflict"):
         raise HTTPException(status_code=409, detail="Note is locked by another client")
@@ -91,7 +91,7 @@ def acquire_lock(payload: dict):
 
 @router.post("/notes/release-lock")
 def release_lock(payload: dict):
-    cmd = CmdReleaseLock(note_id=payload["noteId"], client_id=payload.get("clientId") or "")
+    cmd = CmdReleaseLock(note_id=payload["noteId"], client_id=payload["clientId"]) 
     return cmd.execute()
 
 
@@ -127,14 +127,14 @@ def create_sibling(note_id: str, body: dict):
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
         search_query=body.get("search_query"),
-        client_id=body.get("clientId") or "",
+        client_id=body["clientId"],
     )
     return cmd.execute()
 
 
 @router.post("/notes/new-child/{note_id}")
 def create_child(note_id: str, body: dict):
-    cmd = CmdCreateChild(parent_note_id=note_id, client_id=body.get("clientId") or "")
+    cmd = CmdCreateChild(parent_note_id=note_id, client_id=body["clientId"]) 
     return cmd.execute()
 
 
@@ -156,11 +156,15 @@ def save_note(note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/move")
-def move_stub(note_id: str, body: dict):
-    try:
-        return CmdMove().execute()
-    except Exception as e:
-        _not_impl(e)
+def move_note_endpoint(note_id: str, body: dict):
+    cmd = CmdMove(
+        note_id=note_id,
+        sibling_id=body.get("sibling_id"),
+        position=body.get("position"),
+        new_parent_id=body.get("new_parent_id"),
+        client_id=body["clientId"],
+    )
+    return cmd.execute()
 
 
 @router.post("/notes/{note_id}/collapse")
@@ -181,7 +185,7 @@ def expand_stub(note_id: str, body: dict):
 
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: str, body: dict):
-    client_id = body.get("clientId") or ""
+    client_id = body["clientId"]
     cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id)
     return cmd.execute()
 
