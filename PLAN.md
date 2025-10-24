@@ -142,6 +142,21 @@ Next steps (after view works)
 - [ ] Implement `POST /api2/notes/view` (client‑compatible payload).
 - [ ] Validate with curl; ensure zero post‑startup DB reads.
 
+## Next Step (Phase 1a): Update Content + Undo/Redo
+- Implement `CmdUpdateContent` in `server_v2/endpoints/update_content.py`:
+  - Accept: `clientId`, `noteId`, `content` (required strings)
+  - Command builds a single batched SQL update (ciphertext + nonce + tag) and applies new plaintext to `store` only after commit
+  - Fail fast for missing note, invalid types; no coercion
+  - Zero DB reads at runtime
+- Wire endpoint: `PUT /api2/notes/{note_id}` and `/api2/notes/{note_id}/save` → `CmdUpdateContent`
+- Add minimal Undo/Redo scaffolding for update content only:
+  - `CmdUpdateContent` returns inverse command capturing previous plaintext content
+  - Add `/api2/notes/undo` and `/api2/notes/redo` endpoints that replay the command stack for updates
+  - Reset stack on searchContext change; per‑client ownership
+- Tests/validation:
+  - curl sequence: view → update content → view hash change → undo → view hash restored → redo → view hash changed again
+  - Ensure no DB reads post‑startup
+
 ## File‑Per‑Op Structure (for later phases)
 When we add mutations (create/update/delete), keep each operation fully self‑contained in its own module for clarity and debuggability.
 
