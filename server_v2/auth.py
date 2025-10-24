@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-router = APIRouter(prefix="/api2/auth", tags=["auth2"])
+router = APIRouter(prefix="/auth", tags=["auth2"])
 
 
 @router.get("/status")
@@ -43,4 +43,3 @@ def change_password():
 @router.post("/settings/password/remove")
 def remove_password():
     raise HTTPException(status_code=501, detail="Not implemented")
-

@@ -20,6 +20,7 @@ from server_v2.store import hydrate_from_prefetched as v2_hydrate
 from server_v2.app import router as api2_router
 from server_v2.auth import router as api2_auth_router
 from server_v2.memory import router as api2_memory_router
+from app.core.config import API_PREFIX, V1_API_PREFIX
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
 from loguru import logger
@@ -161,19 +162,37 @@ app.add_middleware(AuthMiddleware)
 # Mount static files with no-cache headers
 app.mount("/static", NoCacheStaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
+ASSET_VERSION = str(int(time.time()))
+
 templates = TemplateLookup(
     directories=[Path(__file__).parent / "templates"],
     module_directory=str(Path(__file__).parent / "__pycache__" / "mako_modules"),
     input_encoding="utf-8"
 )
 
-app.include_router(auth.router)
-app.include_router(notes.router, prefix="/api/notes", tags=["notes"])  # v1 reference
+# Do not mount v1 auth/notes/memory while v2 is active
+# app.include_router(auth.router)
+# app.include_router(notes.router, prefix="/api/notes", tags=["notes"])  # v1 reference
 app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
-app.include_router(memory.router, prefix="/api")  # v1 reference for memory
-app.include_router(api2_router, prefix="/api2", tags=["api2"]) 
-app.include_router(api2_auth_router)
-app.include_router(api2_memory_router)
+# v2 routers mounted under configured API_PREFIX
+app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
+app.include_router(api2_auth_router, prefix=API_PREFIX)
+app.include_router(api2_memory_router, prefix=API_PREFIX)
+
+# Catch-all guard for any v1 API access (returns 410 Gone)
+@app.api_route(f"{V1_API_PREFIX}/{{rest_of_path:path}}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
+async def block_v1_any(rest_of_path: str):
+    return JSONResponse(status_code=410, content={
+        "detail": "V1 API disabled; use API_PREFIX",
+        "path": f"{V1_API_PREFIX}/{rest_of_path}",
+    })
+
+@app.api_route(f"{V1_API_PREFIX}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
+async def block_v1_root():
+    return JSONResponse(status_code=410, content={
+        "detail": "V1 API disabled; use API_PREFIX",
+        "path": V1_API_PREFIX,
+    })
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -227,17 +246,19 @@ async def home(request: Request, db: SafeSession = Depends(get_db)):
         # If authentication is required, don't send any notes data
         if needs_auth:
             return template.render(
-                request=request, 
+                request=request,
                 version=VERSION,
-                needs_auth=True
+                asset_version=ASSET_VERSION,
+                needs_auth=True,
             )
         else:
             # No password required - send empty notes (JavaScript will load them)
             return template.render(
-                request=request, 
-                notes=[], 
+                request=request,
+                notes=[],
                 version=VERSION,
-                needs_auth=False
+                asset_version=ASSET_VERSION,
+                needs_auth=False,
             )
     except Exception as e:
         logger.exception("Error in home route")
@@ -249,7 +270,7 @@ async def maintenance_page(request: Request):
     """Maintenance mode page shown during bulk operations."""
     try:
         template = templates.get_template("maintenance.html")
-        return template.render(request=request)
+        return template.render(request=request, version=VERSION, asset_version=ASSET_VERSION)
     except Exception as e:
         # FAIL FAST AND LOUD - NO SILENT FAILURES
         logger.error(f"🚨 FATAL: Failed to render maintenance template: {e}")

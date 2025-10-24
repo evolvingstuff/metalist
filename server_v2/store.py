@@ -103,10 +103,26 @@ class InMemoryStore:
             cur = links.get(cur, {}).get("next")
         return ordered
 
+    # Mutations --------------------------------------------------------------
+    def update_content(self, note_id: str, new_content: str, *, updated_at: Optional[datetime] = None) -> None:
+        with self._lock:
+            rec = self._notes.get(note_id)
+            if rec is None:
+                raise KeyError(f"Note {note_id} not present in v2 store")
+            self._notes[note_id] = NodeRecord(
+                id=rec.id,
+                parent_id=rec.parent_id,
+                prev_id=rec.prev_id,
+                next_id=rec.next_id,
+                is_collapsed=rec.is_collapsed,
+                content=new_content,
+                created_at=rec.created_at,
+                updated_at=updated_at if updated_at is not None else rec.updated_at,
+            )
+
 
 store = InMemoryStore()
 
 
 def hydrate_from_prefetched(rows: Iterable[Mapping[str, object]], *, get_plaintext) -> None:
     store.hydrate_from_rows(rows, get_plaintext=get_plaintext)
-

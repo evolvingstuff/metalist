@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
 from server_v2.endpoints.view import CmdView
@@ -118,19 +118,20 @@ def create_child_stub(note_id: str, body: dict):
 
 
 @router.put("/notes/{note_id}")
-def update_note_stub(note_id: str, body: dict):
-    try:
-        return CmdUpdateContent().execute()
-    except Exception as e:
-        _not_impl(e)
+def update_note(note_id: str, body: dict):
+    # Required fields; let KeyError surface for missing keys
+    client_id = body["clientId"]
+    content = body["content"]
+    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id)
+    return cmd.execute()
 
 
 @router.put("/notes/{note_id}/save")
-def save_note_stub(note_id: str, body: dict):
-    try:
-        return CmdUpdateContent().execute()
-    except Exception as e:
-        _not_impl(e)
+def save_note(note_id: str, body: dict):
+    client_id = body["clientId"]
+    content = body["content"]
+    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id)
+    return cmd.execute()
 
 
 @router.post("/notes/{note_id}/move")
@@ -198,16 +199,10 @@ def paste_child_stub(target_note_id: str, body: dict):
 
 
 @router.post("/notes/undo")
-def undo_stub(client_id: str = ""):
-    try:
-        return CmdUndo().execute()
-    except Exception as e:
-        _not_impl(e)
+def undo_endpoint(client_id: str, searchContext: str = Query(...)):
+    return CmdUndo(client_id=client_id, search_context=searchContext).execute()
 
 
 @router.post("/notes/redo")
-def redo_stub(client_id: str = ""):
-    try:
-        return CmdRedo().execute()
-    except Exception as e:
-        _not_impl(e)
+def redo_endpoint(client_id: str, searchContext: str = Query(...)):
+    return CmdRedo(client_id=client_id, search_context=searchContext).execute()

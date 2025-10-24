@@ -20,6 +20,11 @@ DISABLE_UNDO_SNAPSHOT = _env_flag("DISABLE_UNDO_SNAPSHOT", True)
 TOKEN_EXPIRY_MINUTES = 30  # Token expires after 30 minutes of inactivity
 PW_PBKDF2_ITERATIONS = 1_000_000  # Number of iterations for app password hashing
 
+# API prefixes (single source of truth)
+# Client uses '/api2' via JS CONFIG; server uses the same here.
+API_PREFIX = os.environ.get("API_PREFIX", "/api2").rstrip("/")
+V1_API_PREFIX = os.environ.get("V1_API_PREFIX", "/api").rstrip("/")
+
 # Check if running in test mode
 TEST_MODE = '--test' in sys.argv or os.environ.get('TEST_MODE') == '1'
 

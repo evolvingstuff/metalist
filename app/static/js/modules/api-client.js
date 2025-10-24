@@ -221,11 +221,15 @@ export const NotesAPI = {
     },
 
     async undo() {
-        return this._apiCall(`${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}`, { method: 'POST' });
+        const searchContext = (ModeContext.searchQuery || '').toString();
+        const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&searchContext=${encodeURIComponent(searchContext)}`;
+        return this._apiCall(url, { method: 'POST' });
     },
 
     async redo() {
-        return this._apiCall(`${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}`, { method: 'POST' });
+        const searchContext = (ModeContext.searchQuery || '').toString();
+        const url = `${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&searchContext=${encodeURIComponent(searchContext)}`;
+        return this._apiCall(url, { method: 'POST' });
     },
 
     getNoteElement(noteId) {

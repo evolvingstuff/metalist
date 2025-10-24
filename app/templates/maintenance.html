@@ -80,7 +80,7 @@
     <script>
         // Auto-retry every 200ms to check if maintenance is complete
         function checkMaintenanceStatus() {
-            fetch('/', {
+            fetch('/?v=${asset_version}', {
                 method: 'GET',
                 cache: 'no-cache'
             }).then(response => {
