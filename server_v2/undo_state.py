@@ -96,6 +96,17 @@ def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optiona
         os._exit(1)
 
 
+def record_collapse(client_id: str, note_id: str, *, before: bool, after: bool) -> None:
+    ctx = _ctx(client_id)
+    ctx.history.append({
+        "type": "collapse",
+        "note_id": note_id,
+        "before": bool(before),
+        "after": bool(after),
+    })
+    ctx.redo.clear()
+
+
 def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
     ctx = _ctx(client_id)
     sc = search_context or ""
@@ -138,6 +149,13 @@ def undo(client_id: str) -> bool:
         ctx.redo.append(op)
         generate_new_uuid()
         return True
+    if op.get("type") == "collapse":
+        # invert collapse
+        from server_v2.endpoints.collapse import apply_set_collapse
+        apply_set_collapse(op["note_id"], bool(op["before"]))
+        ctx.redo.append(op)
+        generate_new_uuid()
+        return True
     raise RuntimeError(f"Unsupported undo op: {op.get('type')}")
 
 
@@ -174,6 +192,12 @@ def redo(client_id: str) -> bool:
             op["after_next"],
         )
         _assert_neighbors(op["note_id"], op["after_parent"], op["after_prev"], op["after_next"]) 
+        ctx.history.append(op)
+        generate_new_uuid()
+        return True
+    if op.get("type") == "collapse":
+        from server_v2.endpoints.collapse import apply_set_collapse
+        apply_set_collapse(op["note_id"], bool(op["after"]))
         ctx.history.append(op)
         generate_new_uuid()
         return True

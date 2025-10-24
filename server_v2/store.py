@@ -277,6 +277,24 @@ class InMemoryStore:
                 updated_at=rec.updated_at,
             )
 
+    def set_collapsed(self, note_id: str, collapsed: bool) -> None:
+        with self._lock:
+            rec = self._notes.get(note_id)
+            if rec is None:
+                raise KeyError(f"Note {note_id} not present in v2 store")
+            if bool(rec.is_collapsed) == bool(collapsed):
+                return
+            self._notes[note_id] = NodeRecord(
+                id=rec.id,
+                parent_id=rec.parent_id,
+                prev_id=rec.prev_id,
+                next_id=rec.next_id,
+                is_collapsed=bool(collapsed),
+                content=rec.content,
+                created_at=rec.created_at,
+                updated_at=rec.updated_at,
+            )
+
 
 store = InMemoryStore()
 

@@ -168,19 +168,15 @@ def move_note_endpoint(note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/collapse")
-def collapse_stub(note_id: str, body: dict):
-    try:
-        return CmdCollapse().execute()
-    except Exception as e:
-        _not_impl(e)
+def collapse_endpoint(note_id: str, body: dict):
+    cmd = CmdCollapse(note_id=note_id, client_id=body["clientId"])
+    return cmd.execute()
 
 
 @router.post("/notes/{note_id}/expand")
-def expand_stub(note_id: str, body: dict):
-    try:
-        return CmdExpand().execute()
-    except Exception as e:
-        _not_impl(e)
+def expand_endpoint(note_id: str, body: dict):
+    cmd = CmdExpand(note_id=note_id, client_id=body["clientId"])
+    return cmd.execute()
 
 
 @router.delete("/notes/{note_id}")
