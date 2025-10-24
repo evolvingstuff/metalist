@@ -1,16 +1,13 @@
-# Server V2 Rewrite Plan: Greenfield, Command‑Driven, and Scalable
+# Server V2 Plan: Start With View Only (api2)
 
 Owner: server/platform
-Status: Proposal – awaiting approval
-Scope: New greenfield server in `server_v2/` mounted alongside current app; frontend/static remains unchanged
+Status: Revised – smallest possible start
+Scope: New greenfield server in `server_v2/` mounted at `/api2` ONLY for view; frontend/client unchanged for now
 
-## Goals
-- Single read of sqlite3 at startup/unlock; forbid all post‑startup DB reads.
-- All data kept decrypted in memory; encrypt only at rest.
-- Every API request builds an explicit, inspectible list of Commands.
-- Commands serve both Undo/Redo and batched SQL writes within a single atomic transaction.
-- Scale comfortably to 500k notes; avoid O(N) operations in steady state.
-- Undo/Redo resets on context boundaries (e.g., search changes, client switch).
+## Immediate Goal
+- Get `POST /api2/notes/view` returning a correct snapshot the client can consume.
+- No DB reads after startup. In‑memory only. No mutations yet.
+- Keep v1 intact as reference; no interweaving.
 
 Non‑goals
 - Multi‑user sync or remote collaboration.
@@ -24,23 +21,15 @@ Replace (greenfield for everything else)
 - API surface, services, store, transaction flow, and DB helpers: implemented fresh under `server_v2/`.
 - Eliminate all runtime `allow_reads` fallbacks; v2 does not read DB after hydrate.
 
-## Architecture Overview (Server V2)
+## First Slice Only (View)
 - InMemoryStore (authoritative)
   - Unified decrypted record per note: content + parent/prev/next + flags + timestamps.
   - O(1) by‑id; O(1) head/tail/sibling navigation; RLock‑guarded.
-  - Optional inverted index for search (later phase).
 - Strict DB Access Policy
   - Hydrate once at startup/unlock; then `enable_read_guard()` permanently.
   - All reads go through InMemoryStore; v2 code performs zero DB reads at runtime.
-- Command Pattern + UnitOfWork
-  - Handlers build an ordered list of Commands (inspectible, typed, debuggable).
-  - `plan(store)` validates invariants; `apply_preview(store_overlay)` produces inverse Commands.
-  - `to_sql()` emits compact, batchable ops; `UnitOfWork.commit()` executes once inside a transaction.
-  - On success: apply overlay to InMemoryStore and push inverse list to Undo stack.
-  - On failure: rollback; store remains unchanged.
-- Undo/Redo Integration
-  - Inverse Commands maintained per client; resets on search/client boundaries or explicit clear.
-  - No DB reads; deltas come from the store.
+- Simple view builder that walks the store to produce `structure` + `notes` + `locks` + `updateUUID` + `version`.
+- API: `POST /api2/notes/view` (payload shape compatible with client).
 
 ## Data Model and Indexes (500k‑ready)
 - Core maps
@@ -90,11 +79,8 @@ Memory update strategy
 - Context resets: `TransactionManager.check_context_change()` on search string, client change, or explicit clear.
 - Limits: configurable max stack depth; truncation on new branch.
 
-## V2 Endpoints (Round 1)
-- POST `/api2/notes/insert` – create note (required fields: `client_id`, `parent_id`, `prev_id`, `content`).
-- POST `/api2/notes/delete` – delete subtree (required: `client_id`, `note_id`).
-- POST `/api2/undo` – undo last for client (required: `client_id`, `search_context`).
-- POST `/api2/redo` – redo last for client (required: `client_id`, `search_context`).
+## Endpoint (Phase 0)
+- POST `/api2/notes/view` only.
 
 Notes
 - No Optional fields in request models; use empty string for “none” where applicable (e.g., `search_context`).
@@ -111,26 +97,17 @@ Expected complexity and targets
 - Delete subtree size K: O(K) store; single batched DELETE; ensure no per‑node DB roundtrips.
 - Search (token match): O(|postings|) set ops; avoid scanning all notes.
 
-## Migration and Rollout (Small, verifiable steps)
-Phase A – Scaffold v2 (day 0.5)
-- Create `server_v2/` with app bootstrap, store skeleton, Command base, UnitOfWork, undo manager.
-- Mount router at `/api2` without touching existing client/static.
+## Rollout (Reset)
+Phase 0 – View only
+- Scaffold `server_v2/` with: minimal store, view builder, router.
+- Hydrate store at startup using existing prefetched rows; enable read guard.
+- Implement `POST /api2/notes/view` (structure, notes, locks, updateUUID, version).
+- Do NOT touch v1. Do NOT modify client for now.
+- Verify with curl/Postman; logs should show `/api2/notes/view`.
 
-Phase B – Insert/Delete MVP (1–2 days)
-- Implement Commands: `CmdCreateNote`, `CmdDeleteSubtree` + their inverse commands.
-- Finish store invariants; batch SQL for insert/delete; atomic commit.
-- Implement `/api2/notes/insert`, `/api2/notes/delete`, `/api2/undo`, `/api2/redo`.
-- Tests: end‑to‑end undo/redo for insert/delete, fuzz for cycles, zero DB reads after hydrate.
-
-Phase C – Move/Relink (1–2 days)
-- Add `Relink` command (move), update adjacency; batch link updates.
-- Undo/redo coverage and performance checks.
-
-Phase D – Update Content (0.5–1 day)
-- Add `UpdateContent` command; encrypt at commit; update search index if enabled.
-
-Phase E – Optional search index + perf harness (2–4 days)
-- Build inverted index; flag‑gated integration; bench on large datasets.
+Next steps (after view works)
+- Add `POST /api2/notes/check-updates`, `acquire-lock`, `release-lock` (in‑memory only).
+- Only then start mutations (create/update/delete) using command list + single atomic commit.
 
 ## Testing Strategy
 - Unit tests
@@ -159,15 +136,38 @@ Phase E – Optional search index + perf harness (2–4 days)
   - InMemoryStore is authoritative and consistent across operations.
   - 500k notes OK under targets; steady‑state ops avoid O(N) scans.
 
-## Implementation Checklist (high‑level)
-- [ ] Scaffold `server_v2/` and router `/api2`.
-- [ ] Implement InMemoryStore skeleton and hydration.
-- [ ] Implement Command base + UnitOfWork (with trace mode).
-- [ ] Implement CmdCreateNote/CmdDeleteSubtree + inverse commands.
-- [ ] Implement `/api2/notes/insert`, `/api2/notes/delete`, `/api2/undo`, `/api2/redo`.
-- [ ] Enforce read guard; remove any DB reads from v2 runtime.
-- [ ] Tests (insert/delete + undo/redo; invariants; zero post‑startup reads).
-- [ ] Next: Relink, UpdateContent, optional search index.
+## Implementation Checklist (phase 0)
+- [ ] Create `server_v2/` skeleton: store (read‑only), view builder, router.
+- [ ] Hydrate store at startup from prefetched rows; enable read guard.
+- [ ] Implement `POST /api2/notes/view` (client‑compatible payload).
+- [ ] Validate with curl; ensure zero post‑startup DB reads.
+
+## File‑Per‑Op Structure (for later phases)
+When we add mutations (create/update/delete), keep each operation fully self‑contained in its own module for clarity and debuggability.
+
+Layout (proposed, evolves after Phase 0):
+- `server_v2/store.py` – InMemoryStore (authoritative, decrypted; no DB reads post‑startup)
+- `server_v2/view.py` – view snapshot builder (structure + notes + locks)
+- `server_v2/sync.py` – in‑memory locks + update UUID
+- `server_v2/uow.py` – UnitOfWork + SqlEmitter interface (single atomic commit)
+- `server_v2/ops/` – one file per operation (all logic local to the op)
+  - `create_note.py` – CmdCreateNote (plan/apply/emit SQL/inverse)
+  - `update_content.py` – CmdUpdateContent
+  - `delete_subtree.py` – CmdDeleteSubtree + CmdRestoreSubtree
+  - (later) `relink.py`, `collapse.py`, etc.
+- `server_v2/core/` – shared helpers used across ops (pure utilities only)
+- `server_v2/app.py` – FastAPI router for `/api2/*`
+
+Op module contract
+- Define the command class(es) for the op with: `plan(store)`, `inverse(store)`, `to_sql(sql)`, `apply_store(store)`, and `describe()`.
+- Keep decision logic (validation, pointer derivation) inside the op file; use `core/` only for reusable primitives.
+- No try/except for internal errors; assert invariants and crash fast.
+- Requests use required fields only (no Optional); the router enforces shape.
+
+Why this works
+- Isolation: each op is reasoned about in one place.
+- Debuggability: step‑through an op’s command list without jumping across files.
+- Reuse: shared helpers live in `core/`, not scattered across services.
 
 Estimates
 - Phase A+B (scaffold + insert/delete + undo/redo + tests): 1–2 days
