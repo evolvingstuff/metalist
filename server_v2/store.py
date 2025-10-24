@@ -104,6 +104,54 @@ class InMemoryStore:
         return ordered
 
     # Mutations --------------------------------------------------------------
+    def _ensure_parent_structures(self, parent_id: Optional[str]) -> Dict[str, Dict[str, Optional[str]]]:
+        links = self._links.get(parent_id)
+        if links is None:
+            links = {}
+            self._links[parent_id] = links
+            self._heads[parent_id] = None
+            self._tails[parent_id] = None
+        return links
+
+    def insert_after(self, note: NodeRecord, parent_id: Optional[str], prev_id: Optional[str]) -> None:
+        with self._lock:
+            if note.id in self._notes:
+                raise KeyError(f"Note {note.id} already present in v2 store")
+
+            links = self._ensure_parent_structures(parent_id)
+            if prev_id and prev_id not in links:
+                prev_id = None
+
+            # Determine next based on prev
+            if prev_id is None:
+                next_id = self._heads.get(parent_id)
+            else:
+                next_id = links.get(prev_id, {}).get("next")
+
+            # Update links
+            links[note.id] = {"prev": prev_id, "next": next_id}
+            if prev_id is not None:
+                links[prev_id]["next"] = note.id
+            else:
+                self._heads[parent_id] = note.id
+
+            if next_id is not None:
+                links[next_id]["prev"] = note.id
+            else:
+                self._tails[parent_id] = note.id
+
+            # Store record with resolved pointers
+            self._notes[note.id] = NodeRecord(
+                id=note.id,
+                parent_id=parent_id,
+                prev_id=prev_id,
+                next_id=next_id,
+                is_collapsed=note.is_collapsed,
+                content=note.content,
+                created_at=note.created_at,
+                updated_at=note.updated_at,
+            )
+
     def update_content(self, note_id: str, new_content: str, *, updated_at: Optional[datetime] = None) -> None:
         with self._lock:
             rec = self._notes.get(note_id)
@@ -119,6 +167,66 @@ class InMemoryStore:
                 created_at=rec.created_at,
                 updated_at=updated_at if updated_at is not None else rec.updated_at,
             )
+
+    def delete_subtree(self, note_id: str) -> None:
+        with self._lock:
+            if note_id not in self._notes:
+                return
+
+            # Collect subtree ids
+            to_remove: List[str] = []
+            stack: List[str] = [note_id]
+            while stack:
+                nid = stack.pop()
+                to_remove.append(nid)
+                child_ids = self.children(nid)
+                stack.extend(child_ids)
+
+            removed = set(to_remove)
+
+            # Adjust parent links for the root (if parent outside removed set)
+            root = self._notes[note_id]
+            parent_id = root.parent_id
+            if parent_id not in removed:
+                links = self._links.get(parent_id) or {}
+                prev_id = links.get(note_id, {}).get("prev")
+                next_id = links.get(note_id, {}).get("next")
+                if prev_id is not None and prev_id in links:
+                    links[prev_id]["next"] = next_id
+                else:
+                    self._heads[parent_id] = next_id
+                if next_id is not None and next_id in links:
+                    links[next_id]["prev"] = prev_id
+                else:
+                    self._tails[parent_id] = prev_id
+                links.pop(note_id, None)
+
+            # Remove internal child structures and notes
+            for nid in to_remove:
+                # Remove this node's children links entirely
+                self._links.pop(nid, None)
+                self._heads.pop(nid, None)
+                self._tails.pop(nid, None)
+                # Remove from notes map
+                self._notes.pop(nid, None)
+
+    def restore_subtree(self, records: List[NodeRecord]) -> None:
+        with self._lock:
+            for rec in records:
+                self.insert_after(
+                    NodeRecord(
+                        id=rec.id,
+                        parent_id=rec.parent_id,
+                        prev_id=None,
+                        next_id=None,
+                        is_collapsed=rec.is_collapsed,
+                        content=rec.content,
+                        created_at=rec.created_at,
+                        updated_at=rec.updated_at,
+                    ),
+                    parent_id=rec.parent_id,
+                    prev_id=rec.prev_id,
+                )
 
 
 store = InMemoryStore()

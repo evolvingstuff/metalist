@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from server_v2.endpoints.update_content import apply_update_content
+from server_v2.endpoints.delete_subtree import apply_delete_subtree, apply_restore_records
 from server_v2.sync import generate_new_uuid
 
 
@@ -34,6 +35,24 @@ def record_update(client_id: str, note_id: str, *, before: str, after: str) -> N
     ctx.redo.clear()
 
 
+def record_create(client_id: str, record: dict) -> None:
+    ctx = _ctx(client_id)
+    ctx.history.append({
+        "type": "create_note",
+        "record": record,
+    })
+    ctx.redo.clear()
+
+
+def record_delete(client_id: str, records: List[NodeRecord]) -> None:
+    ctx = _ctx(client_id)
+    ctx.history.append({
+        "type": "delete_subtree",
+        "records": records,
+    })
+    ctx.redo.clear()
+
+
 def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
     ctx = _ctx(client_id)
     sc = search_context or ""
@@ -53,6 +72,18 @@ def undo(client_id: str) -> bool:
         ctx.redo.append(op)
         generate_new_uuid()
         return True
+    if op.get("type") == "create_note":
+        rec = op["record"]
+        apply_delete_subtree(rec["id"])  # delete the created note
+        ctx.redo.append(op)
+        generate_new_uuid()
+        return True
+    if op.get("type") == "delete_subtree":
+        records = op["records"]
+        apply_restore_records(records)
+        ctx.redo.append(op)
+        generate_new_uuid()
+        return True
     raise RuntimeError(f"Unsupported undo op: {op.get('type')}")
 
 
@@ -66,5 +97,19 @@ def redo(client_id: str) -> bool:
         ctx.history.append(op)
         generate_new_uuid()
         return True
+    if op.get("type") == "create_note":
+        # recreate
+        rec = op["record"]
+        from server_v2.store import NodeRecord
+        apply_restore_records([NodeRecord(**rec)])
+        ctx.history.append(op)
+        generate_new_uuid()
+        return True
+    if op.get("type") == "delete_subtree":
+        # re-delete
+        first = op["records"][0]
+        apply_delete_subtree(first.id)
+        ctx.history.append(op)
+        generate_new_uuid()
+        return True
     raise RuntimeError(f"Unsupported redo op: {op.get('type')}")
-

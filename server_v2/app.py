@@ -105,11 +105,13 @@ def _not_impl(exc: Exception) -> None:
 
 
 @router.post("/notes/new")
-def create_note_stub(body: dict):
-    try:
-        return CmdCreateNote().execute()
-    except Exception as e:
-        _not_impl(e)
+def create_note_top(body: dict):
+    cmd = CmdCreateNote(
+        first_visible_note_id=body.get("first_visible_note_id"),
+        search_query=body.get("search_query"),
+        client_id=body["clientId"],
+    )
+    return cmd.execute()
 
 
 @router.post("/notes/new-drop")
@@ -178,11 +180,10 @@ def expand_stub(note_id: str, body: dict):
 
 
 @router.delete("/notes/{note_id}")
-def delete_stub(note_id: str):
-    try:
-        return CmdDeleteSubtree().execute()
-    except Exception as e:
-        _not_impl(e)
+def delete_note(note_id: str, body: dict):
+    client_id = body.get("clientId") or ""
+    cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id)
+    return cmd.execute()
 
 
 @router.post("/notes/{note_id}/copy")
