@@ -41,6 +41,7 @@ from app.utils.encryption import encrypt
 
 default_root_count =  20_000  # 1000
 default_child_probability = 0.3
+default_image_probability = 0.0
 
 # Static lorem ipsum blocks to keep seeded notes varied
 _LOREM_PARAGRAPHS: Sequence[str] = (
@@ -361,7 +362,7 @@ def seed_notes(args: argparse.Namespace) -> SeedStats:
                 db_session=db,
                 rng=rng,
                 images=images,
-                image_probability=args.image_probability,
+                image_probability=default_image_probability,
                 max_images=args.max_images,
                 collapse_probability=args.collapse_probability,
                 parent_id=None,
