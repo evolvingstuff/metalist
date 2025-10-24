@@ -142,20 +142,23 @@ Next steps (after view works)
 - [ ] Implement `POST /api2/notes/view` (client‑compatible payload).
 - [ ] Validate with curl; ensure zero post‑startup DB reads.
 
-## Next Step (Phase 1a): Update Content + Undo/Redo
+## Done (Phase 1a): Update Content + Undo/Redo
 - Implement `CmdUpdateContent` in `server_v2/endpoints/update_content.py`:
   - Accept: `clientId`, `noteId`, `content` (required strings)
   - Command builds a single batched SQL update (ciphertext + nonce + tag) and applies new plaintext to `store` only after commit
   - Fail fast for missing note, invalid types; no coercion
   - Zero DB reads at runtime
-- Wire endpoint: `PUT /api2/notes/{note_id}` and `/api2/notes/{note_id}/save` → `CmdUpdateContent`
-- Add minimal Undo/Redo scaffolding for update content only:
-  - `CmdUpdateContent` returns inverse command capturing previous plaintext content
-  - Add `/api2/notes/undo` and `/api2/notes/redo` endpoints that replay the command stack for updates
-  - Reset stack on searchContext change; per‑client ownership
-- Tests/validation:
-  - curl sequence: view → update content → view hash change → undo → view hash restored → redo → view hash changed again
-  - Ensure no DB reads post‑startup
+✅ Wired endpoints: `PUT /api2/notes/{note_id}` and `/api2/notes/{note_id}/save` → `CmdUpdateContent`
+✅ Minimal Undo/Redo for content only via `/api2/notes/undo|redo` (empty search context allowed)
+✅ No DB reads post‑startup
+
+## Next Step (Phase 1b): View Windowing + Infinite Scroll
+- Server windowing: send only first N roots (default 100) and expand window on demand
+  - Implemented in `server_v2/snapshot.py` with chunk + buffer; honors `clientSeenRootIds` and `clientNoteUuidHashes`
+  - Filter notes payloads to only changed hashes
+- Verify client scroll triggers additional `/api2/notes/view` calls as roots are seen; keep payloads small
+- Expose window constants via config if needed after tuning
+
 
 ## File‑Per‑Op Structure (for later phases)
 When we add mutations (create/update/delete), keep each operation fully self‑contained in its own module for clarity and debuggability.

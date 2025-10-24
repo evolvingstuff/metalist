@@ -1,6 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { ErrorHandler } from '../../error-handler.js';
+import { CONFIG } from '../../config.js';
 
 let pollingInterval = null;
 let lastTokenRefreshAt = 0;

@@ -179,20 +179,14 @@ app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"])
 app.include_router(api2_auth_router, prefix=API_PREFIX)
 app.include_router(api2_memory_router, prefix=API_PREFIX)
 
-# Catch-all guard for any v1 API access (returns 410 Gone)
+# Catch-all guard for any v1 API access (hard exit)
 @app.api_route(f"{V1_API_PREFIX}/{{rest_of_path:path}}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
 async def block_v1_any(rest_of_path: str):
-    return JSONResponse(status_code=410, content={
-        "detail": "V1 API disabled; use API_PREFIX",
-        "path": f"{V1_API_PREFIX}/{rest_of_path}",
-    })
+    os._exit(1)
 
 @app.api_route(f"{V1_API_PREFIX}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
 async def block_v1_root():
-    return JSONResponse(status_code=410, content={
-        "detail": "V1 API disabled; use API_PREFIX",
-        "path": V1_API_PREFIX,
-    })
+    os._exit(1)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -217,7 +211,7 @@ async def log_requests(request: Request, call_next):
             path=request.url.path,
             duration=duration_ms,
         )
-        raise
+        os._exit(1)
 
     duration_ms = (time.perf_counter() - start) * 1000
     size = response.headers.get("content-length", "-")

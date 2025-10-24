@@ -53,10 +53,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             ref = request.headers.get('referer', '-')
             ua = request.headers.get('user-agent', '-')
             print(f"V1 API call blocked: path={path} referer={ref} ua={ua}")
-            return JSONResponse(status_code=410, content={
-                "detail": "V1 API disabled; use /api2",
-                "path": path,
-            })
+            raise RuntimeError(f"V1 API disabled: {path}")
         
         # Check if maintenance mode is active first
         if maintenance_service.is_active():
