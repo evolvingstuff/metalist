@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from typing import Optional
+
+from server_v2.endpoints.view import CmdView
+from server_v2.endpoints.create_note import CmdCreateNote
+from server_v2.endpoints.create_drop import CmdCreateDrop
+from server_v2.endpoints.create_sibling import CmdCreateSibling
+from server_v2.endpoints.create_child import CmdCreateChild
+from server_v2.endpoints.update_content import CmdUpdateContent
+from server_v2.endpoints.delete_subtree import CmdDeleteSubtree
+from server_v2.endpoints.move import CmdMove
+from server_v2.endpoints.collapse import CmdCollapse
+from server_v2.endpoints.expand import CmdExpand
+from server_v2.endpoints.copy_note import CmdCopyNote
+from server_v2.endpoints.export_html import CmdExportHtml
+from server_v2.endpoints.paste_sibling import CmdPasteSibling
+from server_v2.endpoints.paste_child import CmdPasteChild
+from server_v2.endpoints.undo import CmdUndo
+from server_v2.endpoints.redo import CmdRedo
+from server_v2.sync import get_current_sync_uuid
+from server_v2.endpoints.check_updates import CmdCheckUpdates
+from server_v2.endpoints.lock import CmdAcquireLock, CmdReleaseLock
+from app.core.config import VERSION
+
+
+router = APIRouter()
+
+
+@router.post("/notes/view")
+def view_diff(payload: dict):
+    # Strict: require keys, let FastAPI raise if invalid
+    client_id = payload["clientId"]
+    editing_note_id = payload["editingNoteId"]
+    search = payload["search"]
+    _ = payload["clientNoteUuidHashes"]
+    _ = payload["clientSeenRootIds"]
+
+    cmd = CmdView(client_id=client_id, editing_note_id=editing_note_id or None, search=search or None)
+    structure, notes, locks = cmd.execute()
+    response = {
+        "snapshot": {
+            "structure": structure,
+            "notes": notes,
+            "locks": locks,
+            "updateUUID": "",
+            "version": VERSION,
+            "currentClientId": client_id,
+            "searchQuery": search,
+            "editingNoteId": editing_note_id,
+        },
+        "updateUUID": "",
+    }
+    return response
+
+
+@router.post("/notes/check-updates")
+def check_updates(payload: dict):
+    cmd = CmdCheckUpdates(client_id=payload["clientId"], last_update_uuid=payload["lastUpdateUUID"])
+    return cmd.execute()
+
+
+@router.post("/notes/acquire-lock")
+def acquire_lock(payload: dict):
+    cmd = CmdAcquireLock(note_id=payload["noteId"], client_id=payload.get("clientId") or "")
+    result = cmd.execute()
+    if not result.get("success") and result.get("conflict"):
+        raise HTTPException(status_code=409, detail="Note is locked by another client")
+    return result
+
+
+@router.post("/notes/release-lock")
+def release_lock(payload: dict):
+    cmd = CmdReleaseLock(note_id=payload["noteId"], client_id=payload.get("clientId") or "")
+    return cmd.execute()
+
+
+# Stub endpoints for the rest of the notes API (501 Not Implemented)
+
+def _not_impl(exc: Exception) -> None:
+    # Turn NotImplementedError into HTTP 501; re-raise anything else
+    if isinstance(exc, NotImplementedError):
+        raise HTTPException(status_code=501, detail=str(exc))
+    raise exc
+
+
+@router.post("/notes/new")
+def create_note_stub(body: dict):
+    try:
+        return CmdCreateNote().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/new-drop")
+def create_drop_stub(body: dict):
+    try:
+        return CmdCreateDrop().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/new-sibling/{note_id}")
+def create_sibling_stub(note_id: str, body: dict):
+    try:
+        return CmdCreateSibling().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/new-child/{note_id}")
+def create_child_stub(note_id: str, body: dict):
+    try:
+        return CmdCreateChild().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.put("/notes/{note_id}")
+def update_note_stub(note_id: str, body: dict):
+    try:
+        return CmdUpdateContent().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.put("/notes/{note_id}/save")
+def save_note_stub(note_id: str, body: dict):
+    try:
+        return CmdUpdateContent().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/{note_id}/move")
+def move_stub(note_id: str, body: dict):
+    try:
+        return CmdMove().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/{note_id}/collapse")
+def collapse_stub(note_id: str, body: dict):
+    try:
+        return CmdCollapse().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/{note_id}/expand")
+def expand_stub(note_id: str, body: dict):
+    try:
+        return CmdExpand().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.delete("/notes/{note_id}")
+def delete_stub(note_id: str):
+    try:
+        return CmdDeleteSubtree().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/{note_id}/copy")
+def copy_stub(note_id: str, body: dict):
+    try:
+        return CmdCopyNote().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.get("/notes/{note_id}/export-html")
+def export_html_stub(note_id: str):
+    try:
+        return CmdExportHtml().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/paste-sibling/{target_note_id}")
+def paste_sibling_stub(target_note_id: str, body: dict):
+    try:
+        return CmdPasteSibling().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/paste-child/{target_note_id}")
+def paste_child_stub(target_note_id: str, body: dict):
+    try:
+        return CmdPasteChild().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/undo")
+def undo_stub(client_id: str = ""):
+    try:
+        return CmdUndo().execute()
+    except Exception as e:
+        _not_impl(e)
+
+
+@router.post("/notes/redo")
+def redo_stub(client_id: str = ""):
+    try:
+        return CmdRedo().execute()
+    except Exception as e:
+        _not_impl(e)

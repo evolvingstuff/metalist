@@ -9,15 +9,16 @@
 
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
+import { CONFIG } from '../config.js';
 
 export class PasswordModal extends BaseModal {
     constructor() {
         super('passwordModal', 'password-modal');
         this.apiEndpoints = {
-            status: '/api/auth/status',
-            create: '/api/auth/settings/password/create',
-            change: '/api/auth/settings/password/change', 
-            remove: '/api/auth/settings/password/remove'
+            status: CONFIG.API.AUTH.STATUS,
+            create: CONFIG.API.AUTH.SETTINGS.PASSWORD.CREATE,
+            change: CONFIG.API.AUTH.SETTINGS.PASSWORD.CHANGE,
+            remove: CONFIG.API.AUTH.SETTINGS.PASSWORD.REMOVE
         };
     }
     

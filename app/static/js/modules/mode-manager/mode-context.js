@@ -773,10 +773,10 @@ class ModeContext {
         // Send initial heartbeat immediately
         this._sendEditingHeartbeat();
         
-        // Start periodic heartbeat every 1 second
+        // Start periodic heartbeat using configured interval
         this._editingHeartbeatTimer = setInterval(() => {
             this._sendEditingHeartbeat();
-        }, 1000);
+        }, CONFIG.SYNC.LOCK_HEARTBEAT_INTERVAL_MS);
         
         Logger.logDebug('Started editing heartbeat timer');
     }
@@ -801,7 +801,7 @@ class ModeContext {
                 headers['Authorization'] = `Bearer ${authToken}`;
             }
 
-            const response = await fetch('/api/notes/acquire-lock', {
+            const response = await fetch(CONFIG.API.NOTES.ACQUIRE_LOCK, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({

@@ -16,6 +16,10 @@ from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.dependencies import get_db
 from .services.content_cache import populate_cache_from_db
 from .services.note_store import store as note_store
+from server_v2.store import hydrate_from_prefetched as v2_hydrate
+from server_v2.app import router as api2_router
+from server_v2.auth import router as api2_auth_router
+from server_v2.memory import router as api2_memory_router
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
 from loguru import logger
@@ -110,6 +114,16 @@ try:
     note_store.load_from_db(None, prefetched_rows=prefetched_rows)
     _log_startup_step("note store hydration", time.perf_counter() - store_start)
 
+    # Hydrate v2 view-only store from the same prefetched rows using decrypted cache
+    def _get_plaintext(note_id: str, row: dict) -> str:
+        from .services.content_cache import get_cached_content
+        plaintext = get_cached_content(note_id)
+        if plaintext is None:
+            raise RuntimeError(f"V2 hydrate failed: no plaintext in cache for note {note_id}")
+        return plaintext
+
+    v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
+
     guard_start = time.perf_counter()
     enable_read_guard()
     _log_startup_step("read guard enable", time.perf_counter() - guard_start)
@@ -154,9 +168,12 @@ templates = TemplateLookup(
 )
 
 app.include_router(auth.router)
-app.include_router(notes.router, prefix="/api/notes", tags=["notes"])
-app.include_router(dev.router, prefix="/dev", tags=["dev"])
-app.include_router(memory.router, prefix="/api")
+app.include_router(notes.router, prefix="/api/notes", tags=["notes"])  # v1 reference
+app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
+app.include_router(memory.router, prefix="/api")  # v1 reference for memory
+app.include_router(api2_router, prefix="/api2", tags=["api2"]) 
+app.include_router(api2_auth_router)
+app.include_router(api2_memory_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):

@@ -1,7 +1,8 @@
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
+import { CONFIG } from '../config.js';
 
-const MEMORY_ENDPOINT = '/api/memory';
+const MEMORY_ENDPOINT = `${CONFIG.API.MEMORY.BASE}`;
 
 export class MemoryModal extends BaseModal {
     constructor() {

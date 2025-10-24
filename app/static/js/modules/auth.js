@@ -1,6 +1,7 @@
 /**
  * Authentication module for handling login/logout and password management
  */
+import { CONFIG } from './config.js';
 
 export const Auth = {
     
@@ -29,7 +30,7 @@ export const Auth = {
                 headers['Authorization'] = `Bearer ${token}`;
             }
             
-            const response = await fetch('/api/auth/status', { headers });
+            const response = await fetch(CONFIG.API.AUTH.STATUS, { headers });
             const status = await response.json();
             
             console.log('[Auth] Status response:', status);
@@ -117,7 +118,7 @@ export const Auth = {
             // Show waiting cursor
             document.body.classList.add('loading');
             
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch(CONFIG.API.AUTH.LOGIN, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -173,7 +174,7 @@ export const Auth = {
         if (token) {
             try {
                 // Call logout endpoint to revoke token
-                await fetch('/api/auth/logout', {
+                await fetch(CONFIG.API.AUTH.LOGOUT, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,

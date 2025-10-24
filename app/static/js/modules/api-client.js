@@ -315,14 +315,14 @@ export const NotesAPI = {
     },
 
     async acquireLock(noteId) {
-        return this._apiCall('/api/notes/acquire-lock', {
+        return this._apiCall(CONFIG.API.NOTES.ACQUIRE_LOCK, {
             method: 'POST',
             body: JSON.stringify({ noteId })
         });
     },
 
     async releaseLock(noteId) {
-        return this._apiCall('/api/notes/release-lock', {
+        return this._apiCall(CONFIG.API.NOTES.RELEASE_LOCK, {
             method: 'POST', 
             body: JSON.stringify({ noteId })
         });

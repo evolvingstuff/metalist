@@ -4,15 +4,13 @@ import { ErrorHandler } from '../../error-handler.js';
 
 let pollingInterval = null;
 let lastTokenRefreshAt = 0;
-
-const POLL_INTERVAL_MS = 120_000;
 const TOKEN_REFRESH_INTERVAL_MS = 60_000; // minimum time between auth refresh calls
 
 export function startPolling() {
     // Unified polling: check connectivity and updates
     pollingInterval = setInterval(() => {
         checkConnectivityAndUpdates();
-    }, POLL_INTERVAL_MS);
+    }, CONFIG.SYNC.POLL_INTERVAL_MS);
 
     Logger.logInit('Unified polling started (connectivity + updates)');
 }
@@ -32,7 +30,7 @@ async function refreshTokenOnActivity() {
     }
 
     try {
-        const response = await fetch('/api/auth/sessions', {
+        const response = await fetch(CONFIG.API.AUTH.SESSIONS, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
@@ -69,7 +67,7 @@ async function checkConnectivityAndUpdates() {
         // Add auth token if it exists
         const authToken = localStorage.getItem('auth_token');
         
-        const response = await fetch('/api/notes/check-updates', {
+        const response = await fetch(CONFIG.API.NOTES.CHECK_UPDATES, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',

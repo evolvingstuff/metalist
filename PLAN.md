@@ -147,7 +147,7 @@ When we add mutations (create/update/delete), keep each operation fully self‑c
 
 Layout (proposed, evolves after Phase 0):
 - `server_v2/store.py` – InMemoryStore (authoritative, decrypted; no DB reads post‑startup)
-- `server_v2/view.py` – view snapshot builder (structure + notes + locks)
+- `server_v2/snapshot.py` – view snapshot builder (structure + notes + locks)
 - `server_v2/sync.py` – in‑memory locks + update UUID
 - `server_v2/uow.py` – UnitOfWork + SqlEmitter interface (single atomic commit)
 - `server_v2/ops/` – one file per operation (all logic local to the op)

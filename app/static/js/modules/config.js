@@ -1,24 +1,47 @@
+// Toggle the notes API base here to switch between v1 and v2
+const API_BASE = '/api2'; // change to '/api' to switch back to v1
+const API_NOTES_BASE = `${API_BASE}/notes`;
+const API_AUTH_BASE = `${API_BASE}/auth`;
+
 export const CONFIG = {
-                
     API: {
         NOTES: {
-            CREATE: '/api/notes/new',
-            CREATE_DROP: '/api/notes/new-drop',
-            CREATE_SIBLING: (noteId) => `/api/notes/new-sibling/${noteId}`,
-            CREATE_CHILD: (noteId) => `/api/notes/new-child/${noteId}`,
-            UPDATE: (noteId) => `/api/notes/${noteId}`,
-            SAVE: (noteId) => `/api/notes/${noteId}/save`,
-            MOVE: (noteId) => `/api/notes/${noteId}/move`,
-            COLLAPSE: (noteId) => `/api/notes/${noteId}/collapse`,
-            EXPAND: (noteId) => `/api/notes/${noteId}/expand`,
-            DELETE: (noteId) => `/api/notes/${noteId}`,
-            COPY: (noteId) => `/api/notes/${noteId}/copy`,
-            EXPORT_HTML: (noteId) => `/api/notes/${noteId}/export-html`,
-            PASTE_SIBLING: (targetNoteId) => `/api/notes/paste-sibling/${targetNoteId}`,
-            PASTE_CHILD: (targetNoteId) => `/api/notes/paste-child/${targetNoteId}`,
-            UNDO: '/api/notes/undo',
-            REDO: '/api/notes/redo',
-            VIEW: '/api/notes/view'
+            CREATE: `${API_NOTES_BASE}/new`,
+            CREATE_DROP: `${API_NOTES_BASE}/new-drop`,
+            CREATE_SIBLING: (noteId) => `${API_NOTES_BASE}/new-sibling/${noteId}`,
+            CREATE_CHILD: (noteId) => `${API_NOTES_BASE}/new-child/${noteId}`,
+            UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
+            SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
+            MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
+            COLLAPSE: (noteId) => `${API_NOTES_BASE}/${noteId}/collapse`,
+            EXPAND: (noteId) => `${API_NOTES_BASE}/${noteId}/expand`,
+            DELETE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
+            COPY: (noteId) => `${API_NOTES_BASE}/${noteId}/copy`,
+            EXPORT_HTML: (noteId) => `${API_NOTES_BASE}/${noteId}/export-html`,
+            PASTE_SIBLING: (targetNoteId) => `${API_NOTES_BASE}/paste-sibling/${targetNoteId}`,
+            PASTE_CHILD: (targetNoteId) => `${API_NOTES_BASE}/paste-child/${targetNoteId}`,
+            UNDO: `${API_NOTES_BASE}/undo`,
+            REDO: `${API_NOTES_BASE}/redo`,
+            VIEW: `${API_NOTES_BASE}/view`,
+            CHECK_UPDATES: `${API_NOTES_BASE}/check-updates`,
+            ACQUIRE_LOCK: `${API_NOTES_BASE}/acquire-lock`,
+            RELEASE_LOCK: `${API_NOTES_BASE}/release-lock`
+        },
+        AUTH: {
+            STATUS: `${API_AUTH_BASE}/status`,
+            LOGIN: `${API_AUTH_BASE}/login`,
+            LOGOUT: `${API_AUTH_BASE}/logout`,
+            SESSIONS: `${API_AUTH_BASE}/sessions`,
+            SETTINGS: {
+                PASSWORD: {
+                    CREATE: `${API_AUTH_BASE}/settings/password/create`,
+                    CHANGE: `${API_AUTH_BASE}/settings/password/change`,
+                    REMOVE: `${API_AUTH_BASE}/settings/password/remove`
+                }
+            }
+        },
+        MEMORY: {
+            BASE: `${API_BASE}/memory`
         }
     },
 
@@ -29,6 +52,11 @@ export const CONFIG = {
         SEARCH_INPUT: 'search-input',
         SEARCH_RESULTS: 'search-results',
         LOADING: 'loading'
+    },
+
+    SYNC: {
+        POLL_INTERVAL_MS: 120000,
+        LOCK_HEARTBEAT_INTERVAL_MS: 120000
     },
 
     DEBUG: {

@@ -4,6 +4,7 @@
  */
 
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
+import { CONFIG } from './config.js';
 import { ErrorHandler } from './error-handler.js';
 
 let connectivityInterval = null;
@@ -59,7 +60,7 @@ export const ConnectivityMonitor = {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
             
-            const response = await fetch('/api/auth/status', {
+            const response = await fetch(CONFIG.API.AUTH.STATUS, {
                 method: 'GET',
                 headers: headers,
                 signal: controller.signal

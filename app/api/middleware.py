@@ -41,6 +41,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Check authentication for protected routes."""
         path = request.url.path
+
+        # Allow all v2 endpoints without auth checks; v2 manages its own lifecycle
+        if path.startswith('/api2/'):
+            return await call_next(request)
         
         # Check if maintenance mode is active first
         if maintenance_service.is_active():
