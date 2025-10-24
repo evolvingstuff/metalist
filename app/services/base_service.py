@@ -1,6 +1,5 @@
 from abc import ABC
 from typing import Optional
-import logging
 import time
 
 from app.core import config
@@ -11,9 +10,7 @@ from app.services.integrity import (
     assert_note_count,
     assert_linked_list_integrity,
 )
-from app.models.database import SafeSession
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class BaseTransactionService(ABC):
@@ -27,6 +24,8 @@ class BaseTransactionService(ABC):
         self._operation_name = None
         self._note_count_snapshot: Optional[int] = None
         self._expected_note_delta: Optional[int] = None
+        self._transaction_started_at: Optional[float] = None
+        self._last_commit_ms: Optional[float] = None
     
     def __enter__(self):
         """Context manager entry - sets up transaction tracking"""
@@ -37,6 +36,7 @@ class BaseTransactionService(ABC):
                 "client": self.client_id,
             },
         )
+        self._transaction_started_at = time.perf_counter()
         self.transaction = self.transaction_manager.start_transaction(self.db, self.client_id)
         if config.DEV_ENFORCE_INTEGRITY_CHECKS:
             print('DEBUG: enforcing integrity checks')
@@ -45,6 +45,7 @@ class BaseTransactionService(ABC):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - handles commit/rollback and cleanup"""
+        success = exc_type is None
         try:
             if exc_type is None:
                 # No exception, commit the transaction
@@ -65,8 +66,20 @@ class BaseTransactionService(ABC):
                 },
             )
             logger.debug(f"Transaction {self.transaction.uuid if self.transaction else 'None'} cleaned up")
+            if self._transaction_started_at is not None:
+                total_ms = (time.perf_counter() - self._transaction_started_at) * 1000
+                logger.bind(
+                    service=type(self).__name__,
+                    client=self.client_id,
+                    operation=self._operation_name,
+                    success=success,
+                    duration_ms=total_ms,
+                    commit_ms=self._last_commit_ms,
+                ).info("db.transaction")
             self._note_count_snapshot = None
             self._expected_note_delta = None
+            self._transaction_started_at = None
+            self._last_commit_ms = None
     
     def _commit(self):
         """Commit the database transaction and finalize command tracking"""
@@ -74,31 +87,12 @@ class BaseTransactionService(ABC):
         commit_start = time.perf_counter()
         self.db.commit()
         commit_ms = (time.perf_counter() - commit_start) * 1000
-        logger.info(
-            "db.commit",
-            extra={
-                "service": type(self).__name__,
-                "client": self.client_id,
-                "duration_ms": commit_ms,
-            },
-        )
-
-        # Flush WAL to avoid large pause on next write
-        try:
-            self.db.connection().execute("PRAGMA wal_checkpoint(PASSIVE)")
-        except sqlite3.OperationalError:
-            try:
-                with sqlite3.connect(str(SafeSession._db_path)) as temp_conn:
-                    temp_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            except Exception as checkpoint_exc:
-                logger.warning(
-                    "db.checkpoint_failed",
-                    extra={
-                        "service": type(self).__name__,
-                        "client": self.client_id,
-                        "error": str(checkpoint_exc),
-                    },
-                )
+        self._last_commit_ms = commit_ms
+        logger.bind(
+            service=type(self).__name__,
+            client=self.client_id,
+            duration_ms=commit_ms,
+        ).info("db.commit")
 
         if config.DEV_ENFORCE_INTEGRITY_CHECKS:
             print('DEBUG: enforcing integrity checks')

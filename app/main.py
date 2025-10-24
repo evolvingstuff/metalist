@@ -1,3 +1,6 @@
+import os
+os.environ.setdefault("DISABLE_UNDO_SNAPSHOT", "1")
+
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,15 +18,48 @@ from .services.content_cache import populate_cache_from_db
 from .services.note_store import store as note_store
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
+from loguru import logger
 import logging
 import time
+import sys
+import uuid
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 import mimetypes
+import os
 
-logger = logging.getLogger(__name__)
+logger.remove()
+logger.add(
+    sys.stdout,
+    level="INFO",
+    backtrace=False,
+    diagnose=False,
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {message} | {extra}"
+)
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level,
+            record.getMessage(),
+        )
+
+
+logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 app = FastAPI()
+logger.warning("Undo/redo snapshots disabled (set before config import)")
 
 # CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
 @app.exception_handler(RequestValidationError)
@@ -44,7 +80,6 @@ def _log_startup_step(step: str, elapsed: float) -> None:
     if not _startup_timing_enabled:
         return
     message = f"[startup] {step} took {elapsed:.2f}s"
-    print(message)
     logger.info(message)
 
 
@@ -125,17 +160,41 @@ app.include_router(memory.router, prefix="/api")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    request_id = uuid.uuid4().hex[:8]
+    handler = request.scope.get("endpoint")
+    handler_name = getattr(handler, "__qualname__", "unknown")
+    logger.bind(request_id=request_id).info(
+        "⇒ {method} {path} handler={handler}",
+        method=request.method,
+        path=request.url.path,
+        handler=handler_name,
+    )
+
+    start = time.perf_counter()
     try:
         response = await call_next(request)
-        if response.status_code >= 400:
-            logger.error(f"Request failed: {request.method} {request.url} - Status: {response.status_code}")
-        return response
-    except Exception as e:
-        # FAIL FAST AND LOUD - NO SILENT FAILURES
-        logger.error(f"🚨 FATAL: Unhandled error in request: {request.method} {request.url}")
-        logger.error(f"🚨 Request processing failed catastrophically!")
-        logger.error(f"🚨 CRASHING IMMEDIATELY")
-        raise RuntimeError(f"Request processing failed: {request.method} {request.url}: {e}") from e
+    except Exception:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.bind(request_id=request_id).exception(
+            "✖ {method} {path} failed after {duration:.2f} ms",
+            method=request.method,
+            path=request.url.path,
+            duration=duration_ms,
+        )
+        raise
+
+    duration_ms = (time.perf_counter() - start) * 1000
+    size = response.headers.get("content-length", "-")
+    logger.bind(request_id=request_id).info(
+        "⇐ {status} {method} {path} handler={handler} duration={duration:.2f} ms size={size}",
+        status=response.status_code,
+        method=request.method,
+        path=request.url.path,
+        handler=handler_name,
+        duration=duration_ms,
+        size=size,
+    )
+    return response
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: SafeSession = Depends(get_db)):

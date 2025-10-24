@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import uuid
 from typing import Dict
+import time
 
+from loguru import logger
+
+from app.core import config
 from app.db.notes_sql import fetch_all_for_cache
 from app.services.content_cache import get_cached_content
 from app.services.note_store import store as note_store
@@ -42,16 +46,27 @@ def _row_to_state(row: dict) -> SnapshotRecord:
 
 
 def _capture_snapshot(db: SafeSession) -> Dict[str, SnapshotRecord]:
+    start = time.perf_counter()
+
+    if config.DISABLE_UNDO_SNAPSHOT:
+        return {}
+
     if note_store.loaded:
-        snapshot = {}
-        for record in note_store.snapshot().values():
-            snapshot[record.id] = _record_to_state(record)
+        snapshot = {
+            record.id: _record_to_state(record)
+            for record in note_store.snapshot().values()
+        }
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.bind(count=len(snapshot), duration_ms=duration_ms).info("undo.snapshot")
         return snapshot
 
     with SafeSession.allow_reads("undo:store_snapshot"):
         rows = fetch_all_for_cache(db.connection())
 
-    return {row["id"]: _row_to_state(row) for row in rows}
+    snapshot = {row["id"]: _row_to_state(row) for row in rows}
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.bind(count=len(snapshot), duration_ms=duration_ms).info("undo.snapshot")
+    return snapshot
 
 
 def _diff_snapshots(

@@ -5,14 +5,15 @@ import { ErrorHandler } from '../../error-handler.js';
 let pollingInterval = null;
 let lastTokenRefreshAt = 0;
 
+const POLL_INTERVAL_MS = 120_000;
 const TOKEN_REFRESH_INTERVAL_MS = 60_000; // minimum time between auth refresh calls
 
 export function startPolling() {
     // Unified polling: check connectivity and updates
     pollingInterval = setInterval(() => {
         checkConnectivityAndUpdates();
-    }, 500);  // Poll every 500ms
-    
+    }, POLL_INTERVAL_MS);
+
     Logger.logInit('Unified polling started (connectivity + updates)');
 }
 

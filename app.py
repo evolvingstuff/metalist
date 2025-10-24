@@ -1,5 +1,6 @@
 import uvicorn
 import logging
+import os
 
 class FilterCheckUpdates(logging.Filter):
     NOISY_PATTERNS = (
@@ -15,7 +16,8 @@ class FilterCheckUpdates(logging.Filter):
 if __name__ == "__main__":
     # Configure logging to filter out check-updates
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
-    
+    os.environ.setdefault("DISABLE_UNDO_SNAPSHOT", "1")  # TODO fix O(n) UNDO/REDO later
+
     uvicorn.run(
         "app.main:app",
         host="127.0.0.1",

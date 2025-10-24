@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Set
 import logging
 import time
+import json
 
 from .dependencies import get_db
 from ..models.database import SafeSession
@@ -497,15 +499,29 @@ def delete_note(
     """Delete a note and all its descendants"""
     apply_delay("delete_note")
     
+    op_start = time.perf_counter()
     with get_note_service(db, transaction_manager, request.clientId) as service:
         try:
-            t1 = time.perf_counter()
+            core_start = time.perf_counter()
             _ = service.delete_note(note_id)
-            t2 = time.perf_counter()
-            print(f'DEBUG: delete took {t2 - t1} seconds')
-            return {"status": "success"}
+            core_end = time.perf_counter()
+            logger.info(
+                "[notes.delete.core] note_id=%s client=%s duration_ms=%.2f",
+                note_id,
+                request.clientId,
+                (core_end - core_start) * 1000,
+            )
         except ValueError as e:
             raise HTTPException(status_code=404, detail="Note not found")
+
+    op_end = time.perf_counter()
+    logger.info(
+        "[notes.delete.total] note_id=%s client=%s duration_ms=%.2f",
+        note_id,
+        request.clientId,
+        (op_end - op_start) * 1000,
+    )
+    return {"status": "success"}
 
 
 @router.post("/new-drop")
@@ -587,6 +603,7 @@ def get_notes_view_diff(
     seen_roots: Set[str] = set(request.client_seen_root_ids or [])
 
     with get_query_service(db) as service:
+        snapshot_start = time.perf_counter()
         structure, payloads, locks = service.build_view_snapshot(
             editing_note_id=request.editing_note_id,
             search=request.search,
@@ -594,6 +611,7 @@ def get_notes_view_diff(
             client_known_note_ids=set(client_hashes.keys()),
             client_seen_root_ids=seen_roots,
         )
+        snapshot_ms = (time.perf_counter() - snapshot_start) * 1000
 
     updated_notes = {
         note_id: payload
@@ -616,6 +634,19 @@ def get_notes_view_diff(
         "updateUUID": update_uuid,
     }
 
+    response_json = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+    payload_bytes = len(response_json.encode('utf-8'))
     duration_ms = (time.perf_counter() - start_time) * 1000
-    print(f"[notes.view] response_time_ms={duration_ms:.2f}")
-    return response
+
+    logger.info(
+        "[notes.view] client=%s editing=%s nodes=%d updated=%d payload_bytes=%d snapshot_ms=%.2f total_ms=%.2f",
+        request.client_id,
+        request.editing_note_id,
+        len(structure),
+        len(updated_notes),
+        payload_bytes,
+        snapshot_ms,
+        duration_ms,
+    )
+
+    return JSONResponse(content=response)

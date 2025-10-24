@@ -14,6 +14,7 @@ def _env_flag(name: str, default: bool = False) -> bool:
 # Development settings - CRASH SERVER ON ANY ERROR
 CRASH_SERVER_ON_FAIL = _env_flag("CRASH_SERVER_ON_FAIL", True)
 DEV_ENFORCE_INTEGRITY_CHECKS = _env_flag("DEV_ENFORCE_INTEGRITY_CHECKS", False)
+DISABLE_UNDO_SNAPSHOT = _env_flag("DISABLE_UNDO_SNAPSHOT", True)
 
 # Authentication configuration
 TOKEN_EXPIRY_MINUTES = 30  # Token expires after 30 minutes of inactivity

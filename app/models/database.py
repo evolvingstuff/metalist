@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from typing import Iterator, Optional
 
 from app.core.config import DATABASE_URL
 from app.db.schema import initialize_schema
+from loguru import logger
 
 _MEMORY_URI = "file:metalist_memory?mode=memory&cache=shared"
 
@@ -28,6 +30,18 @@ def _is_select(statement: str) -> bool:
     snippet = statement.lstrip().lower()
     return snippet.startswith("select")
 
+
+def _configure_sql_logging(conn: sqlite3.Connection) -> None:
+    def tracer(statement: str, _cursor, _time, _data):
+        logger.info(
+            "sqlite.query",
+            extra={
+                "sql": statement,
+                "duration_ms": _time * 1000,
+            },
+        )
+
+    conn.set_trace_callback(lambda statement: logger.info("sqlite.raw", extra={"sql": statement}))
 
 class SafeSession:
     _db_path = _resolve_db_path(DATABASE_URL)
@@ -61,8 +75,10 @@ class SafeSession:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA cache_size=500000")
         initialize_schema(conn)
         conn.commit()
+        _configure_sql_logging(conn)
         return conn
 
     @classmethod
@@ -81,6 +97,7 @@ class SafeSession:
         anchor.execute("PRAGMA foreign_keys = ON")
         initialize_schema(anchor)
         anchor.commit()
+        _configure_sql_logging(anchor)
         cls._memory_anchor = anchor
         print("\n" + "=" * 50)
         print(
@@ -111,6 +128,7 @@ class SafeSession:
         conn.execute("PRAGMA foreign_keys = ON")
         initialize_schema(conn)
         conn.commit()
+        _configure_sql_logging(conn)
         conn.close()
         print("\n" + "=" * 50)
         print(

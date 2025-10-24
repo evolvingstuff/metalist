@@ -41,7 +41,9 @@ class NoteStore:
         self._logger = logging.getLogger(__name__)
         self._lock = RLock()
         self._note_map: Dict[str, NoteRecord] = {}
-        self._children: Dict[Optional[str], List[str]] = {}
+        self._links: Dict[Optional[str], Dict[str, Dict[str, Optional[str]]]] = {}
+        self._heads: Dict[Optional[str], Optional[str]] = {}
+        self._tails: Dict[Optional[str], Optional[str]] = {}
         self._loaded = False
         self._timing_enabled = True
 
@@ -155,7 +157,7 @@ class NoteStore:
         if not self._loaded:
             return
         with self._lock:
-            self._note_map[note.id] = NoteRecord(
+            record = NoteRecord(
                 id=note.id,
                 parent_id=note.parent_id,
                 prev_id=note.prev_id,
@@ -165,25 +167,26 @@ class NoteStore:
                 created_at=getattr(note, "created_at", None),
                 updated_at=getattr(note, "updated_at", None),
             )
-            self._rebuild_indexes_locked()
+            self._note_map[note.id] = record
+            self._insert_link(record.parent_id, record.id, record.prev_id, record.next_id)
 
     def update_note_from_db(self, note: SimpleNamespace, plaintext: str) -> None:
         if not self._loaded:
             return
         with self._lock:
-            if note.id not in self._note_map:
+            current = self._note_map.get(note.id)
+            if not current:
                 return
             self._note_map[note.id] = NoteRecord(
                 id=note.id,
-                parent_id=note.parent_id,
-                prev_id=note.prev_id,
-                next_id=note.next_id,
-                is_collapsed=bool(getattr(note, "is_collapsed", False)),
+                parent_id=current.parent_id,
+                prev_id=current.prev_id,
+                next_id=current.next_id,
+                is_collapsed=current.is_collapsed,
                 content=plaintext,
-                created_at=getattr(note, "created_at", None),
-                updated_at=getattr(note, "updated_at", None),
+                created_at=getattr(note, "created_at", current.created_at),
+                updated_at=getattr(note, "updated_at", current.updated_at),
             )
-            self._rebuild_indexes_locked()
 
     def update_metadata_from_db(self, note: SimpleNamespace, *, rebuild: bool = True) -> None:
         if not self._loaded:
@@ -192,7 +195,7 @@ class NoteStore:
             record = self._note_map.get(note.id)
             if not record:
                 return
-            self._note_map[note.id] = NoteRecord(
+            updated = NoteRecord(
                 id=note.id,
                 parent_id=note.parent_id,
                 prev_id=note.prev_id,
@@ -202,8 +205,12 @@ class NoteStore:
                 created_at=getattr(note, "created_at", record.created_at),
                 updated_at=getattr(note, "updated_at", record.updated_at),
             )
+            self._note_map[note.id] = updated
             if rebuild:
                 self._rebuild_indexes_locked()
+            else:
+                self._remove_link(record.parent_id, record.id)
+                self._insert_link(updated.parent_id, updated.id, updated.prev_id, updated.next_id)
 
     def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool = True) -> None:
         """Apply pointer metadata for multiple notes without repeated rebuilds."""
@@ -215,12 +222,14 @@ class NoteStore:
             return
 
         with self._lock:
+            updates: List[tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]] = []
+
             for note in payload:
                 record = self._note_map.get(note.id)
                 if not record:
                     continue
 
-                self._note_map[note.id] = NoteRecord(
+                updated = NoteRecord(
                     id=record.id,
                     parent_id=getattr(note, "parent_id", record.parent_id),
                     prev_id=getattr(note, "prev_id", record.prev_id),
@@ -231,20 +240,50 @@ class NoteStore:
                     updated_at=getattr(note, "updated_at", record.updated_at),
                 )
 
+                self._note_map[note.id] = updated
+                updates.append((
+                    note.id,
+                    record.parent_id,
+                    updated.parent_id,
+                    updated.prev_id,
+                    updated.next_id,
+                ))
+
             if rebuild:
                 self._rebuild_indexes_locked()
+            else:
+                for note_id, old_parent, new_parent, new_prev, new_next in updates:
+                    self._remove_link(old_parent, note_id)
+                    self._insert_link(new_parent, note_id, new_prev, new_next)
 
     def remove_note(self, note_id: str) -> None:
         if not self._loaded:
             return
         with self._lock:
-            to_visit = [note_id]
+            to_visit: List[str] = [note_id]
+            removed: List[tuple[Optional[str], str]] = []
+
             while to_visit:
                 current = to_visit.pop()
                 record = self._note_map.pop(current, None)
-                if record:
-                    to_visit.extend(self._children.get(current, []))
-            self._rebuild_indexes_locked()
+                if not record:
+                    continue
+
+                removed.append((record.parent_id, record.id))
+
+                child_links = self._links.get(current)
+                if child_links:
+                    to_visit.extend(child_links.keys())
+                    self._links.pop(current, None)
+                self._heads.pop(current, None)
+                self._tails.pop(current, None)
+
+            removed_ids = {node_id for _, node_id in removed}
+
+            for parent_id, node_id in removed:
+                if parent_id in removed_ids:
+                    continue
+                self._remove_link(parent_id, node_id)
 
     def set_collapsed(self, note_id: str, collapsed: bool) -> None:
         if not self._loaded:
@@ -266,14 +305,112 @@ class NoteStore:
             self._rebuild_indexes_locked()
 
     def _rebuild_indexes_locked(self) -> None:
+        links: Dict[Optional[str], Dict[str, Dict[str, Optional[str]]]] = {}
+        heads: Dict[Optional[str], Optional[str]] = {}
+        tails: Dict[Optional[str], Optional[str]] = {}
+
         children: Dict[Optional[str], List[str]] = {}
         for record in self._note_map.values():
             children.setdefault(record.parent_id, []).append(record.id)
 
         for parent_id, ids in children.items():
-            children[parent_id] = self._order_ids(ids)
+            ordered = self._order_ids(ids)
+            if not ordered:
+                continue
+            parent_links: Dict[str, Dict[str, Optional[str]]] = {}
+            for index, note_id in enumerate(ordered):
+                prev_id = ordered[index - 1] if index > 0 else None
+                next_id = ordered[index + 1] if index + 1 < len(ordered) else None
+                parent_links[note_id] = {'prev': prev_id, 'next': next_id}
+            links[parent_id] = parent_links
+            heads[parent_id] = ordered[0]
+            tails[parent_id] = ordered[-1]
 
-        self._children = children
+        self._links = links
+        self._heads = heads
+        self._tails = tails
+
+    def _ensure_parent_structures(self, parent_id: Optional[str]) -> Dict[str, Dict[str, Optional[str]]]:
+        if parent_id not in self._links:
+            self._links[parent_id] = {}
+            self._heads[parent_id] = None
+            self._tails[parent_id] = None
+        return self._links[parent_id]
+
+    @staticmethod
+    def _get_or_create_link(links: Dict[str, Dict[str, Optional[str]]], node_id: str) -> Dict[str, Optional[str]]:
+        link = links.get(node_id)
+        if link is None:
+            link = {'prev': None, 'next': None}
+            links[node_id] = link
+        else:
+            link.setdefault('prev', None)
+            link.setdefault('next', None)
+        return link
+
+    def _insert_link(
+        self,
+        parent_id: Optional[str],
+        note_id: str,
+        prev_id: Optional[str],
+        next_id: Optional[str],
+    ) -> None:
+        links = self._ensure_parent_structures(parent_id)
+
+        if prev_id not in links:
+            prev_id = None
+        if next_id not in links:
+            next_id = None
+
+        if prev_id is None and next_id is None:
+            prev_id = self._tails.get(parent_id)
+            next_id = None
+
+        if prev_id is not None:
+            prev_link = self._get_or_create_link(links, prev_id)
+            next_id = prev_link.get('next') if next_id is None else next_id
+        if next_id is not None:
+            next_link = self._get_or_create_link(links, next_id)
+            prev_id = next_link.get('prev') if prev_id is None else prev_id
+
+        links[note_id] = {'prev': prev_id, 'next': next_id}
+
+        if prev_id is not None:
+            links[prev_id]['next'] = note_id
+        else:
+            self._heads[parent_id] = note_id
+
+        if next_id is not None:
+            links[next_id]['prev'] = note_id
+        else:
+            self._tails[parent_id] = note_id
+
+    def _remove_link(self, parent_id: Optional[str], note_id: str) -> None:
+        links = self._links.get(parent_id)
+        if not links:
+            return
+
+        link = links.pop(note_id, None)
+        if not link:
+            return
+
+        prev_id = link.get('prev')
+        next_id = link.get('next')
+
+        if prev_id is not None and prev_id in links:
+            links[prev_id]['next'] = next_id
+        else:
+            self._heads[parent_id] = next_id
+
+        if next_id is not None and next_id in links:
+            links[next_id]['prev'] = prev_id
+        else:
+            self._tails[parent_id] = prev_id
+
+        if not links:
+            self._links.pop(parent_id, None)
+            self._heads.pop(parent_id, None)
+            self._tails.pop(parent_id, None)
 
     def _order_ids(self, ids: List[str]) -> List[str]:
         if not ids:
@@ -320,7 +457,20 @@ class NoteStore:
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:
-            return list(self._children.get(parent_id, []))
+            head = self._heads.get(parent_id)
+            if head is None:
+                return []
+            links = self._links.get(parent_id)
+            if not links:
+                return []
+            ordered: List[str] = []
+            current = head
+            visited = set()
+            while current and current not in visited:
+                ordered.append(current)
+                visited.add(current)
+                current = links.get(current, {}).get('next')
+            return ordered
 
     # Debug helpers -----------------------------------------------------------
 
@@ -361,7 +511,7 @@ class NoteStore:
                         )
 
                 if record.parent_id is not None:
-                    children = self._children.get(record.parent_id, [])
+                    children = self.get_children(record.parent_id)
                     if record.id not in children:
                         raise RuntimeError(
                             "Integrity failure: parent/child mismatch: "

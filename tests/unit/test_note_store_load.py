@@ -21,7 +21,9 @@ def test_note_store_loads_core_inserted_note():
 
     with store._lock:
         store._note_map.clear()
-        store._children.clear()
+        store._links.clear()
+        store._heads.clear()
+        store._tails.clear()
         store._loaded = False
 
     content_cache.clear_cache()
