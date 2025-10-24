@@ -123,19 +123,19 @@ def create_drop_stub(body: dict):
 
 
 @router.post("/notes/new-sibling/{note_id}")
-def create_sibling_stub(note_id: str, body: dict):
-    try:
-        return CmdCreateSibling().execute()
-    except Exception as e:
-        _not_impl(e)
+def create_sibling(note_id: str, body: dict):
+    cmd = CmdCreateSibling(
+        reference_note_id=note_id,
+        search_query=body.get("search_query"),
+        client_id=body.get("clientId") or "",
+    )
+    return cmd.execute()
 
 
 @router.post("/notes/new-child/{note_id}")
-def create_child_stub(note_id: str, body: dict):
-    try:
-        return CmdCreateChild().execute()
-    except Exception as e:
-        _not_impl(e)
+def create_child(note_id: str, body: dict):
+    cmd = CmdCreateChild(parent_note_id=note_id, client_id=body.get("clientId") or "")
+    return cmd.execute()
 
 
 @router.put("/notes/{note_id}")
