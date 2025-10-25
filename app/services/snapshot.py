@@ -4,7 +4,7 @@ import hashlib
 import json
 from typing import Dict, List, Optional, Tuple, Set
 
-from app.services.store import store as note_store
+from app.services.note_store import store as note_store
 from app.services.sync import get_all_locks
 
 # Windowing constants (tuned later)
@@ -42,9 +42,9 @@ def _determine_root_window_end(
         # Expand to include the root containing the editing node
         try:
             # Find root id by walking parents in store
-            current = note_store.get(editing_note_id)
+            current = note_store.get_note(editing_note_id)
             while current.parent_id:
-                current = note_store.get(current.parent_id)
+                current = note_store.get_note(current.parent_id)
             editing_root_id = current.id
             index = root_index_map.get(editing_root_id)
             if index is not None:
@@ -81,17 +81,17 @@ def build_view_snapshot(
             return True
         if nid in allow_cache:
             return allow_cache[nid]
-        rec = note_store.get(nid)
+        rec = note_store.get_note(nid)
         content = rec.content or ""
         content_match = search_term in content.lower()
-        child_match = any(_should_include(child) for child in note_store.children(nid))
+        child_match = any(_should_include(child) for child in note_store.get_children(nid))
         editing_match = bool(editing_note_id and nid == editing_note_id)
         result = content_match or child_match or editing_match
         allow_cache[nid] = result
         return result
 
     # Determine root window
-    ordered_root_ids = note_store.children(None)
+    ordered_root_ids = note_store.get_children(None)
     root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
     client_known_note_ids = client_known_note_ids or set()
     seen_root_indices = {
@@ -110,14 +110,14 @@ def build_view_snapshot(
         allowed_root_ids = set(ordered_root_ids[: window_end + 1]) if window_end >= 0 else set()
 
     def traverse(parent_id: Optional[str]) -> None:
-        ids = note_store.children(parent_id)
+        ids = note_store.get_children(parent_id)
         # Apply root windowing at the top level
         if parent_id is None and allowed_root_ids is not None:
             ids = [i for i in ids if i in allowed_root_ids]
         for idx, nid in enumerate(ids):
             if not _should_include(nid):
                 continue
-            rec = note_store.get(nid)
+            rec = note_store.get_note(nid)
             prev_id = ids[idx - 1] if idx > 0 else None
             next_id = ids[idx + 1] if idx + 1 < len(ids) else None
             flags = {
