@@ -225,7 +225,7 @@ async def log_requests(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: SafeSession = Depends(get_db)):
     try:
-        from .services.auth_old import AuthService
+        from .services.auth import AuthService
         
         template = templates.get_template("index.html")
         

@@ -5,12 +5,13 @@ It now uses the token-based DEK system for encryption operations.
 """
 
 import logging
+from types import SimpleNamespace
 from typing import Optional, Tuple
 
+from app.db.settings_sql import fetch_settings
+from app.models.database import SafeSession
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
-from app.services.auth_old import AuthService
-from app.models.database import SafeSession
 
 # Global encryption service instance (per-request)
 _encryption_service: Optional[EncryptionService] = None
@@ -152,8 +153,9 @@ def set_encryption_key(password: str, salt: bytes) -> None:
     # But we can't get the DEK without the database settings
     db = SafeSession()
     try:
-        auth = AuthService(db)
-        settings = auth.get_settings()
+        with SafeSession.allow_reads("utils:encryption:set_key:settings"):
+            row = fetch_settings(db.connection())
+        settings = SimpleNamespace(**row) if row else None
 
         if settings and settings.encrypted_dek:
             _encryption_service = EncryptionService()
@@ -215,8 +217,9 @@ def get_encryption_status() -> dict:
     """
     db = SafeSession()
     try:
-        auth = AuthService(db)
-        settings = auth.get_settings()
+        with SafeSession.allow_reads("utils:encryption:status:settings"):
+            row = fetch_settings(db.connection())
+        settings = SimpleNamespace(**row) if row else None
 
         return {
             "encryption_enabled": settings.encryption_enabled if settings else False,
