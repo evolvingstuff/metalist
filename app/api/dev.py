@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 import logging
 
 from ..models.database import SafeSession
-from app.db import begin_writer
+from app.db.session import begin_writer
 from app.db.schema import initialize_schema, NOTES_TABLE
 
 logger = logging.getLogger(__name__)

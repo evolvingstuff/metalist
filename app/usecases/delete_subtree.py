@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 
-from app.db.engine import begin_writer
+from app.db.session import begin_writer
 from app.db.notes_sql import update_links as db_update_links, delete_notes as db_delete_notes
 
 
@@ -75,7 +75,7 @@ def apply_delete_subtree(note_id: str) -> None:
 def apply_restore_records(records: List[NodeRecord]) -> None:
     # Reinsert records in preorder; rely on stored prev/next pointers
     from app.db.notes_sql import insert_note as db_insert_note
-    from app.utils.encryption import encrypt
+    from app.security.encryption import encrypt
 
     # Insert in DB
     with begin_writer() as connection:
@@ -124,4 +124,3 @@ class CmdDeleteSubtree(QueryCommand):
 
         update_uuid = generate_new_uuid()
         return {"status": "success", "updateUUID": update_uuid}
-

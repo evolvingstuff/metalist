@@ -2,24 +2,24 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.endpoints.view import CmdView
+from app.usecases.view import CmdView
 from app.services.snapshot import build_view_snapshot
-from app.endpoints.create_note import CmdCreateNote
-from app.endpoints.create_sibling import CmdCreateSibling
-from app.endpoints.create_child import CmdCreateChild
-from app.endpoints.update_content import CmdUpdateContent
-from app.endpoints.delete_subtree import CmdDeleteSubtree
-from app.endpoints.move import CmdMove
-from app.endpoints.collapse import CmdCollapse
-from app.endpoints.expand import CmdExpand
-from app.endpoints.copy_note import CmdCopyNote
-from app.endpoints.paste_sibling import CmdPasteSibling
-from app.endpoints.paste_child import CmdPasteChild
-from app.endpoints.undo import CmdUndo
-from app.endpoints.redo import CmdRedo
+from app.usecases.create_note import CmdCreateNote
+from app.usecases.create_sibling import CmdCreateSibling
+from app.usecases.create_child import CmdCreateChild
+from app.usecases.update_content import CmdUpdateContent
+from app.usecases.delete_subtree import CmdDeleteSubtree
+from app.usecases.move import CmdMove
+from app.usecases.collapse import CmdCollapse
+from app.usecases.expand import CmdExpand
+from app.usecases.copy_note import CmdCopyNote
+from app.usecases.paste_sibling import CmdPasteSibling
+from app.usecases.paste_child import CmdPasteChild
+from app.usecases.undo import CmdUndo
+from app.usecases.redo import CmdRedo
 from app.services.sync import get_current_sync_uuid
-from app.endpoints.check_updates import CmdCheckUpdates
-from app.endpoints.lock import CmdAcquireLock, CmdReleaseLock
+from app.usecases.check_updates import CmdCheckUpdates
+from app.usecases.lock import CmdAcquireLock, CmdReleaseLock
 from app.core.config import VERSION
 
 

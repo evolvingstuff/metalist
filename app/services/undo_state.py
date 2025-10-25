@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from app.endpoints.update_content import apply_update_content
-from app.endpoints.delete_subtree import apply_delete_subtree, apply_restore_records
-from app.endpoints.move import apply_move
+from app.usecases.update_content import apply_update_content
+from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
+from app.usecases.move import apply_move
 from app.services.store import store
 import os
 import logging
@@ -160,7 +160,7 @@ def undo(client_id: str) -> bool:
         return True
     if op.get("type") == "collapse":
         # invert collapse
-        from app.endpoints.collapse import apply_set_collapse
+        from app.usecases.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["before"]))
         ctx.redo.append(op)
         generate_new_uuid()
@@ -215,7 +215,7 @@ def redo(client_id: str) -> bool:
         generate_new_uuid()
         return True
     if op.get("type") == "collapse":
-        from app.endpoints.collapse import apply_set_collapse
+        from app.usecases.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["after"]))
         ctx.history.append(op)
         generate_new_uuid()

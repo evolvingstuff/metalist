@@ -4,10 +4,10 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.services.tokens import token_service
-from app.services.auth import AuthService
+from app.services.auth_service import AuthService
 from app.services.maintenance_mode import maintenance_service
 from app.models.database import SafeSession
-from app.utils.encryption import set_encryption_key
+from app.security.encryption import set_encryption_key
 from app.core.config import API_PREFIX, V1_API_PREFIX
 
 
@@ -118,66 +118,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                     content={"detail": "Authentication required"}
                 )
-            
-            # Extract token from "Bearer <token>" format
-            parts = authorization.split()
-            if len(parts) != 2 or parts[0].lower() != "bearer":
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid authorization format"}
-                )
-            
-            token = parts[1]
-            
-            # Verify token
-            if not token_service.verify_token(token):
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid or expired token"}
-                )
-            
-            # Refresh token (sliding window) - but not for background/automated requests
-            should_refresh_token = not any(path.startswith(bg_path) for bg_path in self.NO_TOKEN_REFRESH_PATHS)
-            if should_refresh_token:
-                token_service.refresh_token(token)
-            elif not is_quiet:
-                print(f"[Middleware] Skipping token refresh for background path: {path}")
-            
-            # Set encryption keys for this request
-            encryption_keys = token_service.get_encryption_keys(token)
-            if not is_quiet:
-                print(f"[Middleware] Got encryption keys: {encryption_keys is not None}")
-            if encryption_keys:
-                master_key, dek = encryption_keys
-                if not is_quiet:
-                    print(f"[Middleware] Setting encryption keys for path: {path}")
-                # Set up the global encryption service with the cached keys
-                from app.utils.encryption import get_encryption_service
-                service = get_encryption_service()
-                if not service:
-                    from app.services.encryption import EncryptionService
-                    service = EncryptionService()
-                    # Set it globally for this request
-                    import app.utils.encryption
-                    app.utils.encryption._encryption_service = service
-                service.master_key = master_key
-                service.dek = dek
-            else:
-                if not is_quiet:
-                    print(f"[Middleware] No encryption keys found for token")
-            
-            # Continue with request
-            response = await call_next(request)
-            
-            # Optionally add refreshed token to response header
-            # This allows client to update token if needed
-            # response.headers["X-New-Token"] = token
-            
-            return response
-            
         except Exception as e:
-            # FAIL FAST AND LOUD - NO GRACEFUL DEGRADATION
-            print(f"🚨 AUTH MIDDLEWARE FATAL ERROR: {e}")
-            print(f"🚨 REQUEST PATH: {request.url.path}")
-            print(f"🚨 CRASHING IMMEDIATELY - NO SILENT FAILURES")
-            raise e
+            # Fail fast for internal errors
+            raise
+
+        token = authorization.split()[1] if authorization and authorization.lower().startswith("bearer ") else None
+        if token:
+            # Refresh token on user-initiated paths only
+            if not any(path.startswith(p) for p in self.NO_TOKEN_REFRESH_PATHS):
+                token_service.refresh_token(token)
+        
+        return await call_next(request)

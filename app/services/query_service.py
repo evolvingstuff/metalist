@@ -4,7 +4,7 @@ import json
 
 from .base_service import BaseQueryService
 from ..models.linked_list import LinkedListManager
-from ..render.note_renderer import build_note_tree
+from app.presentation.render.note_renderer import build_note_tree
 from .sync_state import get_all_locks
 from .note_store import store as note_store
 

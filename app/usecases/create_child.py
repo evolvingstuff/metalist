@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Dict
 import uuid
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store
 from app.services.sync import generate_new_uuid
-from app.endpoints.create_note import apply_insert_note
+from app.usecases.create_note import apply_insert_note
 
 
 @dataclass

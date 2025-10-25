@@ -1,303 +1,104 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
-from threading import RLock
-from typing import Dict, List, Optional, Iterable, Mapping, Set
+from types import SimpleNamespace
+from typing import Iterable, Mapping, Optional, List
+
+from app.services.note_store import store as _note_store
+from app.services.note_store import NoteRecord as NodeRecord
 
 
-@dataclass(slots=True)
-class NodeRecord:
-    id: str
-    parent_id: Optional[str]
-    prev_id: Optional[str]
-    next_id: Optional[str]
-    is_collapsed: bool
-    content: str
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+class _AdapterStore:
+    """Adapter exposing the legacy store API on top of NoteStore.
 
-
-class InMemoryStore:
-    def __init__(self) -> None:
-        self._lock = RLock()
-        self._notes: Dict[str, NodeRecord] = {}
-        self._links: Dict[Optional[str], Dict[str, Dict[str, Optional[str]]]] = {}
-        self._heads: Dict[Optional[str], Optional[str]] = {}
-        self._tails: Dict[Optional[str], Optional[str]] = {}
-        self._loaded = False
+    This keeps existing usecases working while consolidating on the
+    canonical NoteStore implementation.
+    """
 
     @property
     def loaded(self) -> bool:
-        return self._loaded
+        return _note_store.loaded
 
-    def hydrate_from_rows(self, rows: Iterable[Mapping[str, object]], *, get_plaintext) -> None:
-        with self._lock:
-            self._notes.clear()
-            self._links.clear()
-            self._heads.clear()
-            self._tails.clear()
+    # Internal links used by some usecases; forwarded for compatibility.
+    @property
+    def _links(self):  # type: ignore[override]
+        return _note_store._links  # intentional adapter to internals
 
-            for row in rows:
-                note_id = str(row["id"])  # crash if missing
-                plaintext = get_plaintext(note_id, row)
-                self._notes[note_id] = NodeRecord(
-                    id=note_id,
-                    parent_id=row.get("parent_id"),
-                    prev_id=row.get("prev_id"),
-                    next_id=row.get("next_id"),
-                    is_collapsed=bool(row.get("is_collapsed", False)),
-                    content=plaintext,
-                    created_at=row.get("created_at"),
-                    updated_at=row.get("updated_at"),
-                )
-
-            children: Dict[Optional[str], List[str]] = {}
-            for rec in self._notes.values():
-                children.setdefault(rec.parent_id, []).append(rec.id)
-
-            for parent_id, ids in children.items():
-                by_id = {i: self._notes[i] for i in ids}
-                head = next((r for r in by_id.values() if not r.prev_id or r.prev_id not in by_id), None)
-                if not head and ids:
-                    head = by_id[ids[0]]
-                ordered: List[str] = []
-                seen: Set[str] = set()
-                cur = head
-                while cur and cur.id not in seen:
-                    ordered.append(cur.id)
-                    seen.add(cur.id)
-                    cur = by_id.get(cur.next_id or "")
-                for nid in ids:
-                    if nid not in seen:
-                        ordered.append(nid)
-
-                links: Dict[str, Dict[str, Optional[str]]] = {}
-                for idx, nid in enumerate(ordered):
-                    prev_id = ordered[idx - 1] if idx > 0 else None
-                    next_id = ordered[idx + 1] if idx + 1 < len(ordered) else None
-                    links[nid] = {"prev": prev_id, "next": next_id}
-                self._links[parent_id] = links
-                self._heads[parent_id] = ordered[0] if ordered else None
-                self._tails[parent_id] = ordered[-1] if ordered else None
-
-            self._loaded = True
-
+    # Reads -----------------------------------------------------------------
     def get(self, note_id: str) -> NodeRecord:
-        rec = self._notes.get(note_id)
-        if rec is None:
-            raise KeyError(f"Note {note_id} not present in v2 store")
-        return rec
+        return _note_store.get_note(note_id)
 
     def children(self, parent_id: Optional[str]) -> List[str]:
-        head = self._heads.get(parent_id)
-        if head is None:
-            return []
-        links = self._links.get(parent_id) or {}
-        ordered: List[str] = []
-        cur = head
-        visited: Set[str] = set()
-        while cur and cur not in visited:
-            ordered.append(cur)
-            visited.add(cur)
-            cur = links.get(cur, {}).get("next")
-        return ordered
+        return _note_store.get_children(parent_id)
 
     # Mutations --------------------------------------------------------------
-    def _ensure_parent_structures(self, parent_id: Optional[str]) -> Dict[str, Dict[str, Optional[str]]]:
-        links = self._links.get(parent_id)
-        if links is None:
-            links = {}
-            self._links[parent_id] = links
-            self._heads[parent_id] = None
-            self._tails[parent_id] = None
-        return links
-
     def insert_after(self, note: NodeRecord, parent_id: Optional[str], prev_id: Optional[str]) -> None:
-        with self._lock:
-            if note.id in self._notes:
-                raise KeyError(f"Note {note.id} already present in v2 store")
+        # Compute next_id based on current links for the parent
+        if prev_id is None:
+            ids = _note_store.get_children(parent_id)
+            next_id = ids[0] if ids else None
+        else:
+            links = _note_store._links.get(parent_id) or {}
+            next_id = links.get(prev_id, {}).get('next')
 
-            links = self._ensure_parent_structures(parent_id)
-            if prev_id and prev_id not in links:
-                prev_id = None
-
-            # Determine next based on prev
-            if prev_id is None:
-                next_id = self._heads.get(parent_id)
-            else:
-                next_id = links.get(prev_id, {}).get("next")
-
-            # Update links
-            links[note.id] = {"prev": prev_id, "next": next_id}
-            if prev_id is not None:
-                links[prev_id]["next"] = note.id
-            else:
-                self._heads[parent_id] = note.id
-
-            if next_id is not None:
-                links[next_id]["prev"] = note.id
-            else:
-                self._tails[parent_id] = note.id
-
-            # Store record with resolved pointers
-            self._notes[note.id] = NodeRecord(
-                id=note.id,
-                parent_id=parent_id,
-                prev_id=prev_id,
-                next_id=next_id,
-                is_collapsed=note.is_collapsed,
-                content=note.content,
-                created_at=note.created_at,
-                updated_at=note.updated_at,
-            )
+        row = SimpleNamespace(
+            id=note.id,
+            parent_id=parent_id,
+            prev_id=prev_id,
+            next_id=next_id,
+            is_collapsed=bool(getattr(note, 'is_collapsed', False)),
+            created_at=getattr(note, 'created_at', None),
+            updated_at=getattr(note, 'updated_at', None),
+        )
+        _note_store.add_note_from_db(row, note.content or "")
 
     def update_content(self, note_id: str, new_content: str, *, updated_at: Optional[datetime] = None) -> None:
-        with self._lock:
-            rec = self._notes.get(note_id)
-            if rec is None:
-                raise KeyError(f"Note {note_id} not present in v2 store")
-            self._notes[note_id] = NodeRecord(
-                id=rec.id,
-                parent_id=rec.parent_id,
-                prev_id=rec.prev_id,
-                next_id=rec.next_id,
-                is_collapsed=rec.is_collapsed,
-                content=new_content,
-                created_at=rec.created_at,
-                updated_at=updated_at if updated_at is not None else rec.updated_at,
-            )
+        row = SimpleNamespace(id=note_id, updated_at=updated_at)
+        _note_store.update_note_from_db(row, new_content)
 
     def delete_subtree(self, note_id: str) -> None:
-        with self._lock:
-            if note_id not in self._notes:
-                return
-
-            # Collect subtree ids
-            to_remove: List[str] = []
-            stack: List[str] = [note_id]
-            while stack:
-                nid = stack.pop()
-                to_remove.append(nid)
-                child_ids = self.children(nid)
-                stack.extend(child_ids)
-
-            removed = set(to_remove)
-
-            # Adjust parent links for the root (if parent outside removed set)
-            root = self._notes[note_id]
-            parent_id = root.parent_id
-            if parent_id not in removed:
-                links = self._links.get(parent_id) or {}
-                prev_id = links.get(note_id, {}).get("prev")
-                next_id = links.get(note_id, {}).get("next")
-                if prev_id is not None and prev_id in links:
-                    links[prev_id]["next"] = next_id
-                else:
-                    self._heads[parent_id] = next_id
-                if next_id is not None and next_id in links:
-                    links[next_id]["prev"] = prev_id
-                else:
-                    self._tails[parent_id] = prev_id
-                links.pop(note_id, None)
-
-            # Remove internal child structures and notes
-            for nid in to_remove:
-                # Remove this node's children links entirely
-                self._links.pop(nid, None)
-                self._heads.pop(nid, None)
-                self._tails.pop(nid, None)
-                # Remove from notes map
-                self._notes.pop(nid, None)
+        _note_store.remove_note(note_id)
 
     def restore_subtree(self, records: List[NodeRecord]) -> None:
-        with self._lock:
-            for rec in records:
-                self.insert_after(
-                    NodeRecord(
-                        id=rec.id,
-                        parent_id=rec.parent_id,
-                        prev_id=None,
-                        next_id=None,
-                        is_collapsed=rec.is_collapsed,
-                        content=rec.content,
-                        created_at=rec.created_at,
-                        updated_at=rec.updated_at,
-                    ),
-                    parent_id=rec.parent_id,
-                    prev_id=rec.prev_id,
-                )
-
-    def move_note(self, note_id: str, new_parent_id: Optional[str], prev_id: Optional[str]) -> None:
-        with self._lock:
-            rec = self._notes.get(note_id)
-            if rec is None:
-                raise KeyError(f"Note {note_id} not present in v2 store")
-
-            # Unlink from old parent
-            old_parent = rec.parent_id
-            old_links = self._links.get(old_parent) or {}
-            link = old_links.get(note_id, {})
-            old_prev = link.get('prev')
-            old_next = link.get('next')
-            if old_prev is not None and old_prev in old_links:
-                old_links[old_prev]['next'] = old_next
-            else:
-                self._heads[old_parent] = old_next
-            if old_next is not None and old_next in old_links:
-                old_links[old_next]['prev'] = old_prev
-            else:
-                self._tails[old_parent] = old_prev
-            old_links.pop(note_id, None)
-
-            # Insert into new parent
-            links = self._ensure_parent_structures(new_parent_id)
-            if prev_id and prev_id not in links:
-                prev_id = None
-            next_id = links.get(prev_id, {}).get('next') if prev_id is not None else self._heads.get(new_parent_id)
-
-            links[note_id] = {'prev': prev_id, 'next': next_id}
-            if prev_id is not None:
-                links[prev_id]['next'] = note_id
-            else:
-                self._heads[new_parent_id] = note_id
-            if next_id is not None:
-                links[next_id]['prev'] = note_id
-            else:
-                self._tails[new_parent_id] = note_id
-
-            self._notes[note_id] = NodeRecord(
-                id=rec.id,
-                parent_id=new_parent_id,
-                prev_id=prev_id,
-                next_id=next_id,
-                is_collapsed=rec.is_collapsed,
-                content=rec.content,
-                created_at=rec.created_at,
-                updated_at=rec.updated_at,
-            )
-
-    def set_collapsed(self, note_id: str, collapsed: bool) -> None:
-        with self._lock:
-            rec = self._notes.get(note_id)
-            if rec is None:
-                raise KeyError(f"Note {note_id} not present in v2 store")
-            if bool(rec.is_collapsed) == bool(collapsed):
-                return
-            self._notes[note_id] = NodeRecord(
+        # Insert records honoring their stored prev/next pointers
+        for rec in records:
+            row = SimpleNamespace(
                 id=rec.id,
                 parent_id=rec.parent_id,
                 prev_id=rec.prev_id,
                 next_id=rec.next_id,
-                is_collapsed=bool(collapsed),
-                content=rec.content,
+                is_collapsed=bool(rec.is_collapsed),
                 created_at=rec.created_at,
                 updated_at=rec.updated_at,
             )
+            _note_store.add_note_from_db(row, rec.content or "")
+
+    def move_note(self, note_id: str, new_parent_id: Optional[str], prev_id: Optional[str]) -> None:
+        # Determine next based on prev in destination parent
+        if prev_id is None:
+            ids = _note_store.get_children(new_parent_id)
+            next_id = ids[0] if ids else None
+        else:
+            links = _note_store._links.get(new_parent_id) or {}
+            next_id = links.get(prev_id, {}).get('next')
+
+        row = SimpleNamespace(
+            id=note_id,
+            parent_id=new_parent_id,
+            prev_id=prev_id,
+            next_id=next_id,
+        )
+        _note_store.update_metadata_from_db(row, rebuild=False)
+
+    def set_collapsed(self, note_id: str, collapsed: bool) -> None:
+        _note_store.set_collapsed(note_id, bool(collapsed))
 
 
-store = InMemoryStore()
+# Public adapter instance
+store = _AdapterStore()
 
 
-def hydrate_from_prefetched(rows: Iterable[Mapping[str, object]], *, get_plaintext) -> None:
-    store.hydrate_from_rows(rows, get_plaintext=get_plaintext)
+def hydrate_from_prefetched(rows: Iterable[Mapping[str, object]], *, get_plaintext) -> None:  # noqa: ARG001
+    # Canonical NoteStore can load from prefetched rows using the decrypted cache.
+    _note_store.load_from_db(None, prefetched_rows=list(rows))
+

@@ -6,11 +6,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 
-from app.db.engine import begin_writer
+from app.db.session import begin_writer
 from app.db.notes_sql import update_links as db_update_links
 
 

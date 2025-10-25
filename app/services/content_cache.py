@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Dict, Mapping, Optional, Sequence
 
-from app.db import connect_reader
+from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
 from ..models.database import SafeSession

@@ -2,6 +2,24 @@
 
 ----
 
+## Undo referential integrity regression (adapter removal)
+
+When migrating usecases to call `app/services/note_store.py` directly (removing
+the `app/services/store.py` adapter), certain undo sequences (delete or move
+down) left the in-memory links in an invalid state, causing the UI to enter a
+loading/unresponsive state. Stashing those changes (restoring the adapter)
+returns stability.
+
+Status: adapter kept; revisit later with link invariants and stepwise migration.
+
+Suggested approach:
+- Add `note_store.debug_validate_links()` checks after each apply_* in undo flows
+  (move, delete, restore) to pinpoint inconsistencies early.
+- Migrate one usecase at a time (e.g., update_content → delete → move) and test
+  undo/redo sequences before removing the adapter entirely.
+
+----
+
 ## Errors when moving notes
 
 When moving notes up or down in the outline, it works fine 

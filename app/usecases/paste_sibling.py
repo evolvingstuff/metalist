@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 import uuid
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import get_clipboard, generate_new_uuid
-from app.endpoints.create_note import apply_insert_note
-from app.endpoints.delete_subtree import _collect_subtree_ids
+from app.usecases.create_note import apply_insert_note
+from app.usecases.delete_subtree import _collect_subtree_ids
 from app.services.undo_state import record_paste
 
 

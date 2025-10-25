@@ -11,7 +11,7 @@ from threading import Lock
 from typing import Dict, Iterable, List, Tuple
 
 from ..models.linked_list import LinkedListManager
-from ..render.note_renderer import build_note_tree
+from app.presentation.render.note_renderer import build_note_tree
 from ..models.database import SafeSession
 
 

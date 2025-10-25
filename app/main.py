@@ -1,24 +1,23 @@
 import os
-os.environ.setdefault("DISABLE_UNDO_SNAPSHOT", "1")
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
-from mako.lookup import TemplateLookup
+from app.presentation.templates import get_templates
 from .api import dev
-from .api.middleware import AuthMiddleware
+from .api.middleware.auth import AuthMiddleware
 from .core.config import VERSION
-from .db.engine import begin_writer, enable_read_guard
+from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.settings_sql import fetch_settings, insert_default_settings
-from .api.dependencies import get_db
+from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
 from .services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
-from app.app import router as api2_router
-from app.services.auth import router as api2_auth_router
-from app.services.memory import router as api2_memory_router
+from app.api.routes.notes import router as api2_router
+from app.api.routes.auth import router as api2_auth_router
+from app.api.routes.memory import router as api2_memory_router
 from app.core.config import API_PREFIX, V1_API_PREFIX
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
@@ -62,7 +61,6 @@ class InterceptHandler(logging.Handler):
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 app = FastAPI()
-logger.warning("Undo/redo snapshots disabled (set before config import)")
 
 # CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
 @app.exception_handler(RequestValidationError)
@@ -162,11 +160,7 @@ app.mount("/static", NoCacheStaticFiles(directory=str(Path(__file__).parent / "s
 
 ASSET_VERSION = str(int(time.time()))
 
-templates = TemplateLookup(
-    directories=[Path(__file__).parent / "templates"],
-    module_directory=str(Path(__file__).parent / "__pycache__" / "mako_modules"),
-    input_encoding="utf-8"
-)
+templates = get_templates()
 
 # Legacy v1 routers removed; keep dev utilities mounted separately.
 app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged

@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Dict
 import os
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store
 from app.services.sync import generate_new_uuid
-from app.endpoints.collapse import apply_set_collapse
+from app.usecases.collapse import apply_set_collapse
 
 
 @dataclass
