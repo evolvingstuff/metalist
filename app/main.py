@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
-from mako.lookup import TemplateLookup
+from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
 from .core.config import VERSION
@@ -162,11 +162,7 @@ app.mount("/static", NoCacheStaticFiles(directory=str(Path(__file__).parent / "s
 
 ASSET_VERSION = str(int(time.time()))
 
-templates = TemplateLookup(
-    directories=[Path(__file__).parent / "templates"],
-    module_directory=str(Path(__file__).parent / "__pycache__" / "mako_modules"),
-    input_encoding="utf-8"
-)
+templates = get_templates()
 
 # Legacy v1 routers removed; keep dev utilities mounted separately.
 app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged

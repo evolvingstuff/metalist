@@ -9,13 +9,10 @@ from app.api.deps import get_db
 from app.models.database import SafeSession
 from app.core.config import VERSION
 from app.services.memory_service import MemoryService, apply_memory_flags
-from mako.lookup import TemplateLookup
+from app.presentation.templates import get_templates
 
 
 router = APIRouter(tags=["memory2"])
-_template_lookup = TemplateLookup(
-    directories=[str(Path(__file__).resolve().parent.parent.parent / "templates")]
-)
 
 
 class MemoryRequest(BaseModel):
@@ -81,7 +78,7 @@ def memory_endpoint(payload: MemoryRequest, db: SafeSession = Depends(get_db)) -
     )
     apply_memory_flags(root_note, selected_note['id'])
 
-    template = _template_lookup.get_template('notes_list.html')
+    template = get_templates().get_template('notes_list.html')
     html = template.render(
         notes=[root_note],
         version=VERSION,
@@ -104,4 +101,3 @@ def memory_endpoint(payload: MemoryRequest, db: SafeSession = Depends(get_db)) -
         probability=probability,
         stats=stats_response,
     )
-
