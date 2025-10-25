@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from server_v2.endpoints.base import QueryCommand
 from server_v2.store import store, NodeRecord
 from server_v2.sync import set_clipboard, generate_new_uuid
+from app.models.utils import (
+    render_note_data_read_only,
+    note_data_to_html,
+    note_data_to_plain_text,
+)
 
 
 def snapshot_subtree_preorder(root_id: str) -> List[NodeRecord]:
@@ -21,6 +26,21 @@ def snapshot_subtree_preorder(root_id: str) -> List[NodeRecord]:
     return result
 
 
+def _build_serialized_tree(root_id: str) -> Dict[str, Any]:
+    """Build a pure data representation of a note subtree for rendering.
+
+    The shape matches v1's clipboard serialization used by
+    render_note_data_read_only/note_data_to_html/plain_text:
+      { content: str, children: [ ...same shape... ] }
+    """
+    rec = store.get(root_id)
+    children = store.children(root_id)
+    return {
+        "content": rec.content or "",
+        "children": [_build_serialized_tree(cid) for cid in children],
+    }
+
+
 @dataclass
 class CmdCopyNote(QueryCommand):
     note_id: str
@@ -29,9 +49,9 @@ class CmdCopyNote(QueryCommand):
     def describe(self) -> str:
         return f"CmdCopyNote(note={self.note_id}, client={self.client_id})"
 
-    def execute(self) -> Dict[str, str]:
+    def execute(self) -> Dict[str, Any]:
+        # Snapshot for server-side clipboard (structure + plaintext content)
         records = snapshot_subtree_preorder(self.note_id)
-        # Convert to serializable dicts
         payload = [
             {
                 "id": r.id,
@@ -44,4 +64,16 @@ class CmdCopyNote(QueryCommand):
             for r in records
         ]
         set_clipboard(self.client_id, payload)
-        return {"status": "copied", "updateUUID": generate_new_uuid()}
+
+        # Produce rendered HTML + plain text for system clipboard parity with v1
+        tree = _build_serialized_tree(self.note_id)
+        rendered = render_note_data_read_only(tree)
+        html = note_data_to_html(rendered)
+        plain_text = note_data_to_plain_text(rendered)
+
+        return {
+            "status": "success",
+            "html": html,
+            "plain_text": plain_text,
+            "updateUUID": generate_new_uuid(),
+        }
