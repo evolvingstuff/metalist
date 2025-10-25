@@ -10,9 +10,9 @@ Goal: Reach feature parity on `/api2` so we can remove the legacy `/api` stack.
 3. ✅ **Clipboard** – Nested paste logic fixed; copied notes return HTML/plaintext for clipboard integration.
 4. ✅ **Memory mode** – `/api2/memory` provides HTML payload, stats, and feedback flow.
 5. **Housekeeping for v1 removal** *(in progress)*
-   - Remove v1 router wiring once smoke tests pass against `/api2` only.
-   - Audit frontend config so nothing points at `/api`.
-   - Update docs / setup scripts for API2-only world.
+   - ✅ Remove legacy v1 endpoint modules (`app/api/{auth,notes,memory}.py`).
+   - ☐ Audit frontend config so nothing points at `/api`.
+   - ☐ Update docs / setup scripts for API2-only world.
 
 ## Supporting Work
 - Add targeted tests (later) once manual validation confirms behavior.
@@ -31,4 +31,4 @@ Goal: Reach feature parity on `/api2` so we can remove the legacy `/api` stack.
 - Undo/redo + clipboard fixes already merged; keep eye on regression coverage once tests return.
 
 ## Next Step
-→ Execute housekeeping tasks to detach `/api` (router removal, config audit, docs update), then plan v1 code deletion.
+→ Finish housekeeping: audit configs for `/api` references and update docs/setup for the API2-only flow.

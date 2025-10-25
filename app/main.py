@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from mako.lookup import TemplateLookup
-from .api import notes, dev, auth, memory
+from .api import dev
 from .api.middleware import AuthMiddleware
 from .core.config import VERSION
 from .db.engine import begin_writer, enable_read_guard
@@ -170,9 +170,7 @@ templates = TemplateLookup(
     input_encoding="utf-8"
 )
 
-# Do not mount v1 auth/notes/memory while v2 is active
-# app.include_router(auth.router)
-# app.include_router(notes.router, prefix="/api/notes", tags=["notes"])  # v1 reference
+# Legacy v1 routers removed; keep dev utilities mounted separately.
 app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
 # v2 routers mounted under configured API_PREFIX
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 

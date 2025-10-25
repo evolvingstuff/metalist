@@ -9,7 +9,9 @@ from app.api.dependencies import get_db
 from app.services.auth import AuthService
 from app.services.tokens import token_service
 from app.utils.encryption import set_encryption_key, clear_encryption_key
-from app.services.content_cache import refresh_encrypted_cache
+from app.services.content_cache import populate_cache_from_db, get_cached_content
+from app.services.note_store import store as note_store
+from server_v2.store import hydrate_from_prefetched as v2_hydrate
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -88,7 +90,19 @@ def login(request: Request, payload: LoginRequest, db: SafeSession = Depends(get
     )
 
     set_encryption_key(payload.password, settings.password_salt)
-    refresh_encrypted_cache(db)
+
+    prefetched_rows = populate_cache_from_db()
+    note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+
+    def _get_plaintext(note_id: str, row: dict) -> str:
+        plaintext = get_cached_content(note_id)
+        if plaintext is None:
+            raise RuntimeError(
+                f"V2 hydrate failed after login: no plaintext in cache for note {note_id}"
+            )
+        return plaintext
+
+    v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
 
     token = token_service.create_token(_client_info(request), master_key, dek)
     return LoginResponse(token=token, message="Login successful")
