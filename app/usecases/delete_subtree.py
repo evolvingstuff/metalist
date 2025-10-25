@@ -8,7 +8,7 @@ from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 
-from app.db.engine import begin_writer
+from app.db.session import begin_writer
 from app.db.notes_sql import update_links as db_update_links, delete_notes as db_delete_notes
 
 

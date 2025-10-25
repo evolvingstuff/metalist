@@ -9,7 +9,7 @@ from mako.lookup import TemplateLookup
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
 from .core.config import VERSION
-from .db.engine import begin_writer, enable_read_guard
+from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.deps import get_db
