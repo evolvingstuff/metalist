@@ -7,18 +7,18 @@ from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from mako.lookup import TemplateLookup
 from .api import dev
-from .api.middleware import AuthMiddleware
+from .api.middleware.auth import AuthMiddleware
 from .core.config import VERSION
 from .db.engine import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.settings_sql import fetch_settings, insert_default_settings
-from .api.dependencies import get_db
+from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
 from .services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
-from app.app import router as api2_router
-from app.services.auth import router as api2_auth_router
-from app.services.memory import router as api2_memory_router
+from app.api.routes.notes import router as api2_router
+from app.api.routes.auth import router as api2_auth_router
+from app.api.routes.memory import router as api2_memory_router
 from app.core.config import API_PREFIX, V1_API_PREFIX
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
