@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 import uuid
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 

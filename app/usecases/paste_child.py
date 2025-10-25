@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import get_clipboard, generate_new_uuid
-from app.endpoints.paste_sibling import _insert_cloned_subtree_at
-from app.endpoints.delete_subtree import _collect_subtree_ids
+from app.usecases.paste_sibling import _insert_cloned_subtree_at
+from app.usecases.delete_subtree import _collect_subtree_ids
 from app.services.undo_state import record_paste
 
 

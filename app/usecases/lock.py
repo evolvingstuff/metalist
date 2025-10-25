@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.sync import acquire_note_lock, release_note_lock, get_current_sync_uuid
 
 

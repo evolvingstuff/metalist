@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 

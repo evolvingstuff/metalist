@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, List
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.snapshot import build_view_snapshot
 
 

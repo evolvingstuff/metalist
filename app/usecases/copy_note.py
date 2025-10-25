@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Any
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import set_clipboard, generate_new_uuid
 from app.models.utils import (

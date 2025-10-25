@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List
 
-from app.endpoints.base import QueryCommand
+from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 
@@ -124,4 +124,3 @@ class CmdDeleteSubtree(QueryCommand):
 
         update_uuid = generate_new_uuid()
         return {"status": "success", "updateUUID": update_uuid}
-
