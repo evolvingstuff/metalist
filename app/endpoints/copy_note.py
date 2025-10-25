@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Any
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.store import store, NodeRecord
-from server_v2.sync import set_clipboard, generate_new_uuid
+from app.endpoints.base import QueryCommand
+from app.services.store import store, NodeRecord
+from app.services.sync import set_clipboard, generate_new_uuid
 from app.models.utils import (
     render_note_data_read_only,
     note_data_to_html,

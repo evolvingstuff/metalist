@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, List
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.snapshot import build_view_snapshot
+from app.endpoints.base import QueryCommand
+from app.services.snapshot import build_view_snapshot
 
 
 @dataclass

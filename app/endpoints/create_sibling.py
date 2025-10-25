@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 import uuid
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.store import store
-from server_v2.sync import generate_new_uuid
-from server_v2.endpoints.create_note import apply_insert_note
+from app.endpoints.base import QueryCommand
+from app.services.store import store
+from app.services.sync import generate_new_uuid
+from app.endpoints.create_note import apply_insert_note
 
 
 @dataclass
@@ -40,7 +40,7 @@ class CmdCreateSibling(QueryCommand):
 
         apply_insert_note(note_uuid, parent_id, prev_id, next_id, content)
 
-        from server_v2.undo_state import record_create
+        from app.services.undo_state import record_create
         rec = {
             "id": note_uuid,
             "parent_id": parent_id,

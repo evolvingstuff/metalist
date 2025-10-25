@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.sync import get_current_sync_uuid
+from app.endpoints.base import QueryCommand
+from app.services.sync import get_current_sync_uuid
 
 
 @dataclass

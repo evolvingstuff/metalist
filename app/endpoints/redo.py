@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from server_v2.endpoints.base import QueryCommand
-from server_v2.undo_state import redo as do_redo, maybe_reset_on_context
-from server_v2.sync import get_current_sync_uuid
+from app.endpoints.base import QueryCommand
+from app.services.undo_state import redo as do_redo, maybe_reset_on_context
+from app.services.sync import get_current_sync_uuid
 
 
 @dataclass

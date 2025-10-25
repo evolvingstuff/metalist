@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.store import store
-from server_v2.sync import generate_new_uuid
+from app.endpoints.base import QueryCommand
+from app.services.store import store
+from app.services.sync import generate_new_uuid
 
 from app.db.engine import begin_writer
 from app.db.notes_sql import update_note_content as db_update_note_content
@@ -59,7 +59,7 @@ class CmdUpdateContent(QueryCommand):
 
         # Record in undo stack
         try:
-            from server_v2.undo_state import record_update
+            from app.services.undo_state import record_update
             record_update(self.client_id, self.note_id, before=prev, after=self.content)
         except Exception:
             # Fail fast on internal errors; if undo tracking fails, surface explicitly

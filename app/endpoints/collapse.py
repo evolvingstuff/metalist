@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from typing import Dict
 import os
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.store import store
-from server_v2.sync import generate_new_uuid
+from app.endpoints.base import QueryCommand
+from app.services.store import store
+from app.services.sync import generate_new_uuid
 
 from app.db.engine import begin_writer
 from app.db.notes_sql import update_links as db_update_links
@@ -40,7 +40,7 @@ class CmdCollapse(QueryCommand):
             os._exit(1)
 
         # record undo
-        from server_v2.undo_state import record_collapse
+        from app.services.undo_state import record_collapse
         record_collapse(self.client_id, self.note_id, before=before, after=True)
 
         return {"status": "updated", "updateUUID": generate_new_uuid()}

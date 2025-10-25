@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from server_v2.endpoints.update_content import apply_update_content
-from server_v2.endpoints.delete_subtree import apply_delete_subtree, apply_restore_records
-from server_v2.endpoints.move import apply_move
-from server_v2.store import store
+from app.endpoints.update_content import apply_update_content
+from app.endpoints.delete_subtree import apply_delete_subtree, apply_restore_records
+from app.endpoints.move import apply_move
+from app.services.store import store
 import os
 import logging
-from server_v2.sync import generate_new_uuid
+from app.services.sync import generate_new_uuid
 
 
 @dataclass
@@ -160,7 +160,7 @@ def undo(client_id: str) -> bool:
         return True
     if op.get("type") == "collapse":
         # invert collapse
-        from server_v2.endpoints.collapse import apply_set_collapse
+        from app.endpoints.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["before"]))
         ctx.redo.append(op)
         generate_new_uuid()
@@ -191,7 +191,7 @@ def redo(client_id: str) -> bool:
     if op.get("type") == "create_note":
         # recreate
         rec = op["record"]
-        from server_v2.store import NodeRecord
+        from app.services.store import NodeRecord
         apply_restore_records([NodeRecord(**rec)])
         ctx.history.append(op)
         generate_new_uuid()
@@ -215,7 +215,7 @@ def redo(client_id: str) -> bool:
         generate_new_uuid()
         return True
     if op.get("type") == "collapse":
-        from server_v2.endpoints.collapse import apply_set_collapse
+        from app.endpoints.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["after"]))
         ctx.history.append(op)
         generate_new_uuid()

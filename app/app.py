@@ -1,26 +1,25 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
 
-from server_v2.endpoints.view import CmdView
-from server_v2.snapshot import build_view_snapshot
-from server_v2.endpoints.create_note import CmdCreateNote
-from server_v2.endpoints.create_sibling import CmdCreateSibling
-from server_v2.endpoints.create_child import CmdCreateChild
-from server_v2.endpoints.update_content import CmdUpdateContent
-from server_v2.endpoints.delete_subtree import CmdDeleteSubtree
-from server_v2.endpoints.move import CmdMove
-from server_v2.endpoints.collapse import CmdCollapse
-from server_v2.endpoints.expand import CmdExpand
-from server_v2.endpoints.copy_note import CmdCopyNote
-from server_v2.endpoints.paste_sibling import CmdPasteSibling
-from server_v2.endpoints.paste_child import CmdPasteChild
-from server_v2.endpoints.undo import CmdUndo
-from server_v2.endpoints.redo import CmdRedo
-from server_v2.sync import get_current_sync_uuid
-from server_v2.endpoints.check_updates import CmdCheckUpdates
-from server_v2.endpoints.lock import CmdAcquireLock, CmdReleaseLock
+from app.endpoints.view import CmdView
+from app.services.snapshot import build_view_snapshot
+from app.endpoints.create_note import CmdCreateNote
+from app.endpoints.create_sibling import CmdCreateSibling
+from app.endpoints.create_child import CmdCreateChild
+from app.endpoints.update_content import CmdUpdateContent
+from app.endpoints.delete_subtree import CmdDeleteSubtree
+from app.endpoints.move import CmdMove
+from app.endpoints.collapse import CmdCollapse
+from app.endpoints.expand import CmdExpand
+from app.endpoints.copy_note import CmdCopyNote
+from app.endpoints.paste_sibling import CmdPasteSibling
+from app.endpoints.paste_child import CmdPasteChild
+from app.endpoints.undo import CmdUndo
+from app.endpoints.redo import CmdRedo
+from app.services.sync import get_current_sync_uuid
+from app.endpoints.check_updates import CmdCheckUpdates
+from app.endpoints.lock import CmdAcquireLock, CmdReleaseLock
 from app.core.config import VERSION
 
 

@@ -4,7 +4,7 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.services.tokens import token_service
-from app.services.auth import AuthService
+from app.services.auth_old import AuthService
 from app.services.maintenance_mode import maintenance_service
 from app.models.database import SafeSession
 from app.utils.encryption import set_encryption_key

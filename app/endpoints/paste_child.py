@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List
-import uuid
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.store import store, NodeRecord
-from server_v2.sync import get_clipboard, generate_new_uuid
-from server_v2.endpoints.create_note import apply_insert_note
-from server_v2.endpoints.paste_sibling import _insert_cloned_subtree_at
-from server_v2.endpoints.delete_subtree import _collect_subtree_ids
-from server_v2.undo_state import record_paste
+from app.endpoints.base import QueryCommand
+from app.services.store import store, NodeRecord
+from app.services.sync import get_clipboard, generate_new_uuid
+from app.endpoints.paste_sibling import _insert_cloned_subtree_at
+from app.endpoints.delete_subtree import _collect_subtree_ids
+from app.services.undo_state import record_paste
 
 
 @dataclass

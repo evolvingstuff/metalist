@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List
 
-from server_v2.endpoints.base import QueryCommand
-from server_v2.store import store, NodeRecord
-from server_v2.sync import generate_new_uuid
+from app.endpoints.base import QueryCommand
+from app.services.store import store, NodeRecord
+from app.services.sync import generate_new_uuid
 
 from app.db.engine import begin_writer
 from app.db.notes_sql import update_links as db_update_links, delete_notes as db_delete_notes
@@ -119,7 +119,7 @@ class CmdDeleteSubtree(QueryCommand):
         apply_delete_subtree(self.note_id)
 
         # Record for undo
-        from server_v2.undo_state import record_delete
+        from app.services.undo_state import record_delete
         record_delete(self.client_id, snapshot)
 
         update_uuid = generate_new_uuid()

@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
-from app.services.auth import AuthService
+from app.services.auth_old import AuthService
 from app.models.database import SafeSession
 
 # Global encryption service instance (per-request)

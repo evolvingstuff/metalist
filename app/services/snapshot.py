@@ -4,8 +4,8 @@ import hashlib
 import json
 from typing import Dict, List, Optional, Tuple, Set
 
-from server_v2.store import store as note_store
-from server_v2.sync import get_all_locks
+from app.services.store import store as note_store
+from app.services.sync import get_all_locks
 
 # Windowing constants (tuned later)
 ROOT_CHUNK_SIZE = 100

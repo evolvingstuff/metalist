@@ -1,9 +1,8 @@
 import os
 os.environ.setdefault("DISABLE_UNDO_SNAPSHOT", "1")
 
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from mako.lookup import TemplateLookup
@@ -16,10 +15,10 @@ from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.dependencies import get_db
 from .services.content_cache import populate_cache_from_db
 from .services.note_store import store as note_store
-from server_v2.store import hydrate_from_prefetched as v2_hydrate
-from server_v2.app import router as api2_router
-from server_v2.auth import router as api2_auth_router
-from server_v2.memory import router as api2_memory_router
+from app.services.store import hydrate_from_prefetched as v2_hydrate
+from app.app import router as api2_router
+from app.services.auth import router as api2_auth_router
+from app.services.memory import router as api2_memory_router
 from app.core.config import API_PREFIX, V1_API_PREFIX
 from .core.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
@@ -30,7 +29,6 @@ import sys
 import uuid
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
-import mimetypes
 import os
 
 logger.remove()
@@ -227,7 +225,7 @@ async def log_requests(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: SafeSession = Depends(get_db)):
     try:
-        from .services.auth import AuthService
+        from .services.auth_old import AuthService
         
         template = templates.get_template("index.html")
         
