@@ -107,6 +107,15 @@ def record_collapse(client_id: str, note_id: str, *, before: bool, after: bool) 
     ctx.redo.clear()
 
 
+def record_paste(client_id: str, records: List[NodeRecord]) -> None:
+    ctx = _ctx(client_id)
+    ctx.history.append({
+        "type": "paste_subtree",
+        "records": records,
+    })
+    ctx.redo.clear()
+
+
 def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
     ctx = _ctx(client_id)
     sc = search_context or ""
@@ -156,6 +165,17 @@ def undo(client_id: str) -> bool:
         ctx.redo.append(op)
         generate_new_uuid()
         return True
+    if op.get("type") == "paste_subtree":
+        # delete the pasted subtree
+        from server_v2.endpoints.delete_subtree import apply_delete_subtree
+        root_id = op["records"][0].id if op["records"] else None
+        if not root_id:
+            print("FATAL: paste_subtree undo missing root record")
+            os._exit(1)
+        apply_delete_subtree(root_id)
+        ctx.redo.append(op)
+        generate_new_uuid()
+        return True
     raise RuntimeError(f"Unsupported undo op: {op.get('type')}")
 
 
@@ -198,6 +218,13 @@ def redo(client_id: str) -> bool:
     if op.get("type") == "collapse":
         from server_v2.endpoints.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["after"]))
+        ctx.history.append(op)
+        generate_new_uuid()
+        return True
+    if op.get("type") == "paste_subtree":
+        # restore the subtree
+        from server_v2.endpoints.delete_subtree import apply_restore_records
+        apply_restore_records(op["records"])  
         ctx.history.append(op)
         generate_new_uuid()
         return True

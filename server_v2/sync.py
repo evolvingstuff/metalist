@@ -5,6 +5,7 @@ from typing import Dict, Tuple
 
 _update_uuid: str = uuid.uuid4().hex
 _locks: Dict[str, str] = {}
+_clipboards: Dict[str, list] = {}
 
 
 def generate_new_uuid() -> str:
@@ -40,3 +41,11 @@ def release_note_lock(note_id: str, client_id: str) -> None:
 def get_all_locks() -> Dict[str, str]:
     return dict(_locks)
 
+
+def set_clipboard(client_id: str, records: list) -> None:
+    _clipboards[client_id] = records
+    generate_new_uuid()
+
+
+def get_clipboard(client_id: str) -> list:
+    return list(_clipboards.get(client_id) or [])

@@ -187,11 +187,9 @@ def delete_note(note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/copy")
-def copy_stub(note_id: str, body: dict):
-    try:
-        return CmdCopyNote().execute()
-    except Exception as e:
-        _not_impl(e)
+def copy_note_endpoint(note_id: str, body: dict):
+    cmd = CmdCopyNote(note_id=note_id, client_id=body["clientId"])  
+    return cmd.execute()
 
 
 @router.get("/notes/{note_id}/export-html")
@@ -203,19 +201,15 @@ def export_html_stub(note_id: str):
 
 
 @router.post("/notes/paste-sibling/{target_note_id}")
-def paste_sibling_stub(target_note_id: str, body: dict):
-    try:
-        return CmdPasteSibling().execute()
-    except Exception as e:
-        _not_impl(e)
+def paste_sibling_endpoint(target_note_id: str, body: dict):
+    cmd = CmdPasteSibling(target_note_id=target_note_id, client_id=body["clientId"]) 
+    return cmd.execute()
 
 
 @router.post("/notes/paste-child/{target_note_id}")
-def paste_child_stub(target_note_id: str, body: dict):
-    try:
-        return CmdPasteChild().execute()
-    except Exception as e:
-        _not_impl(e)
+def paste_child_endpoint(target_note_id: str, body: dict):
+    cmd = CmdPasteChild(target_note_id=target_note_id, client_id=body["clientId"]) 
+    return cmd.execute()
 
 
 @router.post("/notes/undo")
