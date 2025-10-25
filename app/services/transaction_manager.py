@@ -2,9 +2,6 @@ from typing import Optional
 from threading import Lock
 import logging
 
-from ..models.api_transaction import ApiTransaction
-from ..undo_redo import CommandStack
-
 logger = logging.getLogger(__name__)
 
 
@@ -21,13 +18,14 @@ class TransactionManager:
     """
     
     def __init__(self):
-        self.current_transaction: Optional[ApiTransaction] = None
-        self.command_stack = CommandStack()
+        # Snapshot-based undo subsystem removed; keep minimal transaction shell
+        self.current_transaction = None
+        self.command_stack_size = 0
         self.lock = Lock()
         self.last_search_query: Optional[str] = None
         self.active_client_id: Optional[str] = None
     
-    def start_transaction(self, db, client_id: str = None) -> ApiTransaction:
+    def start_transaction(self, db, client_id: str = None):
         """
         Start a new transaction.
         
@@ -42,38 +40,18 @@ class TransactionManager:
         """
         with self.lock:
             if self.current_transaction is not None:
-                active = self.current_transaction
-                logger.error(
-                    "Transaction already in progress", extra={
-                        "active_transaction": getattr(active, "uuid", None),
-                        "active_client": getattr(active, "client_id", None),
-                        "requesting_client": client_id,
-                    }
-                )
                 raise Exception("Transaction already in progress")
-
-            self.current_transaction = ApiTransaction(
-                db=db,
-                transaction_manager=self,
-                client_id=client_id,
-            )
-            logger.debug(f"Transaction {self.current_transaction.uuid} started for client {client_id}")
+            # Return a lightweight token object
+            self.current_transaction = object()
+            logger.debug(f"Transaction started for client {client_id}")
             return self.current_transaction
     
     def end_transaction(self):
         """End the current transaction and clean up."""
         with self.lock:
-            if self.current_transaction:
-                logger.debug(
-                    "Transaction ended",
-                    extra={
-                        "transaction": self.current_transaction.uuid,
-                        "client": self.current_transaction.client_id,
-                    },
-                )
             self.current_transaction = None
     
-    def get_current_transaction(self) -> Optional[ApiTransaction]:
+    def get_current_transaction(self):
         """Get the currently active transaction, if any."""
         return self.current_transaction
     
@@ -92,9 +70,9 @@ class TransactionManager:
         normalized_last = normalized_last if normalized_last else None
         
         if normalized_current != normalized_last:
-            if self.command_stack.stack:
-                logger.info(f"Search context changed ('{normalized_last}' → '{normalized_current}'), clearing undo stack (was {len(self.command_stack.stack)} commands)")
-                self.command_stack.clear_all()
+            if self.command_stack_size:
+                logger.info(f"Search context changed ('{normalized_last}' → '{normalized_current}'), clearing undo stack (was {self.command_stack_size} commands)")
+                self.command_stack_size = 0
             else:
                 logger.debug(f"Search context changed ('{normalized_last}' → '{normalized_current}'), undo stack was already empty")
             
@@ -110,9 +88,9 @@ class TransactionManager:
             client_id: The ID of the client performing an operation
         """
         if self.active_client_id != client_id:
-            if self.command_stack.stack:
-                logger.info(f"🔧 UNDO STACK: Client ownership changed from {self.active_client_id} to {client_id}, clearing stack (was {len(self.command_stack.stack)} commands)")
-                self.command_stack.clear_all()
+            if self.command_stack_size:
+                logger.info(f"🔧 UNDO STACK: Client ownership changed from {self.active_client_id} to {client_id}, clearing stack (was {self.command_stack_size} commands)")
+                self.command_stack_size = 0
             else:
                 logger.info(f"🔧 UNDO STACK: Client ownership set to {client_id} (stack was empty)")
             
@@ -121,17 +99,8 @@ class TransactionManager:
     def add_command_to_stack(self, command, client_id: str):
         """Add a command to the undo/redo stack."""
         self.check_client_ownership(client_id)
-        self.command_stack.push(command)
-        logger.info(f"🔧 UNDO STACK: Command added to stack for client {client_id}")
-        logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
-        
-        # Print current stack contents with indentation
-        logger.info("🔧 UNDO STACK CONTENTS:")
-        for i, cmd in enumerate(self.command_stack.stack):
-            indent = "    " * (i + 1)
-            is_current = i == self.command_stack.current_index
-            marker = " <-- CURRENT" if is_current else ""
-            logger.info(f"{indent}{cmd.func_name} (depth {i + 1}){marker}")
+        self.command_stack_size += 1
+        logger.info(f"🔧 UNDO STACK: Command added to stack for client {client_id} (size={self.command_stack_size})")
     
     def undo(self, db, client_id: str = None) -> bool:
         """Perform an undo operation."""
@@ -142,15 +111,8 @@ class TransactionManager:
             logger.info(f"🔧 UNDO STACK: Undo denied - client {client_id} does not own stack (owned by {self.active_client_id})")
             return False
             
-        if self.command_stack.current_index >= 0:
-            self.command_stack.undo(db)
-            logger.info(f"🔧 UNDO STACK: Undo executed")
-            logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
-            return True
-        else:
-            logger.info(f"🔧 UNDO STACK: No operations to undo")
-            logger.info(f"🔧 UNDO STACK STATE: size={len(self.command_stack.stack)}, index={self.command_stack.current_index}, owner={self.active_client_id}")
-            return False
+        logger.info(f"🔧 UNDO STACK: No operations to undo (snapshot-based engine removed)")
+        return False
     
     def redo(self, db, client_id: str = None) -> bool:
         """Perform a redo operation."""
@@ -161,13 +123,8 @@ class TransactionManager:
             logger.info(f"🔧 UNDO STACK: Redo denied - client {client_id} does not own stack (owned by {self.active_client_id})")
             return False
             
-        if self.command_stack.current_index < len(self.command_stack.stack) - 1:
-            self.command_stack.redo(db)
-            logger.info(f"🔧 UNDO STACK: After redo (size = {len(self.command_stack.stack)}, index = {self.command_stack.current_index})")
-            return True
-        else:
-            logger.info(f"🔧 UNDO STACK: No operations to redo")
-            return False
+        logger.info(f"🔧 UNDO STACK: No operations to redo (snapshot-based engine removed)")
+        return False
 
 
 # Global singleton instance - this is the only global state we need

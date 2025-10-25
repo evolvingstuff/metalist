@@ -1,5 +1,4 @@
 import os
-os.environ.setdefault("DISABLE_UNDO_SNAPSHOT", "1")
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -62,7 +61,6 @@ class InterceptHandler(logging.Handler):
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 app = FastAPI()
-logger.warning("Undo/redo snapshots disabled (set before config import)")
 
 # CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
 @app.exception_handler(RequestValidationError)
