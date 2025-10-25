@@ -44,10 +44,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """Check authentication for protected routes."""
         path = request.url.path
 
-        # Allow all v2 endpoints without auth checks; v2 manages its own lifecycle
-        if path.startswith(API_PREFIX + '/') or path == API_PREFIX:
-            return await call_next(request)
-
         # Block any v1 API usage with an explicit 410 Gone (no DB access)
         if path.startswith('/api') and not (path.startswith(API_PREFIX) or path == API_PREFIX):
             ref = request.headers.get('referer', '-')
@@ -98,7 +94,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 auth = AuthService(db)
 
                 # Special case: password creation endpoint is only public if no password exists
-                if path == "/api/auth/settings/password/create" and not auth.has_password():
+                if path in {"/api/auth/settings/password/create", f"{API_PREFIX}/auth/settings/password/create"} and not auth.has_password():
                     if not is_quiet:
                         print(f"Password creation allowed - no password set")
                     return await call_next(request)

@@ -5,6 +5,7 @@ import json
 from typing import Dict, List, Optional, Tuple, Set
 
 from server_v2.store import store as note_store
+from server_v2.sync import get_all_locks
 
 # Windowing constants (tuned later)
 ROOT_CHUNK_SIZE = 100
@@ -67,6 +68,28 @@ def build_view_snapshot(
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
 
+    search_term: Optional[str] = None
+    if search:
+        stripped = search.strip()
+        if stripped:
+            search_term = stripped.lower()
+
+    allow_cache: Dict[str, bool] = {}
+
+    def _should_include(nid: str) -> bool:
+        if search_term is None:
+            return True
+        if nid in allow_cache:
+            return allow_cache[nid]
+        rec = note_store.get(nid)
+        content = rec.content or ""
+        content_match = search_term in content.lower()
+        child_match = any(_should_include(child) for child in note_store.children(nid))
+        editing_match = bool(editing_note_id and nid == editing_note_id)
+        result = content_match or child_match or editing_match
+        allow_cache[nid] = result
+        return result
+
     # Determine root window
     ordered_root_ids = note_store.children(None)
     root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
@@ -76,10 +99,15 @@ def build_view_snapshot(
         for rid in (client_seen_root_ids or set())
         if rid in root_index_map
     }
-    window_end = _determine_root_window_end(
-        ordered_root_ids, root_index_map, client_known_note_ids, seen_root_indices, editing_note_id
-    )
-    allowed_root_ids: Optional[Set[str]] = set(ordered_root_ids[: window_end + 1]) if window_end >= 0 else set()
+    if search_term is not None:
+        allowed_root_ids: Optional[Set[str]] = {
+            rid for rid in ordered_root_ids if _should_include(rid)
+        }
+    else:
+        window_end = _determine_root_window_end(
+            ordered_root_ids, root_index_map, client_known_note_ids, seen_root_indices, editing_note_id
+        )
+        allowed_root_ids = set(ordered_root_ids[: window_end + 1]) if window_end >= 0 else set()
 
     def traverse(parent_id: Optional[str]) -> None:
         ids = note_store.children(parent_id)
@@ -87,6 +115,8 @@ def build_view_snapshot(
         if parent_id is None and allowed_root_ids is not None:
             ids = [i for i in ids if i in allowed_root_ids]
         for idx, nid in enumerate(ids):
+            if not _should_include(nid):
+                continue
             rec = note_store.get(nid)
             prev_id = ids[idx - 1] if idx > 0 else None
             next_id = ids[idx + 1] if idx + 1 < len(ids) else None
@@ -109,9 +139,12 @@ def build_view_snapshot(
                 "flags": flags,
                 "hash": h,
             }
-            if not flags["isCollapsed"] or flags["isEditing"]:
+            if not flags["isCollapsed"] or flags["isEditing"] or search_term is not None:
                 traverse(rec.id)
 
     traverse(None)
-    locks: Dict[str, str] = {}
+    visible_ids = {entry["id"] for entry in structure}
+    locks: Dict[str, str] = {
+        note_id: owner for note_id, owner in get_all_locks().items() if note_id in visible_ids
+    }
     return structure, payloads, locks

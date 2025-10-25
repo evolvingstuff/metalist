@@ -167,7 +167,6 @@ def undo(client_id: str) -> bool:
         return True
     if op.get("type") == "paste_subtree":
         # delete the pasted subtree
-        from server_v2.endpoints.delete_subtree import apply_delete_subtree
         root_id = op["records"][0].id if op["records"] else None
         if not root_id:
             print("FATAL: paste_subtree undo missing root record")
@@ -223,7 +222,6 @@ def redo(client_id: str) -> bool:
         return True
     if op.get("type") == "paste_subtree":
         # restore the subtree
-        from server_v2.endpoints.delete_subtree import apply_restore_records
         apply_restore_records(op["records"])  
         ctx.history.append(op)
         generate_new_uuid()

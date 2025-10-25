@@ -14,7 +14,6 @@ from server_v2.endpoints.move import CmdMove
 from server_v2.endpoints.collapse import CmdCollapse
 from server_v2.endpoints.expand import CmdExpand
 from server_v2.endpoints.copy_note import CmdCopyNote
-from server_v2.endpoints.export_html import CmdExportHtml
 from server_v2.endpoints.paste_sibling import CmdPasteSibling
 from server_v2.endpoints.paste_child import CmdPasteChild
 from server_v2.endpoints.undo import CmdUndo
@@ -57,18 +56,20 @@ def view_diff(payload: dict):
         if client_hashes.get(note_id) != data.get("hash")
     }
 
+    update_uuid = get_current_sync_uuid()
+
     response = {
         "snapshot": {
             "structure": structure,
             "notes": filtered_notes,
             "locks": locks,
-            "updateUUID": "",
+            "updateUUID": update_uuid,
             "version": VERSION,
             "currentClientId": client_id,
             "searchQuery": search,
             "editingNoteId": editing_note_id,
         },
-        "updateUUID": "",
+        "updateUUID": update_uuid,
     }
     return response
 
@@ -181,14 +182,6 @@ def delete_note(note_id: str, body: dict):
 def copy_note_endpoint(note_id: str, body: dict):
     cmd = CmdCopyNote(note_id=note_id, client_id=body["clientId"])  
     return cmd.execute()
-
-
-@router.get("/notes/{note_id}/export-html")
-def export_html_stub(note_id: str):
-    try:
-        return CmdExportHtml().execute()
-    except Exception as e:
-        _not_impl(e)
 
 
 @router.post("/notes/paste-sibling/{target_note_id}")
