@@ -7,7 +7,7 @@ from app.services.tokens import token_service
 from app.services.auth_service import AuthService
 from app.services.maintenance_mode import maintenance_service
 from app.models.database import SafeSession
-from app.utils.encryption import set_encryption_key
+from app.security.encryption import set_encryption_key
 from app.core.config import API_PREFIX, V1_API_PREFIX
 
 
@@ -129,4 +129,3 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 token_service.refresh_token(token)
         
         return await call_next(request)
-

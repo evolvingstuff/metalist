@@ -10,7 +10,7 @@ from app.services.sync import generate_new_uuid
 
 from app.db.engine import begin_writer
 from app.db.notes_sql import update_note_content as db_update_note_content
-from app.utils.encryption import encrypt
+from app.security.encryption import encrypt
 
 
 def apply_update_content(note_id: str, content: str) -> None:

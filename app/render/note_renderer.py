@@ -10,7 +10,7 @@ from app.core import config
 from app.utils.text_utils import strip_html
 from app.services.content_cache import get_cached_content
 from app.services.note_store import store as note_store
-from app.utils.encryption import decrypt
+from app.security.encryption import decrypt
 from html import escape
 
 

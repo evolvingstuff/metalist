@@ -88,7 +88,7 @@ def login(request: Request, payload: LoginRequest, db: SafeSession = Depends(get
         master_key,
     )
 
-    from app.utils.encryption import set_encryption_key
+    from app.security.encryption import set_encryption_key
 
     set_encryption_key(payload.password, settings.password_salt)
 
@@ -112,7 +112,7 @@ def login(request: Request, payload: LoginRequest, db: SafeSession = Depends(get
 @router.post("/logout")
 def logout(token: str = Depends(_require_auth)):
     token_service.revoke_token(token)
-    from app.utils.encryption import clear_encryption_key
+    from app.security.encryption import clear_encryption_key
 
     clear_encryption_key()
     return {"message": "Logout successful"}
@@ -170,4 +170,3 @@ def remove_password(payload: PasswordRemoveRequest, db: SafeSession = Depends(ge
 @router.get("/sessions")
 def sessions(token: str = Depends(_require_auth)):
     return {"sessions": token_service.list_active_sessions()}
-

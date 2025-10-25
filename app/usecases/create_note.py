@@ -11,7 +11,7 @@ from app.services.sync import generate_new_uuid
 
 from app.db.engine import begin_writer
 from app.db.notes_sql import insert_note as db_insert_note, update_links as db_update_links
-from app.utils.encryption import encrypt
+from app.security.encryption import encrypt
 
 
 def apply_insert_note(note_id: str, parent_id: Optional[str], prev_id: Optional[str], next_id: Optional[str], content: str = "") -> None:

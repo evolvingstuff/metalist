@@ -13,7 +13,7 @@ from app.db.notes_sql import (
 )
 from app.services import content_cache
 from app.services.note_store import store as note_store
-from app.utils.encryption import encrypt
+from app.security.encryption import encrypt
 
 
 @dataclass

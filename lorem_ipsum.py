@@ -36,7 +36,7 @@ from app.db.settings_sql import fetch_settings, insert_default_settings
 from app.models.database import SafeSession
 from app.services.content_cache import cache_note, clear_cache
 from app.services.note_store import store as note_store
-from app.utils.encryption import encrypt
+from app.security.encryption import encrypt
 
 
 default_root_count =  10_000  # 1000

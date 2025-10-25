@@ -75,7 +75,7 @@ def apply_delete_subtree(note_id: str) -> None:
 def apply_restore_records(records: List[NodeRecord]) -> None:
     # Reinsert records in preorder; rely on stored prev/next pointers
     from app.db.notes_sql import insert_note as db_insert_note
-    from app.utils.encryption import encrypt
+    from app.security.encryption import encrypt
 
     # Insert in DB
     with begin_writer() as connection:
