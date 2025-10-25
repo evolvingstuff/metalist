@@ -26,8 +26,8 @@ A minimalist note-taking application with a focus on server-side rendering and e
 - CSS Custom Properties for theming
 
 ### Testing
-- Cypress - End-to-end UI testing
-- Property-based testing for backend
+- Cypress - End-to-end UI testing (primary automated coverage)
+- Manual smoke scripts for API2 flows
 
 ## Architecture
 
@@ -81,39 +81,9 @@ python app.py
 
 ### Running Tests
 
-#### Backend tests:
+Automated backend/unit suites have been retired during the APIv2 migration. Focus on the Cypress suite plus manual regression passes:
 
-Unit tests (standard suite):
-```
-python -m pytest tests/unit
-```
-
-Run only the service-driven undo/redo fuzzers (helpful after workflow changes):
-```
-python -m pytest tests/unit/test_undo_redo_fuzz.py tests/unit/test_undo_redo_fuzz_encrypted.py
-```
-
-Enable integrity assertions when debugging data issues:
-```
-DEV_ENFORCE_INTEGRITY_CHECKS=1 python -m pytest tests/unit
-```
-
-Generate coverage (creates coverage.xml):
-```
-python -m pytest --cov=app --cov=tests --cov-report=term-missing --cov-report=xml
-```
-
-Integration tests (FastAPI TestClient):
-```
-python -m pytest tests/integration
-```
-
-Property-based linked list fuzzing:
-```
-python -m pytest tests/unit/test_linked_list_hypothesis.py
-```
-
-#### Frontend tests:
+#### Frontend/UI (Cypress)
 
 Open Cypress Test Runner
 ```

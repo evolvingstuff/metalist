@@ -33,7 +33,7 @@ sequenceDiagram
         alt Note has unsaved changes (isDirty = true)
             Actions->>Content: actionSaveNote(noteId)
             Content->>API: updateNote(noteId, content)
-            API->>Server: PUT /api/notes/{id}
+            API->>Server: PUT /api2/notes/{id}
             Server->>Service: update_note(noteId, content)
             Service->>LLM: update_note()
             LLM->>DB: Update content_encrypted
@@ -47,7 +47,7 @@ sequenceDiagram
         end
         
         Actions->>API: copyNote(noteId)
-        API->>Server: POST /api/notes/{id}/copy
+        API->>Server: POST /api2/notes/{id}/copy
         Server->>Service: copy_note_subtree(noteId)
         Service->>LLM: copy_note(noteId)
         LLM->>DB: Read note tree

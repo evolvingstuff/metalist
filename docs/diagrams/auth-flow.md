@@ -15,7 +15,7 @@ sequenceDiagram
     
     U->>Browser: Enter password
     Browser->>Browser: Add loading cursor
-    Browser->>API: POST /api/auth/login {password}
+    Browser->>API: POST /api2/auth/login {password}
     
     API->>AuthSvc: validate_password(password)
     AuthSvc->>DB: Get AppSettings

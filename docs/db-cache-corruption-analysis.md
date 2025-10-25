@@ -1,7 +1,7 @@
 # DB Cache Corruption Investigation
 
 ## Incident Snapshot
-- **Endpoint:** `/api/notes/view`
+- **Endpoint:** `/api2/notes/view`
 - **Crash signature:** `CACHE CORRUPTION: Note f22c2495-c1e6-4c85-9e55-6b8ee9496e96 not found in cache`
 - **Trigger:** Server startup followed by rendering notes view
 - **Observed effect:** FastAPI middleware aborted request because `build_note_tree` could not locate cached plaintext for note `f22c2495-c1e6-4c85-9e55-6b8ee9496e96`.

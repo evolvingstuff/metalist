@@ -155,12 +155,12 @@ When implementing this architecture from a different system:
 
 All endpoints except login require authentication token when password protection is enabled:
 
-- `POST /api/auth/login` - Authenticate and establish session
-- `POST /api/auth/logout` - Clear session and keys from memory
-- `POST /api/auth/settings/password/create` - Enable password protection
-- `PUT /api/auth/settings/password/change` - Change password (re-encrypts DEK)
-- `DELETE /api/auth/settings/password/remove` - Disable encryption
-- `GET /api/notes/*` - All note operations use cached DEK
+- `POST /api2/auth/login` - Authenticate and establish session
+- `POST /api2/auth/logout` - Clear session and keys from memory
+- `POST /api2/auth/settings/password/create` - Enable password protection
+- `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)
+- `DELETE /api2/auth/settings/password/remove` - Disable encryption
+- `GET /api2/notes/*` - All note operations use cached DEK
 
 ## Monitoring and Logging
 

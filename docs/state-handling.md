@@ -476,19 +476,19 @@ async function actionCreateNote() {
 
 // Long polling for updates from other clients
 async function pollForUpdates() {
-  const response = await fetch('/api/sync', {
+  const response = await fetch('/api2/notes/check-updates', {
     method: 'POST', 
     body: JSON.stringify({
-      lastUpdateTime: ModeContext.lastSyncTime,
+      lastUpdateUUID: ModeContext.lastSyncUUID,
       context: getCurrentClientContext()
     })
   });
   
-  if (response.hasChanges) {
+  if (response.needsUpdate) {
     // Remote changes detected - server already cleared its undo stack
     // Clear any local undo context and refresh
     await actionRefreshView();
-    ModeContext.setLastSyncTime(response.serverTime);
+    ModeContext.setLastSyncUUID(response.currentUpdateUUID);
   }
 }
 ```

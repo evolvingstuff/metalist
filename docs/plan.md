@@ -215,7 +215,7 @@ async function actionPasteNoteSibling() {
     
     // Call the API to paste as sibling
     try {
-        const response = await fetch(`/api/notes/${clipboardNoteId}/paste-sibling/${currentNoteId}`, {
+        const response = await fetch(`/api2/notes/${clipboardNoteId}/paste-sibling/${currentNoteId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -257,7 +257,7 @@ async function actionPasteNoteChild() {
     
     // Call the API to paste as child
     try {
-        const response = await fetch(`/api/notes/${clipboardNoteId}/paste-child/${currentNoteId}`, {
+        const response = await fetch(`/api2/notes/${clipboardNoteId}/paste-child/${currentNoteId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
