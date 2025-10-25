@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from ..utils.encryption import encrypt
 from ..services.content_cache import get_cached_content, cache_note
 from ..services.note_store import store as note_store
-from ..render.note_renderer import render_read_only_mode
+from app.presentation.render.note_renderer import render_read_only_mode
 from app.db.notes_sql import (
     fetch_children_ordered,
     fetch_note,
