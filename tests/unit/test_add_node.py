@@ -33,11 +33,12 @@ def test_undo_redo_ops(db):
         )
         visualize_tree(db)
 
-        # drag and drop from +
-        LinkedListManager.create_note_drop(
-            db,
-            new_note_id3,
-            node.parent_id,
+        # drag and drop from + (create at root then reposition)
+        LinkedListManager.create_note_top(db, new_note_id3)
+        LinkedListManager.move_note(
+            db=db,
+            note_id=new_note_id3,
+            new_parent_id=node.parent_id,
             sibling_id=new_note_id2,
             position=MovePosition.BEFORE
         )

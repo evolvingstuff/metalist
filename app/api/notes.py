@@ -523,33 +523,6 @@ def delete_note(
     )
     return {"status": "success"}
 
-
-@router.post("/new-drop")
-def create_note_with_position(
-    command: MoveNoteCommand,
-    db: SafeSession = Depends(get_db),
-    transaction_manager: TransactionManager = Depends(get_transaction_manager)
-):
-    """Create a new note at a specific position"""
-    apply_delay("create_note_drop")
-    
-    # Convert string position to enum
-    position = None
-    if command.position:
-        try:
-            position = MovePosition[command.position.upper()]
-        except KeyError:
-            raise HTTPException(status_code=400, detail="Invalid position value")
-
-    with get_note_service(db, transaction_manager, command.clientId) as service:
-        result = service.create_note_with_position(
-            new_parent_id=command.new_parent_id,
-            sibling_id=command.sibling_id,
-            position=position
-        )
-        return {"id": result["id"]}
-
-
 @router.post("/new-sibling/{note_id}")
 def create_new_sibling(
     note_id: str,

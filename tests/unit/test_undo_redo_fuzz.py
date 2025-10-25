@@ -90,15 +90,24 @@ def test_fuzz_undo_redo(db):
                         target = db.get(DBNote, target_id)
                         drop_type = random.choice(['inside', 'before', 'after'])
                         print(f"Dragging to {target_id} ({drop_type})")
+                        created = service.create_note()
+                        new_note_id = created['id']
                         if drop_type == 'inside':
-                            result = service.create_note_with_position(new_parent_id=target_id)
+                            service.move_note(
+                                note_id=new_note_id,
+                                new_parent_id=target_id,
+                                sibling_id=None,
+                                position=None,
+                            )
                         else:
                             position = MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
-                            result = service.create_note_with_position(
+                            service.move_note(
+                                note_id=new_note_id,
                                 new_parent_id=target.parent_id,
                                 sibling_id=target_id,
                                 position=position,
                             )
+                        result = {"id": new_note_id}
                         operation_counts['add_drag'] += 1
                     elif add_type == 'sibling' and active_note_ids:
                         target_id = random.choice(active_note_ids)

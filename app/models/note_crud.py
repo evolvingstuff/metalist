@@ -295,24 +295,6 @@ class NoteCRUD:
             print(e)
             raise
 
-    @staticmethod
-    def create_note_drop(db: SafeSession, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
-        # First create the note at root level
-        NoteCRUD.create_note_top(db, note_id)
-
-        # TODO: possible to fail at next step but original update still made...
-        
-        # Then move it to the desired location (either under a parent or relative to siblings)
-        # Import here to avoid circular dependency
-        from .list_operations import ListOperations
-        ListOperations.move_note(
-            db=db,
-            note_id=note_id,
-            new_parent_id=new_parent_id,
-            sibling_id=sibling_id,
-            position=position
-        )
-
 
 def _collect_descendants_from_store(root_id: str) -> list[str]:
     stack = [root_id]

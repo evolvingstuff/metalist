@@ -7,7 +7,6 @@ export const CONFIG = {
     API: {
         NOTES: {
             CREATE: `${API_NOTES_BASE}/new`,
-            CREATE_DROP: `${API_NOTES_BASE}/new-drop`,
             CREATE_SIBLING: (noteId) => `${API_NOTES_BASE}/new-sibling/${noteId}`,
             CREATE_CHILD: (noteId) => `${API_NOTES_BASE}/new-child/${noteId}`,
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,

@@ -55,10 +55,6 @@ class LinkedListManager:
     def delete_note(db: SafeSession, note_id: str) -> None:
         return NoteCRUD.delete_note(db, note_id)
 
-    @staticmethod
-    def create_note_drop(db: SafeSession, note_id: str, new_parent_id: str = None, sibling_id: str = None, position: MovePosition = None):
-        return NoteCRUD.create_note_drop(db, note_id, new_parent_id, sibling_id, position)
-
     # Delegate to ListOperations
     @staticmethod
     def move_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None,

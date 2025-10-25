@@ -183,22 +183,6 @@ class NoteService(BaseTransactionService):
         
         return {"status": "moved", "updateUUID": new_uuid}
     
-    def create_note_with_position(self, new_parent_id: Optional[str] = None,
-                                 sibling_id: Optional[str] = None, 
-                                 position: Optional[MovePosition] = None) -> dict:
-        """Create a new note at a specific position"""
-        self._set_operation("create_note_drop")
-        assert self.client_id, "create_note_with_position requires client_id"
-        self.expect_note_delta(1)
-        
-        note_id = str(uuid.uuid4())
-        LinkedListManager.create_note_drop(
-            self.db, note_id, new_parent_id, sibling_id, position
-        )
-        
-        logger.info(f"Created note {note_id} at position")
-        return {"id": note_id, "status": "created"}
-    
     def create_sibling_note(self, reference_note_id: str, search_query: Optional[str] = None) -> dict:
         """Create a new note as a sibling after the reference note"""
         self._set_operation("create_new_sibling")

@@ -24,14 +24,22 @@ def _insert_cloned_subtree_at(
     last_per_parent[dest_parent] = dest_prev
 
     new_root_id: Optional[str] = None
+    snapshot_ids = {rec.get("id") for rec in snapshot}
 
     for rec in snapshot:
         old_id = rec["id"]
         new_id = str(uuid.uuid4())
         id_map[old_id] = new_id
 
-        old_parent = rec["parent_id"]
-        new_parent = dest_parent if old_parent is None else id_map[old_parent]
+        old_parent = rec.get("parent_id")
+        if old_parent is None or old_parent not in snapshot_ids:
+            new_parent = dest_parent
+        elif old_parent in id_map:
+            new_parent = id_map[old_parent]
+        else:
+            raise RuntimeError(
+                f"Clipboard snapshot missing parent {old_parent} for node {old_id}"
+            )
 
         prev_id = last_per_parent.get(new_parent)
         # Compute next from current store state
@@ -44,7 +52,7 @@ def _insert_cloned_subtree_at(
         apply_insert_note(new_id, new_parent, prev_id, next_id, rec.get("content") or "")
 
         last_per_parent[new_parent] = new_id
-        if old_parent is None and new_root_id is None:
+        if new_root_id is None and new_parent == dest_parent:
             new_root_id = new_id
 
     return new_root_id or ""

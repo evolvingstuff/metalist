@@ -108,17 +108,6 @@ export const NotesAPI = {
         });
     },
 
-    async createNoteDrop(parentId, siblingId, position) {
-        return this._apiCall(CONFIG.API.NOTES.CREATE_DROP, {
-            method: 'POST',
-            body: JSON.stringify({
-                new_parent_id: parentId,
-                sibling_id: siblingId,
-                position: position
-            })
-        });
-    },
-
     async createSibling(noteId, searchQuery = null) {
         const body = {};
         if (searchQuery) {

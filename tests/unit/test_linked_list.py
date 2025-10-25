@@ -976,20 +976,24 @@ def test_fuzz_linked_list_with_mutations(db):
                 if drop_type == 'inside':
                     # Create note and move it under target
                     with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
-                            new_parent_id=target_id
+                        LinkedListManager.create_note_top(db, new_id)
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=new_id,
+                            new_parent_id=target_id,
+                            sibling_id=None,
+                            position=None,
                         )
                 else:
                     # Create note and position it relative to target
                     with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
+                        LinkedListManager.create_note_top(db, new_id)
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=new_id,
                             new_parent_id=target.parent_id,
                             sibling_id=target_id,
-                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER,
                         )
             else:  # Regular click creation
                 with transaction_scope(db):
@@ -1168,20 +1172,24 @@ def test_fuzz_linked_list_with_mutations_and_drag_add(db):
                 if drop_type == 'inside':
                     # Create note and move it under target
                     with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
-                            new_parent_id=target_id
+                        LinkedListManager.create_note_top(db, new_id)
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=new_id,
+                            new_parent_id=target_id,
+                            sibling_id=None,
+                            position=None,
                         )
                 else:
                     # Create note and position it relative to target
                     with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
+                        LinkedListManager.create_note_top(db, new_id)
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=new_id,
                             new_parent_id=target.parent_id,
                             sibling_id=target_id,
-                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER,
                         )
             else:  # Regular click creation
                 with transaction_scope(db):
@@ -1360,19 +1368,23 @@ def test_fuzz_linked_list_with_sibling_and_child_creation(db):
 
                 if drop_type == 'inside':
                     with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
-                            new_parent_id=target_id
+                        LinkedListManager.create_note_top(db, new_id)
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=new_id,
+                            new_parent_id=target_id,
+                            sibling_id=None,
+                            position=None,
                         )
                 else:
                     with transaction_scope(db):
-                        LinkedListManager.create_note_drop(
-                            db,
-                            new_id,
+                        LinkedListManager.create_note_top(db, new_id)
+                        LinkedListManager.move_note(
+                            db=db,
+                            note_id=new_id,
                             new_parent_id=target.parent_id,
                             sibling_id=target_id,
-                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER
+                            position=MovePosition.BEFORE if drop_type == 'before' else MovePosition.AFTER,
                         )
                 operation_counts['add_drag'] += 1
             elif add_type == 'sibling' and active_note_ids:

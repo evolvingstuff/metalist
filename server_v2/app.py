@@ -6,7 +6,6 @@ from typing import Optional
 from server_v2.endpoints.view import CmdView
 from server_v2.snapshot import build_view_snapshot
 from server_v2.endpoints.create_note import CmdCreateNote
-from server_v2.endpoints.create_drop import CmdCreateDrop
 from server_v2.endpoints.create_sibling import CmdCreateSibling
 from server_v2.endpoints.create_child import CmdCreateChild
 from server_v2.endpoints.update_content import CmdUpdateContent
@@ -112,14 +111,6 @@ def create_note_top(body: dict):
         client_id=body["clientId"],
     )
     return cmd.execute()
-
-
-@router.post("/notes/new-drop")
-def create_drop_stub(body: dict):
-    try:
-        return CmdCreateDrop().execute()
-    except Exception as e:
-        _not_impl(e)
 
 
 @router.post("/notes/new-sibling/{note_id}")
