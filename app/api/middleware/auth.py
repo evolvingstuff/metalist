@@ -1,14 +1,13 @@
 """Authentication middleware for API requests."""
 
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.services.tokens import token_service
 from app.services.auth_service import AuthService
 from app.services.maintenance_mode import maintenance_service
 from app.models.database import SafeSession
-from app.security.encryption import set_encryption_key
-from app.core.config import API_PREFIX, V1_API_PREFIX
+from app.config import API_PREFIX
 
 
 class AuthMiddleware(BaseHTTPMiddleware):

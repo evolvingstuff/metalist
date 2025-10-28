@@ -1,14 +1,13 @@
 """AES-256-GCM encryption service for note content."""
 
 import base64
-import json
 import os
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Tuple
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
-from app.core.config import PW_PBKDF2_ITERATIONS
+from app.config import PW_PBKDF2_ITERATIONS
 
 
 class EncryptionService:

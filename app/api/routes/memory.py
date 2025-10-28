@@ -3,11 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional
-from pathlib import Path
 
 from app.api.deps import get_db
 from app.models.database import SafeSession
-from app.core.config import VERSION
+from app.config import VERSION
 from app.services.memory_service import MemoryService, apply_memory_flags
 from app.presentation.templates import get_templates
 

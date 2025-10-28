@@ -29,7 +29,7 @@ from types import SimpleNamespace
 
 from tqdm import tqdm
 
-from app.core.config import DATABASE_URL
+from app.config import DATABASE_URL
 from app.db.notes_sql import insert_note, update_links
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
 from app.db.settings_sql import fetch_settings, insert_default_settings

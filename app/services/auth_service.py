@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.models.database import SafeSession
-from app.core.config import PW_PBKDF2_ITERATIONS
+from app.config import PW_PBKDF2_ITERATIONS
 from app.db.notes_sql import fetch_all_for_cache, update_note_content
 from app.db.settings_sql import (
     clear_password_settings,

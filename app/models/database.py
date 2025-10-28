@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -9,7 +8,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Iterator, Optional
 
-from app.core.config import DATABASE_URL
+from app.config import DATABASE_URL
 from app.db.schema import initialize_schema
 from loguru import logger
 

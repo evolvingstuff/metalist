@@ -20,7 +20,7 @@ from app.usecases.redo import CmdRedo
 from app.services.sync import get_current_sync_uuid
 from app.usecases.check_updates import CmdCheckUpdates
 from app.usecases.lock import CmdAcquireLock, CmdReleaseLock
-from app.core.config import VERSION
+from app.config import VERSION
 
 
 router = APIRouter()

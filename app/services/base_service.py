@@ -2,9 +2,8 @@ from abc import ABC
 from typing import Optional
 import time
 
-from app.core import config
+from app import config
 from app.models.database import SafeSession
-import sqlite3
 from app.services.integrity import (
     snapshot_note_count,
     assert_note_count,

@@ -4,7 +4,7 @@ import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from app.core.config import TOKEN_EXPIRY_MINUTES
+from app.config import TOKEN_EXPIRY_MINUTES
 
 
 class TokenService:

@@ -1,5 +1,3 @@
-import os
-
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -7,7 +5,7 @@ from pathlib import Path
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
-from .core.config import VERSION
+from app.config import VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.settings_sql import fetch_settings, insert_default_settings
@@ -18,8 +16,8 @@ from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
-from app.core.config import API_PREFIX, V1_API_PREFIX
-from .core.config import CRASH_SERVER_ON_FAIL
+from app.config import API_PREFIX, V1_API_PREFIX
+from app.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
 from loguru import logger
 import logging
