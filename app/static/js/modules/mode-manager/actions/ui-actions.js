@@ -6,6 +6,7 @@ import { CONFIG } from '../../config.js';
 import { highlightCommentsOnRender } from '../events/input-events.js';
 import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
+import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 
 function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
                            rootNotesKnown, rootNotesSeen, updatedNotes,
@@ -149,13 +150,13 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     if (noteId) {
         const noteElement = DOMUtils.getNoteById(noteId);
         contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+        const noteContentElement = DOMUtils.getNoteContent(noteElement);
 
         if (ModeContext.isEditing) {
                         
             DOMUtils.setNoteEditable(noteElement, true);
             
             // Highlight comments immediately when entering edit mode
-            const noteContentElement = DOMUtils.getNoteContent(noteElement);
             highlightCommentsOnRender(noteContentElement);
 
             let cursorOffset = 0;
@@ -182,6 +183,9 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
             }
 
             DOMUtils.focusNote(noteElement, cursorOffset);
+            attachEditorSurface(noteId, noteContentElement);
+        } else {
+            detachEditorSurface();
         }
 
         if (shouldManageLoading && ModeContext.isLoading) {
@@ -193,6 +197,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         if (shouldManageLoading && ModeContext.isLoading) {
             ModeContext.setLoading(false);
         }
+        detachEditorSurface();
         result = null;
     }
 

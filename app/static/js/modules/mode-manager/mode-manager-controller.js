@@ -11,6 +11,7 @@ import { initContentAutoSave } from './events/inactivity-events.js';
 import { initializeSearchEvents } from './events/search-events.js';
 import { startPolling } from './services/polling-service.js';
 import { startInfiniteScrollMonitor, resetInfiniteScrollState } from './services/infinite-scroll-service.js';
+import { initEditorToolbar, setToolbarVisible } from '../editor-toolbar.js';
 
 const DEFAULT_CONFIG = {};
 
@@ -29,6 +30,7 @@ const ModeManager = {
             };
 
             await this._registerEventListeners(mergedConfig);
+            initEditorToolbar();
 
             ModeContext.addListener(this._handleModeChange.bind(this));
 
@@ -69,6 +71,9 @@ const ModeManager = {
         Logger.logDebug(`Mode change: ${property}`, { [property]: newValue });
         if (property === 'searchQuery') {
             resetInfiniteScrollState();
+        }
+        if (property === 'editing') {
+            setToolbarVisible(Boolean(newValue));
         }
     },
 

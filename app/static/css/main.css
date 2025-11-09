@@ -499,6 +499,61 @@ body {
     cursor: text;
 }
 
+.rich-text-toolbar {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    display: none;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    background: rgba(18, 18, 18, 0.95);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    z-index: 2000;
+    color: #f5f5f5;
+    align-items: center;
+}
+
+.rich-text-toolbar.visible {
+    display: flex;
+}
+
+.toolbar-group {
+    display: flex;
+    gap: 4px;
+}
+
+.toolbar-divider {
+    width: 1px;
+    height: 26px;
+    background: rgba(255, 255, 255, 0.15);
+    display: inline-block;
+}
+
+.rich-text-toolbar button {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-width: 40px;
+    line-height: 1;
+}
+
+.rich-text-toolbar button[data-active="true"],
+.rich-text-toolbar button:focus-visible {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.rich-text-toolbar button span {
+    pointer-events: none;
+}
+
 .note-children {
     flex-basis: 100%;
     margin-left: 2rem;

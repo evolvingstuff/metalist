@@ -35,6 +35,14 @@ function handleClick(event) {
         });
         return; 
     }
+
+    const toolbarElement = event.target.closest('#rich-text-toolbar');
+    if (toolbarElement) {
+        Logger.logDebug('Click inside rich text toolbar', {
+            eventType: event.type
+        }, Logger.LogCategory.EVENT);
+        return;
+    }
     
     // Check if we're disconnected from server
     if (!ModeContext.isConnected) {
