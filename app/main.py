@@ -259,3 +259,23 @@ async def maintenance_page(request: Request):
         logger.error(f"🚨 Cannot display maintenance page!")
         logger.error(f"🚨 CRASHING IMMEDIATELY")
         raise RuntimeError(f"Maintenance page failed: Could not render template: {e}") from e
+
+
+@app.get("/locked", response_class=HTMLResponse)
+async def locked_page(request: Request, db: SafeSession = Depends(get_db)):
+    """Render a dedicated locked screen when a session is invalidated."""
+    try:
+        from .services.auth import AuthService
+
+        template = templates.get_template("locked.html")
+        auth = AuthService(db)
+        has_password = auth.has_password()
+        return template.render(
+            request=request,
+            version=VERSION,
+            asset_version=ASSET_VERSION,
+            has_password=has_password,
+        )
+    except Exception as e:
+        logger.error(f"🚨 FATAL: Failed to render locked template: {e}")
+        raise RuntimeError(f"Locked page failed: Could not render template: {e}") from e

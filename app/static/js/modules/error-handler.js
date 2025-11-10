@@ -3,6 +3,7 @@
  */
 
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
+import { Auth } from './auth.js';
 
 export const ErrorHandler = {
     
@@ -44,22 +45,7 @@ export const ErrorHandler = {
      */
     handleAuthError(message = 'Authentication required. Please log in again.') {
         console.log('[ErrorHandler] Auth error:', message);
-        
-        // Clear invalid token
-        localStorage.removeItem('auth_token');
-        
-        // Show login screen with error message
-        if (window.Auth) {
-            window.Auth.showLoginModal();
-            if (message !== 'Your session has expired. Please log in again.') {
-                // Show custom message if it's not the default
-                window.Auth.showLoginError(message);
-            }
-        } else {
-            // Fallback: reload page
-            console.warn('[ErrorHandler] Auth module not available, reloading page');
-            window.location.reload();
-        }
+        Auth.forceLogout(message);
     },
     
     /**

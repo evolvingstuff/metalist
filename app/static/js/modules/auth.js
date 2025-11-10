@@ -4,12 +4,16 @@
 import { CONFIG } from './config.js';
 
 export const Auth = {
+    hasPassword: null,
+    _forcingLogout: false,
+    _tabId: null,
     
     /**
      * Initialize authentication on page load
      * Returns true if OK to proceed with app initialization
      */
     async init() {
+        this._ensureTabId();
         this.setupEventListeners();
         return await this.checkAuthStatus();
     },
@@ -20,37 +24,72 @@ export const Auth = {
      */
     async checkAuthStatus() {
         try {
-            // Get stored token
             const token = localStorage.getItem('auth_token');
             console.log('[Auth] Checking status with token:', token ? token.substring(0, 10) + '...' : 'none');
-            
-            // Include token in request if we have one
+            const activeOwner = localStorage.getItem('auth_owner');
+            const ownerMismatch = Boolean(token && activeOwner && activeOwner !== this._tabId);
+            const missingOwner = Boolean(token && !activeOwner);
+
             const headers = {};
             if (token) {
                 headers['Authorization'] = `Bearer ${token}`;
             }
-            
+
             const response = await fetch(CONFIG.API.AUTH.STATUS, { headers });
-            const status = await response.json();
-            
-            console.log('[Auth] Status response:', status);
-            
-            // If password is required and we're not authenticated, show login
-            if (status.has_password && !status.authenticated) {
-                // Clear invalid token if we have one
-                if (token) {
-                    console.log('[Auth] Token is invalid, removing from storage');
-                    localStorage.removeItem('auth_token');
-                }
-                this.showLoginModal();
-                return false; // Block further initialization
+            if (!response.ok) {
+                throw new Error(`Status request failed with ${response.status}`);
             }
-            
-            return true; // OK to proceed
+
+            const status = await response.json();
+            this.hasPassword = Boolean(status.has_password);
+            console.log('[Auth] Status response:', status);
+
+            if (this.hasPassword) {
+                if (!status.authenticated || ownerMismatch || missingOwner) {
+                    if (token) {
+                        console.log('[Auth] Clearing token for password-protected mismatch');
+                        this.clearSessionState();
+                    }
+                    this.showLoginModal();
+                    return false;
+                }
+                return true;
+            }
+
+            if (ownerMismatch || missingOwner || !status.authenticated) {
+                if (ownerMismatch || missingOwner) {
+                    console.log('[Auth] Passwordless takeover detected, clearing local token');
+                    this.clearSessionState();
+                }
+                await this.claimPasswordlessSession();
+            }
+
+            return true;
         } catch (error) {
             console.error('[Auth] Failed to check status:', error);
             return false; // Block on error
         }
+    },
+
+    async claimPasswordlessSession() {
+        console.log('[Auth] Claiming passwordless session');
+        const response = await fetch(CONFIG.API.AUTH.SESSION, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const detail = await response.text();
+            throw new Error(`Failed to claim session: ${response.status} ${detail}`);
+        }
+
+        const data = await response.json();
+        if (!data.token) {
+            throw new Error('Session response missing token');
+        }
+
+        this._setTokenForThisTab(data.token);
+        console.log('[Auth] Passwordless session established');
+        return data.token;
     },
     
     /**
@@ -130,7 +169,7 @@ export const Auth = {
                 const data = await response.json();
                 
                 // Store the token
-                localStorage.setItem('auth_token', data.token);
+                this._setTokenForThisTab(data.token);
                 console.log('[Auth] Token stored in localStorage:', data.token.substring(0, 10) + '...');
                 
                 // Verify it was stored
@@ -186,13 +225,31 @@ export const Auth = {
             }
         }
         
-        // Clear token from storage
-        localStorage.removeItem('auth_token');
-        
-        // Reload page to show login
+        this.clearSessionState();
         window.location.reload();
     },
-    
+
+    clearSessionState() {
+        localStorage.removeItem('auth_token');
+        sessionStorage.removeItem('metalist_client_id');
+        localStorage.removeItem('auth_owner');
+    },
+
+    forceLogout(message = 'Session ended') {
+        if (this._forcingLogout) {
+            return;
+        }
+        this._forcingLogout = true;
+        console.warn('[Auth] Forcing logout:', message);
+        this.clearSessionState();
+
+        if (document.body) {
+            document.body.replaceChildren();
+        }
+
+        window.location.replace('/locked');
+    },
+
     /**
      * Setup event listeners
      */
@@ -219,8 +276,51 @@ export const Auth = {
                 // this.hideLoginModal();
             }
         });
+
+        window.addEventListener('storage', (event) => {
+            if (!event) {
+                return;
+            }
+
+            if (event.key === 'auth_owner') {
+                const activeOwner = localStorage.getItem('auth_owner');
+                if (!activeOwner) {
+                    this.forceLogout('Session ended.');
+                    return;
+                }
+                if (activeOwner !== this._tabId) {
+                    this.forceLogout('Session moved to another tab.');
+                }
+                return;
+            }
+
+            if (event.key === 'auth_token' && event.newValue === null) {
+                this.forceLogout('Session ended.');
+            }
+        });
+    },
+
+    _ensureTabId() {
+        if (this._tabId) {
+            return;
+        }
+        let tabId = sessionStorage.getItem('metalist_tab_id');
+        if (!tabId) {
+            tabId = crypto.randomUUID();
+            sessionStorage.setItem('metalist_tab_id', tabId);
+        }
+        this._tabId = tabId;
+    },
+
+    _setTokenForThisTab(token) {
+        if (!token) {
+            throw new Error('Cannot store empty auth token');
+        }
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('auth_owner', this._tabId);
     }
 };
 
 // Make showLoginModal available globally for API client
 window.showLoginModal = () => Auth.showLoginModal();
+window.Auth = Auth;

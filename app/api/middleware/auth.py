@@ -17,8 +17,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     PUBLIC_PATHS = [
         f"{API_PREFIX}/auth/login",
         f"{API_PREFIX}/auth/status",
+        f"{API_PREFIX}/auth/session",
         "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
+        "/locked",
     ]
     
     # Paths to suppress verbose logging for (frequent polling endpoints)
@@ -91,40 +93,42 @@ class AuthMiddleware(BaseHTTPMiddleware):
             db = SafeSession()
             try:
                 auth = AuthService(db)
+                has_password = auth.has_password()
 
                 # Special case: password creation endpoint is only public if no password exists
-                if path in {"/api/auth/settings/password/create", f"{API_PREFIX}/auth/settings/password/create"} and not auth.has_password():
+                if path in {"/api/auth/settings/password/create", f"{API_PREFIX}/auth/settings/password/create"} and not has_password:
                     if not is_quiet:
                         print(f"Password creation allowed - no password set")
                     return await call_next(request)
-
-                # If no password is set, allow all access
-                if not auth.has_password():
-                    if not is_quiet:
-                        print(f"No password set, allowing {path}")
-                    return await call_next(request)
             finally:
                 db.close()  # Always close the database connection
-            
-            if not is_quiet:
-                print(f"Password is set, checking auth for {path}")
-            
-            # Password is set, require authentication
-            authorization = request.headers.get("authorization")
-            
-            if not authorization:
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Authentication required"}
-                )
         except Exception as e:
             # Fail fast for internal errors
             raise
 
-        token = authorization.split()[1] if authorization and authorization.lower().startswith("bearer ") else None
-        if token:
-            # Refresh token on user-initiated paths only
-            if not any(path.startswith(p) for p in self.NO_TOKEN_REFRESH_PATHS):
-                token_service.refresh_token(token)
-        
+        authorization = request.headers.get("authorization")
+        if not authorization:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required"}
+            )
+
+        parts = authorization.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid Authorization header"}
+            )
+
+        token = parts[1]
+        if not token_service.verify_token(token):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required"}
+            )
+
+        # Refresh token on user-initiated paths only
+        if not any(path.startswith(p) for p in self.NO_TOKEN_REFRESH_PATHS):
+            token_service.refresh_token(token)
+
         return await call_next(request)

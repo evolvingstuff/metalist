@@ -30,6 +30,7 @@ export const CONFIG = {
             STATUS: `${API_AUTH_BASE}/status`,
             LOGIN: `${API_AUTH_BASE}/login`,
             LOGOUT: `${API_AUTH_BASE}/logout`,
+            SESSION: `${API_AUTH_BASE}/session`,
             SESSIONS: `${API_AUTH_BASE}/sessions`,
             SETTINGS: {
                 PASSWORD: {
@@ -55,8 +56,8 @@ export const CONFIG = {
     },
 
     SYNC: {
-        POLL_INTERVAL_MS: 120000,
-        LOCK_HEARTBEAT_INTERVAL_MS: 120000
+        POLL_INTERVAL_MS: 1000,
+        LOCK_HEARTBEAT_INTERVAL_MS: 1000
     },
 
     DEBUG: {

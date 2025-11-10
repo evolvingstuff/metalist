@@ -25,7 +25,12 @@ class TokenService:
         """
         return hashlib.sha256(token.encode()).hexdigest()
     
-    def create_token(self, client_info: str, master_key: bytes = None, dek: bytes = None) -> str:
+    def create_token(
+        self,
+        client_info: str,
+        master_key: Optional[bytes] = None,
+        dek: Optional[bytes] = None,
+    ) -> str:
         """Generate new authentication token for client.
         
         Args:
@@ -36,6 +41,10 @@ class TokenService:
         Returns:
             New authentication token
         """
+        # Enforce single active session: wipe previous tokens before issuing a new one
+        if self.tokens:
+            self.tokens.clear()
+
         # Generate cryptographically secure token
         token = secrets.token_urlsafe(32)
         token_hash = self._hash_token(token)

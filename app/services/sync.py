@@ -49,3 +49,10 @@ def set_clipboard(client_id: str, records: list) -> None:
 
 def get_clipboard(client_id: str) -> list:
     return list(_clipboards.get(client_id) or [])
+
+
+def clear_all_locks() -> None:
+    """Release every lock and bump the sync UUID to force client refresh."""
+    if _locks:
+        _locks.clear()
+        generate_new_uuid()

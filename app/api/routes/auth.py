@@ -11,6 +11,7 @@ from app.services.tokens import token_service
 from app.services.content_cache import populate_cache_from_db, get_cached_content
 from app.services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
+from app.services.sync import clear_all_locks
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -21,6 +22,11 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
+    token: str
+    message: str
+
+
+class SessionResponse(BaseModel):
     token: str
     message: str
 
@@ -106,6 +112,7 @@ def login(request: Request, payload: LoginRequest, db: SafeSession = Depends(get
     v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
 
     token = token_service.create_token(_client_info(request), master_key, dek)
+    clear_all_locks()
     return LoginResponse(token=token, message="Login successful")
 
 
@@ -114,8 +121,20 @@ def logout(token: str = Depends(_require_auth)):
     token_service.revoke_token(token)
     from app.security.encryption import clear_encryption_key
 
+    clear_all_locks()
     clear_encryption_key()
     return {"message": "Logout successful"}
+
+
+@router.post("/session", response_model=SessionResponse)
+def create_passwordless_session(request: Request, db: SafeSession = Depends(get_db)):
+    auth = AuthService(db)
+    if auth.has_password():
+        raise HTTPException(status_code=400, detail="Password is set. Use /login instead.")
+
+    token = token_service.create_token(_client_info(request))
+    clear_all_locks()
+    return SessionResponse(token=token, message="Session established")
 
 
 @router.get("/status")
@@ -140,6 +159,7 @@ def create_password(payload: PasswordCreateRequest, db: SafeSession = Depends(ge
     if not success:
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
+    clear_all_locks()
     return {"message": message}
 
 
@@ -154,6 +174,7 @@ def change_password(payload: PasswordChangeRequest, db: SafeSession = Depends(ge
     if not success:
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
+    clear_all_locks()
     return {"message": message}
 
 
@@ -164,6 +185,7 @@ def remove_password(payload: PasswordRemoveRequest, db: SafeSession = Depends(ge
     if not success:
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
+    clear_all_locks()
     return {"message": message}
 
 
