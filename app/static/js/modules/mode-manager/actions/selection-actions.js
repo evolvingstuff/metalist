@@ -6,7 +6,10 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { NotesAPI } from '../../api-client.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 
-export async function actionSelectNote(noteId) {
+export async function actionSelectNote(noteId, options = {}) {
+    const {
+        initialCaretVisibility = 'hidden'
+    } = options;
     let startedAt = performance.now();
     Logger.logAction('selectNote', { 
         noteId, 
@@ -50,6 +53,12 @@ export async function actionSelectNote(noteId) {
     }
 
     ModeContext.setEditing(true);
+
+    if (initialCaretVisibility === 'hidden') {
+        ModeContext.markCaretHidden();
+    } else {
+        ModeContext.markCaretVisible();
+    }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
@@ -109,7 +118,10 @@ export async function actionDeselectNote() {
     ModeContext.validate();
 }
 
-export async function actionSwitchNotes(newNoteId) {
+export async function actionSwitchNotes(newNoteId, options = {}) {
+    const {
+        initialCaretVisibility = 'hidden'
+    } = options;
     let startedAt = performance.now();
     Logger.logAction('switchNotes', { 
         currentNoteId: ModeContext.currentNoteId,
@@ -176,7 +188,12 @@ export async function actionSwitchNotes(newNoteId) {
     ModeContext.setCurrentContent(null);
 
     ModeContext.setCurrentNoteId(newNoteId);
-    ModeContext.markCaretHidden();
+
+    if (initialCaretVisibility === 'hidden') {
+        ModeContext.markCaretHidden();
+    } else {
+        ModeContext.markCaretVisible();
+    }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
     

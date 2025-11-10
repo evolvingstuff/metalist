@@ -144,10 +144,11 @@ export async function createNote() {
 
     ModeContext.setLoading(false);
 
+    const caretOptions = { initialCaretVisibility: 'visible' };
     if (ModeContext.isEditing) {
-        return await actionSwitchNotes(newNoteId);  //asdf asdf
+        return await actionSwitchNotes(newNoteId, caretOptions);
     } else {
-        return await actionSelectNote(newNoteId);  //asdf asdf
+        return await actionSelectNote(newNoteId, caretOptions);
     }
 }
 
@@ -184,10 +185,11 @@ export async function createChildNote() {
 
     ModeContext.setLoading(false);
 
+    const caretOptions = { initialCaretVisibility: 'visible' };
     if (ModeContext.isEditing) {
-        return await actionSwitchNotes(newNoteId); //asdf asdf
+        return await actionSwitchNotes(newNoteId, caretOptions);
     } else {
-        return await actionSelectNote(newNoteId);  //asdf asdf
+        return await actionSelectNote(newNoteId, caretOptions);
     }
 }
 
@@ -215,6 +217,10 @@ export async function moveNoteUp(noteId) {
         await NotesAPI.moveNoteUp(noteId);
     } finally {
         ModeContext.setLoading(false);
+    }
+
+    if (ModeContext.isEditing) {
+        ModeContext.markCaretHidden();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'moveNoteUp'});
@@ -248,6 +254,10 @@ export async function moveNoteDown(noteId) {
         await NotesAPI.moveNoteDown(noteId);
     } finally {
         ModeContext.setLoading(false);
+    }
+
+    if (ModeContext.isEditing) {
+        ModeContext.markCaretHidden();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'moveNoteDown'});
@@ -350,6 +360,8 @@ export async function actionPasteNoteSibling() {
     const newNoteId = response.id;
 
     ModeContext.setCurrentNoteId(newNoteId);
+
+    ModeContext.markCaretHidden();
     
     ModeContext.setLoading(false);
 
@@ -379,6 +391,8 @@ export async function actionPasteNoteChild() {
     const newNoteId = response.id;
 
     ModeContext.setCurrentNoteId(newNoteId);
+
+    ModeContext.markCaretHidden();
     
     ModeContext.setLoading(false);
 

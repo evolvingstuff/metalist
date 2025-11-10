@@ -152,7 +152,9 @@ class ModeContext {
                 
         const oldValue = this._editing;
         this._editing = Boolean(value);
-        this._caretHidden = this._editing;
+        if (!this._editing) {
+            this._caretHidden = false;
+        }
         
         // Manage editing heartbeat timer
         if (this._editing) {
@@ -319,20 +321,12 @@ class ModeContext {
     }
 
     markCaretHidden() {
-        if (!this._editing) {
-            return this;
-        }
         this._caretHidden = true;
         return this;
     }
 
     markCaretVisible() {
-        if (!this._editing) {
-            return this;
-        }
-        if (this._caretHidden) {
-            this._caretHidden = false;
-        }
+        this._caretHidden = false;
         return this;
     }
 
