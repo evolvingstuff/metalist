@@ -95,7 +95,7 @@ function getCurrentBlockTag() {
     return ancestor ? ancestor.nodeName.toUpperCase() : null;
 }
 
-function toggleInlineCodeInternal() {
+function toggleInlineElement(tagName) {
     const editable = getActiveEditable();
     if (!editable) {
         return;
@@ -105,48 +105,49 @@ function toggleInlineCodeInternal() {
         return;
     }
     const range = selection.getRangeAt(0);
-    const existingCode = findAncestorMatching(
+    const normalizedTag = String(tagName).toUpperCase();
+    const existingWrapper = findAncestorMatching(
         range.startContainer,
-        (node) => node.nodeName === 'CODE',
+        (node) => node.nodeName === normalizedTag,
         editable.parentElement
     );
 
-    if (existingCode) {
+    if (existingWrapper) {
         const newRange = document.createRange();
-        newRange.selectNode(existingCode);
-        unwrapNode(existingCode);
+        newRange.selectNode(existingWrapper);
+        unwrapNode(existingWrapper);
         selection.removeAllRanges();
         selection.addRange(newRange);
         return;
     }
 
     const extracted = range.extractContents();
-    const codeElement = document.createElement('code');
+    const element = document.createElement(tagName);
     if (!extracted || extracted.childNodes.length === 0) {
-        codeElement.textContent = '\u200b';
+        element.textContent = '\u200b';
     } else {
-        codeElement.appendChild(extracted);
+        element.appendChild(extracted);
     }
-    range.insertNode(codeElement);
-    range.selectNodeContents(codeElement);
+    range.insertNode(element);
+    range.selectNodeContents(element);
     selection.removeAllRanges();
     selection.addRange(range);
 }
 
 export function toggleBold() {
-    runExecCommand('bold');
+    withSelection(() => toggleInlineElement('strong'));
 }
 
 export function toggleItalic() {
-    runExecCommand('italic');
+    withSelection(() => toggleInlineElement('em'));
 }
 
 export function toggleUnderline() {
-    runExecCommand('underline');
+    withSelection(() => toggleInlineElement('u'));
 }
 
 export function toggleInlineCode() {
-    withSelection(() => toggleInlineCodeInternal());
+    withSelection(() => toggleInlineElement('code'));
 }
 
 export function toggleBlockQuote() {
