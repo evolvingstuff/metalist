@@ -24,9 +24,9 @@ class ModeContext {
         this._metaKeyPressed = false;   
         this._shiftKeyPressed = false;  
         this._hoveredNoteId = null;
+        this._caretHidden = false;
 
         this._listeners = [];
-        this._savedCursorOffset = null;
         this._lastContentChangeTime = null;
         this._searchQuery = '';
         this._isInitialPageLoad = true;
@@ -152,6 +152,7 @@ class ModeContext {
                 
         const oldValue = this._editing;
         this._editing = Boolean(value);
+        this._caretHidden = this._editing;
         
         // Manage editing heartbeat timer
         if (this._editing) {
@@ -317,6 +318,28 @@ class ModeContext {
         return this._hoveredNoteId;
     }
 
+    markCaretHidden() {
+        if (!this._editing) {
+            return this;
+        }
+        this._caretHidden = true;
+        return this;
+    }
+
+    markCaretVisible() {
+        if (!this._editing) {
+            return this;
+        }
+        if (this._caretHidden) {
+            this._caretHidden = false;
+        }
+        return this;
+    }
+
+    get isCaretHidden() {
+        return this._editing && this._caretHidden;
+    }
+
     setLastSavedContent(content) {
         this._lastSavedContent = content;
         return this;
@@ -333,33 +356,6 @@ class ModeContext {
 
     get cursorOffset() {
         return this._cursorOffset;
-    }
-
-    setSavedCursorOffset(noteId, offset) {
-        
-        const currentValue = this._savedCursorOffset;
-        if (currentValue && 
-            currentValue.noteId === noteId && 
-            currentValue.offset === offset) {
-            throw new Error(`Redundant state change: savedCursorOffset is already set to the same values`);
-        }
-        
-        this._savedCursorOffset = { noteId, offset };
-        return this;
-    }
-
-    clearSavedCursorOffset() {
-        
-        if (this._savedCursorOffset === null) {
-            throw new Error(`Redundant state change: savedCursorOffset is already null`);
-        }
-        
-        this._savedCursorOffset = null;
-        return this;
-    }
-
-    get savedCursorOffset() {
-        return this._savedCursorOffset;
     }
 
     setCurrentContent(content) {

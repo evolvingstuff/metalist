@@ -31,6 +31,22 @@ export const DOMUtils = {
         noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditable);
     },
 
+    hideCaret(noteElement) {
+        const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+        content.classList.add(CONFIG.CLASSES.CARET_HIDDEN);
+    },
+
+    revealCaret(noteElement) {
+        const content = this.getNoteContent(noteElement);
+        if (!content) {
+            throw new Error('Note missing content element');
+        }
+        content.classList.remove(CONFIG.CLASSES.CARET_HIDDEN);
+    },
+
     getNoteById(noteId) {
         if (!noteId) {
             throw new Error('Note ID is required');
@@ -55,12 +71,33 @@ export const DOMUtils = {
             throw new Error('Cursor offset must be an integer');
         }
 
-        if (!contentElement.firstChild) {
-            contentElement.appendChild(document.createTextNode(''));
-        }
+        ensureEditableContentNode(contentElement);
 
         contentElement.focus();
         this.setCursorOffset(noteElement, cursorOffset);
+    },
+
+    focusNoteEdge(noteElement, position = 'end') {
+        const normalizedPosition = position === 'start' ? 'start' : 'end';
+        const contentElement = this.getNoteContent(noteElement);
+        if (!contentElement) {
+            throw new Error('Note content element not found');
+        }
+
+        ensureEditableContentNode(contentElement);
+
+        const selection = window.getSelection();
+        if (!selection) {
+            throw new Error('No selection found when trying to focus note edge');
+        }
+
+        const range = document.createRange();
+        range.selectNodeContents(contentElement);
+        range.collapse(normalizedPosition === 'start');
+
+        contentElement.focus();
+        selection.removeAllRanges();
+        selection.addRange(range);
     },
 
     getCursorOffset(noteElement) {
@@ -289,4 +326,10 @@ function findRangeAtOffset(container, targetOffset) {
     range.selectNodeContents(container);
     range.collapse(false);
     return range;
+}
+
+function ensureEditableContentNode(contentElement) {
+    if (!contentElement.firstChild) {
+        contentElement.appendChild(document.createTextNode(''));
+    }
 }

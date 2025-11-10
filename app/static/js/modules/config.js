@@ -48,6 +48,7 @@ export const CONFIG = {
         NOTE: 'note',
         NOTE_CONTENT: 'note-content',
         EDITING: 'editing',
+        CARET_HIDDEN: 'caret-hidden',
         SEARCH_INPUT: 'search-input',
         SEARCH_RESULTS: 'search-results',
         LOADING: 'loading'

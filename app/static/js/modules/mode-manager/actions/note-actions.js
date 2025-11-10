@@ -209,10 +209,6 @@ export async function moveNoteUp(noteId) {
         await actionSaveNote(noteId);
     }
 
-    if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
-        ModeContext.setSavedCursorOffset(noteId, window.getSelection().focusOffset);
-    }
-
     ModeContext.setLoading(true);
     
     try {
@@ -244,10 +240,6 @@ export async function moveNoteDown(noteId) {
 
     if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
-    }
-
-    if (ModeContext.isEditing && noteId === ModeContext.currentNoteId) {
-        ModeContext.setSavedCursorOffset(noteId, window.getSelection().focusOffset);
     }
 
     ModeContext.setLoading(true);

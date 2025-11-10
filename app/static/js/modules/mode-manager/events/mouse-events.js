@@ -162,7 +162,11 @@ function handleClick(event) {
                     isEditing: true
                 }, Logger.LogCategory.EVENT);
             } else {
-                                
+                if (ModeContext.isCaretHidden && ModeContext.currentNoteId === noteId) {
+                    DOMUtils.revealCaret(noteElement);
+                    ModeContext.markCaretVisible();
+                }
+
                 Logger.logNoop('Click in already selected note - no action needed', { 
                     noteId,
                     coordinates,

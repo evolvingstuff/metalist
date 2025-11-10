@@ -7,6 +7,7 @@ import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
+import { DOMUtils } from '../../dom-utils.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -54,6 +55,8 @@ function handleKeyDown(event) {
         meta: event.metaKey || event.ctrlKey,
         shift: event.shiftKey
     }, Logger.LogCategory.EVENT);
+
+    revealCaretForCurrentNote();
 
     if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
         const targetElement = event.target instanceof HTMLElement ? event.target.closest('.modal') : null;
@@ -242,6 +245,21 @@ function handleKeyDown(event) {
             break;
                 
     }
+}
+
+function revealCaretForCurrentNote() {
+    if (!ModeContext.isEditing || !ModeContext.isCaretHidden) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (!currentNoteId) {
+        return;
+    }
+
+    const noteElement = DOMUtils.getNoteById(currentNoteId);
+    DOMUtils.revealCaret(noteElement);
+    ModeContext.markCaretVisible();
 }
 
 function getHoveredNoteDetails(event) {

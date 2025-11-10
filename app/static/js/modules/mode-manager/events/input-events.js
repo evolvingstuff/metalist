@@ -55,6 +55,11 @@ function handleInput(event) {
             return; 
         }
 
+        if (ModeContext.isCaretHidden) {
+            DOMUtils.revealCaret(noteElement);
+            ModeContext.markCaretVisible();
+        }
+
         const currentHtmlContent = DOMUtils.getNoteContentHTML(noteElement);
 
         if (currentHtmlContent !== ModeContext.currentContent) {

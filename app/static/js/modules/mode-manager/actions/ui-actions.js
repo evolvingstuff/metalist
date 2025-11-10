@@ -155,34 +155,22 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         if (ModeContext.isEditing) {
                         
             DOMUtils.setNoteEditable(noteElement, true);
+
+            if (ModeContext.isCaretHidden) {
+                DOMUtils.hideCaret(noteElement);
+            } else {
+                DOMUtils.revealCaret(noteElement);
+            }
             
             // Highlight comments immediately when entering edit mode
             highlightCommentsOnRender(noteContentElement);
 
-            let cursorOffset = 0;
-                        
-            const savedOffset = ModeContext.savedCursorOffset;
-            if (savedOffset && savedOffset.noteId === noteId) {
-                                
-                cursorOffset = savedOffset.offset;
-
-                ModeContext.clearSavedCursorOffset();
-                                
-                Logger.logDebug('Using stored cursor offset', {
-                    cursorOffset
-                }, Logger.LogCategory.DEBUG);
+            if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {
+                DOMUtils.focusNoteEdge(noteElement, 'start');
             } else {
-                // Use configured default cursor position when no saved offset
-                const contentElement = DOMUtils.getNoteContent(noteElement);
-                if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'END') {
-                    cursorOffset = contentElement.textContent.length || 0;
-                } else {
-                    // Default to START
-                    cursorOffset = 0;
-                }
+                DOMUtils.focusNoteEdge(noteElement, 'end');
             }
 
-            DOMUtils.focusNote(noteElement, cursorOffset);
             attachEditorSurface(noteId, noteContentElement);
         } else {
             detachEditorSurface();

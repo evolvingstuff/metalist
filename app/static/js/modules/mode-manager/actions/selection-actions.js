@@ -176,6 +176,7 @@ export async function actionSwitchNotes(newNoteId) {
     ModeContext.setCurrentContent(null);
 
     ModeContext.setCurrentNoteId(newNoteId);
+    ModeContext.markCaretHidden();
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
     

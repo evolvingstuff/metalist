@@ -491,6 +491,10 @@ body {
     padding-right: 15px; /* Matching right padding for symmetry */
 }
 
+.note-content.caret-hidden {
+    caret-color: transparent;
+}
+
 .note:not(.editing) .note-content {
     cursor: default;
 }
