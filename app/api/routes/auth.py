@@ -181,7 +181,7 @@ def change_password(payload: PasswordChangeRequest, db: SafeSession = Depends(ge
     return {"message": message}
 
 
-@router.post("/settings/password/remove")
+@router.delete("/settings/password/remove")
 def remove_password(payload: PasswordRemoveRequest, db: SafeSession = Depends(get_db), token: str = Depends(_require_auth)):
     auth = AuthService(db)
     success, message = auth.remove_password(payload.current_password)
