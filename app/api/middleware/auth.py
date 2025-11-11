@@ -25,7 +25,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     # Paths to suppress verbose logging for (frequent polling endpoints)
     QUIET_PATHS = [
-        f"{API_PREFIX}/notes/check-updates",
         f"{API_PREFIX}/notes/acquire-lock",
         f"{API_PREFIX}/notes/release-lock",
         f"{API_PREFIX}/auth/status",
@@ -33,10 +32,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     # Background/automated paths that should NOT refresh tokens (not user activity)
     NO_TOKEN_REFRESH_PATHS = [
-        f"{API_PREFIX}/notes/check-updates",
         f"{API_PREFIX}/notes/acquire-lock",
         f"{API_PREFIX}/notes/release-lock",
-        f"{API_PREFIX}/auth/status",  # ConnectivityMonitor pings this every 2 seconds
+        f"{API_PREFIX}/auth/status",  # Polling service pings this for connectivity
     ]
     
     # Note: /api/notes/* paths are NOT in this list - they require auth when password is set

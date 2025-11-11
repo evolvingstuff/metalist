@@ -18,7 +18,6 @@ from app.usecases.paste_child import CmdPasteChild
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.services.sync import get_current_sync_uuid
-from app.usecases.check_updates import CmdCheckUpdates
 from app.usecases.lock import CmdAcquireLock, CmdReleaseLock
 from app.config import VERSION
 
@@ -71,12 +70,6 @@ def view_diff(payload: dict):
         "updateUUID": update_uuid,
     }
     return response
-
-
-@router.post("/notes/check-updates")
-def check_updates(payload: dict):
-    cmd = CmdCheckUpdates(client_id=payload["clientId"], last_update_uuid=payload["lastUpdateUUID"])
-    return cmd.execute()
 
 
 @router.post("/notes/acquire-lock")

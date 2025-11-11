@@ -856,7 +856,7 @@ body.loading::after {
     top: -100px;
     left: 0;
     right: 0;
-    z-index: 9999;
+    z-index: 20000; /* ensure status banners sit above tab overlays */
     transition: transform 0.3s ease-in-out;
     pointer-events: auto;
 }

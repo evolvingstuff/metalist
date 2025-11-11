@@ -474,24 +474,21 @@ async function actionCreateNote() {
   await NotesAPI.createNote(parentId, { context: clientContext });
 }
 
-// Long polling for updates from other clients
-async function pollForUpdates() {
-  const response = await fetch('/api2/notes/check-updates', {
-    method: 'POST', 
-    body: JSON.stringify({
-      lastUpdateUUID: ModeContext.lastSyncUUID,
-      context: getCurrentClientContext()
-    })
+// Connectivity-only polling (single active session = no remote diffing)
+async function pollForConnectivity() {
+  const authToken = localStorage.getItem('auth_token');
+  const response = await fetch('/api2/auth/status', {
+    method: 'GET',
+    headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
   });
-  
-  if (response.needsUpdate) {
-    // Remote changes detected - server already cleared its undo stack
-    // Clear any local undo context and refresh
-    await actionRefreshView();
-    ModeContext.setLastSyncUUID(response.currentUpdateUUID);
+
+  if (response.ok) {
+    ErrorHandler.handleConnectionRestored();
   }
 }
 ```
+
+The background poll now exists purely to clear network banners once connectivity returns. Remote diffing is unnecessary because the auth service issues only one session token at a time.
 
 **Context Boundary Rules:**
 - **Tab switches**: Clear undo stack (new search context)
