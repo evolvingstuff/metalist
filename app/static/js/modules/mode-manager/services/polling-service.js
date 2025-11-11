@@ -64,49 +64,31 @@ async function checkConnectivityAndUpdates() {
 
             ModeContext.setUserActivity(false);
         }
-        
-        // Add auth token if it exists
-        const authToken = localStorage.getItem('auth_token');
-        
-        const response = await fetch(CONFIG.API.NOTES.CHECK_UPDATES, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                ...(authToken && { 'Authorization': `Bearer ${authToken}` })
-            },
-            body: JSON.stringify({
-                clientId: ModeContext.clientId,
-                lastUpdateUUID: ModeContext.lastUpdateUUID
-            })
-        });
-        
-       if (response.ok) {
-            // Connection is working - handle restoration if needed
-            ErrorHandler.handleConnectionRestored();
-            
-            const data = await response.json();
 
-            if (data && data.currentUpdateUUID) {
-                ModeContext.setLastUpdateUUID(data.currentUpdateUUID);
-            }
-            
-            if (data.needsUpdate) {
-                Logger.logDebug('Update detected, refreshing view', {
-                    currentUUID: data.currentUpdateUUID,
-                    lastKnown: ModeContext.lastUpdateUUID
-                });
-
-                // Trigger refresh
-                const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-                await actionRefreshAndMaybeSelect();
-            }
-        } else {
-            // Use error handler for HTTP errors
-            ErrorHandler.handleApiError(null, response);
-        }
+        await pingAuthStatus();
     } catch (error) {
         // Always show network errors immediately and loudly
         ErrorHandler.handleApiError(error);
         Logger.logError('Sync polling error', error);
     }
+}
+
+async function pingAuthStatus() {
+    const authToken = localStorage.getItem('auth_token');
+    const headers = {
+        ...(authToken && { 'Authorization': `Bearer ${authToken}` })
+    };
+
+    const response = await fetch(CONFIG.API.AUTH.STATUS, {
+        method: 'GET',
+        headers
+    });
+
+    if (response.ok) {
+        ErrorHandler.handleConnectionRestored();
+        return;
+    }
+
+    // Use centralized handler for HTTP errors
+    ErrorHandler.handleApiError(null, response);
 }

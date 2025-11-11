@@ -22,7 +22,6 @@ export const CONFIG = {
             UNDO: `${API_NOTES_BASE}/undo`,
             REDO: `${API_NOTES_BASE}/redo`,
             VIEW: `${API_NOTES_BASE}/view`,
-            CHECK_UPDATES: `${API_NOTES_BASE}/check-updates`,
             ACQUIRE_LOCK: `${API_NOTES_BASE}/acquire-lock`,
             RELEASE_LOCK: `${API_NOTES_BASE}/release-lock`
         },

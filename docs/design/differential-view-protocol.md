@@ -23,7 +23,7 @@
 - `clientSeenRootIds` identifies which root notes have actually been visible in the viewport; the server uses this to decide when to append additional root batches.
 - `clientNoteUuidHashes` is a map of `noteId -> expandedHashWithFlags` representing the client’s current cache. Omit entries the client does not have (they will be treated as additions).
 - `clientId`, `editingNoteId`, and `search` retain their current semantics.
-- The client issues the diff request whenever it needs to reconcile with the server: after detecting a changed `updateUUID` from `/api2/notes/check-updates`, or immediately after local mutations (save, move, collapse toggles, exiting edit mode) to pick up server-side side effects.
+- Because authentication now enforces a single active session, the client only issues the diff request after its own mutations (save, move, collapse toggles, exiting edit mode) to pick up server-side side effects.
 
 ## Response Shape
 ```json
