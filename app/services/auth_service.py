@@ -17,8 +17,10 @@ from app.db.settings_sql import (
     insert_default_settings,
     update_password_settings,
 )
+from app.services.content_cache import cache_note
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
+from app.services.note_store import store as note_store
 
 
 class AuthService:
@@ -105,8 +107,6 @@ class AuthService:
             with SafeSession.allow_reads("auth:set_password:fetch_notes"):
                 notes = fetch_all_for_cache(connection)
 
-            from app.services.content_cache import cache_note
-
             for note in notes:
                 note_id = note["id"]
                 content = note["content"]
@@ -148,8 +148,6 @@ class AuthService:
             self.db.commit()
         finally:
             maintenance_service.exit_maintenance()
-
-        from app.services.note_store import store as note_store
 
         if note_store.loaded:
             with SafeSession.allow_reads("auth:set_password:refresh_store"):
@@ -232,33 +230,44 @@ class AuthService:
                 notes = fetch_all_for_cache(connection)
             decrypted_count = 0
 
-            from app.services.content_cache import cache_note
-
             for note in notes:
                 note_id = note["id"]
                 content = note["content"]
                 nonce = note.get("encryption_nonce")
                 tag = note.get("encryption_tag")
 
-                if content and nonce is not None:
-                    try:
-                        plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
-                        update_note_content(
-                            connection,
-                            note_id,
-                            content=plaintext,
-                            encryption_nonce=None,
-                            encryption_tag=None,
-                        )
-                        cache_note(note_id, plaintext)
-                        decrypted_count += 1
-                    except Exception as exc:
-                        print(f"🚨 FATAL: Failed to decrypt note {note_id}: {exc}")
-                        print("🚨 Cannot remove password protection with broken decryption!")
-                        print("🚨 CRASHING IMMEDIATELY")
-                        raise RuntimeError(
-                            f"Password removal failed: Could not decrypt note {note_id}: {exc}"
-                        ) from exc
+                is_encrypted = nonce is not None or tag is not None
+                if not is_encrypted:
+                    continue
+
+                if nonce is None or tag is None:
+                    raise RuntimeError(
+                        "Password removal failed: encrypted note has incomplete metadata: "
+                        f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
+                    )
+                if content is None:
+                    raise RuntimeError(
+                        f"Password removal failed: encrypted note {note_id} has NULL content"
+                    )
+
+                try:
+                    plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
+                    update_note_content(
+                        connection,
+                        note_id,
+                        content=plaintext,
+                        encryption_nonce=None,
+                        encryption_tag=None,
+                    )
+                    cache_note(note_id, plaintext)
+                    decrypted_count += 1
+                except Exception as exc:
+                    print(f"🚨 FATAL: Failed to decrypt note {note_id}: {exc}")
+                    print("🚨 Cannot remove password protection with broken decryption!")
+                    print("🚨 CRASHING IMMEDIATELY")
+                    raise RuntimeError(
+                        f"Password removal failed: Could not decrypt note {note_id}: {exc}"
+                    ) from exc
 
             clear_password_settings(connection)
             self.db.commit()
@@ -266,11 +275,8 @@ class AuthService:
         finally:
             maintenance_service.exit_maintenance()
 
-        from app.services.note_store import store as note_store
-
         if note_store.loaded:
             with SafeSession.allow_reads("auth:remove_password:refresh_store"):
                 note_store.load_from_db(self.db)
 
         return True, f"Password removed successfully. Decrypted {decrypted_count} notes."
-

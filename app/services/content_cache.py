@@ -115,18 +115,25 @@ def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[st
                     f"Cache population failed: Note {note_id} has NULL content."
                 )
 
+            encrypted = nonce is not None or tag is not None
+            if encrypted and (nonce is None or tag is None):
+                raise RuntimeError(
+                    "Cache population failed: encrypted note has incomplete metadata: "
+                    f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
+                )
+
             try:
                 # Handle both encrypted and unencrypted content
-                if nonce is not None and tag is not None:
-                    # Encrypted content - decrypt using new separate fields approach
-                    if encryption_service and encryption_service.dek:
-                        decrypted_content = encryption_service.decrypt_from_storage(
-                            content, nonce, tag
+                if encrypted:
+                    if not encryption_service or not encryption_service.dek:
+                        raise RuntimeError(
+                            "Cache population failed: encrypted note encountered without DEK. "
+                            "This means the database contains encrypted rows but the "
+                            "app_settings table does not have an active password/DEK. "
+                            "The ciphertext is not recoverable without the DEK. "
+                            f"note_id={note_id}"
                         )
-                    else:
-                        # No encryption key available, can't decrypt
-                        logger.warning(f"No encryption key available to decrypt note {note_id}")
-                        decrypted_content = f"[Encrypted content - login required]"
+                    decrypted_content = encryption_service.decrypt_from_storage(content, nonce, tag)
                 else:
                     # Unencrypted content, including empty string which must still be cached
                     decrypted_content = content
@@ -188,8 +195,7 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
     try:
         encryption_service = get_encryption_service()
         if not encryption_service or not encryption_service.dek:
-            logger.warning("No encryption key available for cache refresh")
-            return
+            raise RuntimeError("Cache refresh requested but no encryption key is available")
         
         with SafeSession.allow_reads("cache:refresh_encrypted"):
             rows = fetch_all_for_cache(db.connection())
