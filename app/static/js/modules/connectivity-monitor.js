@@ -50,7 +50,13 @@ export const ConnectivityMonitor = {
         try {
             // Add auth token if it exists
             const authToken = localStorage.getItem('auth_token');
+            const tabId = sessionStorage.getItem('metalist_tab_id');
+            if (!tabId) {
+                throw new Error('metalist_tab_id missing from sessionStorage');
+            }
             const headers = {};
+
+            headers['X-Metalist-Tab-Id'] = tabId;
             
             if (authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`;

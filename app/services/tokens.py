@@ -28,6 +28,7 @@ class TokenService:
     def create_token(
         self,
         client_info: str,
+        owner_tab_id: str,
         master_key: Optional[bytes] = None,
         dek: Optional[bytes] = None,
     ) -> str:
@@ -52,6 +53,7 @@ class TokenService:
         # Store token info including keys for encryption
         self.tokens[token_hash] = {
             "client_info": client_info,
+            "owner_tab_id": owner_tab_id,
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRY_MINUTES),
             "last_activity": datetime.now(timezone.utc),
@@ -89,6 +91,33 @@ class TokenService:
             del self.tokens[token_hash]
             return False
         
+        return True
+
+    def verify_token_for_tab(self, token: str, owner_tab_id: str) -> bool:
+        if not owner_tab_id:
+            return False
+        if not self.verify_token(token):
+            return False
+
+        token_hash = self._hash_token(token)
+        token_info = self.tokens.get(token_hash)
+        if not token_info:
+            return False
+        return token_info.get("owner_tab_id") == owner_tab_id
+
+    def claim_token_for_tab(self, token: str, owner_tab_id: str) -> bool:
+        if not owner_tab_id:
+            return False
+        if not self.verify_token(token):
+            return False
+
+        token_hash = self._hash_token(token)
+        token_info = self.tokens.get(token_hash)
+        if not token_info:
+            return False
+
+        token_info["owner_tab_id"] = owner_tab_id
+        token_info["last_activity"] = datetime.now(timezone.utc)
         return True
     
     def refresh_token(self, token: str) -> Optional[str]:

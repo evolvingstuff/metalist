@@ -5,7 +5,10 @@ import os
 class FilterCheckUpdates(logging.Filter):
     NOISY_PATTERNS = (
         'POST /api/notes/acquire-lock',
+        'POST /api2/notes/acquire-lock',
+        'POST /api2/notes/release-lock',
         'GET /api/auth/sessions',
+        'GET /api2/auth/status',
     )
 
     def filter(self, record):

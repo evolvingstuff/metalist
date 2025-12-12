@@ -3,7 +3,6 @@ import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
-import { NotesAPI } from '../../api-client.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 
 export async function actionSelectNote(noteId, options = {}) {
@@ -30,27 +29,6 @@ export async function actionSelectNote(noteId, options = {}) {
     }
 
     ModeContext.setCurrentNoteId(noteId);
-
-    // Try to acquire lock before entering edit mode
-    try {
-        await NotesAPI.acquireLock(noteId);
-        Logger.logDebug('Acquired lock for note', { noteId });
-    } catch (error) {
-        Logger.logError('Failed to acquire lock', error);
-        // Check if it's a connection issue or an actual lock conflict
-        if (!ModeContext.isConnected) {
-            // Don't show alert - connection error banner is already visible
-            Logger.logDebug('Cannot acquire lock - server unavailable');
-        } else if (error.message && error.message.includes('409')) {
-            // Actual lock conflict
-            alert('This note is being edited by another device');
-        } else {
-            // Some other error
-            alert('Failed to acquire lock. Please try again.');
-        }
-        ModeContext.setCurrentNoteId(null);
-        return;
-    }
 
     ModeContext.setEditing(true);
 
@@ -97,16 +75,6 @@ export async function actionDeselectNote() {
         await actionSaveNote(noteId);
     }
 
-    // Release the lock when exiting edit mode
-    if (noteId) {
-        try {
-            await NotesAPI.releaseLock(noteId);
-            Logger.logDebug('Released lock for note', { noteId });
-        } catch (error) {
-            Logger.logError('Failed to release lock', error);
-        }
-    }
-
     ModeContext.setEditing(false);
 
     ModeContext.setCurrentNoteId(null);
@@ -143,36 +111,6 @@ export async function actionSwitchNotes(newNoteId, options = {}) {
 
     if (ModeContext.isDirty && currentNoteId) {
         await actionSaveNote(currentNoteId);
-    }
-
-    // Release lock on current note if switching
-    if (currentNoteId) {
-        try {
-            await NotesAPI.releaseLock(currentNoteId);
-            Logger.logDebug('Released lock when switching notes', { fromNote: currentNoteId });
-        } catch (error) {
-            Logger.logError('Failed to release lock when switching', error);
-        }
-    }
-
-    // Try to acquire lock on new note
-    try {
-        await NotesAPI.acquireLock(newNoteId);
-        Logger.logDebug('Acquired lock for new note', { noteId: newNoteId });
-    } catch (error) {
-        Logger.logError('Failed to acquire lock for new note', error);
-        // Check if it's a connection issue or an actual lock conflict
-        if (!ModeContext.isConnected) {
-            // Don't show alert - connection error banner is already visible
-            Logger.logDebug('Cannot acquire lock - server unavailable');
-        } else if (error.message && error.message.includes('409')) {
-            // Actual lock conflict
-            alert('This note is being edited by another device');
-        } else {
-            // Some other error
-            alert('Failed to acquire lock. Please try again.');
-        }
-        return;
     }
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;

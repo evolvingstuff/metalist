@@ -25,15 +25,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     # Paths to suppress verbose logging for (frequent polling endpoints)
     QUIET_PATHS = [
-        f"{API_PREFIX}/notes/acquire-lock",
-        f"{API_PREFIX}/notes/release-lock",
         f"{API_PREFIX}/auth/status",
     ]
     
     # Background/automated paths that should NOT refresh tokens (not user activity)
     NO_TOKEN_REFRESH_PATHS = [
-        f"{API_PREFIX}/notes/acquire-lock",
-        f"{API_PREFIX}/notes/release-lock",
         f"{API_PREFIX}/auth/status",  # Polling service pings this for connectivity
     ]
     
@@ -119,7 +115,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         token = parts[1]
-        if not token_service.verify_token(token):
+
+        tab_id = request.headers.get("x-metalist-tab-id")
+        if not tab_id:
+            return JSONResponse(status_code=400, content={"detail": "X-Metalist-Tab-Id header required"})
+
+        claim = request.headers.get("x-metalist-claim") == "1"
+        if claim:
+            token_service.claim_token_for_tab(token, tab_id)
+
+        if not token_service.verify_token_for_tab(token, tab_id):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Authentication required"}

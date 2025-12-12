@@ -40,7 +40,9 @@ def _configure_sql_logging(conn: sqlite3.Connection) -> None:
             },
         )
 
-    conn.set_trace_callback(lambda statement: logger.info("sqlite.raw", extra={"sql": statement}))
+    # Raw trace callback logs *every* statement; keep it DEBUG-only to avoid
+    # drowning the logs in polling traffic.
+    conn.set_trace_callback(lambda statement: logger.debug("sqlite.raw", extra={"sql": statement}))
 
 class SafeSession:
     _db_path = _resolve_db_path(DATABASE_URL)

@@ -7,10 +7,14 @@ export const NotesAPI = {
                 
     async _apiCall(url, options = {}) {
         try {
+            const claimSession = Boolean(options.claimSession);
+            const fetchOptions = { ...options };
+            delete fetchOptions.claimSession;
+
             // Add sync context to request body for non-GET requests
-            let requestBody = options.body;
+            let requestBody = fetchOptions.body;
             let requestPayload = null;
-            if (options.method && options.method !== 'GET') {
+            if (fetchOptions.method && fetchOptions.method !== 'GET') {
                 const syncContext = {
                     clientId: ModeContext.clientId,
                     lastUpdateUUID: ModeContext.lastUpdateUUID
@@ -49,9 +53,9 @@ export const NotesAPI = {
 
                 console.log(' [API] Request:', {
                     url: url,
-                    method: options.method || 'GET',
+                    method: fetchOptions.method || 'GET',
                     body: bodySummary,
-                    headers: options.headers
+                    headers: fetchOptions.headers
                 });
             }
 
@@ -63,8 +67,17 @@ export const NotesAPI = {
             
             const headers = {
                 'Content-Type': 'application/json',
-                ...options.headers
+                ...fetchOptions.headers
             };
+
+            const tabId = sessionStorage.getItem('metalist_tab_id');
+            if (!tabId) {
+                throw new Error('metalist_tab_id missing from sessionStorage');
+            }
+            headers['X-Metalist-Tab-Id'] = tabId;
+            if (claimSession) {
+                headers['X-Metalist-Claim'] = '1';
+            }
             
             if (authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`;
@@ -82,7 +95,7 @@ export const NotesAPI = {
             }
 
             const response = await fetch(url, {
-                ...options,
+                ...fetchOptions,
                 body: requestBody,
                 headers: headers
             });
@@ -147,6 +160,7 @@ export const NotesAPI = {
         
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
             method: 'POST',
+            claimSession: true,
             body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
         });
     },
@@ -159,19 +173,22 @@ export const NotesAPI = {
         
         return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
             method: 'POST',
+            claimSession: true,
             body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
         });
     },
 
     async createChild(noteId) {
         return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { 
-            method: 'POST' 
+            method: 'POST',
+            claimSession: true,
         });
     },
 
     async updateNote(noteId, content) {
         return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
             method: 'PUT',
+            claimSession: true,
             body: JSON.stringify({ content })
         });
     },
@@ -179,6 +196,7 @@ export const NotesAPI = {
     async saveNote(noteId, content) {
         return this._apiCall(CONFIG.API.NOTES.SAVE(noteId), {
             method: 'PUT',
+            claimSession: true,
             body: JSON.stringify({ content })
         }); 
     },
@@ -195,6 +213,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
+            claimSession: true,
             body: JSON.stringify(body)
         });
     },
@@ -229,6 +248,7 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.MOVE(noteId), {
             method: 'POST',
+            claimSession: true,
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -237,31 +257,33 @@ export const NotesAPI = {
     },
 
     async deleteNote(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE' });
+        return this._apiCall(CONFIG.API.NOTES.DELETE(noteId), { method: 'DELETE', claimSession: true });
     },
 
     async collapseNote(noteId) {
         return this._apiCall(CONFIG.API.NOTES.COLLAPSE(noteId), {
-            method: 'POST'
+            method: 'POST',
+            claimSession: true,
         });
     },
 
     async expandNote(noteId) {
         return this._apiCall(CONFIG.API.NOTES.EXPAND(noteId), {
-            method: 'POST'
+            method: 'POST',
+            claimSession: true,
         });
     },
 
     async undo() {
         const searchContext = (ModeContext.searchQuery || '').toString();
         const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&searchContext=${encodeURIComponent(searchContext)}`;
-        return this._apiCall(url, { method: 'POST' });
+        return this._apiCall(url, { method: 'POST', claimSession: true });
     },
 
     async redo() {
         const searchContext = (ModeContext.searchQuery || '').toString();
         const url = `${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&searchContext=${encodeURIComponent(searchContext)}`;
-        return this._apiCall(url, { method: 'POST' });
+        return this._apiCall(url, { method: 'POST', claimSession: true });
     },
 
     getNoteElement(noteId) {
@@ -340,27 +362,17 @@ export const NotesAPI = {
 
     async pasteNoteSibling(targetNoteId) {
         return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(targetNoteId), {
-            method: 'POST'
+            method: 'POST',
+            claimSession: true,
         });
     },
 
     async pasteNoteChild(targetNoteId) {
         return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(targetNoteId), {
-            method: 'POST'
-        });
-    },
-
-    async acquireLock(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.ACQUIRE_LOCK, {
             method: 'POST',
-            body: JSON.stringify({ noteId })
+            claimSession: true,
         });
     },
 
-    async releaseLock(noteId) {
-        return this._apiCall(CONFIG.API.NOTES.RELEASE_LOCK, {
-            method: 'POST', 
-            body: JSON.stringify({ noteId })
-        });
-    }
+    // Note locks removed: single-tab session ownership enforces exclusivity.
 };

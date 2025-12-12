@@ -30,10 +30,18 @@ async function refreshTokenOnActivity() {
         return;
     }
 
+    const tabId = sessionStorage.getItem('metalist_tab_id');
+    if (!tabId) {
+        throw new Error('metalist_tab_id missing from sessionStorage');
+    }
+
     try {
         const response = await fetch(CONFIG.API.AUTH.SESSIONS, {
             method: 'GET',
-            headers: { 'Authorization': `Bearer ${authToken}` }
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'X-Metalist-Tab-Id': tabId
+            }
         });
 
         if (response.ok) {
@@ -75,7 +83,12 @@ async function checkConnectivityAndUpdates() {
 
 async function pingAuthStatus() {
     const authToken = localStorage.getItem('auth_token');
+    const tabId = sessionStorage.getItem('metalist_tab_id');
+    if (!tabId) {
+        throw new Error('metalist_tab_id missing from sessionStorage');
+    }
     const headers = {
+        'X-Metalist-Tab-Id': tabId,
         ...(authToken && { 'Authorization': `Bearer ${authToken}` })
     };
 

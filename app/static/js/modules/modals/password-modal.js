@@ -44,8 +44,19 @@ export class PasswordModal extends BaseModal {
      */
     async onOpen() {
         try {
+            const tabId = sessionStorage.getItem('metalist_tab_id');
+            if (!tabId) {
+                throw new Error('metalist_tab_id missing from sessionStorage');
+            }
+
+            const token = localStorage.getItem('auth_token');
+            const headers = { 'X-Metalist-Tab-Id': tabId };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             // Determine which mode we should be in
-            const response = await fetch(this.apiEndpoints.status);
+            const response = await fetch(this.apiEndpoints.status, { headers });
             const status = await response.json();
             
             const mode = status.has_password ? 'change' : 'create';
@@ -480,8 +491,13 @@ export class PasswordModal extends BaseModal {
         }
         
         const token = localStorage.getItem('auth_token');
+        const tabId = sessionStorage.getItem('metalist_tab_id');
+        if (!tabId) {
+            throw new Error('metalist_tab_id missing from sessionStorage');
+        }
         const headers = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Metalist-Tab-Id': tabId,
         };
         
         if (token) {

@@ -181,12 +181,20 @@ async def log_requests(request: Request, call_next):
     request_id = uuid.uuid4().hex[:8]
     handler = request.scope.get("endpoint")
     handler_name = getattr(handler, "__qualname__", "unknown")
-    logger.bind(request_id=request_id).info(
-        "⇒ {method} {path} handler={handler}",
-        method=request.method,
-        path=request.url.path,
-        handler=handler_name,
-    )
+
+    path = request.url.path
+    is_noisy_poll = request.method == "GET" and path == f"{API_PREFIX}/auth/status"
+    is_noisy_lock = request.method == "POST" and path in {
+        f"{API_PREFIX}/notes/acquire-lock",
+        f"{API_PREFIX}/notes/release-lock",
+    }
+    if not (is_noisy_poll or is_noisy_lock):
+        logger.bind(request_id=request_id).info(
+            "⇒ {method} {path} handler={handler}",
+            method=request.method,
+            path=path,
+            handler=handler_name,
+        )
 
     start = time.perf_counter()
     try:
@@ -203,15 +211,16 @@ async def log_requests(request: Request, call_next):
 
     duration_ms = (time.perf_counter() - start) * 1000
     size = response.headers.get("content-length", "-")
-    logger.bind(request_id=request_id).info(
-        "⇐ {status} {method} {path} handler={handler} duration={duration:.2f} ms size={size}",
-        status=response.status_code,
-        method=request.method,
-        path=request.url.path,
-        handler=handler_name,
-        duration=duration_ms,
-        size=size,
-    )
+    if not (is_noisy_poll or is_noisy_lock):
+        logger.bind(request_id=request_id).info(
+            "⇐ {status} {method} {path} handler={handler} duration={duration:.2f} ms size={size}",
+            status=response.status_code,
+            method=request.method,
+            path=path,
+            handler=handler_name,
+            duration=duration_ms,
+            size=size,
+        )
     return response
 
 @app.get("/", response_class=HTMLResponse)

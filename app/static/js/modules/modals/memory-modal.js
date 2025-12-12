@@ -130,11 +130,20 @@ export class MemoryModal extends BaseModal {
         this.setButtonsDisabled(true);
 
         try {
+            const tabId = sessionStorage.getItem('metalist_tab_id');
+            if (!tabId) {
+                throw new Error('metalist_tab_id missing from sessionStorage');
+            }
+            const authToken = localStorage.getItem('auth_token');
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-Metalist-Tab-Id': tabId,
+                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+            };
+
             const response = await fetch(MEMORY_ENDPOINT, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers,
                 body: JSON.stringify(body),
                 signal: this._abortController.signal
             });

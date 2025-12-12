@@ -44,9 +44,6 @@ class ModeContext {
         // Clipboard mode tracking
         this._clipboardMode = 'system'; // 'system' for text, 'note' for note copying
         
-        // Editing heartbeat timer for dead client lock detection
-        this._editingHeartbeatTimer = null;
-        
         // Connection state tracking
         this._isConnected = true;
         this._connectionErrorBannerVisible = false;
@@ -156,13 +153,6 @@ class ModeContext {
             this._caretHidden = false;
         }
         
-        // Manage editing heartbeat timer
-        if (this._editing) {
-            this._startEditingHeartbeat();
-        } else {
-            this._stopEditingHeartbeat();
-        }
-                
         if (oldValue !== this._editing) {
             this._notifyListeners('editing', this._editing);
         }
@@ -753,83 +743,6 @@ class ModeContext {
 
     get lastUpdateUUID() {
         return this._lastUpdateUUID;
-    }
-    
-    // Editing heartbeat methods
-    _startEditingHeartbeat() {
-        // Clear any existing timer first
-        this._stopEditingHeartbeat();
-        
-        // Send initial heartbeat immediately
-        this._sendEditingHeartbeat();
-        
-        // Start periodic heartbeat using configured interval
-        this._editingHeartbeatTimer = setInterval(() => {
-            this._sendEditingHeartbeat();
-        }, CONFIG.SYNC.LOCK_HEARTBEAT_INTERVAL_MS);
-        
-        Logger.logDebug('Started editing heartbeat timer');
-    }
-    
-    _stopEditingHeartbeat() {
-        if (this._editingHeartbeatTimer) {
-            clearInterval(this._editingHeartbeatTimer);
-            this._editingHeartbeatTimer = null;
-            Logger.logDebug('Stopped editing heartbeat timer');
-        }
-    }
-    
-    async _sendEditingHeartbeat() {
-        if (!this._currentNoteId || !this._editing) {
-            return;
-        }
-        
-        try {
-            const headers = { 'Content-Type': 'application/json' };
-            const authToken = localStorage.getItem('auth_token');
-            if (authToken) {
-                headers['Authorization'] = `Bearer ${authToken}`;
-            }
-
-            const response = await fetch(CONFIG.API.NOTES.ACQUIRE_LOCK, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    noteId: this._currentNoteId,
-                    clientId: this._clientId,
-                    lastUpdateUUID: this._lastUpdateUUID
-                })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                this._lastUpdateUUID = data.updateUUID;
-            } else if (response.status === 409) {
-                // Lock was taken by another client - exit edit mode
-                Logger.logDebug('Lost edit lock to another client');
-                this.setEditing(false);
-                // TODO: Show user notification that they lost the lock
-            } else if (response.status === 401) {
-                Logger.logError('Editing heartbeat unauthorized - exiting edit mode', response.statusText);
-                this.setEditing(false);
-                // Trigger global auth required handler if available
-                window.dispatchEvent(new CustomEvent('metalist-auth-required'));
-                if (window.ErrorHandler) {
-                    window.ErrorHandler.handleApiError(null, response);
-                }
-            } else {
-                Logger.logError('Editing heartbeat failed', response.statusText);
-                if (window.ErrorHandler) {
-                    window.ErrorHandler.handleApiError(null, response);
-                }
-                this.setEditing(false);
-            }
-        } catch (error) {
-            Logger.logError('Failed to send editing heartbeat', error);
-            if (window.ErrorHandler) {
-                window.ErrorHandler.handleApiError(error);
-            }
-        }
     }
     
     // Connection state management

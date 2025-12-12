@@ -21,9 +21,7 @@ export const CONFIG = {
             PASTE_CHILD: (targetNoteId) => `${API_NOTES_BASE}/paste-child/${targetNoteId}`,
             UNDO: `${API_NOTES_BASE}/undo`,
             REDO: `${API_NOTES_BASE}/redo`,
-            VIEW: `${API_NOTES_BASE}/view`,
-            ACQUIRE_LOCK: `${API_NOTES_BASE}/acquire-lock`,
-            RELEASE_LOCK: `${API_NOTES_BASE}/release-lock`
+            VIEW: `${API_NOTES_BASE}/view`
         },
         AUTH: {
             STATUS: `${API_AUTH_BASE}/status`,
@@ -55,8 +53,7 @@ export const CONFIG = {
     },
 
     SYNC: {
-        POLL_INTERVAL_MS: 1000,
-        LOCK_HEARTBEAT_INTERVAL_MS: 1000
+        POLL_INTERVAL_MS: 5_000,
     },
 
     DEBUG: {

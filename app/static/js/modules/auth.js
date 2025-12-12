@@ -31,6 +31,7 @@ export const Auth = {
             const missingOwner = Boolean(token && !activeOwner);
 
             const headers = {};
+            headers['X-Metalist-Tab-Id'] = this._tabId;
             if (token) {
                 headers['Authorization'] = `Bearer ${token}`;
             }
@@ -74,7 +75,10 @@ export const Auth = {
     async claimPasswordlessSession() {
         console.log('[Auth] Claiming passwordless session');
         const response = await fetch(CONFIG.API.AUTH.SESSION, {
-            method: 'POST'
+            method: 'POST',
+            headers: {
+                'X-Metalist-Tab-Id': this._tabId
+            }
         });
 
         if (!response.ok) {
@@ -160,7 +164,8 @@ export const Auth = {
             const response = await fetch(CONFIG.API.AUTH.LOGIN, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-Metalist-Tab-Id': this._tabId,
                 },
                 body: JSON.stringify({ password })
             });
@@ -217,7 +222,8 @@ export const Auth = {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Metalist-Tab-Id': this._tabId,
                     }
                 });
             } catch (error) {

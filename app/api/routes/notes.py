@@ -18,7 +18,6 @@ from app.usecases.paste_child import CmdPasteChild
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.services.sync import get_current_sync_uuid
-from app.usecases.lock import CmdAcquireLock, CmdReleaseLock
 from app.config import VERSION
 
 
@@ -70,21 +69,6 @@ def view_diff(payload: dict):
         "updateUUID": update_uuid,
     }
     return response
-
-
-@router.post("/notes/acquire-lock")
-def acquire_lock(payload: dict):
-    cmd = CmdAcquireLock(note_id=payload["noteId"], client_id=payload["clientId"]) 
-    result = cmd.execute()
-    if not result.get("success") and result.get("conflict"):
-        raise HTTPException(status_code=409, detail="Note is locked by another client")
-    return result
-
-
-@router.post("/notes/release-lock")
-def release_lock(payload: dict):
-    cmd = CmdReleaseLock(note_id=payload["noteId"], client_id=payload["clientId"]) 
-    return cmd.execute()
 
 
 # Stub endpoints for the rest of the notes API (501 Not Implemented)

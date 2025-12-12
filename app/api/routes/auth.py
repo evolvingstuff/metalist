@@ -52,28 +52,38 @@ def _client_info(request: Request) -> str:
     return f"{user_agent[:100]} - {client_host}"
 
 
-def _verify_token(authorization: Optional[str] = Header(None)) -> Optional[str]:
+def _require_tab_id(x_metalist_tab_id: str = Header(..., alias="X-Metalist-Tab-Id")) -> str:
+    return x_metalist_tab_id
+
+
+def _verify_token(
+    tab_id: str = Depends(_require_tab_id),
+    authorization: Optional[str] = Header(None),
+) -> Optional[str]:
     if not authorization:
         return None
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         return None
     token = parts[1]
-    if token_service.verify_token(token):
-        token_service.refresh_token(token)
+    if token_service.verify_token_for_tab(token, tab_id):
         return token
     return None
 
 
-def _require_auth(authorization: Optional[str] = Header(None)) -> str:
-    token = _verify_token(authorization)
+def _require_auth(token: Optional[str] = Depends(_verify_token)) -> str:
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     return token
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(request: Request, payload: LoginRequest, db: SafeSession = Depends(get_db)):
+def login(
+    request: Request,
+    payload: LoginRequest,
+    tab_id: str = Depends(_require_tab_id),
+    db: SafeSession = Depends(get_db),
+):
     auth = AuthService(db)
     if not auth.has_password():
         raise HTTPException(status_code=400, detail="No password is set. Please set a password first.")
@@ -114,7 +124,7 @@ def login(request: Request, payload: LoginRequest, db: SafeSession = Depends(get
         v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
         auth_cache_state.mark_cache_ready()
 
-    token = token_service.create_token(_client_info(request), master_key, dek)
+    token = token_service.create_token(_client_info(request), tab_id, master_key, dek)
     clear_all_locks()
     return LoginResponse(token=token, message="Login successful")
 
@@ -130,21 +140,29 @@ def logout(token: str = Depends(_require_auth)):
 
 
 @router.post("/session", response_model=SessionResponse)
-def create_passwordless_session(request: Request, db: SafeSession = Depends(get_db)):
+def create_passwordless_session(
+    request: Request,
+    tab_id: str = Depends(_require_tab_id),
+    db: SafeSession = Depends(get_db),
+):
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=400, detail="Password is set. Use /login instead.")
 
-    token = token_service.create_token(_client_info(request))
+    token = token_service.create_token(_client_info(request), tab_id)
     clear_all_locks()
     return SessionResponse(token=token, message="Session established")
 
 
 @router.get("/status")
-def auth_status(db: SafeSession = Depends(get_db), authorization: Optional[str] = Header(None)):
+def auth_status(
+    db: SafeSession = Depends(get_db),
+    authorization: Optional[str] = Header(None),
+    tab_id: str = Depends(_require_tab_id),
+):
     auth = AuthService(db)
     settings = auth.get_settings()
-    token = _verify_token(authorization)
+    token = _verify_token(tab_id, authorization)
     return {
         "authenticated": token is not None,
         "has_password": auth.has_password(),
