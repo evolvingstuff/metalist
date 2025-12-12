@@ -8,9 +8,11 @@ from .api.middleware.auth import AuthMiddleware
 from app.config import VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
+from .db.notes_sql import clear_encryption_metadata_for_empty_notes
 from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.deps import get_db
-from .services.content_cache import populate_cache_from_db
+from .services.content_cache import populate_cache_from_db, get_cached_content
+from .services.auth import AuthService
 from .services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.api.routes.notes import router as api2_router
@@ -99,37 +101,61 @@ except Exception as e:
     logger.error(f"🚨 CRASHING IMMEDIATELY")
     raise RuntimeError(f"Application startup failed: Could not initialize app settings: {e}") from e
 
-# Populate content cache on startup
-try:
-    cache_start = time.perf_counter()
-    prefetched_rows = populate_cache_from_db()
-    _log_startup_step("cache population", time.perf_counter() - cache_start)
+startup_has_password = bool(settings and settings.get("password_hash"))
 
-    store_start = time.perf_counter()
-    note_store.load_from_db(None, prefetched_rows=prefetched_rows)
-    _log_startup_step("note store hydration", time.perf_counter() - store_start)
-
-    # Hydrate v2 view-only store from the same prefetched rows using decrypted cache
-    def _get_plaintext(note_id: str, row: dict) -> str:
-        from .services.content_cache import get_cached_content
-        plaintext = get_cached_content(note_id)
-        if plaintext is None:
-            raise RuntimeError(f"V2 hydrate failed: no plaintext in cache for note {note_id}")
-        return plaintext
-
-    v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
-
+if startup_has_password:
+    logger.info("[startup] password set; skipping cache + store hydration until login")
     guard_start = time.perf_counter()
     enable_read_guard()
     _log_startup_step("read guard enable", time.perf_counter() - guard_start)
-
     _log_startup_step("total startup", time.perf_counter() - overall_start)
-except Exception as e:
-    # FAIL FAST AND LOUD - NO SILENT FAILURES
-    logger.error(f"🚨 FATAL: Failed to populate content cache on startup: {e}")
-    logger.error(f"🚨 Cannot start application with broken cache system!")
-    logger.error(f"🚨 CRASHING IMMEDIATELY")
-    raise RuntimeError(f"Application startup failed: Could not populate content cache: {e}") from e
+else:
+    # Populate content cache on startup
+    try:
+        repair_start = time.perf_counter()
+        with begin_writer() as connection:
+            repaired = clear_encryption_metadata_for_empty_notes(connection)
+        if repaired:
+            logger.info(
+                f"[startup] repaired {repaired} empty encrypted notes (cleared nonce/tag)"
+            )
+        _log_startup_step(
+            "empty-note encryption metadata repair",
+            time.perf_counter() - repair_start,
+        )
+
+        cache_start = time.perf_counter()
+        prefetched_rows = populate_cache_from_db()
+        _log_startup_step("cache population", time.perf_counter() - cache_start)
+
+        store_start = time.perf_counter()
+        note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+        _log_startup_step("note store hydration", time.perf_counter() - store_start)
+
+        # Hydrate v2 view-only store from the same prefetched rows using decrypted cache
+        def _get_plaintext(note_id: str, row: dict) -> str:
+            plaintext = get_cached_content(note_id)
+            if plaintext is None:
+                raise RuntimeError(
+                    f"V2 hydrate failed: no plaintext in cache for note {note_id}"
+                )
+            return plaintext
+
+        v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
+
+        guard_start = time.perf_counter()
+        enable_read_guard()
+        _log_startup_step("read guard enable", time.perf_counter() - guard_start)
+
+        _log_startup_step("total startup", time.perf_counter() - overall_start)
+    except Exception as e:
+        # FAIL FAST AND LOUD - NO SILENT FAILURES
+        logger.error(f"🚨 FATAL: Failed to populate content cache on startup: {e}")
+        logger.error(f"🚨 Cannot start application with broken cache system!")
+        logger.error(f"🚨 CRASHING IMMEDIATELY")
+        raise RuntimeError(
+            f"Application startup failed: Could not populate content cache: {e}"
+        ) from e
 
 # Custom StaticFiles class that disables caching
 class NoCacheStaticFiles(StarletteStaticFiles):
@@ -226,8 +252,6 @@ async def log_requests(request: Request, call_next):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: SafeSession = Depends(get_db)):
     try:
-        from .services.auth import AuthService
-        
         template = templates.get_template("index.html")
         
         # Check if authentication is required
@@ -274,8 +298,6 @@ async def maintenance_page(request: Request):
 async def locked_page(request: Request, db: SafeSession = Depends(get_db)):
     """Render a dedicated locked screen when a session is invalidated."""
     try:
-        from .services.auth import AuthService
-
         template = templates.get_template("locked.html")
         auth = AuthService(db)
         has_password = auth.has_password()

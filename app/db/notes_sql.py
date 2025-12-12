@@ -218,3 +218,31 @@ def fetch_all_for_cache(connection: GuardedConnection | sqlite3.Connection) -> l
     conn = _conn(connection)
     rows = conn.execute(f"SELECT * FROM {NOTES_TABLE}").fetchall()
     return [_deserialize_row(row) for row in rows]
+
+
+def clear_encryption_metadata_for_empty_notes(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    updated_at: Optional[datetime] = None,
+) -> int:
+    """Clear encryption metadata for notes whose content is an empty string.
+
+    AES-GCM encryption of an empty plaintext produces an empty ciphertext, so
+    we can safely clear nonce/tag without losing content. This is used as a
+    targeted integrity repair when password protection has been removed.
+    """
+
+    conn = _conn(connection)
+    cursor = conn.execute(
+        f"""
+        UPDATE {NOTES_TABLE}
+        SET encryption_nonce = NULL,
+            encryption_tag = NULL,
+            updated_at = ?
+        WHERE content = ''
+          AND encryption_nonce IS NOT NULL
+          AND encryption_tag IS NOT NULL
+        """,
+        (_serialize_datetime(updated_at),),
+    )
+    return int(cursor.rowcount or 0)

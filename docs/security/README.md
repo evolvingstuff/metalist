@@ -90,6 +90,11 @@ notes table:
 - content: Encrypted note content (Base64)
 - nonce: Per-note nonce for AES-GCM
 - tag: Per-note authentication tag
+
+Important: if any note rows have nonce/tag set, they are encrypted and the
+plaintext is unrecoverable without the DEK. If the `app_settings.encrypted_dek`
+fields are cleared while encrypted notes remain, the server should refuse to
+start rather than display placeholders.
 ```
 
 ## Security Properties
