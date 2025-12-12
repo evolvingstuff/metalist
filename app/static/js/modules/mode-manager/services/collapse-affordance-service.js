@@ -37,30 +37,49 @@ function contentHasAdditionalLines(contentElement) {
 
 export function updateCollapseAffordances(root = document) {
     const noteElements = root.querySelectorAll(NOTE_SELECTOR);
-    noteElements.forEach(note => {
-        const contentElement = note.querySelector(NOTE_CONTENT_SELECTOR);
-        if (!contentElement) {
-            note.dataset[CAN_COLLAPSE_DATA_KEY] = 'false';
-            return;
-        }
-
-        const isCollapsed = note.dataset[COLLAPSED_DATA_KEY] === 'true';
-        const canCollapse = isCollapsed || hasChildren(note) || contentHasAdditionalLines(contentElement);
-        note.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
-
-        // Ensure the DOM class matches the dataset for consistent styling.
-        if (isCollapsed) {
-            note.classList.add('collapsed');
-        } else {
-            note.classList.remove('collapsed');
-        }
-
-        const collapseToggle = note.querySelector(':scope > .note-collapse-toggle');
-        if (collapseToggle) {
-            collapseToggle.setAttribute('aria-label', isCollapsed ? 'Expand note' : 'Collapse note');
-            collapseToggle.setAttribute('title', isCollapsed ? 'Expand' : 'Collapse');
-        }
+    noteElements.forEach((note) => {
+        updateCollapseAffordanceForNote(note);
     });
+}
+
+export function updateCollapseAffordancesForNotes(noteElements) {
+    if (!noteElements) {
+        throw new Error('updateCollapseAffordancesForNotes requires note elements');
+    }
+    for (const noteElement of noteElements) {
+        updateCollapseAffordanceForNote(noteElement);
+    }
+}
+
+export function updateCollapseAffordanceForNote(noteElement) {
+    if (!noteElement) {
+        throw new Error('updateCollapseAffordanceForNote called without a note element');
+    }
+    if (!noteElement.classList || !noteElement.classList.contains('note')) {
+        throw new Error('updateCollapseAffordanceForNote requires an element with class note');
+    }
+    const contentElement = noteElement.querySelector(':scope > ' + NOTE_CONTENT_SELECTOR);
+    if (!contentElement) {
+        noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = 'false';
+        return;
+    }
+
+    const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
+    const canCollapse = isCollapsed || hasChildren(noteElement) || contentHasAdditionalLines(contentElement);
+    noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
+
+    // Ensure the DOM class matches the dataset for consistent styling.
+    if (isCollapsed) {
+        noteElement.classList.add('collapsed');
+    } else {
+        noteElement.classList.remove('collapsed');
+    }
+
+    const collapseToggle = noteElement.querySelector(':scope > .note-collapse-toggle');
+    if (collapseToggle) {
+        collapseToggle.setAttribute('aria-label', isCollapsed ? 'Expand note' : 'Collapse note');
+        collapseToggle.setAttribute('title', isCollapsed ? 'Expand' : 'Collapse');
+    }
 }
 
 export async function ensureNoteExpanded(noteId) {
@@ -81,4 +100,6 @@ export async function ensureNoteExpanded(noteId) {
     await NotesAPI.expandNote(noteId);
     noteElement.dataset[COLLAPSED_DATA_KEY] = 'false';
     noteElement.classList.remove('collapsed');
+
+    updateCollapseAffordanceForNote(noteElement);
 }

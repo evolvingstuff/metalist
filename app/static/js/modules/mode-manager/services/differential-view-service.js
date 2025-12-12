@@ -1,5 +1,11 @@
 import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
+
+const CONTENT_ELEMENT_CACHE = new WeakMap();
+const CHILD_CONTAINER_CACHE = new WeakMap();
+const COLLAPSE_TOGGLE_CACHE = new WeakMap();
+const LOCK_ICON_CACHE = new WeakMap();
 
 function logVDOM(action, details) {
     console.log(` [VDOM] ${action}`, details);
@@ -100,36 +106,88 @@ function createNoteElement(noteId) {
     collapseToggle.setAttribute('aria-label', 'Collapse note');
     collapseToggle.setAttribute('title', 'Collapse');
     noteElement.appendChild(collapseToggle);
+    COLLAPSE_TOGGLE_CACHE.set(noteElement, collapseToggle);
 
     const contentElement = document.createElement('div');
     contentElement.classList.add(CONFIG.CLASSES.NOTE_CONTENT);
     contentElement.setAttribute('contenteditable', 'false');
     noteElement.appendChild(contentElement);
+    CONTENT_ELEMENT_CACHE.set(noteElement, contentElement);
 
     return noteElement;
 }
 
+function getDirectChildByClass(noteElement, className) {
+    for (const child of Array.from(noteElement.children)) {
+        if (child.classList && child.classList.contains(className)) {
+            return child;
+        }
+    }
+    return null;
+}
+
+function getContentElement(noteElement) {
+    if (CONTENT_ELEMENT_CACHE.has(noteElement)) {
+        return CONTENT_ELEMENT_CACHE.get(noteElement);
+    }
+    const contentElement = getDirectChildByClass(noteElement, CONFIG.CLASSES.NOTE_CONTENT)
+        || getDirectChildByClass(noteElement, 'note-content');
+    if (!contentElement) {
+        throw new Error(`Note ${noteElement.dataset.noteId || '<unknown>'} missing content element`);
+    }
+    CONTENT_ELEMENT_CACHE.set(noteElement, contentElement);
+    return contentElement;
+}
+
+function getCollapseToggle(noteElement) {
+    if (COLLAPSE_TOGGLE_CACHE.has(noteElement)) {
+        return COLLAPSE_TOGGLE_CACHE.get(noteElement);
+    }
+    const collapseToggle = getDirectChildByClass(noteElement, 'note-collapse-toggle');
+    if (!collapseToggle) {
+        throw new Error(`Note ${noteElement.dataset.noteId || '<unknown>'} missing collapse toggle element`);
+    }
+    COLLAPSE_TOGGLE_CACHE.set(noteElement, collapseToggle);
+    return collapseToggle;
+}
+
+function getChildContainer(noteElement) {
+    if (CHILD_CONTAINER_CACHE.has(noteElement)) {
+        return CHILD_CONTAINER_CACHE.get(noteElement);
+    }
+    const childContainer = getDirectChildByClass(noteElement, 'note-children');
+    if (childContainer) {
+        CHILD_CONTAINER_CACHE.set(noteElement, childContainer);
+    }
+    return childContainer || null;
+}
+
 function ensureChildContainer(noteElement) {
-    let childContainer = noteElement.querySelector(':scope > .note-children');
+    let childContainer = getChildContainer(noteElement);
     if (!childContainer) {
         childContainer = document.createElement('div');
         childContainer.classList.add('note-children');
         noteElement.appendChild(childContainer);
+        CHILD_CONTAINER_CACHE.set(noteElement, childContainer);
     }
     return childContainer;
 }
 
 function updateLockIcon(noteElement, lockedByOther) {
-    let lockIcon = noteElement.querySelector(':scope > .lock-icon');
+    let lockIcon = LOCK_ICON_CACHE.has(noteElement)
+        ? LOCK_ICON_CACHE.get(noteElement)
+        : getDirectChildByClass(noteElement, 'lock-icon');
     if (lockedByOther) {
         if (!lockIcon) {
             lockIcon = document.createElement('span');
             lockIcon.classList.add('lock-icon');
             lockIcon.textContent = '🔒';
             noteElement.insertBefore(lockIcon, noteElement.firstChild);
+            LOCK_ICON_CACHE.set(noteElement, lockIcon);
         }
     } else if (lockIcon) {
         lockIcon.remove();
+        LOCK_ICON_CACHE.delete(noteElement);
     }
 }
 
@@ -152,6 +210,8 @@ export function applyDifferentialView(payload, options = {}) {
     const diffResults = diffNoteForest(currentForest, desired.roots);
     let vdomOperations = 0;
     const insertedIds = new Set();
+    const touchedParentIds = new Set();
+    const affordanceDirtyElements = new Set();
 
     const noteLocks = payload.locks || {};
 
@@ -196,6 +256,9 @@ export function applyDifferentialView(payload, options = {}) {
                 });
                 logVDOM('removed note', { noteId: op.id, parentId });
                 vdomOperations += 1;
+                if (parentId) {
+                    touchedParentIds.add(parentId);
+                }
                 continue;
             }
 
@@ -205,10 +268,13 @@ export function applyDifferentialView(payload, options = {}) {
                     throw new Error(`Insert operation missing node for ${op.id}`);
                 }
                 const reference = findNoteChildAt(parentContainer, op.toIndex);
-                const element = createNoteSubtree(node, desired.nodeById, elementCache, insertedIds);
+                const element = createNoteSubtree(node, desired.nodeById, elementCache, insertedIds, affordanceDirtyElements);
                 parentContainer.insertBefore(element, reference);
                 logVDOM('inserted note', { noteId: op.id, parentId, index: op.toIndex });
                 vdomOperations += 1;
+                if (parentId) {
+                    touchedParentIds.add(parentId);
+                }
                 continue;
             }
 
@@ -239,6 +305,39 @@ export function applyDifferentialView(payload, options = {}) {
 
         const noteData = payload.notes?.[noteId] || null;
         const incomingHash = typeof entry.hash === 'string' ? entry.hash : null;
+        const existingSnapshotHash = noteElement.dataset.snapshotHash || null;
+
+        const lockOwner = noteLocks[noteId];
+        const previousLockOwner = noteElement.dataset.lockOwner || '';
+        const nextLockOwner = typeof lockOwner === 'string' ? lockOwner : '';
+        const lockChanged = previousLockOwner !== nextLockOwner;
+
+        const lockedByOther = Boolean(nextLockOwner) && nextLockOwner !== payload.currentClientId;
+
+        const hashChanged = insertedIds.has(noteId)
+            || incomingHash === null
+            || existingSnapshotHash === null
+            || existingSnapshotHash !== incomingHash;
+
+        if (!hashChanged && !lockChanged) {
+            continue;
+        }
+
+        // Lock state can change without hash changes (lock payload is out-of-band).
+        if (!hashChanged) {
+            noteElement.dataset.lockOwner = nextLockOwner;
+            noteElement.classList.toggle('locked', lockedByOther);
+            noteElement.classList.toggle('interactive', !lockedByOther);
+            if (lockedByOther) {
+                noteElement.classList.remove(CONFIG.CLASSES.EDITING);
+                const contentElement = getContentElement(noteElement);
+                contentElement.setAttribute('contenteditable', 'false');
+                contentElement.contentEditable = 'false';
+            }
+            updateLockIcon(noteElement, lockedByOther);
+            continue;
+        }
+
         const previousHash = Object.prototype.hasOwnProperty.call(previousHashes, noteId)
             ? previousHashes[noteId]
             : (noteElement.dataset.contentHash || null);
@@ -253,12 +352,15 @@ export function applyDifferentialView(payload, options = {}) {
             memorySelected: noteElement.classList.contains('memory-selected'),
         };
         const flags = noteData?.flags || existingFlags;
-
-        const lockOwner = noteLocks[noteId];
-        const lockedByOther = Boolean(lockOwner) && lockOwner !== payload.currentClientId;
         const isEditing = Boolean(flags.isEditing);
-        const editingByCurrentClient = isEditing && lockOwner === payload.currentClientId;
+        const editingByCurrentClient = isEditing && nextLockOwner === payload.currentClientId;
 
+        if (!incomingHash) {
+            throw new Error(`Structure entry missing hash for ${noteId}`);
+        }
+
+        noteElement.dataset.snapshotHash = incomingHash;
+        noteElement.dataset.lockOwner = nextLockOwner;
         noteElement.dataset.parentId = parentId;
         noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
 
@@ -272,10 +374,7 @@ export function applyDifferentialView(payload, options = {}) {
 
         updateLockIcon(noteElement, lockedByOther);
 
-        const contentElement = noteElement.querySelector(':scope > .' + CONFIG.CLASSES.NOTE_CONTENT) || noteElement.querySelector(':scope > .note-content');
-        if (!contentElement) {
-            throw new Error(`Note ${noteId} missing content element`);
-        }
+        const contentElement = getContentElement(noteElement);
 
         const shouldBeEditable = isEditing && !lockedByOther && !Boolean(flags.memoryMode);
         const contentEditable = shouldBeEditable ? 'true' : 'false';
@@ -301,9 +400,18 @@ export function applyDifferentialView(payload, options = {}) {
         } else if (incomingHash && noteElement.dataset.contentHash !== incomingHash && !editingByCurrentClient) {
             noteElement.dataset.contentHash = incomingHash;
         }
+
+        affordanceDirtyElements.add(noteElement);
     }
 
-    removeEmptyChildContainers(notesContainer);
+    for (const parentId of touchedParentIds) {
+        const parentElement = elementCache.get(parentId) || document.querySelector(`[data-note-id="${parentId}"]`);
+        if (parentElement) {
+            affordanceDirtyElements.add(parentElement);
+        }
+    }
+
+    updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
     if (payload.treeHash && ModeContext.rootHash !== payload.treeHash) {
         ModeContext.setRootHash(payload.treeHash);
@@ -325,7 +433,7 @@ function buildDomForest(container, elementCache) {
         }
         const noteId = child.dataset.noteId;
         elementCache.set(noteId, child);
-        const childContainer = child.querySelector(':scope > .note-children');
+        const childContainer = getChildContainer(child);
         const descendants = childContainer ? buildDomForest(childContainer, elementCache) : [];
         result.push({ id: noteId, element: child, children: descendants });
     }
@@ -386,19 +494,22 @@ function findNoteChildAt(parentContainer, index) {
     return null;
 }
 
-function createNoteSubtree(node, nodeById, elementCache, insertedIds) {
+function createNoteSubtree(node, nodeById, elementCache, insertedIds, affordanceDirtyElements) {
     const { id } = node;
     const noteElement = createNoteElement(id);
     elementCache.set(id, noteElement);
     if (insertedIds) {
         insertedIds.add(id);
     }
+    if (affordanceDirtyElements) {
+        affordanceDirtyElements.add(noteElement);
+    }
 
     if (node.children.length > 0) {
         const container = ensureChildContainer(noteElement);
         for (const child of node.children) {
             const resolvedChild = nodeById.get(child.id) || child;
-            const childElement = createNoteSubtree(resolvedChild, nodeById, elementCache, insertedIds);
+            const childElement = createNoteSubtree(resolvedChild, nodeById, elementCache, insertedIds, affordanceDirtyElements);
             container.appendChild(childElement);
         }
     }
@@ -412,14 +523,4 @@ function collectSubtreeIds(node) {
         ids.push(...collectSubtreeIds(child));
     }
     return ids;
-}
-
-function removeEmptyChildContainers(notesContainer) {
-    const noteElements = notesContainer.querySelectorAll('[data-note-id]');
-    noteElements.forEach((noteElement) => {
-        const childContainer = noteElement.querySelector(':scope > .note-children');
-        if (childContainer && childContainer.querySelectorAll(':scope > [data-note-id]').length === 0) {
-            childContainer.remove();
-        }
-    });
 }

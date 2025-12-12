@@ -4,7 +4,6 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { highlightCommentsOnRender } from '../events/input-events.js';
-import { updateCollapseAffordances } from '../services/collapse-affordance-service.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 
@@ -139,7 +138,6 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     if (!notesContainer) {
         throw new Error('Notes container not found after diff application');
     }
-    requestAnimationFrame(() => updateCollapseAffordances(notesContainer));
 
     // If this is initial page load, fade in the entire app
     if (ModeContext.isInitialPageLoad) {
