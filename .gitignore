@@ -25,6 +25,7 @@ var/
 .coverage
 .idea/
 *.log
+logs/
 app/sql_app.db
 package-lock.json
 node_modules/
