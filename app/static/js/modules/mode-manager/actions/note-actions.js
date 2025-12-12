@@ -1,6 +1,8 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
+import { DOMUtils } from '../../dom-utils.js';
+import { detachEditorSurface } from '../../editor-toolbar.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -282,7 +284,31 @@ async function setNoteCollapse(noteId, collapsed) {
     }
 
     if (ModeContext.isEditing) {
-        throw new Error(`Programming error: Attempted to change collapse state for ${noteId} while editing`);
+        const editingNoteId = ModeContext.currentNoteId;
+        if (!editingNoteId) {
+            throw new Error('Invariant violation: isEditing is true but currentNoteId is null');
+        }
+
+        Logger.logDebug('Collapse toggle clicked while editing; exiting edit mode first', {
+            editingNoteId,
+            targetNoteId: noteId,
+            collapsed
+        }, Logger.LogCategory.EVENT);
+
+        if (ModeContext.isDirty) {
+            await actionSaveNote(editingNoteId);
+        }
+
+        const editingNoteElement = DOMUtils.getNoteById(editingNoteId);
+        DOMUtils.setNoteEditable(editingNoteElement, false);
+        DOMUtils.revealCaret(editingNoteElement);
+        detachEditorSurface();
+
+        ModeContext.setEditing(false);
+        ModeContext.setCurrentNoteId(null);
+        if (ModeContext.currentContent !== null) {
+            ModeContext.setCurrentContent(null);
+        }
     }
 
     ModeContext.setLoading(true);

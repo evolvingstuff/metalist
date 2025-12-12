@@ -78,15 +78,6 @@ function handleClick(event) {
             throw new Error('Collapse toggle clicked without a parent note id');
         }
 
-        if (ModeContext.isEditing) {
-            Logger.logNoop('Collapse toggle ignored while editing', {
-                noteId
-            });
-            event.preventDefault();
-            event.stopPropagation();
-            return;
-        }
-
         const isCurrentlyCollapsed = noteElement.dataset.isCollapsed === 'true';
         const canCollapse = noteElement.dataset.canCollapse !== 'false';
 
