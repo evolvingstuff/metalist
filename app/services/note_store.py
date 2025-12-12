@@ -195,21 +195,32 @@ class NoteStore:
             record = self._note_map.get(note.id)
             if not record:
                 return
-            updated = NoteRecord(
-                id=note.id,
-                parent_id=note.parent_id,
-                prev_id=note.prev_id,
-                next_id=note.next_id,
-                is_collapsed=record.is_collapsed,
-                content=record.content,
-                created_at=getattr(note, "created_at", record.created_at),
-                updated_at=getattr(note, "updated_at", record.updated_at),
-            )
-            self._note_map[note.id] = updated
             if rebuild:
+                updated = NoteRecord(
+                    id=note.id,
+                    parent_id=note.parent_id,
+                    prev_id=note.prev_id,
+                    next_id=note.next_id,
+                    is_collapsed=record.is_collapsed,
+                    content=record.content,
+                    created_at=getattr(note, "created_at", record.created_at),
+                    updated_at=getattr(note, "updated_at", record.updated_at),
+                )
+                self._note_map[note.id] = updated
                 self._rebuild_indexes_locked()
             else:
                 self._remove_link(record.parent_id, record.id)
+                updated = NoteRecord(
+                    id=note.id,
+                    parent_id=note.parent_id,
+                    prev_id=note.prev_id,
+                    next_id=note.next_id,
+                    is_collapsed=record.is_collapsed,
+                    content=record.content,
+                    created_at=getattr(note, "created_at", record.created_at),
+                    updated_at=getattr(note, "updated_at", record.updated_at),
+                )
+                self._note_map[note.id] = updated
                 self._insert_link(updated.parent_id, updated.id, updated.prev_id, updated.next_id)
 
     def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool = True) -> None:
@@ -302,7 +313,11 @@ class NoteStore:
                 created_at=record.created_at,
                 updated_at=record.updated_at,
             )
-            self._rebuild_indexes_locked()
+            # Collapsing/expanding a note must not mutate list structure.
+            # Rebuilding indexes here can reorder notes if neighbor pointers in
+            # `_note_map` are stale (some mutation paths update `_links` without
+            # rewriting every affected NoteRecord). That manifests as a newly
+            # created "top" note jumping to the bottom after a collapse action.
 
     def _rebuild_indexes_locked(self) -> None:
         links: Dict[Optional[str], Dict[str, Dict[str, Optional[str]]]] = {}
@@ -336,6 +351,101 @@ class NoteStore:
             self._heads[parent_id] = None
             self._tails[parent_id] = None
         return self._links[parent_id]
+
+    def _update_record_links_locked(
+        self,
+        note_id: str,
+        *,
+        parent_id: Optional[str],
+        prev_id: Optional[str],
+        next_id: Optional[str],
+    ) -> None:
+        record = self._note_map.get(note_id)
+        if not record:
+            return
+
+        if record.parent_id == parent_id and record.prev_id == prev_id and record.next_id == next_id:
+            return
+
+        self._note_map[note_id] = NoteRecord(
+            id=record.id,
+            parent_id=parent_id,
+            prev_id=prev_id,
+            next_id=next_id,
+            is_collapsed=record.is_collapsed,
+            content=record.content,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )
+
+    def _assert_links_consistent_locked(self, parent_id: Optional[str], note_ids: Iterable[Optional[str]]) -> None:
+        links = self._links.get(parent_id) or {}
+        head = self._heads.get(parent_id)
+        tail = self._tails.get(parent_id)
+
+        for note_id in note_ids:
+            if not note_id:
+                continue
+
+            link = links.get(note_id)
+            if link is None:
+                continue
+
+            record = self._note_map.get(note_id)
+            if record is None:
+                raise RuntimeError(f"Integrity failure: {note_id} present in links but missing from note_map")
+
+            expected_prev = link.get('prev')
+            expected_next = link.get('next')
+
+            if record.parent_id != parent_id:
+                raise RuntimeError(
+                    "Integrity failure: parent mismatch for "
+                    f"{note_id}: record.parent_id={record.parent_id} links.parent_id={parent_id}"
+                )
+            if record.prev_id != expected_prev or record.next_id != expected_next:
+                raise RuntimeError(
+                    "Integrity failure: link mismatch for "
+                    f"{note_id}: record prev/next={record.prev_id}/{record.next_id} "
+                    f"links prev/next={expected_prev}/{expected_next}"
+                )
+
+            if expected_prev is None and head != note_id:
+                raise RuntimeError(
+                    f"Integrity failure: head mismatch for parent {parent_id}: expected head={note_id} actual head={head}"
+                )
+            if expected_next is None and tail != note_id:
+                raise RuntimeError(
+                    f"Integrity failure: tail mismatch for parent {parent_id}: expected tail={note_id} actual tail={tail}"
+                )
+
+            if expected_prev is not None:
+                prev_link = links.get(expected_prev)
+                if prev_link is None or prev_link.get('next') != note_id:
+                    raise RuntimeError(
+                        "Integrity failure: prev/next mismatch: "
+                        f"prev={expected_prev} links.next={None if prev_link is None else prev_link.get('next')} expected {note_id}"
+                    )
+                prev_record = self._note_map.get(expected_prev)
+                if prev_record is None or prev_record.next_id != note_id:
+                    raise RuntimeError(
+                        "Integrity failure: prev record mismatch: "
+                        f"prev={expected_prev} record.next_id={None if prev_record is None else prev_record.next_id} expected {note_id}"
+                    )
+
+            if expected_next is not None:
+                next_link = links.get(expected_next)
+                if next_link is None or next_link.get('prev') != note_id:
+                    raise RuntimeError(
+                        "Integrity failure: next/prev mismatch: "
+                        f"next={expected_next} links.prev={None if next_link is None else next_link.get('prev')} expected {note_id}"
+                    )
+                next_record = self._note_map.get(expected_next)
+                if next_record is None or next_record.prev_id != note_id:
+                    raise RuntimeError(
+                        "Integrity failure: next record mismatch: "
+                        f"next={expected_next} record.prev_id={None if next_record is None else next_record.prev_id} expected {note_id}"
+                    )
 
     @staticmethod
     def _get_or_create_link(links: Dict[str, Dict[str, Optional[str]]], node_id: str) -> Dict[str, Optional[str]]:
@@ -385,6 +495,20 @@ class NoteStore:
         else:
             self._tails[parent_id] = note_id
 
+        self._update_record_links_locked(note_id, parent_id=parent_id, prev_id=prev_id, next_id=next_id)
+        if prev_id is not None:
+            prev_link = links.get(prev_id)
+            if not prev_link or prev_link.get('next') != note_id:
+                raise RuntimeError(f"Integrity failure: insert did not update prev link for {prev_id}")
+            self._update_record_links_locked(prev_id, parent_id=parent_id, prev_id=prev_link.get('prev'), next_id=note_id)
+        if next_id is not None:
+            next_link = links.get(next_id)
+            if not next_link or next_link.get('prev') != note_id:
+                raise RuntimeError(f"Integrity failure: insert did not update next link for {next_id}")
+            self._update_record_links_locked(next_id, parent_id=parent_id, prev_id=note_id, next_id=next_link.get('next'))
+
+        self._assert_links_consistent_locked(parent_id, [note_id, prev_id, next_id])
+
     def _remove_link(self, parent_id: Optional[str], note_id: str) -> None:
         links = self._links.get(parent_id)
         if not links:
@@ -406,6 +530,19 @@ class NoteStore:
             links[next_id]['prev'] = prev_id
         else:
             self._tails[parent_id] = prev_id
+
+        if prev_id is not None:
+            prev_link = links.get(prev_id)
+            if prev_link is None:
+                raise RuntimeError(f"Integrity failure: prev node {prev_id} missing during remove of {note_id}")
+            self._update_record_links_locked(prev_id, parent_id=parent_id, prev_id=prev_link.get('prev'), next_id=next_id)
+        if next_id is not None:
+            next_link = links.get(next_id)
+            if next_link is None:
+                raise RuntimeError(f"Integrity failure: next node {next_id} missing during remove of {note_id}")
+            self._update_record_links_locked(next_id, parent_id=parent_id, prev_id=prev_id, next_id=next_link.get('next'))
+
+        self._assert_links_consistent_locked(parent_id, [prev_id, next_id, self._heads.get(parent_id), self._tails.get(parent_id)])
 
         if not links:
             self._links.pop(parent_id, None)
