@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -49,9 +49,10 @@ function handleClick(event) {
         const noteContent = event.target.closest('.note-content');
         const searchField = event.target.closest('#search-input');
         const createButton = event.target.closest('.add-note');
+        const collapseToggle = event.target.closest('.note-collapse-toggle');
         
         // Only allow certain actions when disconnected
-        if (noteContent || createButton) {
+        if (noteContent || createButton || collapseToggle) {
             Logger.logNoop('Click event ignored while disconnected from server', {
                 eventType: event.type,
                 targetElement: event.target.tagName,
@@ -68,6 +69,49 @@ function handleClick(event) {
         x: event.clientX,
         y: event.clientY
     };
+
+    const collapseToggle = event.target.closest('.note-collapse-toggle');
+    if (collapseToggle) {
+        const noteElement = collapseToggle.closest('.note');
+        const noteId = noteElement?.dataset?.noteId;
+        if (!noteId) {
+            throw new Error('Collapse toggle clicked without a parent note id');
+        }
+
+        if (ModeContext.isEditing) {
+            Logger.logNoop('Collapse toggle ignored while editing', {
+                noteId
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
+        const isCurrentlyCollapsed = noteElement.dataset.isCollapsed === 'true';
+        const canCollapse = noteElement.dataset.canCollapse !== 'false';
+
+        Logger.logDebug('Collapse toggle clicked', {
+            noteId,
+            isCurrentlyCollapsed,
+            canCollapse,
+            coordinates
+        }, Logger.LogCategory.EVENT);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (isCurrentlyCollapsed) {
+            expandNote(noteId);
+        } else if (canCollapse) {
+            collapseNote(noteId);
+        } else {
+            Logger.logNoop('Collapse toggle ignored: note cannot collapse', {
+                noteId
+            });
+        }
+
+        return;
+    }
 
     const noteContent = event.target.closest('.note-content');
     const searchField = event.target.closest('#search-input');

@@ -13,6 +13,7 @@
 | Shortcut | Action |
 |----------|--------|
 | `Enter` | Add new note at top (when not editing) |
+| `Space` | Toggle collapse/expand hovered note |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 
@@ -20,6 +21,7 @@
 | Action | Result |
 |--------|--------|
 | Click `+` button | Add new note at top |
+| Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 

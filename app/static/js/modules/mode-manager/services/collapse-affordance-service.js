@@ -35,10 +35,6 @@ function contentHasAdditionalLines(contentElement) {
     return effectiveContentHeight - lineHeight > DELTA_TOLERANCE;
 }
 
-function contentHasMedia(contentElement) {
-    return Boolean(contentElement.querySelector('img, video, audio, iframe, embed'));
-}
-
 export function updateCollapseAffordances(root = document) {
     const noteElements = root.querySelectorAll(NOTE_SELECTOR);
     noteElements.forEach(note => {
@@ -48,15 +44,21 @@ export function updateCollapseAffordances(root = document) {
             return;
         }
 
-        const canCollapse = hasChildren(note) || contentHasAdditionalLines(contentElement) || contentHasMedia(contentElement);
+        const isCollapsed = note.dataset[COLLAPSED_DATA_KEY] === 'true';
+        const canCollapse = isCollapsed || hasChildren(note) || contentHasAdditionalLines(contentElement);
         note.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
 
         // Ensure the DOM class matches the dataset for consistent styling.
-        const isCollapsed = note.dataset[COLLAPSED_DATA_KEY] === 'true';
         if (isCollapsed) {
             note.classList.add('collapsed');
         } else {
             note.classList.remove('collapsed');
+        }
+
+        const collapseToggle = note.querySelector(':scope > .note-collapse-toggle');
+        if (collapseToggle) {
+            collapseToggle.setAttribute('aria-label', isCollapsed ? 'Expand note' : 'Collapse note');
+            collapseToggle.setAttribute('title', isCollapsed ? 'Expand' : 'Collapse');
         }
     });
 }

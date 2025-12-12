@@ -441,6 +441,47 @@ body {
     border-color: #999999;
 }
 
+.note-collapse-toggle {
+    position: absolute;
+    top: 6px;
+    left: -20px;
+    width: 18px;
+    height: 18px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.35);
+    z-index: 5;
+}
+
+.note[data-can-collapse="true"] > .note-collapse-toggle {
+    display: flex;
+}
+
+.note-collapse-toggle:hover {
+    color: #000000;
+}
+
+.note-collapse-toggle:focus-visible {
+    outline: 2px solid rgba(0, 0, 0, 0.65);
+    outline-offset: 1px;
+    border-radius: 3px;
+}
+
+.note-collapse-toggle::before {
+    content: '▾';
+}
+
+.note.collapsed > .note-collapse-toggle::before {
+    content: '▸';
+}
+
 .note.collapsed {
     background-color: #f2f2f2;
 }

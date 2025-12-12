@@ -29,6 +29,7 @@
         % if locked_by_other:
             <span class="lock-icon">🔒</span>
         % endif
+        <button class="note-collapse-toggle" type="button" aria-label="${'Expand note' if note['flags'].get('isCollapsed') else 'Collapse note'}" title="${'Expand' if note['flags'].get('isCollapsed') else 'Collapse'}"></button>
         <div class="note-content" contenteditable="${'true' if is_editing_by_me else 'false'}">${note['content'] | n}</div>
         % if note.get('children'):
             <div class="note-children">

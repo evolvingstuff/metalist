@@ -94,6 +94,13 @@ function createNoteElement(noteId) {
     noteElement.dataset.parentId = '';
     noteElement.dataset.isCollapsed = 'false';
 
+    const collapseToggle = document.createElement('button');
+    collapseToggle.classList.add('note-collapse-toggle');
+    collapseToggle.type = 'button';
+    collapseToggle.setAttribute('aria-label', 'Collapse note');
+    collapseToggle.setAttribute('title', 'Collapse');
+    noteElement.appendChild(collapseToggle);
+
     const contentElement = document.createElement('div');
     contentElement.classList.add(CONFIG.CLASSES.NOTE_CONTENT);
     contentElement.setAttribute('contenteditable', 'false');

@@ -9,6 +9,7 @@ export const NotesAPI = {
         try {
             // Add sync context to request body for non-GET requests
             let requestBody = options.body;
+            let requestPayload = null;
             if (options.method && options.method !== 'GET') {
                 const syncContext = {
                     clientId: ModeContext.clientId,
@@ -18,26 +19,47 @@ export const NotesAPI = {
                 if (requestBody) {
                     // Merge sync context with existing body
                     const existingBody = JSON.parse(requestBody);
-                    requestBody = JSON.stringify({
+                    requestPayload = {
                         ...existingBody,
                         ...syncContext
-                    });
+                    };
+                    requestBody = JSON.stringify(requestPayload);
                 } else {
                     // Just send sync context
+                    requestPayload = syncContext;
                     requestBody = JSON.stringify(syncContext);
                 }
             }
                                                 
-            console.log(' [API] Request:', {
-                url: url,
-                method: options.method || 'GET',
-                body: requestBody ? JSON.parse(requestBody) : undefined,
-                headers: options.headers
-            });
+            if (CONFIG.DEBUG.LOG_API_CALLS) {
+                const isNotesView = url === CONFIG.API.NOTES.VIEW;
+                const bodySummary = isNotesView && requestPayload
+                    ? {
+                        editingNoteId: requestPayload.editingNoteId,
+                        search: requestPayload.search,
+                        clientSeenRootIdsCount: Array.isArray(requestPayload.clientSeenRootIds)
+                            ? requestPayload.clientSeenRootIds.length
+                            : 0,
+                        clientNoteUuidHashesCount: requestPayload.clientNoteUuidHashes && typeof requestPayload.clientNoteUuidHashes === 'object'
+                            ? Object.keys(requestPayload.clientNoteUuidHashes).length
+                            : 0,
+                        lastUpdateUUID: requestPayload.lastUpdateUUID,
+                    }
+                    : requestPayload;
+
+                console.log(' [API] Request:', {
+                    url: url,
+                    method: options.method || 'GET',
+                    body: bodySummary,
+                    headers: options.headers
+                });
+            }
 
             // Add auth token if it exists
             const authToken = localStorage.getItem('auth_token');
-            console.log('[API] Auth token from localStorage:', authToken ? 'EXISTS' : 'NOT FOUND');
+            if (CONFIG.DEBUG.LOG_API_CALLS) {
+                console.log('[API] Auth token from localStorage:', authToken ? 'EXISTS' : 'NOT FOUND');
+            }
             
             const headers = {
                 'Content-Type': 'application/json',
@@ -46,12 +68,18 @@ export const NotesAPI = {
             
             if (authToken) {
                 headers['Authorization'] = `Bearer ${authToken}`;
-                console.log('[API] Added Authorization header');
+                if (CONFIG.DEBUG.LOG_API_CALLS) {
+                    console.log('[API] Added Authorization header');
+                }
             } else {
-                console.log('[API] No auth token, no Authorization header added');
+                if (CONFIG.DEBUG.LOG_API_CALLS) {
+                    console.log('[API] No auth token, no Authorization header added');
+                }
             }
             
-            console.log('[API] Final headers:', headers);
+            if (CONFIG.DEBUG.LOG_API_CALLS) {
+                console.log('[API] Final headers:', headers);
+            }
 
             const response = await fetch(url, {
                 ...options,
@@ -67,16 +95,31 @@ export const NotesAPI = {
 
             const data = await response.json();
 
-            console.log(' [API] Response:', {
-                url: url,
-                status: response.status,
-                data: data
-            });
+            if (CONFIG.DEBUG.LOG_API_CALLS) {
+                const isNotesView = url === CONFIG.API.NOTES.VIEW;
+                const responseSummary = isNotesView && data && typeof data === 'object'
+                    ? {
+                        updateUUID: data.updateUUID,
+                        snapshotStructureCount: Array.isArray(data.snapshot?.structure) ? data.snapshot.structure.length : 0,
+                        snapshotNotesCount: data.snapshot?.notes && typeof data.snapshot.notes === 'object'
+                            ? Object.keys(data.snapshot.notes).length
+                            : 0,
+                    }
+                    : data;
+
+                console.log(' [API] Response:', {
+                    url: url,
+                    status: response.status,
+                    data: responseSummary
+                });
+            }
             
             // Extract and store update UUID if present
             if (data && data.updateUUID) {
                 ModeContext.setLastUpdateUUID(data.updateUUID);
-                console.log(' [API] Updated sync UUID:', data.updateUUID);
+                if (CONFIG.DEBUG.LOG_API_CALLS) {
+                    console.log(' [API] Updated sync UUID:', data.updateUUID);
+                }
             }
                                                 
             return data;

@@ -123,8 +123,14 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         ms: Number(roundtripMs.toFixed(2))
     });
 
-    if (snapshot) {
-        console.log(' [SNAPSHOT] notes.view payload:', snapshot);
+    if (CONFIG.DEBUG.LOG_API_CALLS) {
+        console.log(' [SNAPSHOT] notes.view summary:', {
+            treeHash: snapshot.treeHash,
+            structureCount: Array.isArray(snapshot.structure) ? snapshot.structure.length : 0,
+            notesCount: snapshot.notes && typeof snapshot.notes === 'object' ? Object.keys(snapshot.notes).length : 0,
+            locksCount: snapshot.locks && typeof snapshot.locks === 'object' ? Object.keys(snapshot.locks).length : 0,
+            editingNoteId: snapshot.editingNoteId
+        });
     }
 
     const renderStartedAt = performance.now();
