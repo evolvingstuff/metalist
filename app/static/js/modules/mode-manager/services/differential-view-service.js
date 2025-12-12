@@ -104,7 +104,6 @@ function createNoteElement(noteId) {
     collapseToggle.classList.add('note-collapse-toggle');
     collapseToggle.type = 'button';
     collapseToggle.setAttribute('aria-label', 'Collapse note');
-    collapseToggle.setAttribute('title', 'Collapse');
     noteElement.appendChild(collapseToggle);
     COLLAPSE_TOGGLE_CACHE.set(noteElement, collapseToggle);
 

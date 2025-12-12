@@ -78,7 +78,7 @@ export function updateCollapseAffordanceForNote(noteElement) {
     const collapseToggle = noteElement.querySelector(':scope > .note-collapse-toggle');
     if (collapseToggle) {
         collapseToggle.setAttribute('aria-label', isCollapsed ? 'Expand note' : 'Collapse note');
-        collapseToggle.setAttribute('title', isCollapsed ? 'Expand' : 'Collapse');
+        collapseToggle.removeAttribute('title');
     }
 }
 
