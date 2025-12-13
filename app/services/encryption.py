@@ -137,7 +137,7 @@ class EncryptionService:
         Raises:
             ValueError: If no DEK is set
         """
-        if not self.dek:
+        if self.dek is None:
             raise ValueError("No DEK set - ensure password has been provided")
             
         # Generate random nonce (96 bits for GCM)
@@ -180,7 +180,7 @@ class EncryptionService:
             ValueError: If no DEK is set
             Exception: If decryption fails (wrong password or corrupted data)
         """
-        if not self.dek:
+        if self.dek is None:
             raise ValueError("No DEK set - ensure password has been provided")
             
         try:
@@ -240,8 +240,14 @@ class EncryptionService:
             Decrypted content or original if not encrypted
         """
         # If no nonce/tag, assume it's unencrypted plaintext
-        if nonce is None or tag is None:
+        if nonce is None and tag is None:
             return content
+
+        if (nonce is None) != (tag is None):
+            raise ValueError(
+                "Encrypted content provided with incomplete metadata: "
+                f"nonce={nonce is not None} tag={tag is not None}"
+            )
             
         # Otherwise decrypt using separate parameters
         return self.decrypt(content, nonce, tag)

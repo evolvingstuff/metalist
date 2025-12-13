@@ -38,16 +38,13 @@ def get_encryption_service_with_token(token: str = None) -> Optional[EncryptionS
     if not token:
         return None
         
-    # Get encryption keys from token
-    keys = token_service.get_encryption_keys(token)
-    if not keys:
+    # Get DEK from token
+    dek = token_service.get_dek(token)
+    if dek is None:
         return None
-        
-    master_key, dek = keys
     
     # Create new encryption service with keys
     _encryption_service = EncryptionService()
-    _encryption_service.master_key = master_key
     _encryption_service.dek = dek
     _current_token = token
     
@@ -110,8 +107,14 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
         return encrypted_content
 
     # If no nonce/tag, assume unencrypted content
-    if nonce is None or tag is None:
+    if nonce is None and tag is None:
         return encrypted_content
+
+    if (nonce is None) != (tag is None):
+        raise ValueError(
+            "Encrypted content provided with incomplete metadata: "
+            f"nonce={nonce is not None} tag={tag is not None}"
+        )
     
     # Try to get service with token first
     if token:
@@ -137,47 +140,15 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
     raise RuntimeError("Encrypted content provided but no encryption key is available")
 
 
-def set_encryption_key(password: str, salt: bytes) -> None:
-    """Set the encryption key for the current session.
-    
-    DEPRECATED: This function is kept for backward compatibility.
-    The new DEK system uses token-based key management.
-    
-    Args:
-        password: User's password
-        salt: Salt from database
-    """
-    global _encryption_service
-    
-    # For backward compatibility, create a service and derive master key
-    # But we can't get the DEK without the database settings
-    db = SafeSession()
-    try:
-        with SafeSession.allow_reads("utils:encryption:set_key:settings"):
-            row = fetch_settings(db.connection())
-        settings = SimpleNamespace(**row) if row else None
-
-        if settings and settings.encrypted_dek:
-            _encryption_service = EncryptionService()
-            try:
-                master_key = _encryption_service.derive_master_key(password, salt)
-                dek = _encryption_service.decrypt_dek(
-                    settings.encrypted_dek,
-                    settings.dek_nonce,
-                    settings.dek_tag,
-                    master_key
-                )
-            except Exception as e:
-                _encryption_service = None
-                raise RuntimeError(f"Failed to set encryption key: {e}") from e
-
-            _encryption_service.master_key = master_key
-            _encryption_service.dek = dek
-        else:
-            # Legacy mode - no DEK in database yet
-            _encryption_service = None
-    finally:
-        db.close()
+def set_session_dek(dek: bytes) -> None:
+    """Set the session DEK without retaining the password or master key."""
+    global _encryption_service, _current_token
+    if not dek:
+        raise ValueError("DEK must be provided")
+    _encryption_service = EncryptionService()
+    _encryption_service.master_key = None
+    _encryption_service.dek = dek
+    _current_token = None
 
 
 def clear_encryption_key() -> None:
