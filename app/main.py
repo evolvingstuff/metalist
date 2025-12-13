@@ -101,7 +101,7 @@ except Exception as e:
     logger.error(f"🚨 CRASHING IMMEDIATELY")
     raise RuntimeError(f"Application startup failed: Could not initialize app settings: {e}") from e
 
-startup_has_password = bool(settings and settings.get("password_hash"))
+startup_has_password = bool(settings and settings.get("encryption_enabled"))
 
 if startup_has_password:
     logger.info("[startup] password set; skipping cache + store hydration until login")

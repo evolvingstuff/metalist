@@ -67,11 +67,27 @@ class AuthService:
     def verify_password(self, password: str) -> bool:
         """Return True if supplied password matches stored hash."""
         settings = self.get_settings()
-        if not settings or not settings.password_hash:
+        if not settings or not settings.encryption_enabled:
             return False
+
+        # New scheme: auth_verifier is separate from KEK derivation.
+        if getattr(settings, "auth_verifier", None) is not None:
+            if settings.auth_salt is None:
+                raise RuntimeError("auth_verifier set but auth_salt is NULL")
+            stored_iterations = settings.auth_iterations or PW_PBKDF2_ITERATIONS
+            candidate = self.hash_password(password, settings.auth_salt, stored_iterations)
+            return secrets.compare_digest(candidate, settings.auth_verifier)
+
+        # Legacy scheme: password_hash is PBKDF2 output using the same salt/iters
+        # as the KEK, which allows offline unwrap with DB access. This path exists
+        # only to support automatic migration on next successful login.
+        if not settings.password_hash:
+            return False
+        if settings.password_salt is None:
+            raise RuntimeError("password_hash set but password_salt is NULL")
         stored_iterations = settings.password_iterations or 250_000
-        password_hash = self.hash_password(password, settings.password_salt, stored_iterations)
-        return secrets.compare_digest(password_hash, settings.password_hash)
+        candidate = self.hash_password(password, settings.password_salt, stored_iterations)
+        return secrets.compare_digest(candidate, settings.password_hash)
 
     def check_password_strength(self, password: str) -> bool:
         """Return True when password meets minimal strength requirements."""
@@ -80,7 +96,84 @@ class AuthService:
     def has_password(self) -> bool:
         """Return True if password protection is enabled."""
         settings = self.get_settings()
-        return settings is not None and settings.password_hash is not None
+        return settings is not None and bool(settings.encryption_enabled)
+
+    def _is_legacy_password_settings(self, settings: SimpleNamespace) -> bool:
+        return (
+            getattr(settings, "auth_verifier", None) is None
+            and getattr(settings, "kek_salt", None) is None
+            and getattr(settings, "password_hash", None) is not None
+        )
+
+    def _derive_kek_from_settings(self, password: str, settings: SimpleNamespace) -> bytes:
+        if getattr(settings, "kek_salt", None) is not None:
+            kek_iterations = settings.kek_iterations or PW_PBKDF2_ITERATIONS
+            return self.encryption.derive_master_key(password, settings.kek_salt, kek_iterations)
+
+        if settings.password_salt is None:
+            raise RuntimeError("No KEK salt available (neither kek_salt nor password_salt)")
+        legacy_iterations = settings.password_iterations or 250_000
+        return self.encryption.derive_master_key(password, settings.password_salt, legacy_iterations)
+
+    def unwrap_dek_for_password(self, password: str) -> bytes:
+        """Return the decrypted DEK for a verified password.
+
+        If the database is on the legacy scheme, this will migrate settings to the
+        split verifier + KEK salts scheme, clearing the legacy password_hash fields.
+        """
+        settings = self.get_settings()
+        if not settings:
+            raise RuntimeError("Failed to retrieve settings")
+        if not settings.encryption_enabled:
+            raise RuntimeError("Encryption is not enabled")
+
+        if settings.encrypted_dek is None or settings.dek_nonce is None or settings.dek_tag is None:
+            raise RuntimeError("Encryption enabled but DEK metadata is missing")
+
+        kek = self._derive_kek_from_settings(password, settings)
+        dek = self.encryption.decrypt_dek(
+            settings.encrypted_dek,
+            settings.dek_nonce,
+            settings.dek_tag,
+            kek,
+        )
+
+        if self._is_legacy_password_settings(settings):
+            algorithm = settings.encryption_algorithm or "AES-256-GCM"
+            self._migrate_legacy_password_settings(password, dek, algorithm)
+
+        return dek
+
+    def _migrate_legacy_password_settings(
+        self,
+        password: str,
+        dek: bytes,
+        encryption_algorithm: str,
+    ) -> None:
+        """Migrate from legacy (password_hash == KEK) to split verifier + KEK salts."""
+        auth_salt = self.encryption.generate_salt()
+        kek_salt = self.encryption.generate_salt()
+        auth_iterations = PW_PBKDF2_ITERATIONS
+        kek_iterations = PW_PBKDF2_ITERATIONS
+
+        auth_verifier = self.hash_password(password, auth_salt, auth_iterations)
+        kek = self.encryption.derive_master_key(password, kek_salt, kek_iterations)
+        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, kek)
+
+        connection = self.db.connection()
+        update_password_settings(
+            connection,
+            auth_verifier=auth_verifier,
+            auth_salt=auth_salt,
+            auth_iterations=auth_iterations,
+            kek_salt=kek_salt,
+            kek_iterations=kek_iterations,
+            encrypted_dek=encrypted_dek,
+            dek_nonce=dek_nonce,
+            dek_tag=dek_tag,
+            encryption_algorithm=encryption_algorithm,
+        )
+        self.db.commit()
 
     def set_password(self, password: str) -> Tuple[bool, str]:
         """Enable password protection by encrypting all existing content."""
@@ -90,14 +183,18 @@ class AuthService:
             return False, "Password is too weak (must be > 3 characters)"
 
         self.initialize_settings()
-        salt = self.encryption.generate_salt()
-        password_hash = self.hash_password(password, salt)
+        auth_salt = self.encryption.generate_salt()
+        kek_salt = self.encryption.generate_salt()
+        auth_iterations = PW_PBKDF2_ITERATIONS
+        kek_iterations = PW_PBKDF2_ITERATIONS
+
+        auth_verifier = self.hash_password(password, auth_salt, auth_iterations)
 
         dek = self.encryption.generate_dek()
-        master_key = self.encryption.derive_master_key(password, salt)
-        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, master_key)
+        kek = self.encryption.derive_master_key(password, kek_salt, kek_iterations)
+        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, kek)
 
-        self.encryption.master_key = master_key
+        self.encryption.master_key = None
         self.encryption.dek = dek
 
         maintenance_service.enter_maintenance("Encrypting all notes with new password")
@@ -137,9 +234,11 @@ class AuthService:
 
             update_password_settings(
                 connection,
-                password_hash=password_hash,
-                password_salt=salt,
-                password_iterations=PW_PBKDF2_ITERATIONS,
+                auth_verifier=auth_verifier,
+                auth_salt=auth_salt,
+                auth_iterations=auth_iterations,
+                kek_salt=kek_salt,
+                kek_iterations=kek_iterations,
                 encrypted_dek=encrypted_dek,
                 dek_nonce=dek_nonce,
                 dek_tag=dek_tag,
@@ -170,12 +269,31 @@ class AuthService:
             return False, "New password is too weak (must be > 3 characters)"
 
         settings = self.get_settings()
-        old_master_key = self.encryption.derive_master_key(current_password, settings.password_salt)
+        if not settings:
+            raise RuntimeError("App settings missing during password change")
+
+        if settings.kek_salt is not None:
+            old_kek_iterations = settings.kek_iterations or PW_PBKDF2_ITERATIONS
+            old_kek = self.encryption.derive_master_key(
+                current_password,
+                settings.kek_salt,
+                old_kek_iterations,
+            )
+        else:
+            if settings.password_salt is None:
+                raise RuntimeError("Legacy password_salt missing during password change")
+            old_kek_iterations = settings.password_iterations or 250_000
+            old_kek = self.encryption.derive_master_key(
+                current_password,
+                settings.password_salt,
+                old_kek_iterations,
+            )
+
         dek = self.encryption.decrypt_dek(
             settings.encrypted_dek,
             settings.dek_nonce,
             settings.dek_tag,
-            old_master_key,
+            old_kek,
         )
 
         if iterations is None:
@@ -183,17 +301,23 @@ class AuthService:
         if not (100_000 <= iterations <= 10_000_000):
             return False, "Iterations must be between 100,000 and 10,000,000"
 
-        new_salt = self.encryption.generate_salt()
-        new_password_hash = self.hash_password(new_password, new_salt, iterations)
-        new_master_key = self.encryption.derive_master_key(new_password, new_salt, iterations)
-        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_master_key)
+        auth_salt = self.encryption.generate_salt()
+        kek_salt = self.encryption.generate_salt()
+        auth_iterations = iterations
+        kek_iterations = iterations
+
+        auth_verifier = self.hash_password(new_password, auth_salt, auth_iterations)
+        new_kek = self.encryption.derive_master_key(new_password, kek_salt, kek_iterations)
+        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_kek)
 
         connection = self.db.connection()
         update_password_settings(
             connection,
-            password_hash=new_password_hash,
-            password_salt=new_salt,
-            password_iterations=iterations,
+            auth_verifier=auth_verifier,
+            auth_salt=auth_salt,
+            auth_iterations=auth_iterations,
+            kek_salt=kek_salt,
+            kek_iterations=kek_iterations,
             encrypted_dek=encrypted_dek,
             dek_nonce=dek_nonce,
             dek_tag=dek_tag,
@@ -201,7 +325,7 @@ class AuthService:
         )
         self.db.commit()
 
-        self.encryption.master_key = new_master_key
+        self.encryption.master_key = None
         self.encryption.dek = dek
         return True, "Password changed successfully. Notes remain encrypted with the same key."
 
@@ -213,14 +337,32 @@ class AuthService:
             return False, "Password is incorrect"
 
         settings = self.get_settings()
-        master_key = self.encryption.derive_master_key(current_password, settings.password_salt)
+        if not settings:
+            raise RuntimeError("App settings missing during password removal")
+
+        if settings.kek_salt is not None:
+            kek_iterations = settings.kek_iterations or PW_PBKDF2_ITERATIONS
+            kek = self.encryption.derive_master_key(
+                current_password,
+                settings.kek_salt,
+                kek_iterations,
+            )
+        else:
+            if settings.password_salt is None:
+                raise RuntimeError("Legacy password_salt missing during password removal")
+            kek_iterations = settings.password_iterations or 250_000
+            kek = self.encryption.derive_master_key(
+                current_password,
+                settings.password_salt,
+                kek_iterations,
+            )
         dek = self.encryption.decrypt_dek(
             settings.encrypted_dek,
             settings.dek_nonce,
             settings.dek_tag,
-            master_key,
+            kek,
         )
-        self.encryption.master_key = master_key
+        self.encryption.master_key = None
         self.encryption.dek = dek
 
         maintenance_service.enter_maintenance("Decrypting all notes (removing password protection)")

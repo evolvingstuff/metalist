@@ -19,17 +19,19 @@ sequenceDiagram
     
     API->>AuthSvc: validate_password(password)
     AuthSvc->>DB: Get AppSettings
-    DB-->>AuthSvc: password_hash, salt, iterations, encrypted_dek
+    DB-->>AuthSvc: auth_verifier, auth_salt, auth_iterations, kek_salt, kek_iterations, encrypted_dek
     
-    AuthSvc->>Enc: derive_key(password, salt, iterations)
-    Enc->>Enc: PBKDF2-SHA256 (1M iterations default)
-    Enc-->>AuthSvc: master_key
+    AuthSvc->>Enc: derive_auth_verifier(password, auth_salt, auth_iterations)
+    Enc->>Enc: PBKDF2-SHA256
+    Enc-->>AuthSvc: candidate_verifier
     
-    AuthSvc->>Enc: verify_password(master_key, stored_hash)
+    AuthSvc->>AuthSvc: constant-time compare(candidate_verifier, auth_verifier)
     
     alt Valid Password
         Enc-->>AuthSvc: Password valid
-        AuthSvc->>Enc: decrypt_dek(encrypted_dek, master_key)
+        AuthSvc->>Enc: derive_kek(password, kek_salt, kek_iterations)
+        Enc-->>AuthSvc: kek
+        AuthSvc->>Enc: decrypt_dek(encrypted_dek, kek)
         Enc-->>AuthSvc: Decrypted DEK
         
         AuthSvc->>TokenSvc: create_token(client_info, dek)

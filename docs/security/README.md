@@ -8,17 +8,23 @@ This document describes the security architecture for MetaList3's password prote
 
 ### Key Components
 
-1. **Master Key**
+1. **KEK (Key Encryption Key)**
    - Derived from user's password using PBKDF2-SHA256 with configurable iterations (currently 1,000,000)
-   - Iteration count is stored with each password hash to allow future upgrades
+   - Uses a dedicated `kek_salt` (distinct from the auth verifier salt)
    - Never stored on disk - only derived transiently during login/password change operations
    - Used solely to encrypt/decrypt the DEK
    - Not retained after unwrapping the DEK
 
-2. **DEK (Data Encryption Key)**
+2. **Auth Verifier**
+   - Used only to verify a password attempt during login
+   - Computed as `PBKDF2(password, auth_salt, auth_iterations)` and stored in the DB
+   - Uses a dedicated `auth_salt` (distinct from `kek_salt`)
+   - Provides a password guessing target (expected) but is not usable for unwrapping the DEK
+
+3. **DEK (Data Encryption Key)**
    - 256-bit randomly generated AES key
    - Created once when password protection is first enabled
-   - Stored in database encrypted by the Master Key
+   - Stored in database encrypted by the KEK
    - Used for all note encryption/decryption operations
    - Remains constant even when user changes their password
 
@@ -27,26 +33,26 @@ This document describes the security architecture for MetaList3's password prote
 ```
 Initial Password Setup:
 1. User sets password
-2. Password → PBKDF2 (current config iterations) → Master Key
+2. Password → PBKDF2 (current config iterations) → KEK
 3. Generate random 256-bit DEK
-4. Encrypt DEK with Master Key → Encrypted DEK
+4. Encrypt DEK with KEK → Encrypted DEK
 5. Store Encrypted DEK + iteration count in database
 6. Use DEK to encrypt all notes with AES-256-GCM
 
 Login Flow:
 1. User enters password
-2. Retrieve stored iteration count from database
-3. Password → PBKDF2 (stored iterations) → Master Key
+2. Verify password via Auth Verifier (auth_salt + auth_iterations)
+3. Derive KEK (kek_salt + kek_iterations)
 4. Retrieve Encrypted DEK from database
-5. Decrypt DEK using Master Key
-6. Discard Master Key; keep only DEK in memory for session
+5. Decrypt DEK using KEK
+6. Discard KEK; keep only DEK in memory for session
 7. Use DEK for all note operations
 
 Password Change Flow:
 1. Verify old password using stored iteration count
-2. Decrypt DEK using old Master Key
-3. Derive new Master Key from new password (current config iterations)
-4. Re-encrypt DEK with new Master Key
+2. Decrypt DEK using old KEK
+3. Derive new KEK from new password (current config iterations)
+4. Re-encrypt DEK with new KEK
 5. Store newly encrypted DEK + new iteration count in database
 6. Notes remain unchanged (still encrypted with same DEK)
 ```
@@ -77,14 +83,19 @@ Password Change Flow:
 
 ```sql
 app_settings table:
-- password_hash: PBKDF2 hash for authentication
-- password_salt: Salt for password hashing
-- password_iterations: PBKDF2 iteration count used for this hash
-- encrypted_dek: DEK encrypted with Master Key
+- auth_verifier: PBKDF2-based password verifier (not a KEK)
+- auth_salt: Salt for auth verifier
+- auth_iterations: PBKDF2 iteration count for auth verifier
+- kek_salt: Salt for KEK derivation
+- kek_iterations: PBKDF2 iteration count for KEK derivation
+- encrypted_dek: DEK encrypted with KEK
 - dek_nonce: Nonce used for DEK encryption
 - dek_tag: Authentication tag for DEK encryption
 - encryption_enabled: Boolean flag
 - encryption_algorithm: "AES-256-GCM"
+
+Legacy fields (migrated/cleared on successful login):
+- password_hash, password_salt, password_iterations
 
 notes table:
 - content: Encrypted note content (Base64)
@@ -103,7 +114,7 @@ start rather than display placeholders.
 - **Strong Key Derivation**: Configurable PBKDF2 iterations (currently 1M) protects against brute force
 - **Future-Proof**: Iteration count stored with hash allows seamless security upgrades
 - **Authenticated Encryption**: AES-GCM prevents tampering and ensures integrity
-- **Memory-Only Master Key**: Master Key never touches disk
+- **Memory-Only KEK**: KEK never touches disk
 - **Unique Nonces**: Each encryption uses a fresh random nonce
 - **Defense in Depth**: Multiple layers (auth + encryption)
 
@@ -126,7 +137,7 @@ start rather than display placeholders.
 ## Implementation Notes
 
 ### Session Management
-- Each authenticated session maintains the DEK in memory (not the password or Master Key)
+- Each authenticated session maintains the DEK in memory (not the password or KEK)
 - DEK is tied to authentication tokens
 - DEK cleared on logout or token expiry
 - Server restart requires re-authentication
@@ -147,7 +158,7 @@ When implementing this architecture from a different system:
 
 1. **During Password Set/Change**:
    - Generate new DEK
-   - Encrypt DEK with Master Key
+   - Encrypt DEK with KEK
    - Store encrypted DEK
    - Re-encrypt all notes with DEK
 

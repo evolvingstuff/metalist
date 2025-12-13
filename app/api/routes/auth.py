@@ -13,9 +13,7 @@ from app.services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.services.sync import clear_all_locks
 from app.services import auth_cache_state
-from app.services.encryption import EncryptionService
 from app.security.encryption import clear_encryption_key, set_session_dek
-from app.config import PW_PBKDF2_ITERATIONS
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -93,23 +91,7 @@ def login(
     if not auth.verify_password(payload.password):
         raise HTTPException(status_code=401, detail="Invalid password")
 
-    settings = auth.get_settings()
-    if not settings:
-        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
-
-    encryption = EncryptionService()
-    stored_iterations = settings.password_iterations or PW_PBKDF2_ITERATIONS
-    master_key = encryption.derive_master_key(
-        payload.password,
-        settings.password_salt,
-        stored_iterations,
-    )
-    dek = encryption.decrypt_dek(
-        settings.encrypted_dek,
-        settings.dek_nonce,
-        settings.dek_tag,
-        master_key,
-    )
+    dek = auth.unwrap_dek_for_password(payload.password)
 
     set_session_dek(dek)
 

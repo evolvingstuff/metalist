@@ -215,6 +215,11 @@ class AppSettings:
     password_hash: Optional[str] = None
     password_salt: Optional[bytes] = None
     password_iterations: Optional[int] = None
+    auth_verifier: Optional[str] = None
+    auth_salt: Optional[bytes] = None
+    auth_iterations: Optional[int] = None
+    kek_salt: Optional[bytes] = None
+    kek_iterations: Optional[int] = None
     encryption_enabled: bool = False
     encryption_algorithm: Optional[str] = None
     encrypted_dek: Optional[bytes] = None

@@ -6,9 +6,11 @@ SQLite database structure with two tables: AppSettings (singleton) and DBNote (h
 erDiagram
     AppSettings {
         int id PK "Always 1"
-        string password_hash "PBKDF2 hash or NULL"
-        bytes password_salt "Random salt"
-        int password_iterations "Default 1M"
+        string auth_verifier "PBKDF2 verifier or NULL"
+        bytes auth_salt "Auth salt"
+        int auth_iterations "PBKDF2 iters"
+        bytes kek_salt "KEK salt"
+        int kek_iterations "PBKDF2 iters"
         boolean encryption_enabled "True if password set"
         string encryption_algorithm "AES-256-GCM"
         bytes encrypted_dek "Encrypted DEK"
