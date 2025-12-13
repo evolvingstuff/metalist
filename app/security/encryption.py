@@ -18,7 +18,7 @@ from app.utils.encryption import (
     get_encryption_service,
     encrypt,
     decrypt,
-    set_encryption_key,
+    set_session_dek,
     clear_encryption_key,
     is_encryption_available,
     get_encryption_status,
@@ -30,9 +30,8 @@ __all__ = [
     "get_encryption_service",
     "encrypt",
     "decrypt",
-    "set_encryption_key",
+    "set_session_dek",
     "clear_encryption_key",
     "is_encryption_available",
     "get_encryption_status",
 ]
-

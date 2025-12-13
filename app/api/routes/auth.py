@@ -13,6 +13,9 @@ from app.services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.services.sync import clear_all_locks
 from app.services import auth_cache_state
+from app.services.encryption import EncryptionService
+from app.security.encryption import clear_encryption_key, set_session_dek
+from app.config import PW_PBKDF2_ITERATIONS
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -94,10 +97,13 @@ def login(
     if not settings:
         raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
-    from app.services.encryption import EncryptionService
-
     encryption = EncryptionService()
-    master_key = encryption.derive_master_key(payload.password, settings.password_salt)
+    stored_iterations = settings.password_iterations or PW_PBKDF2_ITERATIONS
+    master_key = encryption.derive_master_key(
+        payload.password,
+        settings.password_salt,
+        stored_iterations,
+    )
     dek = encryption.decrypt_dek(
         settings.encrypted_dek,
         settings.dek_nonce,
@@ -105,9 +111,7 @@ def login(
         master_key,
     )
 
-    from app.security.encryption import set_encryption_key
-
-    set_encryption_key(payload.password, settings.password_salt)
+    set_session_dek(dek)
 
     if auth_cache_state.cache_refresh_needed():
         prefetched_rows = populate_cache_from_db()
@@ -124,7 +128,7 @@ def login(
         v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
         auth_cache_state.mark_cache_ready()
 
-    token = token_service.create_token(_client_info(request), tab_id, master_key, dek)
+    token = token_service.create_token(_client_info(request), tab_id, dek=dek)
     clear_all_locks()
     return LoginResponse(token=token, message="Login successful")
 
@@ -132,8 +136,6 @@ def login(
 @router.post("/logout")
 def logout(token: str = Depends(_require_auth)):
     token_service.revoke_token(token)
-    from app.security.encryption import clear_encryption_key
-
     clear_all_locks()
     clear_encryption_key()
     return {"message": "Logout successful"}

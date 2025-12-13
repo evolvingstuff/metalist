@@ -32,10 +32,10 @@ sequenceDiagram
         AuthSvc->>Enc: decrypt_dek(encrypted_dek, master_key)
         Enc-->>AuthSvc: Decrypted DEK
         
-        AuthSvc->>TokenSvc: create_token(client_info, master_key, dek)
+        AuthSvc->>TokenSvc: create_token(client_info, dek)
         TokenSvc->>TokenSvc: secrets.token_urlsafe(32)
         TokenSvc->>TokenSvc: SHA-256 hash token
-        TokenSvc->>TokenSvc: Store in memory dict<br/>with 30min expiry
+        TokenSvc->>TokenSvc: Store token + DEK in memory dict<br/>with 30min expiry
         TokenSvc-->>AuthSvc: Plain token string
         
         AuthSvc->>Cache: populate_cache_from_db()

@@ -29,14 +29,12 @@ class TokenService:
         self,
         client_info: str,
         owner_tab_id: str,
-        master_key: Optional[bytes] = None,
         dek: Optional[bytes] = None,
     ) -> str:
         """Generate new authentication token for client.
         
         Args:
             client_info: Information about the client (user agent, IP, etc.)
-            master_key: Master key derived from password (stored in memory)
             dek: Data Encryption Key (stored in memory for note encryption)
             
         Returns:
@@ -57,8 +55,7 @@ class TokenService:
             "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRY_MINUTES),
             "last_activity": datetime.now(timezone.utc),
-            "master_key": master_key,  # Store master key in memory
-            "dek": dek  # Store DEK for note encryption
+            "dek": dek,  # Store DEK for note encryption
         }
         
         # Clean up expired tokens periodically
@@ -206,30 +203,30 @@ class TokenService:
         
         if token_hash in self.tokens:
             info = self.tokens[token_hash].copy()
-            # Don't expose the hash
+            info.pop("dek", None)
             return info
         
         return None
     
-    def get_encryption_keys(self, token: str) -> Optional[tuple[bytes, bytes]]:
-        """Get encryption keys (master key and DEK) for a valid token.
+    def get_dek(self, token: str) -> Optional[bytes]:
+        """Get the DEK for a valid token.
         
         Args:
             token: Token to get encryption keys for
             
         Returns:
-            Tuple of (master_key, dek) or None if not found/invalid
+            DEK bytes or None if not found/invalid
         """
         if not self.verify_token(token):
             return None
             
         token_hash = self._hash_token(token)
         token_info = self.tokens.get(token_hash)
-        
-        if token_info and token_info.get("master_key") and token_info.get("dek"):
-            return token_info["master_key"], token_info["dek"]
-        
-        return None
+
+        if not token_info:
+            return None
+
+        return token_info.get("dek")
     
     def list_active_sessions(self) -> list:
         """List all active sessions.

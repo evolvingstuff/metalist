@@ -11,9 +11,9 @@ This document describes the security architecture for MetaList3's password prote
 1. **Master Key**
    - Derived from user's password using PBKDF2-SHA256 with configurable iterations (currently 1,000,000)
    - Iteration count is stored with each password hash to allow future upgrades
-   - Never stored on disk - only exists in server memory during active sessions
+   - Never stored on disk - only derived transiently during login/password change operations
    - Used solely to encrypt/decrypt the DEK
-   - Cleared from memory on logout or session expiry
+   - Not retained after unwrapping the DEK
 
 2. **DEK (Data Encryption Key)**
    - 256-bit randomly generated AES key
@@ -39,7 +39,7 @@ Login Flow:
 3. Password → PBKDF2 (stored iterations) → Master Key
 4. Retrieve Encrypted DEK from database
 5. Decrypt DEK using Master Key
-6. Keep both keys in memory for session
+6. Discard Master Key; keep only DEK in memory for session
 7. Use DEK for all note operations
 
 Password Change Flow:
@@ -126,9 +126,9 @@ start rather than display placeholders.
 ## Implementation Notes
 
 ### Session Management
-- Each authenticated session maintains its own Master Key and DEK in memory
-- Keys are tied to authentication tokens
-- Keys cleared on logout or token expiry
+- Each authenticated session maintains the DEK in memory (not the password or Master Key)
+- DEK is tied to authentication tokens
+- DEK cleared on logout or token expiry
 - Server restart requires re-authentication
 
 ### Multi-Client Support
