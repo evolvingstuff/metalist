@@ -1,7 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
-import { actionDeselectNote } from '../actions/selection-actions.js';
+import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
@@ -634,7 +634,23 @@ function handleUndoShortcut(event) {
     }
 
     if (ModeContext.isEditing) {
-        return;  
+        if (ModeContext.isDirty || ModeContext.editSessionHasEdits) {
+            return;
+        }
+
+        Logger.logDebug('Undo shortcut in editing mode with no editor history; exiting edit mode first', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: ModeContext.currentNoteId,
+            isDirty: ModeContext.isDirty,
+            editSessionHasEdits: ModeContext.editSessionHasEdits
+        }, Logger.LogCategory.EVENT);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        actionExitEditingWithoutSavingOrRefreshing();
+        actionUndo();
+        return;
     }
 
     Logger.logDebug('Undo shortcut triggered', {

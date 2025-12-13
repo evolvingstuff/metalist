@@ -55,6 +55,8 @@ function handleInput(event) {
             return; 
         }
 
+        ModeContext.markEditSessionHasEdits();
+
         if (ModeContext.isCaretHidden) {
             DOMUtils.revealCaret(noteElement);
             ModeContext.markCaretVisible();

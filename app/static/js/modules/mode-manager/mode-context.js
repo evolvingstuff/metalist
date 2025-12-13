@@ -26,6 +26,11 @@ class ModeContext {
         this._hoveredNoteId = null;
         this._caretHidden = false;
 
+        // Tracks whether this edit session has created editor undo history.
+        // This is intentionally separate from "dirty" because autosave can clear dirty
+        // while the editor still has undo history.
+        this._editSessionHasEdits = false;
+
         this._listeners = [];
         this._lastContentChangeTime = null;
         this._searchQuery = '';
@@ -149,6 +154,8 @@ class ModeContext {
                 
         const oldValue = this._editing;
         this._editing = Boolean(value);
+
+        this._editSessionHasEdits = false;
         if (!this._editing) {
             this._caretHidden = false;
         }
@@ -162,6 +169,17 @@ class ModeContext {
 
     get isEditing() {
         return this._editing;
+    }
+
+    markEditSessionHasEdits() {
+        if (!this._editSessionHasEdits) {
+            this._editSessionHasEdits = true;
+        }
+        return this;
+    }
+
+    get editSessionHasEdits() {
+        return Boolean(this._editSessionHasEdits);
     }
 
     setSearching(value) {

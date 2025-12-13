@@ -1,6 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { detachEditorSurface } from '../../editor-toolbar.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
@@ -82,6 +83,39 @@ export async function actionDeselectNote() {
     ModeContext.setCurrentContent(null);
 
     await actionRefreshAndMaybeSelect({startedAt: startedAt});
+
+    ModeContext.validate();
+}
+
+export function actionExitEditingWithoutSavingOrRefreshing() {
+    Logger.logAction('exit_editing_without_saving_or_refreshing', {
+        currentNoteId: ModeContext.currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty
+    });
+
+    if (!ModeContext.isEditing) {
+        throw new Error('Cannot exit editing locally: not currently editing');
+    }
+    if (ModeContext.isDirty) {
+        throw new Error('Cannot exit editing locally while dirty');
+    }
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        throw new Error('Cannot exit editing locally: currentNoteId is missing');
+    }
+
+    const noteElement = DOMUtils.getNoteById(noteId);
+    DOMUtils.setNoteEditable(noteElement, false);
+    detachEditorSurface();
+
+    ModeContext.setEditing(false);
+    ModeContext.setCurrentNoteId(null);
+
+    if (ModeContext.currentContent !== null) {
+        ModeContext.setCurrentContent(null);
+    }
 
     ModeContext.validate();
 }
