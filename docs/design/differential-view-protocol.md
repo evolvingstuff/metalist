@@ -1,9 +1,11 @@
 # Differential View Protocol
 
 ## Overview
-- `/api2/notes/view` accepts JSON `POST` requests in “diff mode”.
-- The server builds a snapshot from the in-memory `NoteStore` and emits only the delta relative to hashes supplied by the client.
-- HTML fallback is removed; clients that do not send the diff payload should continue to use the legacy HTML endpoint (handled separately).
+- `POST /api2/notes/view` accepts JSON requests in “diff mode”.
+- The server builds a view `snapshot` from the in-memory store and returns:
+  - `snapshot.structure`: the authoritative visible tree/order
+  - `snapshot.notes`: only the notes whose `hash` differs from what the client reported
+- This is the current view endpoint; legacy `/api/*` routes are hard-blocked.
 
 ## Request Shape
 ```json
@@ -13,82 +15,72 @@
   "search": "optional query",
   "clientSeenRootIds": ["root-uuid-1", "root-uuid-2"],
   "clientNoteUuidHashes": {
-    "note-uuid-1": "sha256hash1",
-    "note-uuid-2": "sha256hash2"
+    "note-uuid-1": "expandedHashWithFlags",
+    "note-uuid-2": "expandedHashWithFlags"
   }
 }
 ```
 
 ### Notes
-- `clientSeenRootIds` identifies which root notes have actually been visible in the viewport; the server uses this to decide when to append additional root batches.
-- `clientNoteUuidHashes` is a map of `noteId -> expandedHashWithFlags` representing the client’s current cache. Omit entries the client does not have (they will be treated as additions).
-- `clientId`, `editingNoteId`, and `search` retain their current semantics.
-- Because authentication now enforces a single active session, the client only issues the diff request after its own mutations (save, move, collapse toggles, exiting edit mode) to pick up server-side side effects.
+- All top-level keys above are treated as required by the current handler.
+- `clientSeenRootIds`: roots that have actually been visible in the viewport; used to decide when to append additional root batches (infinite-scroll/windowing).
+- `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have.
+- `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 
 ## Response Shape
 ```json
 {
-  "structure": [
-    {
-      "id": "note-uuid-1",
-      "parentId": null,
-      "prevId": null,
-      "nextId": "note-uuid-2",
-      "hash": "sha256hash1"
+  "snapshot": {
+    "structure": [
+      {
+        "id": "note-uuid-1",
+        "parentId": null,
+        "prevId": null,
+        "nextId": "note-uuid-2",
+        "hash": "expandedHashWithFlags"
+      }
+    ],
+    "notes": {
+      "note-uuid-2": {
+        "content": "<div>rendered html</div>",
+        "flags": {
+          "isEditing": false,
+          "isCollapsed": false,
+          "memoryMode": false,
+          "memorySelected": false
+        },
+        "hash": "expandedHashWithFlags"
+      }
     },
-    {
-      "id": "note-uuid-2",
-      "parentId": null,
-      "prevId": "note-uuid-1",
-      "nextId": null,
-      "hash": "sha256hash2"
-    }
-  ],
-  "notes": {
-    "note-uuid-2": {
-      "content": "<div>rendered html</div>",
-      "flags": {
-        "isEditing": false,
-        "isCollapsed": false,
-        "memoryMode": false,
-        "memorySelected": false
-      },
-      "hash": "sha256hash2"
-    }
+    "locks": {
+      "note-uuid-1": "client-uuid"
+    },
+    "updateUUID": "sync-token",
+    "version": "app-version",
+    "currentClientId": "client-uuid",
+    "searchQuery": "optional query",
+    "editingNoteId": null
   },
-  "locks": {
-    "note-uuid-1": "client-uuid"
-  },
-  "updateUUID": "sync-token",
-  "version": "app-version",
-  "currentClientId": "client-uuid",
-  "searchQuery": "optional query",
-  "editingNoteId": null
+  "updateUUID": "sync-token"
 }
 ```
 
 ### Notes
-- `structure` is preorder; each entry includes `id`, `parentId`, `prevId`, `nextId`, and the authoritative `hash`. Include every visible node so the client can reorder DOM as needed. When infinite scrolling is enabled, the server appends new root nodes as the window expands but keeps previously delivered roots present so clients never drop hashes.
-- `notes` maps only the nodes whose expanded hash differs from what the client reported (or nodes the client lacks). Each value contains normalized flags and the latest hash. The hash incorporates content, normalized flags (e.g., `isCollapsed`, `isEditing`, `memoryMode`, `memorySelected`), and the parent/prev/next pointers so structural changes trigger updates.
-- Any note id missing from `structure` should be removed client-side; no explicit removal list is returned.
-- Locks, version, search info, and `updateUUID` mirror the existing HTML response so downstream code keeps working.
+- `snapshot.structure` includes every visible node so the client can reorder/insert/remove DOM nodes as needed.
+- `snapshot.notes` is a sparse map: only nodes whose `hash` differs from the client’s reported `clientNoteUuidHashes`.
+- Any note id missing from `snapshot.structure` should be removed client-side; no explicit removal list is returned.
+- `updateUUID` is duplicated at the top level for convenience; it matches `snapshot.updateUUID`.
 
 ## Client Reconciliation
-- Maintain a map of `id -> hash` in `ModeContext`; populate it from `structure` hashes each response and drop entries for ids no longer present.
-- Walk `structure` to ensure DOM order matches the server. Insert new nodes when they appear, reposition existing nodes based on `prevId/nextId`, and establish child containers as today.
-- For each entry in `notes`, update content/flags and refresh the stored hash. Nodes absent from `notes` retain their existing content/flags but may still move according to the structure.
-- Remove DOM nodes that are not present in the latest `structure`; also drop their hashes from local cache.
-- Persist `updateUUID` for continued sync polling.
+- Maintain a map of `id -> hash` from the latest `snapshot.structure`.
+- Walk `snapshot.structure` to ensure DOM order matches the server. Insert nodes that appear; reposition existing nodes based on `prevId/nextId`.
+- Apply payloads from `snapshot.notes` to update content/flags and refresh stored hashes.
+- Remove DOM nodes that are absent from the latest `snapshot.structure` and drop their hashes.
 
 ## Manual Verification Checklist
 - CRUD sequences: create, edit, delete and confirm only changed nodes rerender.
-- Structural mutations: move notes across parents/siblings and verify DOM order updates without full redraw.
-- Collapse/expand toggles: ensure child containers and flags stay accurate.
-- Undo/redo flows: structure diff should realign with no stale nodes.
-- Search filtering: filtered structures should diff correctly; stale hashes should trigger payload updates.
-- Lock acquisition/release: verify lock icons/styling update without full refresh.
-
-## Follow-ups
-- Investigate compression/streaming for large `clientNoteUuidHashes` payloads if needed.
-- Extend automated tests once the pytest harness migrates to the sqlite helpers (current suite still pending).
-- Explore caching rendered variants server-side if diff CPU becomes material after the protocol change.
+- Structural mutations: move across parents/siblings and verify order updates without full redraw.
+- Collapse/expand toggles: child containers + flags stay accurate.
+- Undo/redo flows: structure diff realigns with no stale nodes.
+- Search filtering: filtered structures diff correctly.
+- Lock acquisition/release: lock icons/styling update without full refresh.

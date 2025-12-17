@@ -1,72 +1,72 @@
 # System Architecture
 
-High-level overview of MetaList3 system components and their relationships.
+High-level overview of MetaList3 components and their relationships.
 
 ```mermaid
 graph TB
     subgraph "Client Browser"
-        UI[UI Components<br/>Notes, Search, Modals]
-        MM[Mode Manager<br/>State Orchestration]
-        AC[API Client<br/>HTTP Requests]
-        Auth[Auth Module<br/>Token Management]
-        CM[Connectivity Monitor<br/>Online/Offline Status]
-        AT[Activity Tracker<br/>Token Refresh]
+        UI[UI + DOM<br/>Notes, Search, Modals]
+        MM[ModeManager<br/>State Orchestration]
+        AC[API Client<br/>fetch()]
+        Auth[Auth Module<br/>Token + Tab Id]
+        CM[Connectivity Monitor<br/>Status Polling]
     end
-    
-    subgraph "FastAPI Application"
-        MW[Auth Middleware<br/>Token Validation]
-        Router[API Router]
-        Static[Static Files<br/>JS, CSS, Images]
-        Templates[Mako Templates<br/>SSR HTML]
+
+    subgraph "FastAPI App"
+        MW[AuthMiddleware]
+        Router[APIRouters<br/>/api2/*]
+        Static[Static Files]
+        Templates[Mako Templates<br/>SSR]
     end
-    
-    subgraph "API Endpoints"
-        AuthAPI[Auth API<br/>Login, Logout, Password]
-        NotesAPI[Notes API<br/>CRUD, Move, Copy]
-        DevAPI[Dev API<br/>Debug Tools]
+
+    subgraph "Application Layer"
+        Cmds[Usecases Cmd*<br/>create/move/update/undo]
+        Snap[Snapshot Builder<br/>/notes/view]
     end
-    
-    subgraph "Service Layer"
-        AuthService[Auth Service<br/>Password Validation]
-        TokenService[Token Service<br/>In-Memory Store]
-        NoteService[Note Service<br/>Business Logic]
-        UndoService[Undo Service<br/>History Management]
-        ContentCache[Content Cache<br/>Search Index]
+
+    subgraph "Services"
+        AuthSvc[AuthService]
+        TokenSvc[TokenService<br/>single active session]
+        Store[NoteStore<br/>in-memory graph]
+        Cache[Content Cache<br/>decrypted content]
+        Undo[Undo State]
+        Sync[Sync UUID + Locks]
+        Crypto[Encryption Service<br/>AES-GCM + PBKDF2]
     end
-    
-    subgraph "Data Access"
-        LinkedList[LinkedListManager<br/>Facade Pattern]
-        Encryption[Encryption Service<br/>AES-256-GCM]
-        DB[(SQLite Database)]
+
+    subgraph "DB Layer"
+        SQL[sqlite helpers<br/>notes_sql/settings_sql]
+        DB[(SQLite DB)]
     end
-    
+
     UI --> MM
     MM --> AC
-    AC --> MW
     Auth --> AC
     CM --> AC
-    AT --> Auth
-    
+
+    AC --> MW
     MW --> Router
-    Router --> AuthAPI
-    Router --> NotesAPI
-    Router --> DevAPI
-    Router --> Static
+
     Router --> Templates
-    
-    AuthAPI --> AuthService
-    AuthAPI --> TokenService
-    NotesAPI --> NoteService
-    NotesAPI --> UndoService
-    DevAPI --> LinkedList
-    
-    AuthService --> TokenService
-    AuthService --> Encryption
-    NoteService --> LinkedList
-    NoteService --> ContentCache
-    UndoService --> LinkedList
-    
-    LinkedList --> DB
-    Encryption --> DB
-    ContentCache -.->|caches| DB
+    Router --> Static
+
+    Router --> Cmds
+    Router --> Snap
+
+    Snap --> Store
+    Snap --> Cache
+    Snap --> Sync
+
+    Cmds --> Store
+    Cmds --> Undo
+    Cmds --> Sync
+    Cmds --> SQL
+
+    Router --> AuthSvc
+    AuthSvc --> TokenSvc
+    AuthSvc --> Crypto
+
+    SQL --> DB
+    Crypto --> DB
+    Cache -.-> DB
 ```

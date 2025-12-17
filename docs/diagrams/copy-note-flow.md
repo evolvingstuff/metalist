@@ -1,63 +1,45 @@
 # Copy Note Flow
 
-Complete flow showing the fix where dirty notes are saved before copying to ensure current edits are included.
+High-level flow: if the currently edited note is dirty, save first so the copied note includes the latest edits.
 
 ```mermaid
 sequenceDiagram
     participant U as User
     participant Browser as Browser
-    participant Keyboard as keyboard-events.js
-    participant Context as ModeContext
-    participant Actions as note-actions.js
-    participant Content as content-actions.js
-    participant API as APIClient
-    participant Server as Notes API
-    participant Service as NoteService
-    participant LLM as LinkedListManager
-    participant DB as Database
-    
-    U->>Browser: Press Cmd+C while editing
-    Browser->>Keyboard: handleKeyDown(event)
-    Keyboard->>Keyboard: Check window.getSelection()
-    
+    participant Client as Client UI (ModeManager)
+    participant API as API Client
+    participant Server as FastAPI (/api2)
+    participant Update as CmdUpdateContent
+    participant Copy as CmdCopyNote
+    participant Store as NoteStore
+    participant DB as SQLite
+
+    U->>Browser: Cmd+C while editing
+    Browser->>Client: key handler
+
     alt Text is selected
-        Keyboard->>Context: setClipboardMode('system')
-        Keyboard->>Browser: Return (allow default)
-        Browser->>Browser: Copy text to system clipboard
-    else No text selected - Copy note
-        Keyboard->>Keyboard: event.preventDefault()
-        Keyboard->>Context: setClipboardMode('note')
-        Keyboard->>Actions: actionCopyNote()
-        
-        Actions->>Context: Check isDirty
-        alt Note has unsaved changes (isDirty = true)
-            Actions->>Content: actionSaveNote(noteId)
-            Content->>API: updateNote(noteId, content)
+        Client-->>Browser: allow default copy
+        Browser-->>Browser: system clipboard updated
+    else No text selected
+        Client->>Client: treat as "copy note"
+
+        alt Note is dirty
+            Client->>API: PUT /api2/notes/{id} {clientId, content}
             API->>Server: PUT /api2/notes/{id}
-            Server->>Service: update_note(noteId, content)
-            Service->>LLM: update_note()
-            LLM->>DB: Update content_encrypted
-            DB-->>LLM: Success
-            LLM-->>Service: Updated
-            Service-->>Server: {status: updated}
+            Server->>Update: execute()
+            Update->>DB: persist encrypted content
+            Update->>Store: update in-memory content
+            Update-->>Server: success
             Server-->>API: 200 OK
-            API-->>Content: Success
-            Content->>Context: setDirty(false)
-            Content-->>Actions: Save complete
+            API-->>Client: mark clean
         end
-        
-        Actions->>API: copyNote(noteId)
+
+        Client->>API: POST /api2/notes/{id}/copy {clientId}
         API->>Server: POST /api2/notes/{id}/copy
-        Server->>Service: copy_note_subtree(noteId)
-        Service->>LLM: copy_note(noteId)
-        LLM->>DB: Read note tree
-        DB-->>LLM: Note + descendants
-        LLM->>LLM: Serialize tree structure
-        LLM-->>Service: Serialized data
-        Service->>Service: Store in clipboard
-        Service-->>Server: {clipboard_data}
+        Server->>Copy: execute()
+        Copy->>Store: read subtree
+        Copy-->>Server: clipboard payload
         Server-->>API: 200 OK
-        API-->>Actions: Copy successful
-        Actions-->>Keyboard: Complete
+        API-->>Client: clipboard updated
     end
 ```

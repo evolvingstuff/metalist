@@ -1,65 +1,54 @@
 # Note Management System
 
-Architecture of the hierarchical note system showing the actual layered implementation.
+Layered view of the hierarchical note system.
 
 ```mermaid
 graph TD
     subgraph "Frontend"
-        NoteUI[Note UI Components]
-        ModeCtx[Mode Context]
-        NoteActions[Note Actions]
-        KeyboardEvents[Keyboard Events]
+        UI[Note UI]
+        State[ModeContext]
+        Actions[User Actions<br/>(keyboard/mouse)]
     end
-    
+
     subgraph "API Layer"
-        NotesAPI[Notes API Endpoints]
+        NotesAPI[Notes Routes<br/>/api2/notes/*]
+        ViewAPI[View Route<br/>POST /api2/notes/view]
     end
-    
-    subgraph "Service Layer"
-        NotesService[NoteService]
-        UndoService[UndoService]
-        QueryService[QueryService]
-        ContentCache[Content Cache]
+
+    subgraph "Application Layer"
+        Cmds[Cmd* Usecases]
+        Snapshot[Snapshot Builder]
     end
-    
-    subgraph "Model Layer - Facade"
-        LinkedListManager[LinkedListManager<br/>Facade]
+
+    subgraph "Services"
+        Store[NoteStore]
+        Cache[Content Cache]
+        Undo[Undo State]
+        Sync[Sync + Locks]
     end
-    
-    subgraph "Model Layer - Implementation"
-        NoteCRUD[NoteCRUD<br/>Create/Update/Delete]
-        ListOps[ListOperations<br/>Move/Reorder]
-        ListTrav[ListTraversal<br/>Read/Validate]
+
+    subgraph "Persistence"
+        SQL[sqlite helpers]
+        DB[(SQLite DB)]
     end
-    
-    subgraph "Data Layer"
-        Encryption[Encryption Service<br/>AES-256-GCM]
-        DB[(SQLite Database)]
-    end
-    
-    NoteUI --> ModeCtx
-    KeyboardEvents --> NoteActions
-    NoteActions --> ModeCtx
-    ModeCtx --> NotesAPI
-    
-    NotesAPI --> NotesService
-    NotesAPI --> UndoService
-    NotesAPI --> QueryService
-    
-    NotesService --> LinkedListManager
-    UndoService --> LinkedListManager
-    QueryService --> LinkedListManager
-    QueryService --> ContentCache
-    
-    LinkedListManager --> NoteCRUD
-    LinkedListManager --> ListOps
-    LinkedListManager --> ListTrav
-    
-    NoteCRUD --> Encryption
-    NoteCRUD --> DB
-    NoteCRUD --> ContentCache
-    ListOps --> DB
-    ListTrav --> DB
-    
-    ContentCache -.->|caches| DB
+
+    UI --> State
+    Actions --> State
+    State --> NotesAPI
+    State --> ViewAPI
+
+    NotesAPI --> Cmds
+    ViewAPI --> Snapshot
+
+    Cmds --> Store
+    Cmds --> Undo
+    Cmds --> Sync
+    Cmds --> SQL
+
+    Snapshot --> Store
+    Snapshot --> Cache
+    Snapshot --> Sync
+
+    SQL --> DB
+    Cache -.-> DB
 ```

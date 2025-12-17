@@ -143,9 +143,9 @@ start rather than display placeholders.
 - Server restart requires re-authentication
 
 ### Multi-Client Support
-- Each client session has independent keys in memory
-- Token-based authentication identifies sessions
-- No key sharing between clients
+- Token issuance clears any previous tokens (single active session enforced)
+- Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
+- DEK is stored in memory alongside the active token; no DEK is persisted to disk
 
 ### Password Requirements
 - Minimum length should be enforced (recommend 12+ characters)
@@ -169,14 +169,39 @@ When implementing this architecture from a different system:
 
 ## API Endpoints
 
-All endpoints except login require authentication token when password protection is enabled:
+When password protection is enabled, requests must include:
+- `Authorization: Bearer <token>`
+- `X-Metalist-Tab-Id: <uuid>` (required by auth/token verification)
 
+Auth:
 - `POST /api2/auth/login` - Authenticate and establish session
-- `POST /api2/auth/logout` - Clear session and keys from memory
+- `POST /api2/auth/logout` - Revoke token and clear in-memory keys
+- `POST /api2/auth/session` - Claim passwordless session (only when no password is set)
+- `GET /api2/auth/status` - Poll auth/encryption status
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)
 - `DELETE /api2/auth/settings/password/remove` - Disable encryption
-- `GET /api2/notes/*` - All note operations use cached DEK
+- `GET /api2/auth/sessions` - List active session(s)
+
+Notes:
+- `POST /api2/notes/view`
+- `POST /api2/notes/new`
+- `POST /api2/notes/new-sibling/{note_id}`
+- `POST /api2/notes/new-child/{note_id}`
+- `PUT /api2/notes/{note_id}`
+- `PUT /api2/notes/{note_id}/save`
+- `POST /api2/notes/{note_id}/move`
+- `POST /api2/notes/{note_id}/collapse`
+- `POST /api2/notes/{note_id}/expand`
+- `DELETE /api2/notes/{note_id}`
+- `POST /api2/notes/{note_id}/copy`
+- `POST /api2/notes/paste-sibling/{target_note_id}`
+- `POST /api2/notes/paste-child/{target_note_id}`
+- `POST /api2/notes/undo`
+- `POST /api2/notes/redo`
+
+Memory:
+- `POST /api2/memory`
 
 ## Monitoring and Logging
 

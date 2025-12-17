@@ -1,51 +1,28 @@
-# Electron Desktop App Implementation
+# Electron Desktop App (Planning)
 
 ## Overview
-The Electron app serves as the free tier of MetaList, providing a full-featured local experience that acts as both a standalone tool and a funnel to the paid cloud subscription.
+This is a planning doc for an Electron wrapper around the existing FastAPI app so MetaList can run as a packaged desktop app.
 
-## Architecture
+## Current Web App Assumptions
+- The backend is a FastAPI server (Python) serving SSR HTML + JSON APIs.
+- The frontend is vanilla JS.
+- The server currently binds to `127.0.0.1:8000` via `main.py`.
+  - If we want a configurable port, that would require a small code change (not described here).
 
-### Current Web Architecture
-- **Backend**: FastAPI server (Python)
-- **Frontend**: Server-side rendered templates (Mako) + vanilla JavaScript
-- **Database**: SQLite
-- **Server**: Runs on localhost:8000
-
-### Electron Wrapper Approach
-The Electron app will wrap the existing FastAPI application with minimal changes:
+## Electron Wrapper Approach
+Wrap the existing server process with minimal app changes:
 
 ```
 electron-app/
 ├── main.js              # Electron main process
 ├── preload.js           # Security bridge
-├── package.json         # Electron dependencies
+├── package.json         # Electron deps
 ├── dist/                # Packaged Python backend
-│   └── metalist/        # PyInstaller output
-└── build/               # Platform installers
+│   └── metalist/        # PyInstaller output (example)
+└── build/               # Installers
 ```
 
-## Implementation Steps
-
-### Phase 1: Basic Electron Shell (1-2 days)
-1. Create Electron wrapper that launches FastAPI server
-2. Package Python backend with PyInstaller
-3. Handle server lifecycle (start/stop with app)
-4. Basic window management
-
-### Phase 2: Native Integration (2-3 days)
-1. System tray integration
-2. Global hotkeys for quick capture
-3. Native menus
-4. Auto-start option
-5. Native notifications
-
-### Phase 3: Distribution (1-2 days)
-1. Code signing setup
-2. Auto-update mechanism
-3. Platform installers (DMG, EXE, AppImage)
-4. Download page on website
-
-## Technical Details
+## Technical Sketch
 
 ### Electron Main Process (main.js)
 ```javascript
@@ -57,10 +34,10 @@ let mainWindow;
 let backendProcess;
 
 function startBackend() {
-  // Start packaged Python backend
+  // Start packaged Python backend (example path)
   const backendPath = path.join(__dirname, 'dist', 'metalist', 'metalist');
   backendProcess = spawn(backendPath, [], {
-    env: { ...process.env, METALIST_PORT: '8000' }
+    env: { ...process.env }
   });
 }
 
@@ -72,10 +49,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     }
   });
-  
+
   // Wait for backend to be ready, then load
   setTimeout(() => {
-    mainWindow.loadURL('http://localhost:8000');
+    mainWindow.loadURL('http://127.0.0.1:8000');
   }, 2000);
 }
 
@@ -83,90 +60,36 @@ app.whenReady().then(() => {
   startBackend();
   createWindow();
 });
+
+app.on('will-quit', () => {
+  if (backendProcess) {
+    backendProcess.kill();
+  }
+});
 ```
 
-### Python Backend Packaging
-Using PyInstaller to create standalone executable:
+### Python Backend Packaging (PyInstaller)
+MetaList’s runtime entrypoint is `main.py` (which starts Uvicorn for `app.main:app`). A packaging command will need to include templates/static assets.
+
+Example (will likely need iteration per platform):
 ```bash
 pyinstaller --onefile \
   --hidden-import=uvicorn \
   --hidden-import=fastapi \
-  --add-data "templates:templates" \
-  --add-data "static:static" \
-  app.py
+  --add-data "app/templates:app/templates" \
+  --add-data "app/static:app/static" \
+  main.py
 ```
 
-### Data Storage
-- **Free/Local Mode**: SQLite database in user's app data directory
-- **Cloud Mode**: When subscription active, sync local SQLite with cloud
+## Data Storage (Desktop)
+- Current dev/prod default is `notes.db` in the repo root (`app/config.py`).
+- A real desktop build should store the database under the OS app data directory (would require a code/config change).
 
-## Free vs Paid Features
-
-### Always Free (Local)
-- All core features
-- Unlimited notes
-- Full text search
-- Tag implications
-- Import/export
-- Local SQLite database
-
-### Paid (Cloud Subscription)
-- Multi-device sync
-- Web access
-- Automatic backups
-- Share notes (future)
-- Mobile apps (future)
-- Priority support
-
-### Gentle Monetization
-- Occasional popup after 30 days: "Enjoying MetaList? Enable cloud sync"
-- Small "Enable Sync" button in UI
-- Backup reminder after 100+ notes
-- No feature limitations or data hostage
-
-## Migration Path
-
-### Free → Paid
-1. User clicks "Enable Cloud Sync"
-2. Create account / login
-3. Local database uploads to cloud
-4. Seamless transition to synced mode
-
-### Paid → Free
-1. Subscription ends
-2. Final sync to local
-3. Continue using locally
-4. Data remains accessible
-
-## Development Effort
-
-### Minimum Viable Electron App
-- **Time**: 1-2 days
-- **Deliverable**: Basic working desktop app
-- **Platforms**: macOS initially, then Windows/Linux
-
-### Production-Ready Version
-- **Time**: 1 week total
-- **Includes**: Auto-update, installers, code signing
-- **Polish**: Native feel, system integration
-
-## Benefits
-
-### For Users
-- No setup required (vs running Python server)
-- Feels like "real" desktop software  
-- Data stays local unless they choose cloud
-- Natural upgrade path when ready
-
-### For Business
-- Lower barrier to entry than web trial
-- Extended trial period (use free forever)
-- Higher conversion due to investment (time/data)
-- Clear value proposition for upgrade
+## Product Notes
+The Electron wrapper should expose the same feature set as the local web app. Any “free vs paid” split (cloud sync, backups, etc.) is a product decision and likely requires additional backend + client work beyond packaging.
 
 ## Next Steps
-1. Validate FastAPI can be packaged with PyInstaller
-2. Create minimal Electron proof-of-concept
-3. Test on target platforms
-4. Design upgrade flow UX
-5. Implement gentle monetization nudges
+1. Validate FastAPI/Uvicorn packaging with PyInstaller.
+2. Create minimal Electron proof-of-concept (start server, load `http://127.0.0.1:8000`).
+3. Decide on DB location strategy for desktop (app data dir vs user-chosen path).
+4. Add lifecycle robustness: health-check the backend instead of a fixed `setTimeout`.

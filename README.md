@@ -1,103 +1,83 @@
 # MetaList
 
-A minimalist note-taking application with a focus on server-side rendering and efficient data synchronization.
+A minimalist single-user note-taking app focused on server-side rendering (SSR), fast in-memory tree operations, and efficient sync/diff updates.
 
 ## Features
-
-- Rich text editing with image support
+- Rich text editing (ContentEditable) with image support
 - Drag-and-drop note reordering
 - Real-time content saving
-- Keyboard shortcuts (press `?` in the app for a live reference)
-- Server-side rendering for fast initial load
-- Linked list data structure for efficient ordering
+- Keyboard shortcuts (press `?` in the app)
+- Linked-list ordering model for efficient reorders
+- Optional password protection + encryption at rest (AES-GCM)
 
 ## Technology Stack
 
 ### Backend
-- FastAPI - Modern Python web framework
-- sqlite3 (stdlib) - persistent storage with guard-aware wrapper
-- Mako - Server-side templating
-- SQLite - Database storage
+- FastAPI
+- SQLite (via stdlib `sqlite3`) with a guard-aware wrapper (`SafeSession`)
+- Mako templates for SSR
 
 ### Frontend
-- Vanilla JavaScript (No framework)
+- Vanilla JavaScript (no framework)
 - HTML5 Drag and Drop API
 - ContentEditable for rich text editing
-- CSS Custom Properties for theming
+- CSS custom properties for theming
 
 ### Testing
-- Cypress - End-to-end UI testing (primary automated coverage)
-- Manual smoke scripts for API2 flows
+- Cypress end-to-end UI suite (primary automated coverage)
 
-## Architecture
-
-The application uses a server-side rendering approach with minimal JavaScript. Notes are stored in a linked list structure allowing for efficient reordering operations. Content synchronization is handled through a combination of immediate operations (drag-and-drop) and polled updates (content editing).
-
-### Encrypted Single-User Design
-
-MetaList is designed as a **single-user, encrypted-at-rest** application with the following principles:
-
-- **In-Memory Operations**: All data is decrypted and loaded into memory at startup for optimal performance
-- **Encryption-First**: Database stores only encrypted data; all processing happens on decrypted in-memory state
-- **Container-Based Multi-User**: Multiple users supported via separate container instances
-- **Crash-Safe**: Process crashes simply reload from encrypted storage; no persistent state corruption possible
-- **Undo-Based Error Recovery**: Transaction failures are handled via the undo system rather than complex rollback mechanisms
-
-This design optimizes for:
-- **Privacy**: Zero plaintext data at rest
-- **Performance**: In-memory tree operations and recursive patterns
-- **Simplicity**: No complex transaction coordination or connection pooling needed
-- **Reliability**: Clean failure modes with automatic recovery
-
-Key design decisions:
-- Server-side processing
-- Minimal network traffic
-- Clean separation of concerns
-- Simple, efficient client implementation
-- In-memory data structures over database optimization
-- Undo/redo for error recovery
+## Architecture (High Level)
+- Server renders the base page via Mako templates.
+- The browser client drives interaction via `/api2` JSON endpoints.
+- Notes are loaded/decrypted into an in-memory store at startup; a post-startup DB read guard prevents accidental runtime SELECTs.
 
 ## Development
 
 ### Setup
-1. Install Python dependencies:
-```
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-2. Install Node.js dependencies:
-```
+
 npm install
 ```
-3. Install Cypress:
-```
-npm install cypress --save-dev
-```
-### Running the Application
-1. Start the FastAPI server:
-```
-python app.py
-```
-2. Visit http://localhost:8000 in your browser
 
-### Running Tests
-
-Automated backend/unit suites have been retired during the APIv2 migration. Focus on the Cypress suite plus manual regression passes:
-
-#### Frontend/UI (Cypress)
-
-Open Cypress Test Runner
+### Run
+The default entrypoint starts Uvicorn with the FastAPI app:
+```bash
+python main.py
 ```
-cd tests/ui
-npx cypress open
-```
+Then visit `http://127.0.0.1:8000`.
 
-Run tests headlessly (spins up the FastAPI test server automatically)
-```
+Useful env flags:
+- `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
+- `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
+
+### Run Tests (Cypress)
+
+**Headless (recommended)**: starts the server in `TEST_MODE=1` and runs Cypress:
+```bash
 bash run_cypress_tests.sh
 ```
 
-If you already have the server running and just need Cypress, you can still run it manually:
-```
-cd tests/ui
-npx cypress run
+Notes:
+- `TEST_MODE=1` uses `test.db` and deletes it on startup.
+- The script will kill anything already listening on port `8000`.
+
+**Interactive**:
+1. Start the server in test mode:
+   ```bash
+   source .venv/bin/activate
+   TEST_MODE=1 uvicorn app.main:app --port 8000
+   ```
+2. In another terminal:
+   ```bash
+   cd tests/ui
+   npx cypress open
+   ```
+
+### Diagrams
+Render Mermaid diagrams to PNGs:
+```bash
+npm run render-diagrams
 ```

@@ -1,85 +1,53 @@
 # In-Memory Note Store Design
 
 ## Goals
-- Load the entire note hierarchy into memory once at startup.
-- Eliminate runtime SQL reads during normal operation.
+- Load the entire note hierarchy into memory at startup.
+- Avoid runtime SQL reads during normal operation (enforced by a post-startup read guard).
 - Provide fast lookups for rendering, search, and hierarchy manipulation.
-- Preserve undo/redo behavior (temporarily permit DB reads during replay).
-- Prepare for diff-based sync while keeping startup and first-render costs predictable.
+- Keep undo/redo viable (temporary DB reads are permitted via explicit guard overrides).
 
-## Architecture Overview
-```
-Startup
-└─ load notes from DB
-   ├─ populate content cache (existing)
-   ├─ build NoteStore (new):
-   │    - note_map[id] = NoteRecord (content + metadata)
-   │    - children[parent_id] = ordered list of child ids
-   │    - root_order = ordered list of root ids
-   └─ flip ReadGuard.enable()
-```
+## Core Components (As Implemented)
+- `app/services/note_store.py` (`store`): canonical in-memory graph holding decrypted note content + ordering metadata.
+- `app/services/content_cache.py`: decrypts note content from DB into an in-memory cache.
+- `app/services/snapshot.py`: builds the view snapshot used by `POST /api2/notes/view`.
+- `app/db/session.py`: provides `begin_writer()`/`connect_reader()` and enforces the post-startup SELECT guard.
 
-### Core Components
-- `NoteStore`: central in-memory data structure holding decrypted note content and ordering metadata.
-- `ReadGuard`: global flag enforced inside `SafeSession.execute`; raises on SELECT once enabled.
-- `LinkedListManager` / `ListTraversal`: refactored to operate on `NoteStore` instead of issuing queries.
-- `NoteRenderer`: normalizes HTML when the API needs it; rendering happens lazily per request.
+## Data Model (Conceptual)
+Notes are treated as a linked structure:
+- `parent_id`: tree hierarchy
+- `prev_id` / `next_id`: sibling ordering within a parent
 
-## Data Structures
-```python
-@dataclass
-class NoteRecord:
-    id: str
-    parent_id: Optional[str]
-    prev_id: Optional[str]
-    next_id: Optional[str]
-    is_collapsed: bool
-    content: str  # decrypted
-    created_at: datetime
-    updated_at: datetime
-```
-
-Supporting containers:
-- `note_map: dict[str, NoteRecord]`
-- `children: dict[Optional[str], list[str]]` (root uses `None` key)
+The in-memory store maintains enough indices to:
+- answer “get children in order” quickly
+- update local link invariants on move/insert/delete
 
 ## Startup Flow
-1. DB initialization runs as today (create tables, populate cache).
-2. New `NoteStore.load_from_db(session)` performs a single read of `notes` table and constructs `NoteRecord`s with decrypted plaintext.
-3. `ReadGuard.enable()` prevents subsequent SQL reads unless explicitly disabled.
+At a high level (`app/main.py`):
+1. Initialize DB schema + ensure settings exist.
+2. Prefetch all note rows.
+3. Populate the decrypted content cache.
+4. Hydrate the in-memory note store from the prefetched rows.
+5. Enable the read guard so accidental runtime `SELECT` crashes loudly.
 
-## Mutation Workflow
-- Service layer (e.g., `NoteService`) updates `NoteStore` first:
-  - Add/remove note IDs from `children`/`note_map`.
-  - Update linked-list pointers in memory.
-- Persist change to DB via sqlite helpers (write-through).
-- Existing cache listeners remain to keep `_search_cache` synced.
+## View / Diff Flow
+- Route: `POST /api2/notes/view` (`app/api/routes/notes.py`)
+- Snapshot builder: `app/services/snapshot.build_view_snapshot(...)`
+- Diffing behavior:
+  - The server always returns authoritative `snapshot.structure`.
+  - `snapshot.notes` is filtered to only include notes whose `hash` differs from the client’s `clientNoteUuidHashes`.
 
-## Undo/Redo Exception
-- `UndoRedoService` wraps replay operations in `ReadGuard.allow_reads("undo"/"redo")` context.
-- During this window the sqlite helpers can fetch/compare DBNote states without raising.
-- After replay, guard re-enables automatically.
+See `docs/design/differential-view-protocol.md` for the wire format.
 
-## Guard Implementation
-- Extend `SafeSession` with a class-level `reads_enabled` flag.
-- Override `execute` or attach event listeners checking if the statement is a SELECT.
-- Throw `RuntimeError("Post-startup DB read forbidden")` when the guard is active.
-- Provide `@contextmanager allow_reads(reason)` to temporarily permit selects (undo/redo).
+## Read Guard
+The project enforces a “no runtime SELECTs after startup” rule:
+- `app/db/session.py` wraps sqlite connections in `GuardedConnection` and raises `RuntimeError("Post-startup DB read forbidden")` when a `SELECT` is attempted after the guard is enabled.
+- Writers (`begin_writer`) are used for write transactions.
+- Explicit read windows exist via `connect_reader(reason=...)` or `allow_reads(reason=...)`.
 
-## Rendering / Sync Changes
-- `NoteQueryService.build_view_snapshot` asks the renderer for only the visible slice of the tree, limiting work to the roots in view.
-- Hashes used for diffing are computed on-demand from normalized HTML + flags; there is no long-lived variant cache.
-- expand/collapse toggles update `NoteStore` state immediately; the API renders child branches lazily as needed.
+## Undo/Redo Guard Exception
+Undo/redo workflows can legitimately need DB reads (e.g., replay validation or hydration). Those should happen only inside explicit allow-read windows.
 
-## Integrity Checks
-- `ListTraversal.validate_list` rewritten to traverse `NoteStore` child lists.
-- Optional: offline validator to compare `NoteStore` state vs DB after commits for early debugging.
-
-## Testing Strategy
-- Unit tests for `NoteStore` covering load, add, delete, move updates.
-- Integration tests verifying runtime `SELECT` raises once guard enabled (except within `allow_reads`).
-- Performance benchmarks that measure startup time and the cost of the first `/notes/view` window.
-
-## Future Work Hooks
-- Store can emit events when hashes change to power WebSocket push updates.
-- Investigate migrating undo snapshots into `NoteStore` instead of ORM to remove read exception long-term.
+## Testing Notes
+Backend unit/integration tests are currently not the primary coverage (see `docs/testing/harness.md`). If rebuilding backend coverage, the highest-value tests are:
+- NoteStore invariants: load, insert, delete, move, collapse/expand
+- Guard behavior: runtime `SELECT` crashes after startup; allow-read contexts work as expected

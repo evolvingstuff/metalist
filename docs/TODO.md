@@ -18,10 +18,6 @@
   * need differential updates first
 * tracking client state?
 * indexing
-* encryption at rest
-  * need to solve indexing first 
-* users / login / authentication (Google?)
-  * need to solve encryption first
 * tags
 * "advanced" implications
 * @shell functionality
@@ -42,6 +38,11 @@
 * mobile support?
 * allow users to define their own syntax or grammar for tags / implications?
 
+## Completed
+
+* encryption at rest (AES-GCM) + password protection
+* token-based authentication (single active session)
+
 ## Architecture / Refactor
 
 - Undo refactor: remove `app/services/store.py` adapter once NoteStore invariants are validated during undo flows (delete/move). Add targeted `note_store.debug_validate_links()` checks and migrate one Cmd at a time.
@@ -50,8 +51,8 @@
   - Move `app/utils/text_utils.py` under `app/presentation/` to keep UI helpers together.
   - Remove `app/utils/encryption.py` shim once all callers use `app/security/encryption.py` directly.
 - Security layout: consider moving `app/services/tokens.py` under `app/security/` for cohesion.
-- Config cleanup: remove `DISABLE_UNDO_SNAPSHOT` from `app/core/config.py` once no call sites read it.
-- Enforce boundaries: add a lightweight check (pre-commit or CI) to prevent `services/` importing FastAPI and `usecases/` importing `api/`.
+- Config cleanup: remove `DISABLE_UNDO_SNAPSHOT` from `app/config.py` once no call sites read it.
+- Enforce boundaries: add a lightweight check (pre-commit or CI) to prevent `app/services/` importing FastAPI and `app/usecases/` importing `app/api/`.
 - Docs pass: search and prune any stale references to legacy modules (e.g., removed snapshot/diff undo files).
 
 ## Copy/Paste Enhancements
