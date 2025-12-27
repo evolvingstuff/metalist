@@ -38,7 +38,8 @@ Stop shipping multi-megabyte `snapshot.structure` payloads for `/api2/notes/view
 
 ### 5. Window/Chunk Handling
 - `build_view_state` still respects root windowing (initial chunk + expansions) so "full" snapshots never exceed the configured limit (e.g., 50-100 roots).
-- When the client scrolls and requests more, the server expands the cached view and emits insert ops for the new roots; no need to resend earlier ones.
+- Future optimization: track approximate screen height/DOM size (not just root count) so massive single-root trees (e.g., one note with 50k children) can be windowed intelligently, progressively loading more children as the user scrolls deeper into that note.
+- When the client scrolls and requests more, the server expands the cached view and emits insert ops for the new roots/children; no need to resend earlier ones.
 
 ### 6. Edge Cases & Recovery
 - Cache invalidation triggers: server restart (no cache), undo/redo across tabs, search query modifications, auth logout.
