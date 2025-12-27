@@ -39,7 +39,7 @@ from app.services.note_store import store as note_store
 from app.security.encryption import encrypt
 
 
-default_root_count =  20  # 1000
+default_root_count =  10_000  # 1000
 default_child_probability = 0.3
 default_image_probability = 0.05
 
