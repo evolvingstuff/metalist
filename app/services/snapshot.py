@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Dict, List, Optional, Tuple, Set
+from collections import defaultdict
+from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 
 from app.services.note_store import store as note_store
 from app.services.sync import get_all_locks
+from app.services.view_state import ViewState
 
 # Windowing constants (tuned later)
 ROOT_CHUNK_SIZE = 100
@@ -58,15 +60,17 @@ def _determine_root_window_end(
     return window_end
 
 
-def build_view_snapshot(
+def build_view_state(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
     client_known_note_ids: Optional[Set[str]] = None,
     client_seen_root_ids: Optional[Set[str]] = None,
-) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
+) -> ViewState:
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
+    children_by_parent: DefaultDict[Optional[str], List[str]] = defaultdict(list)
+    hash_by_id: Dict[str, str] = {}
 
     search_term: Optional[str] = None
     if search:
@@ -117,6 +121,7 @@ def build_view_snapshot(
         for idx, nid in enumerate(ids):
             if not _should_include(nid):
                 continue
+            children_by_parent[parent_id].append(nid)
             rec = note_store.get_note(nid)
             prev_id = ids[idx - 1] if idx > 0 else None
             next_id = ids[idx + 1] if idx + 1 < len(ids) else None
@@ -139,6 +144,7 @@ def build_view_snapshot(
                 "flags": flags,
                 "hash": h,
             }
+            hash_by_id[rec.id] = h
             if not flags["isCollapsed"] or flags["isEditing"] or search_term is not None:
                 traverse(rec.id)
 
@@ -147,4 +153,31 @@ def build_view_snapshot(
     locks: Dict[str, str] = {
         note_id: owner for note_id, owner in get_all_locks().items() if note_id in visible_ids
     }
-    return structure, payloads, locks
+    metadata = {
+        "editingNoteId": editing_note_id,
+        "search": search,
+    }
+    return ViewState(
+        structure=structure,
+        payloads=payloads,
+        locks=locks,
+        children_by_parent={key: value[:] for key, value in children_by_parent.items()},
+        hash_by_id=hash_by_id,
+        metadata=metadata,
+    )
+
+
+def build_view_snapshot(
+    *,
+    editing_note_id: Optional[str],
+    search: Optional[str],
+    client_known_note_ids: Optional[Set[str]] = None,
+    client_seen_root_ids: Optional[Set[str]] = None,
+) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
+    state = build_view_state(
+        editing_note_id=editing_note_id,
+        search=search,
+        client_known_note_ids=client_known_note_ids,
+        client_seen_root_ids=client_seen_root_ids,
+    )
+    return state.structure, state.payloads, state.locks

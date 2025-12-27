@@ -106,12 +106,16 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         throw new Error('notes.view response missing snapshot payload');
     }
     const { snapshot } = viewResponse;
+    const hasDiffOps = Array.isArray(snapshot.diffOps);
     const previousHashes = ModeContext.getNoteHashPayload();
-    ModeContext.syncNoteHashesFromSnapshot(snapshot);
-    if (!Array.isArray(snapshot.structure)) {
-        throw new Error('notes.view snapshot missing structure array');
+    if (!hasDiffOps) {
+        ModeContext.syncNoteHashesFromSnapshot(snapshot);
+        if (!Array.isArray(snapshot.structure)) {
+            throw new Error('notes.view snapshot missing structure array');
+        }
+    } else if (Array.isArray(snapshot.rootIds)) {
+        ModeContext.syncRootIds(snapshot.rootIds);
     }
-    const totalNotesCount = snapshot.structure.length;
     const rootNotesKnown = ModeContext.knownRootCount;
     const rootNotesSeen = ModeContext.seenRootCount;
     const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'
@@ -204,6 +208,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         console.log(' [PERF] notes.view render:', {
             ms: Number(renderMs.toFixed(2))
         });
+        const totalNotesCount = ModeContext.noteCount;
         updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
             rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
     }

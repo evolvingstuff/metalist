@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from typing import Dict
+
 from fastapi import APIRouter, HTTPException, Query
 
-from app.usecases.view import CmdView
-from app.services.snapshot import build_view_snapshot
+from app.services.snapshot import build_view_state
 from app.usecases.create_note import CmdCreateNote
 from app.usecases.create_sibling import CmdCreateSibling
 from app.usecases.create_child import CmdCreateChild
@@ -19,6 +20,8 @@ from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.services.sync import get_current_sync_uuid
 from app.config import VERSION
+from app.services.view_cache import view_cache
+from app.services.view_diff import generate_diff_ops
 
 
 router = APIRouter()
@@ -30,45 +33,88 @@ def view_diff(payload: dict):
     client_id = payload["clientId"]
     editing_note_id = payload["editingNoteId"]
     search = payload["search"]
+    tab_id = payload.get("tabId") or '0'
     _ = payload["clientNoteUuidHashes"]
     _ = payload["clientSeenRootIds"]
 
-    cmd = CmdView(client_id=client_id, editing_note_id=editing_note_id or None, search=search or None)
     # Known hashes and seen roots from client to drive windowing + diff
     client_hashes = {
         k: v for k, v in (payload.get("clientNoteUuidHashes") or {}).items() if k
     }
     seen_roots = set(payload.get("clientSeenRootIds") or [])
-    structure, notes, locks = build_view_snapshot(
+    state = build_view_state(
         editing_note_id=editing_note_id or None,
         search=search or None,
         client_known_note_ids=set(client_hashes.keys()),
         client_seen_root_ids=seen_roots,
     )
+    update_uuid = get_current_sync_uuid()
+    root_ids = list(state.children_by_parent.get(None, []))
 
-    # Send only changed notes: compare client hashes to computed hashes
-    filtered_notes = {
-        note_id: data
-        for note_id, data in notes.items()
-        if client_hashes.get(note_id) != data.get("hash")
+    cache_key = {
+        "client_id": client_id,
+        "tab_id": tab_id,
+        "search": search or None,
     }
 
-    update_uuid = get_current_sync_uuid()
+    cached_state = view_cache.get(**cache_key)
+    client_has_state = bool(client_hashes)
 
-    response = {
-        "snapshot": {
-            "structure": structure,
+    if not cached_state or not client_has_state:
+        view_cache.set(state=state, **cache_key)
+        filtered_notes = {
+            note_id: data
+            for note_id, data in state.payloads.items()
+            if client_hashes.get(note_id) != data.get("hash")
+        }
+        response_snapshot = {
+            "structure": state.structure,
             "notes": filtered_notes,
-            "locks": locks,
+            "locks": state.locks,
+            "rootIds": root_ids,
             "updateUUID": update_uuid,
             "version": VERSION,
             "currentClientId": client_id,
             "searchQuery": search,
             "editingNoteId": editing_note_id,
-        },
-        "updateUUID": update_uuid,
+        }
+        return {"snapshot": response_snapshot, "updateUUID": update_uuid}
+
+    diff_ops = generate_diff_ops(cached_state, state)
+    note_updates = {
+        note_id: payload
+        for note_id, payload in state.payloads.items()
+        if cached_state.hash_by_id.get(note_id) != payload.get("hash")
     }
-    return response
+
+    view_cache.set(state=state, **cache_key)
+
+    lock_diff = _compute_lock_diff(cached_state.locks, state.locks)
+
+    response_snapshot = {
+        "diffOps": diff_ops,
+        "notes": note_updates,
+        "locks": state.locks,
+        "rootIds": root_ids,
+        "lockDiffs": lock_diff,
+        "updateUUID": update_uuid,
+        "version": VERSION,
+        "currentClientId": client_id,
+        "searchQuery": search,
+        "editingNoteId": editing_note_id,
+    }
+    return {"snapshot": response_snapshot, "updateUUID": update_uuid}
+
+
+def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dict[str, str]:
+    diff: Dict[str, str] = {}
+    for note_id, owner in current.items():
+        if previous.get(note_id) != owner:
+            diff[note_id] = owner
+    for note_id in previous:
+        if note_id not in current:
+            diff[note_id] = ""
+    return diff
 
 
 # Stub endpoints for the rest of the notes API (501 Not Implemented)

@@ -146,6 +146,36 @@ class ModeContext {
         return this;
     }
 
+    syncRootIds(rootIds) {
+        if (!Array.isArray(rootIds)) {
+            return this;
+        }
+
+        const nextKnown = new Set();
+        for (const id of rootIds) {
+            if (typeof id === 'string' && id) {
+                nextKnown.add(id);
+            }
+        }
+
+        this._knownRootIds = nextKnown;
+
+        const intersectedSeen = new Set();
+        for (const rootId of this._seenRootIds) {
+            if (nextKnown.has(rootId)) {
+                intersectedSeen.add(rootId);
+            }
+        }
+        this._seenRootIds = intersectedSeen;
+
+        queueMicrotask(async () => {
+            const module = await import('./services/infinite-scroll-service.js');
+            module.refreshOverlayMetrics();
+        });
+
+        return this;
+    }
+
     setEditing(value) {
                 
         if (this._editing === value) {
@@ -169,6 +199,10 @@ class ModeContext {
 
     get isEditing() {
         return this._editing;
+    }
+
+    get noteCount() {
+        return this._noteHashes.size;
     }
 
     markEditSessionHasEdits() {

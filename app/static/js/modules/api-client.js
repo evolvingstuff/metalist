@@ -307,6 +307,7 @@ export const NotesAPI = {
             clientId: ModeContext.clientId,
             editingNoteId: noteId || null,
             search: searchQuery || null,
+            tabId: ModeContext.activeTabId,
             clientNoteUuidHashes: ModeContext.getNoteHashPayload(),
             clientSeenRootIds: ModeContext.getSeenRootIds()
         };

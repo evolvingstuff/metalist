@@ -11,6 +11,156 @@ function logVDOM(action, details) {
     console.log(` [VDOM] ${action}`, details);
 }
 
+function applyServerDiffOps(payload) {
+    const notesContainer = document.getElementById('notes-container');
+    if (!notesContainer) {
+        throw new Error('Notes container not found');
+    }
+
+    const noteLocks = payload.locks || {};
+    const lockDiffs = payload.lockDiffs || {};
+    const noteUpdates = payload.notes || {};
+    const touchedParentIds = new Set();
+    const affordanceDirtyElements = new Set();
+    const noteElements = new Map();
+    let vdomOperations = 0;
+
+    const resolveParentContainer = (parentId) => {
+        if (!parentId) {
+            return notesContainer;
+        }
+        const parentElement = document.querySelector(`[data-note-id="${parentId}"]`);
+        if (!parentElement) {
+            throw new Error(`Parent note ${parentId} missing from DOM`);
+        }
+        return ensureChildContainer(parentElement);
+    };
+
+    const getOrCacheElement = (noteId) => {
+        if (noteElements.has(noteId)) {
+            return noteElements.get(noteId);
+        }
+        const element = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (element) {
+            noteElements.set(noteId, element);
+        }
+        return element;
+    };
+
+    for (const op of payload.diffOps) {
+        if (!op || typeof op !== 'object') {
+            continue;
+        }
+
+        if (op.type === 'remove') {
+            const element = getOrCacheElement(op.noteId);
+            if (!element) {
+                continue;
+            }
+            const ids = collectDomSubtreeIds(element);
+            element.remove();
+            ids.forEach((id) => {
+                noteElements.delete(id);
+                if (ModeContext.hasNoteHash(id)) {
+                    ModeContext.removeNoteHash(id);
+                }
+            });
+            touchedParentIds.add(op.parentId || null);
+            vdomOperations += 1;
+            continue;
+        }
+
+        if (op.type === 'insert') {
+            const parentContainer = resolveParentContainer(op.parentId || null);
+            const index = typeof op.toIndex === 'number' ? op.toIndex : parentContainer.children.length;
+            const reference = findNoteChildAt(parentContainer, index);
+            const noteData = noteUpdates[op.noteId];
+            if (!noteData) {
+                throw new Error(`Insert operation missing payload for ${op.noteId}`);
+            }
+            const element = createNoteElement(op.noteId);
+            element.dataset.parentId = op.parentId || '';
+            const contentChanged = applyNoteDataFromPayload(
+                element,
+                op.noteId,
+                noteData,
+                noteLocks,
+                payload.currentClientId,
+                affordanceDirtyElements,
+                true,
+            );
+            parentContainer.insertBefore(element, reference);
+            noteElements.set(op.noteId, element);
+            touchedParentIds.add(op.parentId || null);
+            vdomOperations += 1;
+            if (contentChanged) {
+                vdomOperations += 1;
+            }
+            delete noteUpdates[op.noteId];
+            continue;
+        }
+
+        if (op.type === 'move') {
+            const element = getOrCacheElement(op.noteId);
+            if (!element) {
+                continue;
+            }
+            const parentContainer = resolveParentContainer(op.parentId || null);
+            const index = typeof op.toIndex === 'number' ? op.toIndex : parentContainer.children.length;
+            const reference = findNoteChildAt(parentContainer, index);
+            if (reference !== element) {
+                parentContainer.insertBefore(element, reference);
+                vdomOperations += 1;
+            }
+            element.dataset.parentId = op.parentId || '';
+            touchedParentIds.add(op.parentId || null);
+        }
+    }
+
+    Object.entries(noteUpdates).forEach(([noteId, noteData]) => {
+        const element = getOrCacheElement(noteId) || createNoteElement(noteId);
+        if (!element.isConnected) {
+            element.dataset.parentId = '';
+            notesContainer.appendChild(element);
+        }
+        const contentChanged = applyNoteDataFromPayload(
+            element,
+            noteId,
+            noteData,
+            noteLocks,
+            payload.currentClientId,
+            affordanceDirtyElements,
+            false,
+        );
+        noteElements.set(noteId, element);
+        if (contentChanged) {
+            vdomOperations += 1;
+        }
+    });
+
+    applyLockDiffs(lockDiffs, payload.currentClientId, affordanceDirtyElements);
+
+    for (const parentId of touchedParentIds) {
+        if (!parentId) {
+            continue;
+        }
+        const parentElement = getOrCacheElement(parentId);
+        if (parentElement) {
+            affordanceDirtyElements.add(parentElement);
+        }
+    }
+
+    updateCollapseAffordancesForNotes(affordanceDirtyElements);
+
+    return {
+        notesContainer,
+        editingNoteElement: payload.editingNoteId
+            ? document.querySelector(`[data-note-id="${payload.editingNoteId}"]`)
+            : null,
+        vdomOperations,
+    };
+}
+
 function diffSiblingOrder(currentIds, desiredIds) {
     const position = new Map(currentIds.map((id, idx) => [id, idx]));
     const working = currentIds.slice();
@@ -191,7 +341,15 @@ function updateLockIcon(noteElement, lockedByOther) {
 }
 
 export function applyDifferentialView(payload, options = {}) {
-    if (!payload || !Array.isArray(payload.structure)) {
+    if (!payload || typeof payload !== 'object') {
+        throw new Error('Invalid differential payload');
+    }
+
+    if (Array.isArray(payload.diffOps)) {
+        return applyServerDiffOps(payload);
+    }
+
+    if (!Array.isArray(payload.structure)) {
         throw new Error('Invalid differential payload');
     }
 
@@ -520,6 +678,97 @@ function collectSubtreeIds(node) {
     const ids = [node.id];
     for (const child of node.children) {
         ids.push(...collectSubtreeIds(child));
+    }
+    return ids;
+}
+
+function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, currentClientId,
+    affordanceSet, forceContentUpdate) {
+    if (!noteElement || !noteData) {
+        return false;
+    }
+    const flags = noteData.flags || {};
+    const lockOwner = typeof noteLocks[noteId] === 'string' ? noteLocks[noteId] : '';
+    const lockedByOther = Boolean(lockOwner) && lockOwner !== currentClientId;
+    const isEditing = Boolean(flags.isEditing);
+    const editingByCurrentClient = isEditing && lockOwner === currentClientId;
+
+    const snapshotHash = typeof noteData.hash === 'string' ? noteData.hash : '';
+    noteElement.dataset.snapshotHash = snapshotHash;
+    noteElement.dataset.contentHash = snapshotHash;
+    noteElement.dataset.lockOwner = lockOwner;
+    noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
+
+    noteElement.classList.add(CONFIG.CLASSES.NOTE);
+    noteElement.classList.toggle('locked', lockedByOther);
+    noteElement.classList.toggle('interactive', !lockedByOther);
+    noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditing && !lockedByOther);
+    noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
+    noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
+    noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
+
+    updateLockIcon(noteElement, lockedByOther);
+
+    const contentElement = getContentElement(noteElement);
+    const shouldBeEditable = isEditing && !lockedByOther && !Boolean(flags.memoryMode);
+    const contentEditable = shouldBeEditable ? 'true' : 'false';
+    contentElement.setAttribute('contenteditable', contentEditable);
+    contentElement.contentEditable = contentEditable;
+
+    let contentChanged = false;
+    if ((forceContentUpdate || !editingByCurrentClient) && typeof noteData.content === 'string') {
+        contentElement.innerHTML = noteData.content;
+        contentChanged = true;
+    }
+
+    if (snapshotHash) {
+        ModeContext.setNoteHash(noteId, snapshotHash);
+    }
+
+    if (affordanceSet) {
+        affordanceSet.add(noteElement);
+    }
+
+    return contentChanged;
+}
+
+function applyLockDiffs(lockDiffs, currentClientId, affordanceSet) {
+    if (!lockDiffs || typeof lockDiffs !== 'object') {
+        return;
+    }
+    for (const [noteId, owner] of Object.entries(lockDiffs)) {
+        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (!noteElement) {
+            continue;
+        }
+        const lockOwner = owner || '';
+        const lockedByOther = Boolean(lockOwner) && lockOwner !== currentClientId;
+        noteElement.dataset.lockOwner = lockOwner;
+        noteElement.classList.toggle('locked', lockedByOther);
+        noteElement.classList.toggle('interactive', !lockedByOther);
+        if (lockedByOther) {
+            noteElement.classList.remove(CONFIG.CLASSES.EDITING);
+            const contentElement = getContentElement(noteElement);
+            contentElement.setAttribute('contenteditable', 'false');
+            contentElement.contentEditable = 'false';
+        }
+        updateLockIcon(noteElement, lockedByOther);
+        if (affordanceSet) {
+            affordanceSet.add(noteElement);
+        }
+    }
+}
+
+function collectDomSubtreeIds(rootElement) {
+    const ids = [];
+    if (rootElement?.dataset?.noteId) {
+        ids.push(rootElement.dataset.noteId);
+    }
+    const descendants = rootElement ? rootElement.querySelectorAll('[data-note-id]') : [];
+    for (const element of descendants) {
+        if (element.dataset && element.dataset.noteId) {
+            ids.push(element.dataset.noteId);
+        }
     }
     return ids;
 }
