@@ -56,8 +56,9 @@ class ModeContext {
         // User activity tracking for token refresh
         this._userActivity = false;
 
-        // Diff protocol cache
-        this._noteHashes = new Map();
+        // Diff protocol cache per tab
+        this._tabNoteHashes = Object.create(null);
+        this._tabNoteHashes[this._activeTabId] = new Map();
 
         // Infinite scroll tracking
         this._knownRootIds = new Set();
@@ -71,21 +72,33 @@ class ModeContext {
         this._tabStateVersion = 0;
     }
 
+    _ensureTabNoteHashes(tabId) {
+        if (!this._tabNoteHashes[tabId]) {
+            this._tabNoteHashes[tabId] = new Map();
+        }
+        return this._tabNoteHashes[tabId];
+    }
+
+    _getActiveNoteHashes() {
+        return this._ensureTabNoteHashes(this._activeTabId);
+    }
+
     hasNoteHash(noteId) {
         if (!noteId) {
             throw new Error('noteId is required for hasNoteHash');
         }
-        return this._noteHashes.has(noteId);
+        return this._getActiveNoteHashes().has(noteId);
     }
 
     getNoteHash(noteId) {
         if (!noteId) {
             throw new Error('noteId is required for getNoteHash');
         }
-        if (!this._noteHashes.has(noteId)) {
+        const noteHashes = this._getActiveNoteHashes();
+        if (!noteHashes.has(noteId)) {
             throw new Error(`Hash for note ${noteId} is not cached`);
         }
-        return this._noteHashes.get(noteId);
+        return noteHashes.get(noteId);
     }
 
     setNoteHash(noteId, hash) {
@@ -95,7 +108,7 @@ class ModeContext {
         if (typeof hash !== 'string' || hash.length === 0) {
             throw new Error('hash must be a non-empty string');
         }
-        this._noteHashes.set(noteId, hash);
+        this._getActiveNoteHashes().set(noteId, hash);
         return this;
     }
 
@@ -103,18 +116,18 @@ class ModeContext {
         if (!noteId) {
             throw new Error('noteId is required for removeNoteHash');
         }
-        this._noteHashes.delete(noteId);
+        this._getActiveNoteHashes().delete(noteId);
         return this;
     }
 
     clearNoteHashes() {
-        this._noteHashes.clear();
+        this._getActiveNoteHashes().clear();
         return this;
     }
 
     getNoteHashPayload() {
         const payload = {};
-        for (const [noteId, hash] of this._noteHashes.entries()) {
+        for (const [noteId, hash] of this._getActiveNoteHashes().entries()) {
             payload[noteId] = hash;
         }
         return payload;
@@ -126,6 +139,7 @@ class ModeContext {
         }
 
         const validIds = new Set();
+        const noteHashes = this._getActiveNoteHashes();
         for (const entry of snapshot.structure) {
             if (!entry || typeof entry !== 'object') {
                 throw new Error('Malformed structure entry in snapshot');
@@ -135,12 +149,12 @@ class ModeContext {
                 throw new Error('Structure entry missing id/hash');
             }
             validIds.add(id);
-            this._noteHashes.set(id, hash);
+            noteHashes.set(id, hash);
         }
 
-        for (const noteId of Array.from(this._noteHashes.keys())) {
+        for (const noteId of Array.from(noteHashes.keys())) {
             if (!validIds.has(noteId)) {
-                this._noteHashes.delete(noteId);
+                noteHashes.delete(noteId);
             }
         }
 
@@ -205,7 +219,7 @@ class ModeContext {
     }
 
     get noteCount() {
-        return this._noteHashes.size;
+        return this._getActiveNoteHashes().size;
     }
 
     markEditSessionHasEdits() {
@@ -671,6 +685,7 @@ class ModeContext {
         if (!this._tabs[tabId]) {
             this._tabs[tabId] = { searchQuery: '', scrollY: 0 };
         }
+        this._ensureTabNoteHashes(tabId);
         return this._tabs[tabId];
     }
 
@@ -756,8 +771,16 @@ class ModeContext {
         if (!normalized[activeTabId]) {
             throw new Error('Active tab missing from provided state');
         }
+        const previousHashCaches = this._tabNoteHashes || Object.create(null);
+        const nextHashCaches = Object.create(null);
+        for (const tabId of Object.keys(normalized)) {
+            nextHashCaches[tabId] = previousHashCaches[tabId] || new Map();
+        }
+
         this._tabs = normalized;
+        this._tabNoteHashes = nextHashCaches;
         this._activeTabId = activeTabId;
+        this._ensureTabNoteHashes(activeTabId);
         this._searchQuery = normalized[activeTabId].searchQuery;
         this.resetRootTracking();
         if (emitUpdate) {
