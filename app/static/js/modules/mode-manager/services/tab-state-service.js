@@ -3,12 +3,15 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ErrorHandler } from '../../error-handler.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
+const SCROLL_POLL_INTERVAL_MS = 1000;
 
 let lastSignature = null;
 let scrollListenerAttached = false;
 let pendingScrollFrame = null;
 let lastScrollY = 0;
 let pendingTabId = null;
+let scrollPollId = null;
+const lastPersistedScrollByTab = Object.create(null);
 
 export async function initializeTabStateService() {
     const serverState = await fetchTabState();
@@ -16,6 +19,7 @@ export async function initializeTabStateService() {
     ModeContext.setTabStateVersion(typeof serverState.version === 'number' ? serverState.version : 0);
     lastSignature = serializeState(serverState);
     startScrollWatcher();
+    startScrollPolling();
     return serverState;
 }
 
@@ -84,6 +88,32 @@ function handleScrollEvent() {
         }
         pendingTabId = null;
     });
+}
+
+function startScrollPolling() {
+    if (scrollPollId !== null) {
+        return;
+    }
+    scrollPollId = window.setInterval(pollPersistScroll, SCROLL_POLL_INTERVAL_MS);
+}
+
+async function pollPersistScroll() {
+    if (document.hidden) {
+        return;
+    }
+    if (ModeContext.isLoading) {
+        return;
+    }
+    const tabId = ModeContext.activeTabId;
+    const current = getCurrentScrollY();
+    const previous = lastPersistedScrollByTab[tabId];
+    if (typeof previous === 'number' && previous === current) {
+        return;
+    }
+    // Update local state first so the snapshot reflects latest scroll
+    ModeContext.updateActiveTabScroll(current);
+    await persistTabStateSnapshot();
+    lastPersistedScrollByTab[tabId] = current;
 }
 
 function getCurrentScrollY() {
