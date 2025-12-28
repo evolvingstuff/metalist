@@ -5,13 +5,61 @@ import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../acti
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
 
+const collapseToggleClickSkips = new WeakSet();
+
 export function initMouseEvents() {
         
+    document.addEventListener('mousedown', handleCollapseToggleMouseDown, { capture: true });
     document.addEventListener('click', handleClick, { capture: true });
     document.addEventListener('mouseover', handleMouseOver, { capture: true });
     document.addEventListener('mouseout', handleMouseOut, { capture: true });
 
     Logger.logInit('Mouse events handler');
+}
+
+function handleCollapseToggleMouseDown(event) {
+    if (!event) {
+        throw new Error('handleCollapseToggleMouseDown called without an event object');
+    }
+
+    if (!event.target) {
+        throw new Error('Collapse toggle mousedown missing target element');
+    }
+
+    if (typeof event.button !== 'number') {
+        throw new Error(`Invalid MouseEvent: missing button (type: ${event.type})`);
+    }
+
+    if (event.button !== 0) {
+        return;
+    }
+
+    const collapseToggle = event.target.closest('.note-collapse-toggle');
+    if (!collapseToggle) {
+        return;
+    }
+
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Collapse toggle mousedown ignored while system is loading', {
+            eventType: event.type,
+            isLoading: true
+        });
+        return;
+    }
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Collapse toggle mousedown ignored while disconnected from server', {
+            eventType: event.type,
+            targetElement: collapseToggle.tagName,
+            isConnected: false
+        });
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
+    collapseToggleClickSkips.add(collapseToggle);
+    handleCollapseToggleInteraction(event, collapseToggle, 'mousedown');
 }
 
 function handleClick(event) {
@@ -72,35 +120,14 @@ function handleClick(event) {
 
     const collapseToggle = event.target.closest('.note-collapse-toggle');
     if (collapseToggle) {
-        const noteElement = collapseToggle.closest('.note');
-        const noteId = noteElement?.dataset?.noteId;
-        if (!noteId) {
-            throw new Error('Collapse toggle clicked without a parent note id');
+        if (collapseToggleClickSkips.has(collapseToggle)) {
+            event.preventDefault();
+            event.stopPropagation();
+            collapseToggleClickSkips.delete(collapseToggle);
+            return;
         }
 
-        const isCurrentlyCollapsed = noteElement.dataset.isCollapsed === 'true';
-        const canCollapse = noteElement.dataset.canCollapse !== 'false';
-
-        Logger.logDebug('Collapse toggle clicked', {
-            noteId,
-            isCurrentlyCollapsed,
-            canCollapse,
-            coordinates
-        }, Logger.LogCategory.EVENT);
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (isCurrentlyCollapsed) {
-            expandNote(noteId);
-        } else if (canCollapse) {
-            collapseNote(noteId);
-        } else {
-            Logger.logNoop('Collapse toggle ignored: note cannot collapse', {
-                noteId
-            });
-        }
-
+        handleCollapseToggleInteraction(event, collapseToggle, 'click');
         return;
     }
 
@@ -281,6 +308,62 @@ function handleClick(event) {
             });
         }
     }
+}
+
+function handleCollapseToggleInteraction(event, collapseToggle, interactionSource) {
+    if (!collapseToggle) {
+        throw new Error('handleCollapseToggleInteraction called without target collapse toggle');
+    }
+
+    if (event.clientX === undefined || event.clientY === undefined) {
+        throw new Error(`Invalid MouseEvent: missing coordinates (type: ${event.type})`);
+    }
+
+    const noteElement = collapseToggle.closest('.note');
+    if (!noteElement) {
+        throw new Error('Collapse toggle activated without parent .note element');
+    }
+
+    const noteId = noteElement.dataset?.noteId;
+    if (!noteId) {
+        throw new Error('Collapse toggle activated without a parent note id');
+    }
+
+    const coordinates = {
+        x: event.clientX,
+        y: event.clientY
+    };
+
+    const isCurrentlyCollapsed = noteElement.dataset.isCollapsed === 'true';
+    const canCollapse = noteElement.dataset.canCollapse !== 'false';
+
+    Logger.logDebug(
+        interactionSource === 'mousedown' ? 'Collapse toggle pressed' : 'Collapse toggle clicked',
+        {
+            noteId,
+            isCurrentlyCollapsed,
+            canCollapse,
+            coordinates
+        },
+        Logger.LogCategory.EVENT
+    );
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isCurrentlyCollapsed) {
+        expandNote(noteId);
+        return;
+    }
+
+    if (canCollapse) {
+        collapseNote(noteId);
+        return;
+    }
+
+    Logger.logNoop('Collapse toggle ignored: note cannot collapse', {
+        noteId
+    });
 }
 
 function handleMouseOver(event) {
