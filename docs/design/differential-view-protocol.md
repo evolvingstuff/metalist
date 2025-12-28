@@ -119,6 +119,9 @@
   - Update `ModeContext`’s root tracking via the provided `rootIds` array.
 - Both paths keep the `clientNoteUuidHashes` map authoritative so follow-up requests remain incremental. Because caches are tab-scoped, a tab switch simply swaps the active map—no mass invalidation necessary and each `/notes/view` request only sends hashes for what that tab rendered last time.
 
+### Scroll State Note
+- When caching/restoring the notes DOM during a tab switch, the browser can temporarily clamp `window.scrollY` if the page height changes. Scroll persistence should be suppressed during the switch so per-tab `scrollY` snapshots are not overwritten.
+
 ## Manual Verification Checklist
 - CRUD sequences: create, edit, delete and confirm only changed nodes rerender.
 - Structural mutations: move across parents/siblings and verify order updates without full redraw.

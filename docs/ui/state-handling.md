@@ -509,6 +509,9 @@ The background poll now exists purely to clear network banners once connectivity
 - **Remote operations**: Clear undo stack (changes from other client)
 - **App reload**: Clear undo stack (new session)
 
+**Performance Note (Tab Switches):**
+- The UI may cache/detach the rendered notes DOM per tab so switching back to a deeply-scrolled tab is instant; the next `/api2/notes/view` call reconciles any diffs.
+
 **Note-Level Locking Integration:**
 ```javascript
 // Enter edit mode with locking
