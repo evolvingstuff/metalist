@@ -12,6 +12,7 @@ import { initializeSearchEvents } from './events/search-events.js';
 import { startPolling } from './services/polling-service.js';
 import { startInfiniteScrollMonitor, resetInfiniteScrollState } from './services/infinite-scroll-service.js';
 import { initEditorToolbar, setToolbarVisible } from '../editor-toolbar.js';
+import { installGlobalErrorOverlay } from '../error-overlay.js';
 
 const DEFAULT_CONFIG = {};
 
@@ -21,46 +22,38 @@ const ModeManager = {
                 
         console.log('+++ ModeManager: init() called');
                 
-        try {
-            Logger.logInit('Controller');
+        // Global error overlay
+        installGlobalErrorOverlay();
+
+        Logger.logInit('Controller');
 
             const mergedConfig = {
                 ...DEFAULT_CONFIG,
                 ...config
             };
 
-            await this._registerEventListeners(mergedConfig);
-            initEditorToolbar();
+        await this._registerEventListeners(mergedConfig);
+        initEditorToolbar();
 
             ModeContext.addListener(this._handleModeChange.bind(this));
 
-            document.addEventListener('visibilitychange', this._handleVisibilityChange.bind(this));
-                        
-            console.log('+++ ModeManager: init completed successfully');
-            return this;
-        } catch (error) {
-            console.error('+++ ModeManager: Error during initialization', error);
-            throw error;
-        }
+        document.addEventListener('visibilitychange', this._handleVisibilityChange.bind(this));
+                    
+        console.log('+++ ModeManager: init completed successfully');
+        return this;
     },
 
     async _registerEventListeners(config) {
-        try {
-                        
-            initKeyboardEvents();
-            initMouseEvents();
-            initInputEvents();
-            initFocusEvents();
-            initContentAutoSave();
-            await initializeSearchEvents();
-            startPolling();
-            startInfiniteScrollMonitor();
-                        
-            Logger.logDebug('Event handlers registered', { config });
-        } catch (error) {
-            console.error('+++ ModeManager: Error registering event listeners', error);
-            throw error;
-        }
+        initKeyboardEvents();
+        initMouseEvents();
+        initInputEvents();
+        initFocusEvents();
+        initContentAutoSave();
+        await initializeSearchEvents();
+        startPolling();
+        startInfiniteScrollMonitor();
+                    
+        Logger.logDebug('Event handlers registered', { config });
     },
 
     _handleVisibilityChange(event) {

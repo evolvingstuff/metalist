@@ -94,16 +94,31 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     });
 
     const noteId = ModeContext.currentNoteId;
+    const requestTabId = ModeContext.activeTabId;
+    const requestSearchQuery = ModeContext.searchQuery;
 
-    const shouldManageLoading = !options.skipLoadingState;
-    if (shouldManageLoading && !ModeContext.isLoading) {
-        ModeContext.setLoading(true);
+    if (ModeContext.isLoading) {
+        Logger.logNoop('notes.view ignored while request in-flight', {
+            activeTabId: ModeContext.activeTabId,
+            context: options.context || 'refresh'
+        });
+        return null;
     }
+    ModeContext.setLoading(true);
 
     const requestStartedAt = performance.now();
-    const viewResponse = await NotesAPI.fetchView(noteId, ModeContext.searchQuery);
+    const anchorId = ModeContext.getRootAnchorId() || ModeContext.getLastKnownRootId();
+    const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, anchorId);
     if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
         throw new Error('notes.view response missing snapshot payload');
+    }
+    if (ModeContext.activeTabId !== requestTabId) {
+        Logger.logDebug('Discarding snapshot for inactive tab', {
+            requestTabId,
+            activeTabId: ModeContext.activeTabId,
+        });
+        ModeContext.setLoading(false);
+        return null;
     }
     const { snapshot } = viewResponse;
     const hasDiffOps = Array.isArray(snapshot.diffOps);
@@ -184,15 +199,9 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
             detachEditorSurface();
         }
 
-        if (shouldManageLoading && ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-        }
         result = contentHtml;
     } else {
                 
-        if (shouldManageLoading && ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-        }
         detachEditorSurface();
         result = null;
     }
@@ -213,5 +222,6 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
             rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
     }
 
+    ModeContext.setLoading(false);
     return result;
 }

@@ -1,14 +1,26 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 
-const POLL_INTERVAL_MS = 500;
+const POLL_INTERVAL_MS = 800;
 const ROOT_BUFFER_THRESHOLD = 25;
 
 let pollTimer = null;
-let pendingFetch = false;
-let noMoreRoots = false;
-let lastKnownCount = 0;
-let lastFetchTime = 0;
+
+const tabPollState = {};
+
+function getActiveTabState() {
+    const tabId = ModeContext.activeTabId || '0';
+    const searchKey = (ModeContext.searchQuery || '').toString();
+    const key = `${tabId}::${searchKey}`;
+    if (!tabPollState[key]) {
+        tabPollState[key] = {
+            pendingFetch: false,
+            lastKnownCount: 0,
+            lastFetchTime: 0,
+        };
+    }
+    return tabPollState[key];
+}
 
 export function startInfiniteScrollMonitor() {
     if (pollTimer) {
@@ -27,10 +39,17 @@ export function stopInfiniteScrollMonitor() {
 }
 
 export function resetInfiniteScrollState() {
-    noMoreRoots = false;
-    lastKnownCount = ModeContext.knownRootCount;
-    lastFetchTime = 0;
-    pendingFetch = false;
+    const state = getActiveTabState();
+    state.lastKnownCount = ModeContext.knownRootCount;
+    state.lastFetchTime = 0;
+    state.pendingFetch = false;
+    refreshOverlayMetrics();
+}
+
+export function handleTabSwitch() {
+    const state = getActiveTabState();
+    state.pendingFetch = false;
+    state.lastKnownCount = ModeContext.knownRootCount;
     refreshOverlayMetrics();
 }
 
@@ -42,14 +61,12 @@ function collectRootVisibility() {
 
     for (const element of rootElements) {
         const noteId = element.dataset.noteId;
-        if (!noteId) {
-            continue;
-        }
-        const parentId = element.dataset.parentId;
-        const isRoot = !parentId || parentId === 'null' || parentId === 'undefined';
-        if (!isRoot && element.hasAttribute('data-parent-id')) {
-            continue;
-        }
+        if (!noteId) continue;
+
+        const rawParent = element.getAttribute('data-parent-id');
+        const normalized = (typeof rawParent === 'string' ? rawParent : '').trim().toLowerCase();
+        const isRoot = normalized === '' || normalized === 'null' || normalized === 'undefined' || normalized === 'none';
+        if (!isRoot) continue;
 
         const rect = element.getBoundingClientRect();
         if (rect.bottom < 0) {
@@ -63,68 +80,56 @@ function collectRootVisibility() {
 }
 
 async function handlePoll() {
-    if (document.hidden) {
-        return;
+    if (document.hidden) return;
+    if (ModeContext.isLoading) return;
+
+    const state = getActiveTabState();
+    const { visible, past } = collectRootVisibility();
+    if (visible.length > 0) {
+        const anchorId = visible[visible.length - 1];
+        ModeContext.setRootAnchorId(anchorId);
     }
 
-    try {
-        const { visible, past } = collectRootVisibility();
-        const changed = ModeContext.markRootsAsSeen([...visible, ...past]);
-        if (changed) {
-            refreshOverlayMetrics();
-        }
+    const changed = ModeContext.markRootsAsSeen([...visible, ...past]);
+    if (changed) refreshOverlayMetrics();
 
-        const knownCount = ModeContext.knownRootCount;
-        if (knownCount === 0) {
-            return;
-        }
+    const knownCount = ModeContext.knownRootCount;
+    if (knownCount === 0) return;
+    if (state.lastKnownCount === 0 || state.lastKnownCount > knownCount) {
+        state.lastKnownCount = knownCount;
+    } else if (knownCount > state.lastKnownCount) {
+        state.lastKnownCount = knownCount;
+    }
 
-        if (knownCount > lastKnownCount) {
-            lastKnownCount = knownCount;
-            noMoreRoots = false;
-        }
-
-        const unseenCount = ModeContext.getUnseenRootCount();
-        if (unseenCount <= ROOT_BUFFER_THRESHOLD) {
-            await maybeFetchMore(knownCount);
-        }
-    } catch (error) {
-        Logger.logError('Infinite scroll poller error', error);
+    const anchorId = visible.length > 0 ? visible[visible.length - 1] : null;
+    const nearEnd = anchorId ? ModeContext.isAnchorNearEnd(anchorId, ROOT_BUFFER_THRESHOLD) : false;
+    const unseenCount = ModeContext.getUnseenRootCount();
+    // Be conservative: only fetch when user is at the end AND we have low buffer
+    if (nearEnd && unseenCount <= ROOT_BUFFER_THRESHOLD) {
+        await maybeFetchMore(state, knownCount, nearEnd);
     }
 }
 
-async function maybeFetchMore(previousKnownCount) {
-    if (pendingFetch) {
-        return;
-    }
+async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
+    if (state.pendingFetch) return;
 
     const now = Date.now();
-    if (now - lastFetchTime < POLL_INTERVAL_MS) {
-        return;
-    }
+    if (now - state.lastFetchTime < POLL_INTERVAL_MS) return;
 
-    if (noMoreRoots) {
-        return;
-    }
+    state.pendingFetch = true;
+    state.lastFetchTime = now;
 
-    pendingFetch = true;
-    lastFetchTime = now;
-
-    try {
-        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-        await actionRefreshAndMaybeSelect();  //asdf asdf
-        const currentKnown = ModeContext.knownRootCount;
-        if (currentKnown <= previousKnownCount) {
-            noMoreRoots = true;
-        } else {
-            lastKnownCount = currentKnown;
-            refreshOverlayMetrics();
-        }
-    } catch (error) {
-        Logger.logError('Infinite scroll fetch failed', error);
-    } finally {
-        pendingFetch = false;
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect();
+    const currentKnown = ModeContext.knownRootCount;
+    if (currentKnown > previousKnownCount) {
+        state.lastKnownCount = currentKnown;
+        refreshOverlayMetrics();
+    } else if (nearEndFlag) {
+        // Fail fast: at visual end, but server did not extend
+        throw new Error('Infinite scroll blocked: near end but server returned no new roots');
     }
+    state.pendingFetch = false;
 }
 
 //TODO: this is hacky but apparently we need it

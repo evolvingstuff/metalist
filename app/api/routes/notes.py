@@ -34,29 +34,35 @@ def view_diff(payload: dict):
     client_id = payload["clientId"]
     editing_note_id = payload["editingNoteId"]
     search = payload["search"]
-    tab_id = payload.get("tabId") or '0'
+    tab_id = payload["tabId"]
     _ = payload["clientNoteUuidHashes"]
-    _ = payload["clientSeenRootIds"]
+    anchor_root_id = payload.get("visibleRootAnchorId")
 
-    # Known hashes and seen roots from client to drive windowing + diff
+    # Known hashes plus a viewport anchor so the server can extend the window
     client_hashes = {
         k: v for k, v in (payload.get("clientNoteUuidHashes") or {}).items() if k
     }
-    seen_roots = set(payload.get("clientSeenRootIds") or [])
-    state = build_view_state(
-        editing_note_id=editing_note_id or None,
-        search=search or None,
-        client_known_note_ids=set(client_hashes.keys()),
-        client_seen_root_ids=seen_roots,
-    )
-    update_uuid = get_current_sync_uuid()
-    root_ids = list(state.children_by_parent.get(None, []))
-
+    # Fallback: if client didn't provide an anchor, use the last known root from cached state
     cache_key = {
         "client_id": client_id,
         "tab_id": tab_id,
         "search": search or None,
     }
+    cached_state = view_cache.get(**cache_key)
+    if not anchor_root_id and cached_state:
+        last_roots = list(cached_state.children_by_parent.get(None, []))
+        if last_roots:
+            anchor_root_id = last_roots[-1]
+
+    state = build_view_state(
+        editing_note_id=editing_note_id or None,
+        search=search or None,
+        client_known_note_ids=set(client_hashes.keys()),
+        client_seen_root_ids=set(),
+        anchor_root_id=anchor_root_id,
+    )
+    update_uuid = get_current_sync_uuid()
+    root_ids = list(state.children_by_parent.get(None, []))
 
     cached_state = view_cache.get(**cache_key)
     client_has_state = bool(client_hashes)

@@ -41,9 +41,6 @@ export const NotesAPI = {
                     ? {
                         editingNoteId: requestPayload.editingNoteId,
                         search: requestPayload.search,
-                        clientSeenRootIdsCount: Array.isArray(requestPayload.clientSeenRootIds)
-                            ? requestPayload.clientSeenRootIds.length
-                            : 0,
                         clientNoteUuidHashesCount: requestPayload.clientNoteUuidHashes && typeof requestPayload.clientNoteUuidHashes === 'object'
                             ? Object.keys(requestPayload.clientNoteUuidHashes).length
                             : 0,
@@ -302,14 +299,14 @@ export const NotesAPI = {
         return noteElement.querySelector('.note-content');
     },
 
-    async fetchView(noteId = null, searchQuery = null) {
+    async fetchView(noteId = null, searchQuery = null, tabId = null, visibleRootAnchorId = null) {
         const payload = {
             clientId: ModeContext.clientId,
-            editingNoteId: noteId || null,
-            search: searchQuery || null,
-            tabId: ModeContext.activeTabId,
+            editingNoteId: noteId,
+            search: searchQuery,
+            tabId,
             clientNoteUuidHashes: ModeContext.getNoteHashPayload(),
-            clientSeenRootIds: ModeContext.getSeenRootIds()
+            visibleRootAnchorId,
         };
 
         const response = await this._apiCall(CONFIG.API.NOTES.VIEW, {

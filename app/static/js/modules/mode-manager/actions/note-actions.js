@@ -95,7 +95,7 @@ export async function deleteNoteOutsideEdit(noteId) {
         }
 
 
-        await actionRefreshAndMaybeSelect({ skipLoadingState: true, startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
+        await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
     } finally {
         if (shouldManageLoading && ModeContext.isLoading) {
             ModeContext.setLoading(false);
@@ -283,6 +283,15 @@ async function setNoteCollapse(noteId, collapsed) {
         throw new Error('Cannot change collapse state: noteId is required');
     }
 
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Collapse/expand ignored while request in-flight', {
+            noteId,
+            collapsed,
+            activeTab: ModeContext.activeTabId
+        });
+        return;
+    }
+
     if (ModeContext.isEditing) {
         const editingNoteId = ModeContext.currentNoteId;
         if (!editingNoteId) {
@@ -311,20 +320,16 @@ async function setNoteCollapse(noteId, collapsed) {
         }
     }
 
+    // Block UI while performing the collapse/expand operation
     ModeContext.setLoading(true);
-
-    try {
-        if (collapsed) {
-            await NotesAPI.collapseNote(noteId);
-        } else {
-            await NotesAPI.expandNote(noteId);
-        }
-        await actionRefreshAndMaybeSelect({ skipLoadingState: true, startedAt: startedAt, context: 'setNoteCollapse'});
-    } finally {
-        if (ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-        }
+    if (collapsed) {
+        await NotesAPI.collapseNote(noteId);
+    } else {
+        await NotesAPI.expandNote(noteId);
     }
+    // Release the lock before asking for a view refresh; refresh manages its own lock
+    ModeContext.setLoading(false);
+    await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'setNoteCollapse' });
 }
 
 export async function collapseNote(noteId) {

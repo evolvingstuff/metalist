@@ -22,6 +22,7 @@ class NoteQueryService(BaseQueryService):
         client_id: Optional[str] = None,
         client_known_note_ids: Optional[Set[str]] = None,
         client_seen_root_ids: Set[str] = frozenset(),
+        anchor_root_id: Optional[str] = None,
     ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
         """Produce structure entries and note payloads for differential updates."""
 
@@ -54,6 +55,7 @@ class NoteQueryService(BaseQueryService):
             client_known_note_ids,
             seen_root_indices,
             editing_note_id,
+            anchor_root_id,
         )
 
         limit_roots: Optional[Set[str]] = None
@@ -94,6 +96,7 @@ class NoteQueryService(BaseQueryService):
                         client_known_note_ids,
                         seen_root_indices,
                         editing_note_id,
+                        anchor_root_id,
                     )
                     limit_roots = (
                         set(ordered_root_ids[: window_end_index + 1])
@@ -171,6 +174,7 @@ class NoteQueryService(BaseQueryService):
         client_known_note_ids: Set[str],
         seen_root_indices: Set[int],
         editing_note_id: Optional[str],
+        anchor_root_id: Optional[str],
     ) -> int:
         if not ordered_root_ids:
             return -1
@@ -194,6 +198,15 @@ class NoteQueryService(BaseQueryService):
         if highest_seen_index is not None:
             while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
                 window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
+
+        if anchor_root_id:
+            anchor_index = root_index_map.get(anchor_root_id)
+            if anchor_index is not None:
+                while (
+                    window_end < len(ordered_root_ids) - 1
+                    and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD
+                ):
+                    window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
 
         return window_end
 

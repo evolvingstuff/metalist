@@ -8,6 +8,7 @@ import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { persistTabStateSnapshot } from '../services/tab-state-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -1035,39 +1036,13 @@ export function updateSearchContextsList() {
         // Add click handlers to each tab context item
         searchContextsList.querySelectorAll('.tab-context-item').forEach(item => {
             item.addEventListener('click', (e) => {
-                if (ModeContext.isLoading) {
-                    Logger.logNoop('Tab switch ignored while request in-flight', {
-                        requestedTab: e.target.getAttribute('data-tab-id'),
-                        activeTab: ModeContext.activeTabId
-                    });
+                const tabId = e.currentTarget.getAttribute('data-tab-id');
+                if (!tabId || tabId === ModeContext.activeTabId) {
                     return;
                 }
-                const tabId = e.target.getAttribute('data-tab-id');
-                if (tabId && tabId !== ModeContext.activeTabId) {
-                    // Switch to the tab directly
-                    if (!ModeContext.isLoading) {
-                        ModeContext.switchToTab(tabId);
-                    }
-                    
-                    // Update search input field to match new tab's query
-                    const searchInput = document.getElementById('search-input');
-                    if (searchInput) {
-                        searchInput.value = ModeContext.searchQuery;
-                    }
-                    
-                    // Update the display and trigger refresh
-                    updateSearchContextsList();
-                    
-                    // Trigger a refresh with the new tab's search query
-                    import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
-                        try {
-                            await actionRefreshAndMaybeSelect();
-                            ModeContext.restoreScrollForActiveTab();
-                        } catch (error) {
-                            console.error('Failed to refresh after tab switch', error);
-                        }
-                    });
-                }
+                switchToTabContext(tabId).catch(error => {
+                    console.error('Failed to switch tab', error);
+                });
             });
             
             // Add hover effect
@@ -1094,40 +1069,13 @@ export function updateSearchContextsList() {
                     });
                     return;
                 }
-                // Find the next available tab ID
                 let nextTabId = 0;
                 while (ModeContext.tabs[nextTabId.toString()]) {
                     nextTabId++;
                 }
-                
-                // Get current search query to inherit
-                const currentSearchQuery = ModeContext.searchQuery;
-                
-                // Switch to the new tab directly (this will create it automatically)
-                if (!ModeContext.isLoading) {
-                    ModeContext.switchToTab(nextTabId.toString());
-                }
-                
-                // Set the new tab's search query to inherit from current
-                ModeContext.setSearchQuery(currentSearchQuery);
-                
-                // Update search input field to match new tab's query
-                const searchInput = document.getElementById('search-input');
-                if (searchInput) {
-                    searchInput.value = ModeContext.searchQuery;
-                }
-                
-                // Update the display and trigger refresh
-                updateSearchContextsList();
-                
-                // Trigger a refresh with the new tab's search query
-                import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
-                    try {
-                        await actionRefreshAndMaybeSelect();
-                        ModeContext.restoreScrollForActiveTab();
-                    } catch (error) {
-                        console.error('Failed to refresh after tab switch', error);
-                    }
+                const inheritedQuery = ModeContext.searchQuery;
+                switchToTabContext(nextTabId.toString(), { inheritSearchQuery: inheritedQuery }).catch(error => {
+                    console.error('Failed to create tab', error);
                 });
             });
             
@@ -1185,23 +1133,20 @@ export function updateSearchContextsList() {
                     tabs: Object.keys(rebuiltTabs).length ? rebuiltTabs : { '0': { searchQuery: '', scrollY: 0 } }
                 });
 
-                // Update search input field
                 const searchInput = document.getElementById('search-input');
                 if (searchInput) {
                     searchInput.value = ModeContext.searchQuery;
                 }
 
-                // Refresh the display
                 updateSearchContextsList();
 
-                // Trigger a refresh to load the correct notes for the new active tab
+                persistTabStateSnapshot().catch(error => {
+                    console.error('Failed to persist tab state after deletion', error);
+                });
+
                 import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
-                    try {
-                        await actionRefreshAndMaybeSelect();
-                        ModeContext.restoreScrollForActiveTab();
-                    } catch (error) {
-                        console.error('Failed to refresh after tab deletion', error);
-                    }
+                    await actionRefreshAndMaybeSelect();
+                    ModeContext.restoreScrollForActiveTab();
                 });
             });
         });
@@ -1209,4 +1154,42 @@ export function updateSearchContextsList() {
     } else {
         searchContextsList.style.display = 'none';
     }
+}
+
+async function switchToTabContext(tabId, options = {}) {
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Tab switch ignored while request in-flight', {
+            requestedTab: tabId,
+            activeTab: ModeContext.activeTabId
+        });
+        return;
+    }
+
+    await persistCurrentTabState();
+
+    ModeContext.switchToTab(tabId);
+    const { inheritSearchQuery } = options;
+    if (typeof inheritSearchQuery === 'string') {
+        ModeContext.setSearchQuery(inheritSearchQuery);
+    }
+
+    syncSearchInputField();
+    updateSearchContextsList();
+
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect();
+    ModeContext.restoreScrollForActiveTab();
+}
+
+function syncSearchInputField() {
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.value = ModeContext.searchQuery;
+    }
+}
+
+async function persistCurrentTabState() {
+    const currentScroll = Math.max(0, Math.round(window.scrollY));
+    ModeContext.updateActiveTabScroll(currentScroll);
+    await persistTabStateSnapshot();
 }

@@ -41,6 +41,7 @@ class ModeContext {
         this._tabs = {
             '0': { searchQuery: '', scrollY: 0 }
         };
+        this._tabRootAnchors = Object.create(null);
         
         // Multi-device sync
         this._clientId = this._generateClientId();
@@ -56,13 +57,12 @@ class ModeContext {
         // User activity tracking for token refresh
         this._userActivity = false;
 
-        // Diff protocol cache per tab
+        // Diff protocol cache per tab + per-tab root tracking
         this._tabNoteHashes = Object.create(null);
-        this._tabNoteHashes[this._activeTabId] = new Map();
-
-        // Infinite scroll tracking
-        this._knownRootIds = new Set();
-        this._seenRootIds = new Set();
+        this._tabKnownRootIds = Object.create(null);
+        this._tabSeenRootIds = Object.create(null);
+        this._tabRootOrder = Object.create(null);
+        this._ensureTabContainers(this._activeTabId);
         this._lowestVisibleRootId = null;
 
         // asdf hack
@@ -72,15 +72,41 @@ class ModeContext {
         this._tabStateVersion = 0;
     }
 
-    _ensureTabNoteHashes(tabId) {
+    _ensureTabContainers(tabId) {
         if (!this._tabNoteHashes[tabId]) {
             this._tabNoteHashes[tabId] = new Map();
         }
+        if (!this._tabKnownRootIds[tabId]) {
+            this._tabKnownRootIds[tabId] = new Set();
+        }
+        if (!this._tabSeenRootIds[tabId]) {
+            this._tabSeenRootIds[tabId] = new Set();
+        }
+        if (!this._tabRootAnchors[tabId]) {
+            this._tabRootAnchors[tabId] = null;
+        }
+        if (!Array.isArray(this._tabRootOrder[tabId])) {
+            this._tabRootOrder[tabId] = [];
+        }
+    }
+
+    _ensureTabNoteHashes(tabId) {
+        this._ensureTabContainers(tabId);
         return this._tabNoteHashes[tabId];
     }
 
     _getActiveNoteHashes() {
         return this._ensureTabNoteHashes(this._activeTabId);
+    }
+
+    _getActiveKnownRoots() {
+        this._ensureTabContainers(this._activeTabId);
+        return this._tabKnownRootIds[this._activeTabId];
+    }
+
+    _getActiveSeenRoots() {
+        this._ensureTabContainers(this._activeTabId);
+        return this._tabSeenRootIds[this._activeTabId];
     }
 
     hasNoteHash(noteId) {
@@ -168,22 +194,26 @@ class ModeContext {
             return this;
         }
 
-        const nextKnown = new Set();
+        const knownRoots = this._getActiveKnownRoots();
+        knownRoots.clear();
+        const order = [];
         for (const id of rootIds) {
             if (typeof id === 'string' && id) {
-                nextKnown.add(id);
+                knownRoots.add(id);
+                order.push(id);
             }
         }
 
-        this._knownRootIds = nextKnown;
-
         const intersectedSeen = new Set();
-        for (const rootId of this._seenRootIds) {
-            if (nextKnown.has(rootId)) {
+        const seenRoots = this._getActiveSeenRoots();
+        for (const rootId of seenRoots) {
+            if (knownRoots.has(rootId)) {
                 intersectedSeen.add(rootId);
             }
         }
-        this._seenRootIds = intersectedSeen;
+        const active = this._activeTabId;
+        this._tabSeenRootIds[active] = intersectedSeen;
+        this._tabRootOrder[active] = order;
 
         queueMicrotask(async () => {
             const module = await import('./services/infinite-scroll-service.js');
@@ -581,7 +611,7 @@ class ModeContext {
         this._searchQuery = query || '';
         
         if (oldQuery !== this._searchQuery) {
-            this.resetRootTracking();
+            this.resetRootTracking({ clear: true });
             // Update current tab's search query and save tab state
             const entry = this._ensureTabEntry(this._activeTabId);
             entry.searchQuery = this._searchQuery;
@@ -599,7 +629,9 @@ class ModeContext {
     // Infinite scroll helpers ------------------------------------------------
 
     _updateRootTracking(structure) {
-        const nextKnown = new Set();
+        const knownRoots = this._getActiveKnownRoots();
+        knownRoots.clear();
+        const order = [];
         if (Array.isArray(structure)) {
             for (const entry of structure) {
                 if (!entry || typeof entry !== 'object') {
@@ -610,20 +642,22 @@ class ModeContext {
                     continue;
                 }
                 if (parentId === null || parentId === undefined || parentId === '') {
-                    nextKnown.add(id);
+                    knownRoots.add(id);
+                    order.push(id);
                 }
             }
         }
+        this._tabRootOrder[this._activeTabId] = order;
 
-        this._knownRootIds = nextKnown;
-
+        const currentTabId = this._activeTabId;
         const intersectedSeen = new Set();
-        for (const rootId of this._seenRootIds) {
-            if (nextKnown.has(rootId)) {
+        const seenRoots = this._getActiveSeenRoots();
+        for (const rootId of seenRoots) {
+            if (knownRoots.has(rootId)) {
                 intersectedSeen.add(rootId);
             }
         }
-        this._seenRootIds = intersectedSeen;
+        this._tabSeenRootIds[currentTabId] = intersectedSeen;
 
         queueMicrotask(async () => {
             const module = await import('./services/infinite-scroll-service.js');
@@ -631,9 +665,12 @@ class ModeContext {
         });
     }
 
-    resetRootTracking() {
-        this._knownRootIds.clear();
-        this._seenRootIds.clear();
+    resetRootTracking(options = {}) {
+        const shouldClear = options.clear !== false;
+        if (shouldClear) {
+            this._getActiveKnownRoots().clear();
+            this._getActiveSeenRoots().clear();
+        }
         queueMicrotask(async () => {
             const module = await import('./services/infinite-scroll-service.js');
             module.resetInfiniteScrollState();
@@ -641,18 +678,31 @@ class ModeContext {
         return this;
     }
 
+    _notifyInfiniteScrollTabSwitch() {
+        queueMicrotask(async () => {
+            const module = await import('./services/infinite-scroll-service.js');
+            if (typeof module.handleTabSwitch === 'function') {
+                module.handleTabSwitch();
+                return;
+            }
+            module.resetInfiniteScrollState();
+        });
+    }
+
     markRootsAsSeen(rootIds) {
         if (!Array.isArray(rootIds)) {
             return false;
         }
         let changed = false;
+        const knownRoots = this._getActiveKnownRoots();
+        const seenRoots = this._getActiveSeenRoots();
         for (const id of rootIds) {
-            if (typeof id !== 'string' || !this._knownRootIds.has(id)) {
+            if (typeof id !== 'string' || !knownRoots.has(id)) {
                 continue;
             }
-            const before = this._seenRootIds.size;
-            this._seenRootIds.add(id);
-            if (this._seenRootIds.size !== before) {
+            const before = seenRoots.size;
+            seenRoots.add(id);
+            if (seenRoots.size !== before) {
                 changed = true;
             }
         }
@@ -660,25 +710,60 @@ class ModeContext {
     }
 
     clearSeenRoots() {
-        this._seenRootIds.clear();
+        this._getActiveSeenRoots().clear();
         return this;
     }
 
     getUnseenRootCount() {
-        return Math.max(0, this._knownRootIds.size - this._seenRootIds.size);
+        const knownRoots = this._getActiveKnownRoots();
+        const seenRoots = this._getActiveSeenRoots();
+        return Math.max(0, knownRoots.size - seenRoots.size);
     }
 
     get seenRootCount() {
-        return this._seenRootIds.size;
+        return this._getActiveSeenRoots().size;
     }
 
     get knownRootCount() {
-        return this._knownRootIds.size;
+        return this._getActiveKnownRoots().size;
     }
 
     getSeenRootIds() {
-        return Array.from(this._seenRootIds);
+        return Array.from(this._getActiveSeenRoots());
     }
+
+    getLastKnownRootId() {
+        const order = this._tabRootOrder[this._activeTabId] || [];
+        if (!Array.isArray(order) || order.length === 0) {
+            return null;
+        }
+        return order[order.length - 1];
+    }
+
+    isAnchorNearEnd(anchorId, distance = 3) {
+        if (typeof anchorId !== 'string' || !anchorId) {
+            return false;
+        }
+        const order = this._tabRootOrder[this._activeTabId] || [];
+        const idx = order.indexOf(anchorId);
+        if (idx === -1) return false;
+        return (order.length - 1 - idx) <= distance;
+    }
+
+    setRootAnchorId(anchorId) {
+        const tabId = this._activeTabId;
+        if (typeof anchorId !== 'string' || !anchorId) {
+            this._tabRootAnchors[tabId] = null;
+            return this;
+        }
+        this._tabRootAnchors[tabId] = anchorId;
+        return this;
+    }
+
+    getRootAnchorId() {
+        return this._tabRootAnchors[this._activeTabId] || null;
+    }
+
 
     // Tab management methods
     _ensureTabEntry(tabId) {
@@ -732,11 +817,12 @@ class ModeContext {
         const tabs = {};
         const tabIds = Object.keys(this._tabs).sort();
         for (const tabId of tabIds) {
-            const entry = this._tabs[tabId] || { searchQuery: '', scrollY: 0 };
+            const entry = this._tabs[tabId] || { searchQuery: '', scrollY: 0, anchorRootId: null };
             const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0 ? entry.scrollY : 0;
             tabs[tabId] = {
                 searchQuery: typeof entry.searchQuery === 'string' ? entry.searchQuery : '',
-                scrollY
+                scrollY,
+                anchorRootId: this._tabRootAnchors[tabId] || null,
             };
         }
         return {
@@ -762,27 +848,50 @@ class ModeContext {
             if (!entry || typeof entry !== 'object') {
                 throw new Error(`Invalid tab payload for tab ${tabId}`);
             }
-            const searchQuery = typeof entry.searchQuery === 'string' ? entry.searchQuery : '';
-            const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0
-                ? entry.scrollY
-                : 0;
-            normalized[tabId] = { searchQuery, scrollY };
+            if (typeof entry.searchQuery !== 'string') {
+                throw new Error(`Invalid searchQuery for tab ${tabId}`);
+            }
+            if (typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
+                throw new Error(`Invalid scrollY for tab ${tabId}`);
+            }
+            if (
+                entry.anchorRootId !== null
+                && entry.anchorRootId !== undefined
+                && typeof entry.anchorRootId !== 'string'
+            ) {
+                throw new Error(`Invalid anchorRootId for tab ${tabId}`);
+            }
+            const searchQuery = entry.searchQuery;
+            const scrollY = entry.scrollY;
+            const anchorRootId = entry.anchorRootId || null;
+            normalized[tabId] = { searchQuery, scrollY, anchorRootId };
+            this._tabRootAnchors[tabId] = anchorRootId;
         }
         if (!normalized[activeTabId]) {
             throw new Error('Active tab missing from provided state');
         }
+        const tabIdsList = Object.keys(normalized);
         const previousHashCaches = this._tabNoteHashes || Object.create(null);
         const nextHashCaches = Object.create(null);
-        for (const tabId of Object.keys(normalized)) {
+        const previousKnownRoots = this._tabKnownRootIds || Object.create(null);
+        const nextKnownRoots = Object.create(null);
+        const previousSeenRoots = this._tabSeenRootIds || Object.create(null);
+        const nextSeenRoots = Object.create(null);
+
+        for (const tabId of tabIdsList) {
             nextHashCaches[tabId] = previousHashCaches[tabId] || new Map();
+            nextKnownRoots[tabId] = previousKnownRoots[tabId] || new Set();
+            nextSeenRoots[tabId] = previousSeenRoots[tabId] || new Set();
         }
 
         this._tabs = normalized;
         this._tabNoteHashes = nextHashCaches;
+        this._tabKnownRootIds = nextKnownRoots;
+        this._tabSeenRootIds = nextSeenRoots;
         this._activeTabId = activeTabId;
-        this._ensureTabNoteHashes(activeTabId);
+        this._ensureTabContainers(activeTabId);
         this._searchQuery = normalized[activeTabId].searchQuery;
-        this.resetRootTracking();
+        this.resetRootTracking({ clear: true });
         if (emitUpdate) {
             this._emitTabStateMutation('hydrate');
         }
@@ -790,15 +899,22 @@ class ModeContext {
     }
 
     updateActiveTabScroll(scrollY) {
+        return this.updateTabScroll(this._activeTabId, scrollY, true);
+    }
+
+    updateTabScroll(tabId, scrollY, emit = true) {
         if (typeof scrollY !== 'number' || scrollY < 0) {
             throw new Error('scrollY must be a non-negative number');
         }
-        const entry = this._ensureTabEntry(this._activeTabId);
+        const entry = this._ensureTabEntry(tabId);
         if (entry.scrollY === scrollY) {
             return this;
         }
         entry.scrollY = scrollY;
-        this._emitTabStateMutation('scroll');
+        this._tabRootAnchors[tabId] = null;
+        if (emit) {
+            this._emitTabStateMutation('scroll');
+        }
         return this;
     }
 
@@ -836,7 +952,9 @@ class ModeContext {
         const newQuery = targetEntry.searchQuery;
         console.log('Setting search query from tab', tabId, 'query:', newQuery);
         this._searchQuery = newQuery;
-        this.resetRootTracking();
+        // Force a bootstrap render for this tab to avoid stale diff state
+        this.clearNoteHashes();
+        this._notifyInfiniteScrollTabSwitch();
 
         // Notify listeners of changes
         if (oldTabId !== this._activeTabId) {

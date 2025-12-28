@@ -37,13 +37,8 @@ export function handleSearchInput(event) {
     // Set new timeout for debounced search
     searchTimeoutId = setTimeout(async () => {
         Logger.logAction('executeSearch', { searchQuery });
-        
-        try {
-            // Refresh the view with the search query
-            await actionRefreshAndMaybeSelect();
-        } catch (error) {
-            Logger.logError('Search failed', error);
-        }
+        // Refresh the view with the search query (let errors crash)
+        await actionRefreshAndMaybeSelect();
     }, CONFIG.SEARCH.DEBOUNCE_MS);
 }
 
@@ -79,13 +74,8 @@ export async function initializeSearchEvents() {
         // Always trigger initial load - either with restored query or without
         Logger.logAction('initialPageLoad', { searchQuery: activeTabQuery || 'none' });
         
-        try {
-            await actionRefreshAndMaybeSelect({startedAt: startedAt, context: "init search"});
-            
-            ModeContext.restoreScrollForActiveTab();
-        } catch (error) {
-            Logger.logError('Failed to execute initial page load', error);
-        }
+        await actionRefreshAndMaybeSelect({startedAt: startedAt, context: "init search"});
+        ModeContext.restoreScrollForActiveTab();
         
         Logger.logDebug('Search events initialized', { 
             activeTab: ModeContext.activeTabId,

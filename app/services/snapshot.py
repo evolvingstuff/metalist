@@ -32,6 +32,7 @@ def _determine_root_window_end(
     client_known_note_ids: Set[str],
     seen_root_indices: Set[int],
     editing_note_id: Optional[str],
+    anchor_root_id: Optional[str],
 ) -> int:
     if not ordered_root_ids:
         return -1
@@ -57,6 +58,14 @@ def _determine_root_window_end(
         highest_seen_index = max(seen_root_indices)
         while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
             window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
+    if anchor_root_id:
+        anchor_index = root_index_map.get(anchor_root_id)
+        if anchor_index is not None:
+            while (
+                window_end < len(ordered_root_ids) - 1
+                and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD
+            ):
+                window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
     return window_end
 
 
@@ -66,6 +75,7 @@ def build_view_state(
     search: Optional[str],
     client_known_note_ids: Optional[Set[str]] = None,
     client_seen_root_ids: Optional[Set[str]] = None,
+    anchor_root_id: Optional[str] = None,
 ) -> ViewState:
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
@@ -109,7 +119,12 @@ def build_view_state(
         }
     else:
         window_end = _determine_root_window_end(
-            ordered_root_ids, root_index_map, client_known_note_ids, seen_root_indices, editing_note_id
+            ordered_root_ids,
+            root_index_map,
+            client_known_note_ids,
+            seen_root_indices,
+            editing_note_id,
+            anchor_root_id,
         )
         allowed_root_ids = set(ordered_root_ids[: window_end + 1]) if window_end >= 0 else set()
 
@@ -173,11 +188,13 @@ def build_view_snapshot(
     search: Optional[str],
     client_known_note_ids: Optional[Set[str]] = None,
     client_seen_root_ids: Optional[Set[str]] = None,
+    anchor_root_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
     state = build_view_state(
         editing_note_id=editing_note_id,
         search=search,
         client_known_note_ids=client_known_note_ids,
         client_seen_root_ids=client_seen_root_ids,
+        anchor_root_id=anchor_root_id,
     )
     return state.structure, state.payloads, state.locks

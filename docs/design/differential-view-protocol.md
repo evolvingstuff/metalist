@@ -4,7 +4,7 @@
 - `POST /api2/notes/view` now serves two flows:
   - **Bootstrap**: the server returns a compact `structure` chunk for initial load.
   - **Incremental**: after bootstrap, the server caches each tab’s view and returns `diffOps` (insert/move/remove/update instructions) plus sparse payloads.
-- Clients no longer re-send the entire structure every time; hashes + seen roots are only used for window sizing.
+- Clients no longer re-send the entire structure every time; hashes identify stale nodes and a single `visibleRootAnchorId` tells the server where to extend the window.
 - Legacy `/api/*` routes remain blocked.
 
 ## Request Shape
@@ -14,7 +14,7 @@
   "editingNoteId": null,
   "search": "optional query",
   "tabId": "0",
-  "clientSeenRootIds": ["root-uuid-1", "root-uuid-2"],
+  "visibleRootAnchorId": "root-uuid-13",
   "clientNoteUuidHashes": {
     "note-uuid-1": "expandedHashWithFlags",
     "note-uuid-2": "expandedHashWithFlags"
@@ -24,7 +24,7 @@
 
 ### Notes
 - Keys above are required.
-- `clientSeenRootIds`: roots that have actually been visible in the viewport; used to decide when to append additional root batches (infinite-scroll/windowing).
+- `visibleRootAnchorId`: the root note currently near the center of the viewport. The server expands the window around this anchor (plus a buffer) so infinite scroll is driven entirely on the backend.
 - `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have. The cache is **tab-scoped**—each browser tab/search context keeps its own hash map so switching tabs never reports nodes from a different view (prevents the server from widening the first tab's root window after you scroll another tab way down).
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `tabId`: client-maintained active tab (0-9); the server caches one view per `(clientId, tabId, search)` tuple.
