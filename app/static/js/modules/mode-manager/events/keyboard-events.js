@@ -1176,6 +1176,9 @@ async function switchToTabContext(tabId, options = {}) {
     syncSearchInputField();
     updateSearchContextsList();
 
+    // Persist new tab selection and any newly created tab immediately
+    await persistTabStateSnapshot();
+
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
     await actionRefreshAndMaybeSelect();
     ModeContext.restoreScrollForActiveTab();
