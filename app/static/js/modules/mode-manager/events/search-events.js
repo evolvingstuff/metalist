@@ -3,10 +3,19 @@ import * as Logger from '../mode-logger.js';
 import { CONFIG } from '../../config.js';
 import { actionRefreshAndMaybeSelect } from '../actions/ui-actions.js';
 import { updateSearchContextsList } from './keyboard-events.js';
+import { initializeTabStateService } from '../services/tab-state-service.js';
 
 let searchTimeoutId = null;
 
 export function handleSearchInput(event) {
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Search input ignored while request in-flight', {
+            value: event?.target?.value || '',
+            activeTab: ModeContext.activeTabId
+        });
+        event.preventDefault();
+        return;
+    }
     const searchQuery = event.target.value;
     
     Logger.logDebug('Search input changed', { 
@@ -46,8 +55,7 @@ export async function initializeSearchEvents() {
         // Add input event listener
         searchInput.addEventListener('input', handleSearchInput);
         
-        // Restore tab state from localStorage (this also restores search query)
-        ModeContext.restoreTabStateFromStorage();
+        await initializeTabStateService();
         const activeTabQuery = ModeContext.searchQuery;
         
         // Update tab indicator on page load
@@ -62,9 +70,9 @@ export async function initializeSearchEvents() {
         if (activeTabQuery) {
             // Update the search input field with the active tab's query
             searchInput.value = activeTabQuery;
-            Logger.logAction('restoreTabStateFromStorage', { 
+            Logger.logAction('hydrateTabStateFromServer', {
                 activeTab: ModeContext.activeTabId,
-                searchQuery: activeTabQuery 
+                searchQuery: activeTabQuery
             });
         }
         
@@ -74,12 +82,7 @@ export async function initializeSearchEvents() {
         try {
             await actionRefreshAndMaybeSelect({startedAt: startedAt, context: "init search"});
             
-            // Restore scroll position for the active tab
-            const scrollY = ModeContext.getTabScrollPosition();
-            if (scrollY > 0) {
-                window.scrollTo(0, scrollY);
-                Logger.logDebug('Restored scroll position', { scrollY });
-            }
+            ModeContext.restoreScrollForActiveTab();
         } catch (error) {
             Logger.logError('Failed to execute initial page load', error);
         }

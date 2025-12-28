@@ -1035,10 +1035,19 @@ export function updateSearchContextsList() {
         // Add click handlers to each tab context item
         searchContextsList.querySelectorAll('.tab-context-item').forEach(item => {
             item.addEventListener('click', (e) => {
+                if (ModeContext.isLoading) {
+                    Logger.logNoop('Tab switch ignored while request in-flight', {
+                        requestedTab: e.target.getAttribute('data-tab-id'),
+                        activeTab: ModeContext.activeTabId
+                    });
+                    return;
+                }
                 const tabId = e.target.getAttribute('data-tab-id');
                 if (tabId && tabId !== ModeContext.activeTabId) {
                     // Switch to the tab directly
-                    ModeContext.switchToTab(tabId);
+                    if (!ModeContext.isLoading) {
+                        ModeContext.switchToTab(tabId);
+                    }
                     
                     // Update search input field to match new tab's query
                     const searchInput = document.getElementById('search-input');
@@ -1053,6 +1062,7 @@ export function updateSearchContextsList() {
                     import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
                         try {
                             await actionRefreshAndMaybeSelect();
+                            ModeContext.restoreScrollForActiveTab();
                         } catch (error) {
                             console.error('Failed to refresh after tab switch', error);
                         }
@@ -1078,6 +1088,12 @@ export function updateSearchContextsList() {
         const addContextItem = searchContextsList.querySelector('.add-context-item');
         if (addContextItem) {
             addContextItem.addEventListener('click', () => {
+                if (ModeContext.isLoading) {
+                    Logger.logNoop('Tab creation ignored while request in-flight', {
+                        activeTab: ModeContext.activeTabId
+                    });
+                    return;
+                }
                 // Find the next available tab ID
                 let nextTabId = 0;
                 while (ModeContext.tabs[nextTabId.toString()]) {
@@ -1088,7 +1104,9 @@ export function updateSearchContextsList() {
                 const currentSearchQuery = ModeContext.searchQuery;
                 
                 // Switch to the new tab directly (this will create it automatically)
-                ModeContext.switchToTab(nextTabId.toString());
+                if (!ModeContext.isLoading) {
+                    ModeContext.switchToTab(nextTabId.toString());
+                }
                 
                 // Set the new tab's search query to inherit from current
                 ModeContext.setSearchQuery(currentSearchQuery);
@@ -1106,6 +1124,7 @@ export function updateSearchContextsList() {
                 import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
                     try {
                         await actionRefreshAndMaybeSelect();
+                        ModeContext.restoreScrollForActiveTab();
                     } catch (error) {
                         console.error('Failed to refresh after tab switch', error);
                     }
@@ -1126,56 +1145,60 @@ export function updateSearchContextsList() {
         searchContextsList.querySelectorAll('.delete-context').forEach(deleteBtn => {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent tab switching when clicking delete
-                
+                if (ModeContext.isLoading) {
+                    Logger.logNoop('Tab deletion ignored while request in-flight', {
+                        activeTab: ModeContext.activeTabId
+                    });
+                    return;
+                }
+
                 // Don't delete if there's only one tab left
                 if (Object.keys(ModeContext.tabs).length <= 1) {
                     return;
                 }
                 
-                // Clear localStorage completely first
-                localStorage.removeItem('metalist_tab_state');
-                
                 // Get the current active tab ID to delete
                 const deleteTabId = ModeContext.activeTabId;
-                
+
                 // Remove the active tab
                 delete ModeContext.tabs[deleteTabId];
-                
+
                 // Get all remaining tabs and their data
                 const remainingData = [];
                 const sortedIds = Object.keys(ModeContext.tabs).map(id => parseInt(id)).sort((a, b) => a - b);
                 for (const id of sortedIds) {
                     remainingData.push(ModeContext.tabs[id.toString()]);
                 }
-                
+
                 // Clear tabs and rebuild with consecutive numbering
-                ModeContext._tabs = {};
+                const rebuiltTabs = {};
                 for (let i = 0; i < remainingData.length; i++) {
-                    ModeContext._tabs[i.toString()] = remainingData[i];
+                    const tabId = i.toString();
+                    const data = remainingData[i] || { searchQuery: '', scrollY: 0 };
+                    rebuiltTabs[tabId] = {
+                        searchQuery: data.searchQuery || '',
+                        scrollY: typeof data.scrollY === 'number' && data.scrollY >= 0 ? data.scrollY : 0
+                    };
                 }
-                
-                // Set active tab to 0 directly
-                ModeContext._activeTabId = '0';
-                
-                // Update search query to match new tab 0 (this will trigger proper updates)
-                ModeContext.setSearchQuery(ModeContext._tabs['0'].searchQuery || '');
-                
+                ModeContext.hydrateTabState({
+                    activeTabId: '0',
+                    tabs: Object.keys(rebuiltTabs).length ? rebuiltTabs : { '0': { searchQuery: '', scrollY: 0 } }
+                });
+
                 // Update search input field
                 const searchInput = document.getElementById('search-input');
                 if (searchInput) {
-                    searchInput.value = ModeContext._searchQuery;
+                    searchInput.value = ModeContext.searchQuery;
                 }
-                
-                // Save the updated state to localStorage
-                ModeContext._saveTabStateToStorage();
-                
+
                 // Refresh the display
                 updateSearchContextsList();
-                
+
                 // Trigger a refresh to load the correct notes for the new active tab
                 import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
                     try {
                         await actionRefreshAndMaybeSelect();
+                        ModeContext.restoreScrollForActiveTab();
                     } catch (error) {
                         console.error('Failed to refresh after tab deletion', error);
                     }

@@ -21,7 +21,8 @@ export const CONFIG = {
             PASTE_CHILD: (targetNoteId) => `${API_NOTES_BASE}/paste-child/${targetNoteId}`,
             UNDO: `${API_NOTES_BASE}/undo`,
             REDO: `${API_NOTES_BASE}/redo`,
-            VIEW: `${API_NOTES_BASE}/view`
+            VIEW: `${API_NOTES_BASE}/view`,
+            TAB_STATE: `${API_NOTES_BASE}/tab-state`
         },
         AUTH: {
             STATUS: `${API_AUTH_BASE}/status`,

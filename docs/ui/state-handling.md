@@ -373,7 +373,9 @@ The ModeManager architecture naturally supports extending to multi-tab search co
 
 ### Tab State Integration
 
-Tabs add a **minimal layer** above the existing global ModeContext:
+Tabs add a **minimal layer** above the existing global ModeContext and the
+server keeps that structure hot in memory, so browser restarts no longer lose
+search contexts:
 
 ```javascript
 // Existing global state (shared across tabs)
@@ -393,6 +395,13 @@ ModeContext = {
   }
 }
 ```
+
+- `tab-state-service.js` fetches `/api2/notes/tab-state` on startup and hydrates
+  `ModeContext` so the UI mirrors whatever the previous window last displayed.
+- Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
+  aligned with the DOM without spamming requests.
+- With a single interactive client, this global cache keeps persistence simple:
+  new browser windows immediately reuse the stored tabs.
 
 ### Event-Driven Tab Switching
 
@@ -558,7 +567,7 @@ The tab extension **maintains all core ModeManager principles**:
 
 ### Implementation Strategy
 
-- **Phase 1**: Add tab properties to ModeContext, localStorage persistence
+- **Phase 1**: Add tab properties to ModeContext, persist via `/api2/notes/tab-state`
 - **Phase 2**: Implement tab switching actions using existing patterns
 - **Phase 3**: Extend undo commands to capture tab snapshots  
 - **Phase 4**: Add tab UI components and keyboard shortcuts

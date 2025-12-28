@@ -66,6 +66,9 @@ class ModeContext {
 
         // asdf hack
         this._requestStartedAt = null;
+
+        this._tabStateUpdateHook = null;
+        this._tabStateVersion = 0;
     }
 
     hasNoteHash(noteId) {
@@ -566,34 +569,16 @@ class ModeContext {
         if (oldQuery !== this._searchQuery) {
             this.resetRootTracking();
             // Update current tab's search query and save tab state
-            if (this._tabs[this._activeTabId]) {
-                this._tabs[this._activeTabId].searchQuery = this._searchQuery;
-                this._saveTabStateToStorage();
-            }
-            
-            // Also save to old localStorage key for backwards compatibility
-            if (this._searchQuery) {
-                localStorage.setItem('metalist_search_query', this._searchQuery);
-            } else {
-                localStorage.removeItem('metalist_search_query');
-            }
-            
+            const entry = this._ensureTabEntry(this._activeTabId);
+            entry.searchQuery = this._searchQuery;
             this._notifyListeners('searchQuery', this._searchQuery);
+            this._emitTabStateMutation('searchQuery');
         }
         
         return this;
     }
 
     get searchQuery() {
-        return this._searchQuery;
-    }
-
-    restoreSearchQueryFromStorage() {
-        // Restore search query from localStorage without triggering notifications
-        const savedQuery = localStorage.getItem('metalist_search_query');
-        if (savedQuery) {
-            this._searchQuery = savedQuery;
-        }
         return this._searchQuery;
     }
 
@@ -682,6 +667,19 @@ class ModeContext {
     }
 
     // Tab management methods
+    _ensureTabEntry(tabId) {
+        if (!this._tabs[tabId]) {
+            this._tabs[tabId] = { searchQuery: '', scrollY: 0 };
+        }
+        return this._tabs[tabId];
+    }
+
+    _emitTabStateMutation(reason) {
+        if (typeof this._tabStateUpdateHook === 'function') {
+            this._tabStateUpdateHook({ reason, payload: this.getTabStatePayload() });
+        }
+    }
+
     get activeTabId() {
         return this._activeTabId;
     }
@@ -690,78 +688,150 @@ class ModeContext {
         return this._tabs;
     }
 
+    setTabStateUpdateHook(callback) {
+        if (callback && typeof callback !== 'function') {
+            throw new Error('tab state update hook must be a function');
+        }
+        this._tabStateUpdateHook = callback;
+        return this;
+    }
+
+    clearTabStateUpdateHook() {
+        this._tabStateUpdateHook = null;
+        return this;
+    }
+
+    setTabStateVersion(version) {
+        if (typeof version !== 'number' || Number.isNaN(version)) {
+            throw new Error('tab state version must be a number');
+        }
+        this._tabStateVersion = version;
+        return this;
+    }
+
+    get tabStateVersion() {
+        return this._tabStateVersion;
+    }
+
+    getTabStatePayload() {
+        const tabs = {};
+        const tabIds = Object.keys(this._tabs).sort();
+        for (const tabId of tabIds) {
+            const entry = this._tabs[tabId] || { searchQuery: '', scrollY: 0 };
+            const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0 ? entry.scrollY : 0;
+            tabs[tabId] = {
+                searchQuery: typeof entry.searchQuery === 'string' ? entry.searchQuery : '',
+                scrollY
+            };
+        }
+        return {
+            activeTabId: this._activeTabId,
+            tabs,
+            version: this._tabStateVersion
+        };
+    }
+
+    hydrateTabState(state, options = {}) {
+        const emitUpdate = options.emitUpdate !== false;
+        if (!state || typeof state !== 'object') {
+            throw new Error('hydrateTabState requires a state object');
+        }
+        const { activeTabId, tabs } = state;
+        if (!tabs || typeof tabs !== 'object' || Object.keys(tabs).length === 0) {
+            throw new Error('hydrateTabState requires at least one tab');
+        }
+        const normalized = {};
+        const tabIds = Object.keys(tabs);
+        for (const tabId of tabIds) {
+            const entry = tabs[tabId];
+            if (!entry || typeof entry !== 'object') {
+                throw new Error(`Invalid tab payload for tab ${tabId}`);
+            }
+            const searchQuery = typeof entry.searchQuery === 'string' ? entry.searchQuery : '';
+            const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0
+                ? entry.scrollY
+                : 0;
+            normalized[tabId] = { searchQuery, scrollY };
+        }
+        if (!normalized[activeTabId]) {
+            throw new Error('Active tab missing from provided state');
+        }
+        this._tabs = normalized;
+        this._activeTabId = activeTabId;
+        this._searchQuery = normalized[activeTabId].searchQuery;
+        this.resetRootTracking();
+        if (emitUpdate) {
+            this._emitTabStateMutation('hydrate');
+        }
+        return this;
+    }
+
+    updateActiveTabScroll(scrollY) {
+        if (typeof scrollY !== 'number' || scrollY < 0) {
+            throw new Error('scrollY must be a non-negative number');
+        }
+        const entry = this._ensureTabEntry(this._activeTabId);
+        if (entry.scrollY === scrollY) {
+            return this;
+        }
+        entry.scrollY = scrollY;
+        this._emitTabStateMutation('scroll');
+        return this;
+    }
+
+    restoreScrollForActiveTab() {
+        const scrollY = this.getTabScrollPosition();
+        window.scrollTo(0, scrollY);
+    }
+
     switchToTab(tabId) {
         if (tabId < '0' || tabId > '9') {
             throw new Error(`Invalid tab ID: ${tabId}. Must be 0-9.`);
         }
 
+        if (this._loading) {
+            Logger.logNoop('Tab switch ignored while request is in-flight', {
+                requestedTab: tabId,
+                activeTab: this._activeTabId
+            });
+            return this;
+        }
+
         // Save current scroll position to current tab
-        this._tabs[this._activeTabId] = this._tabs[this._activeTabId] || { searchQuery: '', scrollY: 0 };
-        this._tabs[this._activeTabId].scrollY = window.scrollY;
-        this._tabs[this._activeTabId].searchQuery = this._searchQuery;
+        const currentEntry = this._ensureTabEntry(this._activeTabId);
+        currentEntry.scrollY = Math.max(0, Math.round(window.scrollY));
+        currentEntry.searchQuery = this._searchQuery;
 
         // Switch to new tab
         const oldTabId = this._activeTabId;
         this._activeTabId = tabId;
 
         // Initialize tab if it doesn't exist
-        if (!this._tabs[tabId]) {
-            console.log('Initializing new tab', tabId, 'with empty query');
-            this._tabs[tabId] = { searchQuery: '', scrollY: 0 };
-        }
+        const targetEntry = this._ensureTabEntry(tabId);
 
         // Update search query to match new tab
-        const newQuery = this._tabs[tabId].searchQuery;
+        const newQuery = targetEntry.searchQuery;
         console.log('Setting search query from tab', tabId, 'query:', newQuery);
         this._searchQuery = newQuery;
         this.resetRootTracking();
-
-        // Save tab state to localStorage
-        this._saveTabStateToStorage();
 
         // Notify listeners of changes
         if (oldTabId !== this._activeTabId) {
             this._notifyListeners('activeTab', this._activeTabId);
         }
         this._notifyListeners('searchQuery', this._searchQuery);
+        this._emitTabStateMutation('switchTab');
 
-        return this;
-    }
-
-    _saveTabStateToStorage() {
-        const tabState = {
-            activeTabId: this._activeTabId,
-            tabs: this._tabs
-        };
-        localStorage.setItem('metalist_tab_state', JSON.stringify(tabState));
-    }
-
-    restoreTabStateFromStorage() {
-        try {
-            const savedState = localStorage.getItem('metalist_tab_state');
-            if (savedState) {
-                const tabState = JSON.parse(savedState);
-                this._activeTabId = tabState.activeTabId || '0';
-                this._tabs = tabState.tabs || { '0': { searchQuery: '', scrollY: 0 } };
-                
-                // Set search query to match active tab
-                const activeTab = this._tabs[this._activeTabId];
-                if (activeTab) {
-                    this._searchQuery = activeTab.searchQuery || '';
-                }
-            }
-        } catch (error) {
-            console.warn('Failed to restore tab state from localStorage:', error);
-            // Fall back to defaults
-            this._activeTabId = '0';
-            this._tabs = { '0': { searchQuery: '', scrollY: 0 } };
-        }
         return this;
     }
 
     getTabScrollPosition(tabId = null) {
         const targetTabId = tabId || this._activeTabId;
-        return this._tabs[targetTabId]?.scrollY || 0;
+        const entry = this._tabs[targetTabId];
+        if (!entry || typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
+            return 0;
+        }
+        return entry.scrollY;
     }
 
     get isInitialPageLoad() {

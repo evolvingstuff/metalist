@@ -22,6 +22,7 @@ from app.services.sync import get_current_sync_uuid
 from app.config import VERSION
 from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
+from app.services.tab_state import tab_state_store
 
 
 router = APIRouter()
@@ -104,6 +105,23 @@ def view_diff(payload: dict):
         "editingNoteId": editing_note_id,
     }
     return {"snapshot": response_snapshot, "updateUUID": update_uuid}
+
+
+@router.get("/notes/tab-state")
+def get_tab_state() -> Dict[str, object]:
+    return tab_state_store.snapshot()
+
+
+@router.post("/notes/tab-state")
+def update_tab_state(payload: dict) -> Dict[str, object]:
+    if "activeTabId" not in payload or "tabs" not in payload:
+        raise HTTPException(status_code=400, detail="activeTabId and tabs are required")
+    active_tab_id = payload["activeTabId"]
+    tabs = payload["tabs"]
+    try:
+        return tab_state_store.update(active_tab_id=active_tab_id, tabs=tabs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dict[str, str]:
