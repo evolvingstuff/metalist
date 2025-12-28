@@ -9,6 +9,7 @@ import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { persistTabStateSnapshot } from '../services/tab-state-service.js';
+import { cacheNotesDomForTab, clearAllCachedNotesDom, restoreNotesDomForTab } from '../services/tab-dom-cache-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -1133,6 +1134,9 @@ export function updateSearchContextsList() {
                     tabs: Object.keys(rebuiltTabs).length ? rebuiltTabs : { '0': { searchQuery: '', scrollY: 0 } }
                 });
 
+                clearAllCachedNotesDom();
+                ModeContext.clearAllTabViewCaches();
+
                 const searchInput = document.getElementById('search-input');
                 if (searchInput) {
                     searchInput.value = ModeContext.searchQuery;
@@ -1165,23 +1169,37 @@ async function switchToTabContext(tabId, options = {}) {
         return;
     }
 
-    await persistCurrentTabState();
+    const previousTabId = ModeContext.activeTabId;
 
-    ModeContext.switchToTab(tabId);
-    const { inheritSearchQuery } = options;
-    if (typeof inheritSearchQuery === 'string') {
-        ModeContext.setSearchQuery(inheritSearchQuery);
+    ModeContext.beginIgnoreScrollEvents();
+    try {
+        await persistCurrentTabState();
+
+        ModeContext.switchToTab(tabId);
+        cacheNotesDomForTab(previousTabId);
+        const { inheritSearchQuery } = options;
+        const skipDomRestore = typeof inheritSearchQuery === 'string';
+        if (skipDomRestore) {
+            ModeContext.setSearchQuery(inheritSearchQuery);
+        }
+
+        if (!skipDomRestore) {
+            restoreNotesDomForTab(tabId);
+        }
+
+        syncSearchInputField();
+        updateSearchContextsList();
+
+        // Persist new tab selection and any newly created tab immediately
+        await persistTabStateSnapshot();
+
+        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+        await actionRefreshAndMaybeSelect();
+
+        ModeContext.restoreScrollForActiveTab();
+    } finally {
+        ModeContext.endIgnoreScrollEvents();
     }
-
-    syncSearchInputField();
-    updateSearchContextsList();
-
-    // Persist new tab selection and any newly created tab immediately
-    await persistTabStateSnapshot();
-
-    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect();
-    ModeContext.restoreScrollForActiveTab();
 }
 
 function syncSearchInputField() {

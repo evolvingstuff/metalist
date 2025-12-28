@@ -70,6 +70,7 @@ class ModeContext {
 
         this._tabStateUpdateHook = null;
         this._tabStateVersion = 0;
+        this._ignoreScrollEventsDepth = 0;
     }
 
     _ensureTabContainers(tabId) {
@@ -148,6 +149,30 @@ class ModeContext {
 
     clearNoteHashes() {
         this._getActiveNoteHashes().clear();
+        return this;
+    }
+
+    clearTabViewCache(tabId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        this._ensureTabContainers(tabId);
+        this._tabNoteHashes[tabId].clear();
+        this._tabKnownRootIds[tabId].clear();
+        this._tabSeenRootIds[tabId].clear();
+        this._tabRootOrder[tabId] = [];
+        this._tabRootAnchors[tabId] = null;
+        return this;
+    }
+
+    clearAllTabViewCaches() {
+        const tabIds = new Set([
+            ...Object.keys(this._tabs || {}),
+            ...Object.keys(this._tabNoteHashes || {}),
+        ]);
+        for (const tabId of tabIds) {
+            this.clearTabViewCache(tabId);
+        }
         return this;
     }
 
@@ -918,6 +943,23 @@ class ModeContext {
         return this;
     }
 
+    beginIgnoreScrollEvents() {
+        this._ignoreScrollEventsDepth += 1;
+        return this;
+    }
+
+    endIgnoreScrollEvents() {
+        if (this._ignoreScrollEventsDepth <= 0) {
+            throw new Error('endIgnoreScrollEvents called without beginIgnoreScrollEvents');
+        }
+        this._ignoreScrollEventsDepth -= 1;
+        return this;
+    }
+
+    shouldIgnoreScrollEvents() {
+        return this._ignoreScrollEventsDepth > 0;
+    }
+
     restoreScrollForActiveTab() {
         const scrollY = this.getTabScrollPosition();
         window.scrollTo(0, scrollY);
@@ -952,8 +994,6 @@ class ModeContext {
         const newQuery = targetEntry.searchQuery;
         console.log('Setting search query from tab', tabId, 'query:', newQuery);
         this._searchQuery = newQuery;
-        // Force a bootstrap render for this tab to avoid stale diff state
-        this.clearNoteHashes();
         this._notifyInfiniteScrollTabSwitch();
 
         // Notify listeners of changes
