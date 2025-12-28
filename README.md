@@ -9,6 +9,7 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Keyboard shortcuts (press `?` in the app)
 - Linked-list ordering model for efficient reorders
 - Optional password protection + encryption at rest (AES-GCM)
+- Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
 
 ## Technology Stack
 

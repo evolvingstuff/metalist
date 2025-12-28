@@ -28,6 +28,7 @@
 - `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have.
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `tabId`: client-maintained active tab (0-9); the server caches one view per `(clientId, tabId, search)` tuple.
+- A companion `/api2/notes/tab-state` endpoint keeps each tab's search + scroll metadata in-memory so reconnects can hydrate the same contexts before the next `/notes/view` call.
 
 ## Response Shape (Bootstrap)
 ```json
