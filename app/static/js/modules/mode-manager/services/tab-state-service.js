@@ -71,6 +71,9 @@ function startScrollWatcher() {
 }
 
 function handleScrollEvent() {
+    if (ModeContext.shouldIgnoreScrollEvents()) {
+        return;
+    }
     if (ModeContext.isLoading) {
         return;
     }
@@ -99,6 +102,9 @@ function startScrollPolling() {
 
 async function pollPersistScroll() {
     if (document.hidden) {
+        return;
+    }
+    if (ModeContext.shouldIgnoreScrollEvents()) {
         return;
     }
     if (ModeContext.isLoading) {

@@ -110,6 +110,7 @@
 - The server stores the newly generated view in-memory per `(clientId, tabId, search)` so subsequent requests can stay incremental.
 
 ## Client Reconciliation
+- Tab switch optimization: clients may detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile diffs.
 - Bootstrap path: identical to the legacy behavior (diff against `snapshot.structure`, update DOM and hash cache, reset root tracking).
 - Incremental path:
   - Apply `diffOps` in order (remove/move/insert) directly to the DOM.
