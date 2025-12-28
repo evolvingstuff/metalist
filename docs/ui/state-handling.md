@@ -400,6 +400,10 @@ ModeContext = {
   `ModeContext` so the UI mirrors whatever the previous window last displayed.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
   aligned with the DOM without spamming requests.
+- **Diff cache isolation**: each tab now owns its own `clientNoteUuidHashes` map inside
+  `ModeContext`. Swapping tabs swaps the active hash map so `/notes/view` payloads only
+  contain nodes that tab has rendered—prevents the first tab from inheriting the
+  thousands of roots you just scrolled past in another tab.
 - With a single interactive client, this global cache keeps persistence simple:
   new browser windows immediately reuse the stored tabs.
 

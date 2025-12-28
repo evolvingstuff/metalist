@@ -24,6 +24,7 @@
 ## Design
 - Pattern: usecases (Cmd*) orchestrate services; services encapsulate DB work + undo logging.
 - State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll snapshotted via `tab_state_store` so reopening the app restores the last view.
+- Diff caching: Server caches each `(client, tab, search)` view and the client keeps per-tab note-hash maps so `/notes/view` diff payloads stay scoped to the active tab.
 - Error handling: fail-fast (internal errors crash; optional request-validation crash toggle).
 - Auth: PBKDF2 password verifier protecting the DEK; tokens are short-lived and kept in-memory; token issuance enforces a single active session.
 

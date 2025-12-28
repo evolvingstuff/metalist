@@ -25,7 +25,7 @@
 ### Notes
 - Keys above are required.
 - `clientSeenRootIds`: roots that have actually been visible in the viewport; used to decide when to append additional root batches (infinite-scroll/windowing).
-- `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have.
+- `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have. The cache is **tab-scoped**—each browser tab/search context keeps its own hash map so switching tabs never reports nodes from a different view (prevents the server from widening the first tab's root window after you scroll another tab way down).
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `tabId`: client-maintained active tab (0-9); the server caches one view per `(clientId, tabId, search)` tuple.
 - A companion `/api2/notes/tab-state` endpoint keeps each tab's search + scroll metadata in-memory so reconnects can hydrate the same contexts before the next `/notes/view` call.
@@ -116,7 +116,7 @@
   - For each affected note id present in `snapshot.notes`, refresh the DOM content, flags, and cached hash.
   - Apply `lockDiffs` by toggling lock styling/editability without re-rendering content.
   - Update `ModeContext`’s root tracking via the provided `rootIds` array.
-- Both paths keep the `clientNoteUuidHashes` map authoritative so follow-up requests remain incremental.
+- Both paths keep the `clientNoteUuidHashes` map authoritative so follow-up requests remain incremental. Because caches are tab-scoped, a tab switch simply swaps the active map—no mass invalidation necessary and each `/notes/view` request only sends hashes for what that tab rendered last time.
 
 ## Manual Verification Checklist
 - CRUD sequences: create, edit, delete and confirm only changed nodes rerender.
