@@ -11,6 +11,7 @@ import { initContentAutoSave } from './events/inactivity-events.js';
 import { initializeSearchEvents } from './events/search-events.js';
 import { startPolling } from './services/polling-service.js';
 import { startInfiniteScrollMonitor, resetInfiniteScrollState } from './services/infinite-scroll-service.js';
+import { initializeScrollToTopButton } from './services/scroll-to-top-service.js';
 import { initEditorToolbar, setToolbarVisible } from '../editor-toolbar.js';
 import { installGlobalErrorOverlay } from '../error-overlay.js';
 
@@ -52,6 +53,7 @@ const ModeManager = {
         await initializeSearchEvents();
         startPolling();
         startInfiniteScrollMonitor();
+        initializeScrollToTopButton();
                     
         Logger.logDebug('Event handlers registered', { config });
     },
