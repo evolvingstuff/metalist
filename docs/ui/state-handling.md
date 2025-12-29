@@ -388,16 +388,19 @@ ModeContext = {
   clipboardNoteId: '456',
   
   // New tab management
-  activeTabId: 'work',
+  activeTabId: 'tab-uuid-work',
+  tabOrder: ['tab-uuid-work', 'tab-uuid-personal'],
   tabs: {
-    'work': { searchQuery: 'project alpha', scrollY: 150 },
-    'personal': { searchQuery: 'recipes', scrollY: 0 }
+    'tab-uuid-work': { searchQuery: 'project alpha', scrollY: 150 },
+    'tab-uuid-personal': { searchQuery: 'recipes', scrollY: 0 }
   }
 }
 ```
 
 - `tab-state-service.js` fetches `/api2/notes/tab-state` on startup and hydrates
   `ModeContext` so the UI mirrors whatever the previous window last displayed.
+- Tab IDs are server-assigned UUIDs and a `tabOrder` array defines display order.
+- Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
   aligned with the DOM without spamming requests.
 - **Diff cache isolation**: each tab now owns its own `clientNoteUuidHashes` map inside

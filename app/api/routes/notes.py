@@ -120,12 +120,38 @@ def get_tab_state() -> Dict[str, object]:
 
 @router.post("/notes/tab-state")
 def update_tab_state(payload: dict) -> Dict[str, object]:
-    if "activeTabId" not in payload or "tabs" not in payload:
-        raise HTTPException(status_code=400, detail="activeTabId and tabs are required")
+    if "activeTabId" not in payload or "tabs" not in payload or "tabOrder" not in payload:
+        raise HTTPException(status_code=400, detail="activeTabId, tabs, and tabOrder are required")
     active_tab_id = payload["activeTabId"]
     tabs = payload["tabs"]
+    tab_order = payload["tabOrder"]
     try:
-        return tab_state_store.update(active_tab_id=active_tab_id, tabs=tabs)
+        if not isinstance(tab_order, list):
+            raise ValueError("tabOrder must be a list")
+        tab_order_list = [str(entry) for entry in tab_order]
+        return tab_state_store.update(active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/notes/tab-state/new-tab")
+def create_new_tab(payload: dict) -> Dict[str, object]:
+    if "copyFromTabId" not in payload:
+        raise HTTPException(status_code=400, detail="copyFromTabId is required")
+    copy_from_tab_id = payload["copyFromTabId"]
+    try:
+        return tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/notes/tab-state/delete-tab")
+def delete_tab(payload: dict) -> Dict[str, object]:
+    if "tabId" not in payload:
+        raise HTTPException(status_code=400, detail="tabId is required")
+    tab_id = payload["tabId"]
+    try:
+        return tab_state_store.delete_tab(tab_id=tab_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

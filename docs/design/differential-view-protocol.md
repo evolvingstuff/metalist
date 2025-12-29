@@ -13,7 +13,7 @@
   "clientId": "client-uuid",
   "editingNoteId": null,
   "search": "optional query",
-  "tabId": "0",
+  "tabId": "tab-uuid",
   "visibleRootAnchorId": "root-uuid-13",
   "clientNoteUuidHashes": {
     "note-uuid-1": "expandedHashWithFlags",
@@ -27,8 +27,8 @@
 - `visibleRootAnchorId`: the root note currently near the center of the viewport. The server expands the window around this anchor (plus a buffer) so infinite scroll is driven entirely on the backend.
 - `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have. The cache is **tab-scoped**—each browser tab/search context keeps its own hash map so switching tabs never reports nodes from a different view (prevents the server from widening the first tab's root window after you scroll another tab way down).
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
-- `tabId`: client-maintained active tab (0-9); the server caches one view per `(clientId, tabId, search)` tuple.
-- A companion `/api2/notes/tab-state` endpoint keeps each tab's search + scroll metadata in-memory so reconnects can hydrate the same contexts before the next `/notes/view` call.
+- `tabId`: client-maintained active tab UUID; the server caches one view per `(clientId, tabId, search)` tuple.
+- A companion `/api2/notes/tab-state` + tab create/delete endpoints keep each tab's search + scroll metadata in-memory so reconnects can hydrate the same contexts before the next `/notes/view` call.
 
 ## Response Shape (Bootstrap)
 ```json

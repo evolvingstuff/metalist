@@ -22,7 +22,9 @@ export const CONFIG = {
             UNDO: `${API_NOTES_BASE}/undo`,
             REDO: `${API_NOTES_BASE}/redo`,
             VIEW: `${API_NOTES_BASE}/view`,
-            TAB_STATE: `${API_NOTES_BASE}/tab-state`
+            TAB_STATE: `${API_NOTES_BASE}/tab-state`,
+            TAB_STATE_NEW_TAB: `${API_NOTES_BASE}/tab-state/new-tab`,
+            TAB_STATE_DELETE_TAB: `${API_NOTES_BASE}/tab-state/delete-tab`,
         },
         AUTH: {
             STATUS: `${API_AUTH_BASE}/status`,
@@ -88,5 +90,10 @@ export const CONFIG = {
     
     EDITOR: {
         DEFAULT_CURSOR_POSITION: 'END'    // Where to place cursor when entering edit mode ('START' or 'END')
-    }
+    },
+
+    TABS: {
+        MAX_TABS: 10,
+        CREATE_AND_SWITCH: true,
+    },
 };

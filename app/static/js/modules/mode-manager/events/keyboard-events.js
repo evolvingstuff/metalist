@@ -8,8 +8,10 @@ import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
-import { persistTabStateSnapshot } from '../services/tab-state-service.js';
-import { cacheNotesDomForTab, clearAllCachedNotesDom, restoreNotesDomForTab } from '../services/tab-dom-cache-service.js';
+import { CONFIG } from '../../config.js';
+import { ErrorHandler } from '../../error-handler.js';
+import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
+import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 
 const memoryModal = new MemoryModal();
@@ -1002,12 +1004,19 @@ export function updateSearchContextsList() {
     
     const tabs = ModeContext.tabs;
     const activeTabId = ModeContext.activeTabId;
+    const tabOrder = ModeContext.tabOrder;
+
+    if (!CONFIG.TABS || typeof CONFIG.TABS.MAX_TABS !== 'number' || CONFIG.TABS.MAX_TABS <= 0) {
+        throw new Error('CONFIG.TABS.MAX_TABS must be a positive number');
+    }
     
     // Build the list of search contexts
     let contextsList = [];
-    const sortedTabIds = Object.keys(tabs).map(id => parseInt(id)).sort((a, b) => a - b);
-    for (let i = 0; i < sortedTabIds.length; i++) {
-        const tabId = sortedTabIds[i].toString();
+    if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
+        throw new Error('ModeContext.tabOrder must be a non-empty array');
+    }
+    for (let i = 0; i < tabOrder.length; i++) {
+        const tabId = tabOrder[i];
         const originalQuery = tabs[tabId].searchQuery || '';
         let displayQuery = originalQuery || '(empty)';
         
@@ -1017,19 +1026,23 @@ export function updateSearchContextsList() {
         }
         
         const isActive = tabId === activeTabId;
-        const isEmpty = !originalQuery || originalQuery.trim() === '';
         const activeStyle = isActive ? 'color: #90EE90;' : '';
         const hoverStyle = 'cursor: pointer; padding: 2px 0;';
-        
-        // Add red - button for active contexts (only if there are multiple tabs)
-        const deleteButton = (isActive && sortedTabIds.length > 1) ? 
-            ` <span style="color: #ff4444; cursor: pointer;" class="delete-context" data-actual-tab-id="${tabId}">-</span>` : '';
-        
-        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i}: ${displayQuery}${deleteButton}</div>`);
+
+        const atLimit = tabOrder.length >= CONFIG.TABS.MAX_TABS;
+        const addStyle = atLimit
+            ? 'color: #666; cursor: not-allowed;'
+            : 'color: #ccc; cursor: pointer;';
+        const canDelete = tabOrder.length > 1;
+        const deleteStyle = canDelete
+            ? 'color: #ff4444; cursor: pointer;'
+            : 'color: #666; cursor: not-allowed;';
+
+        const actions = ` <span style="${addStyle}" class="duplicate-context" data-source-tab-id="${tabId}">+</span>`
+            + ` <span style="${deleteStyle}" class="delete-context" data-delete-tab-id="${tabId}">-</span>`;
+
+        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i}: ${displayQuery}${actions}</div>`);
     }
-    
-    // Add the + item at the end
-    contextsList.push(`<div style="cursor: pointer; padding: 2px 0; color: #ccc;" class="add-context-item">+</div>`);
     
     if (contextsList.length > 0) {
         searchContextsList.innerHTML = contextsList.join('');
@@ -1042,117 +1055,38 @@ export function updateSearchContextsList() {
                 if (!tabId || tabId === ModeContext.activeTabId) {
                     return;
                 }
-                switchToTabContext(tabId).catch(error => {
-                    console.error('Failed to switch tab', error);
-                });
+                void switchToTabContext(tabId);
             });
             
             // Add hover effect
             item.addEventListener('mouseenter', (e) => {
-                if (e.target.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
-                    e.target.style.color = '#fff';
+                if (e.currentTarget.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
+                    e.currentTarget.style.color = '#fff';
                 }
             });
             
             item.addEventListener('mouseleave', (e) => {
-                if (e.target.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
-                    e.target.style.color = '#ccc';
+                if (e.currentTarget.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
+                    e.currentTarget.style.color = '#ccc';
                 }
             });
         });
         
-        // Add click handler for the + item
-        const addContextItem = searchContextsList.querySelector('.add-context-item');
-        if (addContextItem) {
-            addContextItem.addEventListener('click', () => {
-                if (ModeContext.isLoading) {
-                    Logger.logNoop('Tab creation ignored while request in-flight', {
-                        activeTab: ModeContext.activeTabId
-                    });
-                    return;
-                }
-                let nextTabId = 0;
-                while (ModeContext.tabs[nextTabId.toString()]) {
-                    nextTabId++;
-                }
-                const inheritedQuery = ModeContext.searchQuery;
-                switchToTabContext(nextTabId.toString(), { inheritSearchQuery: inheritedQuery }).catch(error => {
-                    console.error('Failed to create tab', error);
-                });
+        // Add click handlers for per-tab + (duplicate)
+        searchContextsList.querySelectorAll('.duplicate-context').forEach(addBtn => {
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
+                void duplicateTabContext(sourceTabId);
             });
-            
-            // Add hover effect for + item
-            addContextItem.addEventListener('mouseenter', (e) => {
-                e.target.style.color = '#fff';
-            });
-            
-            addContextItem.addEventListener('mouseleave', (e) => {
-                e.target.style.color = '#ccc';
-            });
-        }
+        });
         
         // Add click handler for delete buttons
         searchContextsList.querySelectorAll('.delete-context').forEach(deleteBtn => {
             deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent tab switching when clicking delete
-                if (ModeContext.isLoading) {
-                    Logger.logNoop('Tab deletion ignored while request in-flight', {
-                        activeTab: ModeContext.activeTabId
-                    });
-                    return;
-                }
-
-                // Don't delete if there's only one tab left
-                if (Object.keys(ModeContext.tabs).length <= 1) {
-                    return;
-                }
-                
-                // Get the current active tab ID to delete
-                const deleteTabId = ModeContext.activeTabId;
-
-                // Remove the active tab
-                delete ModeContext.tabs[deleteTabId];
-
-                // Get all remaining tabs and their data
-                const remainingData = [];
-                const sortedIds = Object.keys(ModeContext.tabs).map(id => parseInt(id)).sort((a, b) => a - b);
-                for (const id of sortedIds) {
-                    remainingData.push(ModeContext.tabs[id.toString()]);
-                }
-
-                // Clear tabs and rebuild with consecutive numbering
-                const rebuiltTabs = {};
-                for (let i = 0; i < remainingData.length; i++) {
-                    const tabId = i.toString();
-                    const data = remainingData[i] || { searchQuery: '', scrollY: 0 };
-                    rebuiltTabs[tabId] = {
-                        searchQuery: data.searchQuery || '',
-                        scrollY: typeof data.scrollY === 'number' && data.scrollY >= 0 ? data.scrollY : 0
-                    };
-                }
-                ModeContext.hydrateTabState({
-                    activeTabId: '0',
-                    tabs: Object.keys(rebuiltTabs).length ? rebuiltTabs : { '0': { searchQuery: '', scrollY: 0 } }
-                });
-
-                clearAllCachedNotesDom();
-                ModeContext.clearAllTabViewCaches();
-
-                const searchInput = document.getElementById('search-input');
-                if (searchInput) {
-                    searchInput.value = ModeContext.searchQuery;
-                }
-
-                updateSearchContextsList();
-
-                persistTabStateSnapshot().catch(error => {
-                    console.error('Failed to persist tab state after deletion', error);
-                });
-
-                import('../actions/ui-actions.js').then(async ({ actionRefreshAndMaybeSelect }) => {
-                    await actionRefreshAndMaybeSelect();
-                    ModeContext.restoreScrollForActiveTab();
-                });
+                e.stopPropagation();
+                const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');
+                void deleteTabContext(deleteTabId);
             });
         });
         
@@ -1161,7 +1095,7 @@ export function updateSearchContextsList() {
     }
 }
 
-async function switchToTabContext(tabId, options = {}) {
+async function switchToTabContext(tabId) {
     if (ModeContext.isLoading) {
         Logger.logNoop('Tab switch ignored while request in-flight', {
             requestedTab: tabId,
@@ -1178,15 +1112,7 @@ async function switchToTabContext(tabId, options = {}) {
 
         ModeContext.switchToTab(tabId);
         cacheNotesDomForTab(previousTabId);
-        const { inheritSearchQuery } = options;
-        const skipDomRestore = typeof inheritSearchQuery === 'string';
-        if (skipDomRestore) {
-            ModeContext.setSearchQuery(inheritSearchQuery);
-        }
-
-        if (!skipDomRestore) {
-            restoreNotesDomForTab(tabId);
-        }
+        restoreNotesDomForTab(tabId);
 
         syncSearchInputField();
         updateSearchContextsList();
@@ -1200,6 +1126,113 @@ async function switchToTabContext(tabId, options = {}) {
         ModeContext.restoreScrollForActiveTab();
     } finally {
         ModeContext.endIgnoreScrollEvents();
+    }
+}
+
+function snapshotActiveTabScrollState() {
+    const currentScroll = Math.max(0, Math.round(window.scrollY));
+    ModeContext.updateActiveTabScroll(currentScroll);
+    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+}
+
+async function duplicateTabContext(sourceTabId) {
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Tab duplication ignored while request in-flight', {
+            activeTab: ModeContext.activeTabId,
+            sourceTabId,
+        });
+        return;
+    }
+    if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
+        throw new Error('sourceTabId is required for tab duplication');
+    }
+    if (!CONFIG.TABS || typeof CONFIG.TABS.MAX_TABS !== 'number' || CONFIG.TABS.MAX_TABS <= 0) {
+        throw new Error('CONFIG.TABS.MAX_TABS must be a positive number');
+    }
+    if (typeof CONFIG.TABS.CREATE_AND_SWITCH !== 'boolean') {
+        throw new Error('CONFIG.TABS.CREATE_AND_SWITCH must be a boolean');
+    }
+
+    if (!ModeContext.tabs[sourceTabId]) {
+        throw new Error(`Cannot duplicate missing tab: ${sourceTabId}`);
+    }
+
+    const payload = ModeContext.getTabStatePayload();
+    if (payload.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
+        ErrorHandler.showInfoBanner(`Tab limit reached (${CONFIG.TABS.MAX_TABS}). Close a tab before adding another.`);
+        return;
+    }
+
+    snapshotActiveTabScrollState();
+    await persistTabStateSnapshot();
+
+    const response = await createTabOnServer(sourceTabId);
+    const newTabId = response?.newTabId;
+    if (typeof newTabId !== 'string' || newTabId.length === 0) {
+        throw new Error('Server did not return newTabId');
+    }
+
+    const cloneResult = cloneNotesDomForTab(sourceTabId, newTabId, { activeTabId: ModeContext.activeTabId });
+    if (!cloneResult.cloned) {
+        ErrorHandler.showInfoBanner('Tab not cached yet; duplicated tab will populate after refresh.');
+    }
+
+    ModeContext.hydrateTabState(response);
+    if (cloneResult.noteHashes instanceof Map) {
+        ModeContext.seedTabNoteHashes(newTabId, cloneResult.noteHashes);
+    }
+    updateSearchContextsList();
+
+    if (CONFIG.TABS.CREATE_AND_SWITCH) {
+        await switchToTabContext(newTabId);
+        return;
+    }
+
+    return;
+}
+
+async function deleteTabContext(deleteTabId) {
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Tab deletion ignored while request in-flight', {
+            activeTab: ModeContext.activeTabId,
+            deleteTabId,
+        });
+        return;
+    }
+    if (typeof deleteTabId !== 'string' || deleteTabId.length === 0) {
+        throw new Error('deleteTabId is required for tab deletion');
+    }
+
+    const payload = ModeContext.getTabStatePayload();
+    if (payload.tabOrder.length <= 1) {
+        return;
+    }
+    if (!payload.tabs[deleteTabId]) {
+        throw new Error(`Cannot delete missing tab: ${deleteTabId}`);
+    }
+
+    const activeBeforeDelete = ModeContext.activeTabId;
+
+    if (deleteTabId === activeBeforeDelete) {
+        clearActiveNotesDom();
+    } else {
+        clearCachedNotesDomForTab(deleteTabId);
+    }
+
+    snapshotActiveTabScrollState();
+    await persistTabStateSnapshot();
+
+    const response = await deleteTabOnServer(deleteTabId);
+    ModeContext.hydrateTabState(response);
+
+    syncSearchInputField();
+    updateSearchContextsList();
+
+    if (ModeContext.activeTabId !== activeBeforeDelete) {
+        restoreNotesDomForTab(ModeContext.activeTabId);
+        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+        await actionRefreshAndMaybeSelect();
+        ModeContext.restoreScrollForActiveTab();
     }
 }
 

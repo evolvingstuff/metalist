@@ -25,6 +25,12 @@ function ensureCacheContainer(tabId) {
     return container;
 }
 
+function clearContainer(container) {
+    while (container.firstChild) {
+        container.removeChild(container.firstChild);
+    }
+}
+
 export function cacheNotesDomForTab(tabId) {
     requireTabId(tabId);
     const notesContainer = requireNotesContainer();
@@ -57,6 +63,64 @@ export function restoreNotesDomForTab(tabId) {
     return { restored: hadNodes, moved };
 }
 
+export function cloneNotesDomForTab(sourceTabId, targetTabId, options = {}) {
+    requireTabId(sourceTabId);
+    requireTabId(targetTabId);
+    if (sourceTabId === targetTabId) {
+        throw new Error('sourceTabId and targetTabId must differ');
+    }
+
+    const cachedSource = tabDomCache.get(sourceTabId);
+    let sourceContainer = cachedSource;
+    if (!sourceContainer) {
+        const { activeTabId } = options;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('activeTabId is required when cloning from a non-cached source tab');
+        }
+        if (activeTabId !== sourceTabId) {
+            return { cloned: false, nodeCount: 0 };
+        }
+        sourceContainer = requireNotesContainer();
+    }
+
+    const targetContainer = ensureCacheContainer(targetTabId);
+    clearContainer(targetContainer);
+
+    let nodeCount = 0;
+    for (const node of Array.from(sourceContainer.childNodes)) {
+        targetContainer.appendChild(node.cloneNode(true));
+        nodeCount += 1;
+    }
+
+    const noteHashes = new Map();
+    const noteElements = targetContainer.querySelectorAll('[data-note-id]');
+    for (const element of Array.from(noteElements)) {
+        const noteId = element.dataset.noteId;
+        const hash = element.dataset.snapshotHash || element.dataset.contentHash;
+        if (typeof noteId === 'string' && noteId.length > 0 && typeof hash === 'string' && hash.length > 0) {
+            noteHashes.set(noteId, hash);
+        }
+    }
+
+    return { cloned: true, nodeCount, noteHashes };
+}
+
 export function clearAllCachedNotesDom() {
     tabDomCache.clear();
+}
+
+export function clearCachedNotesDomForTab(tabId) {
+    requireTabId(tabId);
+    tabDomCache.delete(tabId);
+}
+
+export function clearActiveNotesDom() {
+    const notesContainer = requireNotesContainer();
+    if (typeof notesContainer.replaceChildren === 'function') {
+        notesContainer.replaceChildren();
+        return;
+    }
+    while (notesContainer.firstChild) {
+        notesContainer.removeChild(notesContainer.firstChild);
+    }
 }

@@ -4,6 +4,8 @@ import { ErrorHandler } from '../../error-handler.js';
 import { computeScrollAnchor } from './scroll-anchor-service.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
+const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
+const TAB_STATE_DELETE_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DELETE_TAB;
 const SCROLL_POLL_INTERVAL_MS = 1000;
 
 let lastSignature = null;
@@ -18,7 +20,7 @@ export async function initializeTabStateService() {
     const serverState = await fetchTabState();
     ModeContext.hydrateTabState(serverState, { emitUpdate: false });
     ModeContext.setTabStateVersion(typeof serverState.version === 'number' ? serverState.version : 0);
-    lastSignature = serializeState(serverState);
+    lastSignature = serializeState(canonicalizeState(serverState));
     startScrollWatcher();
     startScrollPolling();
     return serverState;
@@ -26,13 +28,33 @@ export async function initializeTabStateService() {
 
 export async function persistTabStateSnapshot() {
     const snapshot = ModeContext.getTabStatePayload();
-    const signature = serializeState(snapshot);
+    const signature = serializeState(canonicalizeState(snapshot));
     if (signature === lastSignature) {
         return;
     }
     const response = await callTabStateApi('POST', snapshot);
     ModeContext.setTabStateVersion(typeof response.version === 'number' ? response.version : 0);
-    lastSignature = serializeState(response);
+    lastSignature = serializeState(canonicalizeState(response));
+}
+
+function canonicalizeState(state) {
+    if (!state || typeof state !== 'object') {
+        throw new Error('tab-state payload must be an object');
+    }
+    return {
+        activeTabId: state.activeTabId,
+        tabs: state.tabs,
+        tabOrder: state.tabOrder,
+        version: state.version,
+    };
+}
+
+function captureServerSignature(state) {
+    if (!state || typeof state !== 'object') {
+        throw new Error('tab-state response missing payload');
+    }
+    ModeContext.setTabStateVersion(typeof state.version === 'number' ? state.version : 0);
+    lastSignature = serializeState(canonicalizeState(state));
 }
 
 async function fetchTabState() {
@@ -40,6 +62,13 @@ async function fetchTabState() {
 }
 
 async function callTabStateApi(method, body = null) {
+    return await callTabStateApiAt(TAB_STATE_ENDPOINT, method, body);
+}
+
+async function callTabStateApiAt(endpoint, method, body = null) {
+    if (typeof endpoint !== 'string' || endpoint.length === 0) {
+        throw new Error('tab-state endpoint must be a non-empty string');
+    }
     const headers = { 'Content-Type': 'application/json' };
     const tabId = sessionStorage.getItem('metalist_tab_id');
     if (!tabId) {
@@ -50,7 +79,7 @@ async function callTabStateApi(method, body = null) {
     if (authToken) {
         headers['Authorization'] = `Bearer ${authToken}`;
     }
-    const response = await fetch(TAB_STATE_ENDPOINT, {
+    const response = await fetch(endpoint, {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
@@ -60,6 +89,24 @@ async function callTabStateApi(method, body = null) {
         throw new Error(`tab-state ${method} failed with status ${response.status}`);
     }
     return await response.json();
+}
+
+export async function createTabOnServer(copyFromTabId) {
+    if (typeof copyFromTabId !== 'string' || copyFromTabId.length === 0) {
+        throw new Error('copyFromTabId must be a non-empty string');
+    }
+    const response = await callTabStateApiAt(TAB_STATE_NEW_TAB_ENDPOINT, 'POST', { copyFromTabId });
+    captureServerSignature(response);
+    return response;
+}
+
+export async function deleteTabOnServer(tabId) {
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('tabId must be a non-empty string');
+    }
+    const response = await callTabStateApiAt(TAB_STATE_DELETE_TAB_ENDPOINT, 'POST', { tabId });
+    captureServerSignature(response);
+    return response;
 }
 
 function startScrollWatcher() {
