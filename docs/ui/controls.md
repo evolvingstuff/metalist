@@ -21,6 +21,7 @@
 | Action | Result |
 |--------|--------|
 | Click `+` button | Add new note at top |
+| Click `↑` button | Scroll to the top |
 | Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
 
