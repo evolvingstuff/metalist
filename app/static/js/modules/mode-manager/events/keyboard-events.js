@@ -1038,8 +1038,18 @@ export function updateSearchContextsList() {
             ? 'color: #ff4444; cursor: pointer;'
             : 'color: #666; cursor: not-allowed;';
 
-        const actions = ` <span style="${addStyle}" class="duplicate-context" data-source-tab-id="${tabId}">+</span>`
-            + ` <span style="${deleteStyle}" class="delete-context" data-delete-tab-id="${tabId}">-</span>`;
+        const canMoveUp = tabOrder.length > 1 && i > 0;
+        const canMoveDown = tabOrder.length > 1 && i < tabOrder.length - 1;
+
+        const actionBtnBox = 'display: inline-block; width: 14px; text-align: center;';
+        const actionBtnSpacer = 'margin-left: 4px;';
+        const moveEnabledStyle = 'color: #ccc; cursor: pointer;';
+        const moveHiddenStyle = 'visibility: hidden; cursor: default; pointer-events: none;';
+
+        const actions = ` <span style="${actionBtnBox}${actionBtnSpacer}${addStyle}" class="duplicate-context" data-source-tab-id="${tabId}">+</span>`
+            + ` <span style="${actionBtnBox}${actionBtnSpacer}${deleteStyle}" class="delete-context" data-delete-tab-id="${tabId}">-</span>`
+            + ` <span style="${actionBtnBox}${actionBtnSpacer}${canMoveUp ? moveEnabledStyle : moveHiddenStyle}" class="move-up-context" data-move-tab-id="${tabId}">↑</span>`
+            + ` <span style="${actionBtnBox}${actionBtnSpacer}${canMoveDown ? moveEnabledStyle : moveHiddenStyle}" class="move-down-context" data-move-tab-id="${tabId}">↓</span>`;
 
         contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i}: ${displayQuery}${actions}</div>`);
     }
@@ -1087,6 +1097,22 @@ export function updateSearchContextsList() {
                 e.stopPropagation();
                 const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');
                 void deleteTabContext(deleteTabId);
+            });
+        });
+
+        searchContextsList.querySelectorAll('.move-up-context').forEach(moveBtn => {
+            moveBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
+                void moveTabContext(moveTabId, -1);
+            });
+        });
+
+        searchContextsList.querySelectorAll('.move-down-context').forEach(moveBtn => {
+            moveBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
+                void moveTabContext(moveTabId, 1);
             });
         });
         
@@ -1189,6 +1215,47 @@ async function duplicateTabContext(sourceTabId) {
     }
 
     return;
+}
+
+async function moveTabContext(tabId, delta) {
+    if (ModeContext.isLoading) {
+        Logger.logNoop('Tab reorder ignored while request in-flight', {
+            activeTab: ModeContext.activeTabId,
+            tabId,
+        });
+        return;
+    }
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('tabId is required for tab reorder');
+    }
+    if (delta !== -1 && delta !== 1) {
+        throw new Error('delta must be -1 or 1 for tab reorder');
+    }
+
+    const tabOrder = ModeContext.tabOrder;
+    if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
+        throw new Error('ModeContext.tabOrder must be a non-empty array');
+    }
+    if (tabOrder.length === 1) {
+        return;
+    }
+
+    const index = tabOrder.indexOf(tabId);
+    if (index === -1) {
+        return;
+    }
+    const target = index + delta;
+    if (target < 0 || target >= tabOrder.length) {
+        return;
+    }
+
+    const currentScroll = Math.max(0, Math.round(window.scrollY));
+    ModeContext.updateActiveTabScroll(currentScroll);
+    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+
+    ModeContext.moveTabInOrder(tabId, delta);
+    updateSearchContextsList();
+    await persistTabStateSnapshot();
 }
 
 async function deleteTabContext(deleteTabId) {
