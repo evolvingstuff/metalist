@@ -1213,6 +1213,6 @@ function syncSearchInputField() {
 async function persistCurrentTabState() {
     const currentScroll = Math.max(0, Math.round(window.scrollY));
     ModeContext.updateActiveTabScroll(currentScroll);
-    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'center' }), true);
+    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
     await persistTabStateSnapshot();
 }

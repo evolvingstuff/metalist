@@ -8,13 +8,35 @@ function clampNumber(value, min, max) {
 }
 
 function getViewportReferenceY(anchorBias) {
+    const topInset = getViewportTopInset();
     if (anchorBias === 'center') {
-        return window.innerHeight / 2;
+        return topInset + (window.innerHeight - topInset) / 2;
     }
     if (anchorBias === 'top') {
-        return 0;
+        return topInset;
     }
     throw new Error(`Unsupported anchorBias: ${anchorBias}`);
+}
+
+function getViewportTopInset() {
+    const candidates = [
+        document.querySelector('.global-controls'),
+        document.querySelector('.controls'),
+        document.getElementById('search-contexts-list'),
+        document.getElementById('tab-indicator'),
+    ].filter(Boolean);
+
+    let maxBottom = 0;
+    for (const element of candidates) {
+        const rect = element.getBoundingClientRect();
+        if (rect.top > 200) {
+            continue;
+        }
+        if (rect.bottom > maxBottom) {
+            maxBottom = rect.bottom;
+        }
+    }
+    return Math.max(0, Math.round(maxBottom));
 }
 
 function getScrollMaxY() {

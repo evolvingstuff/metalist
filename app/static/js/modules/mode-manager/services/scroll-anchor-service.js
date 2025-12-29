@@ -10,13 +10,36 @@ function clampNumber(value, min, max) {
 }
 
 function getViewportReferenceY(anchorBias) {
+    const topInset = getViewportTopInset();
     if (anchorBias === 'center') {
-        return window.innerHeight / 2;
+        return topInset + (window.innerHeight - topInset) / 2;
     }
     if (anchorBias === 'top') {
-        return 0;
+        return topInset;
     }
     throw new Error(`Unsupported anchorBias: ${anchorBias}`);
+}
+
+function getViewportTopInset() {
+    const candidates = [
+        document.querySelector('.global-controls'),
+        document.querySelector('.controls'),
+        document.getElementById('search-contexts-list'),
+        document.getElementById('tab-indicator'),
+    ].filter(Boolean);
+
+    let maxBottom = 0;
+    for (const element of candidates) {
+        const rect = element.getBoundingClientRect();
+        // Ignore elements far below the fold.
+        if (rect.top > 200) {
+            continue;
+        }
+        if (rect.bottom > maxBottom) {
+            maxBottom = rect.bottom;
+        }
+    }
+    return Math.max(0, Math.round(maxBottom));
 }
 
 function requireNotesContainer() {
@@ -91,7 +114,7 @@ function findAnchorIndex(noteElements, anchorBias) {
 }
 
 export function computeScrollAnchor(options = {}) {
-    const anchorBias = options.anchorBias || 'center';
+    const requestedBias = options.anchorBias || 'center';
     const beltSize = typeof options.beltSize === 'number' ? options.beltSize : DEFAULT_BELT_SIZE;
     if (!Number.isInteger(beltSize) || beltSize < 0 || beltSize > 10) {
         throw new Error('beltSize must be an integer between 0 and 10');
@@ -103,7 +126,37 @@ export function computeScrollAnchor(options = {}) {
         return null;
     }
 
-    const anchorIndex = findAnchorIndex(noteElements, anchorBias);
+    let anchorBias = requestedBias;
+    let anchorIndex = -1;
+    if (requestedBias === 'auto') {
+        const topRef = getViewportReferenceY('top');
+        let bestPinnedIndex = -1;
+        let bestPinnedDistance = Infinity;
+        for (let i = 0; i < noteElements.length; i += 1) {
+            const element = noteElements[i];
+            if (!element) continue;
+            const rect = element.getBoundingClientRect();
+            if (rect.bottom <= topRef) continue;
+            const dist = Math.abs(rect.top - topRef);
+            if (dist <= 80 && dist < bestPinnedDistance) {
+                bestPinnedIndex = i;
+                bestPinnedDistance = dist;
+            }
+        }
+        if (bestPinnedIndex >= 0) {
+            anchorBias = 'top';
+            anchorIndex = bestPinnedIndex;
+        } else {
+            anchorBias = 'center';
+            anchorIndex = findAnchorIndex(noteElements, anchorBias);
+        }
+    } else {
+        if (anchorBias !== 'center' && anchorBias !== 'top') {
+            throw new Error(`Unsupported anchorBias: ${anchorBias}`);
+        }
+        anchorIndex = findAnchorIndex(noteElements, anchorBias);
+    }
+
     if (anchorIndex < 0 || anchorIndex >= noteIds.length) {
         return null;
     }

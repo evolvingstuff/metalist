@@ -119,7 +119,7 @@ async function pollPersistScroll() {
     }
     // Update local state first so the snapshot reflects latest scroll
     ModeContext.updateActiveTabScroll(current);
-    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'center' }), true);
+    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
     await persistTabStateSnapshot();
     lastPersistedScrollByTab[tabId] = current;
 }

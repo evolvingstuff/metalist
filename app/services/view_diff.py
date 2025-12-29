@@ -54,6 +54,9 @@ def _diff_sibling_order(previous_ids: Sequence[str], desired_ids: Sequence[str])
                 'fromIndex': idx,
             })
 
+    # Deletions shift sibling indices; keep the position map consistent before moves.
+    _reindex(position, working, start=0)
+
     for target_index, note_id in enumerate(desired_ids):
         existing_index = position.get(note_id, -1)
         if existing_index == -1:
@@ -68,6 +71,15 @@ def _diff_sibling_order(previous_ids: Sequence[str], desired_ids: Sequence[str])
 
         if existing_index == target_index:
             continue
+
+        assert 0 <= existing_index < len(working), (
+            f"diff invariant violated: index out of range: noteId={note_id} "
+            f"index={existing_index} len={len(working)}"
+        )
+        assert working[existing_index] == note_id, (
+            f"diff invariant violated: position map mismatch: noteId={note_id} "
+            f"index={existing_index} actualId={working[existing_index]}"
+        )
 
         working.pop(existing_index)
         working.insert(target_index, note_id)
