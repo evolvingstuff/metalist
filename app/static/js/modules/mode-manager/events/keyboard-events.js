@@ -10,6 +10,7 @@ import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { persistTabStateSnapshot } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, clearAllCachedNotesDom, restoreNotesDomForTab } from '../services/tab-dom-cache-service.js';
+import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -1212,5 +1213,6 @@ function syncSearchInputField() {
 async function persistCurrentTabState() {
     const currentScroll = Math.max(0, Math.round(window.scrollY));
     ModeContext.updateActiveTabScroll(currentScroll);
+    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'center' }), true);
     await persistTabStateSnapshot();
 }

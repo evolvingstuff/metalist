@@ -1,5 +1,6 @@
 import * as Logger from './mode-logger.js';
 import { CONFIG } from '../config.js';
+import { restoreScrollFromAnchor } from './services/scroll-restoration-service.js';
 
 class ModeContext {
     constructor() {
@@ -39,7 +40,7 @@ class ModeContext {
         // Tab state management
         this._activeTabId = '0';
         this._tabs = {
-            '0': { searchQuery: '', scrollY: 0 }
+            '0': { searchQuery: '', scrollY: 0, scrollAnchor: null }
         };
         this._tabRootAnchors = Object.create(null);
         
@@ -793,7 +794,7 @@ class ModeContext {
     // Tab management methods
     _ensureTabEntry(tabId) {
         if (!this._tabs[tabId]) {
-            this._tabs[tabId] = { searchQuery: '', scrollY: 0 };
+            this._tabs[tabId] = { searchQuery: '', scrollY: 0, scrollAnchor: null };
         }
         this._ensureTabNoteHashes(tabId);
         return this._tabs[tabId];
@@ -842,12 +843,13 @@ class ModeContext {
         const tabs = {};
         const tabIds = Object.keys(this._tabs).sort();
         for (const tabId of tabIds) {
-            const entry = this._tabs[tabId] || { searchQuery: '', scrollY: 0, anchorRootId: null };
+            const entry = this._tabs[tabId] || { searchQuery: '', scrollY: 0, anchorRootId: null, scrollAnchor: null };
             const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0 ? entry.scrollY : 0;
             tabs[tabId] = {
                 searchQuery: typeof entry.searchQuery === 'string' ? entry.searchQuery : '',
                 scrollY,
                 anchorRootId: this._tabRootAnchors[tabId] || null,
+                scrollAnchor: entry.scrollAnchor || null,
             };
         }
         return {
@@ -886,10 +888,46 @@ class ModeContext {
             ) {
                 throw new Error(`Invalid anchorRootId for tab ${tabId}`);
             }
+
+            if (entry.scrollAnchor !== null && entry.scrollAnchor !== undefined && typeof entry.scrollAnchor !== 'object') {
+                throw new Error(`Invalid scrollAnchor for tab ${tabId}`);
+            }
             const searchQuery = entry.searchQuery;
             const scrollY = entry.scrollY;
             const anchorRootId = entry.anchorRootId || null;
-            normalized[tabId] = { searchQuery, scrollY, anchorRootId };
+
+            let scrollAnchor = null;
+            if (entry.scrollAnchor && typeof entry.scrollAnchor === 'object') {
+                const candidate = entry.scrollAnchor;
+                if (typeof candidate.anchorId !== 'string' || candidate.anchorId.length === 0) {
+                    throw new Error(`scrollAnchor.anchorId missing for tab ${tabId}`);
+                }
+                if (candidate.anchorBias !== 'center' && candidate.anchorBias !== 'top') {
+                    throw new Error(`scrollAnchor.anchorBias invalid for tab ${tabId}`);
+                }
+                if (typeof candidate.intraOffset !== 'number' || candidate.intraOffset < 0) {
+                    throw new Error(`scrollAnchor.intraOffset invalid for tab ${tabId}`);
+                }
+                if (!Array.isArray(candidate.beltPrev) || !Array.isArray(candidate.beltNext)) {
+                    throw new Error(`scrollAnchor belt invalid for tab ${tabId}`);
+                }
+                if (!candidate.anchorSortKey || typeof candidate.anchorSortKey !== 'object') {
+                    throw new Error(`scrollAnchor.anchorSortKey missing for tab ${tabId}`);
+                }
+                if (typeof candidate.anchorSortKey.domIndex !== 'number' || candidate.anchorSortKey.domIndex < 0) {
+                    throw new Error(`scrollAnchor.anchorSortKey.domIndex invalid for tab ${tabId}`);
+                }
+                scrollAnchor = {
+                    anchorId: candidate.anchorId,
+                    anchorBias: candidate.anchorBias,
+                    intraOffset: candidate.intraOffset,
+                    beltPrev: candidate.beltPrev.filter(id => typeof id === 'string' && id.length > 0),
+                    beltNext: candidate.beltNext.filter(id => typeof id === 'string' && id.length > 0),
+                    anchorSortKey: { domIndex: candidate.anchorSortKey.domIndex },
+                };
+            }
+
+            normalized[tabId] = { searchQuery, scrollY, anchorRootId, scrollAnchor };
             this._tabRootAnchors[tabId] = anchorRootId;
         }
         if (!normalized[activeTabId]) {
@@ -937,10 +975,33 @@ class ModeContext {
         }
         entry.scrollY = scrollY;
         this._tabRootAnchors[tabId] = null;
+        entry.scrollAnchor = null;
         if (emit) {
             this._emitTabStateMutation('scroll');
         }
         return this;
+    }
+
+    updateActiveTabScrollAnchor(scrollAnchor, emit = true) {
+        return this.updateTabScrollAnchor(this._activeTabId, scrollAnchor, emit);
+    }
+
+    updateTabScrollAnchor(tabId, scrollAnchor, emit = true) {
+        const entry = this._ensureTabEntry(tabId);
+        if (scrollAnchor !== null && typeof scrollAnchor !== 'object') {
+            throw new Error('scrollAnchor must be an object or null');
+        }
+        entry.scrollAnchor = scrollAnchor;
+        if (emit) {
+            this._emitTabStateMutation('scrollAnchor');
+        }
+        return this;
+    }
+
+    getTabScrollAnchor(tabId = null) {
+        const targetTabId = tabId || this._activeTabId;
+        const entry = this._tabs[targetTabId];
+        return entry && entry.scrollAnchor ? entry.scrollAnchor : null;
     }
 
     beginIgnoreScrollEvents() {
@@ -961,8 +1022,20 @@ class ModeContext {
     }
 
     restoreScrollForActiveTab() {
-        const scrollY = this.getTabScrollPosition();
-        window.scrollTo(0, scrollY);
+        const tabId = this._activeTabId;
+        const savedAnchor = this.getTabScrollAnchor(tabId);
+        const savedScrollY = this.getTabScrollPosition(tabId);
+
+        window.requestAnimationFrame(() => {
+            this.beginIgnoreScrollEvents();
+            try {
+                restoreScrollFromAnchor(savedAnchor, { scrollYFallback: savedScrollY });
+                const entry = this._ensureTabEntry(tabId);
+                entry.scrollY = Math.max(0, Math.round(window.scrollY));
+            } finally {
+                this.endIgnoreScrollEvents();
+            }
+        });
     }
 
     switchToTab(tabId) {

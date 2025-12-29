@@ -1,6 +1,7 @@
 import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ErrorHandler } from '../../error-handler.js';
+import { computeScrollAnchor } from './scroll-anchor-service.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const SCROLL_POLL_INTERVAL_MS = 1000;
@@ -118,6 +119,7 @@ async function pollPersistScroll() {
     }
     // Update local state first so the snapshot reflects latest scroll
     ModeContext.updateActiveTabScroll(current);
+    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'center' }), true);
     await persistTabStateSnapshot();
     lastPersistedScrollByTab[tabId] = current;
 }

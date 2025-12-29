@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from threading import Lock
-from typing import Dict
+from typing import Dict, List, Optional
 
 
 class TabStateStore:
@@ -14,8 +14,8 @@ class TabStateStore:
     def __init__(self) -> None:
         self._lock = Lock()
         self._active_tab_id = self._DEFAULT_TAB_ID
-        self._tabs: Dict[str, Dict[str, int | str]] = {
-            self._DEFAULT_TAB_ID: {"searchQuery": "", "scrollY": 0}
+        self._tabs: Dict[str, Dict[str, object]] = {
+            self._DEFAULT_TAB_ID: {"searchQuery": "", "scrollY": 0, "scrollAnchor": None}
         }
         self._version = 0
 
@@ -61,9 +61,53 @@ class TabStateStore:
                 raise ValueError("searchQuery must be a string")
             if not isinstance(scroll_y, int) or scroll_y < 0:
                 raise ValueError("scrollY must be a non-negative integer")
+
+            scroll_anchor = value.get("scrollAnchor")
+            normalized_scroll_anchor: Optional[Dict[str, object]] = None
+            if scroll_anchor is not None:
+                if not isinstance(scroll_anchor, dict):
+                    raise ValueError("scrollAnchor must be an object or null")
+
+                anchor_id = scroll_anchor.get("anchorId")
+                anchor_bias = scroll_anchor.get("anchorBias")
+                intra_offset = scroll_anchor.get("intraOffset")
+                belt_prev = scroll_anchor.get("beltPrev")
+                belt_next = scroll_anchor.get("beltNext")
+                anchor_sort_key = scroll_anchor.get("anchorSortKey")
+
+                if not isinstance(anchor_id, str) or not anchor_id:
+                    raise ValueError("scrollAnchor.anchorId must be a non-empty string")
+                if anchor_bias not in ("center", "top"):
+                    raise ValueError("scrollAnchor.anchorBias must be 'center' or 'top'")
+                if not isinstance(intra_offset, int) or intra_offset < 0:
+                    raise ValueError("scrollAnchor.intraOffset must be a non-negative integer")
+                if not isinstance(belt_prev, list) or not isinstance(belt_next, list):
+                    raise ValueError("scrollAnchor belt arrays must be lists")
+
+                def _normalize_belt(payload: List[object]) -> List[str]:
+                    return [entry for entry in payload if isinstance(entry, str) and entry]
+
+                normalized_prev = _normalize_belt(belt_prev)
+                normalized_next = _normalize_belt(belt_next)
+
+                if not isinstance(anchor_sort_key, dict):
+                    raise ValueError("scrollAnchor.anchorSortKey must be an object")
+                dom_index = anchor_sort_key.get("domIndex")
+                if not isinstance(dom_index, int) or dom_index < 0:
+                    raise ValueError("scrollAnchor.anchorSortKey.domIndex must be a non-negative integer")
+
+                normalized_scroll_anchor = {
+                    "anchorId": anchor_id,
+                    "anchorBias": anchor_bias,
+                    "intraOffset": intra_offset,
+                    "beltPrev": normalized_prev,
+                    "beltNext": normalized_next,
+                    "anchorSortKey": {"domIndex": dom_index},
+                }
             normalized[tab_id] = {
                 "searchQuery": search_query,
                 "scrollY": scroll_y,
+                "scrollAnchor": normalized_scroll_anchor,
             }
         return normalized
 
