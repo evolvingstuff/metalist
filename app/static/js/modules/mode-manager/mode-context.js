@@ -42,6 +42,7 @@ class ModeContext {
         this._tabs = {
             '0': { searchQuery: '', scrollY: 0, scrollAnchor: null }
         };
+        this._tabOrder = ['0'];
         this._tabRootAnchors = Object.create(null);
         
         // Multi-device sync
@@ -163,6 +164,46 @@ class ModeContext {
         this._tabSeenRootIds[tabId].clear();
         this._tabRootOrder[tabId] = [];
         this._tabRootAnchors[tabId] = null;
+        return this;
+    }
+
+    resetTabDiffCache(tabId, options = {}) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        const preserveRootAnchor = Boolean(options.preserveRootAnchor);
+
+        this._ensureTabContainers(tabId);
+        this._tabNoteHashes[tabId].clear();
+        this._tabKnownRootIds[tabId].clear();
+        this._tabSeenRootIds[tabId].clear();
+        this._tabRootOrder[tabId] = [];
+        if (!preserveRootAnchor) {
+            this._tabRootAnchors[tabId] = null;
+        }
+        return this;
+    }
+
+    seedTabNoteHashes(tabId, noteHashes) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        if (!(noteHashes instanceof Map)) {
+            throw new Error('noteHashes must be a Map');
+        }
+
+        this._ensureTabContainers(tabId);
+        const target = this._tabNoteHashes[tabId];
+        target.clear();
+        for (const [noteId, hash] of noteHashes.entries()) {
+            if (typeof noteId !== 'string' || noteId.length === 0) {
+                throw new Error('noteHashes contains invalid noteId');
+            }
+            if (typeof hash !== 'string' || hash.length === 0) {
+                throw new Error(`noteHashes contains invalid hash for ${noteId}`);
+            }
+            target.set(noteId, hash);
+        }
         return this;
     }
 
@@ -794,7 +835,7 @@ class ModeContext {
     // Tab management methods
     _ensureTabEntry(tabId) {
         if (!this._tabs[tabId]) {
-            this._tabs[tabId] = { searchQuery: '', scrollY: 0, scrollAnchor: null };
+            throw new Error(`Unknown tabId: ${tabId}`);
         }
         this._ensureTabNoteHashes(tabId);
         return this._tabs[tabId];
@@ -812,6 +853,10 @@ class ModeContext {
 
     get tabs() {
         return this._tabs;
+    }
+
+    get tabOrder() {
+        return this._tabOrder;
     }
 
     setTabStateUpdateHook(callback) {
@@ -841,9 +886,14 @@ class ModeContext {
 
     getTabStatePayload() {
         const tabs = {};
-        const tabIds = Object.keys(this._tabs).sort();
-        for (const tabId of tabIds) {
-            const entry = this._tabs[tabId] || { searchQuery: '', scrollY: 0, anchorRootId: null, scrollAnchor: null };
+        if (!Array.isArray(this._tabOrder) || this._tabOrder.length === 0) {
+            throw new Error('tabOrder must be a non-empty array');
+        }
+        for (const tabId of this._tabOrder) {
+            const entry = this._tabs[tabId];
+            if (!entry) {
+                throw new Error(`tabOrder references missing tab ${tabId}`);
+            }
             const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0 ? entry.scrollY : 0;
             tabs[tabId] = {
                 searchQuery: typeof entry.searchQuery === 'string' ? entry.searchQuery : '',
@@ -855,6 +905,7 @@ class ModeContext {
         return {
             activeTabId: this._activeTabId,
             tabs,
+            tabOrder: this._tabOrder.slice(),
             version: this._tabStateVersion
         };
     }
@@ -864,10 +915,17 @@ class ModeContext {
         if (!state || typeof state !== 'object') {
             throw new Error('hydrateTabState requires a state object');
         }
-        const { activeTabId, tabs } = state;
+        const { activeTabId, tabs, tabOrder } = state;
         if (!tabs || typeof tabs !== 'object' || Object.keys(tabs).length === 0) {
             throw new Error('hydrateTabState requires at least one tab');
         }
+        if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
+            throw new Error('hydrateTabState requires tabOrder');
+        }
+        if (tabOrder.length !== Object.keys(tabs).length) {
+            throw new Error('hydrateTabState tabOrder length mismatch');
+        }
+        this._tabRootAnchors = Object.create(null);
         const normalized = {};
         const tabIds = Object.keys(tabs);
         for (const tabId of tabIds) {
@@ -933,6 +991,20 @@ class ModeContext {
         if (!normalized[activeTabId]) {
             throw new Error('Active tab missing from provided state');
         }
+
+        const normalizedOrder = [];
+        const seenIds = new Set();
+        for (const rawId of tabOrder) {
+            const tabId = String(rawId);
+            if (!normalized[tabId]) {
+                throw new Error(`tabOrder references missing tab ${tabId}`);
+            }
+            if (seenIds.has(tabId)) {
+                throw new Error('tabOrder contains duplicates');
+            }
+            seenIds.add(tabId);
+            normalizedOrder.push(tabId);
+        }
         const tabIdsList = Object.keys(normalized);
         const previousHashCaches = this._tabNoteHashes || Object.create(null);
         const nextHashCaches = Object.create(null);
@@ -948,6 +1020,7 @@ class ModeContext {
         }
 
         this._tabs = normalized;
+        this._tabOrder = normalizedOrder;
         this._tabNoteHashes = nextHashCaches;
         this._tabKnownRootIds = nextKnownRoots;
         this._tabSeenRootIds = nextSeenRoots;
@@ -1068,8 +1141,11 @@ class ModeContext {
     }
 
     switchToTab(tabId) {
-        if (tabId < '0' || tabId > '9') {
-            throw new Error(`Invalid tab ID: ${tabId}. Must be 0-9.`);
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('Invalid tab ID: must be a non-empty string');
+        }
+        if (!this._tabs[tabId]) {
+            throw new Error(`Invalid tab ID: ${tabId} not found`);
         }
 
         if (this._loading) {

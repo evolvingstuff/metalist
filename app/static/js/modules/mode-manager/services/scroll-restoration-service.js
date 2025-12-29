@@ -22,7 +22,6 @@ function getViewportTopInset() {
     const candidates = [
         document.querySelector('.global-controls'),
         document.querySelector('.controls'),
-        document.getElementById('search-contexts-list'),
         document.getElementById('tab-indicator'),
     ].filter(Boolean);
 
