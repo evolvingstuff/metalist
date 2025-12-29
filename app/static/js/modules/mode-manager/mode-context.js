@@ -958,6 +958,7 @@ class ModeContext {
         if (tabOrder.length !== Object.keys(tabs).length) {
             throw new Error('hydrateTabState tabOrder length mismatch');
         }
+        const previousRootAnchors = this._tabRootAnchors || Object.create(null);
         this._tabRootAnchors = Object.create(null);
         const normalized = {};
         const tabIds = Object.keys(tabs);
@@ -972,12 +973,14 @@ class ModeContext {
             if (typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
                 throw new Error(`Invalid scrollY for tab ${tabId}`);
             }
-            if (
-                entry.anchorRootId !== null
-                && entry.anchorRootId !== undefined
-                && typeof entry.anchorRootId !== 'string'
-            ) {
-                throw new Error(`Invalid anchorRootId for tab ${tabId}`);
+            if (Object.prototype.hasOwnProperty.call(entry, 'anchorRootId')) {
+                if (
+                    entry.anchorRootId !== null
+                    && entry.anchorRootId !== undefined
+                    && typeof entry.anchorRootId !== 'string'
+                ) {
+                    throw new Error(`Invalid anchorRootId for tab ${tabId}`);
+                }
             }
 
             if (entry.scrollAnchor !== null && entry.scrollAnchor !== undefined && typeof entry.scrollAnchor !== 'object') {
@@ -985,7 +988,9 @@ class ModeContext {
             }
             const searchQuery = entry.searchQuery;
             const scrollY = entry.scrollY;
-            const anchorRootId = entry.anchorRootId || null;
+            const anchorRootId = Object.prototype.hasOwnProperty.call(entry, 'anchorRootId')
+                ? (entry.anchorRootId || null)
+                : (previousRootAnchors[tabId] || null);
 
             let scrollAnchor = null;
             if (entry.scrollAnchor && typeof entry.scrollAnchor === 'object') {
@@ -1080,7 +1085,6 @@ class ModeContext {
             return this;
         }
         entry.scrollY = scrollY;
-        this._tabRootAnchors[tabId] = null;
         entry.scrollAnchor = null;
         if (emit) {
             this._emitTabStateMutation('scroll');

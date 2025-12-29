@@ -1051,7 +1051,7 @@ export function updateSearchContextsList() {
             + ` <span style="${actionBtnBox}${actionBtnSpacer}${canMoveUp ? moveEnabledStyle : moveHiddenStyle}" class="move-up-context" data-move-tab-id="${tabId}">↑</span>`
             + ` <span style="${actionBtnBox}${actionBtnSpacer}${canMoveDown ? moveEnabledStyle : moveHiddenStyle}" class="move-down-context" data-move-tab-id="${tabId}">↓</span>`;
 
-        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i}: ${displayQuery}${actions}</div>`);
+        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i + 1}: ${displayQuery}${actions}</div>`);
     }
     
     if (contextsList.length > 0) {
@@ -1192,11 +1192,43 @@ async function duplicateTabContext(sourceTabId) {
     snapshotActiveTabScrollState();
     await persistTabStateSnapshot();
 
+    const sourceEntry = ModeContext.tabs[sourceTabId];
+    if (!sourceEntry || typeof sourceEntry !== 'object') {
+        throw new Error(`Cannot duplicate tab with missing state: ${sourceTabId}`);
+    }
+
     const response = await createTabOnServer(sourceTabId);
     const newTabId = response?.newTabId;
     if (typeof newTabId !== 'string' || newTabId.length === 0) {
         throw new Error('Server did not return newTabId');
     }
+
+    if (!response || typeof response !== 'object' || !response.tabs || typeof response.tabs !== 'object') {
+        throw new Error('Server did not return tab-state payload');
+    }
+    if (!response.tabs[newTabId] || typeof response.tabs[newTabId] !== 'object') {
+        throw new Error('Server tab-state response missing new tab payload');
+    }
+
+    const sourceScrollY = typeof sourceEntry.scrollY === 'number' && sourceEntry.scrollY >= 0
+        ? Math.round(sourceEntry.scrollY)
+        : 0;
+    const sourceSearchQuery = typeof sourceEntry.searchQuery === 'string' ? sourceEntry.searchQuery : '';
+    const sourceScrollAnchor = sourceEntry.scrollAnchor && typeof sourceEntry.scrollAnchor === 'object'
+        ? sourceEntry.scrollAnchor
+        : null;
+
+    let sourceAnchorRootId = null;
+    if (sourceTabId === ModeContext.activeTabId) {
+        sourceAnchorRootId = ModeContext.getRootAnchorId() || ModeContext.getLastKnownRootId();
+    } else if (typeof sourceEntry.anchorRootId === 'string' && sourceEntry.anchorRootId.length > 0) {
+        sourceAnchorRootId = sourceEntry.anchorRootId;
+    }
+
+    response.tabs[newTabId].scrollY = sourceScrollY;
+    response.tabs[newTabId].searchQuery = sourceSearchQuery;
+    response.tabs[newTabId].scrollAnchor = sourceScrollAnchor;
+    response.tabs[newTabId].anchorRootId = sourceAnchorRootId;
 
     const cloneResult = cloneNotesDomForTab(sourceTabId, newTabId, { activeTabId: ModeContext.activeTabId });
     if (!cloneResult.cloned) {
