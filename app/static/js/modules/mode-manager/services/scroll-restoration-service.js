@@ -39,7 +39,7 @@ function getNoteElementById(noteId) {
 }
 
 function getNoteContentElement(noteElement) {
-    return noteElement.querySelector('.note-content') || noteElement;
+    return noteElement;
 }
 
 function getOrderedRootNoteIds() {
@@ -133,4 +133,3 @@ export function restoreScrollFromAnchor(savedAnchor, options = {}) {
     window.scrollTo(0, targetScrollY);
     return { restored: true, reason: 'anchor' };
 }
-

@@ -55,7 +55,7 @@ function getNoteContentElement(noteElement) {
     if (!noteElement || typeof noteElement.querySelector !== 'function') {
         throw new Error('noteElement must be a DOM element');
     }
-    return noteElement.querySelector('.note-content') || noteElement;
+    return noteElement;
 }
 
 function distanceToLine(rect, lineY) {
@@ -74,8 +74,8 @@ function findAnchorIndex(noteElements, anchorBias) {
     for (let i = 0; i < noteElements.length; i += 1) {
         const noteElement = noteElements[i];
         if (!noteElement) continue;
-        const contentElement = getNoteContentElement(noteElement);
-        const rect = contentElement.getBoundingClientRect();
+        const blockElement = getNoteContentElement(noteElement);
+        const rect = blockElement.getBoundingClientRect();
         if (rect.height <= 0) continue;
 
         const dist = distanceToLine(rect, lineY);
@@ -114,8 +114,8 @@ export function computeScrollAnchor(options = {}) {
         return null;
     }
 
-    const contentElement = getNoteContentElement(anchorElement);
-    const rect = contentElement.getBoundingClientRect();
+    const blockElement = getNoteContentElement(anchorElement);
+    const rect = blockElement.getBoundingClientRect();
     const referenceY = getViewportReferenceY(anchorBias);
     const rawOffset = referenceY - rect.top;
     const intraOffset = Math.round(clampNumber(rawOffset, 0, Math.max(0, rect.height)));
@@ -132,4 +132,3 @@ export function computeScrollAnchor(options = {}) {
         anchorSortKey: { domIndex: anchorIndex },
     };
 }
-

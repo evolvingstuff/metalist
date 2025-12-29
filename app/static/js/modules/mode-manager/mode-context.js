@@ -1026,15 +1026,44 @@ class ModeContext {
         const savedAnchor = this.getTabScrollAnchor(tabId);
         const savedScrollY = this.getTabScrollPosition(tabId);
 
-        window.requestAnimationFrame(() => {
+        let lastProgrammaticScrollY = null;
+        const applyRestore = () => {
+            if (this._activeTabId !== tabId) {
+                return;
+            }
             this.beginIgnoreScrollEvents();
             try {
                 restoreScrollFromAnchor(savedAnchor, { scrollYFallback: savedScrollY });
                 const entry = this._ensureTabEntry(tabId);
                 entry.scrollY = Math.max(0, Math.round(window.scrollY));
+                lastProgrammaticScrollY = entry.scrollY;
             } finally {
                 this.endIgnoreScrollEvents();
             }
+        };
+
+        const maybeApplyRestore = () => {
+            if (this._activeTabId !== tabId) {
+                return;
+            }
+            if (lastProgrammaticScrollY !== null) {
+                const current = Math.max(0, Math.round(window.scrollY));
+                if (Math.abs(current - lastProgrammaticScrollY) > 60) {
+                    return;
+                }
+            }
+            applyRestore();
+        };
+
+        // Multi-pass restore: fixes layout shifts after diff reconciliation (e.g. images loading).
+        window.requestAnimationFrame(() => {
+            applyRestore();
+            window.requestAnimationFrame(() => {
+                maybeApplyRestore();
+            });
+            window.setTimeout(() => {
+                maybeApplyRestore();
+            }, 250);
         });
     }
 
