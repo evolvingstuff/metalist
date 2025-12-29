@@ -400,6 +400,8 @@ ModeContext = {
 - `tab-state-service.js` fetches `/api2/notes/tab-state` on startup and hydrates
   `ModeContext` so the UI mirrors whatever the previous window last displayed.
 - Tab IDs are server-assigned UUIDs and a `tabOrder` array defines display order.
+- The UI can reorder tabs by mutating `tabOrder` (e.g. via per-tab ↑/↓ controls) and
+  persisting the updated snapshot back to `/api2/notes/tab-state`.
 - Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
   aligned with the DOM without spamming requests.
