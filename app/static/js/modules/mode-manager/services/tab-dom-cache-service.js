@@ -71,7 +71,10 @@ export function cloneNotesDomForTab(sourceTabId, targetTabId, options = {}) {
     }
 
     const cachedSource = tabDomCache.get(sourceTabId);
-    let sourceContainer = cachedSource;
+    // The cache container persists even after we restore nodes back into
+    // `#notes-container`, leaving it empty. Treat an empty cache container as
+    // a cache miss so we can clone from the active DOM when appropriate.
+    let sourceContainer = cachedSource && cachedSource.childNodes.length > 0 ? cachedSource : null;
     if (!sourceContainer) {
         const { activeTabId } = options;
         if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
@@ -90,6 +93,11 @@ export function cloneNotesDomForTab(sourceTabId, targetTabId, options = {}) {
     for (const node of Array.from(sourceContainer.childNodes)) {
         targetContainer.appendChild(node.cloneNode(true));
         nodeCount += 1;
+    }
+
+    const collectNoteHashes = options.collectNoteHashes !== false;
+    if (!collectNoteHashes) {
+        return { cloned: true, nodeCount, noteHashes: null };
     }
 
     const noteHashes = new Map();

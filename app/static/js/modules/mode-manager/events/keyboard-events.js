@@ -1121,7 +1121,7 @@ export function updateSearchContextsList() {
     }
 }
 
-async function switchToTabContext(tabId) {
+async function switchToTabContext(tabId, options = {}) {
     if (ModeContext.isLoading) {
         Logger.logNoop('Tab switch ignored while request in-flight', {
             requestedTab: tabId,
@@ -1161,7 +1161,12 @@ async function switchToTabContext(tabId) {
 
         const startedAt = performance.now();
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-        await actionRefreshAndMaybeSelect({ startedAt, context: perfContext });
+        await actionRefreshAndMaybeSelect({
+            startedAt,
+            context: perfContext,
+            expectedUpdatedNotesMax: options.expectedUpdatedNotesMax,
+            expectedVdomOpsMax: options.expectedVdomOpsMax,
+        });
 
         ModeContext.restoreScrollForActiveTab();
     } finally {
@@ -1244,19 +1249,39 @@ async function duplicateTabContext(sourceTabId) {
     response.tabs[newTabId].scrollAnchor = sourceScrollAnchor;
     response.tabs[newTabId].anchorRootId = sourceAnchorRootId;
 
-    const cloneResult = cloneNotesDomForTab(sourceTabId, newTabId, { activeTabId: ModeContext.activeTabId });
+    const sourceHashCount = ModeContext.getTabNoteHashCount(sourceTabId);
+    if (sourceHashCount <= 0) {
+        throw new Error('Cannot duplicate tab: source tab has no diff cache yet');
+    }
+    const cloneResult = cloneNotesDomForTab(sourceTabId, newTabId, {
+        activeTabId: ModeContext.activeTabId,
+        collectNoteHashes: sourceHashCount === 0,
+    });
     if (!cloneResult.cloned) {
-        ErrorHandler.showInfoBanner('Tab not cached yet; duplicated tab will populate after refresh.');
+        throw new Error('Cannot duplicate tab: source tab DOM is not cached');
     }
 
     ModeContext.hydrateTabState(response);
-    if (cloneResult.noteHashes instanceof Map) {
-        ModeContext.seedTabNoteHashes(newTabId, cloneResult.noteHashes);
+
+    // Only seed the new tab's diff cache if we also cloned its DOM.
+    // If we seed hashes without DOM, the server can legitimately return a
+    // bootstrap payload with an empty `notes` map (hashes match), and the
+    // client would then crash when it needs note payloads to insert nodes.
+    if (cloneResult.cloned && cloneResult.nodeCount > 0) {
+        const hashCloneResult = ModeContext.cloneTabNoteHashes(sourceTabId, newTabId);
+        if (!hashCloneResult.cloned && cloneResult.noteHashes instanceof Map) {
+            ModeContext.seedTabNoteHashes(newTabId, cloneResult.noteHashes);
+        } else if (!hashCloneResult.cloned) {
+            throw new Error('Cannot duplicate tab: failed to seed diff cache for new tab');
+        }
     }
     updateSearchContextsList();
 
     if (CONFIG.TABS.CREATE_AND_SWITCH) {
-        await switchToTabContext(newTabId);
+        await switchToTabContext(newTabId, {
+            expectedUpdatedNotesMax: 0,
+            expectedVdomOpsMax: 0,
+        });
         return;
     }
 

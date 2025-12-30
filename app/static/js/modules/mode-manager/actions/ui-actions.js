@@ -214,6 +214,17 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
 
         const vdom_ops = Number.isInteger(diffResult.vdomOperations) ? diffResult.vdomOperations : 0;
 
+        if (typeof options.expectedUpdatedNotesMax === 'number' && updatedNotesCount > options.expectedUpdatedNotesMax) {
+            throw new Error(
+                `Invariant violation: expected <=${options.expectedUpdatedNotesMax} updated notes but got ${updatedNotesCount} (context=${context})`
+            );
+        }
+        if (typeof options.expectedVdomOpsMax === 'number' && vdom_ops > options.expectedVdomOpsMax) {
+            throw new Error(
+                `Invariant violation: expected <=${options.expectedVdomOpsMax} vdom ops but got ${vdom_ops} (context=${context})`
+            );
+        }
+
         console.log(' [PERF] notes.view render:', {
             ms: Number(renderMs.toFixed(2))
         });

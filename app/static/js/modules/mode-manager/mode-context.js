@@ -207,6 +207,63 @@ class ModeContext {
         return this;
     }
 
+    getTabNoteHashCount(tabId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        if (!this._tabs[tabId]) {
+            throw new Error(`Unknown tabId: ${tabId}`);
+        }
+        this._ensureTabContainers(tabId);
+        const hashes = this._tabNoteHashes[tabId];
+        if (!(hashes instanceof Map)) {
+            throw new Error(`Invariant violation: tab note hashes missing for ${tabId}`);
+        }
+        return hashes.size;
+    }
+
+    cloneTabNoteHashes(sourceTabId, targetTabId) {
+        if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
+            throw new Error('sourceTabId must be a non-empty string');
+        }
+        if (typeof targetTabId !== 'string' || targetTabId.length === 0) {
+            throw new Error('targetTabId must be a non-empty string');
+        }
+        if (sourceTabId === targetTabId) {
+            throw new Error('sourceTabId and targetTabId must differ');
+        }
+        if (!this._tabs[sourceTabId]) {
+            throw new Error(`Unknown sourceTabId: ${sourceTabId}`);
+        }
+        if (!this._tabs[targetTabId]) {
+            throw new Error(`Unknown targetTabId: ${targetTabId}`);
+        }
+
+        this._ensureTabContainers(sourceTabId);
+        this._ensureTabContainers(targetTabId);
+
+        const source = this._tabNoteHashes[sourceTabId];
+        const target = this._tabNoteHashes[targetTabId];
+        if (!(source instanceof Map) || !(target instanceof Map)) {
+            throw new Error('Invariant violation: tab note hashes missing');
+        }
+        if (source.size === 0) {
+            return { cloned: false, count: 0 };
+        }
+
+        target.clear();
+        for (const [noteId, hash] of source.entries()) {
+            if (typeof noteId !== 'string' || noteId.length === 0) {
+                throw new Error('source noteHashes contains invalid noteId');
+            }
+            if (typeof hash !== 'string' || hash.length === 0) {
+                throw new Error(`source noteHashes contains invalid hash for ${noteId}`);
+            }
+            target.set(noteId, hash);
+        }
+        return { cloned: true, count: target.size };
+    }
+
     clearAllTabViewCaches() {
         const tabIds = new Set([
             ...Object.keys(this._tabs || {}),

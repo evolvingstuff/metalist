@@ -67,7 +67,47 @@ def view_diff(payload: dict):
     cached_state = view_cache.get(**cache_key)
     client_has_state = bool(client_hashes)
 
-    if not cached_state or not client_has_state:
+    if not cached_state:
+        view_cache.set(state=state, **cache_key)
+        filtered_notes = {
+            note_id: data
+            for note_id, data in state.payloads.items()
+            if client_hashes.get(note_id) != data.get("hash")
+        }
+
+        # Optimization: when the server cache is cold but the client already has a
+        # complete, matching hash map for the visible window, avoid resending the
+        # full structure + note payloads. This is common when a new tab is created
+        # by cloning the existing DOM.
+        if client_has_state and not filtered_notes:
+            response_snapshot = {
+                "diffOps": [],
+                "notes": {},
+                "locks": state.locks,
+                "rootIds": root_ids,
+                "lockDiffs": {},
+                "updateUUID": update_uuid,
+                "version": VERSION,
+                "currentClientId": client_id,
+                "searchQuery": search,
+                "editingNoteId": editing_note_id,
+            }
+            return {"snapshot": response_snapshot, "updateUUID": update_uuid}
+
+        response_snapshot = {
+            "structure": state.structure,
+            "notes": filtered_notes,
+            "locks": state.locks,
+            "rootIds": root_ids,
+            "updateUUID": update_uuid,
+            "version": VERSION,
+            "currentClientId": client_id,
+            "searchQuery": search,
+            "editingNoteId": editing_note_id,
+        }
+        return {"snapshot": response_snapshot, "updateUUID": update_uuid}
+
+    if not client_has_state:
         view_cache.set(state=state, **cache_key)
         filtered_notes = {
             note_id: data
