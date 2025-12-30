@@ -1131,6 +1131,19 @@ async function switchToTabContext(tabId) {
     }
 
     const previousTabId = ModeContext.activeTabId;
+    const tabOrder = ModeContext.tabOrder;
+    if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
+        throw new Error('ModeContext.tabOrder must be a non-empty array');
+    }
+    const previousTabIndex = tabOrder.indexOf(previousTabId);
+    if (previousTabIndex === -1) {
+        throw new Error(`previousTabId not present in ModeContext.tabOrder: ${previousTabId}`);
+    }
+    const nextTabIndex = tabOrder.indexOf(tabId);
+    if (nextTabIndex === -1) {
+        throw new Error(`tabId not present in ModeContext.tabOrder: ${tabId}`);
+    }
+    const perfContext = `switchTab tab#${previousTabIndex + 1}→tab#${nextTabIndex + 1}`;
 
     ModeContext.beginIgnoreScrollEvents();
     try {
@@ -1146,8 +1159,9 @@ async function switchToTabContext(tabId) {
         // Persist new tab selection and any newly created tab immediately
         await persistTabStateSnapshot();
 
+        const startedAt = performance.now();
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-        await actionRefreshAndMaybeSelect();
+        await actionRefreshAndMaybeSelect({ startedAt, context: perfContext });
 
         ModeContext.restoreScrollForActiveTab();
     } finally {
@@ -1311,6 +1325,18 @@ async function deleteTabContext(deleteTabId) {
     }
 
     const activeBeforeDelete = ModeContext.activeTabId;
+    const beforeTabOrder = payload.tabOrder;
+    if (!Array.isArray(beforeTabOrder) || beforeTabOrder.length === 0) {
+        throw new Error('ModeContext.tabOrder must be a non-empty array');
+    }
+    const activeBeforeIndex = beforeTabOrder.indexOf(activeBeforeDelete);
+    if (activeBeforeIndex === -1) {
+        throw new Error(`activeTabId not present in ModeContext.tabOrder: ${activeBeforeDelete}`);
+    }
+    const deleteTabIndex = beforeTabOrder.indexOf(deleteTabId);
+    if (deleteTabIndex === -1) {
+        throw new Error(`deleteTabId not present in ModeContext.tabOrder: ${deleteTabId}`);
+    }
 
     if (deleteTabId === activeBeforeDelete) {
         clearActiveNotesDom();
@@ -1329,8 +1355,18 @@ async function deleteTabContext(deleteTabId) {
 
     if (ModeContext.activeTabId !== activeBeforeDelete) {
         restoreNotesDomForTab(ModeContext.activeTabId);
+        const afterTabOrder = ModeContext.tabOrder;
+        if (!Array.isArray(afterTabOrder) || afterTabOrder.length === 0) {
+            throw new Error('ModeContext.tabOrder must be a non-empty array');
+        }
+        const activeAfterIndex = afterTabOrder.indexOf(ModeContext.activeTabId);
+        if (activeAfterIndex === -1) {
+            throw new Error(`activeTabId not present in ModeContext.tabOrder: ${ModeContext.activeTabId}`);
+        }
+        const perfContext = `deleteTab tab#${deleteTabIndex + 1}→switch tab#${activeBeforeIndex + 1}→tab#${activeAfterIndex + 1}`;
+        const startedAt = performance.now();
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-        await actionRefreshAndMaybeSelect();
+        await actionRefreshAndMaybeSelect({ startedAt, context: perfContext });
         ModeContext.restoreScrollForActiveTab();
     }
 }

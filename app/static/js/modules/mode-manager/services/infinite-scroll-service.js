@@ -119,8 +119,19 @@ async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
     state.pendingFetch = true;
     state.lastFetchTime = now;
 
+    const startedAt = performance.now();
+    const tabOrder = ModeContext.tabOrder;
+    if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
+        throw new Error('ModeContext.tabOrder must be a non-empty array');
+    }
+    const activeIndex = tabOrder.indexOf(ModeContext.activeTabId);
+    if (activeIndex === -1) {
+        throw new Error(`activeTabId not present in ModeContext.tabOrder: ${ModeContext.activeTabId}`);
+    }
+    const context = `infiniteScroll tab#${activeIndex + 1}`;
+
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-    await actionRefreshAndMaybeSelect();
+    await actionRefreshAndMaybeSelect({ startedAt, context });
     const currentKnown = ModeContext.knownRootCount;
     if (currentKnown > previousKnownCount) {
         state.lastKnownCount = currentKnown;
