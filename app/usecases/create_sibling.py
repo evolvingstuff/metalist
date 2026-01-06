@@ -15,6 +15,7 @@ class CmdCreateSibling(QueryCommand):
     reference_note_id: str
     search_query: Optional[str]
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdCreateSibling(ref={self.reference_note_id}, client={self.client_id})"
@@ -51,7 +52,7 @@ class CmdCreateSibling(QueryCommand):
             "created_at": None,
             "updated_at": None,
         }
-        record_create(self.client_id, rec)
+        record_create(self.client_id, rec, viewport=self.viewport)
 
         update_uuid = generate_new_uuid()
         return {"id": note_uuid, "status": "created", "updateUUID": update_uuid}

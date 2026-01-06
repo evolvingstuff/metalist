@@ -2,6 +2,14 @@ import { CONFIG } from './config.js';
 import { DOMUtils } from './dom-utils.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 import { ErrorHandler } from './error-handler.js';
+import { computeScrollAnchor } from './mode-manager/services/scroll-anchor-service.js';
+
+function captureViewportSnapshot() {
+    return {
+        scrollY: Math.max(0, Math.round(window.scrollY)),
+        scrollAnchor: computeScrollAnchor({ anchorBias: 'auto' }),
+    };
+}
 
 export const NotesAPI = {
                 
@@ -19,6 +27,10 @@ export const NotesAPI = {
                     clientId: ModeContext.clientId,
                     lastUpdateUUID: ModeContext.lastUpdateUUID
                 };
+
+                if (claimSession) {
+                    syncContext.viewport = captureViewportSnapshot();
+                }
                 
                 if (requestBody) {
                     // Merge sync context with existing body

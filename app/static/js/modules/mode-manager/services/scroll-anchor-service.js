@@ -21,24 +21,20 @@ function getViewportReferenceY(anchorBias) {
 }
 
 function getViewportTopInset() {
-    const candidates = [
-        document.querySelector('.global-controls'),
-        document.querySelector('.controls'),
-        document.getElementById('tab-indicator'),
-    ].filter(Boolean);
-
-    let maxBottom = 0;
-    for (const element of candidates) {
-        const rect = element.getBoundingClientRect();
-        // Ignore elements far below the fold.
-        if (rect.top > 200) {
-            continue;
-        }
-        if (rect.bottom > maxBottom) {
-            maxBottom = rect.bottom;
-        }
+    const controls = document.querySelector('.controls');
+    if (!controls) {
+        return 0;
     }
-    return Math.max(0, Math.round(maxBottom));
+    const rect = controls.getBoundingClientRect();
+    if (rect.height <= 0 || rect.width <= 0) {
+        return 0;
+    }
+    if (rect.bottom <= 0) {
+        return 0;
+    }
+    // Add a small buffer so restored anchors don't end up tucked under the sticky search bar.
+    const bufferPx = 8;
+    return Math.max(0, Math.round(rect.bottom + bufferPx));
 }
 
 function requireNotesContainer() {

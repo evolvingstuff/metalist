@@ -59,6 +59,7 @@ class CmdMove(QueryCommand):
     position: Optional[str]  # 'BEFORE' or 'AFTER'
     new_parent_id: Optional[str]
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdMove(note={self.note_id}, sib={self.sibling_id}, pos={self.position}, parent={self.new_parent_id})"
@@ -100,6 +101,7 @@ class CmdMove(QueryCommand):
             after_parent=dest_parent,
             after_prev=prev_id,
             after_next=next_id,
+            viewport=self.viewport,
         )
 
         update_uuid = generate_new_uuid()

@@ -57,6 +57,7 @@ class CmdCreateNote(QueryCommand):
     first_visible_note_id: Optional[str]
     search_query: Optional[str]
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdCreateNote(client={self.client_id})"
@@ -94,7 +95,7 @@ class CmdCreateNote(QueryCommand):
             "created_at": None,
             "updated_at": None,
         }
-        record_create(self.client_id, rec)
+        record_create(self.client_id, rec, viewport=self.viewport)
 
         update_uuid = generate_new_uuid()
         return {"id": note_uuid, "status": "created", "updateUUID": update_uuid}

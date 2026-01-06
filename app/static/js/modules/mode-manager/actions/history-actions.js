@@ -6,8 +6,38 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { CONFIG } from '../../config.js';
 import { DOMUtils } from '../../dom-utils.js';
 
+function applyScrollRestore(scrollRestore, contextLabel) {
+    if (!scrollRestore || typeof scrollRestore !== 'object') {
+        throw new Error(`${contextLabel} response missing scrollRestore object`);
+    }
+
+    const scrollY = scrollRestore.scrollY;
+    if (typeof scrollY !== 'number' || scrollY < 0) {
+        throw new Error(`${contextLabel} scrollRestore.scrollY must be a non-negative number`);
+    }
+
+    const scrollAnchor = scrollRestore.scrollAnchor;
+    if (scrollAnchor !== null && typeof scrollAnchor !== 'object') {
+        throw new Error(`${contextLabel} scrollRestore.scrollAnchor must be an object or null`);
+    }
+
+    ModeContext.updateActiveTabScroll(scrollY);
+    ModeContext.updateActiveTabScrollAnchor(scrollAnchor, true);
+
+    const viewAnchorRootId = typeof scrollRestore.viewAnchorRootId === 'string' && scrollRestore.viewAnchorRootId.length > 0
+        ? scrollRestore.viewAnchorRootId
+        : null;
+
+    const anchorId = scrollAnchor && typeof scrollAnchor.anchorId === 'string' && scrollAnchor.anchorId.length > 0
+        ? scrollAnchor.anchorId
+        : null;
+
+    return viewAnchorRootId || anchorId;
+}
+
 export async function actionUndo() {
     let startedAt = performance.now();
+    let visibleRootAnchorId = null;
     Logger.logAction('undo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -41,6 +71,8 @@ export async function actionUndo() {
     if (result.status === 'success') {
         Logger.logAction('undo_success', { message: result.message });
 
+        visibleRootAnchorId = applyScrollRestore(result.scrollRestore, 'Undo');
+
         if (ModeContext.isDirty) {
             ModeContext.setDirty(false);
         }
@@ -61,7 +93,9 @@ export async function actionUndo() {
         throw new Error(`Undo failed: ${result.message || 'Unknown error'}`);
     }
 
-    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionUndo'});
+    const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'actionUndo', visibleRootAnchorId });
+
+    ModeContext.restoreScrollForActiveTab();
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);
@@ -72,6 +106,7 @@ export async function actionUndo() {
 
 export async function actionRedo() {
     let startedAt = performance.now();
+    let visibleRootAnchorId = null;
     Logger.logAction('redo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -105,6 +140,8 @@ export async function actionRedo() {
     if (result.status === 'success') {
         Logger.logAction('redo_success', { message: result.message });
 
+        visibleRootAnchorId = applyScrollRestore(result.scrollRestore, 'Redo');
+
         if (ModeContext.isDirty) {
             ModeContext.setDirty(false);
         }
@@ -125,7 +162,9 @@ export async function actionRedo() {
         throw new Error(`Redo failed: ${result.message || 'Unknown error'}`);
     }
 
-    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionRedo'});
+    const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'actionRedo', visibleRootAnchorId });
+
+    ModeContext.restoreScrollForActiveTab();
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);

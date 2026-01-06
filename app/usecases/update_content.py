@@ -48,6 +48,7 @@ class CmdUpdateContent(QueryCommand):
     note_id: str
     content: str
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdUpdateContent(note={self.note_id}, client={self.client_id})"
@@ -60,7 +61,13 @@ class CmdUpdateContent(QueryCommand):
         # Record in undo stack
         try:
             from app.services.undo_state import record_update
-            record_update(self.client_id, self.note_id, before=prev, after=self.content)
+            record_update(
+                self.client_id,
+                self.note_id,
+                before=prev,
+                after=self.content,
+                viewport=self.viewport,
+            )
         except Exception:
             # Fail fast on internal errors; if undo tracking fails, surface explicitly
             raise

@@ -109,6 +109,7 @@ def apply_restore_records(records: List[NodeRecord]) -> None:
 class CmdDeleteSubtree(QueryCommand):
     note_id: str
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdDeleteSubtree(note={self.note_id}, client={self.client_id})"
@@ -120,7 +121,7 @@ class CmdDeleteSubtree(QueryCommand):
 
         # Record for undo
         from app.services.undo_state import record_delete
-        record_delete(self.client_id, snapshot)
+        record_delete(self.client_id, snapshot, viewport=self.viewport)
 
         update_uuid = generate_new_uuid()
         return {"status": "success", "updateUUID": update_uuid}

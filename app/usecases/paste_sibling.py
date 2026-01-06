@@ -62,6 +62,7 @@ def _insert_cloned_subtree_at(
 class CmdPasteSibling(QueryCommand):
     target_note_id: str
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdPasteSibling(target={self.target_note_id}, client={self.client_id})"
@@ -80,6 +81,6 @@ class CmdPasteSibling(QueryCommand):
         # Record for undo: as paste_subtree (undo deletes, redo restores)
         new_ids = _collect_subtree_ids(new_root_id)
         records: List[NodeRecord] = [store.get(nid) for nid in new_ids]
-        record_paste(self.client_id, records)
+        record_paste(self.client_id, records, viewport=self.viewport)
 
         return {"status": "pasted", "id": new_root_id, "updateUUID": generate_new_uuid()}

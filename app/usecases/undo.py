@@ -16,12 +16,13 @@ class CmdUndo(QueryCommand):
 
     def execute(self):
         maybe_reset_on_context(self.client_id, self.search_context)
-        ok = bool(do_undo(self.client_id))
-        if ok:
+        scroll_restore = do_undo(self.client_id)
+        if scroll_restore is not None:
             return {
                 "status": "success",
                 "message": "Undo successful",
                 "updateUUID": get_current_sync_uuid(),
+                "scrollRestore": scroll_restore,
             }
         else:
             return {

@@ -107,7 +107,10 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     ModeContext.setLoading(true);
 
     const requestStartedAt = performance.now();
-    const anchorId = ModeContext.getRootAnchorId() || ModeContext.getLastKnownRootId();
+    const forcedAnchorId = typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0
+        ? options.visibleRootAnchorId
+        : null;
+    const anchorId = forcedAnchorId || ModeContext.getRootAnchorId() || ModeContext.getLastKnownRootId();
     const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, anchorId);
     if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
         throw new Error('notes.view response missing snapshot payload');

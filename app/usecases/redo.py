@@ -16,12 +16,13 @@ class CmdRedo(QueryCommand):
 
     def execute(self):
         maybe_reset_on_context(self.client_id, self.search_context)
-        ok = bool(do_redo(self.client_id))
-        if ok:
+        scroll_restore = do_redo(self.client_id)
+        if scroll_restore is not None:
             return {
                 "status": "success",
                 "message": "Redo successful",
                 "updateUUID": get_current_sync_uuid(),
+                "scrollRestore": scroll_restore,
             }
         else:
             return {

@@ -218,27 +218,32 @@ def _not_impl(exc: Exception) -> None:
 
 @router.post("/notes/new")
 def create_note_top(body: dict):
+    viewport = _require_viewport(body)
     cmd = CmdCreateNote(
         first_visible_note_id=body.get("first_visible_note_id"),
         search_query=body.get("search_query"),
         client_id=body["clientId"],
+        viewport=viewport,
     )
     return cmd.execute()
 
 
 @router.post("/notes/new-sibling/{note_id}")
 def create_sibling(note_id: str, body: dict):
+    viewport = _require_viewport(body)
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
         search_query=body.get("search_query"),
         client_id=body["clientId"],
+        viewport=viewport,
     )
     return cmd.execute()
 
 
 @router.post("/notes/new-child/{note_id}")
 def create_child(note_id: str, body: dict):
-    cmd = CmdCreateChild(parent_note_id=note_id, client_id=body["clientId"]) 
+    viewport = _require_viewport(body)
+    cmd = CmdCreateChild(parent_note_id=note_id, client_id=body["clientId"], viewport=viewport)
     return cmd.execute()
 
 
@@ -247,7 +252,8 @@ def update_note(note_id: str, body: dict):
     # Required fields; let KeyError surface for missing keys
     client_id = body["clientId"]
     content = body["content"]
-    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id)
+    viewport = _require_viewport(body)
+    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id, viewport=viewport)
     return cmd.execute()
 
 
@@ -255,38 +261,44 @@ def update_note(note_id: str, body: dict):
 def save_note(note_id: str, body: dict):
     client_id = body["clientId"]
     content = body["content"]
-    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id)
+    viewport = _require_viewport(body)
+    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id, viewport=viewport)
     return cmd.execute()
 
 
 @router.post("/notes/{note_id}/move")
 def move_note_endpoint(note_id: str, body: dict):
+    viewport = _require_viewport(body)
     cmd = CmdMove(
         note_id=note_id,
         sibling_id=body.get("sibling_id"),
         position=body.get("position"),
         new_parent_id=body.get("new_parent_id"),
         client_id=body["clientId"],
+        viewport=viewport,
     )
     return cmd.execute()
 
 
 @router.post("/notes/{note_id}/collapse")
 def collapse_endpoint(note_id: str, body: dict):
-    cmd = CmdCollapse(note_id=note_id, client_id=body["clientId"])
+    viewport = _require_viewport(body)
+    cmd = CmdCollapse(note_id=note_id, client_id=body["clientId"], viewport=viewport)
     return cmd.execute()
 
 
 @router.post("/notes/{note_id}/expand")
 def expand_endpoint(note_id: str, body: dict):
-    cmd = CmdExpand(note_id=note_id, client_id=body["clientId"])
+    viewport = _require_viewport(body)
+    cmd = CmdExpand(note_id=note_id, client_id=body["clientId"], viewport=viewport)
     return cmd.execute()
 
 
 @router.delete("/notes/{note_id}")
 def delete_note(note_id: str, body: dict):
     client_id = body["clientId"]
-    cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id)
+    viewport = _require_viewport(body)
+    cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id, viewport=viewport)
     return cmd.execute()
 
 
@@ -298,14 +310,23 @@ def copy_note_endpoint(note_id: str, body: dict):
 
 @router.post("/notes/paste-sibling/{target_note_id}")
 def paste_sibling_endpoint(target_note_id: str, body: dict):
-    cmd = CmdPasteSibling(target_note_id=target_note_id, client_id=body["clientId"]) 
+    viewport = _require_viewport(body)
+    cmd = CmdPasteSibling(target_note_id=target_note_id, client_id=body["clientId"], viewport=viewport)
     return cmd.execute()
 
 
 @router.post("/notes/paste-child/{target_note_id}")
 def paste_child_endpoint(target_note_id: str, body: dict):
-    cmd = CmdPasteChild(target_note_id=target_note_id, client_id=body["clientId"]) 
+    viewport = _require_viewport(body)
+    cmd = CmdPasteChild(target_note_id=target_note_id, client_id=body["clientId"], viewport=viewport)
     return cmd.execute()
+
+
+def _require_viewport(body: dict) -> dict:
+    viewport = body.get("viewport")
+    if not isinstance(viewport, dict):
+        raise HTTPException(status_code=400, detail="viewport is required")
+    return viewport
 
 
 @router.post("/notes/undo")

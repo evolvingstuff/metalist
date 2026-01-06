@@ -14,6 +14,7 @@ from app.usecases.create_note import apply_insert_note
 class CmdCreateChild(QueryCommand):
     parent_note_id: str
     client_id: str
+    viewport: Dict[str, object]
 
     def describe(self) -> str:
         return f"CmdCreateChild(parent={self.parent_note_id}, client={self.client_id})"
@@ -39,7 +40,7 @@ class CmdCreateChild(QueryCommand):
             "created_at": None,
             "updated_at": None,
         }
-        record_create(self.client_id, rec)
+        record_create(self.client_id, rec, viewport=self.viewport)
 
         update_uuid = generate_new_uuid()
         return {"id": note_uuid, "status": "created", "updateUUID": update_uuid}
