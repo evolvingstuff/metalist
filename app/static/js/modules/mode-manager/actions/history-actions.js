@@ -5,6 +5,7 @@ import { actionSaveNote } from './content-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { CONFIG } from '../../config.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { scrollNoteIntoView } from '../services/scroll-restoration-service.js';
 
 function applyScrollRestore(scrollRestore, contextLabel) {
     if (!scrollRestore || typeof scrollRestore !== 'object') {
@@ -28,16 +29,24 @@ function applyScrollRestore(scrollRestore, contextLabel) {
         ? scrollRestore.viewAnchorRootId
         : null;
 
+    const focusNoteId = typeof scrollRestore.focusNoteId === 'string'
+        ? scrollRestore.focusNoteId
+        : '';
+
     const anchorId = scrollAnchor && typeof scrollAnchor.anchorId === 'string' && scrollAnchor.anchorId.length > 0
         ? scrollAnchor.anchorId
         : null;
 
-    return viewAnchorRootId || anchorId;
+    return {
+        visibleRootAnchorId: viewAnchorRootId || anchorId,
+        focusNoteId,
+    };
 }
 
 export async function actionUndo() {
     let startedAt = performance.now();
     let visibleRootAnchorId = null;
+    let focusNoteId = '';
     Logger.logAction('undo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -71,7 +80,9 @@ export async function actionUndo() {
     if (result.status === 'success') {
         Logger.logAction('undo_success', { message: result.message });
 
-        visibleRootAnchorId = applyScrollRestore(result.scrollRestore, 'Undo');
+        const restored = applyScrollRestore(result.scrollRestore, 'Undo');
+        visibleRootAnchorId = restored.visibleRootAnchorId;
+        focusNoteId = restored.focusNoteId;
 
         if (ModeContext.isDirty) {
             ModeContext.setDirty(false);
@@ -96,6 +107,11 @@ export async function actionUndo() {
     const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'actionUndo', visibleRootAnchorId });
 
     ModeContext.restoreScrollForActiveTab();
+    if (focusNoteId) {
+        window.setTimeout(() => {
+            scrollNoteIntoView(focusNoteId);
+        }, 300);
+    }
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);
@@ -107,6 +123,7 @@ export async function actionUndo() {
 export async function actionRedo() {
     let startedAt = performance.now();
     let visibleRootAnchorId = null;
+    let focusNoteId = '';
     Logger.logAction('redo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -140,7 +157,9 @@ export async function actionRedo() {
     if (result.status === 'success') {
         Logger.logAction('redo_success', { message: result.message });
 
-        visibleRootAnchorId = applyScrollRestore(result.scrollRestore, 'Redo');
+        const restored = applyScrollRestore(result.scrollRestore, 'Redo');
+        visibleRootAnchorId = restored.visibleRootAnchorId;
+        focusNoteId = restored.focusNoteId;
 
         if (ModeContext.isDirty) {
             ModeContext.setDirty(false);
@@ -165,6 +184,11 @@ export async function actionRedo() {
     const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'actionRedo', visibleRootAnchorId });
 
     ModeContext.restoreScrollForActiveTab();
+    if (focusNoteId) {
+        window.setTimeout(() => {
+            scrollNoteIntoView(focusNoteId);
+        }, 300);
+    }
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);

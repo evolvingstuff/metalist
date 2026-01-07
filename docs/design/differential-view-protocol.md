@@ -122,6 +122,7 @@
 ### Scroll State Note
 - When caching/restoring the notes DOM during a tab switch, the browser can temporarily clamp `window.scrollY` if the page height changes. Scroll persistence should be suppressed during the switch so per-tab `scrollY` snapshots are not overwritten.
 - Prefer storing a content-based `scrollAnchor` (anchor note + neighbor belt + intra-note offset) via `/api2/notes/tab-state` so restoration survives insertions/deletions/reorders across overlapping tab result sets.
+- Undo/redo responses additionally return a `scrollRestore.focusNoteId` so the client can scroll the affected note into view (below the sticky search controls) even when the viewport anchor is root-based.
 
 ## Manual Verification Checklist
 - CRUD sequences: create, edit, delete and confirm only changed nodes rerender.

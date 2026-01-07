@@ -150,3 +150,31 @@ export function restoreScrollFromAnchor(savedAnchor, options = {}) {
     window.scrollTo(0, targetScrollY);
     return { restored: true, reason: 'anchor' };
 }
+
+export function scrollNoteIntoView(noteId, options = {}) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('scrollNoteIntoView requires a non-empty noteId');
+    }
+
+    const noteElement = getNoteElementById(noteId);
+    if (!noteElement) {
+        return { scrolled: false, reason: 'missing' };
+    }
+
+    const topInset = getViewportTopInset();
+    const padding = typeof options.padding === 'number' && options.padding >= 0 ? options.padding : 12;
+
+    const rect = noteElement.getBoundingClientRect();
+    const visibleTop = topInset + padding;
+    const visibleBottom = window.innerHeight - padding;
+    const fullyVisible = rect.top >= visibleTop && rect.bottom <= visibleBottom;
+    if (fullyVisible) {
+        return { scrolled: false, reason: 'already_visible' };
+    }
+
+    const docTop = rect.top + window.scrollY;
+    const target = docTop - visibleTop;
+    const clamped = Math.round(clampNumber(target, 0, getScrollMaxY()));
+    window.scrollTo(0, clamped);
+    return { scrolled: true, reason: 'scroll' };
+}
