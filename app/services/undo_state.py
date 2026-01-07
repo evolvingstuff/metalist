@@ -79,11 +79,8 @@ def _anchor_root_id(viewport: Dict[str, object]) -> Optional[str]:
     return None
 
 
-def _root_ancestor_id(note_id: str) -> Optional[str]:
-    try:
-        current = store.get(note_id)
-    except KeyError:
-        return None
+def _root_ancestor_id(note_id: str) -> str:
+    current = store.get(note_id)
     while current.parent_id:
         current = store.get(current.parent_id)
     return current.id
@@ -97,15 +94,22 @@ def _pick_focus_neighbor(prev_id: Optional[str], next_id: Optional[str]) -> str:
 
 
 def _compute_focus_note_id(op: dict, *, direction: str) -> str:
-    op_type = op.get("type")
+    if "type" not in op:
+        raise RuntimeError(f"Redo op missing required key: type | op={op}")
+    op_type = op["type"]
+
     if op_type in {"update_content", "move", "collapse"}:
-        note_id = op.get("note_id")
-        return note_id if isinstance(note_id, str) else ""
+        if "note_id" not in op:
+            raise RuntimeError(f"Undo op missing required key: note_id | op={op}")
+        note_id = op["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise RuntimeError(f"Undo op note_id must be a non-empty string | op={op}")
+        return note_id
 
     if op_type == "create_note":
         record = op.get("record")
         if not isinstance(record, dict):
-            return ""
+            raise RuntimeError(f"Undo op create_note.record must be an object | op={op}")
         created_id = record.get("id")
         if direction == "redo" and isinstance(created_id, str):
             return created_id
@@ -114,14 +118,18 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
     if op_type in {"delete_subtree", "paste_subtree"}:
         records = op.get("records")
         if not isinstance(records, list) or not records:
-            return ""
+            raise RuntimeError(f"Undo op {op_type}.records must be a non-empty list | op={op}")
         first = records[0]
-        root_id = getattr(first, "id", None) if direction == "undo" else getattr(first, "id", None)
+        root_id = getattr(first, "id", None)
+        if root_id is None:
+            raise RuntimeError(f"Undo op {op_type}.records[0] missing id | op={op}")
+        if not isinstance(root_id, str) or not root_id:
+            raise RuntimeError(f"Undo op {op_type}.records[0].id must be a non-empty string | op={op}")
         if direction == "redo" and op_type == "delete_subtree":
             return _pick_focus_neighbor(getattr(first, "prev_id", None), getattr(first, "next_id", None))
         if direction == "undo" and op_type == "paste_subtree":
             return _pick_focus_neighbor(getattr(first, "prev_id", None), getattr(first, "next_id", None))
-        return root_id if isinstance(root_id, str) else ""
+        return root_id
 
     return ""
 
@@ -215,10 +223,16 @@ def record_move(
 
 def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optional[str], exp_next: Optional[str]) -> None:
     parent_id = store.get(note_id).parent_id
-    links = store._links.get(parent_id) or {}  # type: ignore[attr-defined]
-    cur = links.get(note_id, {})
-    prev_id = cur.get('prev')
-    next_id = cur.get('next')
+    links = store._links.get(parent_id)  # type: ignore[attr-defined]
+    if links is None:
+        raise RuntimeError(f"Missing link scope for parent_id={parent_id}")
+    cur = links.get(note_id)
+    if cur is None:
+        raise RuntimeError(f"Missing note_id={note_id} in links for parent_id={parent_id}")
+    if 'prev' not in cur or 'next' not in cur:
+        raise RuntimeError(f"Malformed link entry for note_id={note_id} parent_id={parent_id}: {cur}")
+    prev_id = cur['prev']
+    next_id = cur['next']
     if parent_id != exp_parent or prev_id != exp_prev or next_id != exp_next:
         logging.error(
             "FATAL: undo/redo move invariant failed for %s | expected parent=%s prev=%s next=%s | actual parent=%s prev=%s next=%s",
@@ -277,38 +291,26 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         return None
     op = ctx.history.pop()
     undo_viewport = op["viewport"]
-    focus_note_id = _compute_focus_note_id(op, direction="undo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
-    if op.get("type") == "update_content":
+
+    if "type" not in op:
+        raise RuntimeError(f"Undo op missing required key: type | op={op}")
+    op_type = op["type"]
+
+    if op_type == "update_content":
         apply_update_content(op["note_id"], op["before"])  # apply inverse
         ctx.redo.append(op)
         generate_new_uuid()
-        return {
-            **undo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "create_note":
+    elif op_type == "create_note":
         rec = op["record"]
         apply_delete_subtree(rec["id"])  # delete the created note
         ctx.redo.append(op)
         generate_new_uuid()
-        return {
-            **undo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "delete_subtree":
+    elif op_type == "delete_subtree":
         records = op["records"]
         apply_restore_records(records)
         ctx.redo.append(op)
         generate_new_uuid()
-        return {
-            **undo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "move":
+    elif op_type == "move":
         apply_move(
             op["note_id"],
             op["before_parent"],
@@ -318,23 +320,13 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         _assert_neighbors(op["note_id"], op["before_parent"], op["before_prev"], op["before_next"]) 
         ctx.redo.append(op)
         generate_new_uuid()
-        return {
-            **undo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "collapse":
+    elif op_type == "collapse":
         # invert collapse
         from app.usecases.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["before"]))
         ctx.redo.append(op)
         generate_new_uuid()
-        return {
-            **undo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "paste_subtree":
+    elif op_type == "paste_subtree":
         # delete the pasted subtree
         root_id = op["records"][0].id if op["records"] else None
         if not root_id:
@@ -343,12 +335,16 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         apply_delete_subtree(root_id)
         ctx.redo.append(op)
         generate_new_uuid()
-        return {
-            **undo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    raise RuntimeError(f"Unsupported undo op: {op.get('type')}")
+    else:
+        raise RuntimeError(f"Unsupported undo op: {op_type}")
+
+    focus_note_id = _compute_focus_note_id(op, direction="undo")
+    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
+    return {
+        **undo_viewport,
+        "viewAnchorRootId": view_anchor_root_id,
+        "focusNoteId": focus_note_id,
+    }
 
 
 def redo(client_id: str) -> Optional[Dict[str, object]]:
@@ -357,41 +353,29 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
         return None
     op = ctx.redo.pop()
     redo_viewport = op["viewport"]
-    focus_note_id = _compute_focus_note_id(op, direction="redo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
-    if op.get("type") == "update_content":
+
+    if "type" not in op:
+        raise RuntimeError(f"Undo op missing required key: type | op={op}")
+    op_type = op["type"]
+
+    if op_type == "update_content":
         apply_update_content(op["note_id"], op["after"])  # reapply
         ctx.history.append(op)
         generate_new_uuid()
-        return {
-            **redo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "create_note":
+    elif op_type == "create_note":
         # recreate
         rec = op["record"]
         from app.services.store import NodeRecord
         apply_restore_records([NodeRecord(**rec)])
         ctx.history.append(op)
         generate_new_uuid()
-        return {
-            **redo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "delete_subtree":
+    elif op_type == "delete_subtree":
         # re-delete
         first = op["records"][0]
         apply_delete_subtree(first.id)
         ctx.history.append(op)
         generate_new_uuid()
-        return {
-            **redo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "move":
+    elif op_type == "move":
         apply_move(
             op["note_id"],
             op["after_parent"],
@@ -401,29 +385,23 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
         _assert_neighbors(op["note_id"], op["after_parent"], op["after_prev"], op["after_next"]) 
         ctx.history.append(op)
         generate_new_uuid()
-        return {
-            **redo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "collapse":
+    elif op_type == "collapse":
         from app.usecases.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["after"]))
         ctx.history.append(op)
         generate_new_uuid()
-        return {
-            **redo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    if op.get("type") == "paste_subtree":
+    elif op_type == "paste_subtree":
         # restore the subtree
         apply_restore_records(op["records"])  
         ctx.history.append(op)
         generate_new_uuid()
-        return {
-            **redo_viewport,
-            "viewAnchorRootId": view_anchor_root_id,
-            "focusNoteId": focus_note_id,
-        }
-    raise RuntimeError(f"Unsupported redo op: {op.get('type')}")
+    else:
+        raise RuntimeError(f"Unsupported redo op: {op_type}")
+
+    focus_note_id = _compute_focus_note_id(op, direction="redo")
+    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
+    return {
+        **redo_viewport,
+        "viewAnchorRootId": view_anchor_root_id,
+        "focusNoteId": focus_note_id,
+    }

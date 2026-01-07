@@ -104,7 +104,7 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
         Decrypted plain text content or original if decryption not available
     """
     if encrypted_content is None:
-        return encrypted_content
+        raise ValueError("Cannot decrypt None content")
 
     # If no nonce/tag, assume unencrypted content
     if nonce is None and tag is None:

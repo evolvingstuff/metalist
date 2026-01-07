@@ -17,9 +17,15 @@ from app.db.notes_sql import update_links as db_update_links
 def _neighbors(note_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     rec = store.get(note_id)
     parent_id = rec.parent_id
-    links = store._links.get(parent_id) or {}  # type: ignore[attr-defined]
-    cur = links.get(note_id, {})
-    return parent_id, cur.get('prev'), cur.get('next')
+    links = store._links.get(parent_id)  # type: ignore[attr-defined]
+    if links is None:
+        raise RuntimeError(f"Missing link scope for parent_id={parent_id}")
+    cur = links.get(note_id)
+    if cur is None:
+        raise RuntimeError(f"Missing note_id={note_id} in links for parent_id={parent_id}")
+    if 'prev' not in cur or 'next' not in cur:
+        raise RuntimeError(f"Malformed link entry for note_id={note_id} parent_id={parent_id}: {cur}")
+    return parent_id, cur['prev'], cur['next']
 
 
 def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optional[str], exp_next: Optional[str]) -> None:
@@ -38,8 +44,6 @@ def apply_move(note_id: str, new_parent_id: Optional[str], prev_id: Optional[str
     with begin_writer() as connection:
         if old_prev:
             db_update_links(connection, old_prev, next_id=old_next, updated_at=now)
-        else:
-            pass
         if old_next:
             db_update_links(connection, old_next, prev_id=old_prev, updated_at=now)
 
@@ -74,13 +78,22 @@ class CmdMove(QueryCommand):
         if self.sibling_id:
             sib = store.get(self.sibling_id)
             dest_parent = self.new_parent_id if self.new_parent_id is not None else sib.parent_id
-            links = store._links.get(dest_parent) or {}  # type: ignore[attr-defined]
+            links = store._links.get(dest_parent)  # type: ignore[attr-defined]
+            if links is None:
+                raise RuntimeError(f"Missing link scope for parent_id={dest_parent}")
+            sib_link = links.get(self.sibling_id)
+            if sib_link is None:
+                raise RuntimeError(f"Missing note_id={self.sibling_id} in links for parent_id={dest_parent}")
+            if 'prev' not in sib_link or 'next' not in sib_link:
+                raise RuntimeError(
+                    f"Malformed link entry for note_id={self.sibling_id} parent_id={dest_parent}: {sib_link}"
+                )
             if (self.position or '').upper() == 'BEFORE':
                 next_id = self.sibling_id
-                prev_id = links.get(self.sibling_id, {}).get('prev')
+                prev_id = sib_link['prev']
             else:
                 prev_id = self.sibling_id
-                next_id = links.get(self.sibling_id, {}).get('next')
+                next_id = sib_link['next']
         else:  # Should not happen for up/down; fail fast
             print("FATAL: move without sibling_id not supported in this flow")
             os._exit(1)

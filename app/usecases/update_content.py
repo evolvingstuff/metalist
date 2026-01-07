@@ -59,18 +59,14 @@ class CmdUpdateContent(QueryCommand):
         apply_update_content(self.note_id, self.content)
 
         # Record in undo stack
-        try:
-            from app.services.undo_state import record_update
-            record_update(
-                self.client_id,
-                self.note_id,
-                before=prev,
-                after=self.content,
-                viewport=self.viewport,
-            )
-        except Exception:
-            # Fail fast on internal errors; if undo tracking fails, surface explicitly
-            raise
+        from app.services.undo_state import record_update
+        record_update(
+            self.client_id,
+            self.note_id,
+            before=prev,
+            after=self.content,
+            viewport=self.viewport,
+        )
 
         update_uuid = generate_new_uuid()
         return {"status": "success", "updateUUID": update_uuid}

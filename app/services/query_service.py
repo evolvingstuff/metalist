@@ -122,8 +122,14 @@ class NoteQueryService(BaseQueryService):
                 prev_id = nodes[index - 1]['id'] if index > 0 else None
                 next_id = nodes[index + 1]['id'] if index + 1 < len(nodes) else None
 
-                content = note.get('content') or ''
-                flags = dict(note.get('flags') or {})
+                content = note['content']
+                if not isinstance(content, str):
+                    raise TypeError(f"note.content must be a string: {type(content)}")
+
+                flags = note['flags']
+                if not isinstance(flags, dict):
+                    raise TypeError(f"note.flags must be an object: {type(flags)}")
+
                 normalized_flags = _normalize_flags(flags)
                 hash_value = _compute_note_hash(
                     content=content,
@@ -150,7 +156,9 @@ class NoteQueryService(BaseQueryService):
                 }
                 visited_note_ids.add(note_id)
 
-                children = note.get('children') or []
+                children = note['children']
+                if not isinstance(children, list):
+                    raise TypeError(f"note.children must be an array: {type(children)}")
                 should_include_children = (
                     not normalized_flags.get('isCollapsed', False)
                     or normalized_flags.get('isEditing', False)
@@ -188,10 +196,9 @@ class NoteQueryService(BaseQueryService):
 
         if editing_note_id:
             editing_root_id = _find_root_id(editing_note_id)
-            if editing_root_id:
-                index = root_index_map.get(editing_root_id)
-                if index is not None:
-                    window_end = max(window_end, index)
+            index = root_index_map.get(editing_root_id)
+            if index is not None:
+                window_end = max(window_end, index)
 
         highest_seen_index = max(seen_root_indices) if seen_root_indices else None
 
@@ -240,16 +247,10 @@ def _normalize_flags(flags: Dict[str, object]) -> Dict[str, object]:
     return normalized
 
 
-def _find_root_id(note_id: str) -> Optional[str]:
-    try:
-        record = note_store.get_note(note_id)
-    except KeyError:
-        return None
+def _find_root_id(note_id: str) -> str:
+    record = note_store.get_note(note_id)
 
     current = record
     while current.parent_id:
-        try:
-            current = note_store.get_note(current.parent_id)
-        except KeyError:
-            return None
+        current = note_store.get_note(current.parent_id)
     return current.id

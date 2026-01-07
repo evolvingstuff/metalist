@@ -149,8 +149,10 @@ class ListTraversal:
                 seen.add(current)
                 try:
                     parent_record = note_store.get_note(current)
-                except KeyError:
-                    break
+                except KeyError as exc:
+                    raise ValueError(
+                        f"Cycle check failed: parent id not found in store: {current}"
+                    ) from exc
                 current = parent_record.parent_id
             return False
 
@@ -163,7 +165,7 @@ class ListTraversal:
             with SafeSession.allow_reads("list_traversal:cycle"):
                 parent = fetch_note(db.connection(), current)
             if not parent:
-                break
+                raise ValueError(f"Cycle check failed: parent id not found in db: {current}")
             current = parent.get("parent_id")
         return False
 

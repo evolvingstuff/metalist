@@ -34,9 +34,10 @@ def _build_serialized_tree(root_id: str) -> Dict[str, Any]:
       { content: str, children: [ ...same shape... ] }
     """
     rec = store.get(root_id)
+    assert isinstance(rec.content, str)
     children = store.children(root_id)
     return {
-        "content": rec.content or "",
+        "content": rec.content,
         "children": [_build_serialized_tree(cid) for cid in children],
     }
 
