@@ -38,8 +38,13 @@ class _AdapterStore:
             ids = _note_store.get_children(parent_id)
             next_id = ids[0] if ids else None
         else:
-            links = _note_store._links.get(parent_id) or {}
-            next_id = links.get(prev_id, {}).get('next')
+            links = _note_store._links.get(parent_id)
+            if links is None:
+                raise RuntimeError(f"Missing link scope for parent_id={parent_id}")
+            prev_link = links.get(prev_id)
+            if prev_link is None:
+                raise RuntimeError(f"Missing prev_id={prev_id} in links for parent_id={parent_id}")
+            next_id = prev_link.get('next')
 
         row = SimpleNamespace(
             id=note.id,
@@ -50,7 +55,8 @@ class _AdapterStore:
             created_at=getattr(note, 'created_at', None),
             updated_at=getattr(note, 'updated_at', None),
         )
-        _note_store.add_note_from_db(row, note.content or "")
+        assert isinstance(note.content, str)
+        _note_store.add_note_from_db(row, note.content)
 
     def update_content(self, note_id: str, new_content: str, *, updated_at: Optional[datetime] = None) -> None:
         row = SimpleNamespace(id=note_id, updated_at=updated_at)
@@ -71,7 +77,8 @@ class _AdapterStore:
                 created_at=rec.created_at,
                 updated_at=rec.updated_at,
             )
-            _note_store.add_note_from_db(row, rec.content or "")
+            assert isinstance(rec.content, str)
+            _note_store.add_note_from_db(row, rec.content)
 
     def move_note(self, note_id: str, new_parent_id: Optional[str], prev_id: Optional[str]) -> None:
         # Determine next based on prev in destination parent
@@ -79,8 +86,13 @@ class _AdapterStore:
             ids = _note_store.get_children(new_parent_id)
             next_id = ids[0] if ids else None
         else:
-            links = _note_store._links.get(new_parent_id) or {}
-            next_id = links.get(prev_id, {}).get('next')
+            links = _note_store._links.get(new_parent_id)
+            if links is None:
+                raise RuntimeError(f"Missing link scope for parent_id={new_parent_id}")
+            prev_link = links.get(prev_id)
+            if prev_link is None:
+                raise RuntimeError(f"Missing prev_id={prev_id} in links for parent_id={new_parent_id}")
+            next_id = prev_link.get('next')
 
         row = SimpleNamespace(
             id=note_id,
@@ -101,4 +113,3 @@ store = _AdapterStore()
 def hydrate_from_prefetched(rows: Iterable[Mapping[str, object]], *, get_plaintext) -> None:  # noqa: ARG001
     # Canonical NoteStore can load from prefetched rows using the decrypted cache.
     _note_store.load_from_db(None, prefetched_rows=list(rows))
-

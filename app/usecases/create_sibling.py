@@ -24,12 +24,14 @@ class CmdCreateSibling(QueryCommand):
         ref = store.get(self.reference_note_id)
         parent_id = ref.parent_id
         siblings = store.children(parent_id)
-        try:
-            idx = siblings.index(ref.id)
-        except ValueError:
-            idx = -1
-        prev_id = ref.id if idx >= 0 else None
-        next_id = siblings[idx + 1] if idx >= 0 and idx + 1 < len(siblings) else None
+        if ref.id not in siblings:
+            raise RuntimeError(
+                "Integrity failure: reference note missing from siblings list: "
+                f"note_id={ref.id} parent_id={parent_id}"
+            )
+        idx = siblings.index(ref.id)
+        prev_id = ref.id
+        next_id = siblings[idx + 1] if idx + 1 < len(siblings) else None
 
         note_uuid = str(uuid.uuid4())
         content = ""

@@ -100,12 +100,7 @@ class ListOperations:
 
 def _move_note_with_store(db: SafeSession, note_id: str, new_parent_id: Optional[str],
                           sibling_id: Optional[str], position: Optional[MovePosition]) -> None:
-    try:
-        record = note_store.get_note(note_id)
-    except KeyError:
-        with SafeSession.allow_reads("list_ops:reload_store"):
-            note_store.load_from_db(db)
-        record = note_store.get_note(note_id)
+    record = note_store.get_note(note_id)
 
     if sibling_id and position is None:
         raise ValueError("Position must be specified when sibling_id is provided")

@@ -35,12 +35,15 @@ def view_diff(payload: dict):
     editing_note_id = payload["editingNoteId"]
     search = payload["search"]
     tab_id = payload["tabId"]
-    _ = payload["clientNoteUuidHashes"]
+    client_note_uuid_hashes = payload["clientNoteUuidHashes"]
     anchor_root_id = payload.get("visibleRootAnchorId")
+
+    if not isinstance(client_note_uuid_hashes, dict):
+        raise TypeError("clientNoteUuidHashes must be an object")
 
     # Known hashes plus a viewport anchor so the server can extend the window
     client_hashes = {
-        k: v for k, v in (payload.get("clientNoteUuidHashes") or {}).items() if k
+        k: v for k, v in client_note_uuid_hashes.items() if k
     }
     # Fallback: if client didn't provide an anchor, use the last known root from cached state
     cache_key = {

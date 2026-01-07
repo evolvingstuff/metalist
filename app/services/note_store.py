@@ -606,7 +606,13 @@ class NoteStore:
             while current and current not in visited:
                 ordered.append(current)
                 visited.add(current)
-                current = links.get(current, {}).get('next')
+                link = links.get(current)
+                if link is None:
+                    raise RuntimeError(
+                        "Integrity failure: child list contains node missing from links: "
+                        f"parent_id={parent_id} note_id={current}"
+                    )
+                current = link.get('next')
             return ordered
 
     # Debug helpers -----------------------------------------------------------

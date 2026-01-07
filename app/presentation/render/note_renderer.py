@@ -6,6 +6,8 @@ Acts as the single source of truth for note rendering across the application.
 """
 
 import re
+import logging
+
 from app.utils.text_utils import strip_html
 from app.services.content_cache import get_cached_content
 from app.services.note_store import store as note_store
@@ -273,7 +275,6 @@ def build_note_tree(
         return note_tree
 
     except Exception as e:
-        import logging
         logging.getLogger(__name__).exception("Error building note tree")
         raise
 

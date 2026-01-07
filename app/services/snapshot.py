@@ -17,7 +17,7 @@ ROOT_BUFFER_THRESHOLD = 25
 def _compute_hash(content: str, flags: Dict[str, object], parent_id: Optional[str], prev_id: Optional[str], next_id: Optional[str]) -> str:
     flags_json = json.dumps(flags, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     sha = hashlib.sha256()
-    sha.update((content or "").encode("utf-8"))
+    sha.update(content.encode("utf-8"))
     sha.update(b"|FLAGS|")
     sha.update(flags_json.encode("utf-8"))
     sha.update(b"|STRUCT|")
@@ -43,17 +43,14 @@ def _determine_root_window_end(
             window_end = max(window_end, index)
     if editing_note_id:
         # Expand to include the root containing the editing node
-        try:
-            # Find root id by walking parents in store
-            current = note_store.get_note(editing_note_id)
-            while current.parent_id:
-                current = note_store.get_note(current.parent_id)
-            editing_root_id = current.id
-            index = root_index_map.get(editing_root_id)
-            if index is not None:
-                window_end = max(window_end, index)
-        except Exception:
-            pass
+        # Find root id by walking parents in store
+        current = note_store.get_note(editing_note_id)
+        while current.parent_id:
+            current = note_store.get_note(current.parent_id)
+        editing_root_id = current.id
+        index = root_index_map.get(editing_root_id)
+        if index is not None:
+            window_end = max(window_end, index)
     if seen_root_indices:
         highest_seen_index = max(seen_root_indices)
         while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
@@ -96,7 +93,8 @@ def build_view_state(
         if nid in allow_cache:
             return allow_cache[nid]
         rec = note_store.get_note(nid)
-        content = rec.content or ""
+        assert isinstance(rec.content, str)
+        content = rec.content
         content_match = search_term in content.lower()
         child_match = any(_should_include(child) for child in note_store.get_children(nid))
         editing_match = bool(editing_note_id and nid == editing_note_id)
@@ -146,7 +144,8 @@ def build_view_state(
                 "memoryMode": False,
                 "memorySelected": False,
             }
-            h = _compute_hash(rec.content or "", flags, parent_id, prev_id, next_id)
+            assert isinstance(rec.content, str)
+            h = _compute_hash(rec.content, flags, parent_id, prev_id, next_id)
             structure.append({
                 "id": rec.id,
                 "parentId": parent_id,
@@ -155,7 +154,7 @@ def build_view_state(
                 "hash": h,
             })
             payloads[rec.id] = {
-                "content": rec.content or "",
+                "content": rec.content,
                 "flags": flags,
                 "hash": h,
             }

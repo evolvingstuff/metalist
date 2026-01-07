@@ -49,12 +49,14 @@ def apply_delete_subtree(note_id: str) -> None:
     rec = store.get(note_id)
     parent_id = rec.parent_id
     siblings = store.children(parent_id)
-    try:
-        idx = siblings.index(note_id)
-    except ValueError:
-        idx = -1
+    if note_id not in siblings:
+        raise RuntimeError(
+            "Integrity failure: delete target missing from siblings list: "
+            f"note_id={note_id} parent_id={parent_id}"
+        )
+    idx = siblings.index(note_id)
     prev_id = siblings[idx - 1] if idx > 0 else None
-    next_id = siblings[idx + 1] if idx >= 0 and idx + 1 < len(siblings) else None
+    next_id = siblings[idx + 1] if idx + 1 < len(siblings) else None
 
     ids_to_delete = _collect_subtree_ids(note_id)
 
@@ -81,7 +83,8 @@ def apply_restore_records(records: List[NodeRecord]) -> None:
     with begin_writer() as connection:
         now = datetime.now(timezone.utc)
         for rec in records:
-            ciphertext, nonce, tag = encrypt(rec.content or "")
+            assert isinstance(rec.content, str)
+            ciphertext, nonce, tag = encrypt(rec.content)
             db_insert_note(
                 connection,
                 note_id=rec.id,

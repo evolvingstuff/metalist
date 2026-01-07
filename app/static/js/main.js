@@ -15,26 +15,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initialize authentication first
     console.log('+++ main.js: About to initialize Auth');
-    try {
-        const isAuthOk = await Auth.init();
-        console.log('+++ main.js: Auth init() completed, authOk:', isAuthOk);
-        
-        // Only initialize ModeManager if auth is OK
-        if (isAuthOk) {
-            console.log('+++ main.js: About to initialize ModeManager');
-            
-            if (!ModeManager) {
-                console.error('+++ main.js: ModeManager not defined!');
-            } else {
-                console.log('+++ main.js: ModeManager exists, calling init()');
-                ModeManager.init();
-                console.log('+++ main.js: ModeManager init() completed');
-            }
-        } else {
-            console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
-        }
-    } catch (error) {
-        console.error('+++ main.js: Error initializing:', error);
+    const isAuthOk = await Auth.init();
+    console.log('+++ main.js: Auth init() completed, authOk:', isAuthOk);
+
+    // Only initialize ModeManager if auth is OK
+    if (isAuthOk) {
+        console.log('+++ main.js: About to initialize ModeManager');
+        ModeManager.init();
+        console.log('+++ main.js: ModeManager init() completed');
+    } else {
+        console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
     }
 
     document.addEventListener('focus', (e) => {
