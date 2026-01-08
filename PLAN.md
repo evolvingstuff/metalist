@@ -4,6 +4,13 @@
 
 This version focuses on the UI behavior only. The tag bar should be fully functional from a look-and-feel perspective—visible, positioned correctly, typeable—but **input will not be persisted**. The goal is to nail down the interaction and visual design before wiring up the backend.
 
+### Clarifications / Decisions (V1)
+
+- **Single edit target:** only one note can be in edit mode at a time (so only one tag bar exists at a time).
+- **No prefill:** the input does not need to show existing tags yet.
+- **Reset is OK:** typed tags can reset on rerender / refresh / reopen; persistence is explicitly out of scope.
+- **Styling is secondary:** minimal styling is fine as long as the positioning + visibility behavior is correct (rounded corners suggested but not required).
+
 ## Overview
 
 When a note is in edit mode, a tag bar should appear at the bottom of that note. The tag bar must remain accessible regardless of scroll position while maintaining a clear association with the note being edited.
@@ -79,6 +86,12 @@ You will need to track whether the note being edited has any part visible in the
 
 The visibility check must account for both directions—the note could scroll out of view by going off the top or the bottom of the viewport.
 
+Suggested approach (V1):
+
+- Attach an `IntersectionObserver` to the *edited note container* element.
+- Show the tag bar when `isIntersecting` is true; hide it when false.
+- Ensure the observer is disconnected / updated when edit mode changes (since there is only one edited note at a time).
+
 ### Sticky Positioning Context
 
 Ensure the sticky positioning context is correct. The tag bar should be a child of the note container so that `position: sticky` works relative to that note's scroll context. If the note container isn't the scroll container, you may need to adjust the DOM structure or use JavaScript to achieve the sticky effect.
@@ -88,12 +101,14 @@ Ensure the sticky positioning context is correct. The tag bar should be a child 
 1. **Editing a deeply nested note**: The tag bar appears at the bottom of that specific note, not any ancestor
 2. **Very short notes**: Tag bar simply sits at the bottom; no stickiness needed since it never approaches the viewport edge
 3. **Rapid scrolling across the visibility boundary**: Visibility toggles instantly, no debouncing
-4. **Multiple notes in edit mode** (if supported): Each would need its own tag bar, but clarify if this is a valid state
+4. **Switching edit mode**: When the edited note changes, the old tag bar/observer is removed and the new one is attached
+5. **Viewport resize**: Visibility should remain correct when the window size changes
 
 ## Acceptance Criteria
 
 - [ ] Tag bar appears at bottom of note when entering edit mode
 - [ ] Tag bar is a styled container (e.g., rounded corners) containing a text input that accepts keyboard input
+- [ ] Only one tag bar is visible at a time (since only one note can be edited at once)
 - [ ] Tag bar uses `position: sticky; bottom: 15px`
 - [ ] Tag bar disappears instantly when edited note is fully scrolled out of view (either direction)
 - [ ] Tag bar reappears instantly when any part of edited note becomes visible
