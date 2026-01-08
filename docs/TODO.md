@@ -18,13 +18,12 @@
   * need differential updates first
 * tracking client state?
 * indexing
-* tags
 * "advanced" implications
 * @shell functionality
 * filesystem integration
 * tag suggestions
 * search suggestions
-  * need tags first
+  * requires tags persistence (done)
 * differential updates (per note?)
 * different "view" when rendering
   * need differential updates first? 
@@ -42,6 +41,7 @@
 
 * encryption at rest (AES-GCM) + password protection
 * token-based authentication (single active session)
+* tag persistence: `notes.tags` round-trips via the tag bar
 
 ## Architecture / Refactor
 
@@ -57,4 +57,4 @@
 
 ## Copy/Paste Enhancements
 
-- Eventually don't include tags / comments in copy/paste
+- Decide whether tags should be included in copy/paste (currently included)

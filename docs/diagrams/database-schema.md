@@ -23,8 +23,12 @@ erDiagram
     DBNote {
         string id PK "UUID v4"
         string content "Encrypted content"
+        string tags "Encrypted tags"
+        boolean is_collapsed "UI collapse state"
         bytes encryption_nonce "Per-note nonce"
         bytes encryption_tag "Per-note tag"
+        bytes tags_encryption_nonce "Tags nonce"
+        bytes tags_encryption_tag "Tags tag"
         string parent_id FK "Parent note (self-ref)"
         string prev_id FK "Previous sibling (self-ref)"
         string next_id FK "Next sibling (self-ref)"

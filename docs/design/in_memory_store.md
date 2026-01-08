@@ -7,8 +7,8 @@
 - Keep undo/redo viable (temporary DB reads are permitted via explicit guard overrides).
 
 ## Core Components (As Implemented)
-- `app/services/note_store.py` (`store`): canonical in-memory graph holding decrypted note content + ordering metadata.
-- `app/services/content_cache.py`: decrypts note content from DB into an in-memory cache.
+- `app/services/note_store.py` (`store`): canonical in-memory graph holding decrypted note content + tags + ordering metadata.
+- `app/services/content_cache.py`: decrypts note content + tags from DB into in-memory caches.
 - `app/services/snapshot.py`: builds the view snapshot used by `POST /api2/notes/view`.
 - `app/db/session.py`: provides `begin_writer()`/`connect_reader()` and enforces the post-startup SELECT guard.
 

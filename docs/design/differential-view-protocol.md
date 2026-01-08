@@ -46,6 +46,7 @@
     "notes": {
       "note-uuid-2": {
         "content": "<div>rendered html</div>",
+        "tags": "tag1 tag2",
         "flags": {
           "isEditing": false,
           "isCollapsed": false,
@@ -72,6 +73,7 @@
 ### Notes
 - `snapshot.structure` includes every visible node in the current window. This path is only used when the server lacks a cached view for `(clientId, tabId, search)`.
 - `snapshot.notes` is sparse: only nodes whose `hash` differs from the client’s reported hashes.
+- Each note payload includes `content` (rendered HTML) and `tags` (space-separated string). The `hash` covers content + tags + flags + structural pointers.
 - `rootIds` lists the visible root ordering so the client can refresh infinite-scroll metrics without the full structure.
 - `updateUUID` mirrors `snapshot.updateUUID` for convenience.
 
@@ -85,7 +87,7 @@
       {"type": "move", "noteId": "c", "parentId": "a", "fromIndex": 2, "toIndex": 0}
     ],
     "notes": {
-      "b": {"content": "<div>rendered html</div>", "flags": {"isCollapsed": false}, "hash": "..."}
+      "b": {"content": "<div>rendered html</div>", "tags": "tag1 tag2", "flags": {"isCollapsed": false}, "hash": "..."}
     },
     "locks": {"c": "client-uuid"},
     "lockDiffs": {"c": "client-uuid", "d": ""},
