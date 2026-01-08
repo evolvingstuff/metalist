@@ -236,6 +236,11 @@ function handleKeyDown(event) {
                 handleCopyNoteShortcut(event);
             }
             break;
+        case 'x':
+            if (event.metaKey || event.ctrlKey) {
+                void handleCutNoteShortcut(event);
+            }
+            break;
         case 'y':
             if (event.metaKey || event.ctrlKey) {
                 handleRedoShortcut(event);
@@ -910,6 +915,90 @@ async function handleCopyNoteShortcut(event) {
             error: error.message
         }, Logger.LogCategory.EVENT);
     }
+}
+
+async function handleCutNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleCutNoteShortcut called without an event object');
+    }
+
+    Logger.logDebug('Cut note shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+    }, Logger.LogCategory.EVENT);
+
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (!currentNoteId) {
+        return;
+    }
+
+    const activeElement = document.activeElement;
+    const isTextInput = activeElement
+        && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+    if (isTextInput) {
+        const selectionStart = activeElement.selectionStart;
+        const selectionEnd = activeElement.selectionEnd;
+        if (typeof selectionStart === 'number' && typeof selectionEnd === 'number' && selectionEnd > selectionStart) {
+            if (ModeContext.clipboardMode !== 'system') {
+                ModeContext.setClipboardMode('system');
+            }
+            return;
+        }
+    }
+
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && document.activeElement && document.activeElement.isContentEditable) {
+        if (ModeContext.clipboardMode !== 'system') {
+            ModeContext.setClipboardMode('system');
+        }
+        return;
+    }
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Cut note shortcut ignored while disconnected from server', {
+            isConnected: false,
+        });
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.clipboardMode !== 'note') {
+        ModeContext.setClipboardMode('note');
+    }
+
+    const copyResult = await actionCopyNote();
+    const renderedHtml = copyResult?.html;
+    const renderedPlainText = copyResult?.plain_text;
+
+    if (renderedHtml || renderedPlainText) {
+        if (
+            renderedHtml
+            && typeof ClipboardItem !== 'undefined'
+            && navigator.clipboard
+            && typeof navigator.clipboard.write === 'function'
+        ) {
+            const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+            const plainTextBlob = new Blob([
+                renderedPlainText || '',
+            ], { type: 'text/plain' });
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/html': htmlBlob,
+                    'text/plain': plainTextBlob,
+                })
+            ]);
+        } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(renderedPlainText || '');
+        }
+    }
+
+    await deleteNote(currentNoteId);
 }
 
 function handlePasteNoteSiblingShortcut(event) {
