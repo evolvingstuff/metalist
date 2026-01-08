@@ -7,14 +7,116 @@ import { DOMUtils } from '../../dom-utils.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
+let selectionDragContext = null;
+let ignoreClickAfterSelectionDrag = null;
+
 export function initMouseEvents() {
         
     document.addEventListener('mousedown', handleCollapseToggleMouseDown, { capture: true });
+    document.addEventListener('mousedown', handleSelectionDragMouseDown, { capture: true });
+    document.addEventListener('mouseup', handleSelectionDragMouseUp, { capture: true });
     document.addEventListener('click', handleClick, { capture: true });
     document.addEventListener('mouseover', handleMouseOver, { capture: true });
     document.addEventListener('mouseout', handleMouseOut, { capture: true });
 
     Logger.logInit('Mouse events handler');
+}
+
+function handleSelectionDragMouseDown(event) {
+    if (!event) {
+        throw new Error('handleSelectionDragMouseDown called without an event object');
+    }
+    if (typeof event.button !== 'number') {
+        throw new Error(`Invalid MouseEvent: missing button (type: ${event.type})`);
+    }
+    if (event.button !== 0) {
+        return;
+    }
+    if (!event.target) {
+        throw new Error('Selection drag mousedown missing target element');
+    }
+
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+        selectionDragContext = null;
+        return;
+    }
+
+    const noteContent = event.target.closest('.note-content');
+    if (!noteContent) {
+        selectionDragContext = null;
+        return;
+    }
+
+    const noteElement = noteContent.closest('.note');
+    if (!noteElement) {
+        throw new Error('Found .note-content without parent .note element in selection drag handler');
+    }
+
+    const noteId = noteElement.dataset.noteId;
+    if (!noteId) {
+        throw new Error('Note element missing data-note-id attribute in selection drag handler');
+    }
+
+    if (noteId !== ModeContext.currentNoteId) {
+        selectionDragContext = null;
+        return;
+    }
+
+    selectionDragContext = {
+        noteId,
+        noteContent,
+        startedAt: performance.now(),
+    };
+}
+
+function handleSelectionDragMouseUp(event) {
+    if (!event) {
+        throw new Error('handleSelectionDragMouseUp called without an event object');
+    }
+    if (typeof event.button !== 'number') {
+        throw new Error(`Invalid MouseEvent: missing button (type: ${event.type})`);
+    }
+    if (event.button !== 0) {
+        return;
+    }
+    if (!event.target) {
+        throw new Error('Selection drag mouseup missing target element');
+    }
+
+    const context = selectionDragContext;
+    selectionDragContext = null;
+    if (!context) {
+        return;
+    }
+
+    if (!ModeContext.isEditing || ModeContext.currentNoteId !== context.noteId) {
+        return;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        return;
+    }
+
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (!anchorNode || !focusNode) {
+        throw new Error('Selection missing anchorNode/focusNode after selection drag');
+    }
+
+    if (!context.noteContent.contains(anchorNode) || !context.noteContent.contains(focusNode)) {
+        return;
+    }
+
+    const releasedOutsideContent = !event.target.closest('.note-content');
+    if (!releasedOutsideContent) {
+        return;
+    }
+
+    ignoreClickAfterSelectionDrag = {
+        noteId: context.noteId,
+        ignoreUntil: performance.now() + 500,
+    };
 }
 
 function handleCollapseToggleMouseDown(event) {
@@ -83,6 +185,19 @@ function handleClick(event) {
         });
         return; 
     }
+
+    if (
+        ignoreClickAfterSelectionDrag &&
+        ignoreClickAfterSelectionDrag.noteId === ModeContext.currentNoteId &&
+        performance.now() <= ignoreClickAfterSelectionDrag.ignoreUntil
+    ) {
+        ignoreClickAfterSelectionDrag = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
+    ignoreClickAfterSelectionDrag = null;
 
     const toolbarElement = event.target.closest('#rich-text-toolbar');
     if (toolbarElement) {
