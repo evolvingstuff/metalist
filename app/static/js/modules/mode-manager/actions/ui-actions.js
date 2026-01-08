@@ -5,6 +5,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { highlightCommentsOnRender } from '../events/input-events.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
+import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 
 function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
@@ -161,6 +162,8 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         throw new Error('Notes container not found after diff application');
     }
 
+    syncTagBar(diffResult.editingNoteElement);
+
     // If this is initial page load, fade in the entire app
     if (ModeContext.isInitialPageLoad) {
         const appContainer = document.getElementById('app');
@@ -181,6 +184,7 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
         if (ModeContext.isEditing) {
                         
             DOMUtils.setNoteEditable(noteElement, true);
+            syncTagBar(noteElement);
 
             if (ModeContext.isCaretHidden) {
                 DOMUtils.hideCaret(noteElement);
@@ -200,12 +204,14 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
             attachEditorSurface(noteId, noteContentElement);
         } else {
             detachEditorSurface();
+            clearTagBar();
         }
 
         result = contentHtml;
     } else {
                 
         detachEditorSurface();
+        clearTagBar();
         result = null;
     }
 
