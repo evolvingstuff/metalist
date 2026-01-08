@@ -643,7 +643,7 @@ function handleUndoShortcut(event) {
             return;
         }
 
-        Logger.logDebug('Undo shortcut in editing mode with no editor history; exiting edit mode first', {
+        Logger.logDebug('Undo shortcut in editing mode with no editor history; issuing server undo', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
             isDirty: ModeContext.isDirty,
@@ -653,7 +653,6 @@ function handleUndoShortcut(event) {
         event.preventDefault();
         event.stopPropagation();
 
-        actionExitEditingWithoutSavingOrRefreshing();
         actionUndo();
         return;
     }
@@ -676,7 +675,22 @@ function handleRedoShortcut(event) {
     }
 
     if (ModeContext.isEditing) {
-        return;  
+        if (ModeContext.isDirty || ModeContext.editSessionHasEdits) {
+            return;
+        }
+
+        Logger.logDebug('Redo shortcut in editing mode with no editor history; issuing server redo', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: ModeContext.currentNoteId,
+            isDirty: ModeContext.isDirty,
+            editSessionHasEdits: ModeContext.editSessionHasEdits,
+        }, Logger.LogCategory.EVENT);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        actionRedo();
+        return;
     }
 
     Logger.logDebug('Redo shortcut triggered', {

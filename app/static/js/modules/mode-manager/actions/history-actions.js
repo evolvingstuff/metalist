@@ -47,6 +47,7 @@ export async function actionUndo() {
     let startedAt = performance.now();
     let visibleRootAnchorId = null;
     let focusNoteId = '';
+    const restoreEditing = ModeContext.isEditing;
     Logger.logAction('undo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -88,16 +89,29 @@ export async function actionUndo() {
             ModeContext.setDirty(false);
         }
 
-        if (ModeContext.currentContent !== null) {
-            ModeContext.setCurrentContent(null);
-        }
+        const shouldRestoreEditing = restoreEditing && Boolean(focusNoteId);
 
-        if (ModeContext.currentNoteId !== null) {
-            ModeContext.setCurrentNoteId(null);
-        }
+        if (shouldRestoreEditing) {
+            
+            if (ModeContext.currentNoteId !== focusNoteId) {
+                ModeContext.setCurrentNoteId(focusNoteId);
+            }
 
-        if (ModeContext.isEditing) {
-            ModeContext.setEditing(false);
+            if (!ModeContext.isEditing) {
+                ModeContext.setEditing(true);
+            }
+        } else {
+            if (ModeContext.currentContent !== null) {
+                ModeContext.setCurrentContent(null);
+            }
+
+            if (ModeContext.currentNoteId !== null) {
+                ModeContext.setCurrentNoteId(null);
+            }
+
+            if (ModeContext.isEditing) {
+                ModeContext.setEditing(false);
+            }
         }
     } else {
         
@@ -124,6 +138,7 @@ export async function actionRedo() {
     let startedAt = performance.now();
     let visibleRootAnchorId = null;
     let focusNoteId = '';
+    const restoreEditing = ModeContext.isEditing;
     Logger.logAction('redo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -165,16 +180,29 @@ export async function actionRedo() {
             ModeContext.setDirty(false);
         }
 
-        if (ModeContext.currentContent !== null) {
-            ModeContext.setCurrentContent(null);
-        }
+        const shouldRestoreEditing = restoreEditing && Boolean(focusNoteId);
 
-        if (ModeContext.currentNoteId !== null) {
-            ModeContext.setCurrentNoteId(null);
-        }
+        if (shouldRestoreEditing) {
+            
+            if (ModeContext.currentNoteId !== focusNoteId) {
+                ModeContext.setCurrentNoteId(focusNoteId);
+            }
 
-        if (ModeContext.isEditing) {
-            ModeContext.setEditing(false);
+            if (!ModeContext.isEditing) {
+                ModeContext.setEditing(true);
+            }
+        } else {
+            if (ModeContext.currentContent !== null) {
+                ModeContext.setCurrentContent(null);
+            }
+
+            if (ModeContext.currentNoteId !== null) {
+                ModeContext.setCurrentNoteId(null);
+            }
+
+            if (ModeContext.isEditing) {
+                ModeContext.setEditing(false);
+            }
         }
     } else {
         
