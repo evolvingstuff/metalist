@@ -13,9 +13,14 @@ import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
+import { normalizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
+
+let savedEditingRange = null;
+let savedEditingRangeNoteId = null;
+let savedEditingCursorOffset = null;
 
 export function initKeyboardEvents() {
         
@@ -157,6 +162,11 @@ function handleKeyDown(event) {
     }
 
     switch (event.key) {
+        case 'Tab':
+            if (ModeContext.isEditing) {
+                handleToggleTagBarFocusShortcut(event);
+            }
+            break;
         case 'Escape':
             handleEscapeKey();
             break;
@@ -250,6 +260,99 @@ function handleKeyDown(event) {
             break;
                 
     }
+}
+
+function handleToggleTagBarFocusShortcut(event) {
+    if (!event) {
+        throw new Error('handleToggleTagBarFocusShortcut called without an event object');
+    }
+
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const currentNoteId = ModeContext.currentNoteId;
+    const noteElement = DOMUtils.getNoteById(currentNoteId);
+
+    const activeElement = document.activeElement;
+    const activeIsTagInput = activeElement && activeElement.classList
+        ? activeElement.classList.contains('note-tag-bar-input')
+        : false;
+
+    if (activeIsTagInput) {
+        const tagInput = noteElement.querySelector('.note-tag-bar-input');
+        if (!tagInput) {
+            throw new Error('Expected tag input to exist when toggling focus back to content');
+        }
+
+        const normalized = normalizeTags(tagInput.value || '');
+        setTagBarValue(noteElement, normalized);
+
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        if (!contentElement) {
+            throw new Error('Note missing content element when restoring focus');
+        }
+
+        contentElement.focus();
+
+        if (savedEditingRange && savedEditingRangeNoteId === currentNoteId) {
+            const range = savedEditingRange;
+            const startOk = range.startContainer && contentElement.contains(range.startContainer);
+            const endOk = range.endContainer && contentElement.contains(range.endContainer);
+            if (startOk && endOk) {
+                const selection = window.getSelection();
+                if (!selection) {
+                    throw new Error('No selection available when restoring editor range');
+                }
+                selection.removeAllRanges();
+                selection.addRange(range);
+                return;
+            }
+        }
+
+        if (Number.isInteger(savedEditingCursorOffset) && savedEditingRangeNoteId === currentNoteId) {
+            DOMUtils.focusNote(noteElement, savedEditingCursorOffset);
+            return;
+        }
+
+        DOMUtils.focusNoteEdge(noteElement, 'end');
+        return;
+    }
+
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        if (contentElement && range && range.commonAncestorContainer && contentElement.contains(range.commonAncestorContainer)) {
+            savedEditingRange = range.cloneRange();
+            savedEditingRangeNoteId = currentNoteId;
+            savedEditingCursorOffset = null;
+
+            const anchorNode = selection.anchorNode;
+            if (anchorNode && contentElement.contains(anchorNode)) {
+                savedEditingCursorOffset = DOMUtils.getCursorOffset(noteElement);
+            }
+        }
+    }
+
+    syncTagBar(noteElement);
+    const tagInput = noteElement.querySelector('.note-tag-bar-input');
+    if (!tagInput) {
+        throw new Error('Tag input missing after syncTagBar');
+    }
+
+    const existingTags = typeof tagInput.value === 'string' && tagInput.value.length > 0
+        ? tagInput.value
+        : (noteElement.dataset.noteTags || '');
+    const normalized = normalizeTags(existingTags);
+    tagInput.value = normalized.length > 0 ? `${normalized} ` : '';
+
+    tagInput.focus();
+    const end = tagInput.value.length;
+    tagInput.setSelectionRange(end, end);
 }
 
 function revealCaretForCurrentNote() {
