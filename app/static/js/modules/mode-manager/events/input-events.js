@@ -8,6 +8,67 @@ import { CONFIG } from '../../config.js';
 let commentHighlightTimeoutId = null;
 let lastKeyPressed = null;
 
+function scrollViewportToCenterRect(rect) {
+    if (!rect || typeof rect.top !== 'number' || typeof rect.height !== 'number') {
+        throw new Error('scrollViewportToCenterRect requires a DOMRect-like object');
+    }
+
+    const centerY = rect.top + rect.height / 2;
+    const targetScrollY = Math.max(0, window.scrollY + centerY - window.innerHeight / 2);
+    window.scrollTo({ top: Math.round(targetScrollY), behavior: 'auto' });
+}
+
+function getCaretRectWithin(element) {
+    if (!element) {
+        throw new Error('getCaretRectWithin requires an element');
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+        return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const containerElement = container && container.nodeType === Node.ELEMENT_NODE
+        ? container
+        : container?.parentElement;
+
+    if (!containerElement || !element.contains(containerElement)) {
+        return null;
+    }
+
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.top === 0 && rect.bottom === 0 && rect.height === 0)) {
+        return null;
+    }
+    return rect;
+}
+
+function ensureEditingCaretVisible(noteContentElement) {
+    const caretRect = getCaretRectWithin(noteContentElement);
+    const targetRect = caretRect || noteContentElement.getBoundingClientRect();
+
+    if (!targetRect || typeof targetRect.top !== 'number' || typeof targetRect.bottom !== 'number') {
+        throw new Error('ensureEditingCaretVisible requires a measurable target rect');
+    }
+
+    const margin = 40;
+    const isOffscreen = targetRect.bottom < margin || targetRect.top > window.innerHeight - margin;
+    if (!isOffscreen) {
+        return;
+    }
+
+    Logger.logDebug('Auto-scrolling to keep editing caret visible', {
+        noteId: ModeContext.currentNoteId,
+        hasCaretRect: Boolean(caretRect),
+        rectTop: Math.round(targetRect.top),
+        rectBottom: Math.round(targetRect.bottom),
+    }, Logger.LogCategory.EVENT);
+
+    scrollViewportToCenterRect(targetRect);
+}
+
 export function initInputEvents() {
         
     document.addEventListener('input', handleInput, { capture: true });
@@ -37,6 +98,26 @@ function handleInput(event) {
         return;
     }
         
+    const tagBarInput = event.target.closest('.note-tag-bar-input');
+    if (tagBarInput) {
+        const noteElement = tagBarInput.closest('.note');
+        if (!noteElement) {
+            throw new Error('Found .note-tag-bar-input without parent .note element in input handler');
+        }
+
+        const noteId = noteElement.dataset.noteId;
+        if (!noteId) {
+            throw new Error('Tag bar note element missing data-note-id attribute in input handler');
+        }
+
+        if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+            throw new Error(`Tag bar input fired while not editing note ${noteId}`);
+        }
+
+        ensureEditingCaretVisible(tagBarInput);
+        return;
+    }
+
     const noteContent = event.target.closest('.note-content');
         
     if (noteContent) {
@@ -56,6 +137,8 @@ function handleInput(event) {
         }
 
         ModeContext.markEditSessionHasEdits();
+
+        ensureEditingCaretVisible(noteContent);
 
         if (ModeContext.isCaretHidden) {
             DOMUtils.revealCaret(noteElement);

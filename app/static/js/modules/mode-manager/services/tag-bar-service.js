@@ -67,6 +67,14 @@ function getTagBarInput(tagBar) {
     return tagBar.querySelector(`.${TAG_BAR_INPUT_CLASS}`);
 }
 
+function isTagBarFocused(tagBar) {
+    const input = getTagBarInput(tagBar);
+    if (!input) {
+        return false;
+    }
+    return document.activeElement === input;
+}
+
 export function normalizeTags(rawTags) {
     if (typeof rawTags !== 'string') {
         throw new Error('normalizeTags expects a string');
@@ -166,7 +174,9 @@ export function syncTagBar(editingNoteElement) {
         setTagBarValue(editingNoteElement, initialTags);
     }
 
-    tagBar.hidden = !isElementPartiallyInViewport(editingNoteElement);
+    // Keep the tag bar in the DOM while focused so typing can trigger the
+    // global input handler (used for scroll restoration during editing).
+    tagBar.hidden = !isTagBarFocused(tagBar) && !isElementPartiallyInViewport(editingNoteElement);
 
     if (typeof IntersectionObserver !== 'undefined') {
         if (activeObserver) {
@@ -177,7 +187,7 @@ export function syncTagBar(editingNoteElement) {
                 if (entry.target !== editingNoteElement) {
                     continue;
                 }
-                tagBar.hidden = !entry.isIntersecting;
+                tagBar.hidden = !isTagBarFocused(tagBar) && !entry.isIntersecting;
             }
         });
         activeObserver.observe(editingNoteElement);
@@ -186,7 +196,7 @@ export function syncTagBar(editingNoteElement) {
 
     if (!activeFallbackHandler) {
         activeFallbackHandler = () => {
-            tagBar.hidden = !isElementPartiallyInViewport(editingNoteElement);
+            tagBar.hidden = !isTagBarFocused(tagBar) && !isElementPartiallyInViewport(editingNoteElement);
         };
         window.addEventListener('scroll', activeFallbackHandler, true);
         window.addEventListener('resize', activeFallbackHandler);

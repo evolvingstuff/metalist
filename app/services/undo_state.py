@@ -128,6 +128,9 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         if direction == "redo" and op_type == "delete_subtree":
             return _pick_focus_neighbor(getattr(first, "prev_id", None), getattr(first, "next_id", None))
         if direction == "undo" and op_type == "paste_subtree":
+            parent_id = getattr(first, "parent_id", None)
+            if isinstance(parent_id, str) and parent_id:
+                return parent_id
             return _pick_focus_neighbor(getattr(first, "prev_id", None), getattr(first, "next_id", None))
         return root_id
 
@@ -302,6 +305,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         return None
     op = ctx.history.pop()
     undo_viewport = op["viewport"]
+    focus_note_id_override: Optional[str] = None
 
     if "type" not in op:
         raise RuntimeError(f"Undo op missing required key: type | op={op}")
@@ -343,13 +347,18 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         if not root_id:
             print("FATAL: paste_subtree undo missing root record")
             os._exit(1)
+
+        root_record = store.get(root_id)
+        focus_note_id_override = _pick_focus_neighbor(root_record.prev_id, root_record.next_id)
+        if not focus_note_id_override and root_record.parent_id:
+            focus_note_id_override = root_record.parent_id
         apply_delete_subtree(root_id)
         ctx.redo.append(op)
         generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
 
-    focus_note_id = _compute_focus_note_id(op, direction="undo")
+    focus_note_id = focus_note_id_override if focus_note_id_override is not None else _compute_focus_note_id(op, direction="undo")
     view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
     return {
         **undo_viewport,

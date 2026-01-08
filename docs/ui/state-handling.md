@@ -435,7 +435,7 @@ async function actionSwitchToTab(newTabId) {
   
   // 2. Clean up current state (no background editing)
   if (ModeContext.isEditing) {
-    await actionSaveAndDeselect();
+    await actionSaveAndDeselect(); // tab switches should be single-click: save+exit, then switch
   }
   
   // 3. Switch tab context
@@ -463,7 +463,7 @@ class Command {
   }
 }
 
-// Undo restores exact moment in time
+// Undo restores exact moment in time (including whether the user was editing when possible)
 async function actionUndo() {
   const command = UndoStack.peek();
   

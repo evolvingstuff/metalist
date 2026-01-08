@@ -6,8 +6,14 @@
 | Shortcut | Action |
 |----------|--------|
 | `Esc` | Exit edit mode for current note |
+| `Tab` | Toggle focus between note content and tag bar (restores cursor position) |
 | `⌘ + Enter` | Add new sibling note below current note |
 | `⇧ + ⌘ + Enter` | Add new child note under current note |
+| `⌘ + P` | Save + exit edit mode, then open password modal |
+| `⌘ + C` | Copy selection (default), or copy whole note when no selection |
+| `⌘ + X` | Cut selection (default), or cut whole note when no selection |
+| `⌘ + V` | Paste note as sibling (when note clipboard active) |
+| `⇧ + ⌘ + V` | Paste note as child (when note clipboard active) |
 
 ### General Shortcuts
 | Shortcut | Action |
@@ -24,5 +30,6 @@
 | Click `↑` button | Scroll to the top |
 | Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
+| Drag-select text in note | Releasing mouse outside note keeps edit mode + selection |
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 

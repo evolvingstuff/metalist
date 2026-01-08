@@ -1,5 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
+import { normalizeTags, setTagBarValue } from '../services/tag-bar-service.js';
 
 export function initFocusEvents() {
         
@@ -52,9 +53,29 @@ function handleBlur(event) {
     }
         
     const searchField = event.target.closest('#search-input');
+    const tagBarInput = event.target.closest('.note-tag-bar-input');
         
     if (searchField) {
 
         Logger.logDebug('Search field blurred (no state change)');
+    }
+
+    if (tagBarInput) {
+        const noteElement = tagBarInput.closest('.note');
+        if (!noteElement) {
+            throw new Error('Found tag bar input without parent note element');
+        }
+
+        const noteId = noteElement.dataset?.noteId;
+        if (!noteId) {
+            throw new Error('Tag bar note element missing data-note-id');
+        }
+
+        if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+            return;
+        }
+
+        const normalized = normalizeTags(tagBarInput.value || '');
+        setTagBarValue(noteElement, normalized);
     }
 }

@@ -1,7 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
-import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing } from '../actions/selection-actions.js';
+import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
@@ -13,9 +13,14 @@ import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
+import { normalizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
+
+let savedEditingRange = null;
+let savedEditingRangeNoteId = null;
+let savedEditingCursorOffset = null;
 
 export function initKeyboardEvents() {
         
@@ -157,6 +162,11 @@ function handleKeyDown(event) {
     }
 
     switch (event.key) {
+        case 'Tab':
+            if (ModeContext.isEditing) {
+                handleToggleTagBarFocusShortcut(event);
+            }
+            break;
         case 'Escape':
             handleEscapeKey();
             break;
@@ -226,6 +236,11 @@ function handleKeyDown(event) {
                 handleCopyNoteShortcut(event);
             }
             break;
+        case 'x':
+            if (event.metaKey || event.ctrlKey) {
+                void handleCutNoteShortcut(event);
+            }
+            break;
         case 'y':
             if (event.metaKey || event.ctrlKey) {
                 handleRedoShortcut(event);
@@ -233,7 +248,7 @@ function handleKeyDown(event) {
             break;
         case 'p':
             if (event.metaKey || event.ctrlKey) {
-                handlePasswordModalShortcut(event);
+                void handlePasswordModalShortcut(event);
             }
             break;
         case 'm':
@@ -250,6 +265,99 @@ function handleKeyDown(event) {
             break;
                 
     }
+}
+
+function handleToggleTagBarFocusShortcut(event) {
+    if (!event) {
+        throw new Error('handleToggleTagBarFocusShortcut called without an event object');
+    }
+
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const currentNoteId = ModeContext.currentNoteId;
+    const noteElement = DOMUtils.getNoteById(currentNoteId);
+
+    const activeElement = document.activeElement;
+    const activeIsTagInput = activeElement && activeElement.classList
+        ? activeElement.classList.contains('note-tag-bar-input')
+        : false;
+
+    if (activeIsTagInput) {
+        const tagInput = noteElement.querySelector('.note-tag-bar-input');
+        if (!tagInput) {
+            throw new Error('Expected tag input to exist when toggling focus back to content');
+        }
+
+        const normalized = normalizeTags(tagInput.value || '');
+        setTagBarValue(noteElement, normalized);
+
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        if (!contentElement) {
+            throw new Error('Note missing content element when restoring focus');
+        }
+
+        contentElement.focus();
+
+        if (savedEditingRange && savedEditingRangeNoteId === currentNoteId) {
+            const range = savedEditingRange;
+            const startOk = range.startContainer && contentElement.contains(range.startContainer);
+            const endOk = range.endContainer && contentElement.contains(range.endContainer);
+            if (startOk && endOk) {
+                const selection = window.getSelection();
+                if (!selection) {
+                    throw new Error('No selection available when restoring editor range');
+                }
+                selection.removeAllRanges();
+                selection.addRange(range);
+                return;
+            }
+        }
+
+        if (Number.isInteger(savedEditingCursorOffset) && savedEditingRangeNoteId === currentNoteId) {
+            DOMUtils.focusNote(noteElement, savedEditingCursorOffset);
+            return;
+        }
+
+        DOMUtils.focusNoteEdge(noteElement, 'end');
+        return;
+    }
+
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const contentElement = DOMUtils.getNoteContent(noteElement);
+        if (contentElement && range && range.commonAncestorContainer && contentElement.contains(range.commonAncestorContainer)) {
+            savedEditingRange = range.cloneRange();
+            savedEditingRangeNoteId = currentNoteId;
+            savedEditingCursorOffset = null;
+
+            const anchorNode = selection.anchorNode;
+            if (anchorNode && contentElement.contains(anchorNode)) {
+                savedEditingCursorOffset = DOMUtils.getCursorOffset(noteElement);
+            }
+        }
+    }
+
+    syncTagBar(noteElement);
+    const tagInput = noteElement.querySelector('.note-tag-bar-input');
+    if (!tagInput) {
+        throw new Error('Tag input missing after syncTagBar');
+    }
+
+    const existingTags = typeof tagInput.value === 'string' && tagInput.value.length > 0
+        ? tagInput.value
+        : (noteElement.dataset.noteTags || '');
+    const normalized = normalizeTags(existingTags);
+    tagInput.value = normalized.length > 0 ? `${normalized} ` : '';
+
+    tagInput.focus();
+    const end = tagInput.value.length;
+    tagInput.setSelectionRange(end, end);
 }
 
 function revealCaretForCurrentNote() {
@@ -643,7 +751,7 @@ function handleUndoShortcut(event) {
             return;
         }
 
-        Logger.logDebug('Undo shortcut in editing mode with no editor history; exiting edit mode first', {
+        Logger.logDebug('Undo shortcut in editing mode with no editor history; issuing server undo', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
             isDirty: ModeContext.isDirty,
@@ -653,7 +761,6 @@ function handleUndoShortcut(event) {
         event.preventDefault();
         event.stopPropagation();
 
-        actionExitEditingWithoutSavingOrRefreshing();
         actionUndo();
         return;
     }
@@ -676,7 +783,22 @@ function handleRedoShortcut(event) {
     }
 
     if (ModeContext.isEditing) {
-        return;  
+        if (ModeContext.isDirty || ModeContext.editSessionHasEdits) {
+            return;
+        }
+
+        Logger.logDebug('Redo shortcut in editing mode with no editor history; issuing server redo', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: ModeContext.currentNoteId,
+            isDirty: ModeContext.isDirty,
+            editSessionHasEdits: ModeContext.editSessionHasEdits,
+        }, Logger.LogCategory.EVENT);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        actionRedo();
+        return;
     }
 
     Logger.logDebug('Redo shortcut triggered', {
@@ -795,6 +917,90 @@ async function handleCopyNoteShortcut(event) {
     }
 }
 
+async function handleCutNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleCutNoteShortcut called without an event object');
+    }
+
+    Logger.logDebug('Cut note shortcut triggered', {
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+    }, Logger.LogCategory.EVENT);
+
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (!currentNoteId) {
+        return;
+    }
+
+    const activeElement = document.activeElement;
+    const isTextInput = activeElement
+        && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+    if (isTextInput) {
+        const selectionStart = activeElement.selectionStart;
+        const selectionEnd = activeElement.selectionEnd;
+        if (typeof selectionStart === 'number' && typeof selectionEnd === 'number' && selectionEnd > selectionStart) {
+            if (ModeContext.clipboardMode !== 'system') {
+                ModeContext.setClipboardMode('system');
+            }
+            return;
+        }
+    }
+
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && document.activeElement && document.activeElement.isContentEditable) {
+        if (ModeContext.clipboardMode !== 'system') {
+            ModeContext.setClipboardMode('system');
+        }
+        return;
+    }
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Cut note shortcut ignored while disconnected from server', {
+            isConnected: false,
+        });
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.clipboardMode !== 'note') {
+        ModeContext.setClipboardMode('note');
+    }
+
+    const copyResult = await actionCopyNote();
+    const renderedHtml = copyResult?.html;
+    const renderedPlainText = copyResult?.plain_text;
+
+    if (renderedHtml || renderedPlainText) {
+        if (
+            renderedHtml
+            && typeof ClipboardItem !== 'undefined'
+            && navigator.clipboard
+            && typeof navigator.clipboard.write === 'function'
+        ) {
+            const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+            const plainTextBlob = new Blob([
+                renderedPlainText || '',
+            ], { type: 'text/plain' });
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/html': htmlBlob,
+                    'text/plain': plainTextBlob,
+                })
+            ]);
+        } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(renderedPlainText || '');
+        }
+    }
+
+    await deleteNote(currentNoteId);
+}
+
 function handlePasteNoteSiblingShortcut(event) {
     if (!event) {
         throw new Error('handlePasteNoteSiblingShortcut called without an event object');
@@ -859,7 +1065,7 @@ function handlePasteNoteChildShortcut(event) {
     actionPasteNoteChild();
 }
 
-function handlePasswordModalShortcut(event) {
+async function handlePasswordModalShortcut(event) {
     if (!event) {
         throw new Error('handlePasswordModalShortcut called without an event object');
     }
@@ -876,7 +1082,7 @@ function handlePasswordModalShortcut(event) {
 
     // Exit editing mode if active
     if (ModeContext.isEditing) {
-        actionDeselectNote();
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
 
     // Open the password modal
@@ -909,14 +1115,10 @@ function handleMemoryModalShortcut(event) {
     event.stopPropagation();
 
     const searchQuery = ModeContext.searchQuery || '';
-    try {
-        memoryModal.openWithSearch(searchQuery);
-        Logger.logDebug('Memory modal opened via keyboard shortcut', {
-            searchQuery
-        }, Logger.LogCategory.EVENT);
-    } catch (error) {
-        Logger.logError('Unable to open memory modal', error);
-    }
+    memoryModal.openWithSearch(searchQuery);
+    Logger.logDebug('Memory modal opened via keyboard shortcut', {
+        searchQuery
+    }, Logger.LogCategory.EVENT);
 }
 
 function handleHelpModalShortcut(event) {
@@ -943,12 +1145,8 @@ function handleHelpModalShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    try {
-        helpModal.open();
-        Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
-    } catch (error) {
-        Logger.logError('Unable to open help modal', error);
-    }
+    helpModal.open();
+    Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
 }
 
 
@@ -1130,6 +1328,10 @@ async function switchToTabContext(tabId, options = {}) {
         return;
     }
 
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
+    }
+
     const previousTabId = ModeContext.activeTabId;
     const tabOrder = ModeContext.tabOrder;
     if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
@@ -1181,12 +1383,18 @@ function snapshotActiveTabScrollState() {
 }
 
 async function duplicateTabContext(sourceTabId) {
+    const startedEditing = ModeContext.isEditing;
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Tab duplication ignored while request in-flight', {
             activeTab: ModeContext.activeTabId,
             sourceTabId,
         });
         return;
+    }
+
+    if (startedEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
     if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
         throw new Error('sourceTabId is required for tab duplication');
@@ -1278,10 +1486,14 @@ async function duplicateTabContext(sourceTabId) {
     updateSearchContextsList();
 
     if (CONFIG.TABS.CREATE_AND_SWITCH) {
-        await switchToTabContext(newTabId, {
-            expectedUpdatedNotesMax: 0,
-            expectedVdomOpsMax: 0,
-        });
+        const switchOptions = startedEditing
+            ? {}
+            : {
+                expectedUpdatedNotesMax: 0,
+                expectedVdomOpsMax: 0,
+            };
+
+        await switchToTabContext(newTabId, switchOptions);
         return;
     }
 
@@ -1295,6 +1507,10 @@ async function moveTabContext(tabId, delta) {
             tabId,
         });
         return;
+    }
+
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
     if (typeof tabId !== 'string' || tabId.length === 0) {
         throw new Error('tabId is required for tab reorder');
@@ -1336,6 +1552,10 @@ async function deleteTabContext(deleteTabId) {
             deleteTabId,
         });
         return;
+    }
+
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
     if (typeof deleteTabId !== 'string' || deleteTabId.length === 0) {
         throw new Error('deleteTabId is required for tab deletion');

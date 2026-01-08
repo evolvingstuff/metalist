@@ -18,6 +18,7 @@ This document defines the standard pattern for implementing modal dialogs in the
   - In searching state  
   - Any other "active" state that should be closed first
 - Caller responsible for cleaning state before attempting to open modal
+- Keyboard shortcut handlers are expected to clean state (e.g., `Cmd+P` saves + exits edit mode before opening the password modal)
 
 ### 3. **Event Handling Integration**
 - Follow existing pattern in `keyboard-events.js` (like Esc key handler)
@@ -57,7 +58,7 @@ All modals extend BaseModal which provides:
 
 1. User triggers modal (e.g., Cmd+P keyboard shortcut)
 2. Handler checks current application state
-3. If editing/searching → gracefully close those states first
+3. If editing/searching → save + exit editing and/or exit search first
 4. Attempt `new ModalClass().open()`
 5. BaseModal enforces clean state (throws error if dirty)
 6. Modal opens and updates `ModeContext.modalStack`
