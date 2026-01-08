@@ -19,7 +19,7 @@ from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
-from app.services.content_cache import get_cached_content
+from app.services.content_cache import get_cached_content, get_cached_tags
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,7 @@ class NoteRecord:
     next_id: Optional[str]
     is_collapsed: bool
     content: str
+    tags: str
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
@@ -100,6 +101,12 @@ class NoteStore:
                         f"Cache missing plaintext for note {note.id}; store hydration failed"
                     )
 
+                tags = get_cached_tags(note.id)
+                if tags is None:
+                    raise RuntimeError(
+                        f"Cache missing tags for note {note.id}; store hydration failed"
+                    )
+
                 note_map[note.id] = NoteRecord(
                     id=note.id,
                     parent_id=note.parent_id,
@@ -107,6 +114,7 @@ class NoteStore:
                     next_id=note.next_id,
                     is_collapsed=bool(getattr(note, "is_collapsed", False)),
                     content=plaintext,
+                    tags=tags,
                     created_at=getattr(note, "created_at", None),
                     updated_at=getattr(note, "updated_at", None),
                 )
@@ -153,7 +161,7 @@ class NoteStore:
 
     # Mutation helpers --------------------------------------------------------
 
-    def add_note_from_db(self, note: SimpleNamespace, plaintext: str) -> None:
+    def add_note_from_db(self, note: SimpleNamespace, plaintext: str, tags: str) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -164,13 +172,14 @@ class NoteStore:
                 next_id=note.next_id,
                 is_collapsed=bool(getattr(note, "is_collapsed", False)),
                 content=plaintext,
+                tags=tags,
                 created_at=getattr(note, "created_at", None),
                 updated_at=getattr(note, "updated_at", None),
             )
             self._note_map[note.id] = record
             self._insert_link(record.parent_id, record.id, record.prev_id, record.next_id)
 
-    def update_note_from_db(self, note: SimpleNamespace, plaintext: str) -> None:
+    def update_note_from_db(self, note: SimpleNamespace, plaintext: str, tags: str) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -184,6 +193,7 @@ class NoteStore:
                 next_id=current.next_id,
                 is_collapsed=current.is_collapsed,
                 content=plaintext,
+                tags=tags,
                 created_at=getattr(note, "created_at", current.created_at),
                 updated_at=getattr(note, "updated_at", current.updated_at),
             )
@@ -203,6 +213,7 @@ class NoteStore:
                     next_id=note.next_id,
                     is_collapsed=record.is_collapsed,
                     content=record.content,
+                    tags=record.tags,
                     created_at=getattr(note, "created_at", record.created_at),
                     updated_at=getattr(note, "updated_at", record.updated_at),
                 )
@@ -217,6 +228,7 @@ class NoteStore:
                     next_id=note.next_id,
                     is_collapsed=record.is_collapsed,
                     content=record.content,
+                    tags=record.tags,
                     created_at=getattr(note, "created_at", record.created_at),
                     updated_at=getattr(note, "updated_at", record.updated_at),
                 )
@@ -247,6 +259,7 @@ class NoteStore:
                     next_id=getattr(note, "next_id", record.next_id),
                     is_collapsed=record.is_collapsed,
                     content=record.content,
+                    tags=record.tags,
                     created_at=record.created_at,
                     updated_at=getattr(note, "updated_at", record.updated_at),
                 )
@@ -310,6 +323,7 @@ class NoteStore:
                 next_id=record.next_id,
                 is_collapsed=collapsed,
                 content=record.content,
+                tags=record.tags,
                 created_at=record.created_at,
                 updated_at=record.updated_at,
             )
@@ -374,6 +388,7 @@ class NoteStore:
             next_id=next_id,
             is_collapsed=record.is_collapsed,
             content=record.content,
+            tags=record.tags,
             created_at=record.created_at,
             updated_at=record.updated_at,
         )

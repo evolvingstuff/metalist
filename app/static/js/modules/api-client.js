@@ -194,19 +194,19 @@ export const NotesAPI = {
         });
     },
 
-    async updateNote(noteId, content) {
+    async updateNote(noteId, content, tags) {
         return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
             method: 'PUT',
             claimSession: true,
-            body: JSON.stringify({ content })
+            body: JSON.stringify({ content, tags })
         });
     },
 
-    async saveNote(noteId, content) {
+    async saveNote(noteId, content, tags) {
         return this._apiCall(CONFIG.API.NOTES.SAVE(noteId), {
             method: 'PUT',
             claimSession: true,
-            body: JSON.stringify({ content })
+            body: JSON.stringify({ content, tags })
         }); 
     },
 

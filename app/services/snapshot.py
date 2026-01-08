@@ -14,10 +14,19 @@ ROOT_CHUNK_SIZE = 100
 ROOT_BUFFER_THRESHOLD = 25
 
 
-def _compute_hash(content: str, flags: Dict[str, object], parent_id: Optional[str], prev_id: Optional[str], next_id: Optional[str]) -> str:
+def _compute_hash(
+    content: str,
+    tags: str,
+    flags: Dict[str, object],
+    parent_id: Optional[str],
+    prev_id: Optional[str],
+    next_id: Optional[str],
+) -> str:
     flags_json = json.dumps(flags, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     sha = hashlib.sha256()
     sha.update(content.encode("utf-8"))
+    sha.update(b"|TAGS|")
+    sha.update(tags.encode("utf-8"))
     sha.update(b"|FLAGS|")
     sha.update(flags_json.encode("utf-8"))
     sha.update(b"|STRUCT|")
@@ -145,7 +154,8 @@ def build_view_state(
                 "memorySelected": False,
             }
             assert isinstance(rec.content, str)
-            h = _compute_hash(rec.content, flags, parent_id, prev_id, next_id)
+            assert isinstance(rec.tags, str)
+            h = _compute_hash(rec.content, rec.tags, flags, parent_id, prev_id, next_id)
             structure.append({
                 "id": rec.id,
                 "parentId": parent_id,
@@ -155,6 +165,7 @@ def build_view_state(
             })
             payloads[rec.id] = {
                 "content": rec.content,
+                "tags": rec.tags,
                 "flags": flags,
                 "hash": h,
             }

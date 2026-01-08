@@ -99,11 +99,15 @@ Legacy fields (migrated/cleared on successful login):
 
 notes table:
 - content: Encrypted note content (Base64)
-- nonce: Per-note nonce for AES-GCM
-- tag: Per-note authentication tag
+- encryption_nonce: Per-note nonce for AES-GCM
+- encryption_tag: Per-note authentication tag
+- tags: Encrypted note tags (Base64)
+- tags_encryption_nonce: Tags nonce for AES-GCM
+- tags_encryption_tag: Tags authentication tag
 
-Important: if any note rows have nonce/tag set, they are encrypted and the
-plaintext is unrecoverable without the DEK. If the `app_settings.encrypted_dek`
+Important: if any note rows have `encryption_nonce/encryption_tag` (content)
+or `tags_encryption_nonce/tags_encryption_tag` (tags) set, that field is
+encrypted and unrecoverable without the DEK. If the `app_settings.encrypted_dek`
 fields are cleared while encrypted notes remain, the server should refuse to
 start rather than display placeholders.
 ```

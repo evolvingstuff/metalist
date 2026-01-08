@@ -38,6 +38,7 @@ def _snapshot_subtree(root_id: str) -> List[NodeRecord]:
             next_id=rec.next_id,
             is_collapsed=rec.is_collapsed,
             content=rec.content,
+            tags=rec.tags,
             created_at=rec.created_at,
             updated_at=rec.updated_at,
         ))
@@ -84,13 +85,18 @@ def apply_restore_records(records: List[NodeRecord]) -> None:
         now = datetime.now(timezone.utc)
         for rec in records:
             assert isinstance(rec.content, str)
+            assert isinstance(rec.tags, str)
             ciphertext, nonce, tag = encrypt(rec.content)
+            tags_ciphertext, tags_nonce, tags_tag = encrypt(rec.tags)
             db_insert_note(
                 connection,
                 note_id=rec.id,
                 content=ciphertext,
                 encryption_nonce=nonce,
                 encryption_tag=tag,
+                tags=tags_ciphertext,
+                tags_encryption_nonce=tags_nonce,
+                tags_encryption_tag=tags_tag,
                 parent_id=rec.parent_id,
                 prev_id=rec.prev_id,
                 next_id=rec.next_id,

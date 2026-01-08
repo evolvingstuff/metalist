@@ -76,7 +76,13 @@ def _insert_cloned_subtree_at(
         if not isinstance(content, str):
             raise ValueError("Clipboard snapshot content must be a string")
 
-        apply_insert_note(new_id, new_parent, prev_id, next_id, content)
+        if "tags" not in rec:
+            raise ValueError("Clipboard snapshot missing required key: tags")
+        tags = rec["tags"]
+        if not isinstance(tags, str):
+            raise ValueError("Clipboard snapshot tags must be a string")
+
+        apply_insert_note(new_id, new_parent, prev_id, next_id, content=content, tags=tags)
 
         last_per_parent[new_parent] = new_id
         if new_root_id is None and new_parent == dest_parent:

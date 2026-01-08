@@ -27,7 +27,7 @@ class CmdCreateChild(QueryCommand):
 
         note_uuid = str(uuid.uuid4())
         content = ""
-        apply_insert_note(note_uuid, parent.id, prev_id, next_id, content)
+        apply_insert_note(note_uuid, parent.id, prev_id, next_id, content=content)
 
         from app.services.undo_state import record_create
         rec = {
@@ -37,6 +37,7 @@ class CmdCreateChild(QueryCommand):
             "next_id": next_id,
             "is_collapsed": False,
             "content": content,
+            "tags": "",
             "created_at": None,
             "updated_at": None,
         }

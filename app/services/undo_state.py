@@ -150,7 +150,16 @@ def _ctx(client_id: str) -> _ClientUndo:
     return _clients[client_id]
 
 
-def record_update(client_id: str, note_id: str, *, before: str, after: str, viewport: Dict[str, object]) -> None:
+def record_update(
+    client_id: str,
+    note_id: str,
+    *,
+    before: str,
+    after: str,
+    before_tags: str,
+    after_tags: str,
+    viewport: Dict[str, object],
+) -> None:
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -159,6 +168,8 @@ def record_update(client_id: str, note_id: str, *, before: str, after: str, view
         "note_id": note_id,
         "before": before,
         "after": after,
+        "before_tags": before_tags,
+        "after_tags": after_tags,
         "viewport": normalized_viewport,
         "viewAnchorRootId": view_anchor_root_id,
     })
@@ -297,7 +308,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
     op_type = op["type"]
 
     if op_type == "update_content":
-        apply_update_content(op["note_id"], op["before"])  # apply inverse
+        apply_update_content(op["note_id"], op["before"], op["before_tags"])  # apply inverse
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "create_note":
@@ -359,7 +370,7 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
     op_type = op["type"]
 
     if op_type == "update_content":
-        apply_update_content(op["note_id"], op["after"])  # reapply
+        apply_update_content(op["note_id"], op["after"], op["after_tags"])  # reapply
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "create_note":

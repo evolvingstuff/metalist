@@ -67,15 +67,12 @@ export async function actionDeselectNote() {
     });
 
     const noteId = ModeContext.currentNoteId;
-    const isDirty = ModeContext.isDirty;
 
     if (!ModeContext.isEditing) {
         throw new Error('Cannot deselect note: not currently editing');
     }
 
-    if (isDirty) {
-        await actionSaveNote(noteId);
-    }
+    await actionSaveNote(noteId);
 
     ModeContext.setEditing(false);
 
@@ -145,7 +142,7 @@ export async function actionSwitchNotes(newNoteId, options = {}) {
         return;
     }
 
-    if (ModeContext.isDirty && currentNoteId) {
+    if (currentNoteId) {
         await actionSaveNote(currentNoteId);
     }
 

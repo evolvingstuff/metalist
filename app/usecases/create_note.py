@@ -14,8 +14,17 @@ from app.db.notes_sql import insert_note as db_insert_note, update_links as db_u
 from app.security.encryption import encrypt
 
 
-def apply_insert_note(note_id: str, parent_id: Optional[str], prev_id: Optional[str], next_id: Optional[str], content: str = "") -> None:
+def apply_insert_note(
+    note_id: str,
+    parent_id: Optional[str],
+    prev_id: Optional[str],
+    next_id: Optional[str],
+    *,
+    content: str = "",
+    tags: str = "",
+) -> None:
     ciphertext, nonce, tag = encrypt(content)
+    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags)
     now = datetime.now(timezone.utc)
     with begin_writer() as connection:
         db_insert_note(
@@ -24,6 +33,9 @@ def apply_insert_note(note_id: str, parent_id: Optional[str], prev_id: Optional[
             content=ciphertext,
             encryption_nonce=nonce,
             encryption_tag=tag,
+            tags=tags_ciphertext,
+            tags_encryption_nonce=tags_nonce,
+            tags_encryption_tag=tags_tag,
             parent_id=parent_id,
             prev_id=prev_id,
             next_id=next_id,
@@ -44,6 +56,7 @@ def apply_insert_note(note_id: str, parent_id: Optional[str], prev_id: Optional[
             next_id=None,
             is_collapsed=False,
             content=content,
+            tags=tags,
             created_at=now,
             updated_at=now,
         ),
@@ -81,7 +94,7 @@ class CmdCreateNote(QueryCommand):
             if trimmed:
                 content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed}\" */</div>"
 
-        apply_insert_note(note_uuid, None, prev_id, next_id, content)
+        apply_insert_note(note_uuid, None, prev_id, next_id, content=content)
 
         # Record for undo (delete on undo)
         from app.services.undo_state import record_create
@@ -92,6 +105,7 @@ class CmdCreateNote(QueryCommand):
             "next_id": next_id,
             "is_collapsed": False,
             "content": content,
+            "tags": "",
             "created_at": None,
             "updated_at": None,
         }

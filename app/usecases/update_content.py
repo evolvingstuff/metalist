@@ -9,14 +9,16 @@ from app.services.store import store
 from app.services.sync import generate_new_uuid
 
 from app.db.session import begin_writer
-from app.db.notes_sql import update_note_content as db_update_note_content
+from app.db.notes_sql import update_note_fields as db_update_note_fields
 from app.security.encryption import encrypt
 
 
-def apply_update_content(note_id: str, content: str) -> None:
-    """Apply a content update to DB and in-memory store in a single atomic commit."""
+def apply_update_content(note_id: str, content: str, tags: str) -> None:
+    """Apply a content+tags update to DB and in-memory store in a single atomic commit."""
     if not isinstance(content, str):
         raise TypeError("content must be a string")
+    if not isinstance(tags, str):
+        raise TypeError("tags must be a string")
 
     # Validate existence without DB reads
     try:
@@ -26,27 +28,32 @@ def apply_update_content(note_id: str, content: str) -> None:
 
     # Encrypt (or pass-through if encryption unavailable)
     ciphertext, nonce, tag = encrypt(content)
+    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags)
     now = datetime.now(timezone.utc)
 
     # Single SQL transaction
     with begin_writer() as connection:
-        db_update_note_content(
+        db_update_note_fields(
             connection,
             note_id,
             content=ciphertext,
             encryption_nonce=nonce,
             encryption_tag=tag,
+            tags=tags_ciphertext,
+            tags_encryption_nonce=tags_nonce,
+            tags_encryption_tag=tags_tag,
             updated_at=now,
         )
 
     # Update in-memory store only after commit
-    store.update_content(note_id, content, updated_at=now)
+    store.update_content_and_tags(note_id, content, tags, updated_at=now)
 
 
 @dataclass
 class CmdUpdateContent(QueryCommand):
     note_id: str
     content: str
+    tags: str
     client_id: str
     viewport: Dict[str, object]
 
@@ -55,8 +62,10 @@ class CmdUpdateContent(QueryCommand):
 
     def execute(self) -> Dict[str, str]:
         # Capture previous plaintext for undo recording
-        prev = store.get(self.note_id).content
-        apply_update_content(self.note_id, self.content)
+        record = store.get(self.note_id)
+        prev = record.content
+        prev_tags = record.tags
+        apply_update_content(self.note_id, self.content, self.tags)
 
         # Record in undo stack
         from app.services.undo_state import record_update
@@ -65,6 +74,8 @@ class CmdUpdateContent(QueryCommand):
             self.note_id,
             before=prev,
             after=self.content,
+            before_tags=prev_tags,
+            after_tags=self.tags,
             viewport=self.viewport,
         )
 

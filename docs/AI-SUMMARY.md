@@ -14,6 +14,7 @@
 - `app/usecases`: Cmd* application commands (transport-agnostic orchestration).
 - `app/services`: Auth, tokens, cache, sync, undo, integrity, note store, snapshots, tab state cache.
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
+- Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/tab_state.py`: Tracks `(client, tab)` search + scroll metadata used by the UI between reloads.
 - `app/security/encryption.py`: Crypto facade (AES-GCM, PBKDF2, key mgmt helpers).
@@ -31,6 +32,7 @@
 
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.
+- Tag persistence: tags are included in `snapshot.notes[*].tags` and are saved alongside note content on `PUT /api2/notes/{id}/save`.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.

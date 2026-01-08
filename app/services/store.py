@@ -56,11 +56,19 @@ class _AdapterStore:
             updated_at=getattr(note, 'updated_at', None),
         )
         assert isinstance(note.content, str)
-        _note_store.add_note_from_db(row, note.content)
+        assert isinstance(note.tags, str)
+        _note_store.add_note_from_db(row, note.content, note.tags)
 
-    def update_content(self, note_id: str, new_content: str, *, updated_at: Optional[datetime] = None) -> None:
+    def update_content_and_tags(
+        self,
+        note_id: str,
+        new_content: str,
+        tags: str,
+        *,
+        updated_at: Optional[datetime] = None,
+    ) -> None:
         row = SimpleNamespace(id=note_id, updated_at=updated_at)
-        _note_store.update_note_from_db(row, new_content)
+        _note_store.update_note_from_db(row, new_content, tags)
 
     def delete_subtree(self, note_id: str) -> None:
         _note_store.remove_note(note_id)
@@ -78,7 +86,8 @@ class _AdapterStore:
                 updated_at=rec.updated_at,
             )
             assert isinstance(rec.content, str)
-            _note_store.add_note_from_db(row, rec.content)
+            assert isinstance(rec.tags, str)
+            _note_store.add_note_from_db(row, rec.content, rec.tags)
 
     def move_note(self, note_id: str, new_parent_id: Optional[str], prev_id: Optional[str]) -> None:
         # Determine next based on prev in destination parent
