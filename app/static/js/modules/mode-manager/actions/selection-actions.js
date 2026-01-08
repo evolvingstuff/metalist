@@ -5,6 +5,7 @@ import { detachEditorSurface } from '../../editor-toolbar.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
+import { clearTagBar } from '../services/tag-bar-service.js';
 
 export async function actionSelectNote(noteId, options = {}) {
     const {
@@ -109,6 +110,7 @@ export function actionExitEditingWithoutSavingOrRefreshing() {
     const noteElement = DOMUtils.getNoteById(noteId);
     DOMUtils.setNoteEditable(noteElement, false);
     detachEditorSurface();
+    clearTagBar();
 
     ModeContext.setEditing(false);
     ModeContext.setCurrentNoteId(null);
@@ -151,6 +153,7 @@ export async function actionSwitchNotes(newNoteId, options = {}) {
 
     if (currentNoteElement) {
         DOMUtils.setNoteEditable(currentNoteElement, false);
+        clearTagBar();
     }
 
     if (ModeContext.currentContent === null) {

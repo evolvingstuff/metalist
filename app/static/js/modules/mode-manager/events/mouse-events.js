@@ -91,6 +91,14 @@ function handleClick(event) {
         }, Logger.LogCategory.EVENT);
         return;
     }
+
+    const tagBarElement = event.target.closest('.note-tag-bar');
+    if (tagBarElement) {
+        Logger.logDebug('Click inside tag bar', {
+            eventType: event.type
+        }, Logger.LogCategory.EVENT);
+        return;
+    }
     
     // Check if we're disconnected from server
     if (!ModeContext.isConnected) {

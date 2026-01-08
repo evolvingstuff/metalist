@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
+import { clearTagBar } from '../services/tag-bar-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -312,6 +313,7 @@ async function setNoteCollapse(noteId, collapsed) {
         DOMUtils.setNoteEditable(editingNoteElement, false);
         DOMUtils.revealCaret(editingNoteElement);
         detachEditorSurface();
+        clearTagBar();
 
         ModeContext.setEditing(false);
         ModeContext.setCurrentNoteId(null);
