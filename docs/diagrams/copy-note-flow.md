@@ -2,6 +2,8 @@
 
 High-level flow: if the currently edited note is dirty, save first so the copied note includes the latest edits.
 
+Related behavior: Cmd+X (cut note when no selection) uses the same copy flow and then deletes the note (undoable via delete-subtree undo).
+
 ```mermaid
 sequenceDiagram
     participant U as User
