@@ -99,6 +99,11 @@ function handleClick(event) {
         }, Logger.LogCategory.EVENT);
         return;
     }
+
+    const tabContextsElement = event.target.closest('#search-contexts-list');
+    if (tabContextsElement) {
+        return;
+    }
     
     // Check if we're disconnected from server
     if (!ModeContext.isConnected) {

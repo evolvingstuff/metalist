@@ -1,7 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
-import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing } from '../actions/selection-actions.js';
+import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
@@ -1130,6 +1130,10 @@ async function switchToTabContext(tabId, options = {}) {
         return;
     }
 
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
+    }
+
     const previousTabId = ModeContext.activeTabId;
     const tabOrder = ModeContext.tabOrder;
     if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
@@ -1181,12 +1185,18 @@ function snapshotActiveTabScrollState() {
 }
 
 async function duplicateTabContext(sourceTabId) {
+    const startedEditing = ModeContext.isEditing;
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Tab duplication ignored while request in-flight', {
             activeTab: ModeContext.activeTabId,
             sourceTabId,
         });
         return;
+    }
+
+    if (startedEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
     if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
         throw new Error('sourceTabId is required for tab duplication');
@@ -1278,10 +1288,14 @@ async function duplicateTabContext(sourceTabId) {
     updateSearchContextsList();
 
     if (CONFIG.TABS.CREATE_AND_SWITCH) {
-        await switchToTabContext(newTabId, {
-            expectedUpdatedNotesMax: 0,
-            expectedVdomOpsMax: 0,
-        });
+        const switchOptions = startedEditing
+            ? {}
+            : {
+                expectedUpdatedNotesMax: 0,
+                expectedVdomOpsMax: 0,
+            };
+
+        await switchToTabContext(newTabId, switchOptions);
         return;
     }
 
@@ -1295,6 +1309,10 @@ async function moveTabContext(tabId, delta) {
             tabId,
         });
         return;
+    }
+
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
     if (typeof tabId !== 'string' || tabId.length === 0) {
         throw new Error('tabId is required for tab reorder');
@@ -1336,6 +1354,10 @@ async function deleteTabContext(deleteTabId) {
             deleteTabId,
         });
         return;
+    }
+
+    if (ModeContext.isEditing) {
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
     if (typeof deleteTabId !== 'string' || deleteTabId.length === 0) {
         throw new Error('deleteTabId is required for tab deletion');

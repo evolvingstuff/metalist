@@ -85,6 +85,26 @@ export async function actionDeselectNote() {
     ModeContext.validate();
 }
 
+export async function actionSaveAndExitEditingWithoutRefreshing() {
+    Logger.logAction('save_and_exit_editing_without_refresh', {
+        currentNoteId: ModeContext.currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty,
+    });
+
+    if (!ModeContext.isEditing) {
+        throw new Error('Cannot save and exit editing locally: not currently editing');
+    }
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        throw new Error('Cannot save and exit editing locally: currentNoteId is missing');
+    }
+
+    await actionSaveNote(noteId);
+    actionExitEditingWithoutSavingOrRefreshing();
+}
+
 export function actionExitEditingWithoutSavingOrRefreshing() {
     Logger.logAction('exit_editing_without_saving_or_refreshing', {
         currentNoteId: ModeContext.currentNoteId,
