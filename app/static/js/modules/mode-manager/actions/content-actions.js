@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CommentUtils } from '../../comment-utils.js';
+import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 
 export async function actionSaveNote(noteId) {
     Logger.logAction('saveNote', { noteId });
@@ -18,21 +19,30 @@ export async function actionSaveNote(noteId) {
     const noteElement = DOMUtils.getNoteById(noteId);
     const noteContentElement = DOMUtils.getNoteContent(noteElement);
     const contentHTML = CommentUtils.getCleanContent(noteContentElement);
+    const tags = getTagBarValue(noteElement);
+    const previousTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
+    const tagsChanged = tags !== previousTags;
 
-    if (!ModeContext.isDirty) {
+    if (!ModeContext.isDirty && !tagsChanged) {
         Logger.logDebug('Note not dirty, skipping save', { 
             noteId,
-            contentLength: contentHTML.length
+            contentLength: contentHTML.length,
+            tagsChanged,
         }, Logger.LogCategory.DEBUG);
         return Promise.resolve(); 
     }
 
     ModeContext.setLoading(true);
 
-    const response = await NotesAPI.saveNote(noteId, contentHTML);
+    const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
 
-    ModeContext.setLastSavedContent(contentHTML);
-    ModeContext.setDirty(false);
+    if (ModeContext.isDirty) {
+        ModeContext.setLastSavedContent(contentHTML);
+        ModeContext.setDirty(false);
+    }
+    if (tagsChanged) {
+        setTagBarValue(noteElement, tags);
+    }
 
     ModeContext.setLoading(false);
 
@@ -64,18 +74,21 @@ export async function actionSaveNoteOnIdle(noteId) {
     const noteElement = DOMUtils.getNoteById(noteId);
     const noteContentElement = DOMUtils.getNoteContent(noteElement);
     const contentHTML = CommentUtils.getCleanContent(noteContentElement);
+    const tags = getTagBarValue(noteElement);
     
     Logger.logDebug('Auto-saving note during idle period', {
         noteId,
-        contentLength: contentHTML.length
+        contentLength: contentHTML.length,
+        tagsLength: tags.length,
     }, Logger.LogCategory.STATE);
 
     ModeContext.setLoading(true);
-    const response = await NotesAPI.saveNote(noteId, contentHTML);
+    const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
     ModeContext.setLoading(false);
 
     ModeContext.setLastSavedContent(contentHTML);
     ModeContext.setDirty(false);
+    setTagBarValue(noteElement, tags);
 
     Logger.logDebug('Idle save completed successfully', {
         noteId,

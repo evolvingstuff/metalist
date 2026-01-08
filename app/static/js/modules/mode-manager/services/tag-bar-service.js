@@ -27,7 +27,7 @@ function isElementPartiallyInViewport(element) {
 function ensureTagBarElement(noteElement) {
     const existing = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
     if (existing) {
-        return existing;
+        return { element: existing, created: false };
     }
 
     const tagBar = document.createElement('div');
@@ -57,7 +57,52 @@ function ensureTagBarElement(noteElement) {
         noteElement.appendChild(tagBar);
     }
 
-    return tagBar;
+    return { element: tagBar, created: true };
+}
+
+function getTagBarInput(tagBar) {
+    if (!tagBar) {
+        return null;
+    }
+    return tagBar.querySelector(`.${TAG_BAR_INPUT_CLASS}`);
+}
+
+export function normalizeTags(rawTags) {
+    if (typeof rawTags !== 'string') {
+        throw new Error('normalizeTags expects a string');
+    }
+    return rawTags
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .join(' ');
+}
+
+export function getTagBarValue(noteElement) {
+    if (!noteElement) {
+        throw new Error('getTagBarValue requires a note element');
+    }
+    const tagBar = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
+    const input = getTagBarInput(tagBar);
+    if (input && typeof input.value === 'string') {
+        return normalizeTags(input.value);
+    }
+    return typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
+}
+
+export function setTagBarValue(noteElement, tags) {
+    if (!noteElement) {
+        throw new Error('setTagBarValue requires a note element');
+    }
+    if (typeof tags !== 'string') {
+        throw new Error('setTagBarValue requires tags string');
+    }
+    noteElement.dataset.noteTags = tags;
+    const tagBar = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
+    const input = getTagBarInput(tagBar);
+    if (input) {
+        input.value = tags;
+    }
 }
 
 function removeTagBar(noteElement) {
@@ -111,7 +156,15 @@ export function syncTagBar(editingNoteElement) {
     }
 
     activeNoteElement = editingNoteElement;
-    const tagBar = ensureTagBarElement(editingNoteElement);
+    const tagBarResult = ensureTagBarElement(editingNoteElement);
+    const tagBar = tagBarResult.element;
+
+    if (tagBarResult.created) {
+        const initialTags = typeof editingNoteElement.dataset.noteTags === 'string'
+            ? editingNoteElement.dataset.noteTags
+            : '';
+        setTagBarValue(editingNoteElement, initialTags);
+    }
 
     tagBar.hidden = !isElementPartiallyInViewport(editingNoteElement);
 

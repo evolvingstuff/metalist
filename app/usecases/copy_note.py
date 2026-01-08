@@ -61,6 +61,7 @@ class CmdCopyNote(QueryCommand):
                 "next_id": r.next_id,
                 "is_collapsed": bool(r.is_collapsed),
                 "content": r.content,
+                "tags": r.tags,
             }
             for r in records
         ]

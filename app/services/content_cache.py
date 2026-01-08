@@ -17,8 +17,9 @@ from ..utils.encryption import get_encryption_service
 
 logger = logging.getLogger(__name__)
 
-# Global in-memory cache: {note_id: decrypted_content}
+# Global in-memory caches: {note_id: decrypted_string}
 _search_cache: Dict[str, str] = {}
+_tag_cache: Dict[str, str] = {}
 
 _CACHE_TIMING_ENABLED = True
 
@@ -35,6 +36,10 @@ def get_cached_content(note_id: str) -> Optional[str]:
     return _search_cache.get(note_id)
 
 
+def get_cached_tags(note_id: str) -> Optional[str]:
+    return _tag_cache.get(note_id)
+
+
 def cache_note(note_id: str, decrypted_content: str) -> None:
     """Add or update note content in cache.
     
@@ -46,6 +51,11 @@ def cache_note(note_id: str, decrypted_content: str) -> None:
     logger.debug(f"Cached content for note {note_id[:8]}...")
 
 
+def cache_note_tags(note_id: str, tags: str) -> None:
+    _tag_cache[note_id] = tags
+    logger.debug(f"Cached tags for note {note_id[:8]}...")
+
+
 def remove_cached_note(note_id: str) -> None:
     """Remove note from cache.
     
@@ -55,6 +65,9 @@ def remove_cached_note(note_id: str) -> None:
     if note_id in _search_cache:
         del _search_cache[note_id]
         logger.debug(f"Removed cached content for note {note_id[:8]}...")
+    if note_id in _tag_cache:
+        del _tag_cache[note_id]
+        logger.debug(f"Removed cached tags for note {note_id[:8]}...")
 
 
 def get_cache_size() -> int:
@@ -68,8 +81,9 @@ def get_cache_size() -> int:
 
 def clear_cache() -> None:
     """Clear all cached content."""
-    global _search_cache
+    global _search_cache, _tag_cache
     _search_cache = {}
+    _tag_cache = {}
     logger.info("Cache cleared")
 
 
@@ -98,7 +112,7 @@ def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[st
         # Clear existing cache
         clear_cache()
 
-        # Decrypt and cache each note's content
+        # Decrypt and cache each note's content + tags
         encryption_service = get_encryption_service()
 
         loop_started = time.perf_counter()
@@ -110,9 +124,18 @@ def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[st
             nonce = note["encryption_nonce"]
             tag = note["encryption_tag"]
 
+            tags = note["tags"]
+            tags_nonce = note["tags_encryption_nonce"]
+            tags_tag = note["tags_encryption_tag"]
+
             if content is None:
                 raise RuntimeError(
                     f"Cache population failed: Note {note_id} has NULL content."
+                )
+
+            if tags is None:
+                raise RuntimeError(
+                    f"Cache population failed: Note {note_id} has NULL tags."
                 )
 
             encrypted = nonce is not None or tag is not None
@@ -120,6 +143,13 @@ def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[st
                 raise RuntimeError(
                     "Cache population failed: encrypted note has incomplete metadata: "
                     f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
+                )
+
+            tags_encrypted = tags_nonce is not None or tags_tag is not None
+            if tags_encrypted and (tags_nonce is None or tags_tag is None):
+                raise RuntimeError(
+                    "Cache population failed: encrypted tags have incomplete metadata: "
+                    f"note_id={note_id} nonce={tags_nonce is not None} tag={tags_tag is not None}"
                 )
 
             try:
@@ -138,7 +168,21 @@ def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[st
                     # Unencrypted content, including empty string which must still be cached
                     decrypted_content = content
 
+                if tags_encrypted:
+                    if not encryption_service or not encryption_service.dek:
+                        raise RuntimeError(
+                            "Cache population failed: encrypted tags encountered without DEK. "
+                            "This means the database contains encrypted rows but the "
+                            "app_settings table does not have an active password/DEK. "
+                            "The ciphertext is not recoverable without the DEK. "
+                            f"note_id={note_id}"
+                        )
+                    decrypted_tags = encryption_service.decrypt_from_storage(tags, tags_nonce, tags_tag)
+                else:
+                    decrypted_tags = tags
+
                 cache_note(note_id, decrypted_content)
+                cache_note_tags(note_id, decrypted_tags)
             except Exception as e:
                 # FAIL FAST AND LOUD - NO SILENT FAILURES
                 logger.error(f"🚨 FATAL: Failed to process note {note_id} during cache population: {e}")
@@ -203,7 +247,13 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
         encrypted_notes = [
             row
             for row in rows
-            if row.get("encryption_nonce") is not None and row.get("encryption_tag") is not None
+            if (
+                row.get("encryption_nonce") is not None
+                and row.get("encryption_tag") is not None
+            ) or (
+                row.get("tags_encryption_nonce") is not None
+                and row.get("tags_encryption_tag") is not None
+            )
         ]
         
         refreshed_count = 0
@@ -213,20 +263,36 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
             nonce = note["encryption_nonce"]
             tag = note["encryption_tag"]
             note_id = note["id"]
+            tags = note["tags"]
+            tags_nonce = note["tags_encryption_nonce"]
+            tags_tag = note["tags_encryption_tag"]
 
             if content is None:
                 raise RuntimeError(
                     f"Cache refresh failed: Encrypted note {note_id} has NULL content."
                 )
+            if tags is None:
+                raise RuntimeError(
+                    f"Cache refresh failed: Encrypted note {note_id} has NULL tags."
+                )
 
             try:
-                # Decrypt using separate fields approach
-                decrypted_content = encryption_service.decrypt_from_storage(
-                    content,
-                    nonce,
-                    tag,
-                )
-                cache_note(note_id, decrypted_content)
+                if nonce is not None and tag is not None:
+                    decrypted_content = encryption_service.decrypt_from_storage(
+                        content,
+                        nonce,
+                        tag,
+                    )
+                    cache_note(note_id, decrypted_content)
+
+                if tags_nonce is not None and tags_tag is not None:
+                    decrypted_tags = encryption_service.decrypt_from_storage(
+                        tags,
+                        tags_nonce,
+                        tags_tag,
+                    )
+                    cache_note_tags(note_id, decrypted_tags)
+
                 refreshed_count += 1
             except Exception as e:
                 # FAIL FAST AND LOUD - NO SILENT FAILURES

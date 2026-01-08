@@ -10,14 +10,14 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.models.database import SafeSession
 from app.config import PW_PBKDF2_ITERATIONS
-from app.db.notes_sql import fetch_all_for_cache, update_note_content
+from app.db.notes_sql import fetch_all_for_cache, update_note_fields
 from app.db.settings_sql import (
     clear_password_settings,
     fetch_settings,
     insert_default_settings,
     update_password_settings,
 )
-from app.services.content_cache import cache_note
+from app.services.content_cache import cache_note, cache_note_tags
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
@@ -207,22 +207,47 @@ class AuthService:
             for note in notes:
                 note_id = note["id"]
                 content = note["content"]
+                tags = note["tags"]
                 if content is None:
                     raise RuntimeError(
                         f"Password setup failed: Note {note_id} has NULL content."
                     )
-                if note.get("encryption_nonce") is not None:
+                if tags is None:
+                    raise RuntimeError(
+                        f"Password setup failed: Note {note_id} has NULL tags."
+                    )
+
+                content_encrypted = note.get("encryption_nonce") is not None or note.get("encryption_tag") is not None
+                tags_encrypted = note.get("tags_encryption_nonce") is not None or note.get("tags_encryption_tag") is not None
+
+                if content_encrypted and tags_encrypted:
                     continue
                 try:
-                    ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(content)
-                    update_note_content(
-                        connection,
-                        note_id,
-                        content=ciphertext_base64,
-                        encryption_nonce=nonce_bytes,
-                        encryption_tag=tag_bytes,
-                    )
-                    cache_note(note_id, content)
+                    update_payload: dict[str, object] = {}
+
+                    if not content_encrypted:
+                        ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(content)
+                        update_payload.update(
+                            {
+                                "content": ciphertext_base64,
+                                "encryption_nonce": nonce_bytes,
+                                "encryption_tag": tag_bytes,
+                            }
+                        )
+                        cache_note(note_id, content)
+
+                    if not tags_encrypted:
+                        tags_ciphertext, tags_nonce, tags_tag = self.encryption.encrypt_for_storage(tags)
+                        update_payload.update(
+                            {
+                                "tags": tags_ciphertext,
+                                "tags_encryption_nonce": tags_nonce,
+                                "tags_encryption_tag": tags_tag,
+                            }
+                        )
+                        cache_note_tags(note_id, tags)
+
+                    update_note_fields(connection, note_id, **update_payload)
                     encrypted_count += 1
                 except Exception as exc:
                     print(f"🚨 FATAL: Failed to encrypt note {note_id}: {exc}")
@@ -377,31 +402,63 @@ class AuthService:
                 content = note["content"]
                 nonce = note.get("encryption_nonce")
                 tag = note.get("encryption_tag")
+                tags = note["tags"]
+                tags_nonce = note.get("tags_encryption_nonce")
+                tags_tag = note.get("tags_encryption_tag")
 
-                is_encrypted = nonce is not None or tag is not None
-                if not is_encrypted:
+                content_encrypted = nonce is not None or tag is not None
+                tags_encrypted = tags_nonce is not None or tags_tag is not None
+                if not content_encrypted and not tags_encrypted:
                     continue
 
-                if nonce is None or tag is None:
-                    raise RuntimeError(
-                        "Password removal failed: encrypted note has incomplete metadata: "
-                        f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
-                    )
-                if content is None:
-                    raise RuntimeError(
-                        f"Password removal failed: encrypted note {note_id} has NULL content"
-                    )
+                if content_encrypted:
+                    if nonce is None or tag is None:
+                        raise RuntimeError(
+                            "Password removal failed: encrypted note has incomplete metadata: "
+                            f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
+                        )
+                    if content is None:
+                        raise RuntimeError(
+                            f"Password removal failed: encrypted note {note_id} has NULL content"
+                        )
+
+                if tags_encrypted:
+                    if tags_nonce is None or tags_tag is None:
+                        raise RuntimeError(
+                            "Password removal failed: encrypted tags have incomplete metadata: "
+                            f"note_id={note_id} nonce={tags_nonce is not None} tag={tags_tag is not None}"
+                        )
+                    if tags is None:
+                        raise RuntimeError(
+                            f"Password removal failed: encrypted note {note_id} has NULL tags"
+                        )
 
                 try:
-                    plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
-                    update_note_content(
-                        connection,
-                        note_id,
-                        content=plaintext,
-                        encryption_nonce=None,
-                        encryption_tag=None,
-                    )
-                    cache_note(note_id, plaintext)
+                    update_payload: dict[str, object] = {}
+
+                    if content_encrypted:
+                        plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
+                        update_payload.update(
+                            {
+                                "content": plaintext,
+                                "encryption_nonce": None,
+                                "encryption_tag": None,
+                            }
+                        )
+                        cache_note(note_id, plaintext)
+
+                    if tags_encrypted:
+                        tags_plaintext = self.encryption.decrypt_from_storage(tags, tags_nonce, tags_tag)
+                        update_payload.update(
+                            {
+                                "tags": tags_plaintext,
+                                "tags_encryption_nonce": None,
+                                "tags_encryption_tag": None,
+                            }
+                        )
+                        cache_note_tags(note_id, tags_plaintext)
+
+                    update_note_fields(connection, note_id, **update_payload)
                     decrypted_count += 1
                 except Exception as exc:
                     print(f"🚨 FATAL: Failed to decrypt note {note_id}: {exc}")

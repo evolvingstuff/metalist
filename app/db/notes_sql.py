@@ -23,8 +23,11 @@ def _deserialize_row(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
         "content": row["content"],
+        "tags": row["tags"],
         "encryption_nonce": row["encryption_nonce"],
         "encryption_tag": row["encryption_tag"],
+        "tags_encryption_nonce": row["tags_encryption_nonce"],
+        "tags_encryption_tag": row["tags_encryption_tag"],
         "parent_id": row["parent_id"],
         "prev_id": row["prev_id"],
         "next_id": row["next_id"],
@@ -41,6 +44,9 @@ def insert_note(
     content: str,
     encryption_nonce: Optional[bytes],
     encryption_tag: Optional[bytes],
+    tags: str,
+    tags_encryption_nonce: Optional[bytes],
+    tags_encryption_tag: Optional[bytes],
     parent_id: Optional[str],
     prev_id: Optional[str],
     next_id: Optional[str],
@@ -54,8 +60,11 @@ def insert_note(
         INSERT INTO {NOTES_TABLE} (
             id,
             content,
+            tags,
             encryption_nonce,
             encryption_tag,
+            tags_encryption_nonce,
+            tags_encryption_tag,
             parent_id,
             prev_id,
             next_id,
@@ -67,8 +76,11 @@ def insert_note(
         (
             note_id,
             content,
+            tags,
             encryption_nonce,
             encryption_tag,
+            tags_encryption_nonce,
+            tags_encryption_tag,
             parent_id,
             prev_id,
             next_id,
@@ -88,23 +100,32 @@ def update_note_content(
     encryption_tag: Optional[bytes],
     updated_at: Optional[datetime] = None,
 ) -> None:
-    conn = _conn(connection)
-    conn.execute(
-        f"""
-        UPDATE {NOTES_TABLE}
-        SET content = ?,
-            encryption_nonce = ?,
-            encryption_tag = ?,
-            updated_at = ?
-        WHERE id = ?
-        """,
-        (
-            content,
-            encryption_nonce,
-            encryption_tag,
-            _serialize_datetime(updated_at),
-            note_id,
-        ),
+    update_note_fields(
+        connection,
+        note_id,
+        content=content,
+        encryption_nonce=encryption_nonce,
+        encryption_tag=encryption_tag,
+        updated_at=updated_at,
+    )
+
+
+def update_note_tags(
+    connection: GuardedConnection | sqlite3.Connection,
+    note_id: str,
+    *,
+    tags: str,
+    tags_encryption_nonce: Optional[bytes],
+    tags_encryption_tag: Optional[bytes],
+    updated_at: Optional[datetime] = None,
+) -> None:
+    update_note_fields(
+        connection,
+        note_id,
+        tags=tags,
+        tags_encryption_nonce=tags_encryption_nonce,
+        tags_encryption_tag=tags_encryption_tag,
+        updated_at=updated_at,
     )
 
 
@@ -136,6 +157,47 @@ def update_links(
     if is_collapsed is not _UNSET:
         fields.append("is_collapsed = ?")
         values.append(int(is_collapsed))
+
+    values.append(note_id)
+
+    conn = _conn(connection)
+    sql = f"UPDATE {NOTES_TABLE} SET " + ", ".join(fields) + " WHERE id = ?"
+    conn.execute(sql, tuple(values))
+
+
+def update_note_fields(
+    connection: GuardedConnection | sqlite3.Connection,
+    note_id: str,
+    *,
+    content: str | object = _UNSET,
+    encryption_nonce: Optional[bytes] | object = _UNSET,
+    encryption_tag: Optional[bytes] | object = _UNSET,
+    tags: str | object = _UNSET,
+    tags_encryption_nonce: Optional[bytes] | object = _UNSET,
+    tags_encryption_tag: Optional[bytes] | object = _UNSET,
+    updated_at: Optional[datetime] = None,
+) -> None:
+    fields: list[str] = ["updated_at = ?"]
+    values: list = [_serialize_datetime(updated_at)]
+
+    if content is not _UNSET:
+        fields.append("content = ?")
+        values.append(content)
+    if encryption_nonce is not _UNSET:
+        fields.append("encryption_nonce = ?")
+        values.append(encryption_nonce)
+    if encryption_tag is not _UNSET:
+        fields.append("encryption_tag = ?")
+        values.append(encryption_tag)
+    if tags is not _UNSET:
+        fields.append("tags = ?")
+        values.append(tags)
+    if tags_encryption_nonce is not _UNSET:
+        fields.append("tags_encryption_nonce = ?")
+        values.append(tags_encryption_nonce)
+    if tags_encryption_tag is not _UNSET:
+        fields.append("tags_encryption_tag = ?")
+        values.append(tags_encryption_tag)
 
     values.append(note_id)
 
@@ -225,7 +287,7 @@ def clear_encryption_metadata_for_empty_notes(
     *,
     updated_at: Optional[datetime] = None,
 ) -> int:
-    """Clear encryption metadata for notes whose content is an empty string.
+    """Clear encryption metadata for notes whose content/tags are empty strings.
 
     AES-GCM encryption of an empty plaintext produces an empty ciphertext, so
     we can safely clear nonce/tag without losing content. This is used as a
@@ -236,12 +298,20 @@ def clear_encryption_metadata_for_empty_notes(
     cursor = conn.execute(
         f"""
         UPDATE {NOTES_TABLE}
-        SET encryption_nonce = NULL,
-            encryption_tag = NULL,
+        SET encryption_nonce = CASE WHEN content = '' THEN NULL ELSE encryption_nonce END,
+            encryption_tag = CASE WHEN content = '' THEN NULL ELSE encryption_tag END,
+            tags_encryption_nonce = CASE WHEN tags = '' THEN NULL ELSE tags_encryption_nonce END,
+            tags_encryption_tag = CASE WHEN tags = '' THEN NULL ELSE tags_encryption_tag END,
             updated_at = ?
-        WHERE content = ''
-          AND encryption_nonce IS NOT NULL
-          AND encryption_tag IS NOT NULL
+        WHERE (
+            content = ''
+            AND encryption_nonce IS NOT NULL
+            AND encryption_tag IS NOT NULL
+        ) OR (
+            tags = ''
+            AND tags_encryption_nonce IS NOT NULL
+            AND tags_encryption_tag IS NOT NULL
+        )
         """,
         (_serialize_datetime(updated_at),),
     )

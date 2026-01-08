@@ -34,7 +34,7 @@ from app.db.notes_sql import insert_note, update_links
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
 from app.db.settings_sql import fetch_settings, insert_default_settings
 from app.models.database import SafeSession
-from app.services.content_cache import cache_note, clear_cache
+from app.services.content_cache import cache_note, cache_note_tags, clear_cache
 from app.services.note_store import store as note_store
 from app.security.encryption import encrypt
 
@@ -277,6 +277,7 @@ def create_note(
     content, image_count = build_note_content(rng, images, image_probability, max_images)
 
     ciphertext, nonce, tag = encrypt(content)
+    tags_ciphertext, tags_nonce, tags_tag = encrypt("")
     timestamp = datetime.now(timezone.utc)
     is_collapsed = rng.random() < collapse_probability
 
@@ -286,6 +287,9 @@ def create_note(
         content=ciphertext,
         encryption_nonce=nonce,
         encryption_tag=tag,
+        tags=tags_ciphertext,
+        tags_encryption_nonce=tags_nonce,
+        tags_encryption_tag=tags_tag,
         parent_id=parent_id,
         prev_id=None,
         next_id=None,
@@ -295,6 +299,7 @@ def create_note(
     )
 
     cache_note(note_id, content)
+    cache_note_tags(note_id, "")
 
     if note_store.loaded:
         note_store.add_note_from_db(
@@ -303,6 +308,9 @@ def create_note(
                 content=ciphertext,
                 encryption_nonce=nonce,
                 encryption_tag=tag,
+                tags=tags_ciphertext,
+                tags_encryption_nonce=tags_nonce,
+                tags_encryption_tag=tags_tag,
                 parent_id=parent_id,
                 prev_id=None,
                 next_id=None,
@@ -311,6 +319,7 @@ def create_note(
                 updated_at=timestamp,
             ),
             content,
+            "",
         )
 
     register_note_order(order_map, parent_id, note_id, rng)

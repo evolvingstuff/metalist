@@ -255,8 +255,9 @@ def update_note(note_id: str, body: dict):
     # Required fields; let KeyError surface for missing keys
     client_id = body["clientId"]
     content = body["content"]
+    tags = body["tags"]
     viewport = _require_viewport(body)
-    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id, viewport=viewport)
+    cmd = CmdUpdateContent(note_id=note_id, content=content, tags=tags, client_id=client_id, viewport=viewport)
     return cmd.execute()
 
 
@@ -264,8 +265,9 @@ def update_note(note_id: str, body: dict):
 def save_note(note_id: str, body: dict):
     client_id = body["clientId"]
     content = body["content"]
+    tags = body["tags"]
     viewport = _require_viewport(body)
-    cmd = CmdUpdateContent(note_id=note_id, content=content, client_id=client_id, viewport=viewport)
+    cmd = CmdUpdateContent(note_id=note_id, content=content, tags=tags, client_id=client_id, viewport=viewport)
     return cmd.execute()
 
 

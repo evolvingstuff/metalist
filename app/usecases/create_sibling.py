@@ -41,7 +41,7 @@ class CmdCreateSibling(QueryCommand):
             if trimmed:
                 content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed}\" */</div>"
 
-        apply_insert_note(note_uuid, parent_id, prev_id, next_id, content)
+        apply_insert_note(note_uuid, parent_id, prev_id, next_id, content=content)
 
         from app.services.undo_state import record_create
         rec = {
@@ -51,6 +51,7 @@ class CmdCreateSibling(QueryCommand):
             "next_id": next_id,
             "is_collapsed": False,
             "content": content,
+            "tags": "",
             "created_at": None,
             "updated_at": None,
         }

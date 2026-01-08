@@ -249,6 +249,7 @@ function createNoteElement(noteId) {
     noteElement.dataset.noteId = noteId;
     noteElement.dataset.parentId = '';
     noteElement.dataset.isCollapsed = 'false';
+    noteElement.dataset.noteTags = '';
 
     const collapseToggle = document.createElement('button');
     collapseToggle.classList.add('note-collapse-toggle');
@@ -512,6 +513,16 @@ export function applyDifferentialView(payload, options = {}) {
         const isEditing = Boolean(flags.isEditing);
         const editingByCurrentClient = isEditing && nextLockOwner === payload.currentClientId;
 
+        if (noteData) {
+            if (!Object.prototype.hasOwnProperty.call(noteData, 'tags')) {
+                throw new Error(`Note ${noteId} payload missing tags`);
+            }
+            if (typeof noteData.tags !== 'string') {
+                throw new Error(`Note ${noteId} payload tags must be a string`);
+            }
+            noteElement.dataset.noteTags = noteData.tags;
+        }
+
         if (!incomingHash) {
             throw new Error(`Structure entry missing hash for ${noteId}`);
         }
@@ -687,6 +698,14 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     if (!noteElement || !noteData) {
         return false;
     }
+
+    if (!Object.prototype.hasOwnProperty.call(noteData, 'tags')) {
+        throw new Error(`Note ${noteId} payload missing tags`);
+    }
+    if (typeof noteData.tags !== 'string') {
+        throw new Error(`Note ${noteId} payload tags must be a string`);
+    }
+    noteElement.dataset.noteTags = noteData.tags;
     const flags = noteData.flags || {};
     const lockOwner = typeof noteLocks[noteId] === 'string' ? noteLocks[noteId] : '';
     const lockedByOther = Boolean(lockOwner) && lockOwner !== currentClientId;

@@ -38,6 +38,7 @@ class NoteCRUD:
 
             plaintext = ""
             ciphertext, nonce, tag = encrypt(plaintext)
+            tags_ciphertext, tags_nonce, tags_tag = encrypt("")
             timestamp = datetime.now(timezone.utc)
 
             insert_note(
@@ -46,6 +47,9 @@ class NoteCRUD:
                 content=ciphertext,
                 encryption_nonce=nonce,
                 encryption_tag=tag,
+                tags=tags_ciphertext,
+                tags_encryption_nonce=tags_nonce,
+                tags_encryption_tag=tags_tag,
                 parent_id=parent_id,
                 prev_id=None,
                 next_id=next_id,
@@ -54,8 +58,9 @@ class NoteCRUD:
                 updated_at=timestamp,
             )
 
-            from ..services.content_cache import cache_note
+            from ..services.content_cache import cache_note, cache_note_tags
             cache_note(note_id, plaintext)
+            cache_note_tags(note_id, "")
 
             if next_id:
                 update_links(
@@ -72,6 +77,9 @@ class NoteCRUD:
                         content=ciphertext,
                         encryption_nonce=nonce,
                         encryption_tag=tag,
+                        tags=tags_ciphertext,
+                        tags_encryption_nonce=tags_nonce,
+                        tags_encryption_tag=tags_tag,
                         parent_id=parent_id,
                         prev_id=None,
                         next_id=next_id,
@@ -80,6 +88,7 @@ class NoteCRUD:
                         updated_at=timestamp,
                     ),
                     plaintext,
+                    "",
                 )
                 if next_id:
                     sibling_record = note_store.get_note(next_id)
@@ -172,6 +181,7 @@ class NoteCRUD:
                     updated_at=timestamp,
                 ),
                 content,
+                record.tags,
             )
 
     @staticmethod
