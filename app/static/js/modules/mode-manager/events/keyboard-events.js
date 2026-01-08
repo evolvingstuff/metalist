@@ -233,7 +233,7 @@ function handleKeyDown(event) {
             break;
         case 'p':
             if (event.metaKey || event.ctrlKey) {
-                handlePasswordModalShortcut(event);
+                void handlePasswordModalShortcut(event);
             }
             break;
         case 'm':
@@ -859,7 +859,7 @@ function handlePasteNoteChildShortcut(event) {
     actionPasteNoteChild();
 }
 
-function handlePasswordModalShortcut(event) {
+async function handlePasswordModalShortcut(event) {
     if (!event) {
         throw new Error('handlePasswordModalShortcut called without an event object');
     }
@@ -876,7 +876,7 @@ function handlePasswordModalShortcut(event) {
 
     // Exit editing mode if active
     if (ModeContext.isEditing) {
-        actionDeselectNote();
+        await actionSaveAndExitEditingWithoutRefreshing();
     }
 
     // Open the password modal
@@ -909,14 +909,10 @@ function handleMemoryModalShortcut(event) {
     event.stopPropagation();
 
     const searchQuery = ModeContext.searchQuery || '';
-    try {
-        memoryModal.openWithSearch(searchQuery);
-        Logger.logDebug('Memory modal opened via keyboard shortcut', {
-            searchQuery
-        }, Logger.LogCategory.EVENT);
-    } catch (error) {
-        Logger.logError('Unable to open memory modal', error);
-    }
+    memoryModal.openWithSearch(searchQuery);
+    Logger.logDebug('Memory modal opened via keyboard shortcut', {
+        searchQuery
+    }, Logger.LogCategory.EVENT);
 }
 
 function handleHelpModalShortcut(event) {
@@ -943,12 +939,8 @@ function handleHelpModalShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    try {
-        helpModal.open();
-        Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
-    } catch (error) {
-        Logger.logError('Unable to open help modal', error);
-    }
+    helpModal.open();
+    Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
 }
 
 
