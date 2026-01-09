@@ -60,7 +60,9 @@ def _insert_cloned_subtree_at(
         # Compute next from current store state
         if prev_id is None:
             children = store.children(new_parent)
-            next_id = children[0] if children else None
+            next_id = None
+            if children:
+                next_id = children[0]
         else:
             links = store._links.get(new_parent)  # type: ignore[attr-defined]
             if links is None:

@@ -261,8 +261,14 @@ class _Checker(ast.NodeVisitor):
         allowed_prefixes = python_cfg["allowed_try_callee_prefixes"]
         allowed_exceptions = python_cfg["allowed_exception_names"]
 
+        # `try/finally` is legal Python and does not swallow exceptions.
+        # PY001 is about try/except (soft error handling) at internal boundaries.
         if len(node.handlers) == 0:
-            self._add(node=node, rule_id="PY001", message="try without except is forbidden")
+            if len(node.finalbody) != 0:
+                self.generic_visit(node)
+                return
+
+            self._add(node=node, rule_id="PY001", message="try without except/finally is forbidden")
             self.generic_visit(node)
             return
 

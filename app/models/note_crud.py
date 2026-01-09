@@ -30,7 +30,8 @@ class NoteCRUD:
             next_id = None
             if note_store.loaded:
                 siblings = note_store.get_children(parent_id)
-                next_id = siblings[0] if siblings else None
+                if siblings:
+                    next_id = siblings[0]
             else:
                 with SafeSession.allow_reads("notecrud:create_note_top:first_sibling"):
                     ordered = fetch_children_ordered(db.connection(), parent_id)

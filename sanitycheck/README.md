@@ -14,6 +14,8 @@ Run:
 
 * `./sanitycheck/run`
 
+Note: `try/finally` is allowed (it does not catch/swallow exceptions). The `try/except` form is what is restricted.
+
 To narrow output while iterating, pass a path:
 
 * `./sanitycheck/run src/`
@@ -36,12 +38,14 @@ Dry run a fix:
 * `./sanitycheck/fix --apply PYFIX001 --dry-run src/`
 * `./sanitycheck/fix --apply PYFIX002 --dry-run src/`
 * `./sanitycheck/fix --apply PYFIX003 --dry-run src/`
+* `./sanitycheck/fix --apply PYFIX004 --dry-run src/`
 
 Apply a fix in-place:
 
 * `./sanitycheck/fix --apply PYFIX001 src/`
 * `./sanitycheck/fix --apply PYFIX002 src/`
 * `./sanitycheck/fix --apply PYFIX003 src/`
+* `./sanitycheck/fix --apply PYFIX004 src/`
 
 Notes:
 

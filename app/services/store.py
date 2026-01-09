@@ -36,7 +36,9 @@ class _AdapterStore:
         # Compute next_id based on current links for the parent
         if prev_id is None:
             ids = _note_store.get_children(parent_id)
-            next_id = ids[0] if ids else None
+            next_id = None
+            if ids:
+                next_id = ids[0]
         else:
             links = _note_store._links.get(parent_id)
             if links is None:
@@ -93,7 +95,9 @@ class _AdapterStore:
         # Determine next based on prev in destination parent
         if prev_id is None:
             ids = _note_store.get_children(new_parent_id)
-            next_id = ids[0] if ids else None
+            next_id = None
+            if ids:
+                next_id = ids[0]
         else:
             links = _note_store._links.get(new_parent_id)
             if links is None:

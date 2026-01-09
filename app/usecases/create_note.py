@@ -84,7 +84,9 @@ class CmdCreateNote(QueryCommand):
             next_id = self.first_visible_note_id
             prev_id = siblings[idx - 1] if idx > 0 else None
         else:
-            next_id = siblings[0] if siblings else None
+            next_id = None
+            if siblings:
+                next_id = siblings[0]
             prev_id = None
 
         note_uuid = str(uuid.uuid4())

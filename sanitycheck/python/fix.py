@@ -33,6 +33,13 @@ AVAILABLE_FIXES = [
             "(only built-in next(...) with 2 positional args and default None)"
         ),
     ),
+    Fix(
+        fix_id="PYFIX004",
+        description=(
+            "Replace x = y[0] if y else None with x = y[0] "
+            "(only else None + test is name + body indexes same name)"
+        ),
+    ),
 ]
 
 
@@ -207,6 +214,10 @@ def _call_span(text: str, node: ast.AST) -> tuple[int, int]:
     end = _to_offset(offsets, end_lineno, end_col)
     assert start <= end
     return start, end
+
+
+def _node_span(text: str, node: ast.AST) -> tuple[int, int]:
+    return _call_span(text, node)
 
 
 def _apply_edits(text: str, edits: list[_Edit]) -> str:
@@ -440,6 +451,62 @@ def _fix_pyfix003_next_default_none(path: str, repo_root: str, text: str) -> tup
     return new_text, len(edits)
 
 
+def _fix_pyfix004_ifexp_else_none_drop_none(path: str, repo_root: str, text: str) -> tuple[str, int]:
+    tree = ast.parse(text, filename=path)
+    edits: list[_Edit] = []
+
+    parent: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[id(child)] = node
+
+    def is_in_decorator_context(expr_node: ast.AST) -> bool:
+        cur: ast.AST | None = expr_node
+        while cur is not None:
+            p = parent.get(id(cur))
+            if p is None:
+                return False
+            if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                for deco in p.decorator_list:
+                    for sub in ast.walk(deco):
+                        if sub is expr_node:
+                            return True
+            cur = p
+        return False
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.IfExp):
+            continue
+        if is_in_decorator_context(node):
+            continue
+
+        if not (isinstance(node.orelse, ast.Constant) and node.orelse.value is None):
+            continue
+
+        if not isinstance(node.test, ast.Name):
+            continue
+        name = node.test.id
+
+        if not isinstance(node.body, ast.Subscript):
+            continue
+        if not isinstance(node.body.value, ast.Name):
+            continue
+        if node.body.value.id != name:
+            continue
+
+        body_src = ast.get_source_segment(text, node.body)
+        expr_src = ast.get_source_segment(text, node)
+        assert body_src is not None
+        assert expr_src is not None
+
+        start, end = _node_span(text, node)
+        assert text[start:end] == expr_src
+        edits.append(_Edit(start=start, end=end, replacement=body_src))
+
+    new_text = _apply_edits(text, edits)
+    return new_text, len(edits)
+
+
 def list_fixes() -> None:
     for fix in AVAILABLE_FIXES:
         print(f"{fix.fix_id}: {fix.description}")
@@ -482,6 +549,10 @@ def apply_fixes(
 
         if "PYFIX003" in fix_ids:
             updated, applied = _fix_pyfix003_next_default_none(path, normalized_repo_root, updated)
+            edits_for_file += applied
+
+        if "PYFIX004" in fix_ids:
+            updated, applied = _fix_pyfix004_ifexp_else_none_drop_none(path, normalized_repo_root, updated)
             edits_for_file += applied
 
         if updated != original:

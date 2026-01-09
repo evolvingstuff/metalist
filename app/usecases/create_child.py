@@ -23,7 +23,9 @@ class CmdCreateChild(QueryCommand):
         parent = store.get(self.parent_note_id)
         children = store.children(parent.id)
         prev_id = None
-        next_id = children[0] if children else None
+        next_id = None
+        if children:
+            next_id = children[0]
 
         note_uuid = str(uuid.uuid4())
         content = ""

@@ -103,7 +103,9 @@ def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int
     if not children:
         return
     heads = [row for row in children if row["prev_id"] is None]
-    head = heads[0] if heads else None
+    head = None
+    if heads:
+        head = heads[0]
     if head is None:
         for row in children:
             prefix = "  " * depth
