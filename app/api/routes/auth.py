@@ -63,9 +63,10 @@ def _require_tab_id(
 
 
 def _verify_token(
+    request: Request,
     tab_id: Annotated[str, Depends(_require_tab_id)],
-    authorization: Annotated[Optional[str], Header()],
 ) -> Optional[str]:
+    authorization = request.headers.get("authorization")
     if not authorization:
         return None
     parts = authorization.split()

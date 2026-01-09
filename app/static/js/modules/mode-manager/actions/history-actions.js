@@ -33,6 +33,11 @@ function applyScrollRestore(scrollRestore, contextLabel) {
         ? scrollRestore.focusNoteId
         : '';
 
+    const opType = scrollRestore.opType;
+    if (typeof opType !== 'string' || opType.length === 0) {
+        throw new Error(`${contextLabel} scrollRestore.opType must be a non-empty string`);
+    }
+
     const anchorId = scrollAnchor && typeof scrollAnchor.anchorId === 'string' && scrollAnchor.anchorId.length > 0
         ? scrollAnchor.anchorId
         : null;
@@ -40,6 +45,7 @@ function applyScrollRestore(scrollRestore, contextLabel) {
     return {
         visibleRootAnchorId: viewAnchorRootId || anchorId,
         focusNoteId,
+        opType,
     };
 }
 
@@ -84,12 +90,14 @@ export async function actionUndo() {
         const restored = applyScrollRestore(result.scrollRestore, 'Undo');
         visibleRootAnchorId = restored.visibleRootAnchorId;
         focusNoteId = restored.focusNoteId;
+        const opType = restored.opType;
 
         if (ModeContext.isDirty) {
             ModeContext.setDirty(false);
         }
 
-        const shouldRestoreEditing = restoreEditing && Boolean(focusNoteId);
+        const shouldRestoreEditing = Boolean(focusNoteId)
+            && (opType === 'delete_subtree' || restoreEditing);
 
         if (shouldRestoreEditing) {
             
@@ -100,6 +108,8 @@ export async function actionUndo() {
             if (!ModeContext.isEditing) {
                 ModeContext.setEditing(true);
             }
+
+            ModeContext.markCaretVisible();
         } else {
             if (ModeContext.currentContent !== null) {
                 ModeContext.setCurrentContent(null);
@@ -175,12 +185,15 @@ export async function actionRedo() {
         const restored = applyScrollRestore(result.scrollRestore, 'Redo');
         visibleRootAnchorId = restored.visibleRootAnchorId;
         focusNoteId = restored.focusNoteId;
+        const opType = restored.opType;
 
         if (ModeContext.isDirty) {
             ModeContext.setDirty(false);
         }
 
-        const shouldRestoreEditing = restoreEditing && Boolean(focusNoteId);
+        const shouldRestoreEditing = Boolean(focusNoteId)
+            && restoreEditing
+            && opType !== 'delete_subtree';
 
         if (shouldRestoreEditing) {
             
@@ -191,6 +204,8 @@ export async function actionRedo() {
             if (!ModeContext.isEditing) {
                 ModeContext.setEditing(true);
             }
+
+            ModeContext.markCaretVisible();
         } else {
             if (ModeContext.currentContent !== null) {
                 ModeContext.setCurrentContent(null);
