@@ -17,16 +17,17 @@ class NoteQueryService(BaseQueryService):
 
     def build_view_snapshot(
         self,
-        editing_note_id: Optional[str] = None,
-        search: Optional[str] = None,
-        client_id: Optional[str] = None,
-        client_known_note_ids: Optional[Set[str]] = None,
-        client_seen_root_ids: Set[str] = frozenset(),
-        anchor_root_id: Optional[str] = None,
+        editing_note_id: Optional[str],
+        search: Optional[str],
+        client_id: Optional[str],
+        client_known_note_ids: Optional[Set[str]],
+        client_seen_root_ids: Set[str],
+        anchor_root_id: Optional[str],
     ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
         """Produce structure entries and note payloads for differential updates."""
 
-        client_known_note_ids = client_known_note_ids or set()
+        if client_known_note_ids is None:
+            client_known_note_ids = set()
         client_seen_root_ids = set(client_seen_root_ids)
 
         search_active = bool(search and search.strip())
@@ -38,7 +39,14 @@ class NoteQueryService(BaseQueryService):
             if not ordered_root_ids:
                 store_available = False
         if not store_available:
-            notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
+            notes = build_note_tree(
+                LinkedListManager,
+                self.db,
+                None,
+                editing_note_id,
+                search,
+                None,
+            )
             ordered_root_ids = [note['id'] for note in notes]
 
         root_index_map = {note_id: index for index, note_id in enumerate(ordered_root_ids)}
@@ -60,7 +68,10 @@ class NoteQueryService(BaseQueryService):
 
         limit_roots: Optional[Set[str]] = None
         if not search_active:
-            limit_roots = set(ordered_root_ids[: window_end_index + 1]) if window_end_index >= 0 else set()
+            if window_end_index >= 0:
+                limit_roots = set(ordered_root_ids[: window_end_index + 1])
+            else:
+                limit_roots = set()
 
         if store_available:
             notes = build_note_tree(
@@ -98,11 +109,10 @@ class NoteQueryService(BaseQueryService):
                         editing_note_id,
                         anchor_root_id,
                     )
-                    limit_roots = (
-                        set(ordered_root_ids[: window_end_index + 1])
-                        if window_end_index >= 0
-                        else set()
-                    )
+                    if window_end_index >= 0:
+                        limit_roots = set(ordered_root_ids[: window_end_index + 1])
+                    else:
+                        limit_roots = set()
                     notes = [note for note in notes if note['id'] in limit_roots]
                 else:
                     limit_roots = None
@@ -113,14 +123,24 @@ class NoteQueryService(BaseQueryService):
         payloads: Dict[str, Dict[str, object]] = {}
         visited_note_ids: Set[str] = set()
 
-        def traverse(nodes: List[dict], parent_id: Optional[str] = None) -> None:
+        def traverse(nodes: List[dict], parent_id: Optional[str]) -> None:
             for index, note in enumerate(nodes):
-                is_root = parent_id is None or parent_id == ''
+                is_root = False
+                if parent_id is None:
+                    is_root = True
+                elif parent_id == '':
+                    is_root = True
                 if is_root and limit_roots is not None and note['id'] not in limit_roots:
                     continue
                 note_id = note['id']
-                prev_id = nodes[index - 1]['id'] if index > 0 else None
-                next_id = nodes[index + 1]['id'] if index + 1 < len(nodes) else None
+                if index > 0:
+                    prev_id = nodes[index - 1]['id']
+                else:
+                    prev_id = None
+                if index + 1 < len(nodes):
+                    next_id = nodes[index + 1]['id']
+                else:
+                    next_id = None
 
                 content = note['content']
                 if not isinstance(content, str):
@@ -159,10 +179,11 @@ class NoteQueryService(BaseQueryService):
                 children = note['children']
                 if not isinstance(children, list):
                     raise TypeError(f"note.children must be an array: {type(children)}")
-                should_include_children = (
-                    not normalized_flags.get('isCollapsed', False)
-                    or normalized_flags.get('isEditing', False)
-                )
+                is_collapsed = normalized_flags['isCollapsed']
+                is_editing = normalized_flags['isEditing']
+                should_include_children = not bool(is_collapsed)
+                if not should_include_children and bool(is_editing):
+                    should_include_children = True
                 if should_include_children:
                     traverse(children, note_id)
 
@@ -190,24 +211,27 @@ class NoteQueryService(BaseQueryService):
         window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
 
         for note_id in client_known_note_ids:
-            index = root_index_map.get(note_id)
+            index = root_index_map[note_id]
             if index is not None:
                 window_end = max(window_end, index)
 
         if editing_note_id:
             editing_root_id = _find_root_id(editing_note_id)
-            index = root_index_map.get(editing_root_id)
+            index = root_index_map[editing_root_id]
             if index is not None:
                 window_end = max(window_end, index)
 
-        highest_seen_index = max(seen_root_indices) if seen_root_indices else None
+        if seen_root_indices:
+            highest_seen_index = max(seen_root_indices)
+        else:
+            highest_seen_index = None
 
         if highest_seen_index is not None:
             while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
                 window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
 
         if anchor_root_id:
-            anchor_index = root_index_map.get(anchor_root_id)
+            anchor_index = root_index_map[anchor_root_id]
             if anchor_index is not None:
                 while (
                     window_end < len(ordered_root_ids) - 1

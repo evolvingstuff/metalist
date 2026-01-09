@@ -25,7 +25,7 @@ class TransactionManager:
         self.last_search_query: Optional[str] = None
         self.active_client_id: Optional[str] = None
     
-    def start_transaction(self, db, client_id: str = None):
+    def start_transaction(self, db, client_id: Optional[str]):
         """
         Start a new transaction.
         
@@ -55,7 +55,7 @@ class TransactionManager:
         """Get the currently active transaction, if any."""
         return self.current_transaction
     
-    def check_context_change(self, current_search_query: Optional[str] = None):
+    def check_context_change(self, current_search_query: Optional[str]):
         """
         Check if the search context has changed and clear undo stack if so.
         
@@ -63,11 +63,23 @@ class TransactionManager:
             current_search_query: The current search query from the request
         """
         # Normalize empty strings to None for consistent comparison
-        normalized_current = current_search_query.strip() if current_search_query else None
-        normalized_current = normalized_current if normalized_current else None
+        if current_search_query:
+            normalized_current = current_search_query.strip()
+        else:
+            normalized_current = None
+        if normalized_current:
+            normalized_current = normalized_current
+        else:
+            normalized_current = None
         
-        normalized_last = self.last_search_query.strip() if self.last_search_query else None
-        normalized_last = normalized_last if normalized_last else None
+        if self.last_search_query:
+            normalized_last = self.last_search_query.strip()
+        else:
+            normalized_last = None
+        if normalized_last:
+            normalized_last = normalized_last
+        else:
+            normalized_last = None
         
         if normalized_current != normalized_last:
             if self.command_stack_size:
@@ -102,7 +114,7 @@ class TransactionManager:
         self.command_stack_size += 1
         logger.info(f"🔧 UNDO STACK: Command added to stack for client {client_id} (size={self.command_stack_size})")
     
-    def undo(self, db, client_id: str = None) -> bool:
+    def undo(self, db, client_id: Optional[str]) -> bool:
         """Perform an undo operation."""
         logger.info(f"🔧 UNDO STACK: Undo requested by client {client_id} (size = {len(self.command_stack.stack)}, index = {self.command_stack.current_index}, owner = {self.active_client_id})")
         
@@ -114,7 +126,7 @@ class TransactionManager:
         logger.info(f"🔧 UNDO STACK: No operations to undo (snapshot-based engine removed)")
         return False
     
-    def redo(self, db, client_id: str = None) -> bool:
+    def redo(self, db, client_id: Optional[str]) -> bool:
         """Perform a redo operation."""
         logger.info(f"🔧 UNDO STACK: Redo requested by client {client_id} (size = {len(self.command_stack.stack)}, index = {self.command_stack.current_index}, owner = {self.active_client_id})")
         

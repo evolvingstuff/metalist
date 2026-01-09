@@ -47,9 +47,9 @@ def _determine_root_window_end(
         return -1
     window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
     for note_id in client_known_note_ids:
-        index = root_index_map.get(note_id)
-        if index is not None:
-            window_end = max(window_end, index)
+        if note_id not in root_index_map:
+            continue
+        window_end = max(window_end, root_index_map[note_id])
     if editing_note_id:
         # Expand to include the root containing the editing node
         # Find root id by walking parents in store
@@ -57,16 +57,15 @@ def _determine_root_window_end(
         while current.parent_id:
             current = note_store.get_note(current.parent_id)
         editing_root_id = current.id
-        index = root_index_map.get(editing_root_id)
-        if index is not None:
-            window_end = max(window_end, index)
+        if editing_root_id in root_index_map:
+            window_end = max(window_end, root_index_map[editing_root_id])
     if seen_root_indices:
         highest_seen_index = max(seen_root_indices)
         while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
             window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
     if anchor_root_id:
-        anchor_index = root_index_map.get(anchor_root_id)
-        if anchor_index is not None:
+        if anchor_root_id in root_index_map:
+            anchor_index = root_index_map[anchor_root_id]
             while (
                 window_end < len(ordered_root_ids) - 1
                 and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD
@@ -79,9 +78,9 @@ def build_view_state(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
-    client_known_note_ids: Optional[Set[str]] = None,
-    client_seen_root_ids: Optional[Set[str]] = None,
-    anchor_root_id: Optional[str] = None,
+    client_known_note_ids: Optional[Set[str]],
+    client_seen_root_ids: Optional[Set[str]],
+    anchor_root_id: Optional[str],
 ) -> ViewState:
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
@@ -107,17 +106,22 @@ def build_view_state(
         content_match = search_term in content.lower()
         child_match = any(_should_include(child) for child in note_store.get_children(nid))
         editing_match = bool(editing_note_id and nid == editing_note_id)
-        result = content_match or child_match or editing_match
+        result = content_match
+        if not result:
+            result = child_match
+        if not result:
+            result = editing_match
         allow_cache[nid] = result
         return result
 
     # Determine root window
     ordered_root_ids = note_store.get_children(None)
     root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
-    client_known_note_ids = client_known_note_ids or set()
+    if client_known_note_ids is None:
+        client_known_note_ids = set()
     seen_root_indices = {
         root_index_map[rid]
-        for rid in (client_seen_root_ids or set())
+        for rid in (client_seen_root_ids if client_seen_root_ids is not None else set())
         if rid in root_index_map
     }
     if search_term is not None:
@@ -133,7 +137,10 @@ def build_view_state(
             editing_note_id,
             anchor_root_id,
         )
-        allowed_root_ids = set(ordered_root_ids[: window_end + 1]) if window_end >= 0 else set()
+        if window_end >= 0:
+            allowed_root_ids = set(ordered_root_ids[: window_end + 1])
+        else:
+            allowed_root_ids = set()
 
     def traverse(parent_id: Optional[str]) -> None:
         ids = note_store.get_children(parent_id)
@@ -145,8 +152,14 @@ def build_view_state(
                 continue
             children_by_parent[parent_id].append(nid)
             rec = note_store.get_note(nid)
-            prev_id = ids[idx - 1] if idx > 0 else None
-            next_id = ids[idx + 1] if idx + 1 < len(ids) else None
+            if idx > 0:
+                prev_id = ids[idx - 1]
+            else:
+                prev_id = None
+            if idx + 1 < len(ids):
+                next_id = ids[idx + 1]
+            else:
+                next_id = None
             flags = {
                 "isCollapsed": bool(rec.is_collapsed),
                 "isEditing": bool(editing_note_id == rec.id),
@@ -196,9 +209,9 @@ def build_view_snapshot(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
-    client_known_note_ids: Optional[Set[str]] = None,
-    client_seen_root_ids: Optional[Set[str]] = None,
-    anchor_root_id: Optional[str] = None,
+    client_known_note_ids: Optional[Set[str]],
+    client_seen_root_ids: Optional[Set[str]],
+    anchor_root_id: Optional[str],
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
     state = build_view_state(
         editing_note_id=editing_note_id,

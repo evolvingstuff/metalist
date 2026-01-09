@@ -98,16 +98,18 @@ def collect_children(notes: List[sqlite3.Row]) -> Dict[str, List[sqlite3.Row]]:
     return grouped
 
 
-def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int = 0) -> None:
-    children = grouped.get(parent_id, [])
+def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int) -> None:
+    children = grouped[parent_id]
     if not children:
         return
     heads = [row for row in children if row["prev_id"] is None]
-    head = heads[0] if heads else None
+    head = None
+    if heads:
+        head = heads[0]
     if head is None:
         for row in children:
             prefix = "  " * depth
-            print(f"{prefix}- {row['id']} [unordered] children={len(grouped.get(row['id'], []))}")
+            print(f"{prefix}- {row['id']} [unordered] children={len(grouped[row['id']])}")
             print_tree(row["id"], grouped, depth + 1)
         return
     current = head
@@ -117,7 +119,7 @@ def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int
         prefix = "  " * depth
         print(
             f"{prefix}- {node_id} prev={current['prev_id'] or 'None'} next={current['next_id'] or 'None'} "
-            f"children={len(grouped.get(node_id, []))} ciphertext_len={current['ciphertext_len']}"
+            f"children={len(grouped[node_id])} ciphertext_len={current['ciphertext_len']}"
         )
         print_tree(node_id, grouped, depth + 1)
         visited.add(node_id)
@@ -127,8 +129,8 @@ def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int
         if next_id in visited:
             print(f"{prefix}  !! cycle back to {next_id}")
             break
-        peers = grouped.get(parent_id, [])
-        next_row = next((row for row in peers if row["id"] == next_id), None)
+        peers = grouped[parent_id]
+        next_row = next((row for row in peers if row["id"] == next_id))
         if next_row is None:
             print(f"{prefix}  !! missing next node {next_id}")
             break
@@ -150,10 +152,10 @@ def inspect_note(note_id: str, index: Dict[str, sqlite3.Row], grouped: Dict[str,
     print(f"has_tag      : {bool(note['has_tag'])}")
     print(f"created_at   : {note['created_at']}")
     print(f"updated_at   : {note['updated_at']}")
-    siblings = grouped.get(note["parent_id"], [])
+    siblings = grouped[note["parent_id"]]
     if siblings:
         ordered = []
-        head = next((row for row in siblings if row["prev_id"] is None), None)
+        head = next((row for row in siblings if row["prev_id"] is None))
         current = head
         seen = set()
         while current:
@@ -162,11 +164,11 @@ def inspect_note(note_id: str, index: Dict[str, sqlite3.Row], grouped: Dict[str,
             nxt = current["next_id"]
             if nxt is None:
                 break
-            current = next((row for row in siblings if row["id"] == nxt), None)
+            current = next((row for row in siblings if row["id"] == nxt))
             if current is None or current["id"] in seen:
                 break
         print(f"siblings order: {ordered}")
-    child_ids = [row["id"] for row in grouped.get(note_id, [])]
+    child_ids = [row["id"] for row in grouped[note_id]]
     print(f"child ids     : {child_ids}")
     print()
 
@@ -191,7 +193,7 @@ def main() -> None:
     else:
         print("Linked list structure appears consistent.\n")
     print("=== Tree Snapshot ===")
-    print_tree(None, grouped)
+    print_tree(None, grouped, depth=0)
     print()
     if args.note_id:
         inspect_note(args.note_id, index, grouped)

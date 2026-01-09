@@ -28,6 +28,9 @@ class _AdapterStore:
     def get(self, note_id: str) -> NodeRecord:
         return _note_store.get_note(note_id)
 
+    def contains(self, note_id: str) -> bool:
+        return _note_store.has_note(note_id)
+
     def children(self, parent_id: Optional[str]) -> List[str]:
         return _note_store.get_children(parent_id)
 
@@ -36,7 +39,9 @@ class _AdapterStore:
         # Compute next_id based on current links for the parent
         if prev_id is None:
             ids = _note_store.get_children(parent_id)
-            next_id = ids[0] if ids else None
+            next_id = None
+            if ids:
+                next_id = ids[0]
         else:
             links = _note_store._links.get(parent_id)
             if links is None:
@@ -65,7 +70,7 @@ class _AdapterStore:
         new_content: str,
         tags: str,
         *,
-        updated_at: Optional[datetime] = None,
+        updated_at: datetime,
     ) -> None:
         row = SimpleNamespace(id=note_id, updated_at=updated_at)
         _note_store.update_note_from_db(row, new_content, tags)
@@ -93,7 +98,9 @@ class _AdapterStore:
         # Determine next based on prev in destination parent
         if prev_id is None:
             ids = _note_store.get_children(new_parent_id)
-            next_id = ids[0] if ids else None
+            next_id = None
+            if ids:
+                next_id = ids[0]
         else:
             links = _note_store._links.get(new_parent_id)
             if links is None:

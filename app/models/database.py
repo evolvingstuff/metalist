@@ -156,7 +156,7 @@ class SafeSession:
 
     @classmethod
     @contextmanager
-    def allow_reads(cls, reason: str = "") -> Iterator[None]:
+    def allow_reads(cls, reason: str) -> Iterator[None]:
         with cls._read_guard_lock:
             previous = cls._reads_enabled
             cls._reads_enabled = True
@@ -172,10 +172,10 @@ class SafeSession:
     def rollback(self) -> None:
         self._connection.rollback()
 
-    def execute(self, statement: str, parameters: Optional[tuple] = None):
+    def execute(self, statement: str, parameters: tuple):
         if not type(self)._reads_enabled and _is_select(statement):
             raise RuntimeError("Post-startup DB read forbidden")
-        if parameters is None:
+        if len(parameters) == 0:
             return self._connection.execute(statement)
         return self._connection.execute(statement, parameters)
 

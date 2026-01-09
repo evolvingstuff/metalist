@@ -37,3 +37,7 @@ CLAUDE.md
 AI-SUMMARY.md
 # Auto-generated project summary in docs
 docs/AI-SUMMARY.md
+sanitycheck/js/node_modules/
+sanitycheck/js/.npm-cache/
+*.pyc
+*.pyo

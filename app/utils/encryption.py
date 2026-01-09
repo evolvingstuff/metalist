@@ -20,7 +20,7 @@ _current_token: Optional[str] = None
 logger = logging.getLogger(__name__)
 
 
-def get_encryption_service_with_token(token: str = None) -> Optional[EncryptionService]:
+def get_encryption_service_with_token(token: str) -> Optional[EncryptionService]:
     """Get encryption service with DEK loaded from token.
     
     Args:
@@ -62,7 +62,7 @@ def get_encryption_service() -> Optional[EncryptionService]:
     return _encryption_service
 
 
-def encrypt(content: str, token: str = None) -> Tuple[str, Optional[bytes], Optional[bytes]]:
+def encrypt(content: str, token: str) -> Tuple[str, Optional[bytes], Optional[bytes]]:
     """Encrypt note content using DEK from token.
     
     Args:
@@ -82,16 +82,13 @@ def encrypt(content: str, token: str = None) -> Tuple[str, Optional[bytes], Opti
         service = get_encryption_service()
     
     if service and service.dek:
-        try:
-            return service.encrypt_for_storage(content)
-        except Exception as e:
-            raise RuntimeError(f"Encryption failed: {e}") from e
+        return service.encrypt_for_storage(content)
     
     # No encryption available, return as-is
     return content, None, None
 
 
-def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, token: str = None) -> str:
+def decrypt(encrypted_content: str, nonce: bytes, tag: bytes, token: str) -> str:
     """Decrypt note content using DEK from token.
     
     Args:
@@ -123,19 +120,7 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
         service = get_encryption_service()
     
     if service and service.dek:
-        try:
-            return service.decrypt_from_storage(encrypted_content, nonce, tag)
-        except Exception as e:
-            nonce_preview = nonce.hex()[:16] if nonce else 'None'
-            tag_preview = tag.hex()[:16] if tag else 'None'
-            logger.error(
-                "Decrypt failed for content len=%s nonce=%s tag=%s: %s",
-                len(encrypted_content) if encrypted_content else 0,
-                nonce_preview,
-                tag_preview,
-                e,
-            )
-            raise RuntimeError(f"Decryption failed: {e}") from e
+        return service.decrypt_from_storage(encrypted_content, nonce, tag)
 
     raise RuntimeError("Encrypted content provided but no encryption key is available")
 
@@ -163,7 +148,7 @@ def clear_encryption_key() -> None:
     _current_token = None
 
 
-def is_encryption_available(token: str = None) -> bool:
+def is_encryption_available(token: str) -> bool:
     """Check if encryption is available.
     
     Args:
@@ -190,7 +175,10 @@ def get_encryption_status() -> dict:
     try:
         with SafeSession.allow_reads("utils:encryption:status:settings"):
             row = fetch_settings(db.connection())
-        settings = SimpleNamespace(**row) if row else None
+        if row:
+            settings = SimpleNamespace(**row)
+        else:
+            settings = None
 
         return {
             "encryption_enabled": settings.encryption_enabled if settings else False,

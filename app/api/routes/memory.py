@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional
+from typing import Annotated, Optional
 
 from app.api.deps import get_db
 from app.models.database import SafeSession
@@ -58,7 +58,10 @@ class MemoryResponse(BaseModel):
 
 
 @router.post("/memory", response_model=MemoryResponse)
-def memory_endpoint(payload: MemoryRequest, db: SafeSession = Depends(get_db)) -> MemoryResponse:
+def memory_endpoint(
+    payload: MemoryRequest,
+    db: Annotated[SafeSession, Depends(get_db)],
+) -> MemoryResponse:
     if payload.search_query is None:
         raise HTTPException(status_code=422, detail="searchQuery is required for memory mode")
 
@@ -67,7 +70,7 @@ def memory_endpoint(payload: MemoryRequest, db: SafeSession = Depends(get_db)) -
     if payload.previous_note_id and payload.feedback is not None:
         service.record_feedback(payload.previous_note_id, payload.feedback)
 
-    notes = service.build_candidate_tree(payload.search_query or None)
+    notes = service.build_candidate_tree(payload.search_query)
     if not notes:
         raise HTTPException(status_code=404, detail="No notes available for the current search context")
 

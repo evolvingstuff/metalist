@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from app.usecases.update_content import apply_update_content
@@ -70,7 +69,7 @@ def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, objec
 
 
 def _anchor_root_id(viewport: Dict[str, object]) -> Optional[str]:
-    scroll_anchor = viewport.get("scrollAnchor")
+    scroll_anchor = viewport["scrollAnchor"]
     if not isinstance(scroll_anchor, dict):
         return None
     anchor_id = scroll_anchor.get("anchorId")
@@ -107,7 +106,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         return note_id
 
     if op_type == "create_note":
-        record = op.get("record")
+        record = op["record"]
         if not isinstance(record, dict):
             raise RuntimeError(f"Undo op create_note.record must be an object | op={op}")
         created_id = record.get("id")
@@ -116,7 +115,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         return _pick_focus_neighbor(record.get("prev_id"), record.get("next_id"))
 
     if op_type in {"delete_subtree", "paste_subtree"}:
-        records = op.get("records")
+        records = op["records"]
         if not isinstance(records, list) or not records:
             raise RuntimeError(f"Undo op {op_type}.records must be a non-empty list | op={op}")
         first = records[0]
@@ -137,11 +136,13 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
     return ""
 
 
-@dataclass
 class _ClientUndo:
-    history: List[dict] = field(default_factory=list)  # list of ops
-    redo: List[dict] = field(default_factory=list)
-    last_search_context: str = ""
+    __slots__ = ("history", "redo", "last_search_context")
+
+    def __init__(self) -> None:
+        self.history: List[dict] = []
+        self.redo: List[dict] = []
+        self.last_search_context: str = ""
 
 
 _clients: Dict[str, _ClientUndo] = {}
@@ -292,27 +293,28 @@ def record_paste(client_id: str, records: List[NodeRecord], *, viewport: Dict[st
 
 def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
     ctx = _ctx(client_id)
-    sc = search_context or ""
+    sc = search_context
+    if sc is None:
+        sc = ""
     if ctx.last_search_context != sc:
         ctx.history.clear()
         ctx.redo.clear()
         ctx.last_search_context = sc
 
 
-def undo(client_id: str) -> Optional[Dict[str, object]]:
+def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     ctx = _ctx(client_id)
     if not ctx.history:
         return None
     op = ctx.history.pop()
     undo_viewport = op["viewport"]
-    focus_note_id_override: Optional[str] = None
 
     if "type" not in op:
         raise RuntimeError(f"Undo op missing required key: type | op={op}")
     op_type = op["type"]
 
     if op_type == "update_content":
-        apply_update_content(op["note_id"], op["before"], op["before_tags"])  # apply inverse
+        apply_update_content(op["note_id"], op["before"], op["before_tags"], token)  # apply inverse
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "create_note":
@@ -322,7 +324,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "delete_subtree":
         records = op["records"]
-        apply_restore_records(records)
+        apply_restore_records(records, token)
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "move":
@@ -343,23 +345,24 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "paste_subtree":
         # delete the pasted subtree
-        root_id = op["records"][0].id if op["records"] else None
+        if op["records"]:
+            root_id = op["records"][0].id
+        else:
+            root_id = None
         if not root_id:
             print("FATAL: paste_subtree undo missing root record")
             os._exit(1)
-
-        root_record = store.get(root_id)
-        focus_note_id_override = _pick_focus_neighbor(root_record.prev_id, root_record.next_id)
-        if not focus_note_id_override and root_record.parent_id:
-            focus_note_id_override = root_record.parent_id
         apply_delete_subtree(root_id)
         ctx.redo.append(op)
         generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
 
-    focus_note_id = focus_note_id_override if focus_note_id_override is not None else _compute_focus_note_id(op, direction="undo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
+    focus_note_id = _compute_focus_note_id(op, direction="undo")
+    if focus_note_id:
+        view_anchor_root_id = _root_ancestor_id(focus_note_id)
+    else:
+        view_anchor_root_id = op["viewAnchorRootId"]
     return {
         **undo_viewport,
         "viewAnchorRootId": view_anchor_root_id,
@@ -367,7 +370,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
     }
 
 
-def redo(client_id: str) -> Optional[Dict[str, object]]:
+def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     ctx = _ctx(client_id)
     if not ctx.redo:
         return None
@@ -379,14 +382,14 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
     op_type = op["type"]
 
     if op_type == "update_content":
-        apply_update_content(op["note_id"], op["after"], op["after_tags"])  # reapply
+        apply_update_content(op["note_id"], op["after"], op["after_tags"], token)  # reapply
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "create_note":
         # recreate
         rec = op["record"]
         from app.services.store import NodeRecord
-        apply_restore_records([NodeRecord(**rec)])
+        apply_restore_records([NodeRecord(**rec)], token)
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "delete_subtree":
@@ -412,14 +415,17 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "paste_subtree":
         # restore the subtree
-        apply_restore_records(op["records"])  
+        apply_restore_records(op["records"], token)
         ctx.history.append(op)
         generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported redo op: {op_type}")
 
     focus_note_id = _compute_focus_note_id(op, direction="redo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
+    if focus_note_id:
+        view_anchor_root_id = _root_ancestor_id(focus_note_id)
+    else:
+        view_anchor_root_id = op["viewAnchorRootId"]
     return {
         **redo_viewport,
         "viewAnchorRootId": view_anchor_root_id,

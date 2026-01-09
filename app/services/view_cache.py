@@ -13,10 +13,14 @@ class ViewCache:
 
     @staticmethod
     def _normalize(value: Optional[str]) -> str:
-        return value or ''
+        if value is None:
+            return ''
+        return value
 
     def _key(self, client_id: str, tab_id: Optional[str], search: Optional[str]) -> Tuple[str, str, str]:
-        normalized_tab = tab_id or '0'
+        normalized_tab = tab_id
+        if normalized_tab is None:
+            normalized_tab = '0'
         normalized_search = self._normalize(search)
         return (client_id, normalized_tab, normalized_search)
 

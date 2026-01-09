@@ -10,7 +10,7 @@ class ListTraversal:
     """Handles traversal and validation of linked list structures"""
     
     @staticmethod
-    def validate_list(db: SafeSession, parent_id: Optional[str] = None) -> bool:
+    def validate_list(db: SafeSession, parent_id: Optional[str]) -> bool:
         """Validate the linked list structure"""
 
         if note_store.loaded:
@@ -21,11 +21,21 @@ class ListTraversal:
             records = [note_store.get_note(note_id) for note_id in child_ids]
 
             for index, record in enumerate(records):
-                expected_prev = records[index - 1].id if index > 0 else None
-                expected_next = records[index + 1].id if index < len(records) - 1 else None
+                if index > 0:
+                    expected_prev = records[index - 1].id
+                else:
+                    expected_prev = None
+                if index < len(records) - 1:
+                    expected_next = records[index + 1].id
+                else:
+                    expected_next = None
 
-                prev_id = record.prev_id or None
-                next_id = record.next_id or None
+                prev_id = None
+                if record.prev_id is not None:
+                    prev_id = record.prev_id
+                next_id = None
+                if record.next_id is not None:
+                    next_id = record.next_id
 
                 if prev_id != expected_prev:
                     return False
@@ -69,7 +79,7 @@ class ListTraversal:
             return False
 
         while current.next_id:
-            next_note = next((note for note in notes if note.id == current.next_id), None)
+            next_note = next((note for note in notes if note.id == current.next_id))
             # Explicit checks for each condition
             if not next_note:
                 return False  # Next note doesn't exist
@@ -88,7 +98,7 @@ class ListTraversal:
                 current.parent_id == parent_id)  # Tail has correct parent
 
     @staticmethod
-    def get_ordered_child_list(db: SafeSession, parent_id: Optional[str] = None) -> List[Any]:
+    def get_ordered_child_list(db: SafeSession, parent_id: Optional[str]) -> List[Any]:
         """Get an ordered list of child notes for the given parent_id"""
 
         if note_store.loaded:
@@ -118,7 +128,7 @@ class ListTraversal:
         
         # Follow next_id chain
         while current.next_id:
-            next_note = next((note for note in all_notes if note.id == current.next_id), None)
+            next_note = next((note for note in all_notes if note.id == current.next_id))
             if not next_note:
                 raise ValueError(f"Invalid state: Note {current.id} points to non-existent next_id {current.next_id}")
             if next_note.id in seen:
@@ -147,12 +157,7 @@ class ListTraversal:
                 if current == note_id:
                     return True
                 seen.add(current)
-                try:
-                    parent_record = note_store.get_note(current)
-                except KeyError as exc:
-                    raise ValueError(
-                        f"Cycle check failed: parent id not found in store: {current}"
-                    ) from exc
+                parent_record = note_store.get_note(current)
                 current = parent_record.parent_id
             return False
 
@@ -166,7 +171,11 @@ class ListTraversal:
                 parent = fetch_note(db.connection(), current)
             if not parent:
                 raise ValueError(f"Cycle check failed: parent id not found in db: {current}")
-            current = parent.get("parent_id")
+            if "parent_id" not in parent:
+                raise RuntimeError(
+                    f"Cycle check failed: fetched row missing parent_id for id {current}"
+                )
+            current = parent["parent_id"]
         return False
 
 

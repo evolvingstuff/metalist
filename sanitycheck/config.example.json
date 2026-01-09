@@ -1,0 +1,29 @@
+{
+  "exclude_dot_folders": true,
+  "ignore_globs": [],
+  "python": {
+    "allowed_try_callee_prefixes": [
+      "requests.",
+      "httpx.",
+      "socket.",
+      "subprocess.",
+      "urllib."
+    ],
+    "allowed_exception_names": [
+      "TimeoutError",
+      "ConnectionError",
+      "OSError"
+    ]
+  },
+  "js": {
+    "allowed_try_callee_names": [
+      "fetch",
+      "JSON.parse"
+    ],
+    "allowed_try_callee_prefixes": [
+      "axios.",
+      "fs.",
+      "child_process."
+    ]
+  }
+}

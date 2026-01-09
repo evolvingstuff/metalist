@@ -17,4 +17,10 @@ class CmdView(QueryCommand):
         return f"CmdView(client={self.client_id}, editing={self.editing_note_id})"
 
     def execute(self) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
-        return build_view_snapshot(editing_note_id=self.editing_note_id, search=self.search)
+        return build_view_snapshot(
+            editing_note_id=self.editing_note_id,
+            search=self.search,
+            client_known_note_ids=None,
+            client_seen_root_ids=None,
+            anchor_root_id=None,
+        )

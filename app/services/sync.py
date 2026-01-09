@@ -24,17 +24,20 @@ def set_server_sync_uuid(value: str) -> None:
 
 
 def acquire_note_lock(note_id: str, client_id: str) -> Tuple[bool, bool]:
-    current = _locks.get(note_id)
-    if current and current != client_id:
-        return False, False
+    if note_id in _locks:
+        current = _locks[note_id]
+        if current and current != client_id:
+            return False, False
     _locks[note_id] = client_id
     generate_new_uuid()
     return True, False
 
 
 def release_note_lock(note_id: str, client_id: str) -> None:
-    if _locks.get(note_id) == client_id:
-        _locks.pop(note_id, None)
+    if note_id not in _locks:
+        return
+    if _locks[note_id] == client_id:
+        del _locks[note_id]
         generate_new_uuid()
 
 
@@ -48,7 +51,12 @@ def set_clipboard(client_id: str, records: list) -> None:
 
 
 def get_clipboard(client_id: str) -> list:
-    return list(_clipboards.get(client_id) or [])
+    if client_id not in _clipboards:
+        return []
+    records = _clipboards[client_id]
+    if records:
+        return list(records)
+    return []
 
 
 def clear_all_locks() -> None:

@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from .base_service import BaseQueryService
 from .sync_state import generate_new_uuid, set_server_sync_uuid
@@ -15,7 +16,7 @@ class UndoRedoService(BaseQueryService):
         super().__init__(db)
         self.transaction_manager = transaction_manager
     
-    def undo(self, client_id: str = None) -> dict:
+    def undo(self, client_id: Optional[str]) -> dict:
         """Perform an undo operation"""
         logger.info(f"🔧 UNDO SERVICE: undo() called for client {client_id}")
         with SafeSession.allow_reads("undo"):
@@ -29,7 +30,7 @@ class UndoRedoService(BaseQueryService):
             logger.info("No operations to undo")
             return {"status": "noop", "message": "No actions to undo"}
     
-    def redo(self, client_id: str = None) -> dict:
+    def redo(self, client_id: Optional[str]) -> dict:
         """Perform a redo operation"""
         with SafeSession.allow_reads("redo"):
             redid = self.transaction_manager.redo(self.db, client_id)

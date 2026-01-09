@@ -15,7 +15,7 @@ from loguru import logger
 class BaseTransactionService(ABC):
     """Base class for services that need transaction tracking for undo/redo"""
     
-    def __init__(self, db: SafeSession, transaction_manager, client_id: str = None):
+    def __init__(self, db: SafeSession, transaction_manager, client_id: Optional[str]):
         self.db = db
         self.transaction_manager = transaction_manager
         self.client_id = client_id
@@ -95,7 +95,9 @@ class BaseTransactionService(ABC):
 
         if config.DEV_ENFORCE_INTEGRITY_CHECKS:
             print('DEBUG: enforcing integrity checks')
-            op_name = self._operation_name or "unspecified_operation"
+            op_name = self._operation_name
+            if op_name is None:
+                op_name = "unspecified_operation"
             assert_note_count(
                 self.db,
                 self._note_count_snapshot,

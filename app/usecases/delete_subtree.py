@@ -9,7 +9,12 @@ from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 
 from app.db.session import begin_writer
-from app.db.notes_sql import update_links as db_update_links, delete_notes as db_delete_notes
+from app.db.notes_sql import (
+    delete_notes as db_delete_notes,
+    insert_note as db_insert_note,
+    update_links as db_update_links,
+)
+from app.security.encryption import encrypt
 
 
 def _collect_subtree_ids(root_id: str) -> List[str]:
@@ -56,8 +61,14 @@ def apply_delete_subtree(note_id: str) -> None:
             f"note_id={note_id} parent_id={parent_id}"
         )
     idx = siblings.index(note_id)
-    prev_id = siblings[idx - 1] if idx > 0 else None
-    next_id = siblings[idx + 1] if idx + 1 < len(siblings) else None
+    if idx > 0:
+        prev_id = siblings[idx - 1]
+    else:
+        prev_id = None
+    if idx + 1 < len(siblings):
+        next_id = siblings[idx + 1]
+    else:
+        next_id = None
 
     ids_to_delete = _collect_subtree_ids(note_id)
 
@@ -75,19 +86,20 @@ def apply_delete_subtree(note_id: str) -> None:
     store.delete_subtree(note_id)
 
 
-def apply_restore_records(records: List[NodeRecord]) -> None:
+def apply_restore_records(records: List[NodeRecord], token: str) -> None:
     # Reinsert records in preorder; rely on stored prev/next pointers
-    from app.db.notes_sql import insert_note as db_insert_note
-    from app.security.encryption import encrypt
-
     # Insert in DB
     with begin_writer() as connection:
         now = datetime.now(timezone.utc)
         for rec in records:
             assert isinstance(rec.content, str)
             assert isinstance(rec.tags, str)
-            ciphertext, nonce, tag = encrypt(rec.content)
-            tags_ciphertext, tags_nonce, tags_tag = encrypt(rec.tags)
+            ciphertext, nonce, tag = encrypt(rec.content, token)
+            tags_ciphertext, tags_nonce, tags_tag = encrypt(rec.tags, token)
+
+            created_at = rec.created_at
+            if created_at is None:
+                created_at = now
             db_insert_note(
                 connection,
                 note_id=rec.id,
@@ -101,7 +113,7 @@ def apply_restore_records(records: List[NodeRecord]) -> None:
                 prev_id=rec.prev_id,
                 next_id=rec.next_id,
                 is_collapsed=rec.is_collapsed,
-                created_at=rec.created_at or now,
+                created_at=created_at,
                 updated_at=now,
             )
             # Update neighbor links around this node

@@ -12,7 +12,7 @@ class MaintenanceModeService:
         self._operation_description = ""
         self._lock = threading.Lock()
     
-    def enter_maintenance(self, operation_description: str = "Processing") -> None:
+    def enter_maintenance(self, operation_description: str) -> None:
         """Enter maintenance mode with optional description.
         
         Args:

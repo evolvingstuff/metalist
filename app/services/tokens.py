@@ -29,7 +29,7 @@ class TokenService:
         self,
         client_info: str,
         owner_tab_id: str,
-        dek: Optional[bytes] = None,
+        dek: Optional[bytes],
     ) -> str:
         """Generate new authentication token for client.
         
@@ -100,7 +100,7 @@ class TokenService:
         token_info = self.tokens.get(token_hash)
         if not token_info:
             return False
-        return token_info.get("owner_tab_id") == owner_tab_id
+        return token_info["owner_tab_id"] == owner_tab_id
 
     def claim_token_for_tab(self, token: str, owner_tab_id: str) -> bool:
         if not owner_tab_id:
@@ -203,7 +203,8 @@ class TokenService:
         
         if token_hash in self.tokens:
             info = self.tokens[token_hash].copy()
-            info.pop("dek", None)
+            if "dek" in info:
+                del info["dek"]
             return info
         
         return None
@@ -226,7 +227,7 @@ class TokenService:
         if not token_info:
             return None
 
-        return token_info.get("dek")
+        return token_info["dek"]
     
     def list_active_sessions(self) -> list:
         """List all active sessions.

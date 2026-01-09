@@ -1,9 +1,29 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from threading import Lock
 from typing import Dict, List, Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
+
+
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}$"
+)
+
+
+def _is_uuid_string(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    if not value:
+        return False
+    if _UUID_RE.match(value) is None:
+        return False
+    return True
 
 
 class TabStateStore:
@@ -28,10 +48,8 @@ class TabStateStore:
     def create_tab(self, *, copy_from_tab_id: str) -> Dict[str, object]:
         if not isinstance(copy_from_tab_id, str) or not copy_from_tab_id:
             raise ValueError("copyFromTabId must be a non-empty string")
-        try:
-            UUID(copy_from_tab_id)
-        except ValueError as exc:
-            raise ValueError("copyFromTabId must be a UUID string") from exc
+        if not _is_uuid_string(copy_from_tab_id):
+            raise ValueError("copyFromTabId must be a UUID string")
 
         with self._lock:
             if copy_from_tab_id not in self._tabs:
@@ -54,10 +72,8 @@ class TabStateStore:
     def delete_tab(self, *, tab_id: str) -> Dict[str, object]:
         if not isinstance(tab_id, str) or not tab_id:
             raise ValueError("tabId must be a non-empty string")
-        try:
-            UUID(tab_id)
-        except ValueError as exc:
-            raise ValueError("tabId must be a UUID string") from exc
+        if not _is_uuid_string(tab_id):
+            raise ValueError("tabId must be a UUID string")
 
         with self._lock:
             if tab_id not in self._tabs:
@@ -72,7 +88,10 @@ class TabStateStore:
             del self._tabs[tab_id]
 
             if was_active:
-                next_active = order[idx] if idx < len(order) else order[idx - 1]
+                if idx < len(order):
+                    next_active = order[idx]
+                else:
+                    next_active = order[idx - 1]
                 self._active_tab_id = next_active
 
             self._tab_order = order
@@ -143,10 +162,8 @@ class TabStateStore:
             tab_id = str(key)
             if not tab_id:
                 raise ValueError("tab ids must be non-empty strings")
-            try:
-                UUID(tab_id)
-            except ValueError as exc:
-                raise ValueError("tab ids must be UUID strings") from exc
+            if not _is_uuid_string(tab_id):
+                raise ValueError("tab ids must be UUID strings")
             if not isinstance(value, dict):
                 raise ValueError("tab payload must be an object")
             if "searchQuery" not in value or "scrollY" not in value:
@@ -158,7 +175,7 @@ class TabStateStore:
             if not isinstance(scroll_y, int) or scroll_y < 0:
                 raise ValueError("scrollY must be a non-negative integer")
 
-            scroll_anchor = value.get("scrollAnchor")
+            scroll_anchor = value["scrollAnchor"]
             normalized_scroll_anchor: Optional[Dict[str, object]] = None
             if scroll_anchor is not None:
                 if not isinstance(scroll_anchor, dict):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional
+from typing import Annotated, Optional
 
 from app.api.deps import get_db
 from app.models.database import SafeSession
@@ -49,17 +49,22 @@ class PasswordRemoveRequest(BaseModel):
 
 def _client_info(request: Request) -> str:
     user_agent = request.headers.get("user-agent", "Unknown")
-    client_host = request.client.host if request.client else "Unknown"
+    if request.client:
+        client_host = request.client.host
+    else:
+        client_host = "Unknown"
     return f"{user_agent[:100]} - {client_host}"
 
 
-def _require_tab_id(x_metalist_tab_id: str = Header(..., alias="X-Metalist-Tab-Id")) -> str:
+def _require_tab_id(
+    x_metalist_tab_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
+) -> str:
     return x_metalist_tab_id
 
 
 def _verify_token(
-    tab_id: str = Depends(_require_tab_id),
-    authorization: Optional[str] = Header(None),
+    tab_id: Annotated[str, Depends(_require_tab_id)],
+    authorization: Annotated[Optional[str], Header()],
 ) -> Optional[str]:
     if not authorization:
         return None
@@ -72,7 +77,7 @@ def _verify_token(
     return None
 
 
-def _require_auth(token: Optional[str] = Depends(_verify_token)) -> str:
+def _require_auth(token: Annotated[Optional[str], Depends(_verify_token)]) -> str:
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     return token
@@ -82,8 +87,8 @@ def _require_auth(token: Optional[str] = Depends(_verify_token)) -> str:
 def login(
     request: Request,
     payload: LoginRequest,
-    tab_id: str = Depends(_require_tab_id),
-    db: SafeSession = Depends(get_db),
+    tab_id: Annotated[str, Depends(_require_tab_id)],
+    db: Annotated[SafeSession, Depends(get_db)],
 ):
     auth = AuthService(db)
     if not auth.has_password():
@@ -96,16 +101,11 @@ def login(
     set_session_dek(dek)
 
     if auth_cache_state.cache_refresh_needed():
-        prefetched_rows = populate_cache_from_db()
+        prefetched_rows = populate_cache_from_db(None)
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
 
         def _get_plaintext(note_id: str, row: dict) -> str:
-            plaintext = get_cached_content(note_id)
-            if plaintext is None:
-                raise RuntimeError(
-                    f"V2 hydrate failed after login: no plaintext in cache for note {note_id}"
-                )
-            return plaintext
+            return get_cached_content(note_id)
 
         v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
         auth_cache_state.mark_cache_ready()
@@ -116,7 +116,7 @@ def login(
 
 
 @router.post("/logout")
-def logout(token: str = Depends(_require_auth)):
+def logout(token: Annotated[str, Depends(_require_auth)]):
     token_service.revoke_token(token)
     clear_all_locks()
     clear_encryption_key()
@@ -126,27 +126,25 @@ def logout(token: str = Depends(_require_auth)):
 @router.post("/session", response_model=SessionResponse)
 def create_passwordless_session(
     request: Request,
-    tab_id: str = Depends(_require_tab_id),
-    db: SafeSession = Depends(get_db),
+    tab_id: Annotated[str, Depends(_require_tab_id)],
+    db: Annotated[SafeSession, Depends(get_db)],
 ):
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=400, detail="Password is set. Use /login instead.")
 
-    token = token_service.create_token(_client_info(request), tab_id)
+    token = token_service.create_token(_client_info(request), tab_id, dek=None)
     clear_all_locks()
     return SessionResponse(token=token, message="Session established")
 
 
 @router.get("/status")
 def auth_status(
-    db: SafeSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
-    tab_id: str = Depends(_require_tab_id),
+    db: Annotated[SafeSession, Depends(get_db)],
+    token: Annotated[Optional[str], Depends(_verify_token)],
 ):
     auth = AuthService(db)
     settings = auth.get_settings()
-    token = _verify_token(tab_id, authorization)
     return {
         "authenticated": token is not None,
         "has_password": auth.has_password(),
@@ -156,7 +154,10 @@ def auth_status(
 
 
 @router.post("/settings/password/create")
-def create_password(payload: PasswordCreateRequest, db: SafeSession = Depends(get_db)):
+def create_password(
+    payload: PasswordCreateRequest,
+    db: Annotated[SafeSession, Depends(get_db)],
+):
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=400, detail="Password already exists. Use change endpoint instead.")
@@ -169,7 +170,11 @@ def create_password(payload: PasswordCreateRequest, db: SafeSession = Depends(ge
 
 
 @router.put("/settings/password/change")
-def change_password(payload: PasswordChangeRequest, db: SafeSession = Depends(get_db), token: str = Depends(_require_auth)):
+def change_password(
+    payload: PasswordChangeRequest,
+    db: Annotated[SafeSession, Depends(get_db)],
+    token: Annotated[str, Depends(_require_auth)],
+):
     auth = AuthService(db)
     success, message = auth.change_password(
         payload.current_password,
@@ -184,7 +189,11 @@ def change_password(payload: PasswordChangeRequest, db: SafeSession = Depends(ge
 
 
 @router.delete("/settings/password/remove")
-def remove_password(payload: PasswordRemoveRequest, db: SafeSession = Depends(get_db), token: str = Depends(_require_auth)):
+def remove_password(
+    payload: PasswordRemoveRequest,
+    db: Annotated[SafeSession, Depends(get_db)],
+    token: Annotated[str, Depends(_require_auth)],
+):
     auth = AuthService(db)
     success, message = auth.remove_password(payload.current_password)
     if not success:
@@ -195,5 +204,5 @@ def remove_password(payload: PasswordRemoveRequest, db: SafeSession = Depends(ge
 
 
 @router.get("/sessions")
-def sessions(token: str = Depends(_require_auth)):
+def sessions(token: Annotated[str, Depends(_require_auth)]):
     return {"sessions": token_service.list_active_sessions()}

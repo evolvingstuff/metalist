@@ -1,4 +1,6 @@
-from typing import Dict, Optional, Any
+import html
+import re
+from typing import Any, Dict, Optional
 from types import SimpleNamespace
 import uuid
 from datetime import datetime, timezone
@@ -55,12 +57,7 @@ def _serialize_note_recursive(db: SafeSession, source_note: Any) -> Dict[str, An
     """
     # Get decrypted content from cache - MUST be there
     decrypted_content = get_cached_content(source_note.id)
-    if decrypted_content is None:
-        raise RuntimeError(f"CACHE CORRUPTION: Note {source_note.id} not found in cache during copy operation!")
-
     decrypted_tags = get_cached_tags(source_note.id)
-    if decrypted_tags is None:
-        raise RuntimeError(f"CACHE CORRUPTION: Note {source_note.id} tags not found in cache during copy operation!")
     
     # Serialize this note's data
     note_data = {
@@ -83,7 +80,7 @@ def _serialize_note_recursive(db: SafeSession, source_note: Any) -> Dict[str, An
     return note_data
 
 
-def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
+def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str]) -> str:
     """
     Deserializes clipboard data into real database notes with new UUIDs.
     
@@ -98,7 +95,7 @@ def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_paren
     return _deserialize_note_recursive(db, note_data, new_parent_id)
 
 
-def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
+def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str]) -> str:
     """
     Recursively deserializes note data into real database notes.
     
@@ -112,11 +109,11 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
     """
     # Generate a new ID for the note and encrypt its content
     new_id = str(uuid.uuid4())
-    ciphertext, nonce, tag = encrypt(note_data["content"])
-    tags_value = note_data.get("tags", "")
-    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags_value)
+    ciphertext, nonce, tag = encrypt(note_data["content"], "")
+    tags_value = note_data["tags"]
+    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags_value, "")
     timestamp = datetime.now(timezone.utc)
-    is_collapsed = bool(note_data.get("is_collapsed", False))
+    is_collapsed = bool(note_data["is_collapsed"])
 
     insert_note(
         db.connection(),
@@ -160,7 +157,7 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
         )
     
     # Deserialize children if any
-    children_data = note_data.get("children", [])
+    children_data = note_data["children"]
     if children_data:
         # Deserialize each child recursively
         previous_child_id = None
@@ -170,15 +167,18 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
             
             # Update prev_id and next_id to maintain sibling order
             if previous_child_id:
+                updated_at = datetime.now(timezone.utc)
                 update_links(
                     db.connection(),
                     new_child_id,
                     prev_id=previous_child_id,
+                    updated_at=updated_at,
                 )
                 update_links(
                     db.connection(),
                     previous_child_id,
                     next_id=new_child_id,
+                    updated_at=updated_at,
                 )
                 if note_store.loaded:
                     new_child_record = note_store.get_note(new_child_id)
@@ -192,7 +192,8 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
                             created_at=new_child_record.created_at,
                             updated_at=new_child_record.updated_at,
                             is_collapsed=new_child_record.is_collapsed,
-                        )
+                        ),
+                        rebuild=True,
                     )
                     note_store.update_metadata_from_db(
                         SimpleNamespace(
@@ -203,7 +204,8 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
                             created_at=prev_record.created_at,
                             updated_at=prev_record.updated_at,
                             is_collapsed=prev_record.is_collapsed,
-                        )
+                        ),
+                        rebuild=True,
                     )
             
             previous_child_id = new_child_id
@@ -211,7 +213,7 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
     return new_id
 
 
-def copy_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None) -> str:
+def copy_note(db: SafeSession, note_id: str, new_parent_id: Optional[str]) -> str:
     """Create a deep copy of ``note_id`` and its descendants."""
 
     with SafeSession.allow_reads("copy_note:source"):
@@ -227,7 +229,7 @@ def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
     if not note_data:
         return 0
     total = 1
-    for child in note_data.get("children", []) or []:
+    for child in note_data["children"] or []:
         total += count_serialized_note_tree(child)
     return total
 
@@ -235,23 +237,23 @@ def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
 def _copy_note_recursive(
     db: SafeSession,
     source_row: Dict[str, Any],
-    new_parent_id: Optional[str] = None,
+    new_parent_id: Optional[str],
 ) -> str:
     """Recursively duplicate ``source_row`` into a new subtree."""
 
     new_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc)
-    is_collapsed = bool(source_row.get("is_collapsed", False))
+    is_collapsed = bool(source_row["is_collapsed"])
 
     insert_note(
         db.connection(),
         note_id=new_id,
         content=source_row["content"],
-        encryption_nonce=source_row.get("encryption_nonce"),
-        encryption_tag=source_row.get("encryption_tag"),
+        encryption_nonce=source_row["encryption_nonce"],
+        encryption_tag=source_row["encryption_tag"],
         tags=source_row["tags"],
-        tags_encryption_nonce=source_row.get("tags_encryption_nonce"),
-        tags_encryption_tag=source_row.get("tags_encryption_tag"),
+        tags_encryption_nonce=source_row["tags_encryption_nonce"],
+        tags_encryption_tag=source_row["tags_encryption_tag"],
         parent_id=new_parent_id,
         prev_id=None,
         next_id=None,
@@ -261,20 +263,10 @@ def _copy_note_recursive(
     )
 
     plaintext = get_cached_content(source_row["id"])
-    if plaintext is None:
-        if source_row.get("encryption_nonce") is not None:
-            raise RuntimeError(
-                f"Cache missing plaintext for encrypted note {source_row['id']} during copy operation"
-            )
-        plaintext = source_row.get("content", "")
 
     cache_note(new_id, plaintext)
 
     tags_plaintext = get_cached_tags(source_row["id"])
-    if tags_plaintext is None:
-        raise RuntimeError(
-            f"Cache missing tags for note {source_row['id']} during copy operation"
-        )
 
     cache_note_tags(new_id, tags_plaintext)
 
@@ -283,11 +275,11 @@ def _copy_note_recursive(
             SimpleNamespace(
                 id=new_id,
                 content=source_row["content"],
-                encryption_nonce=source_row.get("encryption_nonce"),
-                encryption_tag=source_row.get("encryption_tag"),
+                encryption_nonce=source_row["encryption_nonce"],
+                encryption_tag=source_row["encryption_tag"],
                 tags=source_row["tags"],
-                tags_encryption_nonce=source_row.get("tags_encryption_nonce"),
-                tags_encryption_tag=source_row.get("tags_encryption_tag"),
+                tags_encryption_nonce=source_row["tags_encryption_nonce"],
+                tags_encryption_tag=source_row["tags_encryption_tag"],
                 parent_id=new_parent_id,
                 prev_id=None,
                 next_id=None,
@@ -307,15 +299,18 @@ def _copy_note_recursive(
         new_child_id = _copy_note_recursive(db, child_row, new_id)
 
         if previous_child_id:
+            updated_at = datetime.now(timezone.utc)
             update_links(
                 db.connection(),
                 new_child_id,
                 prev_id=previous_child_id,
+                updated_at=updated_at,
             )
             update_links(
                 db.connection(),
                 previous_child_id,
                 next_id=new_child_id,
+                updated_at=updated_at,
             )
 
             if note_store.loaded:
@@ -330,7 +325,8 @@ def _copy_note_recursive(
                         created_at=new_child_record.created_at,
                         updated_at=new_child_record.updated_at,
                         is_collapsed=new_child_record.is_collapsed,
-                    )
+                    ),
+                    rebuild=True,
                 )
                 note_store.update_metadata_from_db(
                     SimpleNamespace(
@@ -341,7 +337,8 @@ def _copy_note_recursive(
                         created_at=prev_record.created_at,
                         updated_at=prev_record.updated_at,
                         is_collapsed=prev_record.is_collapsed,
-                    )
+                    ),
+                    rebuild=True,
                 )
 
         previous_child_id = new_child_id
@@ -360,7 +357,7 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
     Returns:
         HTML string representation with guaranteed indentation
     """
-    def render_note(note, depth=0):
+    def render_note(note: Dict[str, Any], depth: int) -> str:
         """Render note using table structure for reliable indentation"""
         html_parts = []
         
@@ -372,7 +369,9 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
             html_parts.append('<td>')
         
         # Add the note content with border
-        content = note.get("content", "")
+        if "content" not in note:
+            raise RuntimeError(f"note_data missing required key: content | note={note}")
+        content = note["content"]
         note_style = """
             border: 1px solid #cccccc;
             border-radius: 4px;
@@ -387,7 +386,11 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
             html_parts.append('</td></tr></table>')
         
         # Add children with increased depth
-        children = note.get("children", [])
+        if "children" not in note:
+            raise RuntimeError(f"note_data missing required key: children | note={note}")
+        children = note["children"]
+        if not isinstance(children, list):
+            raise TypeError(f"note_data.children must be a list: {type(children)}")
         for child in children:
             html_parts.append(render_note(child, depth + 1))
         
@@ -417,19 +420,19 @@ def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
     Returns:
         Plain text string with proper indentation
     """
-    def render_note_text(note, depth=0):
+    def render_note_text(note: Dict[str, Any], depth: int) -> list[str]:
         """Recursively render a note and its children as plain text"""
         lines = []
         indent = "    " * depth  # 4 spaces per level
         
         # Get content and strip HTML tags
-        content = note.get("content", "").strip()
+        if "content" not in note:
+            raise RuntimeError(f"note_data missing required key: content | note={note}")
+        content = str(note["content"]).strip()
         if content:
             # Strip HTML tags but preserve text
-            import re
             plain_content = re.sub(r'<[^>]+>', '', content)
             # Convert HTML entities
-            import html
             plain_content = html.unescape(plain_content)
             # Handle line breaks
             plain_content = plain_content.replace('\n', f'\n{indent}')
@@ -437,7 +440,11 @@ def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
             lines.append(f"{indent}{plain_content}")
         
         # Add children with increased depth
-        children = note.get("children", [])
+        if "children" not in note:
+            raise RuntimeError(f"note_data missing required key: children | note={note}")
+        children = note["children"]
+        if not isinstance(children, list):
+            raise TypeError(f"note_data.children must be a list: {type(children)}")
         for child in children:
             child_lines = render_note_text(child, depth + 1)
             lines.extend(child_lines)

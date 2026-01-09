@@ -13,7 +13,7 @@ from app.db.notes_sql import update_note_fields as db_update_note_fields
 from app.security.encryption import encrypt
 
 
-def apply_update_content(note_id: str, content: str, tags: str) -> None:
+def apply_update_content(note_id: str, content: str, tags: str, token: str) -> None:
     """Apply a content+tags update to DB and in-memory store in a single atomic commit."""
     if not isinstance(content, str):
         raise TypeError("content must be a string")
@@ -21,14 +21,12 @@ def apply_update_content(note_id: str, content: str, tags: str) -> None:
         raise TypeError("tags must be a string")
 
     # Validate existence without DB reads
-    try:
-        _ = store.get(note_id)
-    except KeyError as exc:
-        raise KeyError(f"Note not found: {note_id}") from exc
+    if not store.contains(note_id):
+        raise KeyError(f"Note not found: {note_id}")
 
     # Encrypt (or pass-through if encryption unavailable)
-    ciphertext, nonce, tag = encrypt(content)
-    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags)
+    ciphertext, nonce, tag = encrypt(content, token)
+    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
     now = datetime.now(timezone.utc)
 
     # Single SQL transaction
@@ -54,6 +52,7 @@ class CmdUpdateContent(QueryCommand):
     note_id: str
     content: str
     tags: str
+    token: str
     client_id: str
     viewport: Dict[str, object]
 
@@ -65,7 +64,7 @@ class CmdUpdateContent(QueryCommand):
         record = store.get(self.note_id)
         prev = record.content
         prev_tags = record.tags
-        apply_update_content(self.note_id, self.content, self.tags)
+        apply_update_content(self.note_id, self.content, self.tags, self.token)
 
         # Record in undo stack
         from app.services.undo_state import record_update

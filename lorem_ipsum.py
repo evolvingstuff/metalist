@@ -221,7 +221,8 @@ ROOT_KEY = "__root__"
 
 
 def _parent_key(parent_id: str | None) -> str:
-    return parent_id if parent_id is not None else ROOT_KEY
+    assert parent_id is not None
+    return parent_id
 
 
 def register_note_order(
@@ -240,14 +241,21 @@ def apply_all_orders(db_session: SafeSession, order_map: Dict[str, List[str]]) -
     for key, ordered_ids in order_map.items():
         if not ordered_ids:
             continue
-        parent_id = None if key == ROOT_KEY else key
+        assert key != ROOT_KEY
+        parent_id = key
         apply_order(db_session, parent_id, ordered_ids)
 
 
 def apply_order(db_session: SafeSession, parent_id: str | None, ordered_ids: List[str]) -> None:
     for idx, current_id in enumerate(ordered_ids):
-        prev_id = ordered_ids[idx - 1] if idx > 0 else None
-        next_id = ordered_ids[idx + 1] if idx < len(ordered_ids) - 1 else None
+        if idx > 0:
+            prev_id = ordered_ids[idx - 1]
+        else:
+            prev_id = None
+        if idx < len(ordered_ids) - 1:
+            next_id = ordered_ids[idx + 1]
+        else:
+            next_id = None
         update_links(
             db_session.connection(),
             current_id,
