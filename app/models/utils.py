@@ -1,4 +1,6 @@
-from typing import Dict, Optional, Any
+import html
+import re
+from typing import Any, Dict, Optional
 from types import SimpleNamespace
 import uuid
 from datetime import datetime, timezone
@@ -190,7 +192,8 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
                             created_at=new_child_record.created_at,
                             updated_at=new_child_record.updated_at,
                             is_collapsed=new_child_record.is_collapsed,
-                        )
+                        ),
+                        rebuild=True,
                     )
                     note_store.update_metadata_from_db(
                         SimpleNamespace(
@@ -201,7 +204,8 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
                             created_at=prev_record.created_at,
                             updated_at=prev_record.updated_at,
                             is_collapsed=prev_record.is_collapsed,
-                        )
+                        ),
+                        rebuild=True,
                     )
             
             previous_child_id = new_child_id
@@ -321,7 +325,8 @@ def _copy_note_recursive(
                         created_at=new_child_record.created_at,
                         updated_at=new_child_record.updated_at,
                         is_collapsed=new_child_record.is_collapsed,
-                    )
+                    ),
+                    rebuild=True,
                 )
                 note_store.update_metadata_from_db(
                     SimpleNamespace(
@@ -332,7 +337,8 @@ def _copy_note_recursive(
                         created_at=prev_record.created_at,
                         updated_at=prev_record.updated_at,
                         is_collapsed=prev_record.is_collapsed,
-                    )
+                    ),
+                    rebuild=True,
                 )
 
         previous_child_id = new_child_id
@@ -351,7 +357,7 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
     Returns:
         HTML string representation with guaranteed indentation
     """
-    def render_note(note, depth=0):
+    def render_note(note: Dict[str, Any], depth: int) -> str:
         """Render note using table structure for reliable indentation"""
         html_parts = []
         
@@ -363,7 +369,9 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
             html_parts.append('<td>')
         
         # Add the note content with border
-        content = note.get("content", "")
+        if "content" not in note:
+            raise RuntimeError(f"note_data missing required key: content | note={note}")
+        content = note["content"]
         note_style = """
             border: 1px solid #cccccc;
             border-radius: 4px;
@@ -378,7 +386,11 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
             html_parts.append('</td></tr></table>')
         
         # Add children with increased depth
-        children = note.get("children", [])
+        if "children" not in note:
+            raise RuntimeError(f"note_data missing required key: children | note={note}")
+        children = note["children"]
+        if not isinstance(children, list):
+            raise TypeError(f"note_data.children must be a list: {type(children)}")
         for child in children:
             html_parts.append(render_note(child, depth + 1))
         
@@ -408,19 +420,19 @@ def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
     Returns:
         Plain text string with proper indentation
     """
-    def render_note_text(note, depth=0):
+    def render_note_text(note: Dict[str, Any], depth: int) -> list[str]:
         """Recursively render a note and its children as plain text"""
         lines = []
         indent = "    " * depth  # 4 spaces per level
         
         # Get content and strip HTML tags
-        content = note.get("content", "").strip()
+        if "content" not in note:
+            raise RuntimeError(f"note_data missing required key: content | note={note}")
+        content = str(note["content"]).strip()
         if content:
             # Strip HTML tags but preserve text
-            import re
             plain_content = re.sub(r'<[^>]+>', '', content)
             # Convert HTML entities
-            import html
             plain_content = html.unescape(plain_content)
             # Handle line breaks
             plain_content = plain_content.replace('\n', f'\n{indent}')
@@ -428,7 +440,11 @@ def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
             lines.append(f"{indent}{plain_content}")
         
         # Add children with increased depth
-        children = note.get("children", [])
+        if "children" not in note:
+            raise RuntimeError(f"note_data missing required key: children | note={note}")
+        children = note["children"]
+        if not isinstance(children, list):
+            raise TypeError(f"note_data.children must be a list: {type(children)}")
         for child in children:
             child_lines = render_note_text(child, depth + 1)
             lines.extend(child_lines)

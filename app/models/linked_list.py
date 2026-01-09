@@ -17,11 +17,11 @@ class LinkedListManager:
 
     # Delegate to ListTraversal
     @staticmethod
-    def validate_list(db: SafeSession, parent_id: Optional[str] = None) -> bool:
+    def validate_list(db: SafeSession, parent_id: Optional[str]) -> bool:
         return ListTraversal.validate_list(db, parent_id)
 
     @staticmethod
-    def get_ordered_child_list(db: SafeSession, parent_id: Optional[str] = None) -> List[Any]:
+    def get_ordered_child_list(db: SafeSession, parent_id: Optional[str]) -> List[Any]:
         return ListTraversal.get_ordered_child_list(db, parent_id)
 
     @staticmethod
@@ -40,7 +40,7 @@ class LinkedListManager:
 
     # Delegate to NoteCRUD
     @staticmethod
-    def create_note_top(db: SafeSession, note_id: str, parent_id: Optional[str] = None) -> None:
+    def create_note_top(db: SafeSession, note_id: str, parent_id: Optional[str]) -> None:
         return NoteCRUD.create_note_top(db, note_id, parent_id)
 
     @staticmethod
@@ -57,6 +57,11 @@ class LinkedListManager:
 
     # Delegate to ListOperations
     @staticmethod
-    def move_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None,
-                  sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
+    def move_note(
+        db: SafeSession,
+        note_id: str,
+        new_parent_id: Optional[str],
+        sibling_id: Optional[str],
+        position: Optional[MovePosition],
+    ):
         return ListOperations.move_note(db, note_id, new_parent_id, sibling_id, position)

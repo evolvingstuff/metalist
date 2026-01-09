@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from app.usecases.update_content import apply_update_content
@@ -137,11 +136,13 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
     return ""
 
 
-@dataclass
 class _ClientUndo:
-    history: List[dict] = field(default_factory=list)  # list of ops
-    redo: List[dict] = field(default_factory=list)
-    last_search_context: str = ""
+    __slots__ = ("history", "redo", "last_search_context")
+
+    def __init__(self) -> None:
+        self.history: List[dict] = []
+        self.redo: List[dict] = []
+        self.last_search_context: str = ""
 
 
 _clients: Dict[str, _ClientUndo] = {}
@@ -292,7 +293,9 @@ def record_paste(client_id: str, records: List[NodeRecord], *, viewport: Dict[st
 
 def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
     ctx = _ctx(client_id)
-    sc = search_context or ""
+    sc = search_context
+    if sc is None:
+        sc = ""
     if ctx.last_search_context != sc:
         ctx.history.clear()
         ctx.redo.clear()
@@ -305,7 +308,6 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         return None
     op = ctx.history.pop()
     undo_viewport = op["viewport"]
-    focus_note_id_override: Optional[str] = None
 
     if "type" not in op:
         raise RuntimeError(f"Undo op missing required key: type | op={op}")
@@ -350,19 +352,13 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         if not root_id:
             print("FATAL: paste_subtree undo missing root record")
             os._exit(1)
-
-        root_record = store.get(root_id)
-        focus_note_id_override = _pick_focus_neighbor(root_record.prev_id, root_record.next_id)
-        if not focus_note_id_override and root_record.parent_id:
-            focus_note_id_override = root_record.parent_id
         apply_delete_subtree(root_id)
         ctx.redo.append(op)
         generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
 
-    assert focus_note_id_override is not None
-    focus_note_id = focus_note_id_override
+    focus_note_id = _compute_focus_note_id(op, direction="undo")
     if focus_note_id:
         view_anchor_root_id = _root_ancestor_id(focus_note_id)
     else:

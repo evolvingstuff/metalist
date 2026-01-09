@@ -28,6 +28,9 @@ class _AdapterStore:
     def get(self, note_id: str) -> NodeRecord:
         return _note_store.get_note(note_id)
 
+    def contains(self, note_id: str) -> bool:
+        return _note_store.has_note(note_id)
+
     def children(self, parent_id: Optional[str]) -> List[str]:
         return _note_store.get_children(parent_id)
 
@@ -67,7 +70,7 @@ class _AdapterStore:
         new_content: str,
         tags: str,
         *,
-        updated_at: Optional[datetime] = None,
+        updated_at: datetime,
     ) -> None:
         row = SimpleNamespace(id=note_id, updated_at=updated_at)
         _note_store.update_note_from_db(row, new_content, tags)

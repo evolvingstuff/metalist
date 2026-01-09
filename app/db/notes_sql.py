@@ -12,10 +12,11 @@ from .schema import NOTES_TABLE
 
 
 def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
-    if isinstance(connection, GuardedConnection):
-        return connection.raw_connection
-    else:
-        return connection
+    raw_connection = getattr(connection, "raw_connection", None)
+    if isinstance(raw_connection, sqlite3.Connection):
+        return raw_connection
+    assert isinstance(connection, sqlite3.Connection)
+    return connection
 
 
 def _serialize_datetime(value: datetime) -> str:
@@ -339,4 +340,7 @@ def clear_encryption_metadata_for_empty_notes(
         """,
         (_serialize_datetime(updated_at),),
     )
-    return int(cursor.rowcount or 0)
+    rowcount = cursor.rowcount
+    if rowcount is None:
+        return 0
+    return int(rowcount)

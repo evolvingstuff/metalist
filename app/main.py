@@ -44,10 +44,7 @@ logger.add(
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
-        try:
-            level = logger.level(record.levelname).name
-        except ValueError:
-            level = record.levelno
+        level = record.levelno
 
         frame, depth = logging.currentframe(), 2
         while frame and frame.f_code.co_filename == logging.__file__:
@@ -86,22 +83,15 @@ def _log_startup_step(step: str, elapsed: float) -> None:
     logger.info(message)
 
 
-try:
-    overall_start = time.perf_counter()
+overall_start = time.perf_counter()
 
-    schema_start = time.perf_counter()
-    with begin_writer() as connection:
-        initialize_schema(connection.raw_connection)
-        settings = fetch_settings(connection)
-        if not settings:
-            insert_default_settings(connection)
-    _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
-except Exception as e:
-    # FAIL FAST AND LOUD - NO SILENT FAILURES
-    logger.error(f"🚨 FATAL: Failed to initialize app settings: {e}")
-    logger.error(f"🚨 Cannot start application with broken settings!")
-    logger.error(f"🚨 CRASHING IMMEDIATELY")
-    raise RuntimeError(f"Application startup failed: Could not initialize app settings: {e}") from e
+schema_start = time.perf_counter()
+with begin_writer() as connection:
+    initialize_schema(connection.raw_connection)
+    settings = fetch_settings(connection)
+    if not settings:
+        insert_default_settings(connection)
+_log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 startup_has_password = False
 if settings:
@@ -115,49 +105,40 @@ if startup_has_password:
     _log_startup_step("total startup", time.perf_counter() - overall_start)
 else:
     # Populate content cache on startup
-    try:
-        repair_start = time.perf_counter()
-        with begin_writer() as connection:
-            repaired = clear_encryption_metadata_for_empty_notes(
-                connection,
-                updated_at=datetime.now(timezone.utc),
-            )
-        if repaired:
-            logger.info(
-                f"[startup] repaired {repaired} empty encrypted notes (cleared nonce/tag)"
-            )
-        _log_startup_step(
-            "empty-note encryption metadata repair",
-            time.perf_counter() - repair_start,
+    repair_start = time.perf_counter()
+    with begin_writer() as connection:
+        repaired = clear_encryption_metadata_for_empty_notes(
+            connection,
+            updated_at=datetime.now(timezone.utc),
         )
+    if repaired:
+        logger.info(
+            f"[startup] repaired {repaired} empty encrypted notes (cleared nonce/tag)"
+        )
+    _log_startup_step(
+        "empty-note encryption metadata repair",
+        time.perf_counter() - repair_start,
+    )
 
-        cache_start = time.perf_counter()
-        prefetched_rows = populate_cache_from_db(None)
-        _log_startup_step("cache population", time.perf_counter() - cache_start)
+    cache_start = time.perf_counter()
+    prefetched_rows = populate_cache_from_db(None)
+    _log_startup_step("cache population", time.perf_counter() - cache_start)
 
-        store_start = time.perf_counter()
-        note_store.load_from_db(None, prefetched_rows=prefetched_rows)
-        _log_startup_step("note store hydration", time.perf_counter() - store_start)
+    store_start = time.perf_counter()
+    note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+    _log_startup_step("note store hydration", time.perf_counter() - store_start)
 
-        # Hydrate v2 view-only store from the same prefetched rows using decrypted cache
-        def _get_plaintext(note_id: str, row: dict) -> str:
-            return get_cached_content(note_id)
+    # Hydrate v2 view-only store from the same prefetched rows using decrypted cache
+    def _get_plaintext(note_id: str, row: dict) -> str:
+        return get_cached_content(note_id)
 
-        v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
+    v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
 
-        guard_start = time.perf_counter()
-        enable_read_guard()
-        _log_startup_step("read guard enable", time.perf_counter() - guard_start)
+    guard_start = time.perf_counter()
+    enable_read_guard()
+    _log_startup_step("read guard enable", time.perf_counter() - guard_start)
 
-        _log_startup_step("total startup", time.perf_counter() - overall_start)
-    except Exception as e:
-        # FAIL FAST AND LOUD - NO SILENT FAILURES
-        logger.error(f"🚨 FATAL: Failed to populate content cache on startup: {e}")
-        logger.error(f"🚨 Cannot start application with broken cache system!")
-        logger.error(f"🚨 CRASHING IMMEDIATELY")
-        raise RuntimeError(
-            f"Application startup failed: Could not populate content cache: {e}"
-        ) from e
+    _log_startup_step("total startup", time.perf_counter() - overall_start)
 
 # Custom StaticFiles class that disables caching
 class NoCacheStaticFiles(StarletteStaticFiles):
@@ -225,17 +206,7 @@ async def log_requests(request: Request, call_next):
         )
 
     start = time.perf_counter()
-    try:
-        response = await call_next(request)
-    except Exception:
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.bind(request_id=request_id).exception(
-            "✖ {method} {path} failed after {duration:.2f} ms",
-            method=request.method,
-            path=request.url.path,
-            duration=duration_ms,
-        )
-        os._exit(1)
+    response = await call_next(request)
 
     duration_ms = (time.perf_counter() - start) * 1000
     size = response.headers.get("content-length", "-")
@@ -253,62 +224,43 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
-    try:
-        template = templates.get_template("index.html")
-        
-        # Check if authentication is required
-        auth = AuthService(db)
-        needs_auth = auth.has_password()
-        
-        # If authentication is required, don't send any notes data
-        if needs_auth:
-            return template.render(
-                request=request,
-                version=VERSION,
-                asset_version=ASSET_VERSION,
-                needs_auth=True,
-            )
-        else:
-            # No password required - send empty notes (JavaScript will load them)
-            return template.render(
-                request=request,
-                notes=[],
-                version=VERSION,
-                asset_version=ASSET_VERSION,
-                needs_auth=False,
-            )
-    except Exception as e:
-        logger.exception("Error in home route")
-        raise
+    template = templates.get_template("index.html")
+
+    auth = AuthService(db)
+    needs_auth = auth.has_password()
+
+    if needs_auth:
+        return template.render(
+            request=request,
+            version=VERSION,
+            asset_version=ASSET_VERSION,
+            needs_auth=True,
+        )
+    return template.render(
+        request=request,
+        notes=[],
+        version=VERSION,
+        asset_version=ASSET_VERSION,
+        needs_auth=False,
+    )
 
 
 @app.get("/maintenance", response_class=HTMLResponse)
 async def maintenance_page(request: Request):
     """Maintenance mode page shown during bulk operations."""
-    try:
-        template = templates.get_template("maintenance.html")
-        return template.render(request=request, version=VERSION, asset_version=ASSET_VERSION)
-    except Exception as e:
-        # FAIL FAST AND LOUD - NO SILENT FAILURES
-        logger.error(f"🚨 FATAL: Failed to render maintenance template: {e}")
-        logger.error(f"🚨 Cannot display maintenance page!")
-        logger.error(f"🚨 CRASHING IMMEDIATELY")
-        raise RuntimeError(f"Maintenance page failed: Could not render template: {e}") from e
+    template = templates.get_template("maintenance.html")
+    return template.render(request=request, version=VERSION, asset_version=ASSET_VERSION)
 
 
 @app.get("/locked", response_class=HTMLResponse)
 async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     """Render a dedicated locked screen when a session is invalidated."""
-    try:
-        template = templates.get_template("locked.html")
-        auth = AuthService(db)
-        has_password = auth.has_password()
-        return template.render(
-            request=request,
-            version=VERSION,
-            asset_version=ASSET_VERSION,
-            has_password=has_password,
-        )
-    except Exception as e:
-        logger.error(f"🚨 FATAL: Failed to render locked template: {e}")
-        raise RuntimeError(f"Locked page failed: Could not render template: {e}") from e
+    template = templates.get_template("locked.html")
+    auth = AuthService(db)
+    has_password = auth.has_password()
+    return template.render(
+        request=request,
+        version=VERSION,
+        asset_version=ASSET_VERSION,
+        has_password=has_password,
+    )

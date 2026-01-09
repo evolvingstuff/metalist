@@ -17,16 +17,17 @@ class NoteQueryService(BaseQueryService):
 
     def build_view_snapshot(
         self,
-        editing_note_id: Optional[str] = None,
-        search: Optional[str] = None,
-        client_id: Optional[str] = None,
-        client_known_note_ids: Optional[Set[str]] = None,
-        client_seen_root_ids: Set[str] = frozenset(),
-        anchor_root_id: Optional[str] = None,
+        editing_note_id: Optional[str],
+        search: Optional[str],
+        client_id: Optional[str],
+        client_known_note_ids: Optional[Set[str]],
+        client_seen_root_ids: Set[str],
+        anchor_root_id: Optional[str],
     ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
         """Produce structure entries and note payloads for differential updates."""
 
-        client_known_note_ids = client_known_note_ids or set()
+        if client_known_note_ids is None:
+            client_known_note_ids = set()
         client_seen_root_ids = set(client_seen_root_ids)
 
         search_active = bool(search and search.strip())
@@ -122,9 +123,13 @@ class NoteQueryService(BaseQueryService):
         payloads: Dict[str, Dict[str, object]] = {}
         visited_note_ids: Set[str] = set()
 
-        def traverse(nodes: List[dict], parent_id: Optional[str] = None) -> None:
+        def traverse(nodes: List[dict], parent_id: Optional[str]) -> None:
             for index, note in enumerate(nodes):
-                is_root = parent_id is None or parent_id == ''
+                is_root = False
+                if parent_id is None:
+                    is_root = True
+                elif parent_id == '':
+                    is_root = True
                 if is_root and limit_roots is not None and note['id'] not in limit_roots:
                     continue
                 note_id = note['id']
@@ -174,10 +179,11 @@ class NoteQueryService(BaseQueryService):
                 children = note['children']
                 if not isinstance(children, list):
                     raise TypeError(f"note.children must be an array: {type(children)}")
-                should_include_children = (
-                    not normalized_flags.get('isCollapsed', False)
-                    or normalized_flags.get('isEditing', False)
-                )
+                is_collapsed = normalized_flags['isCollapsed']
+                is_editing = normalized_flags['isEditing']
+                should_include_children = not bool(is_collapsed)
+                if not should_include_children and bool(is_editing):
+                    should_include_children = True
                 if should_include_children:
                     traverse(children, note_id)
 

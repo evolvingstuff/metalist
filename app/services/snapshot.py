@@ -106,7 +106,11 @@ def build_view_state(
         content_match = search_term in content.lower()
         child_match = any(_should_include(child) for child in note_store.get_children(nid))
         editing_match = bool(editing_note_id and nid == editing_note_id)
-        result = content_match or child_match or editing_match
+        result = content_match
+        if not result:
+            result = child_match
+        if not result:
+            result = editing_match
         allow_cache[nid] = result
         return result
 

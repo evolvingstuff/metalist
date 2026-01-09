@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.models.database import SafeSession
 from app.config import PW_PBKDF2_ITERATIONS
+from app.db.session import begin_writer
 from app.db.notes_sql import fetch_all_for_cache, update_note_fields
 from app.db.settings_sql import (
     clear_password_settings,
@@ -44,17 +45,20 @@ class AuthService:
         settings = self.get_settings()
         if settings:
             return settings
-        insert_default_settings(self.db.connection())
-        self.db.commit()
+
+        with begin_writer() as connection:
+            insert_default_settings(connection)
         settings = self.get_settings()
         if not settings:
             raise RuntimeError("App settings initialization failed")
         return settings
 
-    def hash_password(self, password: str, salt: bytes, iterations: Optional[int] = None) -> str:
+    def hash_password(self, password: str, salt: bytes, iterations: int) -> str:
         """Return PBKDF2 hash used for password storage."""
-        if iterations is None:
-            iterations = PW_PBKDF2_ITERATIONS
+        if not isinstance(iterations, int):
+            raise TypeError(f"iterations must be an int: {type(iterations)}")
+        if iterations <= 0:
+            raise ValueError(f"iterations must be positive: {iterations}")
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -75,7 +79,9 @@ class AuthService:
         if getattr(settings, "auth_verifier", None) is not None:
             if settings.auth_salt is None:
                 raise RuntimeError("auth_verifier set but auth_salt is NULL")
-            stored_iterations = settings.auth_iterations or PW_PBKDF2_ITERATIONS
+            stored_iterations = settings.auth_iterations
+            if stored_iterations is None:
+                stored_iterations = PW_PBKDF2_ITERATIONS
             candidate = self.hash_password(password, settings.auth_salt, stored_iterations)
             return secrets.compare_digest(candidate, settings.auth_verifier)
 
@@ -86,7 +92,9 @@ class AuthService:
             return False
         if settings.password_salt is None:
             raise RuntimeError("password_hash set but password_salt is NULL")
-        stored_iterations = settings.password_iterations or 250_000
+        stored_iterations = settings.password_iterations
+        if stored_iterations is None:
+            stored_iterations = 250_000
         candidate = self.hash_password(password, settings.password_salt, stored_iterations)
         return secrets.compare_digest(candidate, settings.password_hash)
 
@@ -108,12 +116,16 @@ class AuthService:
 
     def _derive_kek_from_settings(self, password: str, settings: SimpleNamespace) -> bytes:
         if getattr(settings, "kek_salt", None) is not None:
-            kek_iterations = settings.kek_iterations or PW_PBKDF2_ITERATIONS
+            kek_iterations = settings.kek_iterations
+            if kek_iterations is None:
+                kek_iterations = PW_PBKDF2_ITERATIONS
             return self.encryption.derive_master_key(password, settings.kek_salt, kek_iterations)
 
         if settings.password_salt is None:
             raise RuntimeError("No KEK salt available (neither kek_salt nor password_salt)")
-        legacy_iterations = settings.password_iterations or 250_000
+        legacy_iterations = settings.password_iterations
+        if legacy_iterations is None:
+            legacy_iterations = 250_000
         return self.encryption.derive_master_key(password, settings.password_salt, legacy_iterations)
 
     def unwrap_dek_for_password(self, password: str) -> bytes:
@@ -140,7 +152,9 @@ class AuthService:
         )
 
         if self._is_legacy_password_settings(settings):
-            algorithm = settings.encryption_algorithm or "AES-256-GCM"
+            algorithm = settings.encryption_algorithm
+            if algorithm is None:
+                algorithm = "AES-256-GCM"
             self._migrate_legacy_password_settings(password, dek, algorithm)
 
         return dek
@@ -161,20 +175,19 @@ class AuthService:
         kek = self.encryption.derive_master_key(password, kek_salt, kek_iterations)
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, kek)
 
-        connection = self.db.connection()
-        update_password_settings(
-            connection,
-            auth_verifier=auth_verifier,
-            auth_salt=auth_salt,
-            auth_iterations=auth_iterations,
-            kek_salt=kek_salt,
-            kek_iterations=kek_iterations,
-            encrypted_dek=encrypted_dek,
-            dek_nonce=dek_nonce,
-            dek_tag=dek_tag,
-            encryption_algorithm=encryption_algorithm,
-        )
-        self.db.commit()
+        with begin_writer() as connection:
+            update_password_settings(
+                connection,
+                auth_verifier=auth_verifier,
+                auth_salt=auth_salt,
+                auth_iterations=auth_iterations,
+                kek_salt=kek_salt,
+                kek_iterations=kek_iterations,
+                encrypted_dek=encrypted_dek,
+                dek_nonce=dek_nonce,
+                dek_tag=dek_tag,
+                encryption_algorithm=encryption_algorithm,
+            )
 
     def set_password(self, password: str) -> Tuple[bool, str]:
         """Enable password protection by encrypting all existing content."""
@@ -199,31 +212,35 @@ class AuthService:
         self.encryption.dek = dek
 
         maintenance_service.enter_maintenance("Encrypting all notes with new password")
-        connection = self.db.connection()
         encrypted_count = 0
         try:
-            with SafeSession.allow_reads("auth:set_password:fetch_notes"):
-                notes = fetch_all_for_cache(connection)
+            with begin_writer() as connection:
+                with SafeSession.allow_reads("auth:set_password:fetch_notes"):
+                    notes = fetch_all_for_cache(connection)
 
-            for note in notes:
-                note_id = note["id"]
-                content = note["content"]
-                tags = note["tags"]
-                if content is None:
-                    raise RuntimeError(
-                        f"Password setup failed: Note {note_id} has NULL content."
-                    )
-                if tags is None:
-                    raise RuntimeError(
-                        f"Password setup failed: Note {note_id} has NULL tags."
-                    )
+                for note in notes:
+                    note_id = note["id"]
+                    content = note["content"]
+                    tags = note["tags"]
+                    if content is None:
+                        raise RuntimeError(
+                            f"Password setup failed: Note {note_id} has NULL content."
+                        )
+                    if tags is None:
+                        raise RuntimeError(
+                            f"Password setup failed: Note {note_id} has NULL tags."
+                        )
 
-                content_encrypted = note["encryption_nonce"] is not None or note["encryption_tag"] is not None
-                tags_encrypted = note["tags_encryption_nonce"] is not None or note["tags_encryption_tag"] is not None
+                    content_encrypted = note["encryption_nonce"] is not None
+                    if not content_encrypted:
+                        content_encrypted = note["encryption_tag"] is not None
+                    tags_encrypted = note["tags_encryption_nonce"] is not None
+                    if not tags_encrypted:
+                        tags_encrypted = note["tags_encryption_tag"] is not None
 
-                if content_encrypted and tags_encrypted:
-                    continue
-                try:
+                    if content_encrypted and tags_encrypted:
+                        continue
+
                     update_payload: dict[str, object] = {}
 
                     if not content_encrypted:
@@ -235,7 +252,6 @@ class AuthService:
                                 "encryption_tag": tag_bytes,
                             }
                         )
-                        cache_note(note_id, content)
 
                     if not tags_encrypted:
                         tags_ciphertext, tags_nonce, tags_tag = self.encryption.encrypt_for_storage(tags)
@@ -246,38 +262,29 @@ class AuthService:
                                 "tags_encryption_tag": tags_tag,
                             }
                         )
-                        cache_note_tags(note_id, tags)
 
                     update_payload["updated_at"] = datetime.now(timezone.utc)
                     update_note_fields(connection, note_id, **update_payload)
                     encrypted_count += 1
-                except Exception as exc:
-                    print(f"🚨 FATAL: Failed to encrypt note {note_id}: {exc}")
-                    print("🚨 Cannot continue password setup with broken encryption!")
-                    print("🚨 CRASHING IMMEDIATELY")
-                    raise RuntimeError(
-                        f"Password setup failed: Could not encrypt note {note_id}: {exc}"
-                    ) from exc
 
-            update_password_settings(
-                connection,
-                auth_verifier=auth_verifier,
-                auth_salt=auth_salt,
-                auth_iterations=auth_iterations,
-                kek_salt=kek_salt,
-                kek_iterations=kek_iterations,
-                encrypted_dek=encrypted_dek,
-                dek_nonce=dek_nonce,
-                dek_tag=dek_tag,
-                encryption_algorithm="AES-256-GCM",
-            )
-            self.db.commit()
+                update_password_settings(
+                    connection,
+                    auth_verifier=auth_verifier,
+                    auth_salt=auth_salt,
+                    auth_iterations=auth_iterations,
+                    kek_salt=kek_salt,
+                    kek_iterations=kek_iterations,
+                    encrypted_dek=encrypted_dek,
+                    dek_nonce=dek_nonce,
+                    dek_tag=dek_tag,
+                    encryption_algorithm="AES-256-GCM",
+                )
         finally:
             maintenance_service.exit_maintenance()
 
         if note_store.loaded:
             with SafeSession.allow_reads("auth:set_password:refresh_store"):
-                note_store.load_from_db(self.db)
+                note_store.load_from_db(self.db, prefetched_rows=None)
 
         return True, f"Password set successfully. Encrypted {encrypted_count} notes."
 
@@ -285,7 +292,7 @@ class AuthService:
         self,
         current_password: str,
         new_password: str,
-        iterations: Optional[int] = None,
+        iterations: Optional[int],
     ) -> Tuple[bool, str]:
         """Change the password while keeping the existing DEK."""
         if not self.has_password():
@@ -300,7 +307,9 @@ class AuthService:
             raise RuntimeError("App settings missing during password change")
 
         if settings.kek_salt is not None:
-            old_kek_iterations = settings.kek_iterations or PW_PBKDF2_ITERATIONS
+            old_kek_iterations = settings.kek_iterations
+            if old_kek_iterations is None:
+                old_kek_iterations = PW_PBKDF2_ITERATIONS
             old_kek = self.encryption.derive_master_key(
                 current_password,
                 settings.kek_salt,
@@ -309,7 +318,9 @@ class AuthService:
         else:
             if settings.password_salt is None:
                 raise RuntimeError("Legacy password_salt missing during password change")
-            old_kek_iterations = settings.password_iterations or 250_000
+            old_kek_iterations = settings.password_iterations
+            if old_kek_iterations is None:
+                old_kek_iterations = 250_000
             old_kek = self.encryption.derive_master_key(
                 current_password,
                 settings.password_salt,
@@ -337,20 +348,23 @@ class AuthService:
         new_kek = self.encryption.derive_master_key(new_password, kek_salt, kek_iterations)
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_kek)
 
-        connection = self.db.connection()
-        update_password_settings(
-            connection,
-            auth_verifier=auth_verifier,
-            auth_salt=auth_salt,
-            auth_iterations=auth_iterations,
-            kek_salt=kek_salt,
-            kek_iterations=kek_iterations,
-            encrypted_dek=encrypted_dek,
-            dek_nonce=dek_nonce,
-            dek_tag=dek_tag,
-            encryption_algorithm=settings.encryption_algorithm or "AES-256-GCM",
-        )
-        self.db.commit()
+        encryption_algorithm = settings.encryption_algorithm
+        if encryption_algorithm is None:
+            encryption_algorithm = "AES-256-GCM"
+
+        with begin_writer() as connection:
+            update_password_settings(
+                connection,
+                auth_verifier=auth_verifier,
+                auth_salt=auth_salt,
+                auth_iterations=auth_iterations,
+                kek_salt=kek_salt,
+                kek_iterations=kek_iterations,
+                encrypted_dek=encrypted_dek,
+                dek_nonce=dek_nonce,
+                dek_tag=dek_tag,
+                encryption_algorithm=encryption_algorithm,
+            )
 
         self.encryption.master_key = None
         self.encryption.dek = dek
@@ -368,7 +382,9 @@ class AuthService:
             raise RuntimeError("App settings missing during password removal")
 
         if settings.kek_salt is not None:
-            kek_iterations = settings.kek_iterations or PW_PBKDF2_ITERATIONS
+            kek_iterations = settings.kek_iterations
+            if kek_iterations is None:
+                kek_iterations = PW_PBKDF2_ITERATIONS
             kek = self.encryption.derive_master_key(
                 current_password,
                 settings.kek_salt,
@@ -377,7 +393,9 @@ class AuthService:
         else:
             if settings.password_salt is None:
                 raise RuntimeError("Legacy password_salt missing during password removal")
-            kek_iterations = settings.password_iterations or 250_000
+            kek_iterations = settings.password_iterations
+            if kek_iterations is None:
+                kek_iterations = 250_000
             kek = self.encryption.derive_master_key(
                 current_password,
                 settings.password_salt,
@@ -393,52 +411,44 @@ class AuthService:
         self.encryption.dek = dek
 
         maintenance_service.enter_maintenance("Decrypting all notes (removing password protection)")
-        connection = self.db.connection()
+        cache_content_updates: dict[str, str] = {}
+        cache_tag_updates: dict[str, str] = {}
         try:
-            with SafeSession.allow_reads("auth:remove_password:fetch_notes"):
-                notes = fetch_all_for_cache(connection)
             decrypted_count = 0
+            with begin_writer() as connection:
+                with SafeSession.allow_reads("auth:remove_password:fetch_notes"):
+                    notes = fetch_all_for_cache(connection)
 
-            for note in notes:
-                note_id = note["id"]
-                content = note["content"]
-                nonce = note["encryption_nonce"]
-                tag = note["encryption_tag"]
-                tags = note["tags"]
-                tags_nonce = note["tags_encryption_nonce"]
-                tags_tag = note["tags_encryption_tag"]
+                for note in notes:
+                    note_id = note["id"]
+                    content = note["content"]
+                    nonce = note["encryption_nonce"]
+                    tag = note["encryption_tag"]
+                    tags = note["tags"]
+                    tags_nonce = note["tags_encryption_nonce"]
+                    tags_tag = note["tags_encryption_tag"]
 
-                content_encrypted = nonce is not None or tag is not None
-                tags_encrypted = tags_nonce is not None or tags_tag is not None
-                if not content_encrypted and not tags_encrypted:
-                    continue
+                    content_encrypted = nonce is not None
+                    if not content_encrypted:
+                        content_encrypted = tag is not None
+                    tags_encrypted = tags_nonce is not None
+                    if not tags_encrypted:
+                        tags_encrypted = tags_tag is not None
+                    if not content_encrypted and not tags_encrypted:
+                        continue
 
-                if content_encrypted:
-                    if nonce is None or tag is None:
-                        raise RuntimeError(
-                            "Password removal failed: encrypted note has incomplete metadata: "
-                            f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
-                        )
-                    if content is None:
-                        raise RuntimeError(
-                            f"Password removal failed: encrypted note {note_id} has NULL content"
-                        )
-
-                if tags_encrypted:
-                    if tags_nonce is None or tags_tag is None:
-                        raise RuntimeError(
-                            "Password removal failed: encrypted tags have incomplete metadata: "
-                            f"note_id={note_id} nonce={tags_nonce is not None} tag={tags_tag is not None}"
-                        )
-                    if tags is None:
-                        raise RuntimeError(
-                            f"Password removal failed: encrypted note {note_id} has NULL tags"
-                        )
-
-                try:
                     update_payload: dict[str, object] = {}
 
                     if content_encrypted:
+                        if nonce is None or tag is None:
+                            raise RuntimeError(
+                                "Password removal failed: encrypted note has incomplete metadata: "
+                                f"note_id={note_id} nonce={nonce is not None} tag={tag is not None}"
+                            )
+                        if content is None:
+                            raise RuntimeError(
+                                f"Password removal failed: encrypted note {note_id} has NULL content"
+                            )
                         plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
                         update_payload.update(
                             {
@@ -447,9 +457,18 @@ class AuthService:
                                 "encryption_tag": None,
                             }
                         )
-                        cache_note(note_id, plaintext)
+                        cache_content_updates[note_id] = plaintext
 
                     if tags_encrypted:
+                        if tags_nonce is None or tags_tag is None:
+                            raise RuntimeError(
+                                "Password removal failed: encrypted tags have incomplete metadata: "
+                                f"note_id={note_id} nonce={tags_nonce is not None} tag={tags_tag is not None}"
+                            )
+                        if tags is None:
+                            raise RuntimeError(
+                                f"Password removal failed: encrypted note {note_id} has NULL tags"
+                            )
                         tags_plaintext = self.encryption.decrypt_from_storage(tags, tags_nonce, tags_tag)
                         update_payload.update(
                             {
@@ -458,27 +477,24 @@ class AuthService:
                                 "tags_encryption_tag": None,
                             }
                         )
-                        cache_note_tags(note_id, tags_plaintext)
+                        cache_tag_updates[note_id] = tags_plaintext
 
                     update_payload["updated_at"] = datetime.now(timezone.utc)
                     update_note_fields(connection, note_id, **update_payload)
                     decrypted_count += 1
-                except Exception as exc:
-                    print(f"🚨 FATAL: Failed to decrypt note {note_id}: {exc}")
-                    print("🚨 Cannot remove password protection with broken decryption!")
-                    print("🚨 CRASHING IMMEDIATELY")
-                    raise RuntimeError(
-                        f"Password removal failed: Could not decrypt note {note_id}: {exc}"
-                    ) from exc
 
-            clear_password_settings(connection)
-            self.db.commit()
+                clear_password_settings(connection)
             self.encryption.clear_keys()
         finally:
             maintenance_service.exit_maintenance()
 
+        for note_id, content in cache_content_updates.items():
+            cache_note(note_id, content)
+        for note_id, tags in cache_tag_updates.items():
+            cache_note_tags(note_id, tags)
+
         if note_store.loaded:
             with SafeSession.allow_reads("auth:remove_password:refresh_store"):
-                note_store.load_from_db(self.db)
+                note_store.load_from_db(self.db, prefetched_rows=None)
 
         return True, f"Password removed successfully. Decrypted {decrypted_count} notes."

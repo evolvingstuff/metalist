@@ -133,7 +133,7 @@ def create_passwordless_session(
     if auth.has_password():
         raise HTTPException(status_code=400, detail="Password is set. Use /login instead.")
 
-    token = token_service.create_token(_client_info(request), tab_id)
+    token = token_service.create_token(_client_info(request), tab_id, dek=None)
     clear_all_locks()
     return SessionResponse(token=token, message="Session established")
 

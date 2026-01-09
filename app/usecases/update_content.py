@@ -21,10 +21,8 @@ def apply_update_content(note_id: str, content: str, tags: str, token: str) -> N
         raise TypeError("tags must be a string")
 
     # Validate existence without DB reads
-    try:
-        _ = store.get(note_id)
-    except KeyError as exc:
-        raise KeyError(f"Note not found: {note_id}") from exc
+    if not store.contains(note_id):
+        raise KeyError(f"Note not found: {note_id}")
 
     # Encrypt (or pass-through if encryption unavailable)
     ciphertext, nonce, tag = encrypt(content, token)

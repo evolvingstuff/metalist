@@ -41,6 +41,14 @@ def view_diff(payload: dict):
     if not isinstance(client_note_uuid_hashes, dict):
         raise TypeError("clientNoteUuidHashes must be an object")
 
+    normalized_search = search
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+
+    normalized_editing_note_id = editing_note_id
+    if isinstance(normalized_editing_note_id, str) and normalized_editing_note_id == "":
+        normalized_editing_note_id = None
+
     # Known hashes plus a viewport anchor so the server can extend the window
     client_hashes = {
         k: v for k, v in client_note_uuid_hashes.items() if k
@@ -49,7 +57,7 @@ def view_diff(payload: dict):
     cache_key = {
         "client_id": client_id,
         "tab_id": tab_id,
-        "search": search or None,
+        "search": normalized_search,
     }
     cached_state = view_cache.get(**cache_key)
     if not anchor_root_id and cached_state:
@@ -58,8 +66,8 @@ def view_diff(payload: dict):
             anchor_root_id = last_roots[-1]
 
     state = build_view_state(
-        editing_note_id=editing_note_id or None,
-        search=search or None,
+        editing_note_id=normalized_editing_note_id,
+        search=normalized_search,
         client_known_note_ids=set(client_hashes.keys()),
         client_seen_root_ids=set(),
         anchor_root_id=anchor_root_id,
@@ -168,13 +176,10 @@ def update_tab_state(payload: dict) -> Dict[str, object]:
     active_tab_id = payload["activeTabId"]
     tabs = payload["tabs"]
     tab_order = payload["tabOrder"]
-    try:
-        if not isinstance(tab_order, list):
-            raise ValueError("tabOrder must be a list")
-        tab_order_list = [str(entry) for entry in tab_order]
-        return tab_state_store.update(active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not isinstance(tab_order, list):
+        raise HTTPException(status_code=400, detail="tabOrder must be a list")
+    tab_order_list = [str(entry) for entry in tab_order]
+    return tab_state_store.update(active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list)
 
 
 @router.post("/notes/tab-state/new-tab")
@@ -182,10 +187,7 @@ def create_new_tab(payload: dict) -> Dict[str, object]:
     if "copyFromTabId" not in payload:
         raise HTTPException(status_code=400, detail="copyFromTabId is required")
     copy_from_tab_id = payload["copyFromTabId"]
-    try:
-        return tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return tab_state_store.create_tab(copy_from_tab_id=copy_from_tab_id)
 
 
 @router.post("/notes/tab-state/delete-tab")
@@ -193,10 +195,7 @@ def delete_tab(payload: dict) -> Dict[str, object]:
     if "tabId" not in payload:
         raise HTTPException(status_code=400, detail="tabId is required")
     tab_id = payload["tabId"]
-    try:
-        return tab_state_store.delete_tab(tab_id=tab_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return tab_state_store.delete_tab(tab_id=tab_id)
 
 
 def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dict[str, str]:

@@ -12,161 +12,162 @@ class ListOperations:
     """Handles linked list manipulation operations"""
     
     @staticmethod
-    def move_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None,
-                  sibling_id: Optional[str] = None, position: Optional[MovePosition] = None):
+    def move_note(
+        db: SafeSession,
+        note_id: str,
+        new_parent_id: Optional[str],
+        sibling_id: Optional[str],
+        position: Optional[MovePosition],
+    ):
         """Move a note to a new position"""
-        try:
-            if note_store.loaded:
-                _move_note_with_store(db, note_id, new_parent_id, sibling_id, position)
-                return
+        if note_store.loaded:
+            _move_note_with_store(db, note_id, new_parent_id, sibling_id, position)
+            return
 
             # Fallback path when store is not available (legacy behavior)
-            if sibling_id and position is None:
-                raise ValueError("Position must be specified when sibling_id is provided")
-            if position and not sibling_id:
-                raise ValueError("Position cannot be specified without a sibling_id")
-            if sibling_id == note_id:
-                raise ValueError("Cannot move note relative to itself")
+        if sibling_id and position is None:
+            raise ValueError("Position must be specified when sibling_id is provided")
+        if position and not sibling_id:
+            raise ValueError("Position cannot be specified without a sibling_id")
+        if sibling_id == note_id:
+            raise ValueError("Cannot move note relative to itself")
 
-            with SafeSession.allow_reads("list_ops:move_note:target"):
-                note_row = fetch_note(db.connection(), note_id)
-            if not note_row:
-                raise ValueError(f"Note {note_id} not found")
+        with SafeSession.allow_reads("list_ops:move_note:target"):
+            note_row = fetch_note(db.connection(), note_id)
+        if not note_row:
+            raise ValueError(f"Note {note_id} not found")
 
-            note = SimpleNamespace(**note_row)
-            if new_parent_id == note.parent_id and sibling_id is None:
-                raise ValueError("Note is already at this position")
+        note = SimpleNamespace(**note_row)
+        if new_parent_id == note.parent_id and sibling_id is None:
+            raise ValueError("Note is already at this position")
 
-            old_prev_id = note.prev_id
-            old_next_id = note.next_id
+        old_prev_id = note.prev_id
+        old_next_id = note.next_id
 
-            def is_descendant(parent_id: str, potential_child_id: str) -> bool:
-                with SafeSession.allow_reads("list_ops:is_descendant"):
-                    current_row = fetch_note(db.connection(), potential_child_id)
-                if current_row:
-                    current = SimpleNamespace(**current_row)
+        def is_descendant(parent_id: str, potential_child_id: str) -> bool:
+            with SafeSession.allow_reads("list_ops:is_descendant"):
+                current_row = fetch_note(db.connection(), potential_child_id)
+            if current_row:
+                current = SimpleNamespace(**current_row)
+            else:
+                current = None
+            while current and current.parent_id:
+                if current.parent_id == parent_id:
+                    return True
+                with SafeSession.allow_reads("list_ops:is_descendant:up"):
+                    row = fetch_note(db.connection(), current.parent_id)
+                if row:
+                    current = SimpleNamespace(**row)
                 else:
                     current = None
-                while current and current.parent_id:
-                    if current.parent_id == parent_id:
-                        return True
-                    with SafeSession.allow_reads("list_ops:is_descendant:up"):
-                        row = fetch_note(db.connection(), current.parent_id)
-                    if row:
-                        current = SimpleNamespace(**row)
-                    else:
-                        current = None
-                return False
+            return False
 
-            if new_parent_id and is_descendant(note_id, new_parent_id):
-                raise ValueError("Cannot create circular parent-child relationship")
-            if new_parent_id == note_id:
-                raise ValueError("Cannot make a note its own parent")
+        if new_parent_id and is_descendant(note_id, new_parent_id):
+            raise ValueError("Cannot create circular parent-child relationship")
+        if new_parent_id == note_id:
+            raise ValueError("Cannot make a note its own parent")
 
-            with SafeSession.allow_reads("list_ops:target_notes"):
-                target_rows = fetch_children_ordered(db.connection(), new_parent_id)
-            target_notes = [SimpleNamespace(**row) for row in target_rows]
+        with SafeSession.allow_reads("list_ops:target_notes"):
+            target_rows = fetch_children_ordered(db.connection(), new_parent_id)
+        target_notes = [SimpleNamespace(**row) for row in target_rows]
 
-            updated_at = datetime.now(timezone.utc)
+        updated_at = datetime.now(timezone.utc)
 
-            if old_prev_id:
-                update_links(
-                    db.connection(),
-                    old_prev_id,
-                    next_id=old_next_id,
-                    updated_at=updated_at,
-                )
-            if old_next_id:
-                update_links(
-                    db.connection(),
-                    old_next_id,
-                    prev_id=old_prev_id,
-                    updated_at=updated_at,
-                )
-
+        if old_prev_id:
             update_links(
                 db.connection(),
-                note_id,
-                parent_id=new_parent_id,
-                prev_id=None,
-                next_id=None,
+                old_prev_id,
+                next_id=old_next_id,
+                updated_at=updated_at,
+            )
+        if old_next_id:
+            update_links(
+                db.connection(),
+                old_next_id,
+                prev_id=old_prev_id,
                 updated_at=updated_at,
             )
 
-            if sibling_id is None:
-                heads = [n for n in target_notes if n.prev_id is None]
-                if not heads:
-                    raise RuntimeError(
-                        "Integrity failure: target sibling list has no head (prev_id is NULL)"
-                    )
-                existing_head = heads[0]
-                update_links(
-                    db.connection(),
-                    existing_head.id,
-                    prev_id=note_id,
-                    updated_at=updated_at,
-                )
-                update_links(
-                    db.connection(),
-                    note_id,
-                    next_id=existing_head.id,
-                    updated_at=updated_at,
-                )
-                return
+        update_links(
+            db.connection(),
+            note_id,
+            parent_id=new_parent_id,
+            prev_id=None,
+            next_id=None,
+            updated_at=updated_at,
+        )
 
-            with SafeSession.allow_reads("list_ops:sibling"):
-                sibling_row = fetch_note(db.connection(), sibling_id)
-            if not sibling_row:
-                raise ValueError(f"Sibling note {sibling_id} not found")
-            sibling = SimpleNamespace(**sibling_row)
-            if sibling.parent_id != new_parent_id:
-                raise ValueError("Sibling must have the same parent")
+        if sibling_id is None:
+            heads = [n for n in target_notes if n.prev_id is None]
+            if not heads:
+                raise RuntimeError(
+                    "Integrity failure: target sibling list has no head (prev_id is NULL)"
+                )
+            existing_head = heads[0]
+            update_links(
+                db.connection(),
+                existing_head.id,
+                prev_id=note_id,
+                updated_at=updated_at,
+            )
+            update_links(
+                db.connection(),
+                note_id,
+                next_id=existing_head.id,
+                updated_at=updated_at,
+            )
+            return
 
-            if position == MovePosition.BEFORE:
+        with SafeSession.allow_reads("list_ops:sibling"):
+            sibling_row = fetch_note(db.connection(), sibling_id)
+        if not sibling_row:
+            raise ValueError(f"Sibling note {sibling_id} not found")
+        sibling = SimpleNamespace(**sibling_row)
+        if sibling.parent_id != new_parent_id:
+            raise ValueError("Sibling must have the same parent")
+
+        if position == MovePosition.BEFORE:
+            update_links(
+                db.connection(),
+                note_id,
+                prev_id=sibling.prev_id,
+                next_id=sibling_id,
+                updated_at=updated_at,
+            )
+            update_links(
+                db.connection(),
+                sibling_id,
+                prev_id=note_id,
+                updated_at=updated_at,
+            )
+            if sibling.prev_id:
                 update_links(
                     db.connection(),
-                    note_id,
-                    prev_id=sibling.prev_id,
-                    next_id=sibling_id,
-                    updated_at=updated_at,
-                )
-                update_links(
-                    db.connection(),
-                    sibling_id,
-                    prev_id=note_id,
-                    updated_at=updated_at,
-                )
-                if sibling.prev_id:
-                    update_links(
-                        db.connection(),
-                        sibling.prev_id,
-                        next_id=note_id,
-                        updated_at=updated_at,
-                    )
-            else:
-                update_links(
-                    db.connection(),
-                    note_id,
-                    prev_id=sibling_id,
-                    next_id=sibling.next_id,
-                    updated_at=updated_at,
-                )
-                update_links(
-                    db.connection(),
-                    sibling_id,
+                    sibling.prev_id,
                     next_id=note_id,
                     updated_at=updated_at,
                 )
-                if sibling.next_id:
-                    update_links(
-                        db.connection(),
-                        sibling.next_id,
-                        prev_id=note_id,
-                        updated_at=updated_at,
-                    )
-        except Exception as e:
-            print(e)
-            raise
+        else:
+            update_links(
+                db.connection(),
+                note_id,
+                prev_id=sibling_id,
+                next_id=sibling.next_id,
+                updated_at=updated_at,
+            )
+            update_links(
+                db.connection(),
+                sibling_id,
+                next_id=note_id,
+                updated_at=updated_at,
+            )
+            if sibling.next_id:
+                update_links(
+                    db.connection(),
+                    sibling.next_id,
+                    prev_id=note_id,
+                    updated_at=updated_at,
+                )
 
 
 def _move_note_with_store(db: SafeSession, note_id: str, new_parent_id: Optional[str],

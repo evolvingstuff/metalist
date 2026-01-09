@@ -41,9 +41,10 @@ else:
     V1_API_PREFIX = "/api"
 
 # Check if running in test mode
-TEST_MODE = "--test" in sys.argv or (
-    "TEST_MODE" in os.environ and os.environ["TEST_MODE"] == "1"
-)
+if "--test" in sys.argv:
+    TEST_MODE = True
+else:
+    TEST_MODE = "TEST_MODE" in os.environ and os.environ["TEST_MODE"] == "1"
 
 if TEST_MODE:
     # Use test database

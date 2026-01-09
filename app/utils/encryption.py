@@ -82,10 +82,7 @@ def encrypt(content: str, token: str) -> Tuple[str, Optional[bytes], Optional[by
         service = get_encryption_service()
     
     if service and service.dek:
-        try:
-            return service.encrypt_for_storage(content)
-        except Exception as e:
-            raise RuntimeError(f"Encryption failed: {e}") from e
+        return service.encrypt_for_storage(content)
     
     # No encryption available, return as-is
     return content, None, None
@@ -123,25 +120,7 @@ def decrypt(encrypted_content: str, nonce: bytes, tag: bytes, token: str) -> str
         service = get_encryption_service()
     
     if service and service.dek:
-        try:
-            return service.decrypt_from_storage(encrypted_content, nonce, tag)
-        except Exception as e:
-            if nonce:
-                nonce_preview = nonce.hex()[:16]
-            else:
-                nonce_preview = 'None'
-            if tag:
-                tag_preview = tag.hex()[:16]
-            else:
-                tag_preview = 'None'
-            logger.error(
-                "Decrypt failed for content len=%s nonce=%s tag=%s: %s",
-                len(encrypted_content) if encrypted_content else 0,
-                nonce_preview,
-                tag_preview,
-                e,
-            )
-            raise RuntimeError(f"Decryption failed: {e}") from e
+        return service.decrypt_from_storage(encrypted_content, nonce, tag)
 
     raise RuntimeError("Encrypted content provided but no encryption key is available")
 

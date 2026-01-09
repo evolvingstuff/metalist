@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 
@@ -13,7 +13,7 @@ class ViewState:
     locks: Dict[str, str]
     children_by_parent: Dict[Optional[str], List[str]]
     hash_by_id: Dict[str, str]
-    metadata: Dict[str, object] = field(default_factory=dict)
+    metadata: Dict[str, object]
 
     def visible_note_ids(self) -> List[str]:
         return list(self.hash_by_id.keys())

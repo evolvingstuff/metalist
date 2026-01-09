@@ -91,14 +91,14 @@ class MemoryService:
     def get_stats(self, note_id: str) -> MemoryStats:
         return _tracker.get(note_id)
 
-    def build_candidate_tree(self, search_query: str | None = None) -> List[dict]:
+    def build_candidate_tree(self, search_query: str | None) -> List[dict]:
         """Return the rendered note tree for the current search context."""
         return build_note_tree(LinkedListManager, self.db, None, None, search_query, None)
 
     def choose_note(
         self,
         notes: List[dict],
-        previous_note_id: str | None = None,
+        previous_note_id: str | None,
     ) -> Tuple[dict, dict, MemoryStats, float]:
         """Select the note with the strongest positive feedback ratio.
 
@@ -167,31 +167,43 @@ class MemoryService:
 def apply_memory_flags(root_node: dict, selected_id: str) -> None:
     """Highlight selection and collapse branches outside the selected subtree."""
 
-    def _apply(node: dict, within_selected: bool = False) -> bool:
-        flags = node.setdefault('flags', {})
+    def _apply(node: dict, within_selected: bool) -> bool:
+        if 'flags' not in node:
+            node['flags'] = {}
+        flags = node['flags']
+        if not isinstance(flags, dict):
+            raise TypeError(f"node.flags must be an object: {type(flags)}")
         flags['memoryMode'] = True
 
         is_selected = node['id'] == selected_id
         contains_selected = is_selected
 
         for child in node['children']:
-            if _apply(child, within_selected or is_selected):
+            next_within_selected = within_selected
+            if is_selected:
+                next_within_selected = True
+            if _apply(child, next_within_selected):
                 contains_selected = True
 
         if is_selected:
             flags['memorySelected'] = True
         else:
-            flags.pop('memorySelected', None)
+            if 'memorySelected' in flags:
+                del flags['memorySelected']
 
-        is_in_selected_path = contains_selected or within_selected
+        is_in_selected_path = contains_selected
+        if not is_in_selected_path:
+            is_in_selected_path = within_selected
         if is_in_selected_path:
             flags['isCollapsed'] = False
         else:
             flags['isCollapsed'] = True
 
-        return contains_selected or within_selected
+        if contains_selected:
+            return True
+        return within_selected
 
-    _apply(root_node)
+    _apply(root_node, False)
 
 
 __all__ = [

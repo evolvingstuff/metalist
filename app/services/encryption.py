@@ -17,7 +17,7 @@ class EncryptionService:
         self.master_key: Optional[bytes] = None  # Derived from password, used to encrypt DEK
         self.dek: Optional[bytes] = None  # Data Encryption Key, used for note encryption
         
-    def derive_master_key(self, password: str, salt: bytes, iterations: int = None) -> bytes:
+    def derive_master_key(self, password: str, salt: bytes, iterations: int) -> bytes:
         """Derive master key from password using PBKDF2 with configurable iteration count.
         
         Args:
@@ -28,9 +28,11 @@ class EncryptionService:
         Returns:
             32-byte master key
         """
-        if iterations is None:
-            iterations = PW_PBKDF2_ITERATIONS
-            
+        if not isinstance(iterations, int):
+            raise TypeError(f"iterations must be an int: {type(iterations)}")
+        if iterations <= 0:
+            raise ValueError(f"iterations must be positive: {iterations}")
+
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,  # 256 bits for AES-256
@@ -100,8 +102,14 @@ class EncryptionService:
         dek = decryptor.update(encrypted_dek) + decryptor.finalize()
         return dek
     
-    def set_master_key_and_dek(self, password: str, salt: bytes, encrypted_dek: bytes = None, 
-                               dek_nonce: bytes = None, dek_tag: bytes = None) -> None:
+    def set_master_key_and_dek(
+        self,
+        password: str,
+        salt: bytes,
+        encrypted_dek: Optional[bytes],
+        dek_nonce: Optional[bytes],
+        dek_tag: Optional[bytes],
+    ) -> None:
         """Set both master key and DEK for this session.
         
         Args:
@@ -112,7 +120,7 @@ class EncryptionService:
             dek_tag: Tag for DEK decryption (optional)
         """
         # Derive master key
-        self.master_key = self.derive_master_key(password, salt)
+        self.master_key = self.derive_master_key(password, salt, PW_PBKDF2_ITERATIONS)
         
         # If DEK is provided, decrypt it; otherwise generate new one
         if encrypted_dek and dek_nonce and dek_tag:
@@ -183,31 +191,22 @@ class EncryptionService:
         if self.dek is None:
             raise ValueError("No DEK set - ensure password has been provided")
             
-        try:
-            # Normalize padding for base64 strings
-            normalized = ciphertext_base64.strip()
-            missing_padding = (-len(normalized)) % 4
-            if missing_padding:
-                normalized += "=" * missing_padding
+        # Normalize padding for base64 strings
+        normalized = ciphertext_base64.strip()
+        missing_padding = (-len(normalized)) % 4
+        if missing_padding:
+            normalized += "=" * missing_padding
 
-            # Decode ciphertext from base64
-            ciphertext = base64.b64decode(normalized)
-            
-            # Create cipher with tag using DEK
-            cipher = Cipher(
-                algorithms.AES(self.dek),
-                modes.GCM(nonce, tag),
-                backend=default_backend()
-            )
-            decryptor = cipher.decryptor()
-            
-            # Decrypt
-            plaintext_bytes = decryptor.update(ciphertext) + decryptor.finalize()
-            
-            return plaintext_bytes.decode('utf-8')
-            
-        except Exception as e:
-            raise Exception(f"Decryption failed: {str(e)}")
+        ciphertext = base64.b64decode(normalized)
+
+        cipher = Cipher(
+            algorithms.AES(self.dek),
+            modes.GCM(nonce, tag),
+            backend=default_backend()
+        )
+        decryptor = cipher.decryptor()
+        plaintext_bytes = decryptor.update(ciphertext) + decryptor.finalize()
+        return plaintext_bytes.decode('utf-8')
     
     def generate_salt(self) -> bytes:
         """Generate cryptographically secure random salt.
@@ -228,7 +227,7 @@ class EncryptionService:
         """
         return self.encrypt(plaintext)
     
-    def decrypt_from_storage(self, content: str, nonce: bytes = None, tag: bytes = None) -> str:
+    def decrypt_from_storage(self, content: str, nonce: Optional[bytes], tag: Optional[bytes]) -> str:
         """Decrypt content from database storage format.
         
         Args:

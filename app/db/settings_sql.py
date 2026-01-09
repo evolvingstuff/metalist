@@ -11,14 +11,17 @@ from .schema import APP_SETTINGS_TABLE
 
 
 def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
-    if isinstance(connection, GuardedConnection):
-        return connection.raw_connection
-    else:
-        return connection
+    raw_connection = getattr(connection, "raw_connection", None)
+    if isinstance(raw_connection, sqlite3.Connection):
+        return raw_connection
+    assert isinstance(connection, sqlite3.Connection)
+    return connection
 
 
 def _serialize_datetime(value: Optional[datetime]) -> str:
-    return (value or datetime.now(timezone.utc)).isoformat()
+    if value is None:
+        value = datetime.now(timezone.utc)
+    return value.isoformat()
 
 
 def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Optional[dict]:

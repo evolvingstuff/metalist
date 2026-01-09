@@ -29,7 +29,7 @@ class TokenService:
         self,
         client_info: str,
         owner_tab_id: str,
-        dek: Optional[bytes] = None,
+        dek: Optional[bytes],
     ) -> str:
         """Generate new authentication token for client.
         
@@ -203,7 +203,8 @@ class TokenService:
         
         if token_hash in self.tokens:
             info = self.tokens[token_hash].copy()
-            info.pop("dek", None)
+            if "dek" in info:
+                del info["dek"]
             return info
         
         return None

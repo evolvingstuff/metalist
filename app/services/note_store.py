@@ -56,7 +56,7 @@ class NoteStore:
         self,
         db: SafeSession | None,
         *,
-        prefetched_rows: Optional[Sequence[Mapping[str, object]]] = None,
+        prefetched_rows: Optional[Sequence[Mapping[str, object]]],
     ) -> None:
         """Populate the store by reading all notes from the database once.
 
@@ -190,7 +190,7 @@ class NoteStore:
                 updated_at=getattr(note, "updated_at", current.updated_at),
             )
 
-    def update_metadata_from_db(self, note: SimpleNamespace, *, rebuild: bool = True) -> None:
+    def update_metadata_from_db(self, note: SimpleNamespace, *, rebuild: bool) -> None:
         if not self._loaded:
             return
         with self._lock:
@@ -227,7 +227,7 @@ class NoteStore:
                 self._note_map[note.id] = updated
                 self._insert_link(updated.parent_id, updated.id, updated.prev_id, updated.next_id)
 
-    def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool = True) -> None:
+    def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool) -> None:
         """Apply pointer metadata for multiple notes without repeated rebuilds."""
         if not self._loaded:
             return
@@ -392,7 +392,9 @@ class NoteStore:
         )
 
     def _assert_links_consistent_locked(self, parent_id: Optional[str], note_ids: Iterable[Optional[str]]) -> None:
-        links = self._links.get(parent_id) or {}
+        links = self._links.get(parent_id)
+        if links is None:
+            links = {}
         head = self._heads.get(parent_id)
         tail = self._tails.get(parent_id)
 
@@ -467,8 +469,10 @@ class NoteStore:
             link = {'prev': None, 'next': None}
             links[node_id] = link
         else:
-            link.setdefault('prev', None)
-            link.setdefault('next', None)
+            if 'prev' not in link:
+                link['prev'] = None
+            if 'next' not in link:
+                link['next'] = None
         return link
 
     def _insert_link(
@@ -533,7 +537,9 @@ class NoteStore:
         if not links:
             return
 
-        link = links.pop(note_id, None)
+        if note_id not in links:
+            return
+        link = links.pop(note_id)
         if not link:
             return
 
@@ -610,6 +616,10 @@ class NoteStore:
             raise KeyError(f"Note {note_id} not present in NoteStore")
 
         return record
+
+    def has_note(self, note_id: str) -> bool:
+        with self._lock:
+            return note_id in self._note_map
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:

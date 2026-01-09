@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class NoteService(BaseTransactionService):
     """Service for note CRUD operations with transaction tracking"""
     
-    def create_note(self, parent_id: Optional[str] = None, first_visible_note_id: Optional[str] = None, search_query: Optional[str] = None) -> dict:
+    def create_note(self, parent_id: Optional[str], first_visible_note_id: Optional[str], search_query: Optional[str]) -> dict:
         """Create a new note at the top of the list (or before first visible note)"""
         self._set_operation("create_note_top")
         assert self.client_id, "create_note requires client_id"
@@ -158,8 +158,13 @@ class NoteService(BaseTransactionService):
             "metrics": timings,
         }
     
-    def move_note(self, note_id: str, new_parent_id: Optional[str] = None,
-                  sibling_id: Optional[str] = None, position: Optional[MovePosition] = None) -> dict:
+    def move_note(
+        self,
+        note_id: str,
+        new_parent_id: Optional[str],
+        sibling_id: Optional[str],
+        position: Optional[MovePosition],
+    ) -> dict:
         """Move a note to a new position"""
         self._set_operation("move_note")
         assert self.client_id, "move_note requires client_id"
@@ -189,7 +194,7 @@ class NoteService(BaseTransactionService):
         
         return {"status": "moved", "updateUUID": new_uuid}
     
-    def create_sibling_note(self, reference_note_id: str, search_query: Optional[str] = None) -> dict:
+    def create_sibling_note(self, reference_note_id: str, search_query: Optional[str]) -> dict:
         """Create a new note as a sibling after the reference note"""
         self._set_operation("create_new_sibling")
         assert self.client_id, "create_sibling_note requires client_id"
@@ -202,7 +207,7 @@ class NoteService(BaseTransactionService):
         
         # Create new note at top level first
         new_note_id = str(uuid.uuid4())
-        LinkedListManager.create_note_top(self.db, new_note_id)
+        LinkedListManager.create_note_top(self.db, new_note_id, parent_id=None)
         
         # Then move it to be after the reference note
         LinkedListManager.move_note(

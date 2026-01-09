@@ -49,7 +49,9 @@ def assert_linked_list_integrity(db: SafeSession, operation: str) -> None:
 
     for parent_id in parent_ids:
         if not ListTraversal.validate_list(db, parent_id):
-            scope = parent_id or "root"
+            scope = parent_id
+            if scope is None:
+                scope = "root"
             raise RuntimeError(
                 f"Linked list integrity check failed for parent '{scope}' during '{operation}'."
             )
@@ -57,10 +59,8 @@ def assert_linked_list_integrity(db: SafeSession, operation: str) -> None:
 
 def count_subtree(db: SafeSession, note_id: str) -> int:
     if note_store.loaded:
-        try:
-            note_store.get_note(note_id)
-        except KeyError as exc:
-            raise ValueError(f"Note {note_id} not found") from exc
+        if not note_store.has_note(note_id):
+            raise ValueError(f"Note {note_id} not found")
 
         def _count_store(current_id: str) -> int:
             total = 1
