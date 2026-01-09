@@ -158,32 +158,28 @@ export const NotesAPI = {
         }
     },
 
-    async createNote(firstVisibleNoteId = null, searchQuery = null) {
-        const body = {};
-        if (firstVisibleNoteId) {
-            body.first_visible_note_id = firstVisibleNoteId;
-        }
-        if (searchQuery) {
-            body.search_query = searchQuery;
-        }
-        
+    async createNote(firstVisibleNoteId, searchQuery) {
+        const body = {
+            first_visible_note_id: firstVisibleNoteId,
+            search_query: searchQuery,
+        };
+
         return this._apiCall(CONFIG.API.NOTES.CREATE, {
             method: 'POST',
             claimSession: true,
-            body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
+            body: JSON.stringify(body)
         });
     },
 
-    async createSibling(noteId, searchQuery = null) {
-        const body = {};
-        if (searchQuery) {
-            body.search_query = searchQuery;
-        }
-        
+    async createSibling(noteId, searchQuery) {
+        const body = {
+            search_query: searchQuery,
+        };
+
         return this._apiCall(CONFIG.API.NOTES.CREATE_SIBLING(noteId), { 
             method: 'POST',
             claimSession: true,
-            body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined
+            body: JSON.stringify(body)
         });
     },
 

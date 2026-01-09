@@ -4,8 +4,11 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+import os
 from pathlib import Path
+import sys
 from threading import RLock
+import traceback
 from typing import Iterator, Optional
 
 from app.config import DATABASE_URL
@@ -171,6 +174,21 @@ class SafeSession:
 
     def rollback(self) -> None:
         self._connection.rollback()
+        stack = "".join(traceback.format_stack(limit=50))
+        exc_type, _, _ = sys.exc_info()
+        if exc_type is None:
+            logger.error(
+                "FATAL: DB rollback executed; crashing process",
+                extra={"stack": stack},
+            )
+        else:
+            logger.opt(exception=True).error(
+                "FATAL: DB rollback executed; crashing process",
+                extra={"stack": stack},
+            )
+        sys.stderr.write("FATAL: DB rollback executed; crashing process\n")
+        sys.stderr.flush()
+        os._exit(1)
 
     def execute(self, statement: str, parameters: tuple):
         if not type(self)._reads_enabled and _is_select(statement):

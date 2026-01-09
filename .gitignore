@@ -20,6 +20,8 @@ var/
 *.egg
 .env
 *.db
+*.db-wal
+*.db-shm
 .pytest_cache/
 .hypothesis/
 .coverage
