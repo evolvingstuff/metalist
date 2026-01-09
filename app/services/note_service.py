@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import HTTPException
 import uuid
@@ -82,7 +83,12 @@ class NoteService(BaseTransactionService):
         self._set_operation("set_note_collapse")
         assert self.client_id, "set_note_collapse requires client_id"
         self.expect_note_delta(0)
-        update_links(self.db.connection(), note_id, is_collapsed=desired_state)
+        update_links(
+            self.db.connection(),
+            note_id,
+            is_collapsed=desired_state,
+            updated_at=datetime.now(timezone.utc),
+        )
 
         from .note_store import store as note_store
         if note_store.loaded:

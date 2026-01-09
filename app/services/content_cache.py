@@ -24,19 +24,15 @@ _tag_cache: Dict[str, str] = {}
 _CACHE_TIMING_ENABLED = True
 
 
-def get_cached_content(note_id: str) -> Optional[str]:
-    """Retrieve decrypted content from cache.
-    
-    Args:
-        note_id: ID of note to retrieve
-        
-    Returns:
-        Decrypted content or None if not in cache
-    """
+def get_cached_content(note_id: str) -> str:
+    if note_id not in _search_cache:
+        raise RuntimeError(f"Cache missing plaintext for note {note_id}")
     return _search_cache[note_id]
 
 
-def get_cached_tags(note_id: str) -> Optional[str]:
+def get_cached_tags(note_id: str) -> str:
+    if note_id not in _tag_cache:
+        raise RuntimeError(f"Cache missing tags for note {note_id}")
     return _tag_cache[note_id]
 
 
@@ -87,7 +83,7 @@ def clear_cache() -> None:
     logger.info("Cache cleared")
 
 
-def populate_cache_from_db(db: SafeSession | None = None) -> Sequence[Mapping[str, object]]:
+def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, object]]:
     """Populate cache with all notes from database on startup.
 
     The optional ``db`` parameter is retained for backwards compatibility but

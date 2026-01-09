@@ -41,8 +41,8 @@ class NoteCRUD:
                     next_id = None
 
             plaintext = ""
-            ciphertext, nonce, tag = encrypt(plaintext)
-            tags_ciphertext, tags_nonce, tags_tag = encrypt("")
+            ciphertext, nonce, tag = encrypt(plaintext, "")
+            tags_ciphertext, tags_nonce, tags_tag = encrypt("", "")
             timestamp = datetime.now(timezone.utc)
 
             insert_note(
@@ -159,7 +159,7 @@ class NoteCRUD:
         else:
             record = NoteCRUD.get_note(db, note_id)
 
-        ciphertext, nonce, tag = encrypt(content)
+        ciphertext, nonce, tag = encrypt(content, "")
         timestamp = datetime.now(timezone.utc)
 
         update_note_content(
@@ -206,12 +206,15 @@ class NoteCRUD:
 
                 timings: dict[str, float] = {}
 
+                updated_at = datetime.now(timezone.utc)
+
                 neighbor_start = time.perf_counter()
                 if record.prev_id:
                     update_links(
                         db.connection(),
                         record.prev_id,
                         next_id=record.next_id,
+                        updated_at=updated_at,
                     )
                     prev_record = note_store.get_note(record.prev_id)
                     note_store.update_metadata_from_db(
@@ -232,6 +235,7 @@ class NoteCRUD:
                         db.connection(),
                         record.next_id,
                         prev_id=record.prev_id,
+                        updated_at=updated_at,
                     )
                     next_record = note_store.get_note(record.next_id)
                     note_store.update_metadata_from_db(
@@ -295,12 +299,14 @@ class NoteCRUD:
                     db.connection(),
                     prev_id,
                     next_id=next_id,
+                    updated_at=datetime.now(timezone.utc),
                 )
             if next_id:
                 update_links(
                     db.connection(),
                     next_id,
                     prev_id=prev_id,
+                    updated_at=datetime.now(timezone.utc),
                 )
 
             delete_notes(db.connection(), [note_id])

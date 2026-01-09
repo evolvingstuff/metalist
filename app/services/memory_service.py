@@ -93,7 +93,7 @@ class MemoryService:
 
     def build_candidate_tree(self, search_query: str | None = None) -> List[dict]:
         """Return the rendered note tree for the current search context."""
-        return build_note_tree(LinkedListManager, self.db, None, None, search_query)
+        return build_note_tree(LinkedListManager, self.db, None, None, search_query, None)
 
     def choose_note(
         self,

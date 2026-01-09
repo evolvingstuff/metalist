@@ -20,7 +20,7 @@ _current_token: Optional[str] = None
 logger = logging.getLogger(__name__)
 
 
-def get_encryption_service_with_token(token: str = None) -> Optional[EncryptionService]:
+def get_encryption_service_with_token(token: str) -> Optional[EncryptionService]:
     """Get encryption service with DEK loaded from token.
     
     Args:
@@ -62,7 +62,7 @@ def get_encryption_service() -> Optional[EncryptionService]:
     return _encryption_service
 
 
-def encrypt(content: str, token: str = None) -> Tuple[str, Optional[bytes], Optional[bytes]]:
+def encrypt(content: str, token: str) -> Tuple[str, Optional[bytes], Optional[bytes]]:
     """Encrypt note content using DEK from token.
     
     Args:
@@ -91,7 +91,7 @@ def encrypt(content: str, token: str = None) -> Tuple[str, Optional[bytes], Opti
     return content, None, None
 
 
-def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, token: str = None) -> str:
+def decrypt(encrypted_content: str, nonce: bytes, tag: bytes, token: str) -> str:
     """Decrypt note content using DEK from token.
     
     Args:
@@ -169,7 +169,7 @@ def clear_encryption_key() -> None:
     _current_token = None
 
 
-def is_encryption_available(token: str = None) -> bool:
+def is_encryption_available(token: str) -> bool:
     """Check if encryption is available.
     
     Args:

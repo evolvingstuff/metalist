@@ -38,7 +38,14 @@ class NoteQueryService(BaseQueryService):
             if not ordered_root_ids:
                 store_available = False
         if not store_available:
-            notes = build_note_tree(LinkedListManager, self.db, None, editing_note_id, search)
+            notes = build_note_tree(
+                LinkedListManager,
+                self.db,
+                None,
+                editing_note_id,
+                search,
+                None,
+            )
             ordered_root_ids = [note['id'] for note in notes]
 
         root_index_map = {note_id: index for index, note_id in enumerate(ordered_root_ids)}

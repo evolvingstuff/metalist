@@ -96,16 +96,8 @@ class NoteStore:
             for row in rows:
                 note = SimpleNamespace(**row)
                 plaintext = get_cached_content(note.id)
-                if plaintext is None:
-                    raise RuntimeError(
-                        f"Cache missing plaintext for note {note.id}; store hydration failed"
-                    )
 
                 tags = get_cached_tags(note.id)
-                if tags is None:
-                    raise RuntimeError(
-                        f"Cache missing tags for note {note.id}; store hydration failed"
-                    )
 
                 note_map[note.id] = NoteRecord(
                     id=note.id,

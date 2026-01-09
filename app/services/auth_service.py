@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Optional, Tuple
 
@@ -247,6 +248,7 @@ class AuthService:
                         )
                         cache_note_tags(note_id, tags)
 
+                    update_payload["updated_at"] = datetime.now(timezone.utc)
                     update_note_fields(connection, note_id, **update_payload)
                     encrypted_count += 1
                 except Exception as exc:
@@ -458,6 +460,7 @@ class AuthService:
                         )
                         cache_note_tags(note_id, tags_plaintext)
 
+                    update_payload["updated_at"] = datetime.now(timezone.utc)
                     update_note_fields(connection, note_id, **update_payload)
                     decrypted_count += 1
                 except Exception as exc:

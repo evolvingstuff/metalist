@@ -299,7 +299,7 @@ def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> Non
         ctx.last_search_context = sc
 
 
-def undo(client_id: str) -> Optional[Dict[str, object]]:
+def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     ctx = _ctx(client_id)
     if not ctx.history:
         return None
@@ -312,7 +312,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
     op_type = op["type"]
 
     if op_type == "update_content":
-        apply_update_content(op["note_id"], op["before"], op["before_tags"])  # apply inverse
+        apply_update_content(op["note_id"], op["before"], op["before_tags"], token)  # apply inverse
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "create_note":
@@ -322,7 +322,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "delete_subtree":
         records = op["records"]
-        apply_restore_records(records)
+        apply_restore_records(records, token)
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "move":
@@ -374,7 +374,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
     }
 
 
-def redo(client_id: str) -> Optional[Dict[str, object]]:
+def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     ctx = _ctx(client_id)
     if not ctx.redo:
         return None
@@ -386,14 +386,14 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
     op_type = op["type"]
 
     if op_type == "update_content":
-        apply_update_content(op["note_id"], op["after"], op["after_tags"])  # reapply
+        apply_update_content(op["note_id"], op["after"], op["after_tags"], token)  # reapply
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "create_note":
         # recreate
         rec = op["record"]
         from app.services.store import NodeRecord
-        apply_restore_records([NodeRecord(**rec)])
+        apply_restore_records([NodeRecord(**rec)], token)
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "delete_subtree":
@@ -419,7 +419,7 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "paste_subtree":
         # restore the subtree
-        apply_restore_records(op["records"])  
+        apply_restore_records(op["records"], token)
         ctx.history.append(op)
         generate_new_uuid()
     else:

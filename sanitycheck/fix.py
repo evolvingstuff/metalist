@@ -34,9 +34,11 @@ def main() -> int:
     fixer.list_fixes()
     print("")
 
-    fix_id = _prompt("Select fix id (e.g. PYFIX001): ")
-    if fix_id == "":
+    fix_id_raw = _prompt("Select fix id/group (e.g. PY003_GET_TO_SUBSCRIPT or ALL): ")
+    if fix_id_raw == "":
         raise RuntimeError("No fix selected")
+
+    fix_ids = [x for x in fix_id_raw.replace(",", " ").split() if x != ""]
 
     paths_raw = _prompt("Paths to apply (blank = whole repo): ")
     targets: list[str]
@@ -58,7 +60,7 @@ def main() -> int:
     return fixer.apply_fixes(
         config_path=str(config_path),
         repo_root=str(repo_root),
-        fix_ids=[fix_id],
+        fix_ids=fix_ids,
         targets=targets,
         dry_run=dry_run,
     )

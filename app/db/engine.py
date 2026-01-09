@@ -61,7 +61,7 @@ def disable_read_guard() -> None:
 
 
 @contextmanager
-def allow_reads(reason: str = "") -> Iterator[None]:
+def allow_reads(reason: str) -> Iterator[None]:
     with _safe_session().allow_reads(reason):
         yield
 
@@ -83,7 +83,7 @@ def begin_writer() -> Iterator[GuardedConnection]:
 
 
 @contextmanager
-def connect_reader(reason: Optional[str] = None) -> Iterator[GuardedConnection]:
+def connect_reader(reason: Optional[str]) -> Iterator[GuardedConnection]:
     SessionCls = _safe_session()
     with SessionCls.allow_reads(reason or "reader"):
         session = SessionCls()

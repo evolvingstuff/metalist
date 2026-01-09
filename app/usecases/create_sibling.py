@@ -14,6 +14,7 @@ from app.usecases.create_note import apply_insert_note
 class CmdCreateSibling(QueryCommand):
     reference_note_id: str
     search_query: Optional[str]
+    token: str
     client_id: str
     viewport: Dict[str, object]
 
@@ -44,7 +45,15 @@ class CmdCreateSibling(QueryCommand):
             if trimmed:
                 content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed}\" */</div>"
 
-        apply_insert_note(note_uuid, parent_id, prev_id, next_id, content=content)
+        apply_insert_note(
+            note_uuid,
+            parent_id,
+            prev_id,
+            next_id,
+            self.token,
+            content=content,
+            tags="",
+        )
 
         from app.services.undo_state import record_create
         rec = {

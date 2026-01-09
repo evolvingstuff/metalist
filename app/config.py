@@ -4,11 +4,19 @@ import sys
 VERSION = "0.3.0"
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    value = os.environ.get(name)
-    if value is None:
+def _env_flag(name: str, default: bool) -> bool:
+    if name not in os.environ:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    value = os.environ[name].strip().lower()
+    assert value != "", f"Empty env flag: {name}"
+
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+
+    raise ValueError(f"Invalid boolean env flag {name}={value!r}")
 
 
 # Development settings - CRASH SERVER ON ANY ERROR
@@ -22,18 +30,26 @@ PW_PBKDF2_ITERATIONS = 1_000_000  # Number of iterations for app password hashin
 
 # API prefixes (single source of truth)
 # Client uses '/api2' via JS CONFIG; server uses the same here.
-API_PREFIX = os.environ.get("API_PREFIX", "/api2").rstrip("/")
-V1_API_PREFIX = os.environ.get("V1_API_PREFIX", "/api").rstrip("/")
+if "API_PREFIX" in os.environ:
+    API_PREFIX = os.environ["API_PREFIX"].rstrip("/")
+else:
+    API_PREFIX = "/api2"
+
+if "V1_API_PREFIX" in os.environ:
+    V1_API_PREFIX = os.environ["V1_API_PREFIX"].rstrip("/")
+else:
+    V1_API_PREFIX = "/api"
 
 # Check if running in test mode
-TEST_MODE = '--test' in sys.argv or os.environ.get('TEST_MODE') == '1'
+TEST_MODE = "--test" in sys.argv or (
+    "TEST_MODE" in os.environ and os.environ["TEST_MODE"] == "1"
+)
 
 if TEST_MODE:
     # Use test database
     DATABASE_URL = "sqlite:///./test.db"
     
     # Delete existing test.db if it exists
-    import os
     if os.path.exists('./test.db'):
         os.remove('./test.db')
         print("🧪 Deleted existing test.db")

@@ -78,9 +78,9 @@ def build_view_state(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
-    client_known_note_ids: Optional[Set[str]] = None,
-    client_seen_root_ids: Optional[Set[str]] = None,
-    anchor_root_id: Optional[str] = None,
+    client_known_note_ids: Optional[Set[str]],
+    client_seen_root_ids: Optional[Set[str]],
+    anchor_root_id: Optional[str],
 ) -> ViewState:
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
@@ -113,10 +113,11 @@ def build_view_state(
     # Determine root window
     ordered_root_ids = note_store.get_children(None)
     root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
-    client_known_note_ids = client_known_note_ids or set()
+    if client_known_note_ids is None:
+        client_known_note_ids = set()
     seen_root_indices = {
         root_index_map[rid]
-        for rid in (client_seen_root_ids or set())
+        for rid in (client_seen_root_ids if client_seen_root_ids is not None else set())
         if rid in root_index_map
     }
     if search_term is not None:
@@ -204,9 +205,9 @@ def build_view_snapshot(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
-    client_known_note_ids: Optional[Set[str]] = None,
-    client_seen_root_ids: Optional[Set[str]] = None,
-    anchor_root_id: Optional[str] = None,
+    client_known_note_ids: Optional[Set[str]],
+    client_seen_root_ids: Optional[Set[str]],
+    anchor_root_id: Optional[str],
 ) -> Tuple[List[Dict[str, object]], Dict[str, Dict[str, object]], Dict[str, str]]:
     state = build_view_state(
         editing_note_id=editing_note_id,

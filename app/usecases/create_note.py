@@ -19,12 +19,13 @@ def apply_insert_note(
     parent_id: Optional[str],
     prev_id: Optional[str],
     next_id: Optional[str],
+    token: str,
     *,
-    content: str = "",
-    tags: str = "",
+    content: str,
+    tags: str,
 ) -> None:
-    ciphertext, nonce, tag = encrypt(content)
-    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags)
+    ciphertext, nonce, tag = encrypt(content, token)
+    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
     now = datetime.now(timezone.utc)
     with begin_writer() as connection:
         db_insert_note(
@@ -69,6 +70,7 @@ def apply_insert_note(
 class CmdCreateNote(QueryCommand):
     first_visible_note_id: Optional[str]
     search_query: Optional[str]
+    token: str
     client_id: str
     viewport: Dict[str, object]
 
@@ -99,7 +101,15 @@ class CmdCreateNote(QueryCommand):
             if trimmed:
                 content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed}\" */</div>"
 
-        apply_insert_note(note_uuid, None, prev_id, next_id, content=content)
+        apply_insert_note(
+            note_uuid,
+            None,
+            prev_id,
+            next_id,
+            self.token,
+            content=content,
+            tags="",
+        )
 
         # Record for undo (delete on undo)
         from app.services.undo_state import record_create

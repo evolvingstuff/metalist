@@ -13,6 +13,7 @@ from app.usecases.create_note import apply_insert_note
 @dataclass
 class CmdCreateChild(QueryCommand):
     parent_note_id: str
+    token: str
     client_id: str
     viewport: Dict[str, object]
 
@@ -29,7 +30,15 @@ class CmdCreateChild(QueryCommand):
 
         note_uuid = str(uuid.uuid4())
         content = ""
-        apply_insert_note(note_uuid, parent.id, prev_id, next_id, content=content)
+        apply_insert_note(
+            note_uuid,
+            parent.id,
+            prev_id,
+            next_id,
+            self.token,
+            content=content,
+            tags="",
+        )
 
         from app.services.undo_state import record_create
         rec = {

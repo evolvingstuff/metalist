@@ -98,7 +98,7 @@ def collect_children(notes: List[sqlite3.Row]) -> Dict[str, List[sqlite3.Row]]:
     return grouped
 
 
-def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int = 0) -> None:
+def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int) -> None:
     children = grouped[parent_id]
     if not children:
         return
@@ -193,7 +193,7 @@ def main() -> None:
     else:
         print("Linked list structure appears consistent.\n")
     print("=== Tree Snapshot ===")
-    print_tree(None, grouped)
+    print_tree(None, grouped, depth=0)
     print()
     if args.note_id:
         inspect_note(args.note_id, index, grouped)

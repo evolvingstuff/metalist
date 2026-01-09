@@ -67,18 +67,51 @@ class ListOperations:
                 target_rows = fetch_children_ordered(db.connection(), new_parent_id)
             target_notes = [SimpleNamespace(**row) for row in target_rows]
 
-            if old_prev_id:
-                update_links(db.connection(), old_prev_id, next_id=old_next_id)
-            if old_next_id:
-                update_links(db.connection(), old_next_id, prev_id=old_prev_id)
+            updated_at = datetime.now(timezone.utc)
 
-            update_links(db.connection(), note_id, parent_id=new_parent_id, prev_id=None, next_id=None)
+            if old_prev_id:
+                update_links(
+                    db.connection(),
+                    old_prev_id,
+                    next_id=old_next_id,
+                    updated_at=updated_at,
+                )
+            if old_next_id:
+                update_links(
+                    db.connection(),
+                    old_next_id,
+                    prev_id=old_prev_id,
+                    updated_at=updated_at,
+                )
+
+            update_links(
+                db.connection(),
+                note_id,
+                parent_id=new_parent_id,
+                prev_id=None,
+                next_id=None,
+                updated_at=updated_at,
+            )
 
             if sibling_id is None:
-                existing_head = next((n for n in target_notes if n.prev_id is None))
-                if existing_head:
-                    update_links(db.connection(), existing_head.id, prev_id=note_id)
-                    update_links(db.connection(), note_id, next_id=existing_head.id)
+                heads = [n for n in target_notes if n.prev_id is None]
+                if not heads:
+                    raise RuntimeError(
+                        "Integrity failure: target sibling list has no head (prev_id is NULL)"
+                    )
+                existing_head = heads[0]
+                update_links(
+                    db.connection(),
+                    existing_head.id,
+                    prev_id=note_id,
+                    updated_at=updated_at,
+                )
+                update_links(
+                    db.connection(),
+                    note_id,
+                    next_id=existing_head.id,
+                    updated_at=updated_at,
+                )
                 return
 
             with SafeSession.allow_reads("list_ops:sibling"):
@@ -90,15 +123,47 @@ class ListOperations:
                 raise ValueError("Sibling must have the same parent")
 
             if position == MovePosition.BEFORE:
-                update_links(db.connection(), note_id, prev_id=sibling.prev_id, next_id=sibling_id)
-                update_links(db.connection(), sibling_id, prev_id=note_id)
+                update_links(
+                    db.connection(),
+                    note_id,
+                    prev_id=sibling.prev_id,
+                    next_id=sibling_id,
+                    updated_at=updated_at,
+                )
+                update_links(
+                    db.connection(),
+                    sibling_id,
+                    prev_id=note_id,
+                    updated_at=updated_at,
+                )
                 if sibling.prev_id:
-                    update_links(db.connection(), sibling.prev_id, next_id=note_id)
+                    update_links(
+                        db.connection(),
+                        sibling.prev_id,
+                        next_id=note_id,
+                        updated_at=updated_at,
+                    )
             else:
-                update_links(db.connection(), note_id, prev_id=sibling_id, next_id=sibling.next_id)
-                update_links(db.connection(), sibling_id, next_id=note_id)
+                update_links(
+                    db.connection(),
+                    note_id,
+                    prev_id=sibling_id,
+                    next_id=sibling.next_id,
+                    updated_at=updated_at,
+                )
+                update_links(
+                    db.connection(),
+                    sibling_id,
+                    next_id=note_id,
+                    updated_at=updated_at,
+                )
                 if sibling.next_id:
-                    update_links(db.connection(), sibling.next_id, prev_id=note_id)
+                    update_links(
+                        db.connection(),
+                        sibling.next_id,
+                        prev_id=note_id,
+                        updated_at=updated_at,
+                    )
         except Exception as e:
             print(e)
             raise

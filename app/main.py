@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
+from typing import Annotated
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
@@ -29,6 +30,7 @@ import uuid
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 import os
+from datetime import datetime, timezone
 
 logger.remove()
 logger.add(
@@ -101,7 +103,9 @@ except Exception as e:
     logger.error(f"🚨 CRASHING IMMEDIATELY")
     raise RuntimeError(f"Application startup failed: Could not initialize app settings: {e}") from e
 
-startup_has_password = bool(settings and settings.get("encryption_enabled"))
+startup_has_password = False
+if settings:
+    startup_has_password = bool(settings["encryption_enabled"])
 
 if startup_has_password:
     logger.info("[startup] password set; skipping cache + store hydration until login")
@@ -114,7 +118,10 @@ else:
     try:
         repair_start = time.perf_counter()
         with begin_writer() as connection:
-            repaired = clear_encryption_metadata_for_empty_notes(connection)
+            repaired = clear_encryption_metadata_for_empty_notes(
+                connection,
+                updated_at=datetime.now(timezone.utc),
+            )
         if repaired:
             logger.info(
                 f"[startup] repaired {repaired} empty encrypted notes (cleared nonce/tag)"
@@ -125,7 +132,7 @@ else:
         )
 
         cache_start = time.perf_counter()
-        prefetched_rows = populate_cache_from_db()
+        prefetched_rows = populate_cache_from_db(None)
         _log_startup_step("cache population", time.perf_counter() - cache_start)
 
         store_start = time.perf_counter()
@@ -134,12 +141,7 @@ else:
 
         # Hydrate v2 view-only store from the same prefetched rows using decrypted cache
         def _get_plaintext(note_id: str, row: dict) -> str:
-            plaintext = get_cached_content(note_id)
-            if plaintext is None:
-                raise RuntimeError(
-                    f"V2 hydrate failed: no plaintext in cache for note {note_id}"
-                )
-            return plaintext
+            return get_cached_content(note_id)
 
         v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
 
@@ -250,7 +252,7 @@ async def log_requests(request: Request, call_next):
     return response
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, db: SafeSession = Depends(get_db)):
+async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     try:
         template = templates.get_template("index.html")
         
@@ -295,7 +297,7 @@ async def maintenance_page(request: Request):
 
 
 @app.get("/locked", response_class=HTMLResponse)
-async def locked_page(request: Request, db: SafeSession = Depends(get_db)):
+async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     """Render a dedicated locked screen when a session is invalidated."""
     try:
         template = templates.get_template("locked.html")

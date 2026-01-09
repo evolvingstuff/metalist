@@ -16,6 +16,7 @@ def _insert_cloned_subtree_at(
     snapshot: List[dict],
     dest_parent: Optional[str],
     dest_prev: Optional[str],
+    token: str,
 ) -> str:
     if not isinstance(snapshot, list) or not snapshot:
         raise ValueError("Clipboard snapshot must be a non-empty list")
@@ -56,6 +57,8 @@ def _insert_cloned_subtree_at(
                 f"Clipboard snapshot missing parent {old_parent} for node {old_id}"
             )
 
+        if new_parent not in last_per_parent:
+            last_per_parent[new_parent] = None
         prev_id = last_per_parent[new_parent]
         # Compute next from current store state
         if prev_id is None:
@@ -84,7 +87,18 @@ def _insert_cloned_subtree_at(
         if not isinstance(tags, str):
             raise ValueError("Clipboard snapshot tags must be a string")
 
-        apply_insert_note(new_id, new_parent, prev_id, next_id, content=content, tags=tags)
+        apply_insert_note(
+            new_id,
+            new_parent,
+            prev_id,
+            next_id,
+            token,
+            content=content,
+            tags=tags,
+        )
+
+        if new_id not in last_per_parent:
+            last_per_parent[new_id] = None
 
         last_per_parent[new_parent] = new_id
         if new_root_id is None and new_parent == dest_parent:
@@ -98,6 +112,7 @@ def _insert_cloned_subtree_at(
 @dataclass
 class CmdPasteSibling(QueryCommand):
     target_note_id: str
+    token: str
     client_id: str
     viewport: Dict[str, object]
 
@@ -117,7 +132,7 @@ class CmdPasteSibling(QueryCommand):
                 f"note_id={target.id} parent_id={target.parent_id}"
             )
         prev_id = target.id
-        new_root_id = _insert_cloned_subtree_at(snapshot, target.parent_id, prev_id)
+        new_root_id = _insert_cloned_subtree_at(snapshot, target.parent_id, prev_id, self.token)
 
         # Record for undo: as paste_subtree (undo deletes, redo restores)
         new_ids = _collect_subtree_ids(new_root_id)

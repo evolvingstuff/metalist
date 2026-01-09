@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Request
 
 from app.services.snapshot import build_view_state
 from app.usecases.create_note import CmdCreateNote
@@ -220,11 +220,13 @@ def _not_impl(exc: Exception) -> None:
 
 
 @router.post("/notes/new")
-def create_note_top(body: dict):
+def create_note_top(request: Request, body: dict):
+    token = _require_bearer_token(request)
     viewport = _require_viewport(body)
     cmd = CmdCreateNote(
         first_visible_note_id=body["first_visible_note_id"],
         search_query=body["search_query"],
+        token=token,
         client_id=body["clientId"],
         viewport=viewport,
     )
@@ -232,11 +234,13 @@ def create_note_top(body: dict):
 
 
 @router.post("/notes/new-sibling/{note_id}")
-def create_sibling(note_id: str, body: dict):
+def create_sibling(request: Request, note_id: str, body: dict):
+    token = _require_bearer_token(request)
     viewport = _require_viewport(body)
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
         search_query=body["search_query"],
+        token=token,
         client_id=body["clientId"],
         viewport=viewport,
     )
@@ -244,30 +248,52 @@ def create_sibling(note_id: str, body: dict):
 
 
 @router.post("/notes/new-child/{note_id}")
-def create_child(note_id: str, body: dict):
+def create_child(request: Request, note_id: str, body: dict):
+    token = _require_bearer_token(request)
     viewport = _require_viewport(body)
-    cmd = CmdCreateChild(parent_note_id=note_id, client_id=body["clientId"], viewport=viewport)
+    cmd = CmdCreateChild(
+        parent_note_id=note_id,
+        token=token,
+        client_id=body["clientId"],
+        viewport=viewport,
+    )
     return cmd.execute()
 
 
 @router.put("/notes/{note_id}")
-def update_note(note_id: str, body: dict):
+def update_note(request: Request, note_id: str, body: dict):
     # Required fields; let KeyError surface for missing keys
     client_id = body["clientId"]
     content = body["content"]
     tags = body["tags"]
     viewport = _require_viewport(body)
-    cmd = CmdUpdateContent(note_id=note_id, content=content, tags=tags, client_id=client_id, viewport=viewport)
+    token = _require_bearer_token(request)
+    cmd = CmdUpdateContent(
+        note_id=note_id,
+        content=content,
+        tags=tags,
+        token=token,
+        client_id=client_id,
+        viewport=viewport,
+    )
     return cmd.execute()
 
 
 @router.put("/notes/{note_id}/save")
-def save_note(note_id: str, body: dict):
+def save_note(request: Request, note_id: str, body: dict):
     client_id = body["clientId"]
     content = body["content"]
     tags = body["tags"]
     viewport = _require_viewport(body)
-    cmd = CmdUpdateContent(note_id=note_id, content=content, tags=tags, client_id=client_id, viewport=viewport)
+    token = _require_bearer_token(request)
+    cmd = CmdUpdateContent(
+        note_id=note_id,
+        content=content,
+        tags=tags,
+        token=token,
+        client_id=client_id,
+        viewport=viewport,
+    )
     return cmd.execute()
 
 
@@ -314,16 +340,28 @@ def copy_note_endpoint(note_id: str, body: dict):
 
 
 @router.post("/notes/paste-sibling/{target_note_id}")
-def paste_sibling_endpoint(target_note_id: str, body: dict):
+def paste_sibling_endpoint(request: Request, target_note_id: str, body: dict):
     viewport = _require_viewport(body)
-    cmd = CmdPasteSibling(target_note_id=target_note_id, client_id=body["clientId"], viewport=viewport)
+    token = _require_bearer_token(request)
+    cmd = CmdPasteSibling(
+        target_note_id=target_note_id,
+        token=token,
+        client_id=body["clientId"],
+        viewport=viewport,
+    )
     return cmd.execute()
 
 
 @router.post("/notes/paste-child/{target_note_id}")
-def paste_child_endpoint(target_note_id: str, body: dict):
+def paste_child_endpoint(request: Request, target_note_id: str, body: dict):
     viewport = _require_viewport(body)
-    cmd = CmdPasteChild(target_note_id=target_note_id, client_id=body["clientId"], viewport=viewport)
+    token = _require_bearer_token(request)
+    cmd = CmdPasteChild(
+        target_note_id=target_note_id,
+        token=token,
+        client_id=body["clientId"],
+        viewport=viewport,
+    )
     return cmd.execute()
 
 
@@ -334,11 +372,23 @@ def _require_viewport(body: dict) -> dict:
     return viewport
 
 
+def _require_bearer_token(request: Request) -> str:
+    if "authorization" not in request.headers:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    authorization = request.headers["authorization"]
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid Authorization header")
+    return parts[1]
+
+
 @router.post("/notes/undo")
-def undo_endpoint(client_id: str, searchContext: str = Query(...)):
-    return CmdUndo(client_id=client_id, search_context=searchContext).execute()
+def undo_endpoint(request: Request, client_id: str, searchContext: str):
+    token = _require_bearer_token(request)
+    return CmdUndo(client_id=client_id, token=token, search_context=searchContext).execute()
 
 
 @router.post("/notes/redo")
-def redo_endpoint(client_id: str, searchContext: str = Query(...)):
-    return CmdRedo(client_id=client_id, search_context=searchContext).execute()
+def redo_endpoint(request: Request, client_id: str, searchContext: str):
+    token = _require_bearer_token(request)
+    return CmdRedo(client_id=client_id, token=token, search_context=searchContext).execute()

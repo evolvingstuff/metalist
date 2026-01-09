@@ -171,7 +171,7 @@ def mark_search_relevance(notes, search_terms):
     return notes
 
 
-def apply_redacted_rendering(notes, search_query=None):
+def apply_redacted_rendering(notes, search_query):
     """
     Apply redacted rendering to notes marked as irrelevant.
     This modifies the content of notes in-place based on their search_relevance.
@@ -242,10 +242,10 @@ EMPTY_EDIT_PLACEHOLDER = "<div><br></div>"
 def build_note_tree(
     db_manager,
     db,
-    parent_id=None,
-    editing_note_id=None,
-    search_query=None,
-    allowed_root_ids=None,
+    parent_id,
+    editing_note_id,
+    search_query,
+    allowed_root_ids,
 ):
     """Build a hierarchical tree, preferring the in-memory store when loaded."""
 
@@ -341,10 +341,6 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
         children = _build_tree_from_db(db_manager, db, note.id, editing_note_id, allowed_root_ids)
 
         decrypted_content = get_cached_content(note.id)
-        if decrypted_content is None:
-            raise RuntimeError(
-                f"CACHE CORRUPTION: Note {note.id} not found in cache! Cache system has failed."
-            )
 
         class DecryptedNote:
             def __init__(self, original_note, decrypted_content):

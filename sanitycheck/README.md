@@ -29,31 +29,46 @@ List available fixes:
 
 * `./sanitycheck/fix --list`
 
+Apply everything:
+
+* `./sanitycheck/fix --apply ALL src/`
+
 If you're running from an IDE (no CLI args), run:
 
 * `python3 sanitycheck/fix.py`
 
 Dry run a fix:
 
-* `./sanitycheck/fix --apply PYFIX001 --dry-run src/`
-* `./sanitycheck/fix --apply PYFIX002 --dry-run src/`
-* `./sanitycheck/fix --apply PYFIX003 --dry-run src/`
-* `./sanitycheck/fix --apply PYFIX004 --dry-run src/`
-* `./sanitycheck/fix --apply PYFIX005 --dry-run src/`
-* `./sanitycheck/fix --apply PYFIX006 --dry-run src/`
+* `./sanitycheck/fix --apply PY003_GET_TO_SUBSCRIPT --dry-run src/`
+* `./sanitycheck/fix --apply PY003_GET_DEFAULT_TO_SUBSCRIPT --dry-run src/`
+* `./sanitycheck/fix --apply PY003_NEXT_NONE_TO_NEXT --dry-run src/`
+* `./sanitycheck/fix --apply PY003_OS_ENVIRON_GET_TO_SUBSCRIPT --dry-run src/`
+* `./sanitycheck/fix --apply PY004_IFEXP_DROP_NONE --dry-run src/`
+* `./sanitycheck/fix --apply PY004_IFEXP_ASSERT --dry-run src/`
+* `./sanitycheck/fix --apply PY004_IFEXP_TO_IFELSE --dry-run src/`
+* `./sanitycheck/fix --apply PY002_PY005_DEF_REMOVE_DEFAULTS --dry-run src/`
+* `./sanitycheck/fix --apply PY002_PY005_CALLS_EXPLICIT_DEFAULTS_AND_REMOVE --dry-run src/`
 
 Apply a fix in-place:
 
-* `./sanitycheck/fix --apply PYFIX001 src/`
-* `./sanitycheck/fix --apply PYFIX002 src/`
-* `./sanitycheck/fix --apply PYFIX003 src/`
-* `./sanitycheck/fix --apply PYFIX004 src/`
-* `./sanitycheck/fix --apply PYFIX005 src/`
-* `./sanitycheck/fix --apply PYFIX006 src/`
+* `./sanitycheck/fix --apply PY003_GET_TO_SUBSCRIPT src/`
+* `./sanitycheck/fix --apply PY003_GET_DEFAULT_TO_SUBSCRIPT src/`
+* `./sanitycheck/fix --apply PY003_NEXT_NONE_TO_NEXT src/`
+* `./sanitycheck/fix --apply PY003_OS_ENVIRON_GET_TO_SUBSCRIPT src/`
+* `./sanitycheck/fix --apply PY004_IFEXP_DROP_NONE src/`
+* `./sanitycheck/fix --apply PY004_IFEXP_ASSERT src/`
+* `./sanitycheck/fix --apply PY004_IFEXP_TO_IFELSE src/`
+* `./sanitycheck/fix --apply PY002_PY005_DEF_REMOVE_DEFAULTS src/`
+* `./sanitycheck/fix --apply PY002_PY005_CALLS_EXPLICIT_DEFAULTS_AND_REMOVE src/`
 
 Notes:
 
-* `PYFIX001` intentionally skips decorator contexts (e.g. FastAPI `@router.get("/path")`).
+* The `PY002_PY005_DEF_REMOVE_DEFAULTS` fix removes defaults from function signatures.
+* The `PY002_PY005_CALLS_EXPLICIT_DEFAULTS_AND_REMOVE` fix only updates callsites within the same file as the function definition.
+
+Notes:
+
+* `PY003_GET_TO_SUBSCRIPT` intentionally skips decorator contexts (e.g. FastAPI `@router.get("/path")`).
 
 Install deps:
 

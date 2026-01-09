@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 import time
 from datetime import datetime, timezone
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Any
 
 from .engine import GuardedConnection
 from .schema import NOTES_TABLE
@@ -18,8 +18,9 @@ def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connect
         return connection
 
 
-def _serialize_datetime(value: Optional[datetime]) -> str:
-    return (value or datetime.now(timezone.utc)).isoformat()
+def _serialize_datetime(value: datetime) -> str:
+    assert isinstance(value, datetime)
+    return value.isoformat()
 
 
 def _deserialize_row(row: sqlite3.Row) -> dict:
@@ -53,9 +54,9 @@ def insert_note(
     parent_id: Optional[str],
     prev_id: Optional[str],
     next_id: Optional[str],
-    is_collapsed: bool = False,
-    created_at: Optional[datetime] = None,
-    updated_at: Optional[datetime] = None,
+    is_collapsed: bool,
+    created_at: datetime,
+    updated_at: datetime,
 ) -> None:
     conn = _conn(connection)
     conn.execute(
@@ -101,7 +102,7 @@ def update_note_content(
     content: str,
     encryption_nonce: Optional[bytes],
     encryption_tag: Optional[bytes],
-    updated_at: Optional[datetime] = None,
+    updated_at: datetime,
 ) -> None:
     update_note_fields(
         connection,
@@ -120,7 +121,7 @@ def update_note_tags(
     tags: str,
     tags_encryption_nonce: Optional[bytes],
     tags_encryption_tag: Optional[bytes],
-    updated_at: Optional[datetime] = None,
+    updated_at: datetime,
 ) -> None:
     update_note_fields(
         connection,
@@ -132,32 +133,40 @@ def update_note_tags(
     )
 
 
-_UNSET = object()
+_LINK_FIELDS = {"parent_id", "prev_id", "next_id", "is_collapsed"}
 
 
 def update_links(
     connection: GuardedConnection | sqlite3.Connection,
     note_id: str,
-    *,
-    parent_id: Optional[str] = _UNSET,
-    prev_id: Optional[str] = _UNSET,
-    next_id: Optional[str] = _UNSET,
-    is_collapsed: Optional[bool] = _UNSET,
-    updated_at: Optional[datetime] = None,
+    **updates: Any,
 ) -> None:
+    if "updated_at" not in updates:
+        raise ValueError("update_links requires updated_at")
+    updated_at = updates.pop("updated_at")
+    if not isinstance(updated_at, datetime):
+        raise TypeError("update_links updated_at must be a datetime")
+
     fields: list[str] = ["updated_at = ?"]
     values: list = [_serialize_datetime(updated_at)]
 
-    if parent_id is not _UNSET:
+    for key in updates:
+        if key not in _LINK_FIELDS:
+            raise ValueError(f"update_links received unexpected field: {key}")
+
+    if "parent_id" in updates:
         fields.append("parent_id = ?")
-        values.append(parent_id)
-    if prev_id is not _UNSET:
+        values.append(updates["parent_id"])
+    if "prev_id" in updates:
         fields.append("prev_id = ?")
-        values.append(prev_id)
-    if next_id is not _UNSET:
+        values.append(updates["prev_id"])
+    if "next_id" in updates:
         fields.append("next_id = ?")
-        values.append(next_id)
-    if is_collapsed is not _UNSET:
+        values.append(updates["next_id"])
+    if "is_collapsed" in updates:
+        is_collapsed = updates["is_collapsed"]
+        if not isinstance(is_collapsed, bool):
+            raise TypeError("update_links is_collapsed must be a bool")
         fields.append("is_collapsed = ?")
         values.append(int(is_collapsed))
 
@@ -171,36 +180,48 @@ def update_links(
 def update_note_fields(
     connection: GuardedConnection | sqlite3.Connection,
     note_id: str,
-    *,
-    content: str | object = _UNSET,
-    encryption_nonce: Optional[bytes] | object = _UNSET,
-    encryption_tag: Optional[bytes] | object = _UNSET,
-    tags: str | object = _UNSET,
-    tags_encryption_nonce: Optional[bytes] | object = _UNSET,
-    tags_encryption_tag: Optional[bytes] | object = _UNSET,
-    updated_at: Optional[datetime] = None,
+    **updates: Any,
 ) -> None:
+    if "updated_at" not in updates:
+        raise ValueError("update_note_fields requires updated_at")
+    updated_at = updates.pop("updated_at")
+    if not isinstance(updated_at, datetime):
+        raise TypeError("update_note_fields updated_at must be a datetime")
+
     fields: list[str] = ["updated_at = ?"]
     values: list = [_serialize_datetime(updated_at)]
 
-    if content is not _UNSET:
+    allowed_fields = {
+        "content",
+        "encryption_nonce",
+        "encryption_tag",
+        "tags",
+        "tags_encryption_nonce",
+        "tags_encryption_tag",
+    }
+
+    for key in updates:
+        if key not in allowed_fields:
+            raise ValueError(f"update_note_fields received unexpected field: {key}")
+
+    if "content" in updates:
         fields.append("content = ?")
-        values.append(content)
-    if encryption_nonce is not _UNSET:
+        values.append(updates["content"])
+    if "encryption_nonce" in updates:
         fields.append("encryption_nonce = ?")
-        values.append(encryption_nonce)
-    if encryption_tag is not _UNSET:
+        values.append(updates["encryption_nonce"])
+    if "encryption_tag" in updates:
         fields.append("encryption_tag = ?")
-        values.append(encryption_tag)
-    if tags is not _UNSET:
+        values.append(updates["encryption_tag"])
+    if "tags" in updates:
         fields.append("tags = ?")
-        values.append(tags)
-    if tags_encryption_nonce is not _UNSET:
+        values.append(updates["tags"])
+    if "tags_encryption_nonce" in updates:
         fields.append("tags_encryption_nonce = ?")
-        values.append(tags_encryption_nonce)
-    if tags_encryption_tag is not _UNSET:
+        values.append(updates["tags_encryption_nonce"])
+    if "tags_encryption_tag" in updates:
         fields.append("tags_encryption_tag = ?")
-        values.append(tags_encryption_tag)
+        values.append(updates["tags_encryption_tag"])
 
     values.append(note_id)
 
@@ -288,7 +309,7 @@ def fetch_all_for_cache(connection: GuardedConnection | sqlite3.Connection) -> l
 def clear_encryption_metadata_for_empty_notes(
     connection: GuardedConnection | sqlite3.Connection,
     *,
-    updated_at: Optional[datetime] = None,
+    updated_at: datetime,
 ) -> int:
     """Clear encryption metadata for notes whose content/tags are empty strings.
 

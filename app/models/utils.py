@@ -55,12 +55,7 @@ def _serialize_note_recursive(db: SafeSession, source_note: Any) -> Dict[str, An
     """
     # Get decrypted content from cache - MUST be there
     decrypted_content = get_cached_content(source_note.id)
-    if decrypted_content is None:
-        raise RuntimeError(f"CACHE CORRUPTION: Note {source_note.id} not found in cache during copy operation!")
-
     decrypted_tags = get_cached_tags(source_note.id)
-    if decrypted_tags is None:
-        raise RuntimeError(f"CACHE CORRUPTION: Note {source_note.id} tags not found in cache during copy operation!")
     
     # Serialize this note's data
     note_data = {
@@ -83,7 +78,7 @@ def _serialize_note_recursive(db: SafeSession, source_note: Any) -> Dict[str, An
     return note_data
 
 
-def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
+def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str]) -> str:
     """
     Deserializes clipboard data into real database notes with new UUIDs.
     
@@ -98,7 +93,7 @@ def paste_note_from_memory(db: SafeSession, note_data: Dict[str, Any], new_paren
     return _deserialize_note_recursive(db, note_data, new_parent_id)
 
 
-def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str] = None) -> str:
+def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_parent_id: Optional[str]) -> str:
     """
     Recursively deserializes note data into real database notes.
     
@@ -112,9 +107,9 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
     """
     # Generate a new ID for the note and encrypt its content
     new_id = str(uuid.uuid4())
-    ciphertext, nonce, tag = encrypt(note_data["content"])
+    ciphertext, nonce, tag = encrypt(note_data["content"], "")
     tags_value = note_data["tags"]
-    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags_value)
+    tags_ciphertext, tags_nonce, tags_tag = encrypt(tags_value, "")
     timestamp = datetime.now(timezone.utc)
     is_collapsed = bool(note_data["is_collapsed"])
 
@@ -170,15 +165,18 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
             
             # Update prev_id and next_id to maintain sibling order
             if previous_child_id:
+                updated_at = datetime.now(timezone.utc)
                 update_links(
                     db.connection(),
                     new_child_id,
                     prev_id=previous_child_id,
+                    updated_at=updated_at,
                 )
                 update_links(
                     db.connection(),
                     previous_child_id,
                     next_id=new_child_id,
+                    updated_at=updated_at,
                 )
                 if note_store.loaded:
                     new_child_record = note_store.get_note(new_child_id)
@@ -211,7 +209,7 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
     return new_id
 
 
-def copy_note(db: SafeSession, note_id: str, new_parent_id: Optional[str] = None) -> str:
+def copy_note(db: SafeSession, note_id: str, new_parent_id: Optional[str]) -> str:
     """Create a deep copy of ``note_id`` and its descendants."""
 
     with SafeSession.allow_reads("copy_note:source"):
@@ -235,7 +233,7 @@ def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
 def _copy_note_recursive(
     db: SafeSession,
     source_row: Dict[str, Any],
-    new_parent_id: Optional[str] = None,
+    new_parent_id: Optional[str],
 ) -> str:
     """Recursively duplicate ``source_row`` into a new subtree."""
 
@@ -261,20 +259,10 @@ def _copy_note_recursive(
     )
 
     plaintext = get_cached_content(source_row["id"])
-    if plaintext is None:
-        if source_row["encryption_nonce"] is not None:
-            raise RuntimeError(
-                f"Cache missing plaintext for encrypted note {source_row['id']} during copy operation"
-            )
-        plaintext = source_row["content"]
 
     cache_note(new_id, plaintext)
 
     tags_plaintext = get_cached_tags(source_row["id"])
-    if tags_plaintext is None:
-        raise RuntimeError(
-            f"Cache missing tags for note {source_row['id']} during copy operation"
-        )
 
     cache_note_tags(new_id, tags_plaintext)
 
@@ -307,15 +295,18 @@ def _copy_note_recursive(
         new_child_id = _copy_note_recursive(db, child_row, new_id)
 
         if previous_child_id:
+            updated_at = datetime.now(timezone.utc)
             update_links(
                 db.connection(),
                 new_child_id,
                 prev_id=previous_child_id,
+                updated_at=updated_at,
             )
             update_links(
                 db.connection(),
                 previous_child_id,
                 next_id=new_child_id,
+                updated_at=updated_at,
             )
 
             if note_store.loaded:
