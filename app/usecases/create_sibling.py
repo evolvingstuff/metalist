@@ -31,7 +31,10 @@ class CmdCreateSibling(QueryCommand):
             )
         idx = siblings.index(ref.id)
         prev_id = ref.id
-        next_id = siblings[idx + 1] if idx + 1 < len(siblings) else None
+        if idx + 1 < len(siblings):
+            next_id = siblings[idx + 1]
+        else:
+            next_id = None
 
         note_uuid = str(uuid.uuid4())
         content = ""

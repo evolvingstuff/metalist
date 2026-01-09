@@ -63,11 +63,23 @@ class TransactionManager:
             current_search_query: The current search query from the request
         """
         # Normalize empty strings to None for consistent comparison
-        normalized_current = current_search_query.strip() if current_search_query else None
-        normalized_current = normalized_current if normalized_current else None
+        if current_search_query:
+            normalized_current = current_search_query.strip()
+        else:
+            normalized_current = None
+        if normalized_current:
+            normalized_current = normalized_current
+        else:
+            normalized_current = None
         
-        normalized_last = self.last_search_query.strip() if self.last_search_query else None
-        normalized_last = normalized_last if normalized_last else None
+        if self.last_search_query:
+            normalized_last = self.last_search_query.strip()
+        else:
+            normalized_last = None
+        if normalized_last:
+            normalized_last = normalized_last
+        else:
+            normalized_last = None
         
         if normalized_current != normalized_last:
             if self.command_stack_size:

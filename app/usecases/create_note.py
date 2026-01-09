@@ -82,7 +82,10 @@ class CmdCreateNote(QueryCommand):
         if self.first_visible_note_id and self.first_visible_note_id in siblings:
             idx = siblings.index(self.first_visible_note_id)
             next_id = self.first_visible_note_id
-            prev_id = siblings[idx - 1] if idx > 0 else None
+            if idx > 0:
+                prev_id = siblings[idx - 1]
+            else:
+                prev_id = None
         else:
             next_id = None
             if siblings:

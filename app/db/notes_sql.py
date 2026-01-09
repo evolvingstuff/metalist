@@ -12,7 +12,10 @@ from .schema import NOTES_TABLE
 
 
 def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
-    return connection.raw_connection if isinstance(connection, GuardedConnection) else connection
+    if isinstance(connection, GuardedConnection):
+        return connection.raw_connection
+    else:
+        return connection
 
 
 def _serialize_datetime(value: Optional[datetime]) -> str:

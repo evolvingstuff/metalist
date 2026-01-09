@@ -60,7 +60,10 @@ class NoteQueryService(BaseQueryService):
 
         limit_roots: Optional[Set[str]] = None
         if not search_active:
-            limit_roots = set(ordered_root_ids[: window_end_index + 1]) if window_end_index >= 0 else set()
+            if window_end_index >= 0:
+                limit_roots = set(ordered_root_ids[: window_end_index + 1])
+            else:
+                limit_roots = set()
 
         if store_available:
             notes = build_note_tree(
@@ -98,11 +101,10 @@ class NoteQueryService(BaseQueryService):
                         editing_note_id,
                         anchor_root_id,
                     )
-                    limit_roots = (
-                        set(ordered_root_ids[: window_end_index + 1])
-                        if window_end_index >= 0
-                        else set()
-                    )
+                    if window_end_index >= 0:
+                        limit_roots = set(ordered_root_ids[: window_end_index + 1])
+                    else:
+                        limit_roots = set()
                     notes = [note for note in notes if note['id'] in limit_roots]
                 else:
                     limit_roots = None
@@ -119,8 +121,14 @@ class NoteQueryService(BaseQueryService):
                 if is_root and limit_roots is not None and note['id'] not in limit_roots:
                     continue
                 note_id = note['id']
-                prev_id = nodes[index - 1]['id'] if index > 0 else None
-                next_id = nodes[index + 1]['id'] if index + 1 < len(nodes) else None
+                if index > 0:
+                    prev_id = nodes[index - 1]['id']
+                else:
+                    prev_id = None
+                if index + 1 < len(nodes):
+                    next_id = nodes[index + 1]['id']
+                else:
+                    next_id = None
 
                 content = note['content']
                 if not isinstance(content, str):
@@ -200,7 +208,10 @@ class NoteQueryService(BaseQueryService):
             if index is not None:
                 window_end = max(window_end, index)
 
-        highest_seen_index = max(seen_root_indices) if seen_root_indices else None
+        if seen_root_indices:
+            highest_seen_index = max(seen_root_indices)
+        else:
+            highest_seen_index = None
 
         if highest_seen_index is not None:
             while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:

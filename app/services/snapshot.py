@@ -132,7 +132,10 @@ def build_view_state(
             editing_note_id,
             anchor_root_id,
         )
-        allowed_root_ids = set(ordered_root_ids[: window_end + 1]) if window_end >= 0 else set()
+        if window_end >= 0:
+            allowed_root_ids = set(ordered_root_ids[: window_end + 1])
+        else:
+            allowed_root_ids = set()
 
     def traverse(parent_id: Optional[str]) -> None:
         ids = note_store.get_children(parent_id)
@@ -144,8 +147,14 @@ def build_view_state(
                 continue
             children_by_parent[parent_id].append(nid)
             rec = note_store.get_note(nid)
-            prev_id = ids[idx - 1] if idx > 0 else None
-            next_id = ids[idx + 1] if idx + 1 < len(ids) else None
+            if idx > 0:
+                prev_id = ids[idx - 1]
+            else:
+                prev_id = None
+            if idx + 1 < len(ids):
+                next_id = ids[idx + 1]
+            else:
+                next_id = None
             flags = {
                 "isCollapsed": bool(rec.is_collapsed),
                 "isEditing": bool(editing_note_id == rec.id),

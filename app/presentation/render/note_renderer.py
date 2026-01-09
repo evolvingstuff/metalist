@@ -251,7 +251,10 @@ def build_note_tree(
 
     try:
         search_active = bool(search_query and str(search_query).strip())
-        constrained_roots = allowed_root_ids if not search_active else None
+        if not search_active:
+            constrained_roots = allowed_root_ids
+        else:
+            constrained_roots = None
 
         if note_store.loaded:
             note_tree = _build_tree_from_store(
@@ -297,7 +300,10 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
         children = _build_tree_from_store(note_id, editing_note_id, allowed_root_ids)
         is_editing = note_id == editing_note_id
 
-        rendered = render_editing_mode(record) if is_editing else render_read_only_mode(record)
+        if is_editing:
+            rendered = render_editing_mode(record)
+        else:
+            rendered = render_read_only_mode(record)
         if is_editing and (not rendered or not rendered.strip()):
             rendered = EMPTY_EDIT_PLACEHOLDER
 
@@ -350,11 +356,10 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
                 self.is_collapsed = getattr(original_note, 'is_collapsed', False)
 
         decrypted_note = DecryptedNote(note, decrypted_content)
-        rendered_content = (
-            render_editing_mode(decrypted_note)
-            if note.id == editing_note_id
-            else render_read_only_mode(decrypted_note)
-        )
+        if note.id == editing_note_id:
+            rendered_content = render_editing_mode(decrypted_note)
+        else:
+            rendered_content = render_read_only_mode(decrypted_note)
         if note.id == editing_note_id and (not rendered_content or not rendered_content.strip()):
             rendered_content = EMPTY_EDIT_PLACEHOLDER
 

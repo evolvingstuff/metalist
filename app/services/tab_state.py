@@ -72,7 +72,10 @@ class TabStateStore:
             del self._tabs[tab_id]
 
             if was_active:
-                next_active = order[idx] if idx < len(order) else order[idx - 1]
+                if idx < len(order):
+                    next_active = order[idx]
+                else:
+                    next_active = order[idx - 1]
                 self._active_tab_id = next_active
 
             self._tab_order = order

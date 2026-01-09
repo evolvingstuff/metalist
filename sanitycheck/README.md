@@ -39,6 +39,8 @@ Dry run a fix:
 * `./sanitycheck/fix --apply PYFIX002 --dry-run src/`
 * `./sanitycheck/fix --apply PYFIX003 --dry-run src/`
 * `./sanitycheck/fix --apply PYFIX004 --dry-run src/`
+* `./sanitycheck/fix --apply PYFIX005 --dry-run src/`
+* `./sanitycheck/fix --apply PYFIX006 --dry-run src/`
 
 Apply a fix in-place:
 
@@ -46,6 +48,8 @@ Apply a fix in-place:
 * `./sanitycheck/fix --apply PYFIX002 src/`
 * `./sanitycheck/fix --apply PYFIX003 src/`
 * `./sanitycheck/fix --apply PYFIX004 src/`
+* `./sanitycheck/fix --apply PYFIX005 src/`
+* `./sanitycheck/fix --apply PYFIX006 src/`
 
 Notes:
 

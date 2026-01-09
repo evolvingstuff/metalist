@@ -35,7 +35,10 @@ class NoteCRUD:
             else:
                 with SafeSession.allow_reads("notecrud:create_note_top:first_sibling"):
                     ordered = fetch_children_ordered(db.connection(), parent_id)
-                next_id = ordered[0]["id"] if ordered else None
+                if ordered:
+                    next_id = ordered[0]["id"]
+                else:
+                    next_id = None
 
             plaintext = ""
             ciphertext, nonce, tag = encrypt(plaintext)

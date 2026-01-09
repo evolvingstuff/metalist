@@ -126,8 +126,14 @@ def decrypt(encrypted_content: str, nonce: bytes = None, tag: bytes = None, toke
         try:
             return service.decrypt_from_storage(encrypted_content, nonce, tag)
         except Exception as e:
-            nonce_preview = nonce.hex()[:16] if nonce else 'None'
-            tag_preview = tag.hex()[:16] if tag else 'None'
+            if nonce:
+                nonce_preview = nonce.hex()[:16]
+            else:
+                nonce_preview = 'None'
+            if tag:
+                tag_preview = tag.hex()[:16]
+            else:
+                tag_preview = 'None'
             logger.error(
                 "Decrypt failed for content len=%s nonce=%s tag=%s: %s",
                 len(encrypted_content) if encrypted_content else 0,
@@ -190,7 +196,10 @@ def get_encryption_status() -> dict:
     try:
         with SafeSession.allow_reads("utils:encryption:status:settings"):
             row = fetch_settings(db.connection())
-        settings = SimpleNamespace(**row) if row else None
+        if row:
+            settings = SimpleNamespace(**row)
+        else:
+            settings = None
 
         return {
             "encryption_enabled": settings.encryption_enabled if settings else False,

@@ -77,7 +77,10 @@ class CmdMove(QueryCommand):
         # Determine destination
         if self.sibling_id:
             sib = store.get(self.sibling_id)
-            dest_parent = self.new_parent_id if self.new_parent_id is not None else sib.parent_id
+            if self.new_parent_id is not None:
+                dest_parent = self.new_parent_id
+            else:
+                dest_parent = sib.parent_id
             links = store._links.get(dest_parent)  # type: ignore[attr-defined]
             if links is None:
                 raise RuntimeError(f"Missing link scope for parent_id={dest_parent}")

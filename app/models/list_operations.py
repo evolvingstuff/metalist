@@ -43,13 +43,19 @@ class ListOperations:
             def is_descendant(parent_id: str, potential_child_id: str) -> bool:
                 with SafeSession.allow_reads("list_ops:is_descendant"):
                     current_row = fetch_note(db.connection(), potential_child_id)
-                current = SimpleNamespace(**current_row) if current_row else None
+                if current_row:
+                    current = SimpleNamespace(**current_row)
+                else:
+                    current = None
                 while current and current.parent_id:
                     if current.parent_id == parent_id:
                         return True
                     with SafeSession.allow_reads("list_ops:is_descendant:up"):
                         row = fetch_note(db.connection(), current.parent_id)
-                    current = SimpleNamespace(**row) if row else None
+                    if row:
+                        current = SimpleNamespace(**row)
+                    else:
+                        current = None
                 return False
 
             if new_parent_id and is_descendant(note_id, new_parent_id):
@@ -152,8 +158,14 @@ def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: li
     updates: list[SimpleNamespace] = []
 
     for index, current_id in enumerate(order):
-        prev_id = order[index - 1] if index > 0 else None
-        next_id = order[index + 1] if index < len(order) - 1 else None
+        if index > 0:
+            prev_id = order[index - 1]
+        else:
+            prev_id = None
+        if index < len(order) - 1:
+            next_id = order[index + 1]
+        else:
+            next_id = None
 
         record = note_store.get_note(current_id)
 

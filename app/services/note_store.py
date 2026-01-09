@@ -348,8 +348,14 @@ class NoteStore:
                 continue
             parent_links: Dict[str, Dict[str, Optional[str]]] = {}
             for index, note_id in enumerate(ordered):
-                prev_id = ordered[index - 1] if index > 0 else None
-                next_id = ordered[index + 1] if index + 1 < len(ordered) else None
+                if index > 0:
+                    prev_id = ordered[index - 1]
+                else:
+                    prev_id = None
+                if index + 1 < len(ordered):
+                    next_id = ordered[index + 1]
+                else:
+                    next_id = None
                 parent_links[note_id] = {'prev': prev_id, 'next': next_id}
             links[parent_id] = parent_links
             heads[parent_id] = ordered[0]
@@ -493,10 +499,16 @@ class NoteStore:
 
         if prev_id is not None:
             prev_link = self._get_or_create_link(links, prev_id)
-            next_id = prev_link.get('next') if next_id is None else next_id
+            if next_id is None:
+                next_id = prev_link.get('next')
+            else:
+                next_id = next_id
         if next_id is not None:
             next_link = self._get_or_create_link(links, next_id)
-            prev_id = next_link.get('prev') if prev_id is None else prev_id
+            if prev_id is None:
+                prev_id = next_link.get('prev')
+            else:
+                prev_id = prev_id
 
         links[note_id] = {'prev': prev_id, 'next': next_id}
 

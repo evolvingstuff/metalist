@@ -343,7 +343,10 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "paste_subtree":
         # delete the pasted subtree
-        root_id = op["records"][0].id if op["records"] else None
+        if op["records"]:
+            root_id = op["records"][0].id
+        else:
+            root_id = None
         if not root_id:
             print("FATAL: paste_subtree undo missing root record")
             os._exit(1)
@@ -358,8 +361,12 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
 
-    focus_note_id = focus_note_id_override if focus_note_id_override is not None else _compute_focus_note_id(op, direction="undo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op["viewAnchorRootId"]
+    assert focus_note_id_override is not None
+    focus_note_id = focus_note_id_override
+    if focus_note_id:
+        view_anchor_root_id = _root_ancestor_id(focus_note_id)
+    else:
+        view_anchor_root_id = op["viewAnchorRootId"]
     return {
         **undo_viewport,
         "viewAnchorRootId": view_anchor_root_id,
@@ -419,7 +426,10 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
         raise RuntimeError(f"Unsupported redo op: {op_type}")
 
     focus_note_id = _compute_focus_note_id(op, direction="redo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op["viewAnchorRootId"]
+    if focus_note_id:
+        view_anchor_root_id = _root_ancestor_id(focus_note_id)
+    else:
+        view_anchor_root_id = op["viewAnchorRootId"]
     return {
         **redo_viewport,
         "viewAnchorRootId": view_anchor_root_id,

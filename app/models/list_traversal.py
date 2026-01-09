@@ -21,8 +21,14 @@ class ListTraversal:
             records = [note_store.get_note(note_id) for note_id in child_ids]
 
             for index, record in enumerate(records):
-                expected_prev = records[index - 1].id if index > 0 else None
-                expected_next = records[index + 1].id if index < len(records) - 1 else None
+                if index > 0:
+                    expected_prev = records[index - 1].id
+                else:
+                    expected_prev = None
+                if index < len(records) - 1:
+                    expected_next = records[index + 1].id
+                else:
+                    expected_next = None
 
                 prev_id = record.prev_id or None
                 next_id = record.next_id or None

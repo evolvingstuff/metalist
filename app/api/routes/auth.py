@@ -49,7 +49,10 @@ class PasswordRemoveRequest(BaseModel):
 
 def _client_info(request: Request) -> str:
     user_agent = request.headers.get("user-agent", "Unknown")
-    client_host = request.client.host if request.client else "Unknown"
+    if request.client:
+        client_host = request.client.host
+    else:
+        client_host = "Unknown"
     return f"{user_agent[:100]} - {client_host}"
 
 

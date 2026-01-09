@@ -40,6 +40,20 @@ AVAILABLE_FIXES = [
             "(only else None + test is name + body indexes same name)"
         ),
     ),
+    Fix(
+        fix_id="PYFIX005",
+        description=(
+            "Replace conditional-expression fallbacks with assert+value "
+            "(e.g. return x if x is not None else Y -> assert x is not None; return x)"
+        ),
+    ),
+    Fix(
+        fix_id="PYFIX006",
+        description=(
+            "Rewrite conditional expressions into if/else statements "
+            "(e.g. x = a if cond else b -> if cond: x = a; else: x = b)"
+        ),
+    ),
 ]
 
 
@@ -218,6 +232,28 @@ def _call_span(text: str, node: ast.AST) -> tuple[int, int]:
 
 def _node_span(text: str, node: ast.AST) -> tuple[int, int]:
     return _call_span(text, node)
+
+
+def _stmt_span(text: str, node: ast.AST) -> tuple[int, int]:
+    lineno = getattr(node, "lineno", None)
+    end_lineno = getattr(node, "end_lineno", None)
+    end_col = getattr(node, "end_col_offset", None)
+
+    assert isinstance(lineno, int)
+    assert isinstance(end_lineno, int)
+    assert isinstance(end_col, int)
+
+    offsets = _line_offsets(text)
+    start = _to_offset(offsets, lineno, 0)
+    end = _to_offset(offsets, end_lineno, end_col)
+    assert start <= end
+    return start, end
+
+
+def _indent_child(indent: str) -> str:
+    if "\t" in indent:
+        return indent + "\t"
+    return indent + "    "
 
 
 def _apply_edits(text: str, edits: list[_Edit]) -> str:
@@ -507,6 +543,272 @@ def _fix_pyfix004_ifexp_else_none_drop_none(path: str, repo_root: str, text: str
     return new_text, len(edits)
 
 
+def _fix_pyfix005_ifexp_fallback_to_assert(path: str, repo_root: str, text: str) -> tuple[str, int]:
+    tree = ast.parse(text, filename=path)
+    edits: list[_Edit] = []
+
+    parent: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[id(child)] = node
+
+    lines = text.splitlines(True)
+
+    def indent_for(node: ast.AST) -> str:
+        lineno = getattr(node, "lineno", None)
+        col = getattr(node, "col_offset", None)
+        assert isinstance(lineno, int)
+        assert isinstance(col, int)
+        line = lines[lineno - 1]
+        return line[:col]
+
+    def is_in_decorator_context(expr_node: ast.AST) -> bool:
+        cur: ast.AST | None = expr_node
+        while cur is not None:
+            p = parent.get(id(cur))
+            if p is None:
+                return False
+            if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                for deco in p.decorator_list:
+                    for sub in ast.walk(deco):
+                        if sub is expr_node:
+                            return True
+            cur = p
+        return False
+
+    def match_assert_name_not_none(ifexp: ast.IfExp) -> tuple[str, str] | None:
+        if not isinstance(ifexp.test, ast.Compare):
+            return None
+        test = ifexp.test
+        if len(test.ops) != 1 or len(test.comparators) != 1:
+            return None
+        if not isinstance(test.ops[0], ast.IsNot):
+            return None
+        if not (isinstance(test.comparators[0], ast.Constant) and test.comparators[0].value is None):
+            return None
+        if not isinstance(test.left, ast.Name):
+            return None
+        if not isinstance(ifexp.body, ast.Name):
+            return None
+        if ifexp.body.id != test.left.id:
+            return None
+        return test.left.id, f"{test.left.id} is not None"
+
+    def match_assert_name_not_eq(ifexp: ast.IfExp) -> tuple[str, str] | None:
+        # Match: None if name == X else name  -> assert name != X; name
+        if not (isinstance(ifexp.body, ast.Constant) and ifexp.body.value is None):
+            return None
+        if not isinstance(ifexp.orelse, ast.Name):
+            return None
+        if not isinstance(ifexp.test, ast.Compare):
+            return None
+        test = ifexp.test
+        if len(test.ops) != 1 or len(test.comparators) != 1:
+            return None
+        if not isinstance(test.ops[0], ast.Eq):
+            return None
+        if not isinstance(test.left, ast.Name):
+            return None
+        if ifexp.orelse.id != test.left.id:
+            return None
+        rhs_src = ast.get_source_segment(text, test.comparators[0])
+        assert rhs_src is not None
+        return test.left.id, f"{test.left.id} != {rhs_src}"
+
+    def replace_return(node: ast.Return, *, assert_expr: str, value_expr: str) -> None:
+        indent = indent_for(node)
+        start, end = _stmt_span(text, node)
+        replacement = f"{indent}assert {assert_expr}\n{indent}return {value_expr}"
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    def replace_assign(node: ast.Assign, *, assert_expr: str, value_expr: str) -> None:
+        if len(node.targets) != 1:
+            return
+        target_src = ast.get_source_segment(text, node.targets[0])
+        assert target_src is not None
+        indent = indent_for(node)
+        start, end = _stmt_span(text, node)
+        replacement = f"{indent}assert {assert_expr}\n{indent}{target_src} = {value_expr}"
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    def replace_annassign(node: ast.AnnAssign, *, assert_expr: str, value_expr: str) -> None:
+        target_src = ast.get_source_segment(text, node.target)
+        annotation_src = ast.get_source_segment(text, node.annotation)
+        assert target_src is not None
+        assert annotation_src is not None
+        indent = indent_for(node)
+        start, end = _stmt_span(text, node)
+        replacement = f"{indent}assert {assert_expr}\n{indent}{target_src}: {annotation_src} = {value_expr}"
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.IfExp):
+            continue
+        if is_in_decorator_context(node):
+            continue
+
+        matched = match_assert_name_not_none(node)
+        if matched is None:
+            matched = match_assert_name_not_eq(node)
+        if matched is None:
+            continue
+
+        name, assert_expr = matched
+        p = parent.get(id(node))
+        if p is None:
+            continue
+
+        if isinstance(p, ast.Return) and p.value is node:
+            replace_return(p, assert_expr=assert_expr, value_expr=name)
+        elif isinstance(p, ast.Assign) and p.value is node:
+            replace_assign(p, assert_expr=assert_expr, value_expr=name)
+        elif isinstance(p, ast.AnnAssign) and p.value is node:
+            replace_annassign(p, assert_expr=assert_expr, value_expr=name)
+
+    new_text = _apply_edits(text, edits)
+    return new_text, len(edits)
+
+
+def _fix_pyfix006_ifexp_to_if_else_stmt(path: str, repo_root: str, text: str) -> tuple[str, int]:
+    tree = ast.parse(text, filename=path)
+    edits: list[_Edit] = []
+
+    parent: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[id(child)] = node
+
+    lines = text.splitlines(True)
+
+    def indent_for(node: ast.AST) -> str:
+        lineno = getattr(node, "lineno", None)
+        col = getattr(node, "col_offset", None)
+        assert isinstance(lineno, int)
+        assert isinstance(col, int)
+        line = lines[lineno - 1]
+        return line[:col]
+
+    def is_in_decorator_context(expr_node: ast.AST) -> bool:
+        cur: ast.AST | None = expr_node
+        while cur is not None:
+            p = parent.get(id(cur))
+            if p is None:
+                return False
+            if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                for deco in p.decorator_list:
+                    for sub in ast.walk(deco):
+                        if sub is expr_node:
+                            return True
+            cur = p
+        return False
+
+    def is_single_line(src: str) -> bool:
+        return "\n" not in src and "\r" not in src
+
+    def replace_return(stmt: ast.Return, ifexp: ast.IfExp) -> None:
+        test_src = ast.get_source_segment(text, ifexp.test)
+        body_src = ast.get_source_segment(text, ifexp.body)
+        else_src = ast.get_source_segment(text, ifexp.orelse)
+        assert test_src is not None
+        assert body_src is not None
+        assert else_src is not None
+        if not (is_single_line(test_src) and is_single_line(body_src) and is_single_line(else_src)):
+            return
+
+        indent = indent_for(stmt)
+        inner = _indent_child(indent)
+        start, end = _stmt_span(text, stmt)
+        replacement = (
+            f"{indent}if {test_src}:\n"
+            f"{inner}return {body_src}\n"
+            f"{indent}else:\n"
+            f"{inner}return {else_src}"
+        )
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    def replace_assign(stmt: ast.Assign, ifexp: ast.IfExp) -> None:
+        if len(stmt.targets) != 1:
+            return
+        target_src = ast.get_source_segment(text, stmt.targets[0])
+        test_src = ast.get_source_segment(text, ifexp.test)
+        body_src = ast.get_source_segment(text, ifexp.body)
+        else_src = ast.get_source_segment(text, ifexp.orelse)
+        assert target_src is not None
+        assert test_src is not None
+        assert body_src is not None
+        assert else_src is not None
+        if not (
+            is_single_line(target_src)
+            and is_single_line(test_src)
+            and is_single_line(body_src)
+            and is_single_line(else_src)
+        ):
+            return
+
+        indent = indent_for(stmt)
+        inner = _indent_child(indent)
+        start, end = _stmt_span(text, stmt)
+        replacement = (
+            f"{indent}if {test_src}:\n"
+            f"{inner}{target_src} = {body_src}\n"
+            f"{indent}else:\n"
+            f"{inner}{target_src} = {else_src}"
+        )
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    def replace_annassign(stmt: ast.AnnAssign, ifexp: ast.IfExp) -> None:
+        if stmt.simple != 1:
+            return
+        target_src = ast.get_source_segment(text, stmt.target)
+        annotation_src = ast.get_source_segment(text, stmt.annotation)
+        test_src = ast.get_source_segment(text, ifexp.test)
+        body_src = ast.get_source_segment(text, ifexp.body)
+        else_src = ast.get_source_segment(text, ifexp.orelse)
+        assert target_src is not None
+        assert annotation_src is not None
+        assert test_src is not None
+        assert body_src is not None
+        assert else_src is not None
+        if not (
+            is_single_line(target_src)
+            and is_single_line(annotation_src)
+            and is_single_line(test_src)
+            and is_single_line(body_src)
+            and is_single_line(else_src)
+        ):
+            return
+
+        indent = indent_for(stmt)
+        inner = _indent_child(indent)
+        start, end = _stmt_span(text, stmt)
+        replacement = (
+            f"{indent}if {test_src}:\n"
+            f"{inner}{target_src}: {annotation_src} = {body_src}\n"
+            f"{indent}else:\n"
+            f"{inner}{target_src}: {annotation_src} = {else_src}"
+        )
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.IfExp):
+            continue
+        if is_in_decorator_context(node):
+            continue
+
+        p = parent.get(id(node))
+        if p is None:
+            continue
+        if isinstance(p, ast.Return) and p.value is node:
+            replace_return(p, node)
+        elif isinstance(p, ast.Assign) and p.value is node:
+            replace_assign(p, node)
+        elif isinstance(p, ast.AnnAssign) and p.value is node:
+            replace_annassign(p, node)
+
+    new_text = _apply_edits(text, edits)
+    return new_text, len(edits)
+
+
 def list_fixes() -> None:
     for fix in AVAILABLE_FIXES:
         print(f"{fix.fix_id}: {fix.description}")
@@ -553,6 +855,14 @@ def apply_fixes(
 
         if "PYFIX004" in fix_ids:
             updated, applied = _fix_pyfix004_ifexp_else_none_drop_none(path, normalized_repo_root, updated)
+            edits_for_file += applied
+
+        if "PYFIX005" in fix_ids:
+            updated, applied = _fix_pyfix005_ifexp_fallback_to_assert(path, normalized_repo_root, updated)
+            edits_for_file += applied
+
+        if "PYFIX006" in fix_ids:
+            updated, applied = _fix_pyfix006_ifexp_to_if_else_stmt(path, normalized_repo_root, updated)
             edits_for_file += applied
 
         if updated != original:
