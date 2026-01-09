@@ -39,3 +39,5 @@ AI-SUMMARY.md
 docs/AI-SUMMARY.md
 sanitycheck/js/node_modules/
 sanitycheck/js/.npm-cache/
+*.pyc
+*.pyo

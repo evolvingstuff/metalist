@@ -64,7 +64,7 @@ def _require_tab_id(
 
 def _verify_token(
     tab_id: Annotated[str, Depends(_require_tab_id)],
-    authorization: Annotated[Optional[str], Header()] = None,
+    authorization: Annotated[Optional[str], Header()],
 ) -> Optional[str]:
     if not authorization:
         return None
