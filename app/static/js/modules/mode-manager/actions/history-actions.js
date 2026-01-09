@@ -49,11 +49,46 @@ function applyScrollRestore(scrollRestore, contextLabel) {
     };
 }
 
+function _applyHistorySelectionState({
+    shouldEdit,
+    noteId,
+}) {
+    if (shouldEdit) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('History selection state requires a non-empty noteId when shouldEdit is true');
+        }
+
+        if (ModeContext.currentNoteId !== noteId) {
+            ModeContext.setCurrentNoteId(noteId);
+        }
+
+        if (!ModeContext.isEditing) {
+            ModeContext.setEditing(true);
+        }
+
+        ModeContext.markCaretVisible();
+        return;
+    }
+
+    if (ModeContext.currentContent !== null) {
+        ModeContext.setCurrentContent(null);
+    }
+
+    if (ModeContext.isEditing) {
+        ModeContext.setEditing(false);
+    }
+
+    if (ModeContext.currentNoteId !== null) {
+        ModeContext.setCurrentNoteId(null);
+    }
+}
+
 export async function actionUndo() {
     let startedAt = performance.now();
     let visibleRootAnchorId = null;
     let focusNoteId = '';
     const restoreEditing = ModeContext.isEditing;
+    const restoreEditingNoteId = ModeContext.currentNoteId;
     Logger.logAction('undo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -96,33 +131,17 @@ export async function actionUndo() {
             ModeContext.setDirty(false);
         }
 
-        const shouldRestoreEditing = Boolean(focusNoteId)
-            && (opType === 'delete_subtree' || restoreEditing);
-
-        if (shouldRestoreEditing) {
-            
-            if (ModeContext.currentNoteId !== focusNoteId) {
-                ModeContext.setCurrentNoteId(focusNoteId);
-            }
-
-            if (!ModeContext.isEditing) {
-                ModeContext.setEditing(true);
-            }
-
-            ModeContext.markCaretVisible();
-        } else {
-            if (ModeContext.currentContent !== null) {
-                ModeContext.setCurrentContent(null);
-            }
-
-            if (ModeContext.currentNoteId !== null) {
-                ModeContext.setCurrentNoteId(null);
-            }
-
-            if (ModeContext.isEditing) {
-                ModeContext.setEditing(false);
-            }
+        // IMPORTANT: treat server-provided focusNoteId as scroll guidance, not as an
+        // implicit "start editing this note" directive. Otherwise undoing a prior
+        // collapse/move op while editing causes the editor to jump to unrelated notes.
+        const shouldKeepEditing = Boolean(restoreEditing);
+        if (shouldKeepEditing && (typeof restoreEditingNoteId !== 'string' || restoreEditingNoteId.length === 0)) {
+            throw new Error('Invariant violation: restoreEditing is true but restoreEditingNoteId is empty');
         }
+
+        const shouldEdit = shouldKeepEditing || (opType === 'delete_subtree' && Boolean(focusNoteId));
+        const noteId = shouldKeepEditing ? restoreEditingNoteId : focusNoteId;
+        _applyHistorySelectionState({ shouldEdit, noteId });
     } else {
         
         throw new Error(`Undo failed: ${result.message || 'Unknown error'}`);
@@ -149,6 +168,7 @@ export async function actionRedo() {
     let visibleRootAnchorId = null;
     let focusNoteId = '';
     const restoreEditing = ModeContext.isEditing;
+    const restoreEditingNoteId = ModeContext.currentNoteId;
     Logger.logAction('redo', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
@@ -191,34 +211,16 @@ export async function actionRedo() {
             ModeContext.setDirty(false);
         }
 
-        const shouldRestoreEditing = Boolean(focusNoteId)
-            && restoreEditing
-            && opType !== 'delete_subtree';
-
-        if (shouldRestoreEditing) {
-            
-            if (ModeContext.currentNoteId !== focusNoteId) {
-                ModeContext.setCurrentNoteId(focusNoteId);
-            }
-
-            if (!ModeContext.isEditing) {
-                ModeContext.setEditing(true);
-            }
-
-            ModeContext.markCaretVisible();
-        } else {
-            if (ModeContext.currentContent !== null) {
-                ModeContext.setCurrentContent(null);
-            }
-
-            if (ModeContext.currentNoteId !== null) {
-                ModeContext.setCurrentNoteId(null);
-            }
-
-            if (ModeContext.isEditing) {
-                ModeContext.setEditing(false);
-            }
+        const shouldKeepEditing = Boolean(restoreEditing);
+        if (shouldKeepEditing && (typeof restoreEditingNoteId !== 'string' || restoreEditingNoteId.length === 0)) {
+            throw new Error('Invariant violation: restoreEditing is true but restoreEditingNoteId is empty');
         }
+
+        // Redo should not jump the editor to focusNoteId (collapse/move/update targets).
+        // Keep editing when it was active at request start; otherwise remain idle.
+        const shouldEdit = shouldKeepEditing;
+        const noteId = restoreEditingNoteId;
+        _applyHistorySelectionState({ shouldEdit, noteId });
     } else {
         
         throw new Error(`Redo failed: ${result.message || 'Unknown error'}`);

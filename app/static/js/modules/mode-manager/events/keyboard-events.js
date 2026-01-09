@@ -751,7 +751,7 @@ function handleUndoShortcut(event) {
             return;
         }
 
-        Logger.logDebug('Undo shortcut in editing mode with no editor history; issuing server undo', {
+        Logger.logDebug('Undo shortcut in editing mode with no editor history; exiting edit mode first', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
             isDirty: ModeContext.isDirty,
@@ -761,7 +761,9 @@ function handleUndoShortcut(event) {
         event.preventDefault();
         event.stopPropagation();
 
-        actionUndo();
+        // Selecting a note is an undoable UI transition; do not consume the server undo
+        // stack until we return to the pre-selection state.
+        actionDeselectNote();
         return;
     }
 
