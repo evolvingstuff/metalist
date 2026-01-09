@@ -128,7 +128,7 @@ def print_tree(parent_id: str, grouped: Dict[str, List[sqlite3.Row]], depth: int
             print(f"{prefix}  !! cycle back to {next_id}")
             break
         peers = grouped[parent_id]
-        next_row = next((row for row in peers if row["id"] == next_id), None)
+        next_row = next((row for row in peers if row["id"] == next_id))
         if next_row is None:
             print(f"{prefix}  !! missing next node {next_id}")
             break
@@ -153,7 +153,7 @@ def inspect_note(note_id: str, index: Dict[str, sqlite3.Row], grouped: Dict[str,
     siblings = grouped[note["parent_id"]]
     if siblings:
         ordered = []
-        head = next((row for row in siblings if row["prev_id"] is None), None)
+        head = next((row for row in siblings if row["prev_id"] is None))
         current = head
         seen = set()
         while current:
@@ -162,7 +162,7 @@ def inspect_note(note_id: str, index: Dict[str, sqlite3.Row], grouped: Dict[str,
             nxt = current["next_id"]
             if nxt is None:
                 break
-            current = next((row for row in siblings if row["id"] == nxt), None)
+            current = next((row for row in siblings if row["id"] == nxt))
             if current is None or current["id"] in seen:
                 break
         print(f"siblings order: {ordered}")

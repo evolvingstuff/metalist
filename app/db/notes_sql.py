@@ -257,7 +257,7 @@ def fetch_children_ordered(
 
     notes = [_deserialize_row(row) for row in rows]
     by_id = {note["id"]: note for note in notes}
-    head = next((note for note in notes if note["prev_id"] is None), None)
+    head = next((note for note in notes if note["prev_id"] is None))
     if not head:
         return list(notes)
 

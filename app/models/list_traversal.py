@@ -69,7 +69,7 @@ class ListTraversal:
             return False
 
         while current.next_id:
-            next_note = next((note for note in notes if note.id == current.next_id), None)
+            next_note = next((note for note in notes if note.id == current.next_id))
             # Explicit checks for each condition
             if not next_note:
                 return False  # Next note doesn't exist
@@ -118,7 +118,7 @@ class ListTraversal:
         
         # Follow next_id chain
         while current.next_id:
-            next_note = next((note for note in all_notes if note.id == current.next_id), None)
+            next_note = next((note for note in all_notes if note.id == current.next_id))
             if not next_note:
                 raise ValueError(f"Invalid state: Note {current.id} points to non-existent next_id {current.next_id}")
             if next_note.id in seen:

@@ -5,6 +5,11 @@ Repo-droppable gate that enforces:
 * no `try`/`catch` except at explicitly allowlisted external boundaries
 * no defaults (default params + default-value APIs + defaulting expressions)
 
+Note: default parameters are split into two rule IDs for reporting only (both are forbidden):
+
+* `PY002`: defaults to `None`
+* `PY005`: any other default
+
 Run:
 
 * `./sanitycheck/run`
@@ -30,11 +35,13 @@ Dry run a fix:
 
 * `./sanitycheck/fix --apply PYFIX001 --dry-run src/`
 * `./sanitycheck/fix --apply PYFIX002 --dry-run src/`
+* `./sanitycheck/fix --apply PYFIX003 --dry-run src/`
 
 Apply a fix in-place:
 
 * `./sanitycheck/fix --apply PYFIX001 src/`
 * `./sanitycheck/fix --apply PYFIX002 src/`
+* `./sanitycheck/fix --apply PYFIX003 src/`
 
 Notes:
 

@@ -13,8 +13,7 @@
       "TimeoutError",
       "ConnectionError",
       "OSError"
-    ],
-    "max_try_body_lines": 10
+    ]
   },
   "js": {
     "allowed_try_callee_names": [
@@ -28,4 +27,3 @@
     ]
   }
 }
-

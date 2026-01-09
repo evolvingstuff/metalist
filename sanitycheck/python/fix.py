@@ -26,6 +26,13 @@ AVAILABLE_FIXES = [
             "(only .get(...) with exactly 2 positional args; drops the default)"
         ),
     ),
+    Fix(
+        fix_id="PYFIX003",
+        description=(
+            "Replace next(it, None) with next(it) "
+            "(only built-in next(...) with 2 positional args and default None)"
+        ),
+    ),
 ]
 
 
@@ -400,6 +407,39 @@ def _fix_pyfix002_get_default_to_subscript(path: str, repo_root: str, text: str)
     return new_text, len(edits)
 
 
+def _fix_pyfix003_next_default_none(path: str, repo_root: str, text: str) -> tuple[str, int]:
+    tree = ast.parse(text, filename=path)
+    edits: list[_Edit] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id != "next":
+            continue
+        if len(node.keywords) != 0:
+            continue
+        if len(node.args) != 2:
+            continue
+        default_expr = node.args[1]
+        if not (isinstance(default_expr, ast.Constant) and default_expr.value is None):
+            continue
+
+        first_arg_src = ast.get_source_segment(text, node.args[0])
+        call_src = ast.get_source_segment(text, node)
+        assert first_arg_src is not None
+        assert call_src is not None
+
+        replacement = f"next({first_arg_src})"
+        start, end = _call_span(text, node)
+        assert text[start:end] == call_src
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    new_text = _apply_edits(text, edits)
+    return new_text, len(edits)
+
+
 def list_fixes() -> None:
     for fix in AVAILABLE_FIXES:
         print(f"{fix.fix_id}: {fix.description}")
@@ -438,6 +478,10 @@ def apply_fixes(
 
         if "PYFIX002" in fix_ids:
             updated, applied = _fix_pyfix002_get_default_to_subscript(path, normalized_repo_root, updated)
+            edits_for_file += applied
+
+        if "PYFIX003" in fix_ids:
+            updated, applied = _fix_pyfix003_next_default_none(path, normalized_repo_root, updated)
             edits_for_file += applied
 
         if updated != original:

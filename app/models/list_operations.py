@@ -69,7 +69,7 @@ class ListOperations:
             update_links(db.connection(), note_id, parent_id=new_parent_id, prev_id=None, next_id=None)
 
             if sibling_id is None:
-                existing_head = next((n for n in target_notes if n.prev_id is None), None)
+                existing_head = next((n for n in target_notes if n.prev_id is None))
                 if existing_head:
                     update_links(db.connection(), existing_head.id, prev_id=note_id)
                     update_links(db.connection(), note_id, next_id=existing_head.id)

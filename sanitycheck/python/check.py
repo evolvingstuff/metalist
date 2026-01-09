@@ -46,7 +46,6 @@ def _load_config(config_path: str) -> dict:
 
     assert isinstance(python_cfg["allowed_try_callee_prefixes"], list)
     assert isinstance(python_cfg["allowed_exception_names"], list)
-    assert isinstance(python_cfg["max_try_body_lines"], int)
 
     assert isinstance(js_cfg["allowed_try_callee_names"], list)
     assert isinstance(js_cfg["allowed_try_callee_prefixes"], list)
@@ -125,20 +124,6 @@ def _iter_exception_names(handler_type: ast.AST) -> list[str] | None:
     if single is None:
         return None
     return [single]
-
-
-def _max_end_lineno(node: ast.AST) -> int:
-    max_line = 0
-    for sub in ast.walk(node):
-        end_lineno = getattr(sub, "end_lineno", None)
-        lineno = getattr(sub, "lineno", None)
-        if isinstance(end_lineno, int):
-            if end_lineno > max_line:
-                max_line = end_lineno
-        elif isinstance(lineno, int):
-            if lineno > max_line:
-                max_line = lineno
-    return max_line
 
 
 def _contains_raise(node: ast.AST) -> bool:
@@ -275,7 +260,6 @@ class _Checker(ast.NodeVisitor):
         python_cfg = self._config["python"]
         allowed_prefixes = python_cfg["allowed_try_callee_prefixes"]
         allowed_exceptions = python_cfg["allowed_exception_names"]
-        max_try_lines = python_cfg["max_try_body_lines"]
 
         if len(node.handlers) == 0:
             self._add(node=node, rule_id="PY001", message="try without except is forbidden")
@@ -284,20 +268,6 @@ class _Checker(ast.NodeVisitor):
 
         if not _try_has_allowlisted_call(node, allowed_prefixes):
             self._add(node=node, rule_id="PY001", message="try body has no allowlisted external call")
-
-        start_line = getattr(node, "lineno", None)
-        if not isinstance(start_line, int):
-            start_line = 1
-        end_line = getattr(node, "end_lineno", None)
-        if not isinstance(end_line, int):
-            end_line = _max_end_lineno(node)
-        line_count = end_line - start_line + 1
-        if line_count > max_try_lines:
-            self._add(
-                node=node,
-                rule_id="PY001",
-                message=f"try body too large ({line_count} lines > {max_try_lines})",
-            )
 
         for handler in node.handlers:
             if handler.type is None:
@@ -337,12 +307,47 @@ class _Checker(ast.NodeVisitor):
 
     def _check_defaults(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         args = node.args
-        if len(args.defaults) != 0:
-            self._add(node=node, rule_id="PY002", message="default parameters are forbidden")
-        for kw_default in args.kw_defaults:
-            if kw_default is not None:
-                self._add(node=node, rule_id="PY002", message="default parameters are forbidden")
-                break
+        positional = list(args.posonlyargs) + list(args.args)
+        defaults = list(args.defaults)
+
+        def rule_for_default(expr: ast.AST) -> str:
+            if isinstance(expr, ast.Constant) and expr.value is None:
+                return "PY002"
+            return "PY005"
+
+        if len(defaults) != 0:
+            offset = len(positional) - len(defaults)
+            assert offset >= 0
+            i = 0
+            while i < len(defaults):
+                default_expr = defaults[i]
+                if 0 <= offset + i < len(positional):
+                    arg = positional[offset + i]
+                    self._add(
+                        node=default_expr,
+                        rule_id=rule_for_default(default_expr),
+                        message=f"default for parameter '{arg.arg}' is forbidden",
+                    )
+                else:
+                    self._add(
+                        node=default_expr,
+                        rule_id=rule_for_default(default_expr),
+                        message="default parameters are forbidden",
+                    )
+                i += 1
+
+        if len(args.kwonlyargs) != 0:
+            assert len(args.kwonlyargs) == len(args.kw_defaults)
+            j = 0
+            while j < len(args.kwonlyargs):
+                kw_default = args.kw_defaults[j]
+                if kw_default is not None:
+                    self._add(
+                        node=kw_default,
+                        rule_id=rule_for_default(kw_default),
+                        message=f"default for parameter '{args.kwonlyargs[j].arg}' is forbidden",
+                    )
+                j += 1
 
     def visit_Call(self, node: ast.Call) -> None:
         self._check_default_value_apis(node)
