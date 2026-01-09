@@ -11,10 +11,10 @@ if [ ! -f "$config_path" ]; then
 fi
 
 if [ "$#" -eq 0 ]; then
-  exec python3 "$repo_root/sanitycheck/fix.py"
+  exec env PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/sanitycheck/fix.py"
 fi
 
-exec python3 "$repo_root/sanitycheck/python/fix.py" \
+exec env PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/sanitycheck/python/fix.py" \
   --config "$config_path" \
   --repo-root "$repo_root" \
   "$@"

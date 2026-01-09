@@ -18,7 +18,14 @@ AVAILABLE_FIXES = [
     Fix(
         fix_id="PYFIX001",
         description="Replace mapping.get(key) with mapping[key] (only .get(...) with exactly 1 positional arg)",
-    )
+    ),
+    Fix(
+        fix_id="PYFIX002",
+        description=(
+            "Replace mapping.get(key, default) with mapping[key] "
+            "(only .get(...) with exactly 2 positional args; drops the default)"
+        ),
+    ),
 ]
 
 
@@ -263,6 +270,13 @@ def _fix_pyfix001_get_to_subscript(path: str, repo_root: str, text: str) -> tupl
 
         return False
 
+    def is_dict_like_expr(expr: ast.AST) -> bool:
+        if isinstance(expr, ast.Dict):
+            return True
+        if isinstance(expr, ast.Name):
+            return expr.id in dict_like_names
+        return False
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -277,12 +291,97 @@ def _fix_pyfix001_get_to_subscript(path: str, repo_root: str, text: str) -> tupl
         if node.func.attr != "get":
             continue
 
-        if isinstance(node.func.value, ast.Dict):
-            pass
-        elif isinstance(node.func.value, ast.Name):
-            if node.func.value.id not in dict_like_names:
-                continue
-        else:
+        if not is_dict_like_expr(node.func.value):
+            continue
+
+        base_src = ast.get_source_segment(text, node.func.value)
+        key_src = ast.get_source_segment(text, node.args[0])
+        call_src = ast.get_source_segment(text, node)
+        assert base_src is not None
+        assert key_src is not None
+        assert call_src is not None
+
+        replacement = f"{base_src}[{key_src}]"
+        start, end = _call_span(text, node)
+        assert text[start:end] == call_src
+        edits.append(_Edit(start=start, end=end, replacement=replacement))
+
+    new_text = _apply_edits(text, edits)
+    return new_text, len(edits)
+
+
+def _fix_pyfix002_get_default_to_subscript(path: str, repo_root: str, text: str) -> tuple[str, int]:
+    tree = ast.parse(text, filename=path)
+    edits: list[_Edit] = []
+
+    parent: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[id(child)] = node
+
+    dict_like_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Subscript):
+            if isinstance(node.value, ast.Name):
+                dict_like_names.add(node.value.id)
+
+        if isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name):
+                annotation_src = ast.get_source_segment(text, node.annotation)
+                if annotation_src is not None:
+                    if annotation_src.startswith("dict") or "Mapping" in annotation_src:
+                        dict_like_names.add(node.target.id)
+
+        if isinstance(node, ast.Assign):
+            if isinstance(node.value, ast.Dict):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        dict_like_names.add(target.id)
+            if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+                if node.value.func.id == "dict":
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            dict_like_names.add(target.id)
+
+    def is_in_decorator_context(call_node: ast.AST) -> bool:
+        cur: ast.AST | None = call_node
+        while cur is not None:
+            p = parent.get(id(cur))
+            if p is None:
+                return False
+            if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                i = 0
+                while i < len(p.decorator_list):
+                    deco = p.decorator_list[i]
+                    for sub in ast.walk(deco):
+                        if sub is call_node:
+                            return True
+                    i += 1
+            cur = p
+        return False
+
+    def is_dict_like_expr(expr: ast.AST) -> bool:
+        if isinstance(expr, ast.Dict):
+            return True
+        if isinstance(expr, ast.Name):
+            return expr.id in dict_like_names
+        return False
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if is_in_decorator_context(node):
+            continue
+        if len(node.keywords) != 0:
+            continue
+        if len(node.args) != 2:
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "get":
+            continue
+
+        if not is_dict_like_expr(node.func.value):
             continue
 
         base_src = ast.get_source_segment(text, node.func.value)
@@ -335,6 +434,10 @@ def apply_fixes(
 
         if "PYFIX001" in fix_ids:
             updated, applied = _fix_pyfix001_get_to_subscript(path, normalized_repo_root, updated)
+            edits_for_file += applied
+
+        if "PYFIX002" in fix_ids:
+            updated, applied = _fix_pyfix002_get_default_to_subscript(path, normalized_repo_root, updated)
             edits_for_file += applied
 
         if updated != original:

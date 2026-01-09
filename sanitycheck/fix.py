@@ -5,6 +5,9 @@ import sys
 from pathlib import Path
 
 
+sys.dont_write_bytecode = True
+
+
 def _prompt(prompt: str) -> str:
     return input(prompt).strip()
 
@@ -63,4 +66,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

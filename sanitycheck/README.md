@@ -29,10 +29,12 @@ If you're running from an IDE (no CLI args), run:
 Dry run a fix:
 
 * `./sanitycheck/fix --apply PYFIX001 --dry-run src/`
+* `./sanitycheck/fix --apply PYFIX002 --dry-run src/`
 
 Apply a fix in-place:
 
 * `./sanitycheck/fix --apply PYFIX001 src/`
+* `./sanitycheck/fix --apply PYFIX002 src/`
 
 Notes:
 

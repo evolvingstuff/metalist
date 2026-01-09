@@ -138,7 +138,7 @@ class NoteCRUD:
             parent_id=row["parent_id"],
             prev_id=row["prev_id"],
             next_id=row["next_id"],
-            is_collapsed=row.get("is_collapsed", False),
+            is_collapsed=row["is_collapsed"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             encryption_nonce=row["encryption_nonce"],

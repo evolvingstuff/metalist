@@ -109,13 +109,13 @@ def note_matches_search(note_dict, search_terms):
         True if note or any descendant contains all search terms
     """
     # Check the note's own content using RAW content (for search) not rendered content
-    raw_content = note_dict.get('raw_content', note_dict['content'])
+    raw_content = note_dict['raw_content']
     plain_text = strip_html(raw_content).lower()
     if all(term in plain_text for term in search_terms):
         return True
     
     # Recursively check ALL descendants - if any descendant matches, we include this note
-    for child in note_dict.get('children', []):
+    for child in note_dict['children']:
         if note_matches_search(child, search_terms):
             return True
     
@@ -126,7 +126,7 @@ def note_directly_matches(note_dict, search_terms):
     """
     Check if a note directly contains all search terms (not checking descendants).
     """
-    raw_content = note_dict.get('raw_content', note_dict['content'])
+    raw_content = note_dict['raw_content']
     plain_text = strip_html(raw_content).lower()
     return all(term in plain_text for term in search_terms)
 
@@ -146,7 +146,7 @@ def mark_search_relevance(notes, search_terms):
         
         # Process all children to determine if we have matching descendants
         has_matching_descendant = False
-        for child in note_dict.get('children', []):
+        for child in note_dict['children']:
             # Pass down whether current note or any ancestor was a match
             child_relevance = process_note(child, parent_is_match or is_direct_match)
             if child_relevance in ['direct_match', 'relevant']:
@@ -178,23 +178,23 @@ def apply_redacted_rendering(notes, search_query=None):
     """
     def process_note(note_dict):
         # Recursively process children first
-        for child in note_dict.get('children', []):
+        for child in note_dict['children']:
             process_note(child)
         
         # Apply redacted rendering to irrelevant notes (unless being edited)
         if (note_dict['search_relevance'] == 'irrelevant' and 
-            not note_dict.get('flags', {}).get('isEditing', False)):
+            not note_dict['flags'].get('isEditing', False)):
             # Re-render using redacted mode
             # We need to create a simple note object for the render function
             class SimpleNote:
                 def __init__(self, content):
                     self.content = content
             
-            raw_content = note_dict.get('raw_content', note_dict['content'])
+            raw_content = note_dict['raw_content']
             note_obj = SimpleNote(raw_content)
             note_dict['content'] = render_redacted_mode(note_obj)
         elif (note_dict['search_relevance'] in ['direct_match', 'relevant'] and 
-              not note_dict.get('flags', {}).get('isEditing', False) and
+              not note_dict['flags'].get('isEditing', False) and
               search_query):
             # Apply highlighting to relevant non-editing notes
             note_dict['content'] = highlight_search_terms(note_dict['content'], search_query)

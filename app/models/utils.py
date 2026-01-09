@@ -113,10 +113,10 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
     # Generate a new ID for the note and encrypt its content
     new_id = str(uuid.uuid4())
     ciphertext, nonce, tag = encrypt(note_data["content"])
-    tags_value = note_data.get("tags", "")
+    tags_value = note_data["tags"]
     tags_ciphertext, tags_nonce, tags_tag = encrypt(tags_value)
     timestamp = datetime.now(timezone.utc)
-    is_collapsed = bool(note_data.get("is_collapsed", False))
+    is_collapsed = bool(note_data["is_collapsed"])
 
     insert_note(
         db.connection(),
@@ -160,7 +160,7 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
         )
     
     # Deserialize children if any
-    children_data = note_data.get("children", [])
+    children_data = note_data["children"]
     if children_data:
         # Deserialize each child recursively
         previous_child_id = None
@@ -227,7 +227,7 @@ def count_serialized_note_tree(note_data: Dict[str, Any]) -> int:
     if not note_data:
         return 0
     total = 1
-    for child in note_data.get("children", []) or []:
+    for child in note_data["children"] or []:
         total += count_serialized_note_tree(child)
     return total
 
@@ -241,7 +241,7 @@ def _copy_note_recursive(
 
     new_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc)
-    is_collapsed = bool(source_row.get("is_collapsed", False))
+    is_collapsed = bool(source_row["is_collapsed"])
 
     insert_note(
         db.connection(),
@@ -266,7 +266,7 @@ def _copy_note_recursive(
             raise RuntimeError(
                 f"Cache missing plaintext for encrypted note {source_row['id']} during copy operation"
             )
-        plaintext = source_row.get("content", "")
+        plaintext = source_row["content"]
 
     cache_note(new_id, plaintext)
 

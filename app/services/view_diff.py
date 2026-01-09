@@ -47,7 +47,7 @@ def _diff_sibling_order(previous_ids: Sequence[str], desired_ids: Sequence[str])
         note_id = working[idx]
         if note_id not in desired_set:
             working.pop(idx)
-            position.pop(note_id, None)
+            del position[note_id]
             operations.append({
                 'type': 'remove',
                 'noteId': note_id,
@@ -58,8 +58,7 @@ def _diff_sibling_order(previous_ids: Sequence[str], desired_ids: Sequence[str])
     _reindex(position, working, start=0)
 
     for target_index, note_id in enumerate(desired_ids):
-        existing_index = position.get(note_id, -1)
-        if existing_index == -1:
+        if note_id not in position:
             working.insert(target_index, note_id)
             _reindex(position, working, start=target_index)
             operations.append({
@@ -68,6 +67,8 @@ def _diff_sibling_order(previous_ids: Sequence[str], desired_ids: Sequence[str])
                 'toIndex': target_index,
             })
             continue
+
+        existing_index = position[note_id]
 
         if existing_index == target_index:
             continue

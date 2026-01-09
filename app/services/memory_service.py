@@ -111,7 +111,7 @@ class MemoryService:
 
         def _walk(node: dict, root: dict) -> None:
             flattened.append((node, root))
-            for child in node.get('children', []):
+            for child in node['children']:
                 _walk(child, root)
 
         for root_note in notes:
@@ -174,7 +174,7 @@ def apply_memory_flags(root_node: dict, selected_id: str) -> None:
         is_selected = node['id'] == selected_id
         contains_selected = is_selected
 
-        for child in node.get('children', []):
+        for child in node['children']:
             if _apply(child, within_selected or is_selected):
                 contains_selected = True
 
