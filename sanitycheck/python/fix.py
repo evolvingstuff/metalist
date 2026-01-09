@@ -124,6 +124,7 @@ def _discover_python_files(repo_root: str, config: dict, targets: list[str]) -> 
     assert exclude_dot_folders is True
 
     prune_names = {
+        "sanitycheck",
         "node_modules",
         ".venv",
         "dist",

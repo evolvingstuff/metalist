@@ -86,6 +86,7 @@ Notes:
 
 * Dot-folders (paths under `./.*`) are always excluded.
 * Use `ignore_globs` as an escape hatch (e.g. to ignore a legacy subtree).
+* The `sanitycheck/` folder itself is excluded from scanning/fixing (the gate doesn't lint its own implementation when dropped into a repo).
 
 ## Deploying to multiple repos
 
