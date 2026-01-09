@@ -91,14 +91,14 @@ def release_note_lock(note_id: str, client_id: str) -> None:
     global _note_locks
     
     # Only release if this client owns the lock
-    lock_info = _note_locks.get(note_id)
+    lock_info = _note_locks[note_id]
     if lock_info and lock_info["client_id"] == client_id:
         del _note_locks[note_id]
 
 
 def get_note_lock_owner(note_id: str) -> Optional[str]:
     """Get the client ID that owns the lock for a note (read-only)."""
-    lock_info = _note_locks.get(note_id)
+    lock_info = _note_locks[note_id]
     return lock_info["client_id"] if lock_info else None
 
 
@@ -109,7 +109,7 @@ def get_all_locks() -> Dict[str, str]:
 
 def is_note_locked_by_other_client(note_id: str, client_id: str) -> bool:
     """Check if a note is locked by a different client (read-only)."""
-    lock_info = _note_locks.get(note_id)
+    lock_info = _note_locks[note_id]
     if not lock_info:
         return False
     
@@ -130,7 +130,7 @@ def set_client_clipboard(client_id: str, note_data: Optional[Dict[str, Any]]) ->
 
 def get_client_clipboard(client_id: str) -> Optional[Dict[str, Any]]:
     """Get the clipboard content for a client (read-only)."""
-    return _client_clipboards.get(client_id)
+    return _client_clipboards[client_id]
 
 
 def clear_client_clipboard(client_id: str) -> None:

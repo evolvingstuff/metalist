@@ -182,7 +182,7 @@ def apply_redacted_rendering(notes, search_query=None):
             process_note(child)
         
         # Apply redacted rendering to irrelevant notes (unless being edited)
-        if (note_dict.get('search_relevance') == 'irrelevant' and 
+        if (note_dict['search_relevance'] == 'irrelevant' and 
             not note_dict.get('flags', {}).get('isEditing', False)):
             # Re-render using redacted mode
             # We need to create a simple note object for the render function
@@ -193,7 +193,7 @@ def apply_redacted_rendering(notes, search_query=None):
             raw_content = note_dict.get('raw_content', note_dict['content'])
             note_obj = SimpleNote(raw_content)
             note_dict['content'] = render_redacted_mode(note_obj)
-        elif (note_dict.get('search_relevance') in ['direct_match', 'relevant'] and 
+        elif (note_dict['search_relevance'] in ['direct_match', 'relevant'] and 
               not note_dict.get('flags', {}).get('isEditing', False) and
               search_query):
             # Apply highlighting to relevant non-editing notes

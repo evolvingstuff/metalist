@@ -70,7 +70,7 @@ def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, objec
 
 
 def _anchor_root_id(viewport: Dict[str, object]) -> Optional[str]:
-    scroll_anchor = viewport.get("scrollAnchor")
+    scroll_anchor = viewport["scrollAnchor"]
     if not isinstance(scroll_anchor, dict):
         return None
     anchor_id = scroll_anchor.get("anchorId")
@@ -107,7 +107,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         return note_id
 
     if op_type == "create_note":
-        record = op.get("record")
+        record = op["record"]
         if not isinstance(record, dict):
             raise RuntimeError(f"Undo op create_note.record must be an object | op={op}")
         created_id = record.get("id")
@@ -116,7 +116,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         return _pick_focus_neighbor(record.get("prev_id"), record.get("next_id"))
 
     if op_type in {"delete_subtree", "paste_subtree"}:
-        records = op.get("records")
+        records = op["records"]
         if not isinstance(records, list) or not records:
             raise RuntimeError(f"Undo op {op_type}.records must be a non-empty list | op={op}")
         first = records[0]
@@ -359,7 +359,7 @@ def undo(client_id: str) -> Optional[Dict[str, object]]:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
 
     focus_note_id = focus_note_id_override if focus_note_id_override is not None else _compute_focus_note_id(op, direction="undo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
+    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op["viewAnchorRootId"]
     return {
         **undo_viewport,
         "viewAnchorRootId": view_anchor_root_id,
@@ -419,7 +419,7 @@ def redo(client_id: str) -> Optional[Dict[str, object]]:
         raise RuntimeError(f"Unsupported redo op: {op_type}")
 
     focus_note_id = _compute_focus_note_id(op, direction="redo")
-    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op.get("viewAnchorRootId")
+    view_anchor_root_id = _root_ancestor_id(focus_note_id) if focus_note_id else op["viewAnchorRootId"]
     return {
         **redo_viewport,
         "viewAnchorRootId": view_anchor_root_id,

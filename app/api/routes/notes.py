@@ -36,7 +36,7 @@ def view_diff(payload: dict):
     search = payload["search"]
     tab_id = payload["tabId"]
     client_note_uuid_hashes = payload["clientNoteUuidHashes"]
-    anchor_root_id = payload.get("visibleRootAnchorId")
+    anchor_root_id = payload["visibleRootAnchorId"]
 
     if not isinstance(client_note_uuid_hashes, dict):
         raise TypeError("clientNoteUuidHashes must be an object")
@@ -134,7 +134,7 @@ def view_diff(payload: dict):
     note_updates = {
         note_id: payload
         for note_id, payload in state.payloads.items()
-        if cached_state.hash_by_id.get(note_id) != payload.get("hash")
+        if cached_state.hash_by_id.get(note_id) != payload["hash"]
     }
 
     view_cache.set(state=state, **cache_key)
@@ -223,8 +223,8 @@ def _not_impl(exc: Exception) -> None:
 def create_note_top(body: dict):
     viewport = _require_viewport(body)
     cmd = CmdCreateNote(
-        first_visible_note_id=body.get("first_visible_note_id"),
-        search_query=body.get("search_query"),
+        first_visible_note_id=body["first_visible_note_id"],
+        search_query=body["search_query"],
         client_id=body["clientId"],
         viewport=viewport,
     )
@@ -236,7 +236,7 @@ def create_sibling(note_id: str, body: dict):
     viewport = _require_viewport(body)
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
-        search_query=body.get("search_query"),
+        search_query=body["search_query"],
         client_id=body["clientId"],
         viewport=viewport,
     )
@@ -276,9 +276,9 @@ def move_note_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     cmd = CmdMove(
         note_id=note_id,
-        sibling_id=body.get("sibling_id"),
-        position=body.get("position"),
-        new_parent_id=body.get("new_parent_id"),
+        sibling_id=body["sibling_id"],
+        position=body["position"],
+        new_parent_id=body["new_parent_id"],
         client_id=body["clientId"],
         viewport=viewport,
     )
@@ -328,7 +328,7 @@ def paste_child_endpoint(target_note_id: str, body: dict):
 
 
 def _require_viewport(body: dict) -> dict:
-    viewport = body.get("viewport")
+    viewport = body["viewport"]
     if not isinstance(viewport, dict):
         raise HTTPException(status_code=400, detail="viewport is required")
     return viewport

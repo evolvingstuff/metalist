@@ -402,7 +402,7 @@ class NoteStore:
             if not note_id:
                 continue
 
-            link = links.get(note_id)
+            link = links[note_id]
             if link is None:
                 continue
 
@@ -410,8 +410,8 @@ class NoteStore:
             if record is None:
                 raise RuntimeError(f"Integrity failure: {note_id} present in links but missing from note_map")
 
-            expected_prev = link.get('prev')
-            expected_next = link.get('next')
+            expected_prev = link['prev']
+            expected_next = link['next']
 
             if record.parent_id != parent_id:
                 raise RuntimeError(
@@ -435,7 +435,7 @@ class NoteStore:
                 )
 
             if expected_prev is not None:
-                prev_link = links.get(expected_prev)
+                prev_link = links[expected_prev]
                 if prev_link is None or prev_link.get('next') != note_id:
                     raise RuntimeError(
                         "Integrity failure: prev/next mismatch: "
@@ -449,7 +449,7 @@ class NoteStore:
                     )
 
             if expected_next is not None:
-                next_link = links.get(expected_next)
+                next_link = links[expected_next]
                 if next_link is None or next_link.get('prev') != note_id:
                     raise RuntimeError(
                         "Integrity failure: next/prev mismatch: "
@@ -464,7 +464,7 @@ class NoteStore:
 
     @staticmethod
     def _get_or_create_link(links: Dict[str, Dict[str, Optional[str]]], node_id: str) -> Dict[str, Optional[str]]:
-        link = links.get(node_id)
+        link = links[node_id]
         if link is None:
             link = {'prev': None, 'next': None}
             links[node_id] = link
@@ -512,12 +512,12 @@ class NoteStore:
 
         self._update_record_links_locked(note_id, parent_id=parent_id, prev_id=prev_id, next_id=next_id)
         if prev_id is not None:
-            prev_link = links.get(prev_id)
+            prev_link = links[prev_id]
             if not prev_link or prev_link.get('next') != note_id:
                 raise RuntimeError(f"Integrity failure: insert did not update prev link for {prev_id}")
             self._update_record_links_locked(prev_id, parent_id=parent_id, prev_id=prev_link.get('prev'), next_id=note_id)
         if next_id is not None:
-            next_link = links.get(next_id)
+            next_link = links[next_id]
             if not next_link or next_link.get('prev') != note_id:
                 raise RuntimeError(f"Integrity failure: insert did not update next link for {next_id}")
             self._update_record_links_locked(next_id, parent_id=parent_id, prev_id=note_id, next_id=next_link.get('next'))
@@ -533,8 +533,8 @@ class NoteStore:
         if not link:
             return
 
-        prev_id = link.get('prev')
-        next_id = link.get('next')
+        prev_id = link['prev']
+        next_id = link['next']
 
         if prev_id is not None and prev_id in links:
             links[prev_id]['next'] = next_id
@@ -547,12 +547,12 @@ class NoteStore:
             self._tails[parent_id] = prev_id
 
         if prev_id is not None:
-            prev_link = links.get(prev_id)
+            prev_link = links[prev_id]
             if prev_link is None:
                 raise RuntimeError(f"Integrity failure: prev node {prev_id} missing during remove of {note_id}")
             self._update_record_links_locked(prev_id, parent_id=parent_id, prev_id=prev_link.get('prev'), next_id=next_id)
         if next_id is not None:
-            next_link = links.get(next_id)
+            next_link = links[next_id]
             if next_link is None:
                 raise RuntimeError(f"Integrity failure: next node {next_id} missing during remove of {note_id}")
             self._update_record_links_locked(next_id, parent_id=parent_id, prev_id=prev_id, next_id=next_link.get('next'))
@@ -621,13 +621,13 @@ class NoteStore:
             while current and current not in visited:
                 ordered.append(current)
                 visited.add(current)
-                link = links.get(current)
+                link = links[current]
                 if link is None:
                     raise RuntimeError(
                         "Integrity failure: child list contains node missing from links: "
                         f"parent_id={parent_id} note_id={current}"
                     )
-                current = link.get('next')
+                current = link['next']
             return ordered
 
     # Debug helpers -----------------------------------------------------------

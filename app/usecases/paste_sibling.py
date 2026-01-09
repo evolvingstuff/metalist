@@ -56,7 +56,7 @@ def _insert_cloned_subtree_at(
                 f"Clipboard snapshot missing parent {old_parent} for node {old_id}"
             )
 
-        prev_id = last_per_parent.get(new_parent)
+        prev_id = last_per_parent[new_parent]
         # Compute next from current store state
         if prev_id is None:
             children = store.children(new_parent)

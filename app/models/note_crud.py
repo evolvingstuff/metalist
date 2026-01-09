@@ -139,10 +139,10 @@ class NoteCRUD:
             prev_id=row["prev_id"],
             next_id=row["next_id"],
             is_collapsed=row.get("is_collapsed", False),
-            created_at=row.get("created_at"),
-            updated_at=row.get("updated_at"),
-            encryption_nonce=row.get("encryption_nonce"),
-            encryption_tag=row.get("encryption_tag"),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            encryption_nonce=row["encryption_nonce"],
+            encryption_tag=row["encryption_tag"],
         )
 
     @staticmethod

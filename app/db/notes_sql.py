@@ -267,7 +267,7 @@ def fetch_children_ordered(
     while current["id"] not in seen:
         ordered.append(current)
         seen.add(current["id"])
-        next_id = current.get("next_id")
+        next_id = current["next_id"]
         if next_id is None:
             break
         current = by_id.get(next_id)

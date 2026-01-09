@@ -158,7 +158,7 @@ class TabStateStore:
             if not isinstance(scroll_y, int) or scroll_y < 0:
                 raise ValueError("scrollY must be a non-negative integer")
 
-            scroll_anchor = value.get("scrollAnchor")
+            scroll_anchor = value["scrollAnchor"]
             normalized_scroll_anchor: Optional[Dict[str, object]] = None
             if scroll_anchor is not None:
                 if not isinstance(scroll_anchor, dict):

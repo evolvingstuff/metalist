@@ -217,8 +217,8 @@ class AuthService:
                         f"Password setup failed: Note {note_id} has NULL tags."
                     )
 
-                content_encrypted = note.get("encryption_nonce") is not None or note.get("encryption_tag") is not None
-                tags_encrypted = note.get("tags_encryption_nonce") is not None or note.get("tags_encryption_tag") is not None
+                content_encrypted = note["encryption_nonce"] is not None or note["encryption_tag"] is not None
+                tags_encrypted = note["tags_encryption_nonce"] is not None or note["tags_encryption_tag"] is not None
 
                 if content_encrypted and tags_encrypted:
                     continue
@@ -400,11 +400,11 @@ class AuthService:
             for note in notes:
                 note_id = note["id"]
                 content = note["content"]
-                nonce = note.get("encryption_nonce")
-                tag = note.get("encryption_tag")
+                nonce = note["encryption_nonce"]
+                tag = note["encryption_tag"]
                 tags = note["tags"]
-                tags_nonce = note.get("tags_encryption_nonce")
-                tags_tag = note.get("tags_encryption_tag")
+                tags_nonce = note["tags_encryption_nonce"]
+                tags_tag = note["tags_encryption_tag"]
 
                 content_encrypted = nonce is not None or tag is not None
                 tags_encrypted = tags_nonce is not None or tags_tag is not None

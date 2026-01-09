@@ -190,13 +190,13 @@ class NoteQueryService(BaseQueryService):
         window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
 
         for note_id in client_known_note_ids:
-            index = root_index_map.get(note_id)
+            index = root_index_map[note_id]
             if index is not None:
                 window_end = max(window_end, index)
 
         if editing_note_id:
             editing_root_id = _find_root_id(editing_note_id)
-            index = root_index_map.get(editing_root_id)
+            index = root_index_map[editing_root_id]
             if index is not None:
                 window_end = max(window_end, index)
 
@@ -207,7 +207,7 @@ class NoteQueryService(BaseQueryService):
                 window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
 
         if anchor_root_id:
-            anchor_index = root_index_map.get(anchor_root_id)
+            anchor_index = root_index_map[anchor_root_id]
             if anchor_index is not None:
                 while (
                     window_end < len(ordered_root_ids) - 1

@@ -247,11 +247,11 @@ def _copy_note_recursive(
         db.connection(),
         note_id=new_id,
         content=source_row["content"],
-        encryption_nonce=source_row.get("encryption_nonce"),
-        encryption_tag=source_row.get("encryption_tag"),
+        encryption_nonce=source_row["encryption_nonce"],
+        encryption_tag=source_row["encryption_tag"],
         tags=source_row["tags"],
-        tags_encryption_nonce=source_row.get("tags_encryption_nonce"),
-        tags_encryption_tag=source_row.get("tags_encryption_tag"),
+        tags_encryption_nonce=source_row["tags_encryption_nonce"],
+        tags_encryption_tag=source_row["tags_encryption_tag"],
         parent_id=new_parent_id,
         prev_id=None,
         next_id=None,
@@ -262,7 +262,7 @@ def _copy_note_recursive(
 
     plaintext = get_cached_content(source_row["id"])
     if plaintext is None:
-        if source_row.get("encryption_nonce") is not None:
+        if source_row["encryption_nonce"] is not None:
             raise RuntimeError(
                 f"Cache missing plaintext for encrypted note {source_row['id']} during copy operation"
             )
@@ -283,11 +283,11 @@ def _copy_note_recursive(
             SimpleNamespace(
                 id=new_id,
                 content=source_row["content"],
-                encryption_nonce=source_row.get("encryption_nonce"),
-                encryption_tag=source_row.get("encryption_tag"),
+                encryption_nonce=source_row["encryption_nonce"],
+                encryption_tag=source_row["encryption_tag"],
                 tags=source_row["tags"],
-                tags_encryption_nonce=source_row.get("tags_encryption_nonce"),
-                tags_encryption_tag=source_row.get("tags_encryption_tag"),
+                tags_encryption_nonce=source_row["tags_encryption_nonce"],
+                tags_encryption_tag=source_row["tags_encryption_tag"],
                 parent_id=new_parent_id,
                 prev_id=None,
                 next_id=None,

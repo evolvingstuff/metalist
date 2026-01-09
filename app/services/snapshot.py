@@ -47,9 +47,9 @@ def _determine_root_window_end(
         return -1
     window_end = min(len(ordered_root_ids) - 1, ROOT_CHUNK_SIZE - 1)
     for note_id in client_known_note_ids:
-        index = root_index_map.get(note_id)
-        if index is not None:
-            window_end = max(window_end, index)
+        if note_id not in root_index_map:
+            continue
+        window_end = max(window_end, root_index_map[note_id])
     if editing_note_id:
         # Expand to include the root containing the editing node
         # Find root id by walking parents in store
@@ -57,16 +57,15 @@ def _determine_root_window_end(
         while current.parent_id:
             current = note_store.get_note(current.parent_id)
         editing_root_id = current.id
-        index = root_index_map.get(editing_root_id)
-        if index is not None:
-            window_end = max(window_end, index)
+        if editing_root_id in root_index_map:
+            window_end = max(window_end, root_index_map[editing_root_id])
     if seen_root_indices:
         highest_seen_index = max(seen_root_indices)
         while window_end < len(ordered_root_ids) - 1 and window_end - highest_seen_index <= ROOT_BUFFER_THRESHOLD:
             window_end = min(window_end + ROOT_CHUNK_SIZE, len(ordered_root_ids) - 1)
     if anchor_root_id:
-        anchor_index = root_index_map.get(anchor_root_id)
-        if anchor_index is not None:
+        if anchor_root_id in root_index_map:
+            anchor_index = root_index_map[anchor_root_id]
             while (
                 window_end < len(ordered_root_ids) - 1
                 and window_end - anchor_index <= ROOT_BUFFER_THRESHOLD

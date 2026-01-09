@@ -33,11 +33,11 @@ def get_cached_content(note_id: str) -> Optional[str]:
     Returns:
         Decrypted content or None if not in cache
     """
-    return _search_cache.get(note_id)
+    return _search_cache[note_id]
 
 
 def get_cached_tags(note_id: str) -> Optional[str]:
-    return _tag_cache.get(note_id)
+    return _tag_cache[note_id]
 
 
 def cache_note(note_id: str, decrypted_content: str) -> None:
