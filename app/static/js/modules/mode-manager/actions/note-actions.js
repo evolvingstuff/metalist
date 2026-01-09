@@ -134,7 +134,7 @@ export async function createNote() {
     } else {
         // Find the first visible note to insert before
         const firstVisibleNote = document.querySelector('.note');
-        const firstVisibleNoteId = firstVisibleNote ? firstVisibleNote.dataset.noteId : null;
+        const firstVisibleNoteId = firstVisibleNote ? firstVisibleNote.dataset.noteId : '';
                 
         Logger.logDebug('Creating new note at top of list', {
             firstVisibleNoteId,
