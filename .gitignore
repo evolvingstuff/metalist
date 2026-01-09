@@ -41,3 +41,6 @@ sanitycheck/js/node_modules/
 sanitycheck/js/.npm-cache/
 *.pyc
 *.pyo
+
+# Local tooling (copied from claude-md)
+sanitycheck/
