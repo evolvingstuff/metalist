@@ -365,6 +365,7 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         view_anchor_root_id = op["viewAnchorRootId"]
     return {
         **undo_viewport,
+        "opType": op_type,
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
@@ -428,6 +429,7 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         view_anchor_root_id = op["viewAnchorRootId"]
     return {
         **redo_viewport,
+        "opType": op_type,
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }

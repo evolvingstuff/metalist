@@ -34,9 +34,14 @@ from app.db.notes_sql import insert_note, update_links
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
 from app.db.settings_sql import fetch_settings, insert_default_settings
 from app.models.database import SafeSession
-from app.services.content_cache import cache_note, cache_note_tags, clear_cache
+from app.services.content_cache import (
+    cache_note,
+    cache_note_tags,
+    clear_cache,
+    get_cached_content,
+    populate_cache_from_db,
+)
 from app.services.note_store import store as note_store
-from app.security.encryption import encrypt
 
 
 default_root_count =  10_000  # 1000
@@ -221,7 +226,10 @@ ROOT_KEY = "__root__"
 
 
 def _parent_key(parent_id: str | None) -> str:
-    assert parent_id is not None
+    if parent_id is None:
+        return ROOT_KEY
+    assert isinstance(parent_id, str)
+    assert parent_id
     return parent_id
 
 
@@ -241,12 +249,16 @@ def apply_all_orders(db_session: SafeSession, order_map: Dict[str, List[str]]) -
     for key, ordered_ids in order_map.items():
         if not ordered_ids:
             continue
-        assert key != ROOT_KEY
-        parent_id = key
+        parent_id = None
+        if key != ROOT_KEY:
+            assert isinstance(key, str)
+            assert key
+            parent_id = key
         apply_order(db_session, parent_id, ordered_ids)
 
 
 def apply_order(db_session: SafeSession, parent_id: str | None, ordered_ids: List[str]) -> None:
+    updated_at = datetime.now(timezone.utc)
     for idx, current_id in enumerate(ordered_ids):
         if idx > 0:
             prev_id = ordered_ids[idx - 1]
@@ -259,6 +271,7 @@ def apply_order(db_session: SafeSession, parent_id: str | None, ordered_ids: Lis
         update_links(
             db_session.connection(),
             current_id,
+            updated_at=updated_at,
             parent_id=parent_id,
             prev_id=prev_id,
             next_id=next_id,
@@ -284,8 +297,12 @@ def create_note(
     note_id = str(uuid.uuid4())
     content, image_count = build_note_content(rng, images, image_probability, max_images)
 
-    ciphertext, nonce, tag = encrypt(content)
-    tags_ciphertext, tags_nonce, tags_tag = encrypt("")
+    ciphertext = content
+    nonce = None
+    tag = None
+    tags_ciphertext = ""
+    tags_nonce = None
+    tags_tag = None
     timestamp = datetime.now(timezone.utc)
     is_collapsed = rng.random() < collapse_probability
 
@@ -410,7 +427,8 @@ def main(argv: Sequence[str]) -> int:
 
     stats = seed_notes(args)
 
-    note_store.load_from_db(None)
+    prefetched_rows = populate_cache_from_db(None)
+    note_store.load_from_db(None, prefetched_rows=prefetched_rows)
 
     print(
         "Seed complete:\n"
