@@ -114,6 +114,7 @@ export async function createNote() {
     });
 
     const currentNoteId = ModeContext.currentNoteId;
+    const shouldScrollToTopAfterCreate = !currentNoteId;
 
     if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
         await actionSaveNote(currentNoteId);
@@ -149,9 +150,13 @@ export async function createNote() {
 
     const caretOptions = { initialCaretVisibility: 'visible' };
     if (ModeContext.isEditing) {
-        return await actionSwitchNotes(newNoteId, caretOptions);
+        await actionSwitchNotes(newNoteId, caretOptions);
     } else {
-        return await actionSelectNote(newNoteId, caretOptions);
+        await actionSelectNote(newNoteId, caretOptions);
+    }
+
+    if (shouldScrollToTopAfterCreate) {
+        window.scrollTo(0, 0);
     }
 }
 
