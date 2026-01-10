@@ -107,7 +107,9 @@ function enforceTagBarInputInternal(rawInput, options) {
 
         if (isWhitespace(char)) {
             flushToken({ isFinal: false });
-            output += ' ';
+            if (output.length > 0 && output[output.length - 1] !== ' ') {
+                output += ' ';
+            }
             continue;
         }
 
