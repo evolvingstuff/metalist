@@ -1,7 +1,9 @@
 import { CONFIG } from '../../config.js';
+import { analyzeTagBarInput, enforceTagBarInputForEditing, normalizeTagBarInput } from './tag-syntax-service.js';
 
 const TAG_BAR_CLASS = 'note-tag-bar';
 const TAG_BAR_INPUT_CLASS = 'note-tag-bar-input';
+const TAG_BAR_VALIDATION_MESSAGE_CLASS = 'note-tag-bar-validation-message';
 
 let activeNoteElement = null;
 let activeObserver = null;
@@ -33,6 +35,11 @@ function ensureTagBarElement(noteElement) {
     const tagBar = document.createElement('div');
     tagBar.classList.add(TAG_BAR_CLASS);
 
+    const validationMessage = document.createElement('div');
+    validationMessage.classList.add(TAG_BAR_VALIDATION_MESSAGE_CLASS);
+    validationMessage.hidden = true;
+    tagBar.appendChild(validationMessage);
+
     const input = document.createElement('input');
     input.classList.add(TAG_BAR_INPUT_CLASS);
     input.type = 'text';
@@ -60,6 +67,76 @@ function ensureTagBarElement(noteElement) {
     return { element: tagBar, created: true };
 }
 
+function ensureValidationMessageElement(tagBar) {
+    if (!tagBar) {
+        return null;
+    }
+
+    const existing = tagBar.querySelector(`.${TAG_BAR_VALIDATION_MESSAGE_CLASS}`);
+    if (existing) {
+        return existing;
+    }
+
+    const validationMessage = document.createElement('div');
+    validationMessage.classList.add(TAG_BAR_VALIDATION_MESSAGE_CLASS);
+    validationMessage.hidden = true;
+    tagBar.insertBefore(validationMessage, tagBar.firstChild);
+    return validationMessage;
+}
+
+function setTagBarValidationState(tagBar, analysis) {
+    if (!tagBar) {
+        throw new Error('setTagBarValidationState requires a tag bar element');
+    }
+    if (!analysis || typeof analysis.isValid !== 'boolean') {
+        throw new Error('setTagBarValidationState requires an analysis result');
+    }
+
+    const validationMessage = ensureValidationMessageElement(tagBar);
+    if (analysis.isValid) {
+        if (validationMessage) {
+            validationMessage.hidden = true;
+            validationMessage.textContent = '';
+        }
+        return;
+    }
+
+    if (!validationMessage) {
+        return;
+    }
+
+    if (typeof analysis.errorMessage !== 'string') {
+        throw new Error('Invariant violation: invalid tag bar state missing errorMessage');
+    }
+    validationMessage.textContent = analysis.errorMessage;
+    validationMessage.hidden = false;
+}
+
+export function enforceTagBarInputElement(tagBarInput) {
+    if (!tagBarInput) {
+        throw new Error('enforceTagBarInputElement requires an input element');
+    }
+
+    const rawValue = typeof tagBarInput.value === 'string' ? tagBarInput.value : '';
+    const enforcedValue = enforceTagBarInputForEditing(rawValue);
+    if (enforcedValue === rawValue) {
+        return false;
+    }
+
+    const selectionStart = Number.isInteger(tagBarInput.selectionStart) ? tagBarInput.selectionStart : rawValue.length;
+    const selectionEnd = Number.isInteger(tagBarInput.selectionEnd) ? tagBarInput.selectionEnd : selectionStart;
+
+    const nextSelectionStart = enforceTagBarInputForEditing(rawValue.slice(0, selectionStart)).length;
+    const nextSelectionEnd = enforceTagBarInputForEditing(rawValue.slice(0, selectionEnd)).length;
+
+    tagBarInput.value = enforcedValue;
+    if (typeof tagBarInput.setSelectionRange === 'function') {
+        tagBarInput.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+    }
+
+    return true;
+}
+
 function getTagBarInput(tagBar) {
     if (!tagBar) {
         return null;
@@ -79,11 +156,23 @@ export function normalizeTags(rawTags) {
     if (typeof rawTags !== 'string') {
         throw new Error('normalizeTags expects a string');
     }
-    return rawTags
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .join(' ');
+    return normalizeTagBarInput(rawTags);
+}
+
+export function validateAndRenderTagBar(noteElement) {
+    if (!noteElement) {
+        throw new Error('validateAndRenderTagBar requires a note element');
+    }
+
+    const tagBar = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
+    const input = getTagBarInput(tagBar);
+    if (!tagBar || !input || typeof input.value !== 'string') {
+        return null;
+    }
+
+    const analysis = analyzeTagBarInput(input.value);
+    setTagBarValidationState(tagBar, analysis);
+    return analysis;
 }
 
 export function getTagBarValue(noteElement) {
@@ -93,9 +182,10 @@ export function getTagBarValue(noteElement) {
     const tagBar = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
     const input = getTagBarInput(tagBar);
     if (input && typeof input.value === 'string') {
-        return normalizeTags(input.value);
+        return analyzeTagBarInput(input.value).sanitizedText;
     }
-    return typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
+    const storedTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
+    return analyzeTagBarInput(storedTags).sanitizedText;
 }
 
 export function setTagBarValue(noteElement, tags) {
@@ -105,11 +195,16 @@ export function setTagBarValue(noteElement, tags) {
     if (typeof tags !== 'string') {
         throw new Error('setTagBarValue requires tags string');
     }
-    noteElement.dataset.noteTags = tags;
+    const normalized = normalizeTagBarInput(tags);
+    noteElement.dataset.noteTags = normalized;
     const tagBar = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
     const input = getTagBarInput(tagBar);
     if (input) {
-        input.value = tags;
+        input.value = normalized;
+    }
+
+    if (tagBar) {
+        setTagBarValidationState(tagBar, analyzeTagBarInput(normalized));
     }
 }
 
@@ -173,6 +268,8 @@ export function syncTagBar(editingNoteElement) {
             : '';
         setTagBarValue(editingNoteElement, initialTags);
     }
+
+    validateAndRenderTagBar(editingNoteElement);
 
     // Keep the tag bar in the DOM while focused so typing can trigger the
     // global input handler (used for scroll restoration during editing).

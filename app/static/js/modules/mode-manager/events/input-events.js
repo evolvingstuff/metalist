@@ -4,6 +4,7 @@ import { actionSelectNote } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CommentUtils } from '../../comment-utils.js';
 import { CONFIG } from '../../config.js';
+import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 
 let commentHighlightTimeoutId = null;
 let lastKeyPressed = null;
@@ -100,6 +101,10 @@ function handleInput(event) {
         
     const tagBarInput = event.target.closest('.note-tag-bar-input');
     if (tagBarInput) {
+        if (event.isComposing) {
+            return;
+        }
+
         const noteElement = tagBarInput.closest('.note');
         if (!noteElement) {
             throw new Error('Found .note-tag-bar-input without parent .note element in input handler');
@@ -114,7 +119,9 @@ function handleInput(event) {
             throw new Error(`Tag bar input fired while not editing note ${noteId}`);
         }
 
+        enforceTagBarInputElement(tagBarInput);
         ensureEditingCaretVisible(tagBarInput);
+        validateAndRenderTagBar(noteElement);
         return;
     }
 
