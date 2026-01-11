@@ -23,53 +23,48 @@ export const Auth = {
      * Returns true if authenticated/no password, false if login required
      */
     async checkAuthStatus() {
-        try {
-            const token = localStorage.getItem('auth_token');
-            console.log('[Auth] Checking status with token:', token ? token.substring(0, 10) + '...' : 'none');
-            const activeOwner = localStorage.getItem('auth_owner');
-            const ownerMismatch = Boolean(token && activeOwner && activeOwner !== this._tabId);
-            const missingOwner = Boolean(token && !activeOwner);
+        const token = localStorage.getItem('auth_token');
+        console.log('[Auth] Checking status with token:', token ? token.substring(0, 10) + '...' : 'none');
+        const activeOwner = localStorage.getItem('auth_owner');
+        const ownerMismatch = Boolean(token && activeOwner && activeOwner !== this._tabId);
+        const missingOwner = Boolean(token && !activeOwner);
 
-            const headers = {};
-            headers['X-Metalist-Tab-Id'] = this._tabId;
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-            }
+        const headers = {};
+        headers['X-Metalist-Tab-Id'] = this._tabId;
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
 
-            const response = await fetch(CONFIG.API.AUTH.STATUS, { headers });
-            if (!response.ok) {
-                throw new Error(`Status request failed with ${response.status}`);
-            }
+        const response = await fetch(CONFIG.API.AUTH.STATUS, { headers });
+        if (!response.ok) {
+            throw new Error(`Status request failed with ${response.status}`);
+        }
 
-            const status = await response.json();
-            this.hasPassword = Boolean(status.has_password);
-            console.log('[Auth] Status response:', status);
+        const status = await response.json();
+        this.hasPassword = Boolean(status.has_password);
+        console.log('[Auth] Status response:', status);
 
-            if (this.hasPassword) {
-                if (!status.authenticated || ownerMismatch || missingOwner) {
-                    if (token) {
-                        console.log('[Auth] Clearing token for password-protected mismatch');
-                        this.clearSessionState();
-                    }
-                    this.showLoginModal();
-                    return false;
-                }
-                return true;
-            }
-
-            if (ownerMismatch || missingOwner || !status.authenticated) {
-                if (ownerMismatch || missingOwner) {
-                    console.log('[Auth] Passwordless takeover detected, clearing local token');
+        if (this.hasPassword) {
+            if (!status.authenticated || ownerMismatch || missingOwner) {
+                if (token) {
+                    console.log('[Auth] Clearing token for password-protected mismatch');
                     this.clearSessionState();
                 }
-                await this.claimPasswordlessSession();
+                this.showLoginModal();
+                return false;
             }
-
             return true;
-        } catch (error) {
-            console.error('[Auth] Failed to check status:', error);
-            return false; // Block on error
         }
+
+        if (ownerMismatch || missingOwner || !status.authenticated) {
+            if (ownerMismatch || missingOwner) {
+                console.log('[Auth] Passwordless takeover detected, clearing local token');
+                this.clearSessionState();
+            }
+            await this.claimPasswordlessSession();
+        }
+
+        return true;
     },
 
     async claimPasswordlessSession() {
@@ -157,10 +152,9 @@ export const Auth = {
             return;
         }
         
-        try {
-            // Show waiting cursor
-            document.body.classList.add('loading');
-            
+        document.body.classList.add('loading');
+
+        await (async () => {
             const response = await fetch(CONFIG.API.AUTH.LOGIN, {
                 method: 'POST',
                 headers: {
@@ -169,44 +163,47 @@ export const Auth = {
                 },
                 body: JSON.stringify({ password })
             });
-            
+
             if (response.ok) {
                 const data = await response.json();
-                
-                // Store the token
+
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Login response missing body');
+                }
+                if (typeof data.token !== 'string' || data.token.length === 0) {
+                    throw new Error('Login response missing token');
+                }
+
                 this._setTokenForThisTab(data.token);
                 console.log('[Auth] Token stored in localStorage:', data.token.substring(0, 10) + '...');
-                
-                // Verify it was stored
+
                 const storedToken = localStorage.getItem('auth_token');
                 console.log('[Auth] Token verification - stored correctly:', storedToken === data.token);
-                
+
                 console.log('[Auth] Login successful');
-                
-                // Hide login modal
+
                 this.hideLoginModal();
-                
-                // Initialize ModeManager now that we're authenticated
+
                 console.log('[Auth] Login successful, initializing ModeManager');
                 if (window.ModeManager) {
-                    window.ModeManager.init();
+                    window.ModeManager.init({});
                 } else {
-                    // Fallback: reload if ModeManager not available
                     window.location.reload();
                 }
-                
-            } else {
-                const error = await response.json();
-                this.showLoginError(error.detail || 'Login failed');
-                // Remove waiting cursor on error
-                document.body.classList.remove('loading');
+                return;
             }
-        } catch (error) {
-            console.error('[Auth] Login error:', error);
-            this.showLoginError('Network error. Please try again.');
-            // Remove waiting cursor on error
+
+            const errorBody = await response.json();
+            if (!errorBody || typeof errorBody !== 'object') {
+                throw new Error('Login error response missing body');
+            }
+            if (typeof errorBody.detail !== 'string') {
+                throw new Error('Login error response missing detail');
+            }
+            this.showLoginError(errorBody.detail);
+        })().finally(() => {
             document.body.classList.remove('loading');
-        }
+        });
     },
     
     /**
@@ -216,19 +213,18 @@ export const Auth = {
         const token = localStorage.getItem('auth_token');
         
         if (token) {
-            try {
-                // Call logout endpoint to revoke token
-                await fetch(CONFIG.API.AUTH.LOGOUT, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'X-Metalist-Tab-Id': this._tabId,
-                    }
-                });
-            } catch (error) {
-                console.error('[Auth] Logout API call failed:', error);
-            }
+            await fetch(CONFIG.API.AUTH.LOGOUT, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'X-Metalist-Tab-Id': this._tabId,
+                }
+            }).finally(() => {
+                this.clearSessionState();
+                window.location.reload();
+            });
+            return;
         }
         
         this.clearSessionState();
@@ -241,7 +237,10 @@ export const Auth = {
         localStorage.removeItem('auth_owner');
     },
 
-    forceLogout(message = 'Session ended') {
+    forceLogout(message) {
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('Auth.forceLogout requires message string');
+        }
         if (this._forcingLogout) {
             return;
         }

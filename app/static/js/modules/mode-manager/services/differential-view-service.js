@@ -17,13 +17,29 @@ function applyServerDiffOps(payload) {
         throw new Error('Notes container not found');
     }
 
-    const noteLocks = payload.locks || {};
-    const lockDiffs = payload.lockDiffs || {};
-    const noteUpdates = payload.notes || {};
+    let noteLocks = payload.locks;
+    if (!noteLocks || typeof noteLocks !== 'object') {
+        noteLocks = {};
+    }
+    let lockDiffs = payload.lockDiffs;
+    if (!lockDiffs || typeof lockDiffs !== 'object') {
+        lockDiffs = {};
+    }
+    let noteUpdates = payload.notes;
+    if (!noteUpdates || typeof noteUpdates !== 'object') {
+        noteUpdates = {};
+    }
     const touchedParentIds = new Set();
     const affordanceDirtyElements = new Set();
     const noteElements = new Map();
     let vdomOperations = 0;
+
+    const normalizeParentId = (parentId) => {
+        return typeof parentId === 'string' && parentId.length > 0 ? parentId : null;
+    };
+    const normalizeParentIdForDataset = (parentId) => {
+        return typeof parentId === 'string' ? parentId : '';
+    };
 
     const resolveParentContainer = (parentId) => {
         if (!parentId) {
@@ -65,13 +81,14 @@ function applyServerDiffOps(payload) {
                     ModeContext.removeNoteHash(id);
                 }
             });
-            touchedParentIds.add(op.parentId || null);
+            touchedParentIds.add(normalizeParentId(op.parentId));
             vdomOperations += 1;
             continue;
         }
 
         if (op.type === 'insert') {
-            const parentContainer = resolveParentContainer(op.parentId || null);
+            const parentId = normalizeParentId(op.parentId);
+            const parentContainer = resolveParentContainer(parentId);
             const index = typeof op.toIndex === 'number' ? op.toIndex : parentContainer.children.length;
             const reference = findNoteChildAt(parentContainer, index);
             const noteData = noteUpdates[op.noteId];
@@ -79,7 +96,7 @@ function applyServerDiffOps(payload) {
                 throw new Error(`Insert operation missing payload for ${op.noteId}`);
             }
             const element = createNoteElement(op.noteId);
-            element.dataset.parentId = op.parentId || '';
+            element.dataset.parentId = normalizeParentIdForDataset(op.parentId);
             const contentChanged = applyNoteDataFromPayload(
                 element,
                 op.noteId,
@@ -91,7 +108,7 @@ function applyServerDiffOps(payload) {
             );
             parentContainer.insertBefore(element, reference);
             noteElements.set(op.noteId, element);
-            touchedParentIds.add(op.parentId || null);
+            touchedParentIds.add(parentId);
             vdomOperations += 1;
             if (contentChanged) {
                 vdomOperations += 1;
@@ -105,20 +122,24 @@ function applyServerDiffOps(payload) {
             if (!element) {
                 continue;
             }
-            const parentContainer = resolveParentContainer(op.parentId || null);
+            const parentId = normalizeParentId(op.parentId);
+            const parentContainer = resolveParentContainer(parentId);
             const index = typeof op.toIndex === 'number' ? op.toIndex : parentContainer.children.length;
             const reference = findNoteChildAt(parentContainer, index);
             if (reference !== element) {
                 parentContainer.insertBefore(element, reference);
                 vdomOperations += 1;
             }
-            element.dataset.parentId = op.parentId || '';
-            touchedParentIds.add(op.parentId || null);
+            element.dataset.parentId = normalizeParentIdForDataset(op.parentId);
+            touchedParentIds.add(parentId);
         }
     }
 
     Object.entries(noteUpdates).forEach(([noteId, noteData]) => {
-        const element = getOrCacheElement(noteId) || createNoteElement(noteId);
+        let element = getOrCacheElement(noteId);
+        if (!element) {
+            element = createNoteElement(noteId);
+        }
         if (!element.isConnected) {
             element.dataset.parentId = '';
             notesContainer.appendChild(element);
@@ -210,7 +231,10 @@ function diffSiblingOrder(currentIds, desiredIds) {
     return ops;
 }
 
-function diffNoteForest(currentChildren, desiredChildren, parentId = null, results = []) {
+function diffNoteForest(currentChildren, desiredChildren, parentId, results) {
+    if (!Array.isArray(results)) {
+        throw new Error('diffNoteForest requires results array');
+    }
     const currentIds = currentChildren.map((node) => node.id);
     const desiredIds = desiredChildren.map((node) => node.id);
 
@@ -280,8 +304,10 @@ function getContentElement(noteElement) {
     if (CONTENT_ELEMENT_CACHE.has(noteElement)) {
         return CONTENT_ELEMENT_CACHE.get(noteElement);
     }
-    const contentElement = getDirectChildByClass(noteElement, CONFIG.CLASSES.NOTE_CONTENT)
-        || getDirectChildByClass(noteElement, 'note-content');
+    let contentElement = getDirectChildByClass(noteElement, CONFIG.CLASSES.NOTE_CONTENT);
+    if (!contentElement) {
+        contentElement = getDirectChildByClass(noteElement, 'note-content');
+    }
     if (!contentElement) {
         throw new Error(`Note ${noteElement.dataset.noteId || '<unknown>'} missing content element`);
     }
@@ -309,7 +335,7 @@ function getChildContainer(noteElement) {
     if (childContainer) {
         CHILD_CONTAINER_CACHE.set(noteElement, childContainer);
     }
-    return childContainer || null;
+    return childContainer;
 }
 
 function ensureChildContainer(noteElement) {
@@ -341,7 +367,10 @@ function updateLockIcon(noteElement, lockedByOther) {
     }
 }
 
-export function applyDifferentialView(payload, options = {}) {
+export function applyDifferentialView(payload, options) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('applyDifferentialView requires options object');
+    }
     if (!payload || typeof payload !== 'object') {
         throw new Error('Invalid differential payload');
     }
@@ -354,7 +383,10 @@ export function applyDifferentialView(payload, options = {}) {
         throw new Error('Invalid differential payload');
     }
 
-    const previousHashes = options.previousHashes || {};
+    let previousHashes = options.previousHashes;
+    if (!previousHashes || typeof previousHashes !== 'object') {
+        previousHashes = {};
+    }
 
     const notesContainer = document.getElementById('notes-container');
     if (!notesContainer) {
@@ -363,19 +395,26 @@ export function applyDifferentialView(payload, options = {}) {
 
     const elementCache = new Map();
     const currentForest = buildDomForest(notesContainer, elementCache);
-    const desired = buildDesiredForest(payload.structure, payload.notes || {});
+    let notePayload = payload.notes;
+    if (!notePayload || typeof notePayload !== 'object') {
+        notePayload = {};
+    }
+    const desired = buildDesiredForest(payload.structure, notePayload);
 
-    const diffResults = diffNoteForest(currentForest, desired.roots);
+    const diffResults = diffNoteForest(currentForest, desired.roots, null, []);
     let vdomOperations = 0;
     const insertedIds = new Set();
     const touchedParentIds = new Set();
     const affordanceDirtyElements = new Set();
 
-    const noteLocks = payload.locks || {};
+    let noteLocks = payload.locks;
+    if (!noteLocks || typeof noteLocks !== 'object') {
+        noteLocks = {};
+    }
 
     const parentContainerCache = new Map();
     const ensureParentContainer = (parentId) => {
-        const key = parentId || '__root__';
+        const key = parentId ? parentId : '__root__';
         if (parentContainerCache.has(key)) {
             return parentContainerCache.get(key);
         }
@@ -383,7 +422,10 @@ export function applyDifferentialView(payload, options = {}) {
             parentContainerCache.set(key, notesContainer);
             return notesContainer;
         }
-        const parentElement = elementCache.get(parentId) || document.querySelector(`[data-note-id="${parentId}"]`);
+        let parentElement = elementCache.get(parentId);
+        if (!parentElement) {
+            parentElement = document.querySelector(`[data-note-id="${parentId}"]`);
+        }
         if (!parentElement) {
             throw new Error(`Parent note ${parentId} missing from DOM`);
         }
@@ -453,29 +495,48 @@ export function applyDifferentialView(payload, options = {}) {
 
     for (const entry of payload.structure) {
         const noteId = entry.id;
-        const parentId = entry.parentId || '';
-        const noteElement = elementCache.get(noteId) || document.querySelector(`[data-note-id="${noteId}"]`);
+        let parentId = entry.parentId;
+        if (typeof parentId !== 'string') {
+            parentId = '';
+        }
+
+        let noteElement = elementCache.get(noteId);
+        if (!noteElement) {
+            noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        }
         if (!noteElement) {
             throw new Error(`Note ${noteId} missing from DOM after diff`);
         }
 
         elementCache.set(noteId, noteElement);
 
-        const noteData = payload.notes?.[noteId] || null;
+        const noteData = Object.prototype.hasOwnProperty.call(notePayload, noteId)
+            ? notePayload[noteId]
+            : null;
         const incomingHash = typeof entry.hash === 'string' ? entry.hash : null;
-        const existingSnapshotHash = noteElement.dataset.snapshotHash || null;
+        const existingSnapshotHash = typeof noteElement.dataset.snapshotHash === 'string'
+            ? noteElement.dataset.snapshotHash
+            : null;
 
         const lockOwner = noteLocks[noteId];
-        const previousLockOwner = noteElement.dataset.lockOwner || '';
+        const previousLockOwner = typeof noteElement.dataset.lockOwner === 'string'
+            ? noteElement.dataset.lockOwner
+            : '';
         const nextLockOwner = typeof lockOwner === 'string' ? lockOwner : '';
         const lockChanged = previousLockOwner !== nextLockOwner;
 
         const lockedByOther = Boolean(nextLockOwner) && nextLockOwner !== payload.currentClientId;
 
-        const hashChanged = insertedIds.has(noteId)
-            || incomingHash === null
-            || existingSnapshotHash === null
-            || existingSnapshotHash !== incomingHash;
+        let hashChanged = false;
+        if (insertedIds.has(noteId)) {
+            hashChanged = true;
+        } else if (incomingHash === null) {
+            hashChanged = true;
+        } else if (existingSnapshotHash === null) {
+            hashChanged = true;
+        } else if (existingSnapshotHash !== incomingHash) {
+            hashChanged = true;
+        }
 
         if (!hashChanged && !lockChanged) {
             continue;
@@ -509,7 +570,10 @@ export function applyDifferentialView(payload, options = {}) {
             memoryMode: noteElement.classList.contains('memory-mode'),
             memorySelected: noteElement.classList.contains('memory-selected'),
         };
-        const flags = noteData?.flags || existingFlags;
+        let flags = existingFlags;
+        if (noteData && noteData.flags && typeof noteData.flags === 'object') {
+            flags = noteData.flags;
+        }
         const isEditing = Boolean(flags.isEditing);
         const editingByCurrentClient = isEditing && nextLockOwner === payload.currentClientId;
 
@@ -573,7 +637,10 @@ export function applyDifferentialView(payload, options = {}) {
     }
 
     for (const parentId of touchedParentIds) {
-        const parentElement = elementCache.get(parentId) || document.querySelector(`[data-note-id="${parentId}"]`);
+        let parentElement = elementCache.get(parentId);
+        if (!parentElement) {
+            parentElement = document.querySelector(`[data-note-id="${parentId}"]`);
+        }
         if (parentElement) {
             affordanceDirtyElements.add(parentElement);
         }
@@ -624,13 +691,14 @@ function buildDesiredForest(structure, notes) {
         if (!entry || typeof entry !== 'object') {
             throw new Error('Malformed structure entry');
         }
-        const { id, parentId = null } = entry;
+        const id = entry.id;
+        const parentId = Object.prototype.hasOwnProperty.call(entry, 'parentId') ? entry.parentId : null;
         if (typeof id !== 'string') {
             throw new Error('Structure entry missing id');
         }
         const node = getOrCreate(id);
         node.entry = entry;
-        node.data = notes[id] || null;
+        node.data = Object.prototype.hasOwnProperty.call(notes, id) ? notes[id] : null;
 
         if (parentId) {
             const parentNode = getOrCreate(parentId);
@@ -676,7 +744,10 @@ function createNoteSubtree(node, nodeById, elementCache, insertedIds, affordance
     if (node.children.length > 0) {
         const container = ensureChildContainer(noteElement);
         for (const child of node.children) {
-            const resolvedChild = nodeById.get(child.id) || child;
+            let resolvedChild = nodeById.get(child.id);
+            if (!resolvedChild) {
+                resolvedChild = child;
+            }
             const childElement = createNoteSubtree(resolvedChild, nodeById, elementCache, insertedIds, affordanceDirtyElements);
             container.appendChild(childElement);
         }
@@ -706,7 +777,10 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
         throw new Error(`Note ${noteId} payload tags must be a string`);
     }
     noteElement.dataset.noteTags = noteData.tags;
-    const flags = noteData.flags || {};
+    let flags = noteData.flags;
+    if (!flags || typeof flags !== 'object') {
+        flags = {};
+    }
     const lockOwner = typeof noteLocks[noteId] === 'string' ? noteLocks[noteId] : '';
     const lockedByOther = Boolean(lockOwner) && lockOwner !== currentClientId;
     const isEditing = Boolean(flags.isEditing);
@@ -760,7 +834,7 @@ function applyLockDiffs(lockDiffs, currentClientId, affordanceSet) {
         if (!noteElement) {
             continue;
         }
-        const lockOwner = owner || '';
+        const lockOwner = typeof owner === 'string' ? owner : '';
         const lockedByOther = Boolean(lockOwner) && lockOwner !== currentClientId;
         noteElement.dataset.lockOwner = lockOwner;
         noteElement.classList.toggle('locked', lockedByOther);

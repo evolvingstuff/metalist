@@ -367,11 +367,11 @@ function handleClick(event) {
                 // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully 
                 // to cursor position in source text
 
-                if (ModeContext.currentNoteId) {
-                    actionSwitchNotes(noteId);
-                } else {
-                    actionSelectNote(noteId);
-                }
+			if (ModeContext.currentNoteId) {
+				actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+			} else {
+				actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+			}
                                 
                 Logger.logDebug('Click in note content - selecting note', { 
                     noteId,

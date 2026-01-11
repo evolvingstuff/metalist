@@ -41,16 +41,33 @@ export function installGlobalErrorOverlay() {
   installed = true;
 
   window.addEventListener('error', (event) => {
-    const msg = event?.error?.message || event?.message || 'Uncaught error';
-    const stack = event?.error?.stack || '';
+    let msg = null;
+    if (event && event.error && typeof event.error.message === 'string') {
+      msg = event.error.message;
+    } else if (event && typeof event.message === 'string') {
+      msg = event.message;
+    } else {
+      msg = 'Uncaught error';
+    }
+
+    let stack = '';
+    if (event && event.error && typeof event.error.stack === 'string') {
+      stack = event.error.stack;
+    }
     showFatalError(msg, stack);
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event?.reason;
-    const msg = (reason && (reason.message || String(reason))) || 'Unhandled promise rejection';
+    let msg = null;
+    if (reason && typeof reason.message === 'string') {
+      msg = reason.message;
+    } else if (reason) {
+      msg = String(reason);
+    } else {
+      msg = 'Unhandled promise rejection';
+    }
     const stack = reason && reason.stack ? reason.stack : '';
     showFatalError(msg, stack);
   });
 }
-

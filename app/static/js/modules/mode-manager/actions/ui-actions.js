@@ -88,7 +88,10 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
     `;
 }
 
-export async function actionRefreshAndMaybeSelect(options = {}) {
+export async function actionRefreshAndMaybeSelect(options) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('actionRefreshAndMaybeSelect requires options object');
+    }
     Logger.logAction('refresh_and_maybe_select', { 
         noteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing
@@ -111,7 +114,13 @@ export async function actionRefreshAndMaybeSelect(options = {}) {
     const forcedAnchorId = typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0
         ? options.visibleRootAnchorId
         : null;
-    const anchorId = forcedAnchorId || ModeContext.getRootAnchorId() || ModeContext.getLastKnownRootId();
+    let anchorId = forcedAnchorId;
+    if (!anchorId) {
+        anchorId = ModeContext.getRootAnchorId();
+    }
+    if (!anchorId) {
+        anchorId = ModeContext.getLastKnownRootId();
+    }
     const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, anchorId);
     if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
         throw new Error('notes.view response missing snapshot payload');

@@ -106,11 +106,14 @@ export class MemoryModal extends BaseModal {
         }
     }
 
-    async fetchNextNote(feedback = null) {
-        const state = this.getModalState();
-        const body = {
-            searchQuery: state.searchQuery
-        };
+	async fetchNextNote(feedback) {
+		if (typeof feedback === 'undefined') {
+			feedback = null;
+		}
+		const state = this.getModalState();
+		const body = {
+			searchQuery: state.searchQuery
+		};
 
         if (state.previousNoteId) {
             body.previousNoteId = state.previousNoteId;
@@ -120,64 +123,84 @@ export class MemoryModal extends BaseModal {
             body.feedback = feedback;
         }
 
-        if (this._abortController) {
-            this._abortController.abort();
-        }
-        this._abortController = new AbortController();
+		if (this._abortController) {
+			this._abortController.abort();
+		}
+		const controller = new AbortController();
+		this._abortController = controller;
 
         this.updateModalState({ isLoading: true, error: null });
         this.renderLoading();
         this.setButtonsDisabled(true);
 
-        try {
-            const tabId = sessionStorage.getItem('metalist_tab_id');
-            if (!tabId) {
-                throw new Error('metalist_tab_id missing from sessionStorage');
-            }
-            const authToken = localStorage.getItem('auth_token');
-            const headers = {
-                'Content-Type': 'application/json',
-                'X-Metalist-Tab-Id': tabId,
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
-            };
+		await (async () => {
+			const tabId = sessionStorage.getItem('metalist_tab_id');
+			if (!tabId) {
+				throw new Error('metalist_tab_id missing from sessionStorage');
+			}
+			const authToken = localStorage.getItem('auth_token');
+			const headers = {
+				'Content-Type': 'application/json',
+				'X-Metalist-Tab-Id': tabId,
+				...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+			};
 
-            const response = await fetch(MEMORY_ENDPOINT, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-                signal: this._abortController.signal
-            });
+			const response = await fetch(MEMORY_ENDPOINT, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify(body),
+				signal: controller.signal
+			}).catch((error) => {
+				if (error && error.name === 'AbortError') {
+					return null;
+				}
+				throw error;
+			});
 
-            if (!response.ok) {
-                if (response.status === 404) {
-                    throw new Error('No notes available for the current view. Refine your search or add notes.');
-                }
-                const errorPayload = await response.json().catch(() => ({}));
-                const detail = errorPayload?.detail || response.statusText;
-                throw new Error(`Memory request failed: ${detail}`);
-            }
+			if (response === null) {
+				return;
+			}
 
-            const payload = await response.json();
-            this.updateModalState({
-                isLoading: false,
-                currentPayload: payload,
-                previousNoteId: payload.noteId,
-                error: null
-            });
-            this.renderPayload(payload);
-            this.setButtonsDisabled(false);
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                return;
-            }
-            console.error('Memory modal fetch failed', error);
-            this.updateModalState({ isLoading: false, error: error.message });
-            this.renderError(error.message);
-            this.setButtonsDisabled(false);
-        } finally {
-            this._abortController = null;
-        }
-    }
+			if (!response.ok) {
+				if (response.status === 404) {
+					throw new Error('No notes available for the current view. Refine your search or add notes.');
+				}
+				const errorPayload = await response.json().catch(() => null);
+				let detail = null;
+				if (errorPayload && typeof errorPayload.detail === 'string') {
+					detail = errorPayload.detail;
+				} else {
+					detail = response.statusText;
+				}
+				throw new Error(`Memory request failed: ${detail}`);
+			}
+
+			const payload = await response.json();
+			if (this._abortController !== controller) {
+				return;
+			}
+			this.updateModalState({
+				isLoading: false,
+				currentPayload: payload,
+				previousNoteId: payload.noteId,
+				error: null
+			});
+			this.renderPayload(payload);
+			this.setButtonsDisabled(false);
+		})().catch((error) => {
+			if (this._abortController !== controller) {
+				return;
+			}
+			console.error('Memory modal fetch failed', error);
+			this.updateModalState({ isLoading: false, error: error.message });
+			this.renderError(error.message);
+			this.setButtonsDisabled(false);
+		}).finally(() => {
+			if (this._abortController === controller) {
+				this._abortController = null;
+			}
+		});
+	}
 
     handleFeedback(outcome) {
         if (typeof outcome !== 'number' || !Number.isInteger(outcome)) {

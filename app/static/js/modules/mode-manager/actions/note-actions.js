@@ -79,29 +79,28 @@ export async function deleteNoteOutsideEdit(noteId) {
         throw new Error(`Programming error: deleteNoteOutsideEdit called while editing note ${ModeContext.currentNoteId}`);
     }
 
-    const shouldManageLoading = !ModeContext.isLoading;
-    if (shouldManageLoading) {
-        ModeContext.setLoading(true);
-    }
+	const shouldManageLoading = !ModeContext.isLoading;
+	if (shouldManageLoading) {
+		ModeContext.setLoading(true);
+	}
 
-    try {
-        await NotesAPI.deleteNote(noteId);
+	await (async () => {
+		await NotesAPI.deleteNote(noteId);
 
-        if (ModeContext.currentNoteId === noteId) {
-            ModeContext.setCurrentNoteId(null);
-        }
+		if (ModeContext.currentNoteId === noteId) {
+			ModeContext.setCurrentNoteId(null);
+		}
 
-        if (ModeContext.currentContent !== null) {
-            ModeContext.setCurrentContent(null);
-        }
+		if (ModeContext.currentContent !== null) {
+			ModeContext.setCurrentContent(null);
+		}
 
-
-        await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
-    } finally {
-        if (shouldManageLoading && ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-        }
-    }
+		await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
+	})().finally(() => {
+		if (shouldManageLoading && ModeContext.isLoading) {
+			ModeContext.setLoading(false);
+		}
+	});
 }
 
 export async function createNote() {
@@ -219,13 +218,11 @@ export async function moveNoteUp(noteId) {
         await actionSaveNote(noteId);
     }
 
-    ModeContext.setLoading(true);
-    
-    try {
-        await NotesAPI.moveNoteUp(noteId);
-    } finally {
-        ModeContext.setLoading(false);
-    }
+	ModeContext.setLoading(true);
+
+	await NotesAPI.moveNoteUp(noteId).finally(() => {
+		ModeContext.setLoading(false);
+	});
 
     if (ModeContext.isEditing) {
         ModeContext.markCaretHidden();
@@ -256,13 +253,11 @@ export async function moveNoteDown(noteId) {
         await actionSaveNote(noteId);
     }
 
-    ModeContext.setLoading(true);
-    
-    try {
-        await NotesAPI.moveNoteDown(noteId);
-    } finally {
-        ModeContext.setLoading(false);
-    }
+	ModeContext.setLoading(true);
+
+	await NotesAPI.moveNoteDown(noteId).finally(() => {
+		ModeContext.setLoading(false);
+	});
 
     if (ModeContext.isEditing) {
         ModeContext.markCaretHidden();

@@ -58,14 +58,20 @@ function captureServerSignature(state) {
 }
 
 async function fetchTabState() {
-    return await callTabStateApi('GET');
+    return await callTabStateApi('GET', null);
 }
 
-async function callTabStateApi(method, body = null) {
+async function callTabStateApi(method, body) {
+    if (typeof body === 'undefined') {
+        throw new Error('callTabStateApi requires body (use null)');
+    }
     return await callTabStateApiAt(TAB_STATE_ENDPOINT, method, body);
 }
 
-async function callTabStateApiAt(endpoint, method, body = null) {
+async function callTabStateApiAt(endpoint, method, body) {
+    if (typeof body === 'undefined') {
+        throw new Error('callTabStateApiAt requires body (use null)');
+    }
     if (typeof endpoint !== 'string' || endpoint.length === 0) {
         throw new Error('tab-state endpoint must be a non-empty string');
     }
@@ -135,7 +141,8 @@ function handleScrollEvent() {
         const current = getCurrentScrollY();
         if (current !== lastScrollY) {
             lastScrollY = current;
-            ModeContext.updateTabScroll(pendingTabId || ModeContext.activeTabId, current, true);
+            const effectiveTabId = pendingTabId ? pendingTabId : ModeContext.activeTabId;
+            ModeContext.updateTabScroll(effectiveTabId, current, true);
         }
         pendingTabId = null;
     });

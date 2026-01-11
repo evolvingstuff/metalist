@@ -28,7 +28,12 @@ const COMMAND_HANDLERS = {
     underline: () => toggleUnderline(),
     'inline-code': () => toggleInlineCode(),
     blockquote: () => toggleBlockQuote(),
-    heading: (value) => toggleHeading(value || 'h1'),
+    heading: (value) => {
+        if (typeof value !== 'string' || value.length === 0) {
+            throw new Error('heading command requires a value');
+        }
+        toggleHeading(value);
+    },
     'bullet-list': () => toggleBulletList(),
     'ordered-list': () => toggleOrderedList(),
 };
@@ -51,7 +56,10 @@ function isInlineCodeActive() {
     }
     const savedRange = getSavedRangeClone();
     const selection = document.getSelection();
-    const range = savedRange || (selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null);
+    let range = savedRange;
+    if (!range) {
+        range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    }
     if (!range) {
         return false;
     }
@@ -64,12 +72,7 @@ function isInlineCodeActive() {
 }
 
 function queryCommandStateSafe(command) {
-    try {
-        return document.queryCommandState(command);
-    } catch (error) {
-        console.warn(`queryCommandState failed for ${command}`, error);
-        return false;
-    }
+    return document.queryCommandState(command);
 }
 
 function updateButtonStates() {
@@ -126,7 +129,7 @@ function handleToolbarClick(event) {
     event.preventDefault();
     event.stopPropagation();
     const command = button.dataset.command;
-    const value = button.dataset.value || null;
+    const value = typeof button.dataset.value === 'string' ? button.dataset.value : null;
     const handler = COMMAND_HANDLERS[command];
     if (!handler) {
         console.warn('Unknown toolbar command', command);

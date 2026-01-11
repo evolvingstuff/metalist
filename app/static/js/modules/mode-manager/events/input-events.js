@@ -48,15 +48,18 @@ function getCaretRectWithin(element) {
 
 function ensureEditingCaretVisible(noteContentElement) {
     const caretRect = getCaretRectWithin(noteContentElement);
-    const targetRect = caretRect || noteContentElement.getBoundingClientRect();
+
+    let targetRect = caretRect;
+    if (!targetRect) {
+        targetRect = noteContentElement.getBoundingClientRect();
+    }
 
     if (!targetRect || typeof targetRect.top !== 'number' || typeof targetRect.bottom !== 'number') {
         throw new Error('ensureEditingCaretVisible requires a measurable target rect');
     }
 
     const margin = 40;
-    const isOffscreen = targetRect.bottom < margin || targetRect.top > window.innerHeight - margin;
-    if (!isOffscreen) {
+    if (targetRect.bottom >= margin && targetRect.top <= window.innerHeight - margin) {
         return;
     }
 
@@ -138,10 +141,10 @@ function handleInput(event) {
             throw new Error('Note element missing data-note-id attribute in input handler');
         }
 
-        if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
-            actionSelectNote(noteId);
-            return; 
-        }
+		if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+			actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+			return; 
+		}
 
         ModeContext.markEditSessionHasEdits();
 
@@ -206,11 +209,19 @@ function scheduleCommentHighlighting(noteContentElement) {
     }, CONFIG.COMMENT_HIGHLIGHTING.DEBOUNCE_MS);
 }
 
+const NAVIGATION_KEYS = new Set([
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Home',
+    'End',
+    'PageUp',
+    'PageDown',
+]);
+
 function isNavigationKey(key) {
-    return key === 'ArrowUp' || key === 'ArrowDown' || 
-           key === 'ArrowLeft' || key === 'ArrowRight' ||
-           key === 'Home' || key === 'End' || 
-           key === 'PageUp' || key === 'PageDown';
+    return NAVIGATION_KEYS.has(key);
 }
 
 // Export function to trigger immediate highlighting on render

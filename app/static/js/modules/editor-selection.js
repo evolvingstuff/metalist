@@ -47,10 +47,13 @@ export function initSelectionTracking() {
 }
 
 export function setActiveEditable(noteId, element) {
+    if (typeof element === 'undefined') {
+        throw new Error('setActiveEditable requires element (use null to clear)');
+    }
     if (element && !(element instanceof HTMLElement)) {
         throw new Error('Active editable element must be an HTMLElement');
     }
-    activeEditableElement = element || null;
+    activeEditableElement = element;
     activeNoteId = element ? noteId : null;
     savedRange = null;
 }

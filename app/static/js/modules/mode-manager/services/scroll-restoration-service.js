@@ -64,18 +64,19 @@ function getOrderedRootNoteIds() {
     if (!container) {
         throw new Error('notes-container not found');
     }
-    const noteElements = Array.from(container.querySelectorAll('.note[data-note-id]'));
-    const rootIds = [];
-    for (const element of noteElements) {
-        const rawParent = element?.getAttribute('data-parent-id');
-        const normalized = (typeof rawParent === 'string' ? rawParent : '').trim().toLowerCase();
-        const isRoot = normalized === '' || normalized === 'null' || normalized === 'undefined' || normalized === 'none';
-        if (!isRoot) continue;
-        const noteId = (element?.dataset?.noteId || '').toString();
-        if (!noteId) continue;
-        rootIds.push(noteId);
-    }
-    return rootIds;
+	const noteElements = Array.from(container.querySelectorAll('.note[data-note-id]'));
+	const rootIds = [];
+	const rootParentSentinels = new Set(['', 'null', 'undefined', 'none']);
+	for (const element of noteElements) {
+		const rawParent = element?.getAttribute('data-parent-id');
+		const normalized = (typeof rawParent === 'string' ? rawParent : '').trim().toLowerCase();
+		const isRoot = rootParentSentinels.has(normalized);
+		if (!isRoot) continue;
+		const noteId = (element?.dataset?.noteId || '').toString();
+		if (!noteId) continue;
+		rootIds.push(noteId);
+	}
+	return rootIds;
 }
 
 function pickFirstExistingId(noteIds) {
@@ -97,9 +98,12 @@ function computeScrollYForElement(contentElement, anchorBias, intraOffset) {
     return Math.round(clampNumber(target, 0, getScrollMaxY()));
 }
 
-export function restoreScrollFromAnchor(savedAnchor, options = {}) {
-    const scrollYFallback = typeof options.scrollYFallback === 'number' ? options.scrollYFallback : 0;
-    const orderedRootIds = getOrderedRootNoteIds();
+export function restoreScrollFromAnchor(savedAnchor, options) {
+	if (options === null || typeof options !== 'object') {
+		throw new Error('restoreScrollFromAnchor requires options object');
+	}
+	const scrollYFallback = typeof options.scrollYFallback === 'number' ? options.scrollYFallback : 0;
+	const orderedRootIds = getOrderedRootNoteIds();
 
     if (!savedAnchor || orderedRootIds.length === 0) {
         const fallback = Math.round(clampNumber(scrollYFallback, 0, getScrollMaxY()));
@@ -107,8 +111,11 @@ export function restoreScrollFromAnchor(savedAnchor, options = {}) {
         return { restored: false, reason: 'no_anchor_or_empty' };
     }
 
-    const anchorBias = savedAnchor.anchorBias || 'center';
-    const intraOffset = typeof savedAnchor.intraOffset === 'number' ? savedAnchor.intraOffset : 0;
+	let anchorBias = savedAnchor.anchorBias;
+	if (typeof anchorBias === 'undefined') {
+		anchorBias = 'center';
+	}
+	const intraOffset = typeof savedAnchor.intraOffset === 'number' ? savedAnchor.intraOffset : 0;
 
     let targetId = null;
     if (typeof savedAnchor.anchorId === 'string' && savedAnchor.anchorId.length > 0) {
@@ -128,11 +135,12 @@ export function restoreScrollFromAnchor(savedAnchor, options = {}) {
         const domIndex = savedAnchor.anchorSortKey && typeof savedAnchor.anchorSortKey.domIndex === 'number'
             ? savedAnchor.anchorSortKey.domIndex
             : null;
-        if (typeof domIndex === 'number' && domIndex >= 0 && orderedRootIds.length > 0) {
-            const idx = Math.round(clampNumber(domIndex, 0, orderedRootIds.length - 1));
-            targetId = orderedRootIds[idx] || null;
-        }
-    }
+		if (typeof domIndex === 'number' && domIndex >= 0 && orderedRootIds.length > 0) {
+			const idx = Math.round(clampNumber(domIndex, 0, orderedRootIds.length - 1));
+			const candidate = orderedRootIds[idx];
+			targetId = typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
+		}
+	}
 
     if (!targetId) {
         window.scrollTo(0, 0);
@@ -151,10 +159,13 @@ export function restoreScrollFromAnchor(savedAnchor, options = {}) {
     return { restored: true, reason: 'anchor' };
 }
 
-export function scrollNoteIntoView(noteId, options = {}) {
-    if (typeof noteId !== 'string' || noteId.length === 0) {
-        throw new Error('scrollNoteIntoView requires a non-empty noteId');
-    }
+export function scrollNoteIntoView(noteId, options) {
+	if (options === null || typeof options !== 'object') {
+		throw new Error('scrollNoteIntoView requires options object');
+	}
+	if (typeof noteId !== 'string' || noteId.length === 0) {
+		throw new Error('scrollNoteIntoView requires a non-empty noteId');
+	}
 
     const noteElement = getNoteElementById(noteId);
     if (!noteElement) {

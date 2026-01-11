@@ -10,10 +10,13 @@ export const ErrorHandler = {
     /**
      * Handle different types of API errors with appropriate UX
      */
-    handleApiError(error, response = null) {
+    handleApiError(error, response) {
+        if (typeof response === 'undefined') {
+            throw new Error('ErrorHandler.handleApiError requires response (use null)');
+        }
         console.error('[ErrorHandler] Handling error:', error, response);
         
-        if (response) {
+        if (response !== null) {
             // HTTP response error
             if (response.status === 401) {
                 this.handleAuthError('Your session has expired. Please log in again.');
@@ -24,26 +27,40 @@ export const ErrorHandler = {
             } else {
                 this.handleNetworkError(`Unexpected error (${response.status}). Please try again.`);
             }
-        } else {
-            // Network/connection error (fetch throws)
-            if (error.name === 'TypeError' && (
-                error.message.includes('fetch') || 
-                error.message.includes('Network request failed') ||
-                error.message.includes('Failed to fetch')
-            )) {
+            return;
+        }
+
+        if (!error || typeof error !== 'object') {
+            throw new Error('ErrorHandler.handleApiError requires error object when response is null');
+        }
+        if (typeof error.name !== 'string') {
+            throw new Error('ErrorHandler.handleApiError requires error.name string');
+        }
+        if (typeof error.message !== 'string') {
+            throw new Error('ErrorHandler.handleApiError requires error.message string');
+        }
+
+        // Network/connection error (fetch throws)
+        if (error.name === 'TypeError' && (
+            error.message.includes('fetch') ||
+            error.message.includes('Network request failed') ||
+            error.message.includes('Failed to fetch')
+        )) {
                 this.handleNetworkError('Cannot reach server. Please check your internet connection.');
-            } else if (error.name === 'AbortError') {
+        } else if (error.name === 'AbortError') {
                 this.handleNetworkError('Request timed out. Please try again.');
-            } else {
-                this.handleNetworkError(`Network error: ${error.message || 'Unknown error'}. Please try again.`);
-            }
+        } else {
+            this.handleNetworkError(`Network error: ${error.message}. Please try again.`);
         }
     },
     
     /**
      * Handle authentication errors (401) - show login screen
      */
-    handleAuthError(message = 'Authentication required. Please log in again.') {
+    handleAuthError(message) {
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('ErrorHandler.handleAuthError requires message string');
+        }
         console.log('[ErrorHandler] Auth error:', message);
         Auth.forceLogout(message);
     },
@@ -51,7 +68,10 @@ export const ErrorHandler = {
     /**
      * Handle network errors - show error banner but keep interface visible
      */
-    handleNetworkError(message = 'Network error. Please try again.') {
+    handleNetworkError(message) {
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('ErrorHandler.handleNetworkError requires message string');
+        }
         console.log('[ErrorHandler] Network error:', message);
         
         // Check if we're already showing a connection error banner
@@ -61,7 +81,7 @@ export const ErrorHandler = {
                 ModeContext.setConnected(false);
             }
             ModeContext.setConnectionErrorBannerVisible(true);
-            this.showPersistentErrorBanner(message);
+            this.showPersistentErrorBanner(message, 'error');
             this.disableEditingUI();
         }
         // If banner is already visible, don't create a new one
@@ -146,14 +166,29 @@ export const ErrorHandler = {
     /**
      * Show persistent error banner (no auto-hide, no close button)
      */
-    showPersistentErrorBanner(message, type = 'error') {
+    showPersistentErrorBanner(message, type) {
+        if (typeof type !== 'string' || type.length === 0) {
+            throw new Error('ErrorHandler.showPersistentErrorBanner requires type string');
+        }
         this.showErrorBanner(message, type, 0, false); // duration = 0 means no auto-hide, showClose = false
     },
     
     /**
      * Show error banner at top of screen
      */
-    showErrorBanner(message, type = 'error', duration = 8000, showClose = true) {
+    showErrorBanner(message, type, duration, showClose) {
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('ErrorHandler.showErrorBanner requires message string');
+        }
+        if (typeof type !== 'string' || type.length === 0) {
+            throw new Error('ErrorHandler.showErrorBanner requires type string');
+        }
+        if (typeof duration !== 'number') {
+            throw new Error('ErrorHandler.showErrorBanner requires duration number');
+        }
+        if (typeof showClose !== 'boolean') {
+            throw new Error('ErrorHandler.showErrorBanner requires showClose boolean');
+        }
         // Remove any existing banner
         this.hideErrorBanner();
         
@@ -203,14 +238,20 @@ export const ErrorHandler = {
     /**
      * Show success message banner
      */
-    showSuccessBanner(message, duration = 4000) {
+    showSuccessBanner(message, duration) {
+        if (typeof duration !== 'number') {
+            throw new Error('ErrorHandler.showSuccessBanner requires duration number');
+        }
         this.showErrorBanner(message, 'success', duration);
     },
     
     /**
      * Show info message banner  
      */
-    showInfoBanner(message, duration = 6000) {
+    showInfoBanner(message, duration) {
+        if (typeof duration !== 'number') {
+            throw new Error('ErrorHandler.showInfoBanner requires duration number');
+        }
         this.showErrorBanner(message, 'info', duration);
     }
 };

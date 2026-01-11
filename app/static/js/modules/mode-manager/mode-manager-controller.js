@@ -18,10 +18,13 @@ import { installGlobalErrorOverlay } from '../error-overlay.js';
 const DEFAULT_CONFIG = {};
 
 const ModeManager = {
-        
-    async init(config = {}) {
-                
-        console.log('+++ ModeManager: init() called');
+	    
+	    async init(config) {
+	        if (config === null || typeof config !== 'object') {
+	            throw new Error('ModeManager.init requires config object');
+	        }
+	                
+	        console.log('+++ ModeManager: init() called');
                 
         // Global error overlay
         installGlobalErrorOverlay();

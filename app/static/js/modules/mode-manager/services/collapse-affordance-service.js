@@ -35,7 +35,10 @@ function contentHasAdditionalLines(contentElement) {
     return effectiveContentHeight - lineHeight > DELTA_TOLERANCE;
 }
 
-export function updateCollapseAffordances(root = document) {
+export function updateCollapseAffordances(root) {
+    if (!root) {
+        throw new Error('updateCollapseAffordances requires root node');
+    }
     const noteElements = root.querySelectorAll(NOTE_SELECTOR);
     noteElements.forEach((note) => {
         updateCollapseAffordanceForNote(note);
@@ -65,7 +68,15 @@ export function updateCollapseAffordanceForNote(noteElement) {
     }
 
     const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
-    const canCollapse = isCollapsed || hasChildren(noteElement) || contentHasAdditionalLines(contentElement);
+
+    let canCollapse = false;
+    if (isCollapsed) {
+        canCollapse = true;
+    } else if (hasChildren(noteElement)) {
+        canCollapse = true;
+    } else if (contentHasAdditionalLines(contentElement)) {
+        canCollapse = true;
+    }
     noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
 
     // Ensure the DOM class matches the dataset for consistent styling.

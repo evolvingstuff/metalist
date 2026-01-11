@@ -167,11 +167,17 @@ class ModeContext {
         return this;
     }
 
-    resetTabDiffCache(tabId, options = {}) {
-        if (typeof tabId !== 'string' || tabId.length === 0) {
-            throw new Error('tabId must be a non-empty string');
-        }
-        const preserveRootAnchor = Boolean(options.preserveRootAnchor);
+	resetTabDiffCache(tabId, options) {
+		if (typeof tabId !== 'string' || tabId.length === 0) {
+			throw new Error('tabId must be a non-empty string');
+		}
+		if (typeof options === 'undefined') {
+			options = {};
+		}
+		if (options === null || typeof options !== 'object') {
+			throw new Error('options must be an object');
+		}
+		const preserveRootAnchor = Boolean(options.preserveRootAnchor);
 
         this._ensureTabContainers(tabId);
         this._tabNoteHashes[tabId].clear();
@@ -264,16 +270,18 @@ class ModeContext {
         return { cloned: true, count: target.size };
     }
 
-    clearAllTabViewCaches() {
-        const tabIds = new Set([
-            ...Object.keys(this._tabs || {}),
-            ...Object.keys(this._tabNoteHashes || {}),
-        ]);
-        for (const tabId of tabIds) {
-            this.clearTabViewCache(tabId);
-        }
-        return this;
-    }
+	clearAllTabViewCaches() {
+		const tabs = this._tabs;
+		const noteHashesByTab = this._tabNoteHashes;
+		const tabIds = new Set([
+			...Object.keys(tabs ? tabs : {}),
+			...Object.keys(noteHashesByTab ? noteHashesByTab : {}),
+		]);
+		for (const tabId of tabIds) {
+			this.clearTabViewCache(tabId);
+		}
+		return this;
+	}
 
     getNoteHashPayload() {
         const payload = {};
@@ -517,8 +525,11 @@ class ModeContext {
         return this._currentNoteId;
     }
 
-    setHoveredNoteId(noteId) {
-        const normalized = noteId || null;
+	setHoveredNoteId(noteId) {
+		let normalized = noteId;
+		if (!normalized) {
+			normalized = null;
+		}
 
         if (this._hoveredNoteId === normalized) {
             throw new Error(`Redundant state change: hoveredNoteId is already ${normalized}`);
@@ -586,12 +597,12 @@ class ModeContext {
         return this._currentContent;
     }
 
-    setKeyPressed(key, metaKey = false, shiftKey = false) {
-        this._lastKeyPressed = key;
-        this._metaKeyPressed = Boolean(metaKey);
-        this._shiftKeyPressed = Boolean(shiftKey);
-        return this;
-    }
+	setKeyPressed(key, metaKey, shiftKey) {
+		this._lastKeyPressed = key;
+		this._metaKeyPressed = Boolean(metaKey);
+		this._shiftKeyPressed = Boolean(shiftKey);
+		return this;
+	}
 
     get keyInfo() {
         return {
@@ -601,13 +612,13 @@ class ModeContext {
         };
     }
 
-    setClickTarget(target, coordinates = null) {
-        this._lastClickTarget = target;
-        if (coordinates) {
-            this._coordinates = coordinates;
-        }
-        return this;
-    }
+	setClickTarget(target, coordinates) {
+		this._lastClickTarget = target;
+		if (coordinates) {
+			this._coordinates = coordinates;
+		}
+		return this;
+	}
 
     get clickTarget() {
         return this._lastClickTarget;
@@ -640,14 +651,10 @@ class ModeContext {
 
         Logger.logState(property, newValue, oldValue);
                 
-        this._listeners.forEach(listener => {
-            try {
-                listener(property, newValue);
-            } catch (e) {
-                Logger.logError('Error in listener callback', e);
-            }
-        });
-    }
+		this._listeners.forEach(listener => {
+			listener(property, newValue);
+		});
+	}
 
     getFullState() {
         const state = {
@@ -729,10 +736,14 @@ class ModeContext {
         return this._clipboardMode;
     }
 
-    setSearchQuery(query) {
-        // Don't trigger redundancy check for search as it's expected to change frequently
-        const oldQuery = this._searchQuery;
-        this._searchQuery = query || '';
+	setSearchQuery(query) {
+		// Don't trigger redundancy check for search as it's expected to change frequently
+		const oldQuery = this._searchQuery;
+		let normalized = query;
+		if (typeof normalized !== 'string') {
+			normalized = '';
+		}
+		this._searchQuery = normalized;
         
         if (oldQuery !== this._searchQuery) {
             this.resetRootTracking({ clear: true });
@@ -789,8 +800,14 @@ class ModeContext {
         });
     }
 
-    resetRootTracking(options = {}) {
-        const shouldClear = options.clear !== false;
+	resetRootTracking(options) {
+		if (typeof options === 'undefined') {
+			options = {};
+		}
+		if (options === null || typeof options !== 'object') {
+			throw new Error('resetRootTracking requires options object');
+		}
+		const shouldClear = options.clear !== false;
         if (shouldClear) {
             this._getActiveKnownRoots().clear();
             this._getActiveSeenRoots().clear();
@@ -856,23 +873,32 @@ class ModeContext {
         return Array.from(this._getActiveSeenRoots());
     }
 
-    getLastKnownRootId() {
-        const order = this._tabRootOrder[this._activeTabId] || [];
-        if (!Array.isArray(order) || order.length === 0) {
-            return null;
-        }
-        return order[order.length - 1];
-    }
+	getLastKnownRootId() {
+		let order = this._tabRootOrder[this._activeTabId];
+		if (!Array.isArray(order)) {
+			order = [];
+		}
+		if (!Array.isArray(order) || order.length === 0) {
+			return null;
+		}
+		return order[order.length - 1];
+	}
 
-    isAnchorNearEnd(anchorId, distance = 3) {
-        if (typeof anchorId !== 'string' || !anchorId) {
-            return false;
-        }
-        const order = this._tabRootOrder[this._activeTabId] || [];
-        const idx = order.indexOf(anchorId);
-        if (idx === -1) return false;
-        return (order.length - 1 - idx) <= distance;
-    }
+	isAnchorNearEnd(anchorId, distance) {
+		if (typeof distance === 'undefined') {
+			distance = 3;
+		}
+		if (typeof anchorId !== 'string' || !anchorId) {
+			return false;
+		}
+		let order = this._tabRootOrder[this._activeTabId];
+		if (!Array.isArray(order)) {
+			order = [];
+		}
+		const idx = order.indexOf(anchorId);
+		if (idx === -1) return false;
+		return (order.length - 1 - idx) <= distance;
+	}
 
     setRootAnchorId(anchorId) {
         const tabId = this._activeTabId;
@@ -884,9 +910,10 @@ class ModeContext {
         return this;
     }
 
-    getRootAnchorId() {
-        return this._tabRootAnchors[this._activeTabId] || null;
-    }
+	getRootAnchorId() {
+		const anchorId = this._tabRootAnchors[this._activeTabId];
+		return typeof anchorId === 'string' && anchorId.length > 0 ? anchorId : null;
+	}
 
 
     // Tab management methods
@@ -1000,8 +1027,14 @@ class ModeContext {
         };
     }
 
-    hydrateTabState(state, options = {}) {
-        const emitUpdate = options.emitUpdate !== false;
+	hydrateTabState(state, options) {
+		if (typeof options === 'undefined') {
+			options = {};
+		}
+		if (options === null || typeof options !== 'object') {
+			throw new Error('hydrateTabState requires options object');
+		}
+		const emitUpdate = options.emitUpdate !== false;
         if (!state || typeof state !== 'object') {
             throw new Error('hydrateTabState requires a state object');
         }
@@ -1015,7 +1048,7 @@ class ModeContext {
         if (tabOrder.length !== Object.keys(tabs).length) {
             throw new Error('hydrateTabState tabOrder length mismatch');
         }
-        const previousRootAnchors = this._tabRootAnchors || Object.create(null);
+		const previousRootAnchors = this._tabRootAnchors ? this._tabRootAnchors : Object.create(null);
         this._tabRootAnchors = Object.create(null);
         const normalized = {};
         const tabIds = Object.keys(tabs);
@@ -1100,19 +1133,22 @@ class ModeContext {
             seenIds.add(tabId);
             normalizedOrder.push(tabId);
         }
-        const tabIdsList = Object.keys(normalized);
-        const previousHashCaches = this._tabNoteHashes || Object.create(null);
-        const nextHashCaches = Object.create(null);
-        const previousKnownRoots = this._tabKnownRootIds || Object.create(null);
-        const nextKnownRoots = Object.create(null);
-        const previousSeenRoots = this._tabSeenRootIds || Object.create(null);
-        const nextSeenRoots = Object.create(null);
+		const tabIdsList = Object.keys(normalized);
+		const previousHashCaches = this._tabNoteHashes ? this._tabNoteHashes : Object.create(null);
+		const nextHashCaches = Object.create(null);
+		const previousKnownRoots = this._tabKnownRootIds ? this._tabKnownRootIds : Object.create(null);
+		const nextKnownRoots = Object.create(null);
+		const previousSeenRoots = this._tabSeenRootIds ? this._tabSeenRootIds : Object.create(null);
+		const nextSeenRoots = Object.create(null);
 
-        for (const tabId of tabIdsList) {
-            nextHashCaches[tabId] = previousHashCaches[tabId] || new Map();
-            nextKnownRoots[tabId] = previousKnownRoots[tabId] || new Set();
-            nextSeenRoots[tabId] = previousSeenRoots[tabId] || new Set();
-        }
+		for (const tabId of tabIdsList) {
+			const existingHashes = previousHashCaches[tabId];
+			nextHashCaches[tabId] = existingHashes ? existingHashes : new Map();
+			const existingKnownRoots = previousKnownRoots[tabId];
+			nextKnownRoots[tabId] = existingKnownRoots ? existingKnownRoots : new Set();
+			const existingSeenRoots = previousSeenRoots[tabId];
+			nextSeenRoots[tabId] = existingSeenRoots ? existingSeenRoots : new Set();
+		}
 
         this._tabs = normalized;
         this._tabOrder = normalizedOrder;
@@ -1133,10 +1169,13 @@ class ModeContext {
         return this.updateTabScroll(this._activeTabId, scrollY, true);
     }
 
-    updateTabScroll(tabId, scrollY, emit = true) {
-        if (typeof scrollY !== 'number' || scrollY < 0) {
-            throw new Error('scrollY must be a non-negative number');
-        }
+	updateTabScroll(tabId, scrollY, emit) {
+		if (typeof emit === 'undefined') {
+			emit = true;
+		}
+		if (typeof scrollY !== 'number' || scrollY < 0) {
+			throw new Error('scrollY must be a non-negative number');
+		}
         const entry = this._ensureTabEntry(tabId);
         if (entry.scrollY === scrollY) {
             return this;
@@ -1149,15 +1188,21 @@ class ModeContext {
         return this;
     }
 
-    updateActiveTabScrollAnchor(scrollAnchor, emit = true) {
-        return this.updateTabScrollAnchor(this._activeTabId, scrollAnchor, emit);
-    }
+	updateActiveTabScrollAnchor(scrollAnchor, emit) {
+		if (typeof emit === 'undefined') {
+			emit = true;
+		}
+		return this.updateTabScrollAnchor(this._activeTabId, scrollAnchor, emit);
+	}
 
-    updateTabScrollAnchor(tabId, scrollAnchor, emit = true) {
-        const entry = this._ensureTabEntry(tabId);
-        if (scrollAnchor !== null && typeof scrollAnchor !== 'object') {
-            throw new Error('scrollAnchor must be an object or null');
-        }
+	updateTabScrollAnchor(tabId, scrollAnchor, emit) {
+		if (typeof emit === 'undefined') {
+			emit = true;
+		}
+		const entry = this._ensureTabEntry(tabId);
+		if (scrollAnchor !== null && typeof scrollAnchor !== 'object') {
+			throw new Error('scrollAnchor must be an object or null');
+		}
         entry.scrollAnchor = scrollAnchor;
         if (emit) {
             this._emitTabStateMutation('scrollAnchor');
@@ -1165,11 +1210,11 @@ class ModeContext {
         return this;
     }
 
-    getTabScrollAnchor(tabId = null) {
-        const targetTabId = tabId || this._activeTabId;
-        const entry = this._tabs[targetTabId];
-        return entry && entry.scrollAnchor ? entry.scrollAnchor : null;
-    }
+	getTabScrollAnchor(tabId) {
+		const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+		const entry = this._tabs[targetTabId];
+		return entry && entry.scrollAnchor ? entry.scrollAnchor : null;
+	}
 
     beginIgnoreScrollEvents() {
         this._ignoreScrollEventsDepth += 1;
@@ -1188,26 +1233,26 @@ class ModeContext {
         return this._ignoreScrollEventsDepth > 0;
     }
 
-    restoreScrollForActiveTab() {
+	restoreScrollForActiveTab() {
         const tabId = this._activeTabId;
         const savedAnchor = this.getTabScrollAnchor(tabId);
         const savedScrollY = this.getTabScrollPosition(tabId);
 
         let lastProgrammaticScrollY = null;
-        const applyRestore = () => {
-            if (this._activeTabId !== tabId) {
-                return;
-            }
-            this.beginIgnoreScrollEvents();
-            try {
-                restoreScrollFromAnchor(savedAnchor, { scrollYFallback: savedScrollY });
-                const entry = this._ensureTabEntry(tabId);
-                entry.scrollY = Math.max(0, Math.round(window.scrollY));
-                lastProgrammaticScrollY = entry.scrollY;
-            } finally {
-                this.endIgnoreScrollEvents();
-            }
-        };
+		const applyRestore = () => {
+			if (this._activeTabId !== tabId) {
+				return;
+			}
+			this.beginIgnoreScrollEvents();
+			Promise.resolve().then(() => {
+				restoreScrollFromAnchor(savedAnchor, { scrollYFallback: savedScrollY });
+				const entry = this._ensureTabEntry(tabId);
+				entry.scrollY = Math.max(0, Math.round(window.scrollY));
+				lastProgrammaticScrollY = entry.scrollY;
+			}).finally(() => {
+				this.endIgnoreScrollEvents();
+			});
+		};
 
         const maybeApplyRestore = () => {
             if (this._activeTabId !== tabId) {
@@ -1278,14 +1323,14 @@ class ModeContext {
         return this;
     }
 
-    getTabScrollPosition(tabId = null) {
-        const targetTabId = tabId || this._activeTabId;
-        const entry = this._tabs[targetTabId];
-        if (!entry || typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
-            return 0;
-        }
-        return entry.scrollY;
-    }
+	getTabScrollPosition(tabId) {
+		const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+		const entry = this._tabs[targetTabId];
+		if (!entry || typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
+			return 0;
+		}
+		return entry.scrollY;
+	}
 
     get isInitialPageLoad() {
         return this._isInitialPageLoad;

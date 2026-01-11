@@ -8,8 +8,13 @@ let pollTimer = null;
 
 const tabPollState = {};
 
+const ROOT_PARENT_SENTINELS = new Set(['', 'null', 'undefined', 'none']);
+
 function getActiveTabState() {
-    const tabId = ModeContext.activeTabId || '0';
+    let tabId = ModeContext.activeTabId;
+    if (!tabId) {
+        tabId = '0';
+    }
     const searchKey = (ModeContext.searchQuery || '').toString();
     const key = `${tabId}::${searchKey}`;
     if (!tabPollState[key]) {
@@ -65,7 +70,7 @@ function collectRootVisibility() {
 
         const rawParent = element.getAttribute('data-parent-id');
         const normalized = (typeof rawParent === 'string' ? rawParent : '').trim().toLowerCase();
-        const isRoot = normalized === '' || normalized === 'null' || normalized === 'undefined' || normalized === 'none';
+        const isRoot = ROOT_PARENT_SENTINELS.has(normalized);
         if (!isRoot) continue;
 
         const rect = element.getBoundingClientRect();

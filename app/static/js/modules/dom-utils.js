@@ -74,15 +74,18 @@ export const DOMUtils = {
         ensureEditableContentNode(contentElement);
 
         contentElement.focus();
-        this.setCursorOffset(noteElement, cursorOffset);
-    },
+		this.setCursorOffset(noteElement, cursorOffset);
+	},
 
-    focusNoteEdge(noteElement, position = 'end') {
-        const normalizedPosition = position === 'start' ? 'start' : 'end';
-        const contentElement = this.getNoteContent(noteElement);
-        if (!contentElement) {
-            throw new Error('Note content element not found');
-        }
+	focusNoteEdge(noteElement, position) {
+		if (position !== 'start' && position !== 'end') {
+			throw new Error('DOMUtils.focusNoteEdge requires position start|end');
+		}
+		const normalizedPosition = position;
+		const contentElement = this.getNoteContent(noteElement);
+		if (!contentElement) {
+			throw new Error('Note content element not found');
+		}
 
         ensureEditableContentNode(contentElement);
 
@@ -124,14 +127,17 @@ export const DOMUtils = {
             throw new Error('Could not find path to cursor');
         }
 
-        let offset = 0;
-        for (const node of path) {
-            if (node === selection.anchorNode) {
-                offset += selection.anchorOffset;
-                break;
-            }
-            offset += node.textContent?.length || 0;
-        }
+		let offset = 0;
+		for (const node of path) {
+			if (node === selection.anchorNode) {
+				offset += selection.anchorOffset;
+				break;
+			}
+			const textContent = node.textContent;
+			if (typeof textContent === 'string') {
+				offset += textContent.length;
+			}
+		}
 
         return offset;
     },
@@ -149,35 +155,30 @@ export const DOMUtils = {
             throw new Error('Note missing content element');
         }
 
-        console.log("[DEBUG] Setting cursor at offset:", offset);
+		console.log("[DEBUG] Setting cursor at offset:", offset);
 
-        try {
-            const allTextRange = document.createRange();
-            allTextRange.selectNodeContents(content);
-            const allText = allTextRange.toString();
+		const allTextRange = document.createRange();
+		allTextRange.selectNodeContents(content);
+		const allText = allTextRange.toString();
 
-            if (offset > allText.length) {
-                console.log("[DEBUG] Offset beyond content length, clamping to end");
-                offset = allText.length;
-            }
+		if (offset > allText.length) {
+			console.log("[DEBUG] Offset beyond content length, clamping to end");
+			offset = allText.length;
+		}
 
-            const targetRange = findRangeAtOffset(content, offset);
-            if (!targetRange) {
-                throw new Error(`Could not find position at offset ${offset}`);
-            }
+		const targetRange = findRangeAtOffset(content, offset);
+		if (!targetRange) {
+			throw new Error(`Could not find position at offset ${offset}`);
+		}
 
-            const selection = window.getSelection();
-            if (!selection) {
-                throw new Error('Could not get selection');
-            }
+		const selection = window.getSelection();
+		if (!selection) {
+			throw new Error('Could not get selection');
+		}
 
-            selection.removeAllRanges();
-            selection.addRange(targetRange);
-        } catch (error) {
-            console.error("[DEBUG] Error setting cursor position:", error);
-            throw error;
-        }
-    },
+		selection.removeAllRanges();
+		selection.addRange(targetRange);
+	},
 
     getCursorOffsetFromClick(noteElement, coordinates) {
         if (!noteElement) {
@@ -262,14 +263,17 @@ export const DOMUtils = {
         return current === ancestor ? path : null;
     },
 
-    isNoteContent(element) {
-        if (!element) {
-            return false;
-        }
+	isNoteContent(element) {
+		if (!element) {
+			return false;
+		}
 
-        return element.classList?.contains(CONFIG.CLASSES.NOTE_CONTENT) ||
-               !!element.closest(`.${CONFIG.CLASSES.NOTE_CONTENT}`);
-    },
+		const classList = element.classList;
+		if (classList && classList.contains(CONFIG.CLASSES.NOTE_CONTENT)) {
+			return true;
+		}
+		return Boolean(element.closest(`.${CONFIG.CLASSES.NOTE_CONTENT}`));
+	},
 
     isInSearchResults(coordinates) {
         if (!coordinates || !coordinates.x || !coordinates.y) {

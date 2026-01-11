@@ -10,7 +10,10 @@ const TOKEN_REFRESH_INTERVAL_MS = 60_000; // minimum time between auth refresh c
 export function startPolling() {
     // Unified polling: check connectivity and updates
     pollingInterval = setInterval(() => {
-        checkConnectivityAndUpdates();
+        checkConnectivityAndUpdates().catch((error) => {
+            ErrorHandler.handleApiError(error, null);
+            Logger.logError('Sync polling error', error);
+        });
     }, CONFIG.SYNC.POLL_INTERVAL_MS);
 
     Logger.logInit('Unified polling started (connectivity + updates)');
@@ -35,50 +38,40 @@ async function refreshTokenOnActivity() {
         throw new Error('metalist_tab_id missing from sessionStorage');
     }
 
-    try {
-        const response = await fetch(CONFIG.API.AUTH.SESSIONS, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'X-Metalist-Tab-Id': tabId
-            }
-        });
-
-        if (response.ok) {
-            lastTokenRefreshAt = Date.now();
-            Logger.logDebug('Token refreshed due to user activity');
-        } else {
-            Logger.logError('Token refresh request failed', response.statusText);
-            ErrorHandler.handleApiError(null, response);
+    const response = await fetch(CONFIG.API.AUTH.SESSIONS, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'X-Metalist-Tab-Id': tabId
         }
-    } catch (error) {
-        Logger.logError('Failed to refresh token on activity', error);
-        ErrorHandler.handleApiError(error);
+    });
+
+    if (response.ok) {
+        lastTokenRefreshAt = Date.now();
+        Logger.logDebug('Token refreshed due to user activity');
+        return;
     }
+
+    Logger.logError('Token refresh request failed', response.statusText);
+    ErrorHandler.handleApiError(null, response);
 }
 
 async function checkConnectivityAndUpdates() {
-    try {
-        // Check if user has been active and refresh token if needed
-        if (ModeContext.userActivity) {
-            const now = Date.now();
-            if (now - lastTokenRefreshAt >= TOKEN_REFRESH_INTERVAL_MS) {
-                await refreshTokenOnActivity();
-            } else {
-                Logger.logDebug('User activity detected but token refresh throttled', {
-                    timeSinceLastRefresh: now - lastTokenRefreshAt
-                });
-            }
-
+    if (ModeContext.userActivity) {
+        const now = Date.now();
+        if (now - lastTokenRefreshAt >= TOKEN_REFRESH_INTERVAL_MS) {
+            await refreshTokenOnActivity().finally(() => {
+                ModeContext.setUserActivity(false);
+            });
+        } else {
+            Logger.logDebug('User activity detected but token refresh throttled', {
+                timeSinceLastRefresh: now - lastTokenRefreshAt
+            });
             ModeContext.setUserActivity(false);
         }
-
-        await pingAuthStatus();
-    } catch (error) {
-        // Always show network errors immediately and loudly
-        ErrorHandler.handleApiError(error);
-        Logger.logError('Sync polling error', error);
     }
+
+    await pingAuthStatus();
 }
 
 async function pingAuthStatus() {

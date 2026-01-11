@@ -39,7 +39,10 @@ function withSelection(callback) {
     syncModeContextContent();
 }
 
-function runExecCommand(command, value = null) {
+function runExecCommand(command, value) {
+    if (typeof value === 'undefined') {
+        throw new Error('runExecCommand requires explicit value (use null)');
+    }
     withSelection(() => {
         const succeeded = document.execCommand(command, false, value);
         if (!succeeded) {
@@ -177,11 +180,11 @@ export function toggleHeading(level) {
 }
 
 export function toggleBulletList() {
-    runExecCommand('insertUnorderedList');
+    runExecCommand('insertUnorderedList', null);
 }
 
 export function toggleOrderedList() {
-    runExecCommand('insertOrderedList');
+    runExecCommand('insertOrderedList', null);
 }
 
 export function getActiveBlockTag() {

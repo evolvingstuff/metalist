@@ -7,11 +7,15 @@ import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 
-export async function actionSelectNote(noteId, options = {}) {
-    const {
-        initialCaretVisibility = 'hidden'
-    } = options;
-    let startedAt = performance.now();
+export async function actionSelectNote(noteId, options) {
+	if (options === null || typeof options !== 'object') {
+		throw new Error('actionSelectNote requires options object');
+	}
+	if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
+		throw new Error('actionSelectNote requires options.initialCaretVisibility');
+	}
+	const initialCaretVisibility = options.initialCaretVisibility;
+	let startedAt = performance.now();
     Logger.logAction('selectNote', { 
         noteId, 
         currentNoteId: ModeContext.currentNoteId 
@@ -46,14 +50,10 @@ export async function actionSelectNote(noteId, options = {}) {
         ModeContext.setCurrentContent(newContent);
     }
 
-    try {
-        await ensureNoteExpanded(noteId);
-    } catch (error) {
-        Logger.logDebug('Note not present during ensureExpanded after refresh', {
-            noteId,
-            error: error.message
-        }, Logger.LogCategory.DEBUG);
-    }
+	const maybeNoteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+	if (maybeNoteElement) {
+		await ensureNoteExpanded(noteId);
+	}
 
     ModeContext.validate();
 }
@@ -139,11 +139,15 @@ export function actionExitEditingWithoutSavingOrRefreshing() {
     ModeContext.validate();
 }
 
-export async function actionSwitchNotes(newNoteId, options = {}) {
-    const {
-        initialCaretVisibility = 'hidden'
-    } = options;
-    let startedAt = performance.now();
+export async function actionSwitchNotes(newNoteId, options) {
+	if (options === null || typeof options !== 'object') {
+		throw new Error('actionSwitchNotes requires options object');
+	}
+	if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
+		throw new Error('actionSwitchNotes requires options.initialCaretVisibility');
+	}
+	const initialCaretVisibility = options.initialCaretVisibility;
+	let startedAt = performance.now();
     Logger.logAction('switchNotes', { 
         currentNoteId: ModeContext.currentNoteId,
         newNoteId,
@@ -191,14 +195,10 @@ export async function actionSwitchNotes(newNoteId, options = {}) {
     
     ModeContext.setCurrentContent(newContent);
 
-    try {
-        await ensureNoteExpanded(newNoteId);
-    } catch (error) {
-        Logger.logDebug('Note not present during ensureExpanded after refresh', {
-            noteId: newNoteId,
-            error: error.message
-        }, Logger.LogCategory.DEBUG);
-    }
+	const maybeNoteElement = document.querySelector(`[data-note-id="${newNoteId}"]`);
+	if (maybeNoteElement) {
+		await ensureNoteExpanded(newNoteId);
+	}
   
     ModeContext.validate();
 }

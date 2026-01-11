@@ -63,7 +63,10 @@ export function restoreNotesDomForTab(tabId) {
     return { restored: hadNodes, moved };
 }
 
-export function cloneNotesDomForTab(sourceTabId, targetTabId, options = {}) {
+export function cloneNotesDomForTab(sourceTabId, targetTabId, options) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('cloneNotesDomForTab requires options object');
+    }
     requireTabId(sourceTabId);
     requireTabId(targetTabId);
     if (sourceTabId === targetTabId) {
@@ -104,7 +107,11 @@ export function cloneNotesDomForTab(sourceTabId, targetTabId, options = {}) {
     const noteElements = targetContainer.querySelectorAll('[data-note-id]');
     for (const element of Array.from(noteElements)) {
         const noteId = element.dataset.noteId;
-        const hash = element.dataset.snapshotHash || element.dataset.contentHash;
+        const snapshotHash = element.dataset.snapshotHash;
+        const contentHash = element.dataset.contentHash;
+        const hash = typeof snapshotHash === 'string' && snapshotHash.length > 0
+            ? snapshotHash
+            : contentHash;
         if (typeof noteId === 'string' && noteId.length > 0 && typeof hash === 'string' && hash.length > 0) {
             noteHashes.set(noteId, hash);
         }

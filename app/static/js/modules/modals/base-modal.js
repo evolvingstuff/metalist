@@ -17,7 +17,11 @@ export class BaseModal {
         }
         
         this.modalName = modalName;
-        this.modalElementId = modalElementId || `${modalName}-modal`;
+        if (typeof modalElementId === 'string' && modalElementId.length > 0) {
+            this.modalElementId = modalElementId;
+        } else {
+            this.modalElementId = `${modalName}-modal`;
+        }
         this.isOpen = false;
         
         // Bind event handlers
@@ -300,7 +304,15 @@ export class BaseModal {
      * Get current modal state from ModeContext
      */
     getModalState() {
-        return ModeContext.modalState?.[this.modalName] || {};
+        const modalState = ModeContext.modalState;
+        if (!modalState || typeof modalState !== 'object') {
+            return {};
+        }
+        const state = modalState[this.modalName];
+        if (!state || typeof state !== 'object') {
+            return {};
+        }
+        return state;
     }
     
     /**

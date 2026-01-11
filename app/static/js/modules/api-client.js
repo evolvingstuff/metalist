@@ -13,7 +13,13 @@ function captureViewportSnapshot() {
 
 export const NotesAPI = {
                 
-    async _apiCall(url, options = {}) {
+    async _apiCall(url, options) {
+        if (typeof url !== 'string') {
+            throw new Error('NotesAPI._apiCall requires url string');
+        }
+        if (options === null || typeof options !== 'object') {
+            throw new Error('NotesAPI._apiCall requires options object');
+        }
         try {
             const claimSession = Boolean(options.claimSession);
             const fetchOptions = { ...options };
@@ -149,10 +155,10 @@ export const NotesAPI = {
             console.error(' [API] Error:', error);
             
             // Handle network errors (when fetch throws)
-            if (!error.message.includes('API call failed:')) {
-                // This is a network/connectivity error, not an HTTP error response
-                ErrorHandler.handleApiError(error);
-            }
+			if (!error.message.includes('API call failed:')) {
+				// This is a network/connectivity error, not an HTTP error response
+				ErrorHandler.handleApiError(error, null);
+			}
             
             throw error;
         }
@@ -307,7 +313,19 @@ export const NotesAPI = {
         return noteElement.querySelector('.note-content');
     },
 
-    async fetchView(noteId = null, searchQuery = null, tabId = null, visibleRootAnchorId = null) {
+    async fetchView(noteId, searchQuery, tabId, visibleRootAnchorId) {
+        if (typeof noteId === 'undefined') {
+            throw new Error('NotesAPI.fetchView requires noteId (use null when not editing)');
+        }
+        if (typeof searchQuery === 'undefined') {
+            throw new Error('NotesAPI.fetchView requires searchQuery (use null when empty)');
+        }
+        if (typeof tabId !== 'string') {
+            throw new Error('NotesAPI.fetchView requires tabId string');
+        }
+        if (typeof visibleRootAnchorId === 'undefined') {
+            throw new Error('NotesAPI.fetchView requires visibleRootAnchorId (use null when unknown)');
+        }
         const payload = {
             clientId: ModeContext.clientId,
             editingNoteId: noteId,
@@ -329,12 +347,18 @@ export const NotesAPI = {
         const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;
         if (!prevSibling || !prevSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
+
+        const parentId = noteElement.dataset.parentId;
+        let parentIdOrNull = null;
+        if (typeof parentId === 'string' && parentId.length > 0) {
+            parentIdOrNull = parentId;
+        }
                                 
         await this.moveNote(
             noteId,
             DOMUtils.getNoteId(prevSibling),
             'BEFORE',
-            noteElement.dataset.parentId || null
+            parentIdOrNull
         );
     },
 
@@ -342,12 +366,18 @@ export const NotesAPI = {
         const noteElement = this.getNoteElement(noteId);
         const nextSibling = noteElement.nextElementSibling;
         if (!nextSibling || !nextSibling.classList.contains(CONFIG.CLASSES.NOTE)) return;
+
+        const parentId = noteElement.dataset.parentId;
+        let parentIdOrNull = null;
+        if (typeof parentId === 'string' && parentId.length > 0) {
+            parentIdOrNull = parentId;
+        }
                                 
         await this.moveNote(
             noteId,
             DOMUtils.getNoteId(nextSibling),
             'AFTER',
-            noteElement.dataset.parentId || null
+            parentIdOrNull
         );
     },
 

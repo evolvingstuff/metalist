@@ -54,14 +54,21 @@ export const CommentUtils = {
                 // - There's no text to highlight anyway (empty element = no comment patterns)
                 // - Avoiding DOM manipulation preserves cursor position naturally
                 // - Highlighting will resume once user types text into the empty element
-                const container = range.startContainer;
-                const isInEmptyElement = 
-                    (container.nodeType === Node.ELEMENT_NODE && !container.textContent) ||
-                    (container.nodeType === Node.TEXT_NODE && container.parentNode && !container.parentNode.textContent);
-                
-                if (isInEmptyElement) {
-                    return;
-                }
+				const container = range.startContainer;
+				let isInEmptyElement = false;
+				if (container.nodeType === Node.ELEMENT_NODE && !container.textContent) {
+					isInEmptyElement = true;
+				} else if (
+					container.nodeType === Node.TEXT_NODE &&
+					container.parentNode &&
+					!container.parentNode.textContent
+				) {
+					isInEmptyElement = true;
+				}
+				
+				if (isInEmptyElement) {
+					return;
+				}
                 
                 cursorOffset = this._getTextOffsetInElement(element, range.startContainer, range.startOffset);
             }

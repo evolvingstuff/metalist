@@ -1,5 +1,7 @@
 const DEFAULT_BELT_SIZE = 4;
 
+const ROOT_PARENT_SENTINELS = new Set(['', 'null', 'undefined', 'none']);
+
 function clampNumber(value, min, max) {
     if (typeof value !== 'number' || Number.isNaN(value)) {
         throw new Error('clampNumber requires a number');
@@ -48,7 +50,7 @@ function requireNotesContainer() {
 function isRootNoteElement(element) {
     const rawParent = element?.getAttribute('data-parent-id');
     const normalized = (typeof rawParent === 'string' ? rawParent : '').trim().toLowerCase();
-    return normalized === '' || normalized === 'null' || normalized === 'undefined' || normalized === 'none';
+    return ROOT_PARENT_SENTINELS.has(normalized);
 }
 
 function getNoteId(element) {
@@ -108,14 +110,24 @@ function findAnchorIndex(noteElements, anchorBias) {
     return bestIndex;
 }
 
-export function computeScrollAnchor(options = {}) {
-    const requestedBias = options.anchorBias || 'center';
+export function computeScrollAnchor(options) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('computeScrollAnchor requires options object');
+    }
+
+    let requestedBias = options.anchorBias;
+    if (typeof requestedBias === 'undefined') {
+        requestedBias = 'center';
+    }
     const beltSize = typeof options.beltSize === 'number' ? options.beltSize : DEFAULT_BELT_SIZE;
     if (!Number.isInteger(beltSize) || beltSize < 0 || beltSize > 10) {
         throw new Error('beltSize must be an integer between 0 and 10');
     }
 
-    const container = options.container || requireNotesContainer();
+    let container = options.container;
+    if (!container) {
+        container = requireNotesContainer();
+    }
     const { noteElements, noteIds } = collectRootNotesInDomOrder(container);
     if (noteIds.length === 0) {
         return null;

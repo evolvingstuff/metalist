@@ -43,7 +43,7 @@ export class PasswordModal extends BaseModal {
      * Called after modal opens - determine mode and setup UI
      */
     async onOpen() {
-        try {
+        await (async () => {
             const tabId = sessionStorage.getItem('metalist_tab_id');
             if (!tabId) {
                 throw new Error('metalist_tab_id missing from sessionStorage');
@@ -57,6 +57,9 @@ export class PasswordModal extends BaseModal {
 
             // Determine which mode we should be in
             const response = await fetch(this.apiEndpoints.status, { headers });
+            if (!response.ok) {
+                throw new Error(`Password status request failed with ${response.status}`);
+            }
             const status = await response.json();
             
             const mode = status.has_password ? 'change' : 'create';
@@ -64,14 +67,13 @@ export class PasswordModal extends BaseModal {
             
             // Setup the UI for the determined mode
             this.renderModalContent();
-            
-        } catch (error) {
+        })().catch((error) => {
             console.error('Failed to determine password modal mode:', error);
             this.updateModalState({ 
                 error: 'Failed to load password settings. Please try again.' 
             });
             this.renderError();
-        }
+        });
     }
     
     /**
@@ -363,7 +365,7 @@ export class PasswordModal extends BaseModal {
             return; // Prevent double submission
         }
         
-        try {
+        await (async () => {
             this.updateModalState({ isProcessing: true, error: null });
             this.showProcessingState();
             
@@ -386,19 +388,25 @@ export class PasswordModal extends BaseModal {
             
             // Refresh the app to reflect new encryption state
             window.location.reload();
-            
-        } catch (error) {
+        })().catch((error) => {
             console.error('Password operation failed:', error);
             
             // Remove waiting cursor on error
             document.body.classList.remove('loading');
+
+            let errorMessage = null;
+            if (error && typeof error.message === 'string' && error.message.length > 0) {
+                errorMessage = error.message;
+            } else {
+                errorMessage = 'Password operation failed. Please try again.';
+            }
             
             this.updateModalState({ 
-                error: error.message || 'Password operation failed. Please try again.',
+                error: errorMessage,
                 isProcessing: false 
             });
             this.renderModalContent();
-        }
+        });
     }
     
     /**

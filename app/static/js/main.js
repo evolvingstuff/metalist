@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Only initialize ModeManager if auth is OK
     if (isAuthOk) {
         console.log('+++ main.js: About to initialize ModeManager');
-        ModeManager.init();
+        ModeManager.init({});
         console.log('+++ main.js: ModeManager init() completed');
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');

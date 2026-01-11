@@ -75,7 +75,11 @@ function handleBlur(event) {
             return;
         }
 
-        const sanitized = sanitizeTags(tagBarInput.value || '');
-        setTagBarValue(noteElement, sanitized);
-    }
+		const rawTags = tagBarInput.value;
+		if (typeof rawTags !== 'string') {
+			throw new Error('Tag bar input value must be string');
+		}
+		const sanitized = sanitizeTags(rawTags);
+		setTagBarValue(noteElement, sanitized);
+	}
 }

@@ -264,11 +264,13 @@ function isEditingByMe(noteElement) {
         return false;
     }
 
-    const contentElement = noteElement.querySelector(`:scope > .${CONFIG.CLASSES.NOTE_CONTENT}`)
-        || noteElement.querySelector(`.${CONFIG.CLASSES.NOTE_CONTENT}`);
-    if (!contentElement) {
-        throw new Error('Cannot determine edit state: note missing content element');
-    }
+	let contentElement = noteElement.querySelector(`:scope > .${CONFIG.CLASSES.NOTE_CONTENT}`);
+	if (!contentElement) {
+		contentElement = noteElement.querySelector(`.${CONFIG.CLASSES.NOTE_CONTENT}`);
+	}
+	if (!contentElement) {
+		throw new Error('Cannot determine edit state: note missing content element');
+	}
     return contentElement.getAttribute('contenteditable') === 'true';
 }
 

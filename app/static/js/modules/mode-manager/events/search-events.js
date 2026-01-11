@@ -35,12 +35,12 @@ export function handleSearchInput(event) {
     }
     
     // Set new timeout for debounced search
-    searchTimeoutId = setTimeout(async () => {
-        Logger.logAction('executeSearch', { searchQuery });
-        // Refresh the view with the search query (let errors crash)
-        await actionRefreshAndMaybeSelect();
-    }, CONFIG.SEARCH.DEBOUNCE_MS);
-}
+	    searchTimeoutId = setTimeout(async () => {
+	        Logger.logAction('executeSearch', { searchQuery });
+	        // Refresh the view with the search query (let errors crash)
+	        await actionRefreshAndMaybeSelect({});
+	    }, CONFIG.SEARCH.DEBOUNCE_MS);
+	}
 
 export async function initializeSearchEvents() {
     let startedAt = performance.now();

@@ -18,6 +18,20 @@ import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } fr
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
 
+const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
+const NAVIGATION_KEYS = new Set([
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Home',
+    'End',
+    'PageUp',
+    'PageDown',
+]);
+const UP_DOWN_KEYS = new Set(['ArrowUp', 'ArrowDown']);
+const DELETE_KEYS = new Set(['Backspace', 'Delete']);
+
 let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
 let savedEditingCursorOffset = null;
@@ -54,11 +68,14 @@ function handleKeyDown(event) {
         return;
     }
 
-    ModeContext.setKeyPressed(
-        event.key,
-        event.metaKey || event.ctrlKey,
-        event.shiftKey
-    );
+    let metaOrCtrl = false;
+    if (event.metaKey) {
+        metaOrCtrl = true;
+    } else if (event.ctrlKey) {
+        metaOrCtrl = true;
+    }
+
+    ModeContext.setKeyPressed(event.key, metaOrCtrl, event.shiftKey);
 
     Logger.logDebug('Key pressed', {
         key: event.key,
@@ -87,12 +104,8 @@ function handleKeyDown(event) {
 
     if (ModeContext.isEditing) {
                 
-        const isModifierKey = event.key === 'Control' || event.key === 'Alt' || 
-                                                    event.key === 'Shift' || event.key === 'Meta';
-        const isNavigationKey = event.key === 'ArrowUp' || event.key === 'ArrowDown' || 
-                                                        event.key === 'ArrowLeft' || event.key === 'ArrowRight' ||
-                                                        event.key === 'Home' || event.key === 'End' || 
-                                                        event.key === 'PageUp' || event.key === 'PageDown';
+        const isModifierKey = MODIFIER_KEYS.has(event.key);
+        const isNavigationKey = NAVIGATION_KEYS.has(event.key);
         const isFunctionKey = event.key.startsWith('F') && event.key.length > 1; 
 
         if (!isModifierKey && !isNavigationKey && !isFunctionKey && 
@@ -115,7 +128,7 @@ function handleKeyDown(event) {
     
     const hoveredDetails = getHoveredNoteDetails(event);
 
-    const isArrowKey = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    const isArrowKey = UP_DOWN_KEYS.has(event.key);
     const intendsHoverMove = (
         isArrowKey &&
         !event.metaKey &&
@@ -123,7 +136,7 @@ function handleKeyDown(event) {
         !ModeContext.isEditing &&
         Boolean(hoveredDetails.noteId)
     );
-    const isDeleteKey = event.key === 'Backspace' || event.key === 'Delete';
+    const isDeleteKey = DELETE_KEYS.has(event.key);
     const intendsHoverDelete = (
         isDeleteKey &&
         !event.metaKey &&
@@ -134,19 +147,20 @@ function handleKeyDown(event) {
 
     // Check if we're disconnected from server for operations that need it
     if (!ModeContext.isConnected) {
-        const needsServer = (
-            // Create/delete operations
-            (event.key === 'Enter' && ((event.metaKey || event.ctrlKey) || !ModeContext.isEditing)) ||
-            ((event.key === 'Backspace' || event.key === 'Delete') && ((event.metaKey || event.ctrlKey) || intendsHoverDelete)) ||
-            // Move operations
-            (isArrowKey && ((event.metaKey || event.ctrlKey) || intendsHoverMove)) ||
-            // Paste operations
-            (event.key === 'v' && (event.metaKey || event.ctrlKey)) ||
-            // Copy operations
-            (event.key === 'c' && (event.metaKey || event.ctrlKey)) ||
-            // Undo/redo
-            ((event.key === 'z' || event.key === 'y') && (event.metaKey || event.ctrlKey))
-        );
+        let needsServer = false;
+        if (event.key === 'Enter' && (metaOrCtrl || !ModeContext.isEditing)) {
+            needsServer = true;
+        } else if (isDeleteKey && (metaOrCtrl || intendsHoverDelete)) {
+            needsServer = true;
+        } else if (isArrowKey && (metaOrCtrl || intendsHoverMove)) {
+            needsServer = true;
+        } else if (event.key === 'v' && metaOrCtrl) {
+            needsServer = true;
+        } else if (event.key === 'c' && metaOrCtrl) {
+            needsServer = true;
+        } else if ((event.key === 'z' || event.key === 'y') && metaOrCtrl) {
+            needsServer = true;
+        }
         
         if (needsServer) {
             Logger.logNoop('Keyboard shortcut ignored while disconnected from server', {
@@ -287,14 +301,18 @@ function handleToggleTagBarFocusShortcut(event) {
         ? activeElement.classList.contains('note-tag-bar-input')
         : false;
 
-    if (activeIsTagInput) {
-        const tagInput = noteElement.querySelector('.note-tag-bar-input');
-        if (!tagInput) {
-            throw new Error('Expected tag input to exist when toggling focus back to content');
-        }
-
-        const sanitized = sanitizeTags(tagInput.value || '');
-        setTagBarValue(noteElement, sanitized);
+	    if (activeIsTagInput) {
+	        const tagInput = noteElement.querySelector('.note-tag-bar-input');
+	        if (!tagInput) {
+	            throw new Error('Expected tag input to exist when toggling focus back to content');
+	        }
+	
+	        const rawTags = tagInput.value;
+	        if (typeof rawTags !== 'string') {
+	            throw new Error('Tag input value must be string');
+	        }
+	        const sanitized = sanitizeTags(rawTags);
+	        setTagBarValue(noteElement, sanitized);
 
         const contentElement = DOMUtils.getNoteContent(noteElement);
         if (!contentElement) {
@@ -372,7 +390,7 @@ function revealCaretForCurrentNote() {
 }
 
 function getHoveredNoteDetails(event) {
-    const safeEvent = event || {};
+	const safeEvent = event ? event : {};
 
     const currentHoveredId = ModeContext.hoveredNoteId;
     if (currentHoveredId) {
@@ -406,7 +424,7 @@ function getHoveredNoteDetails(event) {
     return { noteId: null, element: null };
 }
 
-function handleMoveHoveredNote(event, direction, prefetchedDetails = null) {
+function handleMoveHoveredNote(event, direction, prefetchedDetails) {
     if (!event) {
         throw new Error('handleMoveHoveredNote called without an event object');
     }
@@ -415,13 +433,17 @@ function handleMoveHoveredNote(event, direction, prefetchedDetails = null) {
         return;
     }
 
-    const { noteId: hoveredNoteId } = prefetchedDetails ?? getHoveredNoteDetails(event);
-    if (!hoveredNoteId) {
-        Logger.logNoop('Move note shortcut ignored: no hovered note', {
-            direction
-        });
-        return;
-    }
+	let resolvedDetails = prefetchedDetails;
+	if (!resolvedDetails) {
+		resolvedDetails = getHoveredNoteDetails(event);
+	}
+	const hoveredNoteId = resolvedDetails.noteId;
+	if (!hoveredNoteId) {
+		Logger.logNoop('Move note shortcut ignored: no hovered note', {
+			direction
+		});
+		return;
+	}
 
     if (!ModeContext.isConnected) {
         Logger.logNoop('Move note shortcut ignored while disconnected from server', {
@@ -450,7 +472,7 @@ function handleMoveHoveredNote(event, direction, prefetchedDetails = null) {
     }
 }
 
-function handleDeleteHoveredNote(event, prefetchedDetails = null) {
+function handleDeleteHoveredNote(event, prefetchedDetails) {
     if (!event) {
         throw new Error('handleDeleteHoveredNote called without an event object');
     }
@@ -459,11 +481,15 @@ function handleDeleteHoveredNote(event, prefetchedDetails = null) {
         return;
     }
 
-    const { noteId: hoveredNoteId } = prefetchedDetails ?? getHoveredNoteDetails(event);
-    if (!hoveredNoteId) {
-        Logger.logNoop('Delete shortcut ignored: no hovered note');
-        return;
-    }
+	let resolvedDetails = prefetchedDetails;
+	if (!resolvedDetails) {
+		resolvedDetails = getHoveredNoteDetails(event);
+	}
+	const hoveredNoteId = resolvedDetails.noteId;
+	if (!hoveredNoteId) {
+		Logger.logNoop('Delete shortcut ignored: no hovered note');
+		return;
+	}
 
     if (!ModeContext.isConnected) {
         Logger.logNoop('Delete shortcut ignored while disconnected from server', {
@@ -852,66 +878,63 @@ async function handleCopyNoteShortcut(event) {
 
     // No text selected - do note copy
     event.preventDefault();
-    
-    try {
-        // Set clipboard mode to note and call server
-        if (ModeContext.clipboardMode !== 'note') {
-            ModeContext.setClipboardMode('note');
-        }
-        
-        // Copy to server clipboard
-        const copyResult = await actionCopyNote();
 
-        Logger.logDebug('Note copied to server clipboard', {
-            noteId: ModeContext.currentNoteId
-        }, Logger.LogCategory.EVENT);
+    if (ModeContext.clipboardMode !== 'note') {
+        ModeContext.setClipboardMode('note');
+    }
 
-        const renderedHtml = copyResult?.html;
-        const renderedPlainText = copyResult?.plain_text;
+    const copyResult = await actionCopyNote();
 
-        if (!renderedHtml && !renderedPlainText) {
-            Logger.logDebug('Copy endpoint returned no rendered content', {}, Logger.LogCategory.EVENT);
-            return;
-        }
+    Logger.logDebug('Note copied to server clipboard', {
+        noteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
 
-        try {
-            if (renderedHtml && navigator.clipboard && navigator.clipboard.write) {
-                const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
-                const plainTextBlob = new Blob([
-                    renderedPlainText ?? ''
-                ], { type: 'text/plain' });
+    const renderedHtml = copyResult?.html;
+    const renderedPlainText = copyResult?.plain_text;
 
-                const clipboardItem = new ClipboardItem({
-                    'text/html': htmlBlob,
-                    'text/plain': plainTextBlob
-                });
+    if (!renderedHtml && !renderedPlainText) {
+        Logger.logDebug('Copy endpoint returned no rendered content', {}, Logger.LogCategory.EVENT);
+        return;
+    }
 
-                await navigator.clipboard.write([clipboardItem]);
-                Logger.logDebug('Rendered HTML copied to system clipboard', {}, Logger.LogCategory.EVENT);
-            } else if (renderedPlainText && navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(renderedPlainText);
-                Logger.logDebug('Rendered plain text copied to system clipboard', {}, Logger.LogCategory.EVENT);
-            } else if (renderedPlainText) {
-                const textarea = document.createElement('textarea');
-                textarea.value = renderedPlainText;
-                textarea.style.position = 'fixed';
-                textarea.style.opacity = '0';
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                Logger.logDebug('Rendered text copied to system clipboard via legacy fallback', {}, Logger.LogCategory.EVENT);
-            }
-        } catch (clipboardError) {
+    if (renderedHtml && navigator.clipboard && navigator.clipboard.write) {
+        const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+        const plainTextBlob = new Blob([
+            renderedPlainText ?? ''
+        ], { type: 'text/plain' });
+
+        const clipboardItem = new ClipboardItem({
+            'text/html': htmlBlob,
+            'text/plain': plainTextBlob
+        });
+
+        await navigator.clipboard.write([clipboardItem]).catch((clipboardError) => {
             Logger.logDebug('Error copying rendered content to system clipboard', {
                 error: clipboardError.message
             }, Logger.LogCategory.EVENT);
-            // Continue even if clipboard write fails - server clipboard still works
-        }
-    } catch (error) {
-        Logger.logDebug('Error copying note', {
-            error: error.message
-        }, Logger.LogCategory.EVENT);
+        });
+        return;
+    }
+
+    if (renderedPlainText && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(renderedPlainText).catch((clipboardError) => {
+            Logger.logDebug('Error copying rendered content to system clipboard', {
+                error: clipboardError.message
+            }, Logger.LogCategory.EVENT);
+        });
+        return;
+    }
+
+    if (renderedPlainText) {
+        const textarea = document.createElement('textarea');
+        textarea.value = renderedPlainText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        Logger.logDebug('Rendered text copied to system clipboard via legacy fallback', {}, Logger.LogCategory.EVENT);
     }
 }
 
@@ -982,8 +1005,9 @@ async function handleCutNoteShortcut(event) {
             && typeof navigator.clipboard.write === 'function'
         ) {
             const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+            const plainText = typeof renderedPlainText === 'string' ? renderedPlainText : '';
             const plainTextBlob = new Blob([
-                renderedPlainText || '',
+                plainText,
             ], { type: 'text/plain' });
             await navigator.clipboard.write([
                 new ClipboardItem({
@@ -991,8 +1015,8 @@ async function handleCutNoteShortcut(event) {
                     'text/plain': plainTextBlob,
                 })
             ]);
-        } else if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(renderedPlainText || '');
+        } else if (typeof renderedPlainText === 'string' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(renderedPlainText);
         }
     }
 
@@ -1112,8 +1136,11 @@ function handleMemoryModalShortcut(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    const searchQuery = ModeContext.searchQuery || '';
-    memoryModal.openWithSearch(searchQuery);
+	let searchQuery = ModeContext.searchQuery;
+	if (typeof searchQuery !== 'string') {
+		searchQuery = '';
+	}
+	memoryModal.openWithSearch(searchQuery);
     Logger.logDebug('Memory modal opened via keyboard shortcut', {
         searchQuery
     }, Logger.LogCategory.EVENT);
@@ -1211,10 +1238,21 @@ export function updateSearchContextsList() {
     if (!Array.isArray(tabOrder) || tabOrder.length === 0) {
         throw new Error('ModeContext.tabOrder must be a non-empty array');
     }
-    for (let i = 0; i < tabOrder.length; i++) {
-        const tabId = tabOrder[i];
-        const originalQuery = tabs[tabId].searchQuery || '';
-        let displayQuery = originalQuery || '(empty)';
+	for (let i = 0; i < tabOrder.length; i++) {
+	    const tabId = tabOrder[i];
+	    const tabEntry = tabs[tabId];
+	    if (!tabEntry || typeof tabEntry !== 'object') {
+	        throw new Error(`ModeContext.tabs missing entry for tab ${tabId}`);
+	    }
+
+	    let originalQuery = tabEntry.searchQuery;
+	    if (typeof originalQuery !== 'string') {
+	        originalQuery = '';
+	    }
+	    let displayQuery = originalQuery;
+	    if (!displayQuery) {
+	        displayQuery = '(empty)';
+	    }
         
         // Truncate long search queries for display
         if (displayQuery.length > 12 && displayQuery !== '(empty)') {
@@ -1261,7 +1299,7 @@ export function updateSearchContextsList() {
                 if (!tabId || tabId === ModeContext.activeTabId) {
                     return;
                 }
-                void switchToTabContext(tabId);
+				void switchToTabContext(tabId, {});
             });
             
             // Add hover effect
@@ -1317,7 +1355,10 @@ export function updateSearchContextsList() {
     }
 }
 
-async function switchToTabContext(tabId, options = {}) {
+async function switchToTabContext(tabId, options) {
+	if (options === null || typeof options !== 'object') {
+		throw new Error('switchToTabContext requires options object');
+	}
     if (ModeContext.isLoading) {
         Logger.logNoop('Tab switch ignored while request in-flight', {
             requestedTab: tabId,
@@ -1345,33 +1386,33 @@ async function switchToTabContext(tabId, options = {}) {
     }
     const perfContext = `switchTab tab#${previousTabIndex + 1}→tab#${nextTabIndex + 1}`;
 
-    ModeContext.beginIgnoreScrollEvents();
-    try {
-        await persistCurrentTabState();
+	ModeContext.beginIgnoreScrollEvents();
+	await (async () => {
+		await persistCurrentTabState();
 
-        ModeContext.switchToTab(tabId);
-        cacheNotesDomForTab(previousTabId);
-        restoreNotesDomForTab(tabId);
+		ModeContext.switchToTab(tabId);
+		cacheNotesDomForTab(previousTabId);
+		restoreNotesDomForTab(tabId);
 
-        syncSearchInputField();
-        updateSearchContextsList();
+		syncSearchInputField();
+		updateSearchContextsList();
 
-        // Persist new tab selection and any newly created tab immediately
-        await persistTabStateSnapshot();
+		// Persist new tab selection and any newly created tab immediately
+		await persistTabStateSnapshot();
 
-        const startedAt = performance.now();
-        const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
-        await actionRefreshAndMaybeSelect({
-            startedAt,
-            context: perfContext,
-            expectedUpdatedNotesMax: options.expectedUpdatedNotesMax,
-            expectedVdomOpsMax: options.expectedVdomOpsMax,
-        });
+		const startedAt = performance.now();
+		const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+		await actionRefreshAndMaybeSelect({
+			startedAt,
+			context: perfContext,
+			expectedUpdatedNotesMax: options.expectedUpdatedNotesMax,
+			expectedVdomOpsMax: options.expectedVdomOpsMax,
+		});
 
-        ModeContext.restoreScrollForActiveTab();
-    } finally {
-        ModeContext.endIgnoreScrollEvents();
-    }
+		ModeContext.restoreScrollForActiveTab();
+	})().finally(() => {
+		ModeContext.endIgnoreScrollEvents();
+	});
 }
 
 function snapshotActiveTabScrollState() {
@@ -1409,10 +1450,13 @@ async function duplicateTabContext(sourceTabId) {
     }
 
     const payload = ModeContext.getTabStatePayload();
-    if (payload.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
-        ErrorHandler.showInfoBanner(`Tab limit reached (${CONFIG.TABS.MAX_TABS}). Close a tab before adding another.`);
-        return;
-    }
+	if (payload.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
+		ErrorHandler.showInfoBanner(
+			`Tab limit reached (${CONFIG.TABS.MAX_TABS}). Close a tab before adding another.`,
+			6000,
+		);
+		return;
+	}
 
     snapshotActiveTabScrollState();
     await persistTabStateSnapshot();
@@ -1443,12 +1487,16 @@ async function duplicateTabContext(sourceTabId) {
         ? sourceEntry.scrollAnchor
         : null;
 
-    let sourceAnchorRootId = null;
-    if (sourceTabId === ModeContext.activeTabId) {
-        sourceAnchorRootId = ModeContext.getRootAnchorId() || ModeContext.getLastKnownRootId();
-    } else if (typeof sourceEntry.anchorRootId === 'string' && sourceEntry.anchorRootId.length > 0) {
-        sourceAnchorRootId = sourceEntry.anchorRootId;
-    }
+	let sourceAnchorRootId = null;
+	if (sourceTabId === ModeContext.activeTabId) {
+		let anchorRootId = ModeContext.getRootAnchorId();
+		if (!anchorRootId) {
+			anchorRootId = ModeContext.getLastKnownRootId();
+		}
+		sourceAnchorRootId = anchorRootId;
+	} else if (typeof sourceEntry.anchorRootId === 'string' && sourceEntry.anchorRootId.length > 0) {
+		sourceAnchorRootId = sourceEntry.anchorRootId;
+	}
 
     response.tabs[newTabId].scrollY = sourceScrollY;
     response.tabs[newTabId].searchQuery = sourceSearchQuery;

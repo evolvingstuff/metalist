@@ -139,10 +139,15 @@ export async function actionUndo() {
             throw new Error('Invariant violation: restoreEditing is true but restoreEditingNoteId is empty');
         }
 
-        const shouldEdit = shouldKeepEditing || (opType === 'delete_subtree' && Boolean(focusNoteId));
-        const noteId = shouldKeepEditing ? restoreEditingNoteId : focusNoteId;
-        _applyHistorySelectionState({ shouldEdit, noteId });
-    } else {
+		let shouldEdit = false;
+		if (shouldKeepEditing) {
+			shouldEdit = true;
+		} else if (opType === 'delete_subtree' && Boolean(focusNoteId)) {
+			shouldEdit = true;
+		}
+		const noteId = shouldKeepEditing ? restoreEditingNoteId : focusNoteId;
+		_applyHistorySelectionState({ shouldEdit, noteId });
+	} else {
         
         throw new Error(`Undo failed: ${result.message || 'Unknown error'}`);
     }
@@ -151,10 +156,10 @@ export async function actionUndo() {
 
     ModeContext.restoreScrollForActiveTab();
     if (focusNoteId) {
-        window.setTimeout(() => {
-            scrollNoteIntoView(focusNoteId);
-        }, 300);
-    }
+		window.setTimeout(() => {
+			scrollNoteIntoView(focusNoteId, {});
+		}, 300);
+	}
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);
@@ -230,10 +235,10 @@ export async function actionRedo() {
 
     ModeContext.restoreScrollForActiveTab();
     if (focusNoteId) {
-        window.setTimeout(() => {
-            scrollNoteIntoView(focusNoteId);
-        }, 300);
-    }
+		window.setTimeout(() => {
+			scrollNoteIntoView(focusNoteId, {});
+		}, 300);
+	}
 
     if (ModeContext.currentContent !== newContent && newContent !== null) {
         ModeContext.setCurrentContent(newContent);
