@@ -159,6 +159,29 @@ export function normalizeTags(rawTags) {
     return normalizeTagBarInput(rawTags);
 }
 
+export function normalizeTagBarForNewTag(noteElement, tagBarInput) {
+    if (!noteElement) {
+        throw new Error('normalizeTagBarForNewTag requires a note element');
+    }
+    if (!tagBarInput) {
+        throw new Error('normalizeTagBarForNewTag requires a tag bar input element');
+    }
+
+    const inputValue = typeof tagBarInput.value === 'string' ? tagBarInput.value : '';
+    const storedTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
+    const existingTags = inputValue.length > 0 ? inputValue : storedTags;
+    const normalized = normalizeTags(existingTags);
+    const nextValue = normalized.length > 0 ? `${normalized} ` : '';
+
+    tagBarInput.value = nextValue;
+    const end = nextValue.length;
+    if (typeof tagBarInput.setSelectionRange === 'function') {
+        tagBarInput.setSelectionRange(end, end);
+    }
+
+    return nextValue;
+}
+
 export function validateAndRenderTagBar(noteElement) {
     if (!noteElement) {
         throw new Error('validateAndRenderTagBar requires a note element');

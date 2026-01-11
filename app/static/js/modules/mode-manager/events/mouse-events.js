@@ -4,6 +4,7 @@ import { createNote, deleteNote, collapseNote, expandNote } from '../actions/not
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
+import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
@@ -209,6 +210,32 @@ function handleClick(event) {
 
     const tagBarElement = event.target.closest('.note-tag-bar');
     if (tagBarElement) {
+        const tagBarInput = event.target.closest('.note-tag-bar-input');
+        if (tagBarInput && event.detail === 1) {
+            const noteElement = tagBarInput.closest('.note');
+            const noteId = noteElement?.dataset?.noteId;
+            if (noteElement && noteId && ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
+                window.setTimeout(() => {
+                    if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+                        return;
+                    }
+                    if (document.activeElement !== tagBarInput) {
+                        return;
+                    }
+
+                    const value = typeof tagBarInput.value === 'string' ? tagBarInput.value : '';
+                    const end = value.length;
+                    const selectionStart = tagBarInput.selectionStart;
+                    const selectionEnd = tagBarInput.selectionEnd;
+                    if (selectionStart !== end || selectionEnd !== end) {
+                        return;
+                    }
+
+                    normalizeTagBarForNewTag(noteElement, tagBarInput);
+                }, 0);
+            }
+        }
+
         Logger.logDebug('Click inside tag bar', {
             eventType: event.type
         }, Logger.LogCategory.EVENT);

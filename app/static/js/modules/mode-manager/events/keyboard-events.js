@@ -13,7 +13,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
-import { normalizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
+import { normalizeTagBarForNewTag, normalizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -349,11 +349,7 @@ function handleToggleTagBarFocusShortcut(event) {
         throw new Error('Tag input missing after syncTagBar');
     }
 
-    const existingTags = typeof tagInput.value === 'string' && tagInput.value.length > 0
-        ? tagInput.value
-        : (noteElement.dataset.noteTags || '');
-    const normalized = normalizeTags(existingTags);
-    tagInput.value = normalized.length > 0 ? `${normalized} ` : '';
+    normalizeTagBarForNewTag(noteElement, tagInput);
 
     tagInput.focus();
     const end = tagInput.value.length;
