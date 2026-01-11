@@ -152,10 +152,16 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         if direction == "redo" and op_type == "delete_subtree":
             return _pick_focus_neighbor(getattr(first, "prev_id", None), getattr(first, "next_id", None))
         if direction == "undo" and op_type == "paste_subtree":
+            prev_id = getattr(first, "prev_id", None)
+            if isinstance(prev_id, str) and prev_id:
+                return prev_id
             parent_id = getattr(first, "parent_id", None)
             if isinstance(parent_id, str) and parent_id:
                 return parent_id
-            return _pick_focus_neighbor(getattr(first, "prev_id", None), getattr(first, "next_id", None))
+            next_id = getattr(first, "next_id", None)
+            if isinstance(next_id, str) and next_id:
+                return next_id
+            return ""
         return root_id
 
     return ""

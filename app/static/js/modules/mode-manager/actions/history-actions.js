@@ -163,7 +163,7 @@ export async function actionUndo() {
             ModeContext.setDirty(false);
         }
 
-		if (opType === 'edit_mode') {
+			if (opType === 'edit_mode') {
 			if (typeof restored.editingNoteId === 'undefined') {
 				throw new Error('Undo edit_mode response missing scrollRestore.editingNoteId');
 			}
@@ -171,13 +171,13 @@ export async function actionUndo() {
 			const shouldEdit = nextEditingNoteId !== null;
 			const noteId = nextEditingNoteId;
 			_applyHistorySelectionState({ shouldEdit, noteId, priorEditingNoteId: restoreEditingNoteId });
-		} else {
-			let opDeletesEditingTarget = false;
-			if (opType === 'create_note') {
-				opDeletesEditingTarget = true;
-			} else if (opType === 'paste_subtree') {
-				opDeletesEditingTarget = true;
-			}
+			} else {
+				let opDeletesEditingTarget = false;
+				if (opType === 'create_note') {
+					opDeletesEditingTarget = true;
+				} else if (opType === 'paste_subtree') {
+					opDeletesEditingTarget = true;
+				}
 
 			// IMPORTANT: treat server-provided focusNoteId as scroll guidance, not as an
 			// implicit "start editing this note" directive. Otherwise undoing a prior
@@ -187,20 +187,25 @@ export async function actionUndo() {
 				throw new Error('Invariant violation: restoreEditing is true but restoreEditingNoteId is empty');
 			}
 
-			let shouldEdit = false;
-			let noteId = null;
-			if (shouldKeepEditing) {
-				shouldEdit = true;
-				noteId = restoreEditingNoteId;
-			} else if (opType === 'delete_subtree' && Boolean(focusNoteId)) {
-				// Undoing a delete should restore the deleted note subtree and re-enter
-				// editing on the restored root.
-				shouldEdit = true;
-				noteId = focusNoteId;
+				let shouldEdit = false;
+				let noteId = null;
+				if (shouldKeepEditing) {
+					shouldEdit = true;
+					noteId = restoreEditingNoteId;
+				} else if (opDeletesEditingTarget && Boolean(restoreEditing) && Boolean(focusNoteId)) {
+					// Undoing a paste/create deletes the note that was actively edited; restore editing
+					// to the server-provided focus target (typically the paste target).
+					shouldEdit = true;
+					noteId = focusNoteId;
+				} else if (opType === 'delete_subtree' && Boolean(focusNoteId)) {
+					// Undoing a delete should restore the deleted note subtree and re-enter
+					// editing on the restored root.
+					shouldEdit = true;
+					noteId = focusNoteId;
+				}
+				_applyHistorySelectionState({ shouldEdit, noteId, priorEditingNoteId: restoreEditingNoteId });
 			}
-			_applyHistorySelectionState({ shouldEdit, noteId, priorEditingNoteId: restoreEditingNoteId });
-		}
-	} else {
+		} else {
         
         throw new Error(`Undo failed: ${result.message || 'Unknown error'}`);
     }
@@ -277,19 +282,32 @@ export async function actionRedo() {
             const shouldEdit = nextEditingNoteId !== null;
             const noteId = nextEditingNoteId;
 			_applyHistorySelectionState({ shouldEdit, noteId, priorEditingNoteId: restoreEditingNoteId });
-        } else {
-			const opDeletesEditingTarget = opType === 'delete_subtree';
-			const shouldKeepEditing = Boolean(restoreEditing) && !opDeletesEditingTarget;
-            if (shouldKeepEditing && (typeof restoreEditingNoteId !== 'string' || restoreEditingNoteId.length === 0)) {
-                throw new Error('Invariant violation: restoreEditing is true but restoreEditingNoteId is empty');
-            }
+			} else {
+				const opDeletesEditingTarget = opType === 'delete_subtree';
+				let opRecreatesFocusTarget = false;
+				if (opType === 'create_note') {
+					opRecreatesFocusTarget = true;
+				} else if (opType === 'paste_subtree') {
+					opRecreatesFocusTarget = true;
+				}
+				const shouldKeepEditing = Boolean(restoreEditing) && !opDeletesEditingTarget && !opRecreatesFocusTarget;
+	            if (shouldKeepEditing && (typeof restoreEditingNoteId !== 'string' || restoreEditingNoteId.length === 0)) {
+	                throw new Error('Invariant violation: restoreEditing is true but restoreEditingNoteId is empty');
+	            }
 
-            // Redo should not jump the editor to focusNoteId (collapse/move/update targets).
-            // Keep editing when it was active at request start; otherwise remain idle.
-            const shouldEdit = shouldKeepEditing;
-            const noteId = shouldKeepEditing ? restoreEditingNoteId : null;
-			_applyHistorySelectionState({ shouldEdit, noteId, priorEditingNoteId: restoreEditingNoteId });
-		}
+	            // Redo should not jump the editor to focusNoteId for collapse/move/update.
+	            // But redo of create/paste should select the newly (re)created note.
+	            let shouldEdit = false;
+	            let noteId = null;
+	            if (opRecreatesFocusTarget && Boolean(focusNoteId)) {
+	                shouldEdit = true;
+	                noteId = focusNoteId;
+	            } else if (shouldKeepEditing) {
+	                shouldEdit = true;
+	                noteId = restoreEditingNoteId;
+	            }
+				_applyHistorySelectionState({ shouldEdit, noteId, priorEditingNoteId: restoreEditingNoteId });
+			}
     } else {
         
         throw new Error(`Redo failed: ${result.message || 'Unknown error'}`);
