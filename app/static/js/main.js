@@ -28,11 +28,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     document.addEventListener('focus', (e) => {
-        const noteContent = e.target.closest('.note-content');
+        const target = e && e.target;
+        if (!target) {
+            return;
+        }
+
+        let element = null;
+        if (typeof target.closest === 'function') {
+            element = target;
+        } else if (target.nodeType === 3 && target.parentElement && typeof target.parentElement.closest === 'function') {
+            element = target.parentElement;
+        } else {
+            return;
+        }
+
+        const noteContent = element.closest('.note-content');
         if (noteContent) {
+            if (typeof e.clientY !== 'number') {
+                return;
+            }
             const rect = noteContent.getBoundingClientRect();
             if (!(e.clientY >= rect.top && e.clientY <= rect.bottom)) {
-                window.getSelection().removeAllRanges();
+                const selection = window.getSelection();
+                if (selection) {
+                    selection.removeAllRanges();
+                }
             }
         }
     }, true);  
