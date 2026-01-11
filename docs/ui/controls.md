@@ -35,7 +35,5 @@
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 
 ## Tag Bar Syntax
-- Tags are space-separated tokens stored on each note.
-- Tokens may be wrapped with matching `[]`, `{}`, or `()` (repeat 1–3 times), e.g. `[tag]`, `((tag))`, `{{{tag}}}`.
-- Invalid/mismatched closing wrappers are stripped as you type (e.g. `[tag)` → `[tag`).
-- Unclosed wrappers and unclosed `/*` comments show a validation warning; incomplete tokens are omitted from the saved tag string.
+- See `docs/ui/tag-bar.md` for the full grammar (tokens, wrappers, and `/* ... */` comments).
+- Leaving the tag bar (Tab toggle or click-away) sanitizes the value by removing incomplete/broken items.
