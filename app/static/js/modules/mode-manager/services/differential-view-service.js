@@ -613,8 +613,13 @@ export function applyDifferentialView(payload, options) {
         contentElement.setAttribute('contenteditable', contentEditable);
         contentElement.contentEditable = contentEditable;
 
+        const canReplaceWhileEditing = editingByCurrentClient
+            && ModeContext.currentNoteId === noteId
+            && !ModeContext.isDirty
+            && (previousHash === null || previousHash !== incomingHash);
+
         const shouldRenderContent = Boolean(noteData)
-            && !editingByCurrentClient
+            && (!editingByCurrentClient || canReplaceWhileEditing)
             && (
                 insertedIds.has(noteId)
                 || incomingHash === null
@@ -787,6 +792,8 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     const editingByCurrentClient = isEditing && lockOwner === currentClientId;
 
     const snapshotHash = typeof noteData.hash === 'string' ? noteData.hash : '';
+    const hasPreviousContentHash = Object.prototype.hasOwnProperty.call(noteElement.dataset, 'contentHash');
+    const previousContentHash = hasPreviousContentHash ? noteElement.dataset.contentHash : null;
     noteElement.dataset.snapshotHash = snapshotHash;
     noteElement.dataset.contentHash = snapshotHash;
     noteElement.dataset.lockOwner = lockOwner;
@@ -808,8 +815,13 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     contentElement.setAttribute('contenteditable', contentEditable);
     contentElement.contentEditable = contentEditable;
 
+    const canReplaceWhileEditing = editingByCurrentClient
+        && ModeContext.currentNoteId === noteId
+        && !ModeContext.isDirty
+        && previousContentHash !== snapshotHash;
+
     let contentChanged = false;
-    if ((forceContentUpdate || !editingByCurrentClient) && typeof noteData.content === 'string') {
+    if ((forceContentUpdate || !editingByCurrentClient || canReplaceWhileEditing) && typeof noteData.content === 'string') {
         contentElement.innerHTML = noteData.content;
         contentChanged = true;
     }

@@ -965,6 +965,20 @@ body.loading::after {
     border-radius: 2px;
 }
 
+/* Meta tag formatting */
+.meta-global,
+.meta-scope {
+    display: contents;
+}
+
+.meta-monospace {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.meta-red {
+    color: #d32f2f;
+}
+
 /* Error Banner Styles */
 .error-banner {
     position: fixed;

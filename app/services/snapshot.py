@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 
+from app.services.content_formatting import format_note_content_for_view
 from app.services.note_store import store as note_store
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
@@ -168,7 +169,16 @@ def build_view_state(
             }
             assert isinstance(rec.content, str)
             assert isinstance(rec.tags, str)
-            h = _compute_hash(rec.content, rec.tags, flags, parent_id, prev_id, next_id)
+
+            is_editing = bool(flags["isEditing"])
+            rendered_content = rec.content
+            if not is_editing:
+                rendered_content = format_note_content_for_view(
+                    content_html=rec.content,
+                    tags=rec.tags,
+                )
+
+            h = _compute_hash(rendered_content, rec.tags, flags, parent_id, prev_id, next_id)
             structure.append({
                 "id": rec.id,
                 "parentId": parent_id,
@@ -177,7 +187,7 @@ def build_view_state(
                 "hash": h,
             })
             payloads[rec.id] = {
-                "content": rec.content,
+                "content": rendered_content,
                 "tags": rec.tags,
                 "flags": flags,
                 "hash": h,

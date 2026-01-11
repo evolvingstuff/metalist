@@ -8,8 +8,10 @@ Acts as the single source of truth for note rendering across the application.
 import re
 import logging
 
+from app.services.content_formatting import format_note_content_for_view
 from app.utils.text_utils import strip_html
 from app.services.content_cache import get_cached_content
+from app.services.content_cache import get_cached_tags
 from app.services.note_store import store as note_store
 
 
@@ -80,7 +82,11 @@ def strip_comments_from_html(html_content: str) -> str:
 
 
 def render_read_only_mode(note) -> str:
-    return strip_comments_from_html(note.content)
+    tags = getattr(note, "tags", None)
+    if not isinstance(tags, str):
+        raise TypeError(f"Note tags must be a string, got {type(tags)}")
+    content = strip_comments_from_html(note.content)
+    return format_note_content_for_view(content_html=content, tags=tags)
 
 
 def render_editing_mode(note) -> str:
@@ -92,7 +98,12 @@ def render_redacted_mode(note) -> str:
     Render a note in redacted/dimmed mode for irrelevant search results.
     This is where you can customize how de-emphasized notes appear.
     """
+    tags = getattr(note, "tags", None)
+    if not isinstance(tags, str):
+        raise TypeError(f"Note tags must be a string, got {type(tags)}")
+
     content = strip_comments_from_html(note.content)
+    content = format_note_content_for_view(content_html=content, tags=tags)
     # Wrap content in a span with reduced opacity
     return f'<span style="opacity: 0.4; filter: grayscale(50%);">{content}</span>'
 
@@ -190,11 +201,13 @@ def apply_redacted_rendering(notes, search_query):
             # Re-render using redacted mode
             # We need to create a simple note object for the render function
             class SimpleNote:
-                def __init__(self, content):
+                def __init__(self, content, tags):
                     self.content = content
+                    self.tags = tags
             
             raw_content = note_dict['raw_content']
-            note_obj = SimpleNote(raw_content)
+            tags = note_dict['tags']
+            note_obj = SimpleNote(raw_content, tags)
             note_dict['content'] = render_redacted_mode(note_obj)
         elif (note_dict['search_relevance'] in ['direct_match', 'relevant'] and 
               not note_dict['flags'].get('isEditing', False) and
@@ -314,6 +327,7 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
                 'id': record.id,
                 'content': rendered,
                 'raw_content': record.content,
+                'tags': record.tags,
                 'parent_id': parent_id_value,
                 'children': children,
                 'flags': {
@@ -348,6 +362,7 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
             def __init__(self, original_note, decrypted_content):
                 self.id = original_note.id
                 self.content = decrypted_content
+                self.tags = get_cached_tags(original_note.id)
                 self.parent_id = original_note.parent_id
                 self.created_at = original_note.created_at
                 self.updated_at = original_note.updated_at
@@ -369,6 +384,7 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
                 'id': note.id,
                 'content': rendered_content,
                 'raw_content': decrypted_content,
+                'tags': decrypted_note.tags,
                 'parent_id': parent_id_value,
                 'children': children,
                 'flags': {

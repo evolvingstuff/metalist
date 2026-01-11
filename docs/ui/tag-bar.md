@@ -25,6 +25,13 @@ Examples (autocorrected while typing):
 - `[tag)` → `[tag`
 - `((tag))}` → `((tag))`
 
+## Meta Tags (Formatting)
+- Tags starting with `@` are reserved for server-side behaviors.
+- Global meta tags apply to the whole note when unwrapped (e.g. `@red`).
+- Scoped meta tags apply only to regions of note content wrapped with the same bracket type + depth.
+  - Example: tag bar `{{@monospace}}` applies monospace styling to `{{...}}` regions in the note.
+  - Depth must match exactly: `[[...]]` matches `[[@tag]]`, not `[@tag]` or `[[[@tag]]]`.
+
 If a wrapper is opened but not closed:
 - It does not immediately warn on a bare opener like `(`.
 - Once there is content (e.g. `(tag`), the tag bar shows a warning and the incomplete token is omitted from the saved tag string.
