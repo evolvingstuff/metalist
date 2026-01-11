@@ -63,9 +63,12 @@ function enforceTagToken(rawToken) {
     return out;
 }
 
-function enforceWrappedTagToken(rawToken) {
+function enforceWrappedTagTokenInternal(rawToken, preserveTrailingSpaceWhenUnclosed) {
     if (typeof rawToken !== 'string') {
         throw new Error('enforceWrappedTagToken expects a string');
+    }
+    if (typeof preserveTrailingSpaceWhenUnclosed !== 'boolean') {
+        throw new Error('enforceWrappedTagTokenInternal expects preserveTrailingSpaceWhenUnclosed boolean');
     }
 
     if (rawToken.length === 0) {
@@ -89,6 +92,8 @@ function enforceWrappedTagToken(rawToken) {
 
     let remainder = rawToken.slice(openerCount);
 
+    const remainderHadTrailingWhitespace = /\s$/.test(remainder);
+
     while (remainder.length > 0 && TAG_WRAPPER_CHARS.has(remainder[remainder.length - 1]) && remainder[remainder.length - 1] !== closer) {
         remainder = remainder.slice(0, -1);
     }
@@ -99,7 +104,15 @@ function enforceWrappedTagToken(rawToken) {
         remainder = remainder.slice(0, -1);
     }
 
-    const sanitizedInner = enforceTagToken(remainder);
+    const innerParts = remainder
+        .split(/\s+/)
+        .map((part) => enforceTagToken(part))
+        .filter((part) => part.length > 0);
+    let sanitizedInner = innerParts.join(' ');
+    const wrapperIsUnclosed = closerCount < openerCount;
+    if (preserveTrailingSpaceWhenUnclosed && wrapperIsUnclosed && remainderHadTrailingWhitespace && sanitizedInner.length > 0) {
+        sanitizedInner += ' ';
+    }
     if (sanitizedInner.length === 0) {
         if (openerCount > closerCount) {
             return opener.repeat(openerCount);
@@ -110,6 +123,14 @@ function enforceWrappedTagToken(rawToken) {
     const prefix = opener.repeat(openerCount);
     const suffix = closer.repeat(closerCount);
     return `${prefix}${sanitizedInner}${suffix}`;
+}
+
+function enforceWrappedTagToken(rawToken) {
+    return enforceWrappedTagTokenInternal(rawToken, false);
+}
+
+function enforceWrappedTagTokenForEditing(rawToken) {
+    return enforceWrappedTagTokenInternal(rawToken, true);
 }
 
 function analyzeUnclosedWrapperTokenInfo(token) {
@@ -150,8 +171,11 @@ function analyzeUnclosedWrapperTokenInfo(token) {
     }
 
     const inner = token.slice(openerCount, token.length - closerCount);
-    const sanitizedInner = enforceTagToken(inner);
-    const shouldWarn = sanitizedInner.length > 0;
+    const innerParts = inner
+        .split(/\s+/)
+        .map((part) => enforceTagToken(part))
+        .filter((part) => part.length > 0);
+    const shouldWarn = innerParts.length > 0;
 
     return {
         missingSuffix: closer.repeat(openerCount - closerCount),
@@ -169,6 +193,7 @@ function enforceTagBarInputInternal(rawInput, options) {
     let output = '';
     let currentToken = '';
     let inComment = false;
+    let wrapper = null;
 
     const flushToken = ({ isFinal }) => {
         if (currentToken.length === 0) {
@@ -178,7 +203,11 @@ function enforceTagBarInputInternal(rawInput, options) {
         if (allowTrailingCommentStart && currentToken === '/') {
             output += currentToken;
         } else {
-            output += enforceWrappedTagToken(currentToken);
+            if (allowTrailingCommentStart) {
+                output += enforceWrappedTagTokenForEditing(currentToken);
+            } else {
+                output += enforceWrappedTagToken(currentToken);
+            }
         }
         currentToken = '';
     };
@@ -209,7 +238,23 @@ function enforceTagBarInputInternal(rawInput, options) {
             continue;
         }
 
-        if (isWhitespace(char)) {
+        if (!wrapper && currentToken.length === 0 && TAG_WRAPPER_OPENERS.has(char)) {
+            const opener = char;
+            const closer = TAG_WRAPPER_PAIRS.get(opener);
+            if (typeof closer !== 'string') {
+                throw new Error(`Unknown tag wrapper opener: ${opener}`);
+            }
+            let openerCount = 0;
+            while (openerCount < rawInput.length - index && rawInput[index + openerCount] === opener && openerCount < 3) {
+                openerCount += 1;
+            }
+            wrapper = { opener, closer, openerCount };
+            currentToken += opener.repeat(openerCount);
+            index += openerCount - 1;
+            continue;
+        }
+
+        if (isWhitespace(char) && !wrapper) {
             flushToken({ isFinal: false });
             if (output.length > 0 && output[output.length - 1] !== ' ') {
                 output += ' ';
@@ -218,6 +263,10 @@ function enforceTagBarInputInternal(rawInput, options) {
         }
 
         currentToken += char;
+
+        if (wrapper && currentToken.endsWith(wrapper.closer.repeat(wrapper.openerCount))) {
+            wrapper = null;
+        }
     }
 
     flushToken({ isFinal: true });
@@ -240,6 +289,7 @@ function scanTagBarSegments(rawInput) {
     const segments = [];
     let currentToken = '';
     let index = 0;
+    let wrapper = null;
     while (index < rawInput.length) {
         if (rawInput.startsWith('/*', index)) {
             if (currentToken.length > 0) {
@@ -258,7 +308,23 @@ function scanTagBarSegments(rawInput) {
         }
 
         const char = rawInput[index];
-        if (isWhitespace(char)) {
+        if (!wrapper && currentToken.length === 0 && TAG_WRAPPER_OPENERS.has(char)) {
+            const opener = char;
+            const closer = TAG_WRAPPER_PAIRS.get(opener);
+            if (typeof closer !== 'string') {
+                throw new Error(`Unknown tag wrapper opener: ${opener}`);
+            }
+            let openerCount = 0;
+            while (openerCount < rawInput.length - index && rawInput[index + openerCount] === opener && openerCount < 3) {
+                openerCount += 1;
+            }
+            wrapper = { opener, closer, openerCount };
+            currentToken += opener.repeat(openerCount);
+            index += openerCount;
+            continue;
+        }
+
+        if (isWhitespace(char) && !wrapper) {
             if (currentToken.length > 0) {
                 segments.push({ type: 'token', text: currentToken });
                 currentToken = '';
@@ -269,6 +335,10 @@ function scanTagBarSegments(rawInput) {
 
         currentToken += char;
         index += 1;
+
+        if (wrapper && currentToken.endsWith(wrapper.closer.repeat(wrapper.openerCount))) {
+            wrapper = null;
+        }
     }
 
     if (currentToken.length > 0) {

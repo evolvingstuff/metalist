@@ -11,8 +11,11 @@
 - Wrappers in note content are semantic markup regions:
   - `{{...}}`, `[[...]]`, `((...))`
   - Depth 1–3 is supported (e.g. `{{{...}}}`).
-- Wrappers in content are **only consumed/hidden** in view mode when there is a matching *scoped meta tag* in the tag bar.
-- If there is **no matching scoped meta tag**, wrappers are treated as literal text and remain visible even out of edit mode.
+- Wrappers in content are **only consumed/hidden** in view mode when there is a matching *scoped wrapper tag* in the tag bar.
+- If there is **no matching scoped wrapper tag**, wrappers are treated as literal text and remain visible even out of edit mode.
+
+Scoped wrapper tags do not need to be meta tags:
+- Example: tag bar `[foo]` causes all `[...]` regions in the note to render without the brackets in view mode.
 
 ## Meta Tags
 
@@ -29,6 +32,9 @@
   - `[[...]]` matches `[[@tag]]`
   - `[[...]]` does **not** match `[@tag]` or `[[[@tag]]]`
 
+Multiple tags can appear inside the same wrapper token (space-separated), and all recognized meta tags apply:
+- Example: `{{@red @monospace}}`
+
 ### Nesting
 - Scoped regions can be nested within each other.
 - If the tag bar contains multiple scoped meta tags, the rendered view content may contain nested spans.
@@ -36,4 +42,3 @@
 ## Initial meta tags
 - `@monospace`: renders the (scoped) region using a monospace/code font.
 - `@red`: renders the (scoped) region in red.
-

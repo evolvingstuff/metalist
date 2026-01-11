@@ -13,6 +13,12 @@ def test_format_note_content_for_view_scoped_monospace_consumes_delimiters() -> 
     assert rendered == '<div><span class="meta-scope meta-monospace">hello</span></div>'
 
 
+def test_format_note_content_for_view_scoped_multiple_meta_tags_apply_union() -> None:
+    html = "<div>{{hello}}</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="{{@red @monospace}}")
+    assert rendered == '<div><span class="meta-scope meta-monospace meta-red">hello</span></div>'
+
+
 def test_format_note_content_for_view_depth_mismatch_does_not_match_subdepth() -> None:
     html = "<div>{{{hello}}}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="{{@monospace}}")
@@ -43,8 +49,13 @@ def test_format_note_content_for_view_unclosed_wrapper_keeps_literal() -> None:
     assert rendered == html
 
 
+def test_format_note_content_for_view_regular_scoped_tag_consumes_delimiters() -> None:
+    html = "<div>[hello]</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="[foo]")
+    assert rendered == "<div>hello</div>"
+
+
 def test_format_note_content_for_view_global_applies_entire_note() -> None:
     html = "<div>hello</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@red")
     assert rendered == '<span class="meta-global meta-red"><div>hello</div></span>'
-
