@@ -24,6 +24,7 @@ from app.config import VERSION
 from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
+from app.services.undo_state import maybe_reset_on_context
 
 
 router = APIRouter()
@@ -36,8 +37,11 @@ def view_diff(payload: dict):
     editing_note_id = payload["editingNoteId"]
     search = payload["search"]
     tab_id = payload["tabId"]
+    undo_context = payload["undoContext"]
     client_note_uuid_hashes = payload["clientNoteUuidHashes"]
     anchor_root_id = payload["visibleRootAnchorId"]
+
+    maybe_reset_on_context(client_id, undo_context)
 
     if not isinstance(client_note_uuid_hashes, dict):
         raise TypeError("clientNoteUuidHashes must be an object")
