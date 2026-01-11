@@ -105,6 +105,31 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
             raise RuntimeError(f"Undo op note_id must be a non-empty string | op={op}")
         return note_id
 
+    if op_type == "edit_mode":
+        if "before_editing_note_id" not in op:
+            raise RuntimeError(f"Undo op edit_mode missing required key: before_editing_note_id | op={op}")
+        if "after_editing_note_id" not in op:
+            raise RuntimeError(f"Undo op edit_mode missing required key: after_editing_note_id | op={op}")
+        before_editing_note_id = op["before_editing_note_id"]
+        after_editing_note_id = op["after_editing_note_id"]
+        if before_editing_note_id is not None and not isinstance(before_editing_note_id, str):
+            raise RuntimeError(f"Undo op edit_mode.before_editing_note_id must be a string or null | op={op}")
+        if after_editing_note_id is not None and not isinstance(after_editing_note_id, str):
+            raise RuntimeError(f"Undo op edit_mode.after_editing_note_id must be a string or null | op={op}")
+
+        if direction == "undo":
+            if isinstance(before_editing_note_id, str) and before_editing_note_id:
+                return before_editing_note_id
+            if isinstance(after_editing_note_id, str) and after_editing_note_id:
+                return after_editing_note_id
+            return ""
+
+        if isinstance(after_editing_note_id, str) and after_editing_note_id:
+            return after_editing_note_id
+        if isinstance(before_editing_note_id, str) and before_editing_note_id:
+            return before_editing_note_id
+        return ""
+
     if op_type == "create_note":
         record = op["record"]
         if not isinstance(record, dict):
@@ -137,12 +162,12 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
 
 
 class _ClientUndo:
-    __slots__ = ("history", "redo", "last_search_context")
+    __slots__ = ("history", "redo", "last_undo_context")
 
     def __init__(self) -> None:
         self.history: List[dict] = []
         self.redo: List[dict] = []
-        self.last_search_context: str = ""
+        self.last_undo_context: str = ""
 
 
 _clients: Dict[str, _ClientUndo] = {}
@@ -156,6 +181,7 @@ def _ctx(client_id: str) -> _ClientUndo:
 
 def record_update(
     client_id: str,
+    undo_context: str,
     note_id: str,
     *,
     before: str,
@@ -164,6 +190,7 @@ def record_update(
     after_tags: str,
     viewport: Dict[str, object],
 ) -> None:
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -180,7 +207,8 @@ def record_update(
     ctx.redo.clear()
 
 
-def record_create(client_id: str, record: dict, *, viewport: Dict[str, object]) -> None:
+def record_create(client_id: str, undo_context: str, record: dict, *, viewport: Dict[str, object]) -> None:
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -193,7 +221,14 @@ def record_create(client_id: str, record: dict, *, viewport: Dict[str, object]) 
     ctx.redo.clear()
 
 
-def record_delete(client_id: str, records: List[NodeRecord], *, viewport: Dict[str, object]) -> None:
+def record_delete(
+    client_id: str,
+    undo_context: str,
+    records: List[NodeRecord],
+    *,
+    viewport: Dict[str, object],
+) -> None:
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -208,6 +243,7 @@ def record_delete(client_id: str, records: List[NodeRecord], *, viewport: Dict[s
 
 def record_move(
     client_id: str,
+    undo_context: str,
     note_id: str,
     *,
     before_parent: Optional[str],
@@ -218,6 +254,7 @@ def record_move(
     after_next: Optional[str],
     viewport: Dict[str, object],
 ) -> None:
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -258,12 +295,14 @@ def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optiona
 
 def record_collapse(
     client_id: str,
+    undo_context: str,
     note_id: str,
     *,
     before: bool,
     after: bool,
     viewport: Dict[str, object],
 ) -> None:
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -278,7 +317,14 @@ def record_collapse(
     ctx.redo.clear()
 
 
-def record_paste(client_id: str, records: List[NodeRecord], *, viewport: Dict[str, object]) -> None:
+def record_paste(
+    client_id: str,
+    undo_context: str,
+    records: List[NodeRecord],
+    *,
+    viewport: Dict[str, object],
+) -> None:
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
@@ -291,15 +337,44 @@ def record_paste(client_id: str, records: List[NodeRecord], *, viewport: Dict[st
     ctx.redo.clear()
 
 
-def maybe_reset_on_context(client_id: str, search_context: Optional[str]) -> None:
+def record_edit_mode(
+    client_id: str,
+    undo_context: str,
+    *,
+    before_editing_note_id: Optional[str],
+    after_editing_note_id: Optional[str],
+    viewport: Dict[str, object],
+) -> None:
+    if before_editing_note_id is not None and (not isinstance(before_editing_note_id, str) or not before_editing_note_id):
+        raise ValueError("before_editing_note_id must be a non-empty string or null")
+    if after_editing_note_id is not None and (not isinstance(after_editing_note_id, str) or not after_editing_note_id):
+        raise ValueError("after_editing_note_id must be a non-empty string or null")
+
+    maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
-    sc = search_context
-    if sc is None:
-        sc = ""
-    if ctx.last_search_context != sc:
+    normalized_viewport = _normalize_viewport_snapshot(viewport)
+    view_anchor_root_id = _anchor_root_id(normalized_viewport)
+    ctx.history.append({
+        "type": "edit_mode",
+        "before_editing_note_id": before_editing_note_id,
+        "after_editing_note_id": after_editing_note_id,
+        "viewport": normalized_viewport,
+        "viewAnchorRootId": view_anchor_root_id,
+    })
+    ctx.redo.clear()
+
+
+def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
+    ctx = _ctx(client_id)
+    if not isinstance(undo_context, str):
+        raise TypeError("undo_context must be a string")
+    if undo_context == "":
+        raise ValueError("undo_context must be a non-empty string")
+
+    if ctx.last_undo_context != undo_context:
         ctx.history.clear()
         ctx.redo.clear()
-        ctx.last_search_context = sc
+        ctx.last_undo_context = undo_context
 
 
 def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
@@ -355,20 +430,31 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         apply_delete_subtree(root_id)
         ctx.redo.append(op)
         generate_new_uuid()
+    elif op_type == "edit_mode":
+        ctx.redo.append(op)
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
+
+    editing_note_id = None
+    if op_type == "edit_mode":
+        editing_note_id = op["before_editing_note_id"]
+        if editing_note_id is not None and (not isinstance(editing_note_id, str) or not editing_note_id):
+            raise RuntimeError(f"Undo op edit_mode.before_editing_note_id must be a non-empty string or null | op={op}")
 
     focus_note_id = _compute_focus_note_id(op, direction="undo")
     if focus_note_id:
         view_anchor_root_id = _root_ancestor_id(focus_note_id)
     else:
         view_anchor_root_id = op["viewAnchorRootId"]
-    return {
+    payload = {
         **undo_viewport,
         "opType": op_type,
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
+    if op_type == "edit_mode":
+        payload["editingNoteId"] = editing_note_id
+    return payload
 
 
 def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
@@ -419,17 +505,28 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         apply_restore_records(op["records"], token)
         ctx.history.append(op)
         generate_new_uuid()
+    elif op_type == "edit_mode":
+        ctx.history.append(op)
     else:
         raise RuntimeError(f"Unsupported redo op: {op_type}")
+
+    editing_note_id = None
+    if op_type == "edit_mode":
+        editing_note_id = op["after_editing_note_id"]
+        if editing_note_id is not None and (not isinstance(editing_note_id, str) or not editing_note_id):
+            raise RuntimeError(f"Redo op edit_mode.after_editing_note_id must be a non-empty string or null | op={op}")
 
     focus_note_id = _compute_focus_note_id(op, direction="redo")
     if focus_note_id:
         view_anchor_root_id = _root_ancestor_id(focus_note_id)
     else:
         view_anchor_root_id = op["viewAnchorRootId"]
-    return {
+    payload = {
         **redo_viewport,
         "opType": op_type,
         "viewAnchorRootId": view_anchor_root_id,
         "focusNoteId": focus_note_id,
     }
+    if op_type == "edit_mode":
+        payload["editingNoteId"] = editing_note_id
+    return payload

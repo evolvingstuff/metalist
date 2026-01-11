@@ -114,6 +114,7 @@ class CmdPasteSibling(QueryCommand):
     target_note_id: str
     token: str
     client_id: str
+    undo_context: str
     viewport: Dict[str, object]
 
     def describe(self) -> str:
@@ -137,6 +138,6 @@ class CmdPasteSibling(QueryCommand):
         # Record for undo: as paste_subtree (undo deletes, redo restores)
         new_ids = _collect_subtree_ids(new_root_id)
         records: List[NodeRecord] = [store.get(nid) for nid in new_ids]
-        record_paste(self.client_id, records, viewport=self.viewport)
+        record_paste(self.client_id, self.undo_context, records, viewport=self.viewport)
 
         return {"status": "pasted", "id": new_root_id, "updateUUID": generate_new_uuid()}

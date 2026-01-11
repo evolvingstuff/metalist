@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
 import { actionSaveNote } from './content-actions.js';
+import { NotesAPI } from '../../api-client.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
@@ -25,7 +26,7 @@ export async function actionSelectNote(noteId, options) {
         throw new Error('Cannot select note: noteId is required');
     }
 
-    if (ModeContext.isEditing) {
+	if (ModeContext.isEditing) {
         if (ModeContext.currentNoteId === noteId) {
             Logger.logDebug('Note already selected, skipping', { noteId });
             return; 
@@ -43,6 +44,8 @@ export async function actionSelectNote(noteId, options) {
     } else {
         ModeContext.markCaretVisible();
     }
+
+	await NotesAPI.recordEditModeTransition(null, noteId);
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
@@ -79,6 +82,8 @@ export async function actionDeselectNote() {
     ModeContext.setCurrentNoteId(null);
 
     ModeContext.setCurrentContent(null);
+
+    await NotesAPI.recordEditModeTransition(noteId, null);
 
     await actionRefreshAndMaybeSelect({startedAt: startedAt});
 

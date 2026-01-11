@@ -18,6 +18,7 @@ from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
+from app.usecases.record_edit_mode import CmdRecordEditMode
 from app.services.sync import get_current_sync_uuid
 from app.config import VERSION
 from app.services.view_cache import view_cache
@@ -227,6 +228,7 @@ def create_note_top(request: Request, body: dict):
         search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -241,6 +243,7 @@ def create_sibling(request: Request, note_id: str, body: dict):
         search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -254,6 +257,7 @@ def create_child(request: Request, note_id: str, body: dict):
         parent_note_id=note_id,
         token=token,
         client_id=body["clientId"],
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -273,6 +277,7 @@ def update_note(request: Request, note_id: str, body: dict):
         tags=tags,
         token=token,
         client_id=client_id,
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -291,6 +296,7 @@ def save_note(request: Request, note_id: str, body: dict):
         tags=tags,
         token=token,
         client_id=client_id,
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -305,6 +311,7 @@ def move_note_endpoint(note_id: str, body: dict):
         position=body["position"],
         new_parent_id=body["new_parent_id"],
         client_id=body["clientId"],
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -313,14 +320,14 @@ def move_note_endpoint(note_id: str, body: dict):
 @router.post("/notes/{note_id}/collapse")
 def collapse_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
-    cmd = CmdCollapse(note_id=note_id, client_id=body["clientId"], viewport=viewport)
+    cmd = CmdCollapse(note_id=note_id, client_id=body["clientId"], undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 
 
 @router.post("/notes/{note_id}/expand")
 def expand_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
-    cmd = CmdExpand(note_id=note_id, client_id=body["clientId"], viewport=viewport)
+    cmd = CmdExpand(note_id=note_id, client_id=body["clientId"], undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 
 
@@ -328,7 +335,7 @@ def expand_endpoint(note_id: str, body: dict):
 def delete_note(note_id: str, body: dict):
     client_id = body["clientId"]
     viewport = _require_viewport(body)
-    cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id, viewport=viewport)
+    cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id, undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 
 
@@ -346,6 +353,7 @@ def paste_sibling_endpoint(request: Request, target_note_id: str, body: dict):
         target_note_id=target_note_id,
         token=token,
         client_id=body["clientId"],
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -359,6 +367,7 @@ def paste_child_endpoint(request: Request, target_note_id: str, body: dict):
         target_note_id=target_note_id,
         token=token,
         client_id=body["clientId"],
+        undo_context=body["undoContext"],
         viewport=viewport,
     )
     return cmd.execute()
@@ -382,12 +391,26 @@ def _require_bearer_token(request: Request) -> str:
 
 
 @router.post("/notes/undo")
-def undo_endpoint(request: Request, client_id: str, searchContext: str):
+def undo_endpoint(request: Request, client_id: str, undoContext: str):
     token = _require_bearer_token(request)
-    return CmdUndo(client_id=client_id, token=token, search_context=searchContext).execute()
+    return CmdUndo(client_id=client_id, token=token, undo_context=undoContext).execute()
 
 
 @router.post("/notes/redo")
-def redo_endpoint(request: Request, client_id: str, searchContext: str):
+def redo_endpoint(request: Request, client_id: str, undoContext: str):
     token = _require_bearer_token(request)
-    return CmdRedo(client_id=client_id, token=token, search_context=searchContext).execute()
+    return CmdRedo(client_id=client_id, token=token, undo_context=undoContext).execute()
+
+
+@router.post("/notes/edit-mode")
+def record_edit_mode_endpoint(request: Request, body: dict) -> Dict[str, object]:
+    _require_bearer_token(request)
+    viewport = _require_viewport(body)
+    cmd = CmdRecordEditMode(
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        before_editing_note_id=body["beforeEditingNoteId"],
+        after_editing_note_id=body["afterEditingNoteId"],
+        viewport=viewport,
+    )
+    return cmd.execute()

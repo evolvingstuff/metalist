@@ -11,6 +11,21 @@ function captureViewportSnapshot() {
     };
 }
 
+function captureUndoContext() {
+    const tabId = ModeContext.activeTabId;
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('ModeContext.activeTabId must be a non-empty string');
+    }
+
+    const searchQuery = ModeContext.searchQuery;
+    if (searchQuery !== null && typeof searchQuery !== 'string') {
+        throw new Error('ModeContext.searchQuery must be a string or null');
+    }
+
+    const normalizedSearch = searchQuery === null ? '' : searchQuery;
+    return `tab:${tabId}|search:${normalizedSearch}`;
+}
+
 export const NotesAPI = {
                 
     async _apiCall(url, options) {
@@ -31,7 +46,8 @@ export const NotesAPI = {
             if (fetchOptions.method && fetchOptions.method !== 'GET') {
                 const syncContext = {
                     clientId: ModeContext.clientId,
-                    lastUpdateUUID: ModeContext.lastUpdateUUID
+                    lastUpdateUUID: ModeContext.lastUpdateUUID,
+                    undoContext: captureUndoContext(),
                 };
 
                 if (claimSession) {
@@ -286,15 +302,27 @@ export const NotesAPI = {
     },
 
     async undo() {
-        const searchContext = (ModeContext.searchQuery || '').toString();
-        const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&searchContext=${encodeURIComponent(searchContext)}`;
+        const undoContext = captureUndoContext();
+        const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&undoContext=${encodeURIComponent(undoContext)}`;
         return this._apiCall(url, { method: 'POST', claimSession: true });
     },
 
     async redo() {
-        const searchContext = (ModeContext.searchQuery || '').toString();
-        const url = `${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&searchContext=${encodeURIComponent(searchContext)}`;
+        const undoContext = captureUndoContext();
+        const url = `${CONFIG.API.NOTES.REDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&undoContext=${encodeURIComponent(undoContext)}`;
         return this._apiCall(url, { method: 'POST', claimSession: true });
+    },
+
+    async recordEditModeTransition(beforeEditingNoteId, afterEditingNoteId) {
+        const body = {
+            beforeEditingNoteId,
+            afterEditingNoteId,
+        };
+        return this._apiCall(CONFIG.API.NOTES.EDIT_MODE, {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
     },
 
     getNoteElement(noteId) {

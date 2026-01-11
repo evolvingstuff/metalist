@@ -25,8 +25,16 @@ def _serialize_datetime(value: datetime) -> str:
 
 
 def _deserialize_row(row: sqlite3.Row) -> dict:
+    note_id = row["id"]
+
+    def _parse_datetime(field: str) -> datetime:
+        raw = row[field]
+        if not isinstance(raw, str):
+            raise TypeError(f"notes.{field} must be a string | note_id={note_id} value={raw!r}")
+        return datetime.fromisoformat(raw)
+
     return {
-        "id": row["id"],
+        "id": note_id,
         "content": row["content"],
         "tags": row["tags"],
         "encryption_nonce": row["encryption_nonce"],
@@ -37,8 +45,8 @@ def _deserialize_row(row: sqlite3.Row) -> dict:
         "prev_id": row["prev_id"],
         "next_id": row["next_id"],
         "is_collapsed": bool(row["is_collapsed"]),
-        "created_at": datetime.fromisoformat(row["created_at"]),
-        "updated_at": datetime.fromisoformat(row["updated_at"]),
+        "created_at": _parse_datetime("created_at"),
+        "updated_at": _parse_datetime("updated_at"),
     }
 
 

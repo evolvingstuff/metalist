@@ -16,6 +16,7 @@ class CmdCreateSibling(QueryCommand):
     search_query: Optional[str]
     token: str
     client_id: str
+    undo_context: str
     viewport: Dict[str, object]
 
     def describe(self) -> str:
@@ -67,7 +68,7 @@ class CmdCreateSibling(QueryCommand):
             "created_at": None,
             "updated_at": None,
         }
-        record_create(self.client_id, rec, viewport=self.viewport)
+        record_create(self.client_id, self.undo_context, rec, viewport=self.viewport)
 
         update_uuid = generate_new_uuid()
         return {"id": note_uuid, "status": "created", "updateUUID": update_uuid}
