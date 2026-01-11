@@ -35,6 +35,8 @@ Scoped wrapper tags do not need to be meta tags:
 Multiple tags can appear inside the same wrapper token (space-separated), and all recognized meta tags apply:
 - Example: `{{@red @monospace}}`
 
+Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`). Those tags are currently inert for formatting, but the presence of the wrapper token still enables consuming the matching content delimiters in view mode.
+
 ### Nesting
 - Scoped regions can be nested within each other.
 - If the tag bar contains multiple scoped meta tags, the rendered view content may contain nested spans.

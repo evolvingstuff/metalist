@@ -8,7 +8,7 @@
 ## Whitespace + Tokens
 - Outside of `/* ... */` comments, tags are separated by whitespace.
 - Runs of whitespace are normalized to single spaces.
-- Wrapper tokens may contain internal spaces (e.g. `{{@red @monospace}}`), which are preserved (normalized) inside the wrapper.
+- Wrapper tokens may contain internal spaces (e.g. `{{@red @monospace}}`), which are preserved (normalized) inside the wrapper. This means a wrapper token can contain multiple tags.
 - A normal tag token allows only ASCII-printable characters and disallows: `: " \\ > < = [ ] { } ( ) * | ; ~ ``.
 - Tag tokens also cannot start with `-`, `+`, or `/`.
 
@@ -36,6 +36,10 @@ Examples (autocorrected while typing):
 Wrapper regions in note content are always allowed (e.g. `((foo))`), but they are only consumed/hidden in view mode when there is a matching scoped wrapper tag in the tag bar (meta tags like `{{@red}}` or regular tags like `{{foo}}`). Otherwise the wrappers remain literal text.
 
 Wrapper tokens can contain multiple tags separated by spaces (e.g. `{{@red @monospace}}`).
+
+Notes:
+- Multiple tags inside a wrapper are still stored as a single wrapper token in the tag bar (i.e., the internal whitespace does not “split” it into separate top-level tokens).
+- Non-meta tags inside wrapper tokens are allowed (e.g. `{{foo bar}}`) for future semantic uses; currently only `@...` meta tags affect formatting.
 
 If a wrapper is opened but not closed:
 - It does not immediately warn on a bare opener like `(`.
