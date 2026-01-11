@@ -201,6 +201,7 @@ Notes:
 - `POST /api2/notes/{note_id}/copy`
 - `POST /api2/notes/paste-sibling/{target_note_id}`
 - `POST /api2/notes/paste-child/{target_note_id}`
+- `POST /api2/notes/edit-mode`
 - `POST /api2/notes/undo`
 - `POST /api2/notes/redo`
 

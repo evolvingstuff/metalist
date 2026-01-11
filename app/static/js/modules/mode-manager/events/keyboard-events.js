@@ -783,9 +783,7 @@ function handleUndoShortcut(event) {
         event.preventDefault();
         event.stopPropagation();
 
-        // Selecting a note is an undoable UI transition; do not consume the server undo
-        // stack until we return to the pre-selection state.
-        actionDeselectNote();
+        actionUndo();
         return;
     }
 

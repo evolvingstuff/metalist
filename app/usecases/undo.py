@@ -10,13 +10,13 @@ from app.services.sync import get_current_sync_uuid
 class CmdUndo(QueryCommand):
     client_id: str
     token: str
-    search_context: str = ""
+    undo_context: str
 
     def describe(self) -> str:
         return f"CmdUndo(client={self.client_id})"
 
     def execute(self):
-        maybe_reset_on_context(self.client_id, self.search_context)
+        maybe_reset_on_context(self.client_id, self.undo_context)
         scroll_restore = do_undo(self.client_id, self.token)
         if scroll_restore is not None:
             return {

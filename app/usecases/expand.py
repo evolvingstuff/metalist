@@ -14,6 +14,7 @@ from app.usecases.collapse import apply_set_collapse
 class CmdExpand(QueryCommand):
     note_id: str
     client_id: str
+    undo_context: str
     viewport: Dict[str, object]
 
     def describe(self) -> str:
@@ -30,6 +31,13 @@ class CmdExpand(QueryCommand):
             os._exit(1)
 
         from app.services.undo_state import record_collapse
-        record_collapse(self.client_id, self.note_id, before=before, after=False, viewport=self.viewport)
+        record_collapse(
+            self.client_id,
+            self.undo_context,
+            self.note_id,
+            before=before,
+            after=False,
+            viewport=self.viewport,
+        )
 
         return {"status": "updated", "updateUUID": generate_new_uuid()}

@@ -303,33 +303,11 @@ export function syncTagBar(editingNoteElement) {
 
     validateAndRenderTagBar(editingNoteElement);
 
-    // Keep the tag bar in the DOM while focused so typing can trigger the
-    // global input handler (used for scroll restoration during editing).
-    tagBar.hidden = !isTagBarFocused(tagBar) && !isElementPartiallyInViewport(editingNoteElement);
-
-    if (typeof IntersectionObserver !== 'undefined') {
-        if (activeObserver) {
-            return;
-        }
-        activeObserver = new IntersectionObserver((entries) => {
-            for (const entry of entries) {
-                if (entry.target !== editingNoteElement) {
-                    continue;
-                }
-                tagBar.hidden = !isTagBarFocused(tagBar) && !entry.isIntersecting;
-            }
-        });
-        activeObserver.observe(editingNoteElement);
-        return;
-    }
-
-    if (!activeFallbackHandler) {
-        activeFallbackHandler = () => {
-            tagBar.hidden = !isTagBarFocused(tagBar) && !isElementPartiallyInViewport(editingNoteElement);
-        };
-        window.addEventListener('scroll', activeFallbackHandler, true);
-        window.addEventListener('resize', activeFallbackHandler);
-    }
+    // While editing, the tag bar is part of the core editing UI. Keep it visible
+    // (and avoid any observer-driven hiding that can get out of sync during
+    // move/undo reorder operations).
+    disconnectVisibilityTracking();
+    tagBar.hidden = false;
 }
 
 export function clearTagBar() {

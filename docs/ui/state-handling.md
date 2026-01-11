@@ -447,126 +447,54 @@ async function actionSwitchToTab(newTabId) {
 }
 ```
 
-### Undo/Redo with Tab Context
+### Undo/Redo with Context Boundaries
 
-Commands capture **complete application snapshots** for time-travel debugging:
+Undo/redo is **server-side** and scoped by a client-computed `undoContext` (currently `tabId + searchQuery`).
 
-```javascript
-// In BaseTransactionService (backend)
-class Command {
-  constructor(operation, changes) {
-    this.operation = operation;
-    this.changes = changes;
-    
-    // Frontend passes complete tab snapshot
-    this.tabSnapshot = frontendTabContext;
-  }
-}
+- The client sends `undoContext` on every relevant request (including `POST /api2/notes/view`).
+- When `undoContext` changes, the server **clears** the undo+redo stacks for that `clientId`.
+- This guarantees `Cmd+Z`/`Cmd+Y` never crosses tab or search boundaries.
 
-// Undo restores exact moment in time (including whether the user was editing when possible)
-async function actionUndo() {
-  const command = UndoStack.peek();
-  
-  // Restore complete tab state from when action was taken
-  ModeContext.setActiveTab(command.tabSnapshot.activeTabId);
-  ModeContext.setTabs(command.tabSnapshot.tabs);
-  
-  // Execute undo and show user exactly what happened
-  await command.undo();
-  await actionRefreshView();
-}
-```
+Edit-mode transitions are recorded too:
+- Selecting a note (enter edit mode) records an `edit_mode` op.
+- Exiting edit mode (Esc/click-outside) records an `edit_mode` op.
+- Undo/redo of these ops uses `scrollRestore.editingNoteId` (string or null) to enter/exit editing deterministically.
 
-### Multi-Client Context Management
+### Context Boundary Rules
 
-The server-side undo system automatically handles multiple browser tabs and devices through context boundaries:
-
-```javascript
-// Client sends context with every operation
-async function actionCreateNote() {
-  const clientContext = {
-    tabId: ModeContext.activeTabId,
-    sessionId: browserSessionId,
-    clientId: deviceId
-  };
-  
-  await NotesAPI.createNote(parentId, { context: clientContext });
-}
-
-// Connectivity-only polling (single active session = no remote diffing)
-async function pollForConnectivity() {
-  const authToken = localStorage.getItem('auth_token');
-  const response = await fetch('/api2/auth/status', {
-    method: 'GET',
-    headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
-  });
-
-  if (response.ok) {
-    ErrorHandler.handleConnectionRestored();
-  }
-}
-```
-
-The background poll now exists purely to clear network banners once connectivity returns. Remote diffing is unnecessary because the auth service issues only one session token at a time.
-
-**Context Boundary Rules:**
-- **Tab switches**: Clear undo stack (new search context)
-- **Client switches**: Clear undo stack (different browser/device)  
-- **Remote operations**: Clear undo stack (changes from other client)
-- **App reload**: Clear undo stack (new session)
+- **Tab switches**: clear undo/redo stacks (new `undoContext`).
+- **Search changes**: clear undo/redo stacks (new `undoContext`).
+- **App reload**: clears undo/redo stacks (fresh server state).
 
 **Performance Note (Tab Switches):**
 - The UI may cache/detach the rendered notes DOM per tab so switching back to a deeply-scrolled tab is instant; the next `/api2/notes/view` call reconciles any diffs.
 
-**Note-Level Locking Integration:**
+**Edit Mode Integration:**
 ```javascript
-// Enter edit mode with locking
+// Enter edit mode
 async function actionSelectNote(noteId) {
-  try {
-    // Acquire exclusive lock on note
-    await NotesAPI.acquireNoteLock(noteId, clientContext);
-    
-    // Stop background polling to prevent UI shifts
-    clearInterval(pollInterval);
-    
-    // Enter editing state
-    ModeContext.setCurrentNoteId(noteId);
-    ModeContext.setEditing(true);
-    
-  } catch (error) {
-    if (error.status === 423) {
-      showNotification("This note is being edited by another user");
-      return;
-    }
-    throw error;
-  }
+  ModeContext.setCurrentNoteId(noteId);
+  ModeContext.setEditing(true);
+
+  // Record entering edit mode in the server undo stack
+  await NotesAPI.recordEditModeTransition(null, noteId);
+
+  await actionRefreshView();
 }
 
-// Exit edit mode with sync
+// Exit edit mode (Esc / click-outside)
 async function actionDeselectNote() {
-  // Save and release lock
-  await actionSaveNote(ModeContext.currentNoteId);
-  await NotesAPI.releaseNoteLock(ModeContext.currentNoteId, clientContext);
-  
-  // Refresh with all changes that happened during editing
-  await actionRefreshView();
-  
-  // Resume background polling
-  startPolling();
-  
-  // Exit editing state
+  const noteId = ModeContext.currentNoteId;
+  await actionSaveNote(noteId);
   ModeContext.setEditing(false);
   ModeContext.setCurrentNoteId(null);
+
+  // Record exiting edit mode in the server undo stack
+  await NotesAPI.recordEditModeTransition(noteId, null);
+
+  await actionRefreshView();
 }
 ```
-
-**Lock Protection Rules:**
-- Cannot edit notes locked by other users
-- Cannot delete notes (or their children) locked by other users
-- Cannot move notes locked by other users
-- Lock timeouts handle crashed/disconnected clients
-
-This eliminates all undo/redo conflicts while maintaining predictable behavior - users can only undo operations from their current working context. The locking system ensures stable editing sessions without UI interference from concurrent users.
 
 ### Design Benefits Preserved
 

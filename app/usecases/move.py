@@ -63,6 +63,7 @@ class CmdMove(QueryCommand):
     position: Optional[str]  # 'BEFORE' or 'AFTER'
     new_parent_id: Optional[str]
     client_id: str
+    undo_context: str
     viewport: Dict[str, object]
 
     def describe(self) -> str:
@@ -110,6 +111,7 @@ class CmdMove(QueryCommand):
         from app.services.undo_state import record_move
         record_move(
             self.client_id,
+            self.undo_context,
             self.note_id,
             before_parent=old_parent,
             before_prev=old_prev,

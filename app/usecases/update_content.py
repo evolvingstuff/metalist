@@ -54,6 +54,7 @@ class CmdUpdateContent(QueryCommand):
     tags: str
     token: str
     client_id: str
+    undo_context: str
     viewport: Dict[str, object]
 
     def describe(self) -> str:
@@ -70,6 +71,7 @@ class CmdUpdateContent(QueryCommand):
         from app.services.undo_state import record_update
         record_update(
             self.client_id,
+            self.undo_context,
             self.note_id,
             before=prev,
             after=self.content,

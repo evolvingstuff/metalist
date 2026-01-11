@@ -97,7 +97,13 @@ export async function actionRefreshAndMaybeSelect(options) {
         isEditing: ModeContext.isEditing
     });
 
-    const noteId = ModeContext.currentNoteId;
+    let noteId = null;
+    if (ModeContext.isEditing) {
+        noteId = ModeContext.currentNoteId;
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('Invariant violation: ModeContext.isEditing is true but currentNoteId is missing');
+        }
+    }
     const requestTabId = ModeContext.activeTabId;
     const requestSearchQuery = ModeContext.searchQuery;
 
