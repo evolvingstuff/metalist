@@ -1,3 +1,5 @@
+import { scrollWindowToYFastAnimated } from './animated-scroll-service.js';
+
 function clampNumber(value, min, max) {
     if (typeof value !== 'number' || Number.isNaN(value)) {
         throw new Error('clampNumber requires a number');
@@ -186,6 +188,6 @@ export function scrollNoteIntoView(noteId, options) {
     const docTop = rect.top + window.scrollY;
     const target = docTop - visibleTop;
     const clamped = Math.round(clampNumber(target, 0, getScrollMaxY()));
-    window.scrollTo(0, clamped);
+    scrollWindowToYFastAnimated(clamped);
     return { scrolled: true, reason: 'scroll' };
 }

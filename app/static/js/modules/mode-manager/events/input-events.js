@@ -5,6 +5,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { CommentUtils } from '../../comment-utils.js';
 import { CONFIG } from '../../config.js';
 import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
+import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 
 let commentHighlightTimeoutId = null;
 let lastKeyPressed = null;
@@ -16,7 +17,7 @@ function scrollViewportToCenterRect(rect) {
 
     const centerY = rect.top + rect.height / 2;
     const targetScrollY = Math.max(0, window.scrollY + centerY - window.innerHeight / 2);
-    window.scrollTo({ top: Math.round(targetScrollY), behavior: 'auto' });
+    scrollWindowToYFastAnimated(Math.round(targetScrollY));
 }
 
 function getCaretRectWithin(element) {

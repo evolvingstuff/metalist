@@ -4,6 +4,7 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
+import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -154,9 +155,9 @@ export async function createNote() {
         await actionSelectNote(newNoteId, caretOptions);
     }
 
-    if (shouldScrollToTopAfterCreate) {
-        window.scrollTo(0, 0);
-    }
+	if (shouldScrollToTopAfterCreate) {
+		scrollWindowToYFastAnimated(0);
+	}
 }
 
 export async function createChildNote() {
