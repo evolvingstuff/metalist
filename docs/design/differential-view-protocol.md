@@ -12,6 +12,7 @@
 {
   "clientId": "client-uuid",
   "editingNoteId": null,
+  "undoContext": "tab:tab-uuid|search:optional query",
   "search": "optional query",
   "tabId": "tab-uuid",
   "visibleRootAnchorId": "root-uuid-13",
@@ -27,6 +28,7 @@
 - `visibleRootAnchorId`: the root note currently near the center of the viewport. The server expands the window around this anchor (plus a buffer) so infinite scroll is driven entirely on the backend.
 - `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have. The cache is **tab-scoped**—each browser tab/search context keeps its own hash map so switching tabs never reports nodes from a different view (prevents the server from widening the first tab's root window after you scroll another tab way down).
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
+- `undoContext`: a client-computed context boundary (currently tab+search). When this changes, the server clears the undo/redo stack for that client so `Cmd+Z` never crosses tab/search contexts.
 - `tabId`: client-maintained active tab UUID; the server caches one view per `(clientId, tabId, search)` tuple.
 - A companion `/api2/notes/tab-state` + tab create/delete endpoints keep each tab's search + scroll metadata in-memory so reconnects can hydrate the same contexts before the next `/notes/view` call.
 
@@ -125,6 +127,7 @@
 - When caching/restoring the notes DOM during a tab switch, the browser can temporarily clamp `window.scrollY` if the page height changes. Scroll persistence should be suppressed during the switch so per-tab `scrollY` snapshots are not overwritten.
 - Prefer storing a content-based `scrollAnchor` (anchor note + neighbor belt + intra-note offset) via `/api2/notes/tab-state` so restoration survives insertions/deletions/reorders across overlapping tab result sets.
 - Undo/redo responses additionally return a `scrollRestore.focusNoteId` so the client can scroll the affected note into view (below the sticky search controls) even when the viewport anchor is root-based.
+- When undoing/redoing an edit-mode transition, the server includes `scrollRestore.editingNoteId` (string or null) so the client can enter/exit editing deterministically.
 
 ## Manual Verification Checklist
 - CRUD sequences: create, edit, delete and confirm only changed nodes rerender.
