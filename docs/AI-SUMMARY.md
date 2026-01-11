@@ -16,6 +16,7 @@
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
+- `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping.
 - `app/services/tab_state.py`: Tracks `(client, tab)` search + scroll metadata used by the UI between reloads.
 - `app/security/encryption.py`: Crypto facade (AES-GCM, PBKDF2, key mgmt helpers).
 - `app/db`: `session.py` (begin_writer/connect_reader/read guard), `schema.py`, `notes_sql.py`, `settings_sql.py`.

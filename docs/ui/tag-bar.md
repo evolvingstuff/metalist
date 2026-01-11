@@ -32,6 +32,8 @@ Examples (autocorrected while typing):
   - Example: tag bar `{{@monospace}}` applies monospace styling to `{{...}}` regions in the note.
   - Depth must match exactly: `[[...]]` matches `[[@tag]]`, not `[@tag]` or `[[[@tag]]]`.
 
+Wrapper regions in note content are always allowed (e.g. `((foo))`), but they are only consumed/hidden in view mode when there is a matching scoped meta tag in the tag bar. Otherwise the wrappers remain literal text.
+
 If a wrapper is opened but not closed:
 - It does not immediately warn on a bare opener like `(`.
 - Once there is content (e.g. `(tag`), the tag bar shows a warning and the incomplete token is omitted from the saved tag string.

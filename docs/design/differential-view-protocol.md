@@ -75,7 +75,13 @@
 ### Notes
 - `snapshot.structure` includes every visible node in the current window. This path is only used when the server lacks a cached view for `(clientId, tabId, search)`.
 - `snapshot.notes` is sparse: only nodes whose `hash` differs from the client’s reported hashes.
-- Each note payload includes `content` (rendered HTML) and `tags` (tag-bar string: whitespace-separated tokens outside `/* ... */` comments). The client sanitizes invalid/incomplete tokens (e.g. unclosed wrappers/comments) before saving. The `hash` covers content + tags + flags + structural pointers.
+- Each note payload includes:
+  - `content`: HTML that is **rendered for view mode** unless the note is actively being edited by the current client.
+    - When `flags.isEditing` is true (and the lock owner is the current client), the server sends **raw editable HTML** so wrapper delimiters like `{{...}}` remain visible.
+    - Otherwise the server may apply view-only transforms (e.g. meta-tag formatting that consumes matching wrapper delimiters).
+  - `tags`: tag-bar string: whitespace-separated tokens outside `/* ... */` comments.
+  - `hash`: covers `content` + `tags` + flags + structural pointers.
+- The client sanitizes invalid/incomplete tokens (e.g. unclosed wrappers/comments) before saving.
 - `rootIds` lists the visible root ordering so the client can refresh infinite-scroll metrics without the full structure.
 - `updateUUID` mirrors `snapshot.updateUUID` for convenience.
 
