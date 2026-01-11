@@ -503,6 +503,14 @@ function handleCollapseToggleInteraction(event, collapseToggle, interactionSourc
         Logger.LogCategory.EVENT
     );
 
+    const searchInput = document.getElementById('search-input');
+    if (searchInput && typeof searchInput.blur === 'function') {
+        searchInput.blur();
+    }
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
     event.preventDefault();
     event.stopPropagation();
 

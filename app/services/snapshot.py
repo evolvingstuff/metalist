@@ -88,11 +88,10 @@ def build_view_state(
     children_by_parent: DefaultDict[Optional[str], List[str]] = defaultdict(list)
     hash_by_id: Dict[str, str] = {}
 
+    # Search filtering is intentionally disabled during the ongoing search rewrite.
+    # We still accept and propagate `search` (tab state + UI context), but the view
+    # should render as if search is empty.
     search_term: Optional[str] = None
-    if search:
-        stripped = search.strip()
-        if stripped:
-            search_term = stripped.lower()
 
     allow_cache: Dict[str, bool] = {}
 
