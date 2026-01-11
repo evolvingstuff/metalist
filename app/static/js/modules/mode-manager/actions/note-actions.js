@@ -5,6 +5,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
+import { scrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -371,16 +372,14 @@ export async function actionCopyNote() {
 }
 
 export async function actionPasteNoteSibling() {
-    let startedAt = performance.now();
-
     const currentNoteId = ModeContext.currentNoteId;
-    
-    Logger.logAction('actionPasteNoteSibling', { 
+
+    Logger.logAction('actionPasteNoteSibling', {
         currentNoteId,
         isEditing: ModeContext.isEditing
     });
 
-    if (!currentNoteId) {
+    if (!ModeContext.isEditing || !currentNoteId) {
         throw new Error('Cannot paste sibling: no note selected');
     }
 
@@ -389,21 +388,21 @@ export async function actionPasteNoteSibling() {
     }
 
     ModeContext.setLoading(true);
-
     const response = await NotesAPI.pasteNoteSibling(currentNoteId);
-    const newNoteId = response.id;
-
-    ModeContext.setCurrentNoteId(newNoteId);
-
-    ModeContext.markCaretHidden();
-    
     ModeContext.setLoading(false);
 
-    await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionPasteNoteSibling'});
+    const newNoteId = response.id;
+    if (typeof newNoteId !== 'string' || newNoteId.length === 0) {
+        throw new Error('Paste sibling response missing new note id');
+    }
+
+    await actionSwitchNotes(newNoteId, { initialCaretVisibility: 'hidden' });
+    window.requestAnimationFrame(() => {
+        scrollNoteIntoView(newNoteId, {});
+    });
 }
 
 export async function actionPasteNoteChild() {
-    let startedAt = performance.now();
     const currentNoteId = ModeContext.currentNoteId;
     
     Logger.logAction('actionPasteNoteChild', { 
@@ -411,7 +410,7 @@ export async function actionPasteNoteChild() {
         isEditing: ModeContext.isEditing
     });
 
-    if (!currentNoteId) {
+    if (!ModeContext.isEditing || !currentNoteId) {
         throw new Error('Cannot paste child: no note selected');
     }
 
@@ -420,15 +419,16 @@ export async function actionPasteNoteChild() {
     }
 
     ModeContext.setLoading(true);
-
     const response = await NotesAPI.pasteNoteChild(currentNoteId);
-    const newNoteId = response.id;
-
-    ModeContext.setCurrentNoteId(newNoteId);
-
-    ModeContext.markCaretHidden();
-    
     ModeContext.setLoading(false);
 
-    await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'actionPasteNoteChild'});
+    const newNoteId = response.id;
+    if (typeof newNoteId !== 'string' || newNoteId.length === 0) {
+        throw new Error('Paste child response missing new note id');
+    }
+
+    await actionSwitchNotes(newNoteId, { initialCaretVisibility: 'hidden' });
+    window.requestAnimationFrame(() => {
+        scrollNoteIntoView(newNoteId, {});
+    });
 }
