@@ -20,6 +20,14 @@ const TAG_CONTAINS_DISALLOWED = new Set([
 
 const TOKEN_START_DISALLOWED = new Set(['-', '+', '/']);
 
+const TAG_WRAPPER_OPENERS = new Set(['[', '{', '(']);
+const TAG_WRAPPER_PAIRS = new Map([
+    ['[', ']'],
+    ['{', '}'],
+    ['(', ')'],
+]);
+const TAG_WRAPPER_CHARS = new Set(['[', ']', '{', '}', '(', ')']);
+
 function isAsciiPrintable(char) {
     if (typeof char !== 'string' || char.length === 0) {
         return false;
@@ -55,6 +63,102 @@ function enforceTagToken(rawToken) {
     return out;
 }
 
+function enforceWrappedTagToken(rawToken) {
+    if (typeof rawToken !== 'string') {
+        throw new Error('enforceWrappedTagToken expects a string');
+    }
+
+    if (rawToken.length === 0) {
+        return '';
+    }
+
+    const opener = rawToken[0];
+    if (!TAG_WRAPPER_OPENERS.has(opener)) {
+        return enforceTagToken(rawToken);
+    }
+
+    const closer = TAG_WRAPPER_PAIRS.get(opener);
+    if (typeof closer !== 'string') {
+        throw new Error(`Unknown tag wrapper opener: ${opener}`);
+    }
+
+    let openerCount = 0;
+    while (openerCount < rawToken.length && rawToken[openerCount] === opener && openerCount < 3) {
+        openerCount += 1;
+    }
+
+    let remainder = rawToken.slice(openerCount);
+
+    while (remainder.length > 0 && TAG_WRAPPER_CHARS.has(remainder[remainder.length - 1]) && remainder[remainder.length - 1] !== closer) {
+        remainder = remainder.slice(0, -1);
+    }
+
+    let closerCount = 0;
+    while (closerCount < openerCount && remainder.endsWith(closer)) {
+        closerCount += 1;
+        remainder = remainder.slice(0, -1);
+    }
+
+    const sanitizedInner = enforceTagToken(remainder);
+    if (sanitizedInner.length === 0) {
+        if (openerCount > closerCount) {
+            return opener.repeat(openerCount);
+        }
+        return '';
+    }
+
+    const prefix = opener.repeat(openerCount);
+    const suffix = closer.repeat(closerCount);
+    return `${prefix}${sanitizedInner}${suffix}`;
+}
+
+function analyzeUnclosedWrapperTokenInfo(token) {
+    if (typeof token !== 'string') {
+        throw new Error('analyzeUnclosedWrapperTokenInfo expects a string');
+    }
+
+    if (token.length === 0) {
+        return null;
+    }
+
+    const opener = token[0];
+    if (!TAG_WRAPPER_OPENERS.has(opener)) {
+        return null;
+    }
+
+    const closer = TAG_WRAPPER_PAIRS.get(opener);
+    if (typeof closer !== 'string') {
+        throw new Error(`Unknown tag wrapper opener: ${opener}`);
+    }
+
+    let openerCount = 0;
+    while (openerCount < token.length && token[openerCount] === opener && openerCount < 3) {
+        openerCount += 1;
+    }
+
+    let closerCount = 0;
+    while (
+        closerCount < token.length
+        && token[token.length - 1 - closerCount] === closer
+        && closerCount < openerCount
+    ) {
+        closerCount += 1;
+    }
+
+    if (closerCount >= openerCount) {
+        return null;
+    }
+
+    const inner = token.slice(openerCount, token.length - closerCount);
+    const sanitizedInner = enforceTagToken(inner);
+    const shouldWarn = sanitizedInner.length > 0;
+
+    return {
+        missingSuffix: closer.repeat(openerCount - closerCount),
+        shouldWarn,
+    };
+}
+
 function enforceTagBarInputInternal(rawInput, options) {
     if (typeof rawInput !== 'string') {
         throw new Error('enforceTagBarInputInternal expects a string');
@@ -71,10 +175,10 @@ function enforceTagBarInputInternal(rawInput, options) {
             return;
         }
 
-        if (allowTrailingCommentStart && isFinal && currentToken === '/') {
+        if (allowTrailingCommentStart && currentToken === '/') {
             output += currentToken;
         } else {
-            output += enforceTagToken(currentToken);
+            output += enforceWrappedTagToken(currentToken);
         }
         currentToken = '';
     };
@@ -183,16 +287,36 @@ export function analyzeTagBarInput(rawInput) {
     const { segments, unclosedCommentText } = scanTagBarSegments(enforcedText);
 
 
-    const sanitizedSegments = segments.map((segment) => segment.text);
+    let unclosedWrapperSuffix = null;
+
+    const sanitizedSegments = [];
+    const normalizedSegments = [];
+    for (const segment of segments) {
+        normalizedSegments.push(segment.text);
+        if (segment.type === 'token') {
+            const wrapperInfo = analyzeUnclosedWrapperTokenInfo(segment.text);
+            if (wrapperInfo) {
+                if (wrapperInfo.shouldWarn && !unclosedWrapperSuffix) {
+                    unclosedWrapperSuffix = wrapperInfo.missingSuffix;
+                }
+                continue;
+            }
+        }
+        sanitizedSegments.push(segment.text);
+    }
+
     const sanitizedText = sanitizedSegments.join(' ').trim();
 
-    const normalizedSegments = [...sanitizedSegments];
     if (unclosedCommentText) {
         normalizedSegments.push(unclosedCommentText);
     }
     const normalizedText = normalizedSegments.join(' ').trim();
 
-    const errorMessage = unclosedCommentText ? 'Close comment with */' : null;
+    const shouldWarnUnclosedComment = Boolean(unclosedCommentText) && unclosedCommentText.length > 2;
+
+    const errorMessage = shouldWarnUnclosedComment
+        ? 'Close comment with */'
+        : (unclosedWrapperSuffix ? `Close tag wrapper with ${unclosedWrapperSuffix}` : null);
 
     return {
         isValid: errorMessage === null,

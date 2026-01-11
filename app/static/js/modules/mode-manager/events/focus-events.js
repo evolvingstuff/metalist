@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { normalizeTags, setTagBarValue } from '../services/tag-bar-service.js';
+import { sanitizeTags, setTagBarValue } from '../services/tag-bar-service.js';
 
 export function initFocusEvents() {
         
@@ -75,7 +75,7 @@ function handleBlur(event) {
             return;
         }
 
-        const normalized = normalizeTags(tagBarInput.value || '');
-        setTagBarValue(noteElement, normalized);
+        const sanitized = sanitizeTags(tagBarInput.value || '');
+        setTagBarValue(noteElement, sanitized);
     }
 }

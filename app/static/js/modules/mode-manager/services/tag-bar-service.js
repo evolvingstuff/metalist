@@ -159,6 +159,13 @@ export function normalizeTags(rawTags) {
     return normalizeTagBarInput(rawTags);
 }
 
+export function sanitizeTags(rawTags) {
+    if (typeof rawTags !== 'string') {
+        throw new Error('sanitizeTags expects a string');
+    }
+    return analyzeTagBarInput(rawTags).sanitizedText;
+}
+
 export function normalizeTagBarForNewTag(noteElement, tagBarInput) {
     if (!noteElement) {
         throw new Error('normalizeTagBarForNewTag requires a note element');

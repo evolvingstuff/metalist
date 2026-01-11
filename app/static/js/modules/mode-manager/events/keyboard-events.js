@@ -13,7 +13,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
-import { normalizeTagBarForNewTag, normalizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
+import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -293,8 +293,8 @@ function handleToggleTagBarFocusShortcut(event) {
             throw new Error('Expected tag input to exist when toggling focus back to content');
         }
 
-        const normalized = normalizeTags(tagInput.value || '');
-        setTagBarValue(noteElement, normalized);
+        const sanitized = sanitizeTags(tagInput.value || '');
+        setTagBarValue(noteElement, sanitized);
 
         const contentElement = DOMUtils.getNoteContent(noteElement);
         if (!contentElement) {

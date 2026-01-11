@@ -33,3 +33,9 @@
 | Drag-select text in note | Releasing mouse outside note keeps edit mode + selection |
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
+
+## Tag Bar Syntax
+- Tags are space-separated tokens stored on each note.
+- Tokens may be wrapped with matching `[]`, `{}`, or `()` (repeat 1–3 times), e.g. `[tag]`, `((tag))`, `{{{tag}}}`.
+- Invalid/mismatched closing wrappers are stripped as you type (e.g. `[tag)` → `[tag`).
+- Unclosed wrappers and unclosed `/*` comments show a validation warning; incomplete tokens are omitted from the saved tag string.
