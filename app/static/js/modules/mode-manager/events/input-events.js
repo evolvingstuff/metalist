@@ -2,12 +2,9 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { actionSelectNote } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js';
-import { CommentUtils } from '../../comment-utils.js';
-import { CONFIG } from '../../config.js';
 import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 
-let commentHighlightTimeoutId = null;
 let lastKeyPressed = null;
 
 function scrollViewportToCenterRect(rect) {
@@ -174,63 +171,7 @@ function handleInput(event) {
                 noteId,
                 contentLength: currentHtmlContent.length
             }, Logger.LogCategory.EVENT);
-            
-            // Schedule comment highlighting with debounce
-            scheduleCommentHighlighting(noteContent);
         }
     } 
     // Search input handling is now done by search-events.js
-}
-
-function scheduleCommentHighlighting(noteContentElement) {
-    if (!CONFIG.COMMENT_HIGHLIGHTING.ENABLE) {
-        return;
-    }
-    
-    // Don't highlight during navigation key presses
-    const lastKey = ModeContext.lastKeyPressed;
-    if (lastKey && isNavigationKey(lastKey)) {
-        Logger.logDebug('Skipping comment highlighting for navigation key', { key: lastKey });
-        return;
-    }
-    
-    // Clear any existing timeout
-    if (commentHighlightTimeoutId) {
-        clearTimeout(commentHighlightTimeoutId);
-    }
-    
-    // Schedule highlighting after debounce period
-    commentHighlightTimeoutId = setTimeout(() => {
-        if (ModeContext.isEditing && noteContentElement) {
-            CommentUtils.highlightComments(noteContentElement);
-            Logger.logDebug('Comments highlighted after typing pause', {
-                noteId: ModeContext.currentNoteId
-            });
-        }
-    }, CONFIG.COMMENT_HIGHLIGHTING.DEBOUNCE_MS);
-}
-
-const NAVIGATION_KEYS = new Set([
-    'ArrowUp',
-    'ArrowDown',
-    'ArrowLeft',
-    'ArrowRight',
-    'Home',
-    'End',
-    'PageUp',
-    'PageDown',
-]);
-
-function isNavigationKey(key) {
-    return NAVIGATION_KEYS.has(key);
-}
-
-// Export function to trigger immediate highlighting on render
-export function highlightCommentsOnRender(noteContentElement) {
-    if (CONFIG.COMMENT_HIGHLIGHTING.ENABLE && ModeContext.isEditing && noteContentElement) {
-        CommentUtils.highlightComments(noteContentElement);
-        Logger.logDebug('Comments highlighted on render', {
-            noteId: ModeContext.currentNoteId
-        });
-    }
 }

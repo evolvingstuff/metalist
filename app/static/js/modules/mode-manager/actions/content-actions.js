@@ -2,7 +2,6 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
-import { CommentUtils } from '../../comment-utils.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 
 export async function actionSaveNote(noteId) {
@@ -18,7 +17,7 @@ export async function actionSaveNote(noteId) {
 
     const noteElement = DOMUtils.getNoteById(noteId);
     const noteContentElement = DOMUtils.getNoteContent(noteElement);
-    const contentHTML = CommentUtils.getCleanContent(noteContentElement);
+    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
     const tags = getTagBarValue(noteElement);
     const previousTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
     const tagsChanged = tags !== previousTags;
@@ -73,7 +72,7 @@ export async function actionSaveNoteOnIdle(noteId) {
 
     const noteElement = DOMUtils.getNoteById(noteId);
     const noteContentElement = DOMUtils.getNoteContent(noteElement);
-    const contentHTML = CommentUtils.getCleanContent(noteContentElement);
+    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
     const tags = getTagBarValue(noteElement);
     
     Logger.logDebug('Auto-saving note during idle period', {
