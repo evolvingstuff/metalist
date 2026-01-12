@@ -64,6 +64,7 @@ class ModeContext {
         this._tabKnownRootIds = Object.create(null);
         this._tabSeenRootIds = Object.create(null);
         this._tabRootOrder = Object.create(null);
+        this._tabExecutedSearchQuery = Object.create(null);
         this._ensureTabContainers(this._activeTabId);
         this._lowestVisibleRootId = null;
 
@@ -91,6 +92,35 @@ class ModeContext {
         if (!Array.isArray(this._tabRootOrder[tabId])) {
             this._tabRootOrder[tabId] = [];
         }
+        if (typeof this._tabExecutedSearchQuery[tabId] !== 'string') {
+            this._tabExecutedSearchQuery[tabId] = '';
+        }
+    }
+
+    getExecutedSearchQuery(tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        this._ensureTabContainers(targetTabId);
+        return this._tabExecutedSearchQuery[targetTabId];
+    }
+
+    setExecutedSearchQuery(query, tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        this._ensureTabContainers(targetTabId);
+        const normalized = typeof query === 'string' ? query : '';
+        this._tabExecutedSearchQuery[targetTabId] = normalized;
+        return this;
+    }
+
+    clearActiveTabDiffCacheForSearchExecution(executedQuery) {
+        const tabId = this._activeTabId;
+        const normalized = typeof executedQuery === 'string' ? executedQuery : '';
+        const previousExecuted = this.getExecutedSearchQuery(tabId);
+        if (previousExecuted === normalized) {
+            return this;
+        }
+        this.resetTabDiffCache(tabId, { preserveRootAnchor: false });
+        this.setExecutedSearchQuery(normalized, tabId);
+        return this;
     }
 
     _ensureTabNoteHashes(tabId) {
@@ -736,17 +766,16 @@ class ModeContext {
         return this._clipboardMode;
     }
 
-	setSearchQuery(query) {
-		// Don't trigger redundancy check for search as it's expected to change frequently
-		const oldQuery = this._searchQuery;
-		let normalized = query;
-		if (typeof normalized !== 'string') {
-			normalized = '';
-		}
-		this._searchQuery = normalized;
+		setSearchQuery(query) {
+				// Don't trigger redundancy check for search as it's expected to change frequently
+				const oldQuery = this._searchQuery;
+				let normalized = query;
+				if (typeof normalized !== 'string') {
+					normalized = '';
+				}
+				this._searchQuery = normalized;
         
         if (oldQuery !== this._searchQuery) {
-            this.resetRootTracking({ clear: true });
             // Update current tab's search query and save tab state
             const entry = this._ensureTabEntry(this._activeTabId);
             entry.searchQuery = this._searchQuery;
@@ -876,16 +905,16 @@ class ModeContext {
         return Array.from(this._getActiveSeenRoots());
     }
 
-	getLastKnownRootId() {
-		let order = this._tabRootOrder[this._activeTabId];
-		if (!Array.isArray(order)) {
-			order = [];
+		getLastKnownRootId() {
+			let order = this._tabRootOrder[this._activeTabId];
+			if (!Array.isArray(order)) {
+				order = [];
+			}
+			if (!Array.isArray(order) || order.length === 0) {
+				return null;
+			}
+			return order[order.length - 1];
 		}
-		if (!Array.isArray(order) || order.length === 0) {
-			return null;
-		}
-		return order[order.length - 1];
-	}
 
 	isAnchorNearEnd(anchorId, distance) {
 		if (typeof distance === 'undefined') {
@@ -1314,6 +1343,7 @@ class ModeContext {
         const newQuery = targetEntry.searchQuery;
         console.log('Setting search query from tab', tabId, 'query:', newQuery);
         this._searchQuery = newQuery;
+        this.setExecutedSearchQuery(this._searchQuery, tabId);
         this._notifyInfiniteScrollTabSwitch();
 
         // Notify listeners of changes

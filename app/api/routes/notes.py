@@ -25,7 +25,6 @@ from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.undo_state import maybe_reset_on_context
-from app.services.note_store import store as note_store
 
 
 router = APIRouter()
@@ -340,10 +339,6 @@ def expand_endpoint(note_id: str, body: dict):
 def delete_note(note_id: str, body: dict):
     client_id = body["clientId"]
     viewport = _require_viewport(body)
-
-    if not note_store.has_note(note_id):
-        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
-
     cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id, undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 

@@ -57,6 +57,18 @@ function handleKeyDown(event) {
         throw new Error(`Invalid KeyboardEvent: missing or invalid key property: ${event.key}`);
     }
 
+    // Never interpret typing/navigation within inputs as global shortcuts.
+    // In particular, Backspace/Delete must not delete notes while editing the search box.
+    if (event.key !== 'Escape') {
+        const target = event.target;
+        if (target instanceof HTMLElement) {
+            const tagName = target.tagName;
+            if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+                return;
+            }
+        }
+    }
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Keyboard event ignored while system is loading', {
             key: event.key,

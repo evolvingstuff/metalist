@@ -64,6 +64,8 @@ export function handleSearchInput(event) {
         }
 
         Logger.logAction('executeSearch', { searchQuery: currentSearch });
+        ModeContext.clearActiveTabDiffCacheForSearchExecution(currentSearch);
+        ModeContext.resetRootTracking({ clear: true });
         window.scrollTo(0, 0);
         ModeContext.updateActiveTabScroll(0);
         ModeContext.updateActiveTabScrollAnchor(null, true);
@@ -108,6 +110,7 @@ export async function initializeSearchEvents() {
     const initialQueryLogValue = analysis.normalizedText.length > 0 ? analysis.normalizedText : 'none';
     Logger.logAction('initialPageLoad', { searchQuery: initialQueryLogValue });
 
+    ModeContext.setExecutedSearchQuery(analysis.normalizedText);
     await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'init search' });
     ModeContext.restoreScrollForActiveTab();
 

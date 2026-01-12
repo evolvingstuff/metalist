@@ -88,6 +88,13 @@ async function handlePoll() {
     if (document.hidden) return;
     if (ModeContext.isLoading) return;
 
+    const searchQuery = (ModeContext.searchQuery || '').toString();
+    const executedSearchQuery = ModeContext.getExecutedSearchQuery();
+    if (searchQuery !== executedSearchQuery) {
+        // Search context has changed but hasn't been executed yet.
+        return;
+    }
+
     const state = getActiveTabState();
     const { visible, past } = collectRootVisibility();
     if (visible.length > 0) {
