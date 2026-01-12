@@ -16,7 +16,7 @@ from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
 
 # Windowing constants (tuned later)
-ROOT_CHUNK_SIZE = 100
+ROOT_CHUNK_SIZE = 50
 ROOT_BUFFER_THRESHOLD = 25
 
 
