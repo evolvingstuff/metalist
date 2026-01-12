@@ -140,5 +140,6 @@
 - Structural mutations: move across parents/siblings and verify order updates without full redraw.
 - Collapse/expand toggles: child containers + flags stay accurate.
 - Undo/redo flows: structure diff realigns with no stale nodes.
-- Search filtering: filtered structures diff correctly.
+- Search: query round-trips per tab and updates `undoContext` boundaries.
+- Search filtering: intentionally disabled (view renders as if search is empty).
 - Lock acquisition/release: lock icons/styling update without full refresh.
