@@ -800,17 +800,20 @@ class ModeContext {
         });
     }
 
-	resetRootTracking(options) {
-		if (typeof options === 'undefined') {
-			options = {};
-		}
-		if (options === null || typeof options !== 'object') {
-			throw new Error('resetRootTracking requires options object');
-		}
-		const shouldClear = options.clear !== false;
+		resetRootTracking(options) {
+			if (typeof options === 'undefined') {
+				options = {};
+			}
+			if (options === null || typeof options !== 'object') {
+				throw new Error('resetRootTracking requires options object');
+			}
+			const shouldClear = options.clear !== false;
         if (shouldClear) {
+            const tabId = this._activeTabId;
             this._getActiveKnownRoots().clear();
             this._getActiveSeenRoots().clear();
+            this._tabRootOrder[tabId] = [];
+            this._tabRootAnchors[tabId] = null;
         }
         queueMicrotask(async () => {
             const module = await import('./services/infinite-scroll-service.js');

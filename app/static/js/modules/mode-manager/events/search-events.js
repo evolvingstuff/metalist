@@ -64,6 +64,10 @@ export function handleSearchInput(event) {
         }
 
         Logger.logAction('executeSearch', { searchQuery: currentSearch });
+        window.scrollTo(0, 0);
+        ModeContext.updateActiveTabScroll(0);
+        ModeContext.updateActiveTabScrollAnchor(null, true);
+        ModeContext.setRootAnchorId(null);
         // Refresh the view with the search query (let errors crash)
         await actionRefreshAndMaybeSelect({});
     }, CONFIG.SEARCH.DEBOUNCE_MS);
