@@ -35,6 +35,26 @@ Undo/redo history is ephemeral and does NOT participate in search.
 
 ---
 
+## 0. Scope
+
+### v1 (now)
+- Build an in-memory search index for:
+  - Tag terms (from the tag bar)
+  - Quoted text terms (substring search via trigram candidate generation + verification)
+- Update the index incrementally on note add/edit/delete.
+- Use the index to drive `/api2/notes/view` filtering without affecting non-search behavior.
+
+Notes:
+- Ontology / implication rules are explicitly out of scope for v1.
+- Roaring bitmaps are the target representation, but in the absence of a roaring
+  dependency we can start with an abstraction backed by Python sets.
+
+### Future work
+- Ontology / implications.
+- Swap Python-set bitmaps to Roaring bitmaps.
+
+---
+
 ## 2. Identity Model
 
 ### External IDs
@@ -221,6 +241,8 @@ The tag index always reflects effective_tags.
 
 ## 9. Ontology Rules
 
+> Future work (not in v1).
+
 ### Rule categories
 
 1. **Simple tag implications**
@@ -249,6 +271,8 @@ Predicates may test:
 
 ## 10. Rule Evaluation Strategy
 
+> Future work (not in v1).
+
 ### On ontology rule change (add/edit/delete)
 - Recompute simple implication closure
 - Recompute effective_tags for ALL notes
@@ -265,6 +289,8 @@ This is allowed to be expensive.
 ---
 
 ## 11. Query Execution
+
+> Future work (not in v1).
 
 ### Steps
 1. Start with ALL_NOTES bitmap
@@ -283,6 +309,8 @@ This is allowed to be expensive.
 ---
 
 ## 12. Startup Sequence
+
+> Future work (not in v1).
 
 1. Decrypt SQLite persistence
 2. Load current notes

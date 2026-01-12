@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
-from typing import Dict, Iterable, List, Optional, Sequence, Mapping
+from typing import Dict, Iterable, List, Optional, Sequence, Mapping, Set
 from types import SimpleNamespace
 import time
 import logging
@@ -20,6 +20,7 @@ from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
 from app.services.content_cache import get_cached_content, get_cached_tags
+from app.services.search_index import SearchRecord, search_index
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,8 @@ class NoteStore:
         from the active transaction are visible (needed during paste flows).
         """
 
+        search_records: List[SearchRecord] = []
+
         with self._lock:
             timing_enabled = self._timing_enabled and db is None
 
@@ -98,6 +101,14 @@ class NoteStore:
                 plaintext = get_cached_content(note.id)
 
                 tags = get_cached_tags(note.id)
+
+                search_records.append(
+                    SearchRecord(
+                        note_id=note.id,
+                        content_html=plaintext,
+                        tags=tags,
+                    )
+                )
 
                 note_map[note.id] = NoteRecord(
                     id=note.id,
@@ -146,6 +157,8 @@ class NoteStore:
                     f"[startup] note_store hydration loop processed {processed} notes in {total_elapsed:.2f}s"
                 )
 
+        search_index.rebuild(search_records)
+
     def snapshot(self) -> Dict[str, NoteRecord]:
         """Return a shallow copy of the current note map."""
         with self._lock:
@@ -171,14 +184,17 @@ class NoteStore:
             self._note_map[note.id] = record
             self._insert_link(record.parent_id, record.id, record.prev_id, record.next_id)
 
+        search_index.upsert(note_id=record.id, content_html=record.content, tags=record.tags)
+
     def update_note_from_db(self, note: SimpleNamespace, plaintext: str, tags: str) -> None:
         if not self._loaded:
             return
+        updated: NoteRecord | None = None
         with self._lock:
             current = self._note_map.get(note.id)
             if not current:
                 return
-            self._note_map[note.id] = NoteRecord(
+            updated = NoteRecord(
                 id=note.id,
                 parent_id=current.parent_id,
                 prev_id=current.prev_id,
@@ -189,6 +205,10 @@ class NoteStore:
                 created_at=getattr(note, "created_at", current.created_at),
                 updated_at=getattr(note, "updated_at", current.updated_at),
             )
+            self._note_map[note.id] = updated
+
+        assert updated is not None
+        search_index.upsert(note_id=updated.id, content_html=updated.content, tags=updated.tags)
 
     def update_metadata_from_db(self, note: SimpleNamespace, *, rebuild: bool) -> None:
         if not self._loaded:
@@ -275,6 +295,8 @@ class NoteStore:
     def remove_note(self, note_id: str) -> None:
         if not self._loaded:
             return
+        removed_ids: Set[str] = set()
+
         with self._lock:
             to_visit: List[str] = [note_id]
             removed: List[tuple[Optional[str], str]] = []
@@ -295,11 +317,15 @@ class NoteStore:
                 self._tails.pop(current, None)
 
             removed_ids = {node_id for _, node_id in removed}
+            removed_ids = set(removed_ids)
 
             for parent_id, node_id in removed:
                 if parent_id in removed_ids:
                     continue
                 self._remove_link(parent_id, node_id)
+
+        if removed_ids:
+            search_index.remove_many(removed_ids)
 
     def set_collapsed(self, note_id: str, collapsed: bool) -> None:
         if not self._loaded:

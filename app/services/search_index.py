@@ -1,0 +1,416 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass
+from threading import RLock
+import time
+from typing import DefaultDict, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
+
+from loguru import logger
+
+from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token
+from app.services.search_query import ParsedSearchQuery, parse_search_query
+from app.utils.text_utils import strip_html
+
+
+_UNICODE_TRIGRAM_SENTINEL = 0xE000
+
+
+@dataclass(frozen=True, slots=True)
+class SearchRecord:
+    note_id: str
+    content_html: str
+    tags: str
+
+
+def _canonical_codepoint(char: str) -> int:
+    code = ord(char)
+    if code < 128:
+        return code
+    return _UNICODE_TRIGRAM_SENTINEL
+
+
+def _trigram_key(a: int, b: int, c: int) -> int:
+    return (a << 32) | (b << 16) | c
+
+
+def _extract_trigram_keys(text_casefold: str) -> Set[int]:
+    if not isinstance(text_casefold, str):
+        raise TypeError(f"text_casefold must be a string, got {type(text_casefold)}")
+
+    if len(text_casefold) < 3:
+        return set()
+
+    keys: Set[int] = set()
+    codes: List[int] = [_canonical_codepoint(ch) for ch in text_casefold]
+    index = 0
+    while index + 2 < len(codes):
+        keys.add(_trigram_key(codes[index], codes[index + 1], codes[index + 2]))
+        index += 1
+    return keys
+
+
+def extract_tags_for_search(tags: str) -> FrozenSet[str]:
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+
+    terms: Set[str] = set()
+    for token in _tokenize_tag_bar(tags):
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is None:
+            terms.add(base)
+            continue
+        for inner in base.split():
+            if inner:
+                terms.add(inner)
+    return frozenset(terms)
+
+
+class SearchIndex:
+    """In-memory search index (tags + trigrams) built from current note content."""
+
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._revision = 0
+
+        self._uuid_to_id: Dict[str, int] = {}
+        self._id_to_uuid: List[str] = []
+        self._alive: Set[int] = set()
+
+        self._note_text_casefold: List[str] = []
+        self._note_tag_terms: List[FrozenSet[str]] = []
+        self._note_trigrams: List[Set[int]] = []
+
+        self._tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
+        self._tri_notes: DefaultDict[int, Set[int]] = defaultdict(set)
+
+        self._result_cache: Dict[str, tuple[int, FrozenSet[str]]] = {}
+
+    def rebuild(self, records: Iterable[SearchRecord]) -> None:
+        t0 = time.perf_counter()
+        materialized = list(records)
+        with self._lock:
+            self._uuid_to_id.clear()
+            self._id_to_uuid.clear()
+            self._alive.clear()
+            self._note_text_casefold.clear()
+            self._note_tag_terms.clear()
+            self._note_trigrams.clear()
+            self._tag_notes.clear()
+            self._tri_notes.clear()
+            self._result_cache.clear()
+
+            self._revision += 1
+
+            for record in materialized:
+                self._insert_new_locked(record.note_id, record.content_html, record.tags)
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.bind(
+            metrics={
+                "elapsed_ms": elapsed_ms,
+                "note_count": len(materialized),
+                "unique_tag_terms": len(self._tag_notes),
+                "unique_trigrams": len(self._tri_notes),
+                "revision": self._revision,
+            }
+        ).info("search.index.rebuild.finish")
+
+    def upsert(self, *, note_id: str, content_html: str, tags: str) -> None:
+        t0 = time.perf_counter()
+        with self._lock:
+            if note_id in self._uuid_to_id:
+                note_int_id = self._uuid_to_id[note_id]
+                self._update_existing_locked(note_int_id, content_html, tags)
+            else:
+                self._insert_new_locked(note_id, content_html, tags)
+
+            self._revision += 1
+            self._result_cache.clear()
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.bind(
+            metrics={"elapsed_ms": elapsed_ms, "note_id": note_id, "revision": self._revision}
+        ).info("search.index.upsert.finish")
+
+    def remove_many(self, note_ids: Set[str]) -> None:
+        if not note_ids:
+            return
+        t0 = time.perf_counter()
+        with self._lock:
+            for note_id in note_ids:
+                if note_id not in self._uuid_to_id:
+                    continue
+                note_int_id = self._uuid_to_id[note_id]
+                self._remove_existing_locked(note_int_id)
+
+            self._revision += 1
+            self._result_cache.clear()
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.bind(
+            metrics={"elapsed_ms": elapsed_ms, "count": len(note_ids), "revision": self._revision}
+        ).info("search.index.remove_many.finish")
+
+    def query_note_ids(self, search: str) -> Set[str]:
+        t0 = time.perf_counter()
+        if not isinstance(search, str):
+            raise TypeError(f"search must be a string, got {type(search)}")
+
+        with self._lock:
+            cached = self._result_cache.get(search)
+            if cached is not None:
+                cached_revision, cached_results = cached
+                if cached_revision == self._revision:
+                    total_ms = (time.perf_counter() - t0) * 1000
+                    logger.bind(
+                        query=search,
+                        metrics={
+                            "cache_hit": True,
+                            "total_ms": total_ms,
+                            "revision": self._revision,
+                            "matched_count": len(cached_results),
+                        },
+                    ).info("search.query.finish")
+                    return set(cached_results)
+
+        parsed = parse_search_query(search)
+
+        parse_ms = (time.perf_counter() - t0) * 1000
+
+        has_terms = False
+        if len(parsed.required_tags) > 0:
+            has_terms = True
+        if len(parsed.forbidden_tags) > 0:
+            has_terms = True
+        if len(parsed.required_text) > 0:
+            has_terms = True
+        if len(parsed.forbidden_text) > 0:
+            has_terms = True
+        if not has_terms:
+            return set()
+
+        t1 = time.perf_counter()
+        with self._lock:
+            candidate_ids = self._candidate_note_ids_locked(parsed)
+            candidate_count = len(candidate_ids)
+            if not candidate_ids:
+                candidate_ms = (time.perf_counter() - t1) * 1000
+                total_ms = (time.perf_counter() - t0) * 1000
+                logger.bind(
+                    query=search,
+                    metrics={
+                        "cache_hit": False,
+                        "parse_ms": parse_ms,
+                        "candidate_ms": candidate_ms,
+                        "verify_ms": 0.0,
+                        "total_ms": total_ms,
+                        "candidate_count": 0,
+                        "verified_count": 0,
+                        "matched_count": 0,
+                        "required_tag_count": len(parsed.required_tags),
+                        "forbidden_tag_count": len(parsed.forbidden_tags),
+                        "required_text_count": len(parsed.required_text),
+                        "forbidden_text_count": len(parsed.forbidden_text),
+                        "revision": self._revision,
+                    },
+                ).info("search.query.finish")
+                return set()
+
+            t2 = time.perf_counter()
+            matched_note_ids: Set[str] = set()
+            verified = 0
+            for note_int_id in candidate_ids:
+                verified += 1
+                if note_int_id not in self._alive:
+                    continue
+                if not self._verify_note_matches_locked(note_int_id, parsed):
+                    continue
+                matched_note_ids.add(self._id_to_uuid[note_int_id])
+
+            candidate_ms = (t2 - t1) * 1000
+            verify_ms = (time.perf_counter() - t2) * 1000
+            total_ms = (time.perf_counter() - t0) * 1000
+
+            frozen = frozenset(matched_note_ids)
+            self._result_cache[search] = (self._revision, frozen)
+
+        logger.bind(
+            query=search,
+            metrics={
+                "cache_hit": False,
+                "parse_ms": parse_ms,
+                "candidate_ms": candidate_ms,
+                "verify_ms": verify_ms,
+                "total_ms": total_ms,
+                "candidate_count": candidate_count,
+                "verified_count": verified,
+                "matched_count": len(matched_note_ids),
+                "required_tag_count": len(parsed.required_tags),
+                "forbidden_tag_count": len(parsed.forbidden_tags),
+                "required_text_count": len(parsed.required_text),
+                "forbidden_text_count": len(parsed.forbidden_text),
+                "revision": self._revision,
+            },
+        ).info("search.query.finish")
+        return matched_note_ids
+
+    # Internal ----------------------------------------------------------------
+
+    def _insert_new_locked(self, note_id: str, content_html: str, tags: str) -> None:
+        note_int_id = len(self._id_to_uuid)
+        self._uuid_to_id[note_id] = note_int_id
+        self._id_to_uuid.append(note_id)
+        self._alive.add(note_int_id)
+
+        text_casefold, tag_terms, trigrams = self._build_note_state(content_html, tags)
+        self._note_text_casefold.append(text_casefold)
+        self._note_tag_terms.append(tag_terms)
+        self._note_trigrams.append(trigrams)
+
+        for term in tag_terms:
+            self._tag_notes[term].add(note_int_id)
+        for trigram in trigrams:
+            self._tri_notes[trigram].add(note_int_id)
+
+    def _update_existing_locked(self, note_int_id: int, content_html: str, tags: str) -> None:
+        if note_int_id not in self._alive:
+            raise RuntimeError("Cannot update deleted note")
+
+        new_text_casefold, new_tag_terms, new_trigrams = self._build_note_state(content_html, tags)
+        old_tag_terms = self._note_tag_terms[note_int_id]
+        old_trigrams = self._note_trigrams[note_int_id]
+
+        if old_tag_terms != new_tag_terms:
+            for term in old_tag_terms:
+                bucket = self._tag_notes.get(term)
+                if bucket is None:
+                    continue
+                bucket.discard(note_int_id)
+            for term in new_tag_terms:
+                self._tag_notes[term].add(note_int_id)
+            self._note_tag_terms[note_int_id] = new_tag_terms
+
+        if old_trigrams != new_trigrams:
+            for trigram in old_trigrams:
+                bucket = self._tri_notes.get(trigram)
+                if bucket is None:
+                    continue
+                bucket.discard(note_int_id)
+            for trigram in new_trigrams:
+                self._tri_notes[trigram].add(note_int_id)
+            self._note_trigrams[note_int_id] = new_trigrams
+
+        self._note_text_casefold[note_int_id] = new_text_casefold
+
+    def _remove_existing_locked(self, note_int_id: int) -> None:
+        if note_int_id not in self._alive:
+            return
+        self._alive.remove(note_int_id)
+
+        for term in self._note_tag_terms[note_int_id]:
+            bucket = self._tag_notes.get(term)
+            if bucket is None:
+                continue
+            bucket.discard(note_int_id)
+        for trigram in self._note_trigrams[note_int_id]:
+            bucket = self._tri_notes.get(trigram)
+            if bucket is None:
+                continue
+            bucket.discard(note_int_id)
+
+        self._note_text_casefold[note_int_id] = ""
+        self._note_tag_terms[note_int_id] = frozenset()
+        self._note_trigrams[note_int_id] = set()
+
+    def _build_note_state(
+        self,
+        content_html: str,
+        tags: str,
+    ) -> Tuple[str, FrozenSet[str], Set[int]]:
+        if not isinstance(content_html, str):
+            raise TypeError(f"content_html must be a string, got {type(content_html)}")
+        if not isinstance(tags, str):
+            raise TypeError(f"tags must be a string, got {type(tags)}")
+
+        text_casefold = strip_html(content_html).casefold()
+        tag_terms = extract_tags_for_search(tags)
+        trigrams = _extract_trigram_keys(text_casefold)
+        return text_casefold, tag_terms, trigrams
+
+    def _candidate_note_ids_locked(self, parsed: ParsedSearchQuery) -> Set[int]:
+        constraints: List[Set[int]] = []
+
+        for tag in parsed.required_tags:
+            posting = self._tag_notes.get(tag)
+            if posting is None:
+                return set()
+            constraints.append(posting)
+
+        short_text_terms: List[str] = []
+        for term in parsed.required_text:
+            term_casefold = term.casefold()
+            if len(term_casefold) < 3:
+                short_text_terms.append(term_casefold)
+                continue
+            trigram_keys = _extract_trigram_keys(term_casefold)
+            if not trigram_keys:
+                continue
+            for trigram in trigram_keys:
+                posting = self._tri_notes.get(trigram)
+                if posting is None:
+                    return set()
+                constraints.append(posting)
+
+        candidate_ids: Optional[Set[int]] = None
+        if constraints:
+            ordered = sorted(constraints, key=len)
+            candidate_ids = set(ordered[0])
+            for constraint in ordered[1:]:
+                candidate_ids.intersection_update(constraint)
+                if not candidate_ids:
+                    return set()
+
+        if candidate_ids is None:
+            candidate_ids = set(self._alive)
+
+        if parsed.forbidden_tags:
+            for tag in parsed.forbidden_tags:
+                posting = self._tag_notes.get(tag)
+                if posting is None:
+                    continue
+                candidate_ids.difference_update(posting)
+
+        if short_text_terms:
+            verified: Set[int] = set()
+            for note_int_id in candidate_ids:
+                if note_int_id not in self._alive:
+                    continue
+                text_casefold = self._note_text_casefold[note_int_id]
+                missing = False
+                for term in short_text_terms:
+                    if term not in text_casefold:
+                        missing = True
+                        break
+                if missing:
+                    continue
+                verified.add(note_int_id)
+            candidate_ids = verified
+
+        return candidate_ids
+
+    def _verify_note_matches_locked(self, note_int_id: int, parsed: ParsedSearchQuery) -> bool:
+        text_casefold = self._note_text_casefold[note_int_id]
+        for term in parsed.required_text:
+            if term.casefold() not in text_casefold:
+                return False
+        for term in parsed.forbidden_text:
+            if term.casefold() in text_casefold:
+                return False
+        for tag in parsed.forbidden_tags:
+            if tag in self._note_tag_terms[note_int_id]:
+                return False
+        return True
+
+
+search_index = SearchIndex()

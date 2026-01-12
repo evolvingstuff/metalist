@@ -3,10 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+import time
 from typing import DefaultDict, Dict, List, Optional, Tuple, Set
+
+from loguru import logger
 
 from app.services.content_formatting import format_note_content_for_view
 from app.services.note_store import store as note_store
+from app.services.search_index import search_index
+from app.services.search_query import parse_search_query
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
 
@@ -83,52 +88,92 @@ def build_view_state(
     client_seen_root_ids: Optional[Set[str]],
     anchor_root_id: Optional[str],
 ) -> ViewState:
+    t0 = time.perf_counter()
     structure: List[Dict[str, object]] = []
     payloads: Dict[str, Dict[str, object]] = {}
     children_by_parent: DefaultDict[Optional[str], List[str]] = defaultdict(list)
     hash_by_id: Dict[str, str] = {}
 
-    # Search filtering is intentionally disabled during the ongoing search rewrite.
-    # We still accept and propagate `search` (tab state + UI context), but the view
-    # should render as if search is empty.
-    search_term: Optional[str] = None
+    search_active = False
+    allowed_note_ids: Optional[Set[str]] = None
+    search_root_ids_ordered: Optional[List[str]] = None
 
-    allow_cache: Dict[str, bool] = {}
+    if search is not None:
+        if not isinstance(search, str):
+            raise TypeError(f"search must be a string or null, got {type(search)}")
+        parsed = parse_search_query(search)
+        has_terms = False
+        if len(parsed.required_tags) > 0:
+            has_terms = True
+        if len(parsed.forbidden_tags) > 0:
+            has_terms = True
+        if len(parsed.required_text) > 0:
+            has_terms = True
+        if len(parsed.forbidden_text) > 0:
+            has_terms = True
 
-    def _should_include(nid: str) -> bool:
-        if search_term is None:
-            return True
-        if nid in allow_cache:
-            return allow_cache[nid]
-        rec = note_store.get_note(nid)
-        assert isinstance(rec.content, str)
-        content = rec.content
-        content_match = search_term in content.lower()
-        child_match = any(_should_include(child) for child in note_store.get_children(nid))
-        editing_match = bool(editing_note_id and nid == editing_note_id)
-        result = content_match
-        if not result:
-            result = child_match
-        if not result:
-            result = editing_match
-        allow_cache[nid] = result
-        return result
+        if has_terms:
+            search_active = True
+            matched_note_ids = search_index.query_note_ids(search)
+            allowed_note_ids = set(matched_note_ids)
+            if editing_note_id:
+                allowed_note_ids.add(editing_note_id)
+
+            to_visit = list(allowed_note_ids)
+            while to_visit:
+                current_id = to_visit.pop()
+                if not note_store.has_note(current_id):
+                    continue
+                current = note_store.get_note(current_id)
+                parent_id = current.parent_id
+                if parent_id is None:
+                    continue
+                if parent_id in allowed_note_ids:
+                    continue
+                allowed_note_ids.add(parent_id)
+                to_visit.append(parent_id)
+
+            ordered_root_ids = note_store.get_children(None)
+            search_root_ids_ordered = [
+                root_id for root_id in ordered_root_ids if root_id in allowed_note_ids
+            ]
 
     # Determine root window
     ordered_root_ids = note_store.get_children(None)
-    root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
     if client_known_note_ids is None:
         client_known_note_ids = set()
-    seen_root_indices = {
-        root_index_map[rid]
-        for rid in (client_seen_root_ids if client_seen_root_ids is not None else set())
-        if rid in root_index_map
-    }
-    if search_term is not None:
-        allowed_root_ids: Optional[Set[str]] = {
-            rid for rid in ordered_root_ids if _should_include(rid)
+
+    if search_active:
+        if search_root_ids_ordered is None:
+            search_roots = []
+        else:
+            search_roots = search_root_ids_ordered
+        root_index_map = {rid: idx for idx, rid in enumerate(search_roots)}
+        seen_root_indices = {
+            root_index_map[rid]
+            for rid in (client_seen_root_ids if client_seen_root_ids is not None else set())
+            if rid in root_index_map
         }
+
+        window_end = _determine_root_window_end(
+            search_roots,
+            root_index_map,
+            client_known_note_ids,
+            seen_root_indices,
+            editing_note_id,
+            anchor_root_id,
+        )
+        if window_end >= 0:
+            allowed_root_ids = set(search_roots[: window_end + 1])
+        else:
+            allowed_root_ids = set()
     else:
+        root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
+        seen_root_indices = {
+            root_index_map[rid]
+            for rid in (client_seen_root_ids if client_seen_root_ids is not None else set())
+            if rid in root_index_map
+        }
         window_end = _determine_root_window_end(
             ordered_root_ids,
             root_index_map,
@@ -144,12 +189,13 @@ def build_view_state(
 
     def traverse(parent_id: Optional[str]) -> None:
         ids = note_store.get_children(parent_id)
-        # Apply root windowing at the top level
-        if parent_id is None and allowed_root_ids is not None:
-            ids = [i for i in ids if i in allowed_root_ids]
+
+        if parent_id is None:
+            ids = [note_id for note_id in ids if note_id in allowed_root_ids]
+        elif allowed_note_ids is not None:
+            ids = [note_id for note_id in ids if note_id in allowed_note_ids]
+
         for idx, nid in enumerate(ids):
-            if not _should_include(nid):
-                continue
             children_by_parent[parent_id].append(nid)
             rec = note_store.get_note(nid)
             if idx > 0:
@@ -192,7 +238,9 @@ def build_view_state(
                 "hash": h,
             }
             hash_by_id[rec.id] = h
-            if not flags["isCollapsed"] or flags["isEditing"] or search_term is not None:
+            if search_active:
+                traverse(rec.id)
+            elif not flags["isCollapsed"] or flags["isEditing"]:
                 traverse(rec.id)
 
     traverse(None)
@@ -204,6 +252,19 @@ def build_view_state(
         "editingNoteId": editing_note_id,
         "search": search,
     }
+
+    if search_active:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.bind(
+            metrics={
+                "elapsed_ms": elapsed_ms,
+                "structure_count": len(structure),
+                "payload_count": len(payloads),
+                "root_count": len(children_by_parent[None]) if None in children_by_parent else 0,
+            },
+            query=search,
+        ).info("notes.view_state.finish")
+
     return ViewState(
         structure=structure,
         payloads=payloads,

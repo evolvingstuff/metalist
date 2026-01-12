@@ -138,10 +138,12 @@ async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
     await actionRefreshAndMaybeSelect({ startedAt, context });
     const currentKnown = ModeContext.knownRootCount;
+    const searchQuery = (ModeContext.searchQuery || '').toString();
+    const searchActive = searchQuery.trim().length > 0;
     if (currentKnown > previousKnownCount) {
         state.lastKnownCount = currentKnown;
         refreshOverlayMetrics();
-    } else if (nearEndFlag) {
+    } else if (nearEndFlag && !searchActive) {
         // Fail fast: at visual end, but server did not extend
         throw new Error('Infinite scroll blocked: near end but server returned no new roots');
     }

@@ -1,0 +1,44 @@
+from app.services.search_index import SearchIndex, SearchRecord
+from app.services.search_query import parse_search_query
+from app.utils.text_utils import strip_html
+
+
+def test_strip_html_ignores_script_and_inserts_whitespace() -> None:
+    assert strip_html("<div>Hello</div><div>world</div>") == "Hello world"
+    assert strip_html("<div>ok</div><script>alert(1)</script>hi") == "ok hi"
+
+
+def test_search_query_parser_tags_and_text() -> None:
+    parsed = parse_search_query("foo -bar \"hello world\" -'bad'")
+    assert parsed.required_tags == frozenset({"foo"})
+    assert parsed.forbidden_tags == frozenset({"bar"})
+    assert parsed.required_text == ("hello world",)
+    assert parsed.forbidden_text == ("bad",)
+
+
+def test_search_index_tag_and_text_queries() -> None:
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(note_id="n1", content_html="<div>Hello world</div>", tags="foo"),
+            SearchRecord(note_id="n2", content_html="<div>Other</div>", tags="bar"),
+            SearchRecord(note_id="n3", content_html="<div>Hello there</div>", tags="foo bar"),
+        ]
+    )
+
+    assert index.query_note_ids('"hello"') == {"n1", "n3"}
+    assert index.query_note_ids("foo") == {"n1", "n3"}
+    assert index.query_note_ids("foo \"world\"") == {"n1"}
+    assert index.query_note_ids("foo -bar") == {"n1"}
+    assert index.query_note_ids("-\"world\"") == {"n2", "n3"}
+
+
+def test_search_index_short_text_term_falls_back_to_verification() -> None:
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(note_id="n1", content_html="<div>Hello</div>", tags=""),
+            SearchRecord(note_id="n2", content_html="<div>Other</div>", tags=""),
+        ]
+    )
+    assert index.query_note_ids('"ll"') == {"n1"}
