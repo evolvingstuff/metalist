@@ -95,12 +95,11 @@ class CmdCreateNote(QueryCommand):
                 next_id = siblings[0]
             prev_id = None
 
+
         note_uuid = str(uuid.uuid4())
         content = ""
-        if self.search_query and not siblings:
-            trimmed = self.search_query.strip()
-            if trimmed:
-                content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed}\" */</div>"
+        # Search auto-population is intentionally disabled during the ongoing search rewrite.
+        # Search will eventually materialize into structured tags (tag bar), not note content.
 
         apply_insert_note(
             note_uuid,

@@ -3,7 +3,6 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
-import { highlightCommentsOnRender } from '../events/input-events.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
@@ -207,9 +206,6 @@ export async function actionRefreshAndMaybeSelect(options) {
                 DOMUtils.revealCaret(noteElement);
             }
             
-            // Highlight comments immediately when entering edit mode
-            highlightCommentsOnRender(noteContentElement);
-
             if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {
                 DOMUtils.focusNoteEdge(noteElement, 'start');
             } else {

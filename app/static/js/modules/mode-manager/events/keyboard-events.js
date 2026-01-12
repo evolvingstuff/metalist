@@ -1258,32 +1258,33 @@ export function updateSearchContextsList() {
         }
         
         const isActive = tabId === activeTabId;
-        const activeStyle = isActive ? 'color: #90EE90;' : '';
-        const hoverStyle = 'cursor: pointer; padding: 2px 0;';
 
         const atLimit = tabOrder.length >= CONFIG.TABS.MAX_TABS;
-        const addStyle = atLimit
-            ? 'color: #666; cursor: not-allowed;'
-            : 'color: #ccc; cursor: pointer;';
+        const addClass = atLimit ? 'is-disabled' : '';
         const canDelete = tabOrder.length > 1;
-        const deleteStyle = canDelete
-            ? 'color: #ff4444; cursor: pointer;'
-            : 'color: #666; cursor: not-allowed;';
+        const deleteClass = canDelete ? '' : 'is-disabled';
 
         const canMoveUp = tabOrder.length > 1 && i > 0;
         const canMoveDown = tabOrder.length > 1 && i < tabOrder.length - 1;
 
-        const actionBtnBox = 'display: inline-block; width: 14px; text-align: center;';
-        const actionBtnSpacer = 'margin-left: 4px;';
-        const moveEnabledStyle = 'color: #ccc; cursor: pointer;';
-        const moveHiddenStyle = 'visibility: hidden; cursor: default; pointer-events: none;';
+        const moveUpClass = canMoveUp ? '' : 'is-hidden';
+        const moveDownClass = canMoveDown ? '' : 'is-hidden';
 
-        const actions = ` <span style="${actionBtnBox}${actionBtnSpacer}${addStyle}" class="duplicate-context" data-source-tab-id="${tabId}">+</span>`
-            + ` <span style="${actionBtnBox}${actionBtnSpacer}${deleteStyle}" class="delete-context" data-delete-tab-id="${tabId}">-</span>`
-            + ` <span style="${actionBtnBox}${actionBtnSpacer}${canMoveUp ? moveEnabledStyle : moveHiddenStyle}" class="move-up-context" data-move-tab-id="${tabId}">↑</span>`
-            + ` <span style="${actionBtnBox}${actionBtnSpacer}${canMoveDown ? moveEnabledStyle : moveHiddenStyle}" class="move-down-context" data-move-tab-id="${tabId}">↓</span>`;
+        const actions = `
+            <span class="tab-context-action duplicate-context ${addClass}" data-source-tab-id="${tabId}" aria-disabled="${atLimit}">+</span>
+            <span class="tab-context-action tab-context-action--danger delete-context ${deleteClass}" data-delete-tab-id="${tabId}" aria-disabled="${!canDelete}">-</span>
+            <span class="tab-context-action move-up-context ${moveUpClass}" data-move-tab-id="${tabId}">↑</span>
+            <span class="tab-context-action move-down-context ${moveDownClass}" data-move-tab-id="${tabId}">↓</span>
+        `;
 
-        contextsList.push(`<div style="${activeStyle}${hoverStyle}" data-tab-id="${tabId}" class="tab-context-item">${i + 1}: ${displayQuery}${actions}</div>`);
+        const activeClass = isActive ? 'is-active' : '';
+        contextsList.push(
+            `<div data-tab-id="${tabId}" class="tab-context-item ${activeClass}">`
+            + `<span class="tab-context-index">${i + 1}:</span>`
+            + `<span class="tab-context-query">${displayQuery}</span>`
+            + `<span class="tab-context-actions">${actions}</span>`
+            + `</div>`
+        );
     }
     
     if (contextsList.length > 0) {
@@ -1299,25 +1300,15 @@ export function updateSearchContextsList() {
                 }
 				void switchToTabContext(tabId, {});
             });
-            
-            // Add hover effect
-            item.addEventListener('mouseenter', (e) => {
-                if (e.currentTarget.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
-                    e.currentTarget.style.color = '#fff';
-                }
-            });
-            
-            item.addEventListener('mouseleave', (e) => {
-                if (e.currentTarget.getAttribute('data-tab-id') !== ModeContext.activeTabId) {
-                    e.currentTarget.style.color = '#ccc';
-                }
-            });
         });
         
         // Add click handlers for per-tab + (duplicate)
         searchContextsList.querySelectorAll('.duplicate-context').forEach(addBtn => {
             addBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (e.currentTarget.getAttribute('aria-disabled') === 'true') {
+                    return;
+                }
                 const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
                 void duplicateTabContext(sourceTabId);
             });
@@ -1327,6 +1318,9 @@ export function updateSearchContextsList() {
         searchContextsList.querySelectorAll('.delete-context').forEach(deleteBtn => {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (e.currentTarget.getAttribute('aria-disabled') === 'true') {
+                    return;
+                }
                 const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');
                 void deleteTabContext(deleteTabId);
             });

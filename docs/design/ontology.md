@@ -150,6 +150,11 @@ Equivalent to:
 
 ## Search Behavior
 
+Implementation status: very early / not wired up yet.
+- The UI tracks a per-tab `searchQuery` and sends it to the server.
+- The server currently ignores the query for filtering (the view renders as if search is empty).
+- The actual search syntax is still being defined; this section describes intended semantics.
+
 ### Direct Tag Search (`#tag`)
 Returns:
 - Content directly tagged with `#tag`

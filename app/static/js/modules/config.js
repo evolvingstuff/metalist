@@ -83,12 +83,6 @@ export const CONFIG = {
         FADE_DURATION_MS: 150       // Duration of fade effect in milliseconds
     },
     
-    COMMENT_HIGHLIGHTING: {
-        ENABLE: true,              // Enable comment highlighting in edit mode
-        DEBOUNCE_MS: 150,         // Delay before highlighting after typing stops
-        CSS_CLASS: 'my-comment'   // CSS class for highlighted comments
-    },
-    
     EDITOR: {
         DEFAULT_CURSOR_POSITION: 'END'    // Where to place cursor when entering edit mode ('START' or 'END')
     },

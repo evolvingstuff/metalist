@@ -38,13 +38,11 @@ class CmdCreateSibling(QueryCommand):
         else:
             next_id = None
 
+
         note_uuid = str(uuid.uuid4())
         content = ""
-        # Optional search hint only if creating under root during search
-        if self.search_query and parent_id is None:
-            trimmed = self.search_query.strip()
-            if trimmed:
-                content = f"<div> </div><div><br></div><div>/* text search: \"{trimmed}\" */</div>"
+        # Search auto-population is intentionally disabled during the ongoing search rewrite.
+        # Search will eventually materialize into structured tags (tag bar), not note content.
 
         apply_insert_note(
             note_uuid,
