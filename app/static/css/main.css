@@ -919,6 +919,73 @@ body.loading::after {
     line-height: 1.4;
 }
 
+.tab-context-item {
+    display: grid;
+    grid-template-columns: 2.4em 1fr auto;
+    align-items: center;
+    column-gap: 10px;
+    padding: 4px 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #ccc;
+}
+
+.tab-context-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+}
+
+.tab-context-item.is-active {
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #fff;
+}
+
+.tab-context-index {
+    color: rgba(255, 255, 255, 0.65);
+    text-align: right;
+}
+
+.tab-context-query {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.tab-context-actions {
+    display: inline-grid;
+    grid-auto-flow: column;
+    column-gap: 6px;
+    align-items: center;
+}
+
+.tab-context-action {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #ccc;
+    user-select: none;
+}
+
+.tab-context-action:hover {
+    color: #fff;
+}
+
+.tab-context-action--danger {
+    color: #ff4444;
+}
+
+.tab-context-action.is-disabled {
+    color: #666;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.tab-context-action.is-hidden {
+    visibility: hidden;
+    pointer-events: none;
+}
+
 /* App loading states */
 #app {
     opacity: 0;
