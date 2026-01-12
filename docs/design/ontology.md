@@ -155,6 +155,9 @@ Implementation status: very early / not wired up yet.
 - The server currently ignores the query for filtering (the view renders as if search is empty).
 - The actual search syntax is still being defined; this section describes intended semantics.
 
+For the current UI-level query grammar and warnings (syntax-only, not semantics), see:
+- `docs/ui/search-syntax.md`
+
 ### Direct Tag Search (`#tag`)
 Returns:
 - Content directly tagged with `#tag`

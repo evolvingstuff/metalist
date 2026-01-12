@@ -778,6 +778,30 @@ body {
 }
 
 
+.controls .search-controls {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.controls .search-validation-message {
+    width: 500px;
+    margin: 4px auto 0 auto;
+    font-size: 12px;
+    color: #ffb4b4;
+}
+
+.controls .search-input.search-invalid {
+    border-color: #f44336;
+    box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.25);
+}
+
+.controls .search-input.search-invalid:focus {
+    border-color: #f44336;
+    box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.35);
+}
+
 .controls .search-input {
     width: 500px;
     margin: 0 auto;
