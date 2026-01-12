@@ -459,12 +459,29 @@ def render_note_data_read_only(note_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create a deep-copied note tree rendered in read-only mode."""
 
     def _render_node(node: Dict[str, Any]) -> Dict[str, Any]:
-        content = node.get("content", "")
-        note_obj = SimpleNamespace(content=content)
+        if "content" not in node:
+            raise RuntimeError(f"note_data missing required key: content | note={node}")
+        if "tags" not in node:
+            raise RuntimeError(f"note_data missing required key: tags | note={node}")
+
+        content = node["content"]
+        tags = node["tags"]
+        if not isinstance(content, str):
+            raise TypeError(f"note_data.content must be a string: {type(content)}")
+        if not isinstance(tags, str):
+            raise TypeError(f"note_data.tags must be a string: {type(tags)}")
+
+        note_obj = SimpleNamespace(content=content, tags=tags)
         rendered_content = render_read_only_mode(note_obj)
 
+        if "children" not in node:
+            raise RuntimeError(f"note_data missing required key: children | note={node}")
+        children = node["children"]
+        if not isinstance(children, list):
+            raise TypeError(f"note_data.children must be a list: {type(children)}")
+
         rendered_children = []
-        for child in node.get("children", []) or []:
+        for child in children:
             rendered_children.append(_render_node(child))
 
         rendered = dict(node)

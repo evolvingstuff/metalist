@@ -22,6 +22,7 @@ function getActiveTabState() {
             pendingFetch: false,
             lastKnownCount: 0,
             lastFetchTime: 0,
+            noMoreRoots: false,
         };
     }
     return tabPollState[key];
@@ -48,6 +49,7 @@ export function resetInfiniteScrollState() {
     state.lastKnownCount = ModeContext.knownRootCount;
     state.lastFetchTime = 0;
     state.pendingFetch = false;
+    state.noMoreRoots = false;
     refreshOverlayMetrics();
 }
 
@@ -55,6 +57,7 @@ export function handleTabSwitch() {
     const state = getActiveTabState();
     state.pendingFetch = false;
     state.lastKnownCount = ModeContext.knownRootCount;
+    state.noMoreRoots = false;
     refreshOverlayMetrics();
 }
 
@@ -96,6 +99,9 @@ async function handlePoll() {
     }
 
     const state = getActiveTabState();
+    if (state.noMoreRoots) {
+        return;
+    }
     const { visible, past } = collectRootVisibility();
     if (visible.length > 0) {
         const anchorId = visible[visible.length - 1];
@@ -111,6 +117,7 @@ async function handlePoll() {
         state.lastKnownCount = knownCount;
     } else if (knownCount > state.lastKnownCount) {
         state.lastKnownCount = knownCount;
+        state.noMoreRoots = false;
     }
 
     const anchorId = visible.length > 0 ? visible[visible.length - 1] : null;
@@ -124,6 +131,7 @@ async function handlePoll() {
 
 async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
     if (state.pendingFetch) return;
+    if (state.noMoreRoots) return;
 
     const now = Date.now();
     if (now - state.lastFetchTime < POLL_INTERVAL_MS) return;
@@ -149,8 +157,12 @@ async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
     const searchActive = searchQuery.trim().length > 0;
     if (currentKnown > previousKnownCount) {
         state.lastKnownCount = currentKnown;
+        state.noMoreRoots = false;
         refreshOverlayMetrics();
-    } else if (nearEndFlag && !searchActive) {
+    } else if (nearEndFlag && searchActive) {
+        // Search results can legitimately be complete: stop polling for this context.
+        state.noMoreRoots = true;
+    } else if (nearEndFlag) {
         // Fail fast: at visual end, but server did not extend
         throw new Error('Infinite scroll blocked: near end but server returned no new roots');
     }

@@ -242,7 +242,7 @@ export const ErrorHandler = {
         if (typeof duration !== 'number') {
             throw new Error('ErrorHandler.showSuccessBanner requires duration number');
         }
-        this.showErrorBanner(message, 'success', duration);
+        this.showErrorBanner(message, 'success', duration, false);
     },
     
     /**
@@ -252,7 +252,7 @@ export const ErrorHandler = {
         if (typeof duration !== 'number') {
             throw new Error('ErrorHandler.showInfoBanner requires duration number');
         }
-        this.showErrorBanner(message, 'info', duration);
+        this.showErrorBanner(message, 'info', duration, false);
     }
 };
 
