@@ -65,4 +65,6 @@ python main.py
 
 ## Gotchas / Open Issues
 - Removing the `app/services/store.py` adapter and calling `NoteStore` directly from all usecases still exposes referential integrity issues in some undo flows (delete/move). Adapter remains; revisit with tighter invariants + targeted tests.
-- Search is intentionally early-stage: the UI persists per-tab `searchQuery` and uses it for `undoContext` boundaries, but the server currently does not filter views by search.
+- Search is server-side + indexed: `app/services/search_index.py` (tag postings + trigram postings over `strip_html(content)`), used by `app/services/snapshot.py` to filter `/api2/notes/view`.
+  - Query terms: unquoted tokens are tag terms; quoted strings are text terms (see `docs/ui/search-syntax.md` + `docs/ui/search-semantics.md`).
+  - Views remain windowed (roots chunked; infinite scroll extends as needed).

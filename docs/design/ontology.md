@@ -150,10 +150,13 @@ Equivalent to:
 
 ## Search Behavior
 
-Implementation status: very early / not wired up yet.
-- The UI tracks a per-tab `searchQuery` and sends it to the server.
-- The server currently ignores the query for filtering (the view renders as if search is empty).
-- The actual search syntax is still being defined; this section describes intended semantics.
+Implementation status: **future work**.
+
+This document describes the planned ontology/implication search model.
+The current implementation is a simpler tag + quoted-text search without ontology.
+See:
+- Syntax: `docs/ui/search-syntax.md`
+- Current semantics: `docs/ui/search-semantics.md`
 
 For the current UI-level query grammar and warnings (syntax-only, not semantics), see:
 - `docs/ui/search-syntax.md`

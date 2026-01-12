@@ -9,6 +9,7 @@
 ## Core Components (As Implemented)
 - `app/services/note_store.py` (`store`): canonical in-memory graph holding decrypted note content + tags + ordering metadata.
 - `app/services/content_cache.py`: decrypts note content + tags from DB into in-memory caches.
+- `app/services/search_index.py`: in-memory search index (tag postings + trigram postings) maintained from `NoteStore` mutations.
 - `app/services/snapshot.py`: builds the view snapshot used by `POST /api2/notes/view`.
 - `app/db/session.py`: provides `begin_writer()`/`connect_reader()` and enforces the post-startup SELECT guard.
 

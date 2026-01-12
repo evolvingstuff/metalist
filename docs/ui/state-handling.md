@@ -464,7 +464,7 @@ Edit-mode transitions are recorded too:
 
 - **Tab switches**: clear undo/redo stacks (new `undoContext`).
 - **Search changes**: clear undo/redo stacks (new `undoContext`).
-  - Note: search is still early-stage; the server currently does not filter the view by search.
+  - Search execution refreshes `/api2/notes/view` using the new query and resets scroll/root-window state.
 - **App reload**: clears undo/redo stacks (fresh server state).
 
 **Performance Note (Tab Switches):**

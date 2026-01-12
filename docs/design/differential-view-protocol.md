@@ -26,7 +26,10 @@
 ### Notes
 - Keys above are required.
 - `visibleRootAnchorId`: the root note currently near the center of the viewport. The server expands the window around this anchor (plus a buffer) so infinite scroll is driven entirely on the backend.
-- `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache. Omit entries the client does not have. The cache is **tab-scoped**—each browser tab/search context keeps its own hash map so switching tabs never reports nodes from a different view (prevents the server from widening the first tab's root window after you scroll another tab way down).
+- `clientNoteUuidHashes`: map of `noteId -> hash` representing the client cache.
+  - Omit entries the client does not currently have rendered.
+  - The cache is **tab-scoped**.
+  - When a new search query is executed, the client should clear this cache first so the server does not suppress payloads for nodes that are about to be inserted.
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `undoContext`: a client-computed context boundary (currently tab+search). When this changes, the server clears the undo/redo stack for that client so `Cmd+Z` never crosses tab/search contexts.
 - `tabId`: client-maintained active tab UUID; the server caches one view per `(clientId, tabId, search)` tuple.
@@ -141,5 +144,5 @@
 - Collapse/expand toggles: child containers + flags stay accurate.
 - Undo/redo flows: structure diff realigns with no stale nodes.
 - Search: query round-trips per tab and updates `undoContext` boundaries.
-- Search filtering: intentionally disabled (view renders as if search is empty).
+- Search filtering: server-side and windowed by root notes (infinite scroll extends matching roots as needed).
 - Lock acquisition/release: lock icons/styling update without full refresh.
