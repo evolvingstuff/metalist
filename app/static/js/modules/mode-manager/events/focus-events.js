@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { sanitizeTags, setTagBarValue } from '../services/tag-bar-service.js';
+import { sanitizeTags, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 
 export function initFocusEvents() {
         
@@ -80,6 +80,12 @@ function handleBlur(event) {
 			throw new Error('Tag bar input value must be string');
 		}
 		const sanitized = sanitizeTags(rawTags);
-		setTagBarValue(noteElement, sanitized);
+		// Important: do NOT write sanitized tags into `noteElement.dataset.noteTags` here.
+		// That dataset value represents the last server-saved tags; overwriting it on blur
+		// would cause `actionSaveNote` to think tags were already persisted.
+		if (sanitized != rawTags) {
+			tagBarInput.value = sanitized;
+		}
+		validateAndRenderTagBar(noteElement);
 	}
 }
