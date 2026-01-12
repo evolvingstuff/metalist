@@ -33,7 +33,10 @@
         <div class="container">
             <div class="controls">
                 <!-- <button class="add-note interactive">+</button> -->
-                <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes...">
+                <div class="search-controls">
+                    <input type="text" id="search-input" class="search-input interactive" placeholder="Search notes...">
+                    <div id="search-validation-message" class="search-validation-message" hidden></div>
+                </div>
                 <!-- <button id="trash-can" class="trash-can interactive" draggable="false">🗑️</button> -->
             </div>
             <div id="notes-container">

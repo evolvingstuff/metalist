@@ -58,7 +58,7 @@ Rules:
 3. **Empty quoted strings**: `""` and `''` are treated as **incomplete**.
    - Show a warning (e.g. `Enter text inside quotes`)
    - `isComplete=false` and search does not execute.
-4. **Dangling prefixes**: `-` alone or `+` alone are **incomplete**.
+4. **Dangling prefixes**: `-` alone or `+` alone are **incomplete** (but should not immediately warn while the user is still typing).
 5. **Invalid tag token characters**: actively removed during enforcement (tag-bar-style).
 
 ## Not Supported
@@ -98,4 +98,4 @@ Rules:
 - `"unclosed`: warning, `isComplete=false`.
 - `'unclosed`: warning, `isComplete=false`.
 - `""` or `''`: warning, `isComplete=false`.
-- `-` or `+` alone: warning, `isComplete=false`.
+- `-` or `+` alone: `isComplete=false` (no immediate warning).

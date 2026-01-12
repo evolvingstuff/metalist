@@ -13,6 +13,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
+import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 
 const memoryModal = new MemoryModal();
@@ -1656,9 +1657,16 @@ async function deleteTabContext(deleteTabId) {
 
 function syncSearchInputField() {
     const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.value = ModeContext.searchQuery;
+    if (!searchInput) {
+        return;
     }
+
+    const activeQuery = ModeContext.searchQuery;
+    if (typeof activeQuery !== 'string') {
+        throw new Error('ModeContext.searchQuery must be a string');
+    }
+
+    syncSearchInputValue(searchInput, activeQuery);
 }
 
 async function persistCurrentTabState() {

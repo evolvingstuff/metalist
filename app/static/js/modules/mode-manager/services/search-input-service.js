@@ -1,0 +1,75 @@
+import { analyzeSearchQueryInput, enforceSearchQueryInputForEditing } from './search-syntax-service.js';
+
+const SEARCH_INVALID_CLASS = 'search-invalid';
+
+function ensureSearchValidationMessageElement() {
+    const message = document.getElementById('search-validation-message');
+    if (!message) {
+        throw new Error('search-validation-message element missing from DOM');
+    }
+    return message;
+}
+
+export function setSearchValidationState(searchInput, analysis) {
+    if (!searchInput) {
+        throw new Error('setSearchValidationState requires search input element');
+    }
+    if (!analysis || typeof analysis.isComplete !== 'boolean') {
+        throw new Error('setSearchValidationState requires analysis result');
+    }
+
+    const message = ensureSearchValidationMessageElement();
+
+    const shouldWarn = typeof analysis.warningMessage === 'string' && analysis.warningMessage.length > 0;
+    searchInput.classList.toggle(SEARCH_INVALID_CLASS, shouldWarn);
+
+    if (shouldWarn) {
+        message.textContent = analysis.warningMessage;
+        message.hidden = false;
+        return;
+    }
+
+    message.textContent = '';
+    message.hidden = true;
+}
+
+export function enforceSearchInputElement(searchInput) {
+    if (!searchInput || typeof searchInput.value !== 'string') {
+        throw new Error('enforceSearchInputElement requires a search input element');
+    }
+
+    const rawValue = searchInput.value;
+    const enforcedValue = enforceSearchQueryInputForEditing(rawValue);
+    if (enforcedValue === rawValue) {
+        return rawValue;
+    }
+
+    const selectionStart = Number.isInteger(searchInput.selectionStart) ? searchInput.selectionStart : rawValue.length;
+    const selectionEnd = Number.isInteger(searchInput.selectionEnd) ? searchInput.selectionEnd : selectionStart;
+
+    const nextSelectionStart = enforceSearchQueryInputForEditing(rawValue.slice(0, selectionStart)).length;
+    const nextSelectionEnd = enforceSearchQueryInputForEditing(rawValue.slice(0, selectionEnd)).length;
+
+    searchInput.value = enforcedValue;
+    if (typeof searchInput.setSelectionRange === 'function') {
+        searchInput.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+    }
+
+    return enforcedValue;
+}
+
+export function syncSearchInputValue(searchInput, rawSearchQuery) {
+    if (!searchInput || typeof searchInput.value !== 'string') {
+        throw new Error('syncSearchInputValue requires a search input element');
+    }
+    if (typeof rawSearchQuery !== 'string') {
+        throw new Error('syncSearchInputValue requires rawSearchQuery string');
+    }
+
+    const enforcedValue = enforceSearchQueryInputForEditing(rawSearchQuery);
+    searchInput.value = enforcedValue;
+
+    const analysis = analyzeSearchQueryInput(enforcedValue);
+    setSearchValidationState(searchInput, analysis);
+    return analysis;
+}
