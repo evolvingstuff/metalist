@@ -1,68 +1,101 @@
-# Search Query Syntax Implementation Plan
+# Search Query Syntax Verifier Plan
 
-## Overview
+## Scope (This Feature)
 
-Implement a search query parser that validates and parses space-separated search terms. The parser should provide real-time feedback (warnings) for incomplete/invalid syntax, similar to how the tag bar handles unclosed comments or bracket wrappers.
+Implement a **client-side search query syntax verifier + active rewrite**:
+- Enforce a small grammar while typing (like the tag bar).
+- Provide real-time warnings for incomplete syntax.
+- Produce a normalized query string for storage/transport.
 
-Search does not execute while the query is syntactically incomplete.
+This feature **does not implement actual search semantics or filtering**.
 
-## Term Types
+Search does **not** execute while the query is syntactically incomplete.
+
+## Term Model
+
+Query is a whitespace-separated list of terms.
 
 ### Tag Terms
 
-- `foo` — matches notes with tag `foo`, including tags that imply `foo` or are synonyms
-- `-foo` — excludes notes with tag `foo` (negation)
-- `+foo` — strict match for exactly tag `foo`, no implication/synonym expansion
+- `foo`
+- `-foo`
+- `+foo`
 
-Tag tokens follow the same character rules as those in the tag bar.
+Notes:
+- `+`/`-` semantics are out of scope; we only validate and parse.
+- Tag tokens use the same character rules as tag-bar *non-wrapper* tokens.
+- Bracket wrappers (`[foo]`, `{foo}`, `((foo))`) are **not** part of search syntax.
 
 ### Text Terms
 
-- `"some text"` — matches notes containing this literal text
-- `-"some text"` — excludes notes containing this literal text
-- Escaped quotes inside text: `"escaped \"quote\" here"`
+A text term is a quoted string using either quote character, as long as it matches:
 
-## Validation Rules
+- Double-quoted: `"some text"`
+- Single-quoted: `'some text'`
+- Negated forms: `-"some text"`, `-'some text'`
 
-1. **Unclosed quotes** — A quoted string without a closing quote (e.g., `"some text`) triggers a warning. The incomplete term is omitted from the executed search.
+Escapes inside quoted text (backslash approach):
+- Within `"..."`: allow `\\` and `\"`
+- Within `'...'`: allow `\\` and `\'`
 
-2. **Well-formed terms** — Each term must be one of:
-   - A tag term: optional `-` or `+` prefix, followed by a valid tag token
-   - A text term: optional `-` prefix, followed by a properly closed quoted string
+How to search for quote characters without escaping:
+- Search for a literal `"`: use single quotes: `'"'`
+- Search for a literal `'`: use double quotes: `"'"`
 
-3. **Whitespace** — Terms are separated by whitespace. Runs of whitespace are normalized to single spaces.
+## Validation + Completeness Rules
+
+The verifier outputs:
+- `normalizedText`: what we rewrite the input to while typing (whitespace normalization + enforcement).
+- `sanitizedText`: only the *complete* terms.
+- `isComplete`: `true` only when there are no incomplete terms.
+- `warningMessage`: `null` or a user-facing string.
+
+Rules:
+1. **Whitespace**: normalize runs of whitespace to a single space; trim ends.
+2. **Unclosed quotes**: if a term starts a quote and doesn't close it, the query is **incomplete**.
+   - Show a warning (e.g. `Close quote with "` or `Close quote with '`)
+   - `isComplete=false` and search does not execute.
+3. **Empty quoted strings**: `""` and `''` are treated as **incomplete**.
+   - Show a warning (e.g. `Enter text inside quotes`)
+   - `isComplete=false` and search does not execute.
+4. **Dangling prefixes**: `-` alone or `+` alone are **incomplete**.
+5. **Invalid tag token characters**: actively removed during enforcement (tag-bar-style).
 
 ## Not Supported
 
-- **Bracket wrappers** — `[]`, `{}`, `()` wrappers are tag-bar-only (for scoping format meta tags to content regions)
-- **Wildcards** — Not needed; prefix matching is inherent to tag implication
-- **Regex** — Cannot be efficiently implemented with bloom filters over large note sets
+- Bracket wrappers (`[]`, `{}`, `()`): tag-bar-only.
+- Comments (`/* ... */`): tag-bar-only.
+- Regex / wildcard / operators beyond `+`/`-` prefixes.
 
-## Implementation Notes
+## Implementation Plan (Client)
 
-- Text matching will use bloom filters for efficiency at scale (100k+ notes)
-- Tag matching uses the existing tag index with implication/synonym support
-- Parser should emit warnings in real-time as user types (like the tag bar)
-- Incomplete queries should not execute; only syntactically complete queries run
+1. Add a new module mirroring the tag-bar patterns:
+   - `enforceSearchQueryInputForEditing(rawInput)` → rewritten string
+   - `analyzeSearchQueryInput(rawInput)` → `{ normalizedText, sanitizedText, isComplete, warningMessage, terms }`
+   - `normalizeSearchQueryInput(rawInput)` → `normalizedText`
 
-## Examples
+2. Wire enforcement into the search input handler:
+   - On `input`: rewrite value + preserve selection (same approach as tag bar).
+   - Update warning UI state based on `analyzeSearchQueryInput()`.
+   - Ensure execution requests are gated on `isComplete`.
 
-| Query | Meaning |
-|-------|---------|
-| `foo` | Notes with tag `foo` (or implying tags) |
-| `foo bar` | Notes with both `foo` and `bar` |
-| `-foo` | Notes without tag `foo` |
-| `+foo` | Notes with exactly tag `foo` |
-| `"hello world"` | Notes containing "hello world" |
-| `-"hello world"` | Notes not containing "hello world" |
-| `foo "some text"` | Notes with tag `foo` AND containing "some text" |
-| `foo -bar "text"` | Notes with `foo`, without `bar`, containing "text" |
-| `"say \"hi\""` | Notes containing `say "hi"` |
+## Examples (Syntax Only)
+
+| Query | Notes |
+|-------|------|
+| `foo bar` | 2 tag terms |
+| `-foo +bar` | tag terms with prefixes |
+| `"hello world"` | double-quoted text term |
+| `'hello world'` | single-quoted text term |
+| `'"'` | literal double-quote character |
+| `"'"` | literal single-quote character |
+| `"say \"hi\""` | escaped quotes inside `"..."` |
+| `'say \'hi\''` | escaped quotes inside `'...'` |
 
 ## Edge Cases
 
-- Empty query: valid, matches all notes (or no-op)
-- Only whitespace: same as empty
-- `"unclosed` : warning, term omitted, search does not execute
-- `""`: warning, empty quoted string is invalid
-- `-` or `+` alone: invalid/incomplete term
+- Empty / whitespace-only query: complete and valid.
+- `"unclosed`: warning, `isComplete=false`.
+- `'unclosed`: warning, `isComplete=false`.
+- `""` or `''`: warning, `isComplete=false`.
+- `-` or `+` alone: warning, `isComplete=false`.
