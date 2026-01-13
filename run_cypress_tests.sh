@@ -25,7 +25,6 @@ done
 
 # Run Cypress tests
 echo "🏃 Running Cypress tests..."
-cd tests/ui
 npx cypress run
 
 # Capture test result

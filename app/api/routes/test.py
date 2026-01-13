@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from app.config import TEST_MODE
+from app.services.test_reset import reset_state_for_tests
+
+router = APIRouter()
+
+
+@router.post("/test/reset")
+async def reset_test_state() -> dict:
+    assert TEST_MODE, "Test reset endpoint is only available in TEST_MODE"
+    reset_state_for_tests()
+    return {"ok": True}
+
