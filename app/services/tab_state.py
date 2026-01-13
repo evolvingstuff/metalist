@@ -45,6 +45,20 @@ class TabStateStore:
         with self._lock:
             return self._snapshot_locked()
 
+    def reset(self) -> None:
+        default_tab_id = self._new_tab_id()
+        with self._lock:
+            self._active_tab_id = default_tab_id
+            self._tabs = {
+                default_tab_id: {
+                    "searchQuery": "",
+                    "scrollY": 0,
+                    "scrollAnchor": None,
+                }
+            }
+            self._tab_order = [default_tab_id]
+            self._version += 1
+
     def create_tab(self, *, copy_from_tab_id: str) -> Dict[str, object]:
         if not isinstance(copy_from_tab_id, str) or not copy_from_tab_id:
             raise ValueError("copyFromTabId must be a non-empty string")

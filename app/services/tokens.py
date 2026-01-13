@@ -24,6 +24,9 @@ class TokenService:
             SHA-256 hash of the token
         """
         return hashlib.sha256(token.encode()).hexdigest()
+
+    def reset(self) -> None:
+        self.tokens.clear()
     
     def create_token(
         self,

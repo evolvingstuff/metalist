@@ -7,7 +7,7 @@ from app.services.tokens import token_service
 from app.services.auth_service import AuthService
 from app.services.maintenance_mode import maintenance_service
 from app.models.database import SafeSession
-from app.config import API_PREFIX
+from app.config import API_PREFIX, TEST_MODE
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -22,6 +22,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/favicon.ico",
         "/locked",
     ]
+
+    if TEST_MODE:
+        PUBLIC_PATHS.append(f"{API_PREFIX}/test/reset")
     
     # Paths to suppress verbose logging for (frequent polling endpoints)
     QUIET_PATHS = [

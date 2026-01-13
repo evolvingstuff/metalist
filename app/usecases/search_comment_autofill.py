@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 from app.services.search_query import parse_search_query
+from app.services.search_index import extract_tags_for_search
 from app.services.search_text import build_searchable_text_casefold
 from app.services.store import store
 
@@ -46,24 +47,64 @@ def _extract_positive_text_terms(search_query: Optional[str]) -> tuple[str, ...]
     return parsed.required_text
 
 
+def _extract_positive_tag_terms(search_query: Optional[str]) -> tuple[str, ...]:
+    if search_query is None:
+        return ()
+    if not isinstance(search_query, str):
+        raise TypeError(f"search_query must be a string or None, got {type(search_query)}")
+    if search_query.strip() == "":
+        return ()
+    parsed = parse_search_query(search_query)
+    if not parsed.required_tags:
+        return ()
+    return tuple(sorted(parsed.required_tags))
+
+
 def compute_initial_tags_for_new_note(
     *,
     parent_id: Optional[str],
     search_query: Optional[str],
 ) -> str:
+    required_tag_terms = _extract_positive_tag_terms(search_query)
     required_text_terms = _extract_positive_text_terms(search_query)
-    if not required_text_terms:
+    if not required_tag_terms and not required_text_terms:
         return ""
 
-    if parent_id is None:
-        return _build_comment_tokens(required_text_terms)
+    filtered_tag_terms = required_tag_terms
+    if parent_id is not None and required_tag_terms:
+        inherited_non_meta: set[str] = set()
+        current_id = parent_id
+        while current_id is not None:
+            ancestor = store.get(current_id)
+            for term in extract_tags_for_search(ancestor.tags):
+                if term.startswith("@"):
+                    continue
+                inherited_non_meta.add(term)
+            current_id = ancestor.parent_id
+
+        filtered_tag_terms = tuple(
+            term
+            for term in required_tag_terms
+            if term.startswith("@") or term not in inherited_non_meta
+        )
+
+    tags_tokens: list[str] = []
+    tags_tokens.extend(filtered_tag_terms)
+
+    if required_text_terms and parent_id is None:
+        tags_tokens.append(_build_comment_tokens(required_text_terms))
+        return " ".join(tags_tokens)
+
+    if not required_text_terms:
+        return " ".join(tags_tokens)
 
     current_id = parent_id
     while current_id is not None:
         ancestor = store.get(current_id)
         ancestor_text = build_searchable_text_casefold(ancestor.content, ancestor.tags)
         if all(term.casefold() in ancestor_text for term in required_text_terms):
-            return ""
+            return " ".join(tags_tokens)
         current_id = ancestor.parent_id
 
-    return _build_comment_tokens(required_text_terms)
+    tags_tokens.append(_build_comment_tokens(required_text_terms))
+    return " ".join(tags_tokens)

@@ -19,7 +19,8 @@ from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
-from app.config import API_PREFIX, V1_API_PREFIX
+from app.api.routes.test import router as api2_test_router
+from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
 from loguru import logger
@@ -175,6 +176,8 @@ app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
 app.include_router(api2_auth_router, prefix=API_PREFIX)
 app.include_router(api2_memory_router, prefix=API_PREFIX)
+if TEST_MODE:
+    app.include_router(api2_test_router, prefix=API_PREFIX, tags=["api2-test"])
 
 # Catch-all guard for any v1 API access (hard exit)
 @app.api_route(f"{V1_API_PREFIX}/{{rest_of_path:path}}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])

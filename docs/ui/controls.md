@@ -23,6 +23,11 @@
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 
+### Search Input Behavior
+- Pressing `Enter` while focused in the search input creates a new **root** note.
+- If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
+- When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
+
 ### Mouse Controls
 | Action | Result |
 |--------|--------|
