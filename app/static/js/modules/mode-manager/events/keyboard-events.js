@@ -60,18 +60,23 @@ function handleKeyDown(event) {
     // Never interpret typing/navigation within inputs as global shortcuts.
     // In particular, Backspace/Delete must not delete notes while editing the search box.
     // Exception: Enter in the search input is treated like a global "create note" action.
-    if (event.key !== 'Escape') {
-        const target = event.target;
-        if (target instanceof HTMLElement) {
-            const tagName = target.tagName;
-            const isTextInput = tagName === 'INPUT' || tagName === 'TEXTAREA';
-            const isSearchInput = tagName === 'INPUT' && target.id === 'search-input';
+	    if (event.key !== 'Escape') {
+	        const target = event.target;
+	        if (target instanceof HTMLElement) {
+	            const tagName = target.tagName;
+	            let isTextInput = false;
+	            if (tagName === 'INPUT') {
+	                isTextInput = true;
+	            } else if (tagName === 'TEXTAREA') {
+	                isTextInput = true;
+	            }
+	            const isSearchInput = tagName === 'INPUT' && target.id === 'search-input';
 
-            if (isTextInput && !(isSearchInput && event.key === 'Enter')) {
-                return;
-            }
-        }
-    }
+	            if (isTextInput && !(isSearchInput && event.key === 'Enter')) {
+	                return;
+	            }
+	        }
+	    }
 
     if (ModeContext.isLoading) {
         Logger.logNoop('Keyboard event ignored while system is loading', {
