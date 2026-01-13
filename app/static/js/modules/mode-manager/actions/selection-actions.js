@@ -107,6 +107,20 @@ export async function actionSaveAndExitEditingWithoutRefreshing() {
     }
 
     await actionSaveNote(noteId);
+
+    const shouldManageLoading = !ModeContext.isLoading;
+    if (shouldManageLoading) {
+        ModeContext.setLoading(true);
+    }
+
+    await (async () => {
+        await NotesAPI.recordEditModeTransition(noteId, null);
+    })().finally(() => {
+        if (shouldManageLoading && ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+        }
+    });
+
     actionExitEditingWithoutSavingOrRefreshing();
 }
 

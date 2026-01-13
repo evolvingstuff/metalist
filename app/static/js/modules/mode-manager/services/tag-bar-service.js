@@ -8,6 +8,7 @@ const TAG_BAR_VALIDATION_MESSAGE_CLASS = 'note-tag-bar-validation-message';
 let activeNoteElement = null;
 let activeObserver = null;
 let activeFallbackHandler = null;
+let activeSyncedTags = null;
 
 function getDirectChildByClass(parent, className) {
     for (const child of Array.from(parent.children)) {
@@ -280,6 +281,7 @@ export function syncTagBar(editingNoteElement) {
             disconnectVisibilityTracking();
             removeTagBar(activeNoteElement);
             activeNoteElement = null;
+            activeSyncedTags = null;
         }
         return;
     }
@@ -288,17 +290,37 @@ export function syncTagBar(editingNoteElement) {
         disconnectVisibilityTracking();
         removeTagBar(activeNoteElement);
         activeNoteElement = null;
+        activeSyncedTags = null;
     }
 
     activeNoteElement = editingNoteElement;
     const tagBarResult = ensureTagBarElement(editingNoteElement);
     const tagBar = tagBarResult.element;
+    const input = getTagBarInput(tagBar);
+
+    const storedTags = typeof editingNoteElement.dataset.noteTags === 'string'
+        ? editingNoteElement.dataset.noteTags
+        : '';
+    const normalizedStoredTags = normalizeTagBarInput(storedTags);
 
     if (tagBarResult.created) {
-        const initialTags = typeof editingNoteElement.dataset.noteTags === 'string'
-            ? editingNoteElement.dataset.noteTags
-            : '';
-        setTagBarValue(editingNoteElement, initialTags);
+        setTagBarValue(editingNoteElement, normalizedStoredTags);
+        activeSyncedTags = normalizedStoredTags;
+    } else if (input) {
+        if (activeSyncedTags === null) {
+            activeSyncedTags = normalizeTagBarInput(typeof input.value === 'string' ? input.value : '');
+        }
+
+        if (normalizedStoredTags !== activeSyncedTags) {
+            const currentInputValue = typeof input.value === 'string' ? input.value : '';
+
+            if (currentInputValue === activeSyncedTags) {
+                setTagBarValue(editingNoteElement, normalizedStoredTags);
+                activeSyncedTags = normalizedStoredTags;
+            } else if (currentInputValue === normalizedStoredTags) {
+                activeSyncedTags = normalizedStoredTags;
+            }
+        }
     }
 
     validateAndRenderTagBar(editingNoteElement);
