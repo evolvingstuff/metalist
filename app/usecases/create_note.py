@@ -6,6 +6,8 @@ from typing import Dict, Optional
 import uuid
 
 from app.usecases.base import QueryCommand
+from app.services.undo_state import record_create
+from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
 from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 
@@ -98,8 +100,10 @@ class CmdCreateNote(QueryCommand):
 
         note_uuid = str(uuid.uuid4())
         content = ""
-        # Search auto-population is intentionally disabled during the ongoing search rewrite.
-        # Search will eventually materialize into structured tags (tag bar), not note content.
+        tags = compute_initial_tags_for_new_note(
+            parent_id=None,
+            search_query=self.search_query,
+        )
 
         apply_insert_note(
             note_uuid,
@@ -108,11 +112,10 @@ class CmdCreateNote(QueryCommand):
             next_id,
             self.token,
             content=content,
-            tags="",
+            tags=tags,
         )
 
         # Record for undo (delete on undo)
-        from app.services.undo_state import record_create
         rec = {
             "id": note_uuid,
             "parent_id": None,
@@ -120,7 +123,7 @@ class CmdCreateNote(QueryCommand):
             "next_id": next_id,
             "is_collapsed": False,
             "content": content,
-            "tags": "",
+            "tags": tags,
             "created_at": None,
             "updated_at": None,
         }

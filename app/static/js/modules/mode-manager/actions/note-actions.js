@@ -189,7 +189,7 @@ export async function createChildNote() {
         parentNoteId: currentNoteId 
     }, Logger.LogCategory.DEBUG);
     
-    const data = await NotesAPI.createChild(currentNoteId);
+    const data = await NotesAPI.createChild(currentNoteId, ModeContext.searchQuery);
     const newNoteId = data.id;
 
     ModeContext.setLoading(false);

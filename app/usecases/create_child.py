@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 import uuid
 
 from app.usecases.base import QueryCommand
 from app.services.store import store
 from app.services.sync import generate_new_uuid
+from app.services.undo_state import record_create
 from app.usecases.create_note import apply_insert_note
+from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
 
 
 @dataclass
 class CmdCreateChild(QueryCommand):
     parent_note_id: str
+    search_query: Optional[str]
     token: str
     client_id: str
     undo_context: str
@@ -31,6 +34,10 @@ class CmdCreateChild(QueryCommand):
 
         note_uuid = str(uuid.uuid4())
         content = ""
+        tags = compute_initial_tags_for_new_note(
+            parent_id=parent.id,
+            search_query=self.search_query,
+        )
         apply_insert_note(
             note_uuid,
             parent.id,
@@ -38,10 +45,9 @@ class CmdCreateChild(QueryCommand):
             next_id,
             self.token,
             content=content,
-            tags="",
+            tags=tags,
         )
 
-        from app.services.undo_state import record_create
         rec = {
             "id": note_uuid,
             "parent_id": parent.id,
@@ -49,7 +55,7 @@ class CmdCreateChild(QueryCommand):
             "next_id": next_id,
             "is_collapsed": False,
             "content": content,
-            "tags": "",
+            "tags": tags,
             "created_at": None,
             "updated_at": None,
         }

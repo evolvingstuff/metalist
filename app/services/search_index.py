@@ -10,7 +10,7 @@ from loguru import logger
 
 from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token
 from app.services.search_query import ParsedSearchQuery, parse_search_query
-from app.utils.text_utils import strip_html
+from app.services.search_text import build_searchable_text_casefold
 
 
 _UNICODE_TRIGRAM_SENTINEL = 0xE000
@@ -337,7 +337,7 @@ class SearchIndex:
         if not isinstance(tags, str):
             raise TypeError(f"tags must be a string, got {type(tags)}")
 
-        text_casefold = strip_html(content_html).casefold()
+        text_casefold = build_searchable_text_casefold(content_html, tags)
         tag_terms = extract_tags_for_search(tags)
         trigrams = _extract_trigram_keys(text_casefold)
         return text_casefold, tag_terms, trigrams

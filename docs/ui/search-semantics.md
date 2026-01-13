@@ -25,6 +25,7 @@ rules as the tag bar:
 Text matching is:
 - Case-insensitive (`casefold`).
 - Against **visible text**, extracted by stripping HTML (scripts/styles ignored).
+- Also against tag-bar `/* ... */` comment text (whitespace-normalized).
 
 ## Matching Rules
 
@@ -49,4 +50,3 @@ The UI renders a tree, so search returns context:
 Results are still **windowed by root notes**:
 - The server sends an initial window of matching roots.
 - Scrolling near the end triggers additional root windows.
-

@@ -205,10 +205,15 @@ export const NotesAPI = {
         });
     },
 
-    async createChild(noteId) {
+    async createChild(noteId, searchQuery) {
+        const body = {
+            search_query: searchQuery,
+        };
+
         return this._apiCall(CONFIG.API.NOTES.CREATE_CHILD(noteId), { 
             method: 'POST',
             claimSession: true,
+            body: JSON.stringify(body)
         });
     },
 

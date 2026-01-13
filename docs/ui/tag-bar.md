@@ -51,6 +51,8 @@ You can include `/* ... */` comment segments in the tag bar:
 - Comments may contain spaces.
 - Comment text is preserved (ASCII-printable characters only).
 
+Comments also participate in server-side text search.
+
 Unclosed comments behave like unclosed wrappers:
 - A bare `/*` does not immediately warn.
 - Once there is content (e.g. `/*comment`), the tag bar warns.

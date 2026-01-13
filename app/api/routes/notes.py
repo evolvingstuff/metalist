@@ -304,6 +304,7 @@ def create_child(request: Request, note_id: str, body: dict):
     _require_note_present(note_id, context="notes.new-child")
     cmd = CmdCreateChild(
         parent_note_id=note_id,
+        search_query=body["search_query"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
