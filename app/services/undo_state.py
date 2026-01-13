@@ -6,9 +6,12 @@ from app.usecases.update_content import apply_update_content
 from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
 from app.usecases.move import apply_move
 from app.services.store import store
-import os
 import logging
+import os
 from app.services.sync import generate_new_uuid
+
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, object]:
@@ -28,12 +31,25 @@ def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, objec
         if not isinstance(scroll_anchor, dict):
             raise ValueError("viewport.scrollAnchor must be an object or null")
 
-        anchor_id = scroll_anchor.get("anchorId")
-        anchor_bias = scroll_anchor.get("anchorBias")
-        intra_offset = scroll_anchor.get("intraOffset")
-        belt_prev = scroll_anchor.get("beltPrev")
-        belt_next = scroll_anchor.get("beltNext")
-        anchor_sort_key = scroll_anchor.get("anchorSortKey")
+        if "anchorId" not in scroll_anchor:
+            raise ValueError("viewport.scrollAnchor.anchorId is required")
+        if "anchorBias" not in scroll_anchor:
+            raise ValueError("viewport.scrollAnchor.anchorBias is required")
+        if "intraOffset" not in scroll_anchor:
+            raise ValueError("viewport.scrollAnchor.intraOffset is required")
+        if "beltPrev" not in scroll_anchor:
+            raise ValueError("viewport.scrollAnchor.beltPrev is required")
+        if "beltNext" not in scroll_anchor:
+            raise ValueError("viewport.scrollAnchor.beltNext is required")
+        if "anchorSortKey" not in scroll_anchor:
+            raise ValueError("viewport.scrollAnchor.anchorSortKey is required")
+
+        anchor_id = scroll_anchor["anchorId"]
+        anchor_bias = scroll_anchor["anchorBias"]
+        intra_offset = scroll_anchor["intraOffset"]
+        belt_prev = scroll_anchor["beltPrev"]
+        belt_next = scroll_anchor["beltNext"]
+        anchor_sort_key = scroll_anchor["anchorSortKey"]
 
         if not isinstance(anchor_id, str) or not anchor_id:
             raise ValueError("viewport.scrollAnchor.anchorId must be a non-empty string")
@@ -52,7 +68,9 @@ def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, objec
 
         if not isinstance(anchor_sort_key, dict):
             raise ValueError("viewport.scrollAnchor.anchorSortKey must be an object")
-        dom_index = anchor_sort_key.get("domIndex")
+        if "domIndex" not in anchor_sort_key:
+            raise ValueError("viewport.scrollAnchor.anchorSortKey.domIndex is required")
+        dom_index = anchor_sort_key["domIndex"]
         if not isinstance(dom_index, int) or dom_index < 0:
             raise ValueError("viewport.scrollAnchor.anchorSortKey.domIndex must be a non-negative integer")
 
@@ -72,7 +90,9 @@ def _anchor_root_id(viewport: Dict[str, object]) -> Optional[str]:
     scroll_anchor = viewport["scrollAnchor"]
     if not isinstance(scroll_anchor, dict):
         return None
-    anchor_id = scroll_anchor.get("anchorId")
+    if "anchorId" not in scroll_anchor:
+        return None
+    anchor_id = scroll_anchor["anchorId"]
     if isinstance(anchor_id, str) and anchor_id:
         return anchor_id
     return None
@@ -134,10 +154,43 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         record = op["record"]
         if not isinstance(record, dict):
             raise RuntimeError(f"Undo op create_note.record must be an object | op={op}")
-        created_id = record.get("id")
+        if "id" not in record:
+            raise RuntimeError(f"Undo op create_note.record missing id | op={op}")
+        created_id = record["id"]
         if direction == "redo" and isinstance(created_id, str):
             return created_id
-        return _pick_focus_neighbor(record.get("prev_id"), record.get("next_id"))
+        if "parent_id" not in record:
+            raise RuntimeError(f"Undo op create_note.record missing parent_id | op={op}")
+
+        if not isinstance(created_id, str) or not created_id:
+            raise RuntimeError(f"Undo op create_note.record.id must be a non-empty string | op={op}")
+        parent_id = record["parent_id"]
+
+        if "prev_id" not in record:
+            raise RuntimeError(f"Undo op create_note.record missing prev_id | op={op}")
+        prev_id = record["prev_id"]
+        if prev_id is not None and not isinstance(prev_id, str):
+            raise RuntimeError(f"Undo op create_note.record.prev_id must be a string or null | op={op}")
+
+        if prev_id is not None and not isinstance(prev_id, str):
+            raise RuntimeError(f"Undo op create_note.record.prev_id must be a string or null | op={op}")
+        if parent_id is not None and not isinstance(parent_id, str):
+            raise RuntimeError(f"Undo op create_note.record.parent_id must be a string or null | op={op}")
+
+        # Undoing a create should usually return focus to:
+        # - the reference note (sibling creation): prev_id is set
+        # - the parent note (child creation): parent_id is set and prev_id is null
+        # - nothing (root creation from empty selection): parent_id is null and prev_id is null
+        if isinstance(prev_id, str) and prev_id:
+            return prev_id
+        if isinstance(parent_id, str) and parent_id:
+            logger.info(
+                "undo.create_note focus parent: created_id=%s parent_id=%s",
+                created_id,
+                parent_id,
+            )
+            return parent_id
+        return ""
 
     if op_type in {"delete_subtree", "paste_subtree"}:
         records = op["records"]
@@ -281,10 +334,13 @@ def record_move(
 
 def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optional[str], exp_next: Optional[str]) -> None:
     parent_id = store.get(note_id).parent_id
-    links = store._links.get(parent_id)  # type: ignore[attr-defined]
-    if links is None:
+    links_by_parent = store._links  # type: ignore[attr-defined]
+    if parent_id not in links_by_parent:
         raise RuntimeError(f"Missing link scope for parent_id={parent_id}")
-    cur = links.get(note_id)
+    links = links_by_parent[parent_id]
+    if note_id not in links:
+        raise RuntimeError(f"Missing note_id={note_id} in links for parent_id={parent_id}")
+    cur = links[note_id]
     if cur is None:
         raise RuntimeError(f"Missing note_id={note_id} in links for parent_id={parent_id}")
     if 'prev' not in cur or 'next' not in cur:
@@ -361,6 +417,26 @@ def record_edit_mode(
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
 
+    # Don't record an extra undo stage when the client enters edit mode
+    # immediately after creating a note. The create op already captures the
+    # intended "note exists" transition, and keeping edit_mode as a separate
+    # entry forces the user to press undo twice (exit edit mode, then delete).
+    if before_editing_note_id is None and after_editing_note_id is not None and ctx.history:
+        last_op = ctx.history[-1]
+        if "type" not in last_op:
+            raise RuntimeError(f"Undo op missing required key: type | op={last_op}")
+        if last_op["type"] == "create_note":
+            if "record" not in last_op:
+                raise RuntimeError(f"Undo op create_note missing required key: record | op={last_op}")
+            record = last_op["record"]
+            if not isinstance(record, dict):
+                raise RuntimeError(f"Undo op create_note.record must be an object | op={last_op}")
+            if "id" not in record:
+                raise RuntimeError(f"Undo op create_note.record missing id | op={last_op}")
+            created_id = record["id"]
+            if created_id == after_editing_note_id:
+                return
+
     op = {
         "type": "edit_mode",
         "before_editing_note_id": before_editing_note_id,
@@ -380,9 +456,12 @@ def record_edit_mode(
         before_editing_note_id is not None
         and after_editing_note_id is None
         and ctx.history
-        and ctx.history[-1].get("type") == "edit_mode"
-        and ctx.history[-1].get("before_editing_note_id") is None
-        and ctx.history[-1].get("after_editing_note_id") == before_editing_note_id
+        and "type" in ctx.history[-1]
+        and ctx.history[-1]["type"] == "edit_mode"
+        and "before_editing_note_id" in ctx.history[-1]
+        and ctx.history[-1]["before_editing_note_id"] is None
+        and "after_editing_note_id" in ctx.history[-1]
+        and ctx.history[-1]["after_editing_note_id"] == before_editing_note_id
     ):
         ctx.history[-1] = op
     else:
@@ -408,11 +487,47 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     if not ctx.history:
         return None
     op = ctx.history.pop()
-    undo_viewport = op["viewport"]
 
     if "type" not in op:
         raise RuntimeError(f"Undo op missing required key: type | op={op}")
     op_type = op["type"]
+
+    # Coalesce a freshly-created note's auto-enter-edit-mode into the create op.
+    # Without this, the user must press undo twice: once to exit edit mode and
+    # again to delete the note.
+    if op_type == "edit_mode" and ctx.history:
+        if "before_editing_note_id" not in op:
+            raise RuntimeError(f"Undo op edit_mode missing required key: before_editing_note_id | op={op}")
+        if "after_editing_note_id" not in op:
+            raise RuntimeError(f"Undo op edit_mode missing required key: after_editing_note_id | op={op}")
+        before = op["before_editing_note_id"]
+        after = op["after_editing_note_id"]
+        if before is None and isinstance(after, str) and after:
+            prev = ctx.history[-1]
+            if "type" not in prev:
+                raise RuntimeError(f"Undo op missing required key: type | op={prev}")
+            if prev["type"] == "create_note":
+                if "record" not in prev:
+                    raise RuntimeError(f"Undo op create_note missing required key: record | op={prev}")
+                record = prev["record"]
+                if not isinstance(record, dict):
+                    raise RuntimeError(f"Undo op create_note.record must be an object | op={prev}")
+                if "id" not in record:
+                    raise RuntimeError(f"Undo op create_note.record missing id | op={prev}")
+                created_id = record["id"]
+                if not isinstance(created_id, str) or not created_id:
+                    raise RuntimeError(f"Undo op create_note.record.id must be a non-empty string | op={prev}")
+                if created_id == after:
+                    logger.info(
+                        "undo.coalesce create_note+edit_mode: created_id=%s",
+                        created_id,
+                    )
+                    op = ctx.history.pop()
+                    if "type" not in op:
+                        raise RuntimeError(f"Undo op missing required key: type | op={op}")
+                    op_type = op["type"]
+
+    undo_viewport = op["viewport"]
 
     if op_type == "update_content":
         apply_update_content(op["note_id"], op["before"], op["before_tags"], token)  # apply inverse
@@ -480,6 +595,12 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     }
     if op_type == "edit_mode":
         payload["editingNoteId"] = editing_note_id
+    logger.info(
+        "undo.finish opType=%s focusNoteId=%s viewAnchorRootId=%s",
+        op_type,
+        focus_note_id,
+        view_anchor_root_id,
+    )
     return payload
 
 
@@ -505,6 +626,38 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         apply_restore_records([NodeRecord(**rec)], token)
         ctx.history.append(op)
         generate_new_uuid()
+
+        # If the client recorded an enter-edit-mode op immediately after create,
+        # it is redundant: redo(create_note) already restores focus/editing.
+        if ctx.redo:
+            maybe_redundant = ctx.redo[-1]
+            if "type" not in maybe_redundant:
+                raise RuntimeError(f"Redo op missing required key: type | op={maybe_redundant}")
+            if maybe_redundant["type"] == "edit_mode":
+                if "before_editing_note_id" not in maybe_redundant:
+                    raise RuntimeError(
+                        f"Redo op edit_mode missing required key: before_editing_note_id | op={maybe_redundant}"
+                    )
+                if "after_editing_note_id" not in maybe_redundant:
+                    raise RuntimeError(
+                        f"Redo op edit_mode missing required key: after_editing_note_id | op={maybe_redundant}"
+                    )
+                before = maybe_redundant["before_editing_note_id"]
+                after = maybe_redundant["after_editing_note_id"]
+                if not isinstance(rec, dict):
+                    raise RuntimeError(f"Redo op create_note.record must be an object | op={op}")
+                if "id" not in rec:
+                    raise RuntimeError(f"Redo op create_note.record missing id | op={op}")
+                rec_id = rec["id"]
+                if not isinstance(rec_id, str) or not rec_id:
+                    raise RuntimeError(f"Redo op create_note.record.id must be a non-empty string | op={op}")
+
+                if before is None and after == rec_id:
+                    logger.info(
+                        "redo.drop redundant edit_mode enter: note_id=%s",
+                        rec_id,
+                    )
+                    ctx.redo.pop()
     elif op_type == "delete_subtree":
         # re-delete
         first = op["records"][0]
@@ -555,4 +708,10 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     }
     if op_type == "edit_mode":
         payload["editingNoteId"] = editing_note_id
+    logger.info(
+        "redo.finish opType=%s focusNoteId=%s viewAnchorRootId=%s",
+        op_type,
+        focus_note_id,
+        view_anchor_root_id,
+    )
     return payload

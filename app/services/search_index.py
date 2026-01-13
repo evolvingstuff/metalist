@@ -121,6 +121,10 @@ class SearchIndex:
         with self._lock:
             if note_id in self._uuid_to_id:
                 note_int_id = self._uuid_to_id[note_id]
+                if note_int_id not in self._alive:
+                    # Notes can be deleted and later restored (undo/redo) with the same UUID.
+                    # Treat this as a revive instead of an error.
+                    self._alive.add(note_int_id)
                 self._update_existing_locked(note_int_id, content_html, tags)
             else:
                 self._insert_new_locked(note_id, content_html, tags)

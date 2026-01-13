@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
 from app.services.snapshot import build_view_state
+from app.services.note_store import store as note_store
 from app.usecases.create_note import CmdCreateNote
 from app.usecases.create_sibling import CmdCreateSibling
 from app.usecases.create_child import CmdCreateChild
@@ -27,7 +29,22 @@ from app.services.tab_state import tab_state_store
 from app.services.undo_state import maybe_reset_on_context
 
 
+logger = logging.getLogger(__name__)
+
+
 router = APIRouter()
+
+
+def _require_note_present(note_id: str, *, context: str) -> None:
+    if not isinstance(context, str) or not context:
+        raise ValueError("context must be a non-empty string")
+    if not isinstance(note_id, str) or not note_id:
+        raise TypeError("note_id must be a non-empty string")
+
+    if note_store.has_note(note_id):
+        return
+
+    raise HTTPException(status_code=404, detail=f"Note not found: {note_id}")
 
 
 @router.post("/notes/view")
@@ -53,6 +70,14 @@ def view_diff(payload: dict):
     normalized_editing_note_id = editing_note_id
     if isinstance(normalized_editing_note_id, str) and normalized_editing_note_id == "":
         normalized_editing_note_id = None
+
+    # The client can send a stale editingNoteId (e.g. after a delete/undo or a tab clone).
+    # Treat it as "not editing" so /notes/view doesn't 500.
+    if normalized_editing_note_id is not None:
+        if not isinstance(normalized_editing_note_id, str):
+            raise TypeError("editingNoteId must be a string or null")
+        if not note_store.has_note(normalized_editing_note_id):
+            normalized_editing_note_id = None
 
     # Known hashes plus a viewport anchor so the server can extend the window
     client_hashes = {
@@ -82,10 +107,18 @@ def view_diff(payload: dict):
     root_count_total = state.metadata["rootCountTotal"]
     search_root_count_total = state.metadata["searchRootCountTotal"]
 
+    extra_client_ids = set(client_hashes.keys()) - set(state.hash_by_id.keys())
+    force_full_snapshot = bool(extra_client_ids)
+    if force_full_snapshot:
+        logger.info(
+            "notes.view forcing full snapshot (client has unknown ids): extra_count=%s",
+            len(extra_client_ids),
+        )
+
     cached_state = view_cache.get(**cache_key)
     client_has_state = bool(client_hashes)
 
-    if not cached_state:
+    if not cached_state or force_full_snapshot:
         view_cache.set(state=state, **cache_key)
         filtered_notes = {
             note_id: data
@@ -97,7 +130,7 @@ def view_diff(payload: dict):
         # complete, matching hash map for the visible window, avoid resending the
         # full structure + note payloads. This is common when a new tab is created
         # by cloning the existing DOM.
-        if client_has_state and not filtered_notes:
+        if client_has_state and not filtered_notes and not force_full_snapshot:
             response_snapshot = {
                 "diffOps": [],
                 "notes": {},
@@ -110,7 +143,7 @@ def view_diff(payload: dict):
                 "searchQuery": search,
                 "rootCountTotal": root_count_total,
                 "searchRootCountTotal": search_root_count_total,
-                "editingNoteId": editing_note_id,
+                "editingNoteId": normalized_editing_note_id,
             }
             return {"snapshot": response_snapshot, "updateUUID": update_uuid}
 
@@ -125,7 +158,7 @@ def view_diff(payload: dict):
             "searchQuery": search,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
-            "editingNoteId": editing_note_id,
+            "editingNoteId": normalized_editing_note_id,
         }
         return {"snapshot": response_snapshot, "updateUUID": update_uuid}
 
@@ -147,7 +180,7 @@ def view_diff(payload: dict):
             "searchQuery": search,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
-            "editingNoteId": editing_note_id,
+            "editingNoteId": normalized_editing_note_id,
         }
         return {"snapshot": response_snapshot, "updateUUID": update_uuid}
 
@@ -174,7 +207,7 @@ def view_diff(payload: dict):
         "searchQuery": search,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": search_root_count_total,
-        "editingNoteId": editing_note_id,
+        "editingNoteId": normalized_editing_note_id,
     }
     return {"snapshot": response_snapshot, "updateUUID": update_uuid}
 
@@ -252,6 +285,7 @@ def create_note_top(request: Request, body: dict):
 def create_sibling(request: Request, note_id: str, body: dict):
     token = _require_bearer_token(request)
     viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.new-sibling")
     cmd = CmdCreateSibling(
         reference_note_id=note_id,
         search_query=body["search_query"],
@@ -267,6 +301,7 @@ def create_sibling(request: Request, note_id: str, body: dict):
 def create_child(request: Request, note_id: str, body: dict):
     token = _require_bearer_token(request)
     viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.new-child")
     cmd = CmdCreateChild(
         parent_note_id=note_id,
         token=token,
@@ -285,6 +320,7 @@ def update_note(request: Request, note_id: str, body: dict):
     tags = body["tags"]
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.update")
     cmd = CmdUpdateContent(
         note_id=note_id,
         content=content,
@@ -304,6 +340,7 @@ def save_note(request: Request, note_id: str, body: dict):
     tags = body["tags"]
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.save")
     cmd = CmdUpdateContent(
         note_id=note_id,
         content=content,
@@ -319,6 +356,7 @@ def save_note(request: Request, note_id: str, body: dict):
 @router.post("/notes/{note_id}/move")
 def move_note_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.move")
     cmd = CmdMove(
         note_id=note_id,
         sibling_id=body["sibling_id"],
@@ -334,6 +372,7 @@ def move_note_endpoint(note_id: str, body: dict):
 @router.post("/notes/{note_id}/collapse")
 def collapse_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.collapse")
     cmd = CmdCollapse(note_id=note_id, client_id=body["clientId"], undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 
@@ -341,6 +380,7 @@ def collapse_endpoint(note_id: str, body: dict):
 @router.post("/notes/{note_id}/expand")
 def expand_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.expand")
     cmd = CmdExpand(note_id=note_id, client_id=body["clientId"], undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 
@@ -349,6 +389,7 @@ def expand_endpoint(note_id: str, body: dict):
 def delete_note(note_id: str, body: dict):
     client_id = body["clientId"]
     viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.delete")
     cmd = CmdDeleteSubtree(note_id=note_id, client_id=client_id, undo_context=body["undoContext"], viewport=viewport)
     return cmd.execute()
 

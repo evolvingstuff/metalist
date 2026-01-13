@@ -99,6 +99,8 @@ def build_view_state(
     search_root_ids_ordered: Optional[List[str]] = None
     search_root_count_total = 0
 
+    force_uncollapsed_ids: Set[str] = set()
+
     if search is not None:
         if not isinstance(search, str):
             raise TypeError(f"search must be a string or null, got {type(search)}")
@@ -154,6 +156,12 @@ def build_view_state(
     root_count_total = len(ordered_root_ids)
     if client_known_note_ids is None:
         client_known_note_ids = set()
+
+    if editing_note_id is not None and note_store.has_note(editing_note_id):
+        current = note_store.get_note(editing_note_id)
+        while current.parent_id:
+            force_uncollapsed_ids.add(current.parent_id)
+            current = note_store.get_note(current.parent_id)
 
     if search_active:
         if search_root_ids_ordered is None:
@@ -224,6 +232,10 @@ def build_view_state(
                 "memoryMode": False,
                 "memorySelected": False,
             }
+
+            # If a descendant is being edited, force ancestors open so the editing note remains visible.
+            if rec.id in force_uncollapsed_ids:
+                flags["isCollapsed"] = False
             assert isinstance(rec.content, str)
             assert isinstance(rec.tags, str)
 
@@ -251,6 +263,8 @@ def build_view_state(
             }
             hash_by_id[rec.id] = h
             if search_active:
+                traverse(rec.id)
+            elif rec.id in force_uncollapsed_ids:
                 traverse(rec.id)
             elif not flags["isCollapsed"] or flags["isEditing"]:
                 traverse(rec.id)
