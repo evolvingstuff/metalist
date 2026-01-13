@@ -328,12 +328,22 @@ function handleClick(event) {
             event.stopPropagation();
             return;
         }
-                
+
         const noteId = noteElement.dataset.noteId;
         if (!noteId) {
             throw new Error('Note element missing data-note-id attribute');
         }
 
+        if (noteElement.classList.contains('search-redacted')) {
+            Logger.logNoop('Click on redacted note ignored', {
+                noteId,
+                reason: 'search_redacted'
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+                
         const rect = noteContent.getBoundingClientRect();
         if (!rect || typeof rect.left !== 'number' || typeof rect.right !== 'number' || 
                 typeof rect.top !== 'number' || typeof rect.bottom !== 'number') {
