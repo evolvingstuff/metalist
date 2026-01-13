@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 from app.services.search_query import parse_search_query
+from app.services.search_index import extract_tags_for_search
 from app.services.search_text import build_searchable_text_casefold
 from app.services.store import store
 
@@ -69,8 +70,26 @@ def compute_initial_tags_for_new_note(
     if not required_tag_terms and not required_text_terms:
         return ""
 
+    filtered_tag_terms = required_tag_terms
+    if parent_id is not None and required_tag_terms:
+        inherited_non_meta: set[str] = set()
+        current_id = parent_id
+        while current_id is not None:
+            ancestor = store.get(current_id)
+            for term in extract_tags_for_search(ancestor.tags):
+                if term.startswith("@"):
+                    continue
+                inherited_non_meta.add(term)
+            current_id = ancestor.parent_id
+
+        filtered_tag_terms = tuple(
+            term
+            for term in required_tag_terms
+            if term.startswith("@") or term not in inherited_non_meta
+        )
+
     tags_tokens: list[str] = []
-    tags_tokens.extend(required_tag_terms)
+    tags_tokens.extend(filtered_tag_terms)
 
     if required_text_terms and parent_id is None:
         tags_tokens.append(_build_comment_tokens(required_text_terms))
