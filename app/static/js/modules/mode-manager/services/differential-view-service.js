@@ -569,6 +569,7 @@ export function applyDifferentialView(payload, options) {
             isCollapsed: noteElement.classList.contains('collapsed'),
             memoryMode: noteElement.classList.contains('memory-mode'),
             memorySelected: noteElement.classList.contains('memory-selected'),
+            searchRedacted: noteElement.classList.contains('search-redacted'),
         };
         let flags = existingFlags;
         if (noteData && noteData.flags && typeof noteData.flags === 'object') {
@@ -603,6 +604,7 @@ export function applyDifferentialView(payload, options) {
         noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
         noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
         noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
+        noteElement.classList.toggle('search-redacted', Boolean(flags.searchRedacted));
 
         updateLockIcon(noteElement, lockedByOther);
 

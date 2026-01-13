@@ -509,6 +509,25 @@ body {
     display: inline-block;
 }
 
+
+.note.search-redacted {
+    background-color: #f7f7f7;
+    border-color: #e5e5e5;
+}
+
+.note.search-redacted .note-content {
+    color: transparent;
+}
+
+.note.search-redacted .note-content::before {
+    content: '';
+    display: block;
+    height: 0.85em;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 3px;
+    margin: 0.3em 0;
+}
+
 .note.editing {
     border-color: #333333;  /* Almost black border for editing state */
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);  /* Stronger drop shadow */

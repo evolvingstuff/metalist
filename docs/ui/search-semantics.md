@@ -42,6 +42,7 @@ The UI renders a tree, so search returns context:
 - All matching notes are included.
 - All ancestors of a matching note are included (so matches are reachable).
 - All descendants of a matching note are included (so the full subtree under a match is visible).
+- Within a visible root, excluded siblings/branches are rendered as redacted placeholders on the client (fixed-height grey lines) rather than disappearing.
 
 ## Windowing / Infinite Scroll
 

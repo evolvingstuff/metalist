@@ -122,5 +122,8 @@ def test_search_includes_descendants_of_matching_non_root(monkeypatch: pytest.Mo
         anchor_root_id=None,
     )
 
-    # c2 is a sibling of the match, so it should not be included.
-    assert _visible_ids(state) == {"r1", "c1", "g1"}
+    assert _visible_ids(state) == {"r1", "c1", "g1", "c2"}
+    assert not state.payloads["r1"]["flags"]["searchRedacted"]
+    assert not state.payloads["c1"]["flags"]["searchRedacted"]
+    assert not state.payloads["g1"]["flags"]["searchRedacted"]
+    assert state.payloads["c2"]["flags"]["searchRedacted"]

@@ -225,10 +225,14 @@ def build_view_state(
 
         if parent_id is None:
             ids = [note_id for note_id in ids if note_id in allowed_root_ids]
-        elif allowed_note_ids is not None:
-            ids = [note_id for note_id in ids if note_id in allowed_note_ids]
 
         for idx, nid in enumerate(ids):
+            is_search_redacted = (
+                search_active
+                and allowed_note_ids is not None
+                and parent_id is not None
+                and nid not in allowed_note_ids
+            )
             children_by_parent[parent_id].append(nid)
             rec = note_store.get_note(nid)
             if idx > 0:
@@ -244,6 +248,7 @@ def build_view_state(
                 "isEditing": bool(editing_note_id == rec.id),
                 "memoryMode": False,
                 "memorySelected": False,
+                "searchRedacted": bool(is_search_redacted),
             }
 
             # If a descendant is being edited, force ancestors open so the editing note remains visible.
