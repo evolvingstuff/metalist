@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Dict, Optional
 import uuid
 
 from app.usecases.base import QueryCommand
 from app.services.undo_state import record_create
 from app.usecases.search_comment_autofill import compute_initial_tags_for_new_note
-from app.services.store import store, NodeRecord
+from app.services.store import store
 from app.services.sync import generate_new_uuid
 
 from app.db.session import begin_writer
@@ -52,14 +53,11 @@ def apply_insert_note(
             db_update_links(connection, next_id, prev_id=note_id, updated_at=now)
 
     store.insert_after(
-        NodeRecord(
+        SimpleNamespace(
             id=note_id,
-            parent_id=parent_id,
-            prev_id=None,
-            next_id=None,
-            is_collapsed=False,
             content=content,
             tags=tags,
+            is_collapsed=False,
             created_at=now,
             updated_at=now,
         ),

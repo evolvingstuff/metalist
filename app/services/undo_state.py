@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
-from app.usecases.update_content import apply_update_content
-from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
-from app.usecases.move import apply_move
-from app.services.store import store
 import logging
 import os
+from types import SimpleNamespace
+from typing import Dict, List, Optional
+
+from app.usecases.collapse import apply_set_collapse
+from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
+from app.usecases.move import apply_move
+from app.usecases.update_content import apply_update_content
+from app.services.store import store
 from app.services.sync import generate_new_uuid
 
 
@@ -555,7 +557,6 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "collapse":
         # invert collapse
-        from app.usecases.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["before"]))
         ctx.redo.append(op)
         generate_new_uuid()
@@ -622,8 +623,7 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     elif op_type == "create_note":
         # recreate
         rec = op["record"]
-        from app.services.store import NodeRecord
-        apply_restore_records([NodeRecord(**rec)], token)
+        apply_restore_records([SimpleNamespace(**rec)], token)
         ctx.history.append(op)
         generate_new_uuid()
 
@@ -675,7 +675,6 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "collapse":
-        from app.usecases.collapse import apply_set_collapse
         apply_set_collapse(op["note_id"], bool(op["after"]))
         ctx.history.append(op)
         generate_new_uuid()

@@ -35,18 +35,7 @@ def _collect_subtree_ids(root_id: str) -> List[str]:
 def _snapshot_subtree(root_id: str) -> List[NodeRecord]:
     out: List[NodeRecord] = []
     for nid in _collect_subtree_ids(root_id):
-        rec = store.get(nid)
-        out.append(NodeRecord(
-            id=rec.id,
-            parent_id=rec.parent_id,
-            prev_id=rec.prev_id,
-            next_id=rec.next_id,
-            is_collapsed=rec.is_collapsed,
-            content=rec.content,
-            tags=rec.tags,
-            created_at=rec.created_at,
-            updated_at=rec.updated_at,
-        ))
+        out.append(store.get(nid))
     return out
 
 
