@@ -97,6 +97,7 @@ def build_view_state(
     search_active = False
     allowed_note_ids: Optional[Set[str]] = None
     search_root_ids_ordered: Optional[List[str]] = None
+    search_root_count_total = 0
 
     if search is not None:
         if not isinstance(search, str):
@@ -115,31 +116,42 @@ def build_view_state(
         if has_terms:
             search_active = True
             matched_note_ids = search_index.query_note_ids(search)
-            allowed_note_ids = set(matched_note_ids)
-            if editing_note_id:
-                allowed_note_ids.add(editing_note_id)
+            search_allowed_note_ids = set(matched_note_ids)
 
-            to_visit = list(allowed_note_ids)
-            while to_visit:
-                current_id = to_visit.pop()
-                if not note_store.has_note(current_id):
-                    continue
-                current = note_store.get_note(current_id)
-                parent_id = current.parent_id
-                if parent_id is None:
-                    continue
-                if parent_id in allowed_note_ids:
-                    continue
-                allowed_note_ids.add(parent_id)
-                to_visit.append(parent_id)
+            def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
+                to_visit = list(starting_ids)
+                while to_visit:
+                    current_id = to_visit.pop()
+                    if not note_store.has_note(current_id):
+                        continue
+                    parent_id = note_store.get_note(current_id).parent_id
+                    if parent_id is None:
+                        continue
+                    if parent_id in note_ids:
+                        continue
+                    note_ids.add(parent_id)
+                    to_visit.append(parent_id)
+
+            _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
 
             ordered_root_ids = note_store.get_children(None)
+            search_root_ids_ordered_for_count = [
+                root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
+            ]
+            search_root_count_total = len(search_root_ids_ordered_for_count)
+
+            allowed_note_ids = set(search_allowed_note_ids)
+            if editing_note_id:
+                allowed_note_ids.add(editing_note_id)
+                _include_ancestors(allowed_note_ids, starting_ids={editing_note_id})
+
             search_root_ids_ordered = [
                 root_id for root_id in ordered_root_ids if root_id in allowed_note_ids
             ]
 
     # Determine root window
     ordered_root_ids = note_store.get_children(None)
+    root_count_total = len(ordered_root_ids)
     if client_known_note_ids is None:
         client_known_note_ids = set()
 
@@ -251,6 +263,8 @@ def build_view_state(
     metadata = {
         "editingNoteId": editing_note_id,
         "search": search,
+        "rootCountTotal": root_count_total,
+        "searchRootCountTotal": search_root_count_total,
     }
 
     if search_active:

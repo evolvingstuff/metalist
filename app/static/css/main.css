@@ -8,6 +8,10 @@
     --info-color: #17a2b8;
 }
 
+html {
+    scrollbar-gutter: stable;
+}
+
 /* Login Page Styles */
 .login-page {
     position: fixed;
@@ -785,11 +789,35 @@ body {
     align-items: center;
 }
 
+.controls .search-input-row {
+    width: 100%;
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
 .controls .search-validation-message {
     width: 500px;
     margin: 4px auto 0 auto;
     font-size: 12px;
     color: #ffb4b4;
+}
+
+.controls .search-results-count {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    text-align: right;
+    width: 64px;
+    line-height: 1;
+    user-select: none;
+    pointer-events: none;
 }
 
 .controls .search-input.search-invalid {
@@ -804,7 +832,7 @@ body {
 
 .controls .search-input {
     width: 500px;
-    margin: 0 auto;
+    margin: 0;
     padding: 0 12px;
     border: 1px solid var(--border-color);
     border-radius: 4px;

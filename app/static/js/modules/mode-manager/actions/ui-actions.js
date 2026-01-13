@@ -87,6 +87,39 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
     `;
 }
 
+function updateSearchResultsCount(snapshot, tabId) {
+    if (!snapshot || typeof snapshot !== 'object') {
+        throw new Error('updateSearchResultsCount requires snapshot object');
+    }
+
+    const el = document.getElementById('search-results-count');
+    if (!el) {
+        throw new Error('search-results-count element missing from DOM');
+    }
+
+    const rootCountTotal = snapshot.rootCountTotal;
+    if (!Number.isInteger(rootCountTotal) || rootCountTotal < 0) {
+        throw new Error('snapshot.rootCountTotal must be a non-negative integer');
+    }
+
+    const searchRootCountTotal = snapshot.searchRootCountTotal;
+    if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
+        throw new Error('snapshot.searchRootCountTotal must be a non-negative integer');
+    }
+
+    const searchQuery = snapshot.searchQuery;
+    if (searchQuery === null) {
+        throw new Error('snapshot.searchQuery must be a string (empty when not searching)');
+    }
+    if (typeof searchQuery !== 'string') {
+        throw new Error('snapshot.searchQuery must be a string');
+    }
+
+    const isSearching = searchQuery.trim().length > 0;
+    const total = isSearching ? searchRootCountTotal : rootCountTotal;
+    el.textContent = `${total}`;
+}
+
 export async function actionRefreshAndMaybeSelect(options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionRefreshAndMaybeSelect requires options object');
@@ -149,6 +182,8 @@ export async function actionRefreshAndMaybeSelect(options) {
     } else if (Array.isArray(snapshot.rootIds)) {
         ModeContext.syncRootIds(snapshot.rootIds);
     }
+
+    updateSearchResultsCount(snapshot, requestTabId);
     const rootNotesKnown = ModeContext.knownRootCount;
     const rootNotesSeen = ModeContext.seenRootCount;
     const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'

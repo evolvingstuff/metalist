@@ -80,8 +80,7 @@ export async function initializeSearchEvents() {
     const searchInput = document.getElementById('search-input');
 
     if (!searchInput || typeof searchInput.addEventListener !== 'function') {
-        Logger.logError('Search input element not found');
-        return;
+        throw new Error('Search input element not found');
     }
 
     // Add input event listener

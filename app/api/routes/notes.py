@@ -79,6 +79,8 @@ def view_diff(payload: dict):
     )
     update_uuid = get_current_sync_uuid()
     root_ids = list(state.children_by_parent.get(None, []))
+    root_count_total = state.metadata["rootCountTotal"]
+    search_root_count_total = state.metadata["searchRootCountTotal"]
 
     cached_state = view_cache.get(**cache_key)
     client_has_state = bool(client_hashes)
@@ -106,6 +108,8 @@ def view_diff(payload: dict):
                 "version": VERSION,
                 "currentClientId": client_id,
                 "searchQuery": search,
+                "rootCountTotal": root_count_total,
+                "searchRootCountTotal": search_root_count_total,
                 "editingNoteId": editing_note_id,
             }
             return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -119,6 +123,8 @@ def view_diff(payload: dict):
             "version": VERSION,
             "currentClientId": client_id,
             "searchQuery": search,
+            "rootCountTotal": root_count_total,
+            "searchRootCountTotal": search_root_count_total,
             "editingNoteId": editing_note_id,
         }
         return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -139,6 +145,8 @@ def view_diff(payload: dict):
             "version": VERSION,
             "currentClientId": client_id,
             "searchQuery": search,
+            "rootCountTotal": root_count_total,
+            "searchRootCountTotal": search_root_count_total,
             "editingNoteId": editing_note_id,
         }
         return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -164,6 +172,8 @@ def view_diff(payload: dict):
         "version": VERSION,
         "currentClientId": client_id,
         "searchQuery": search,
+        "rootCountTotal": root_count_total,
+        "searchRootCountTotal": search_root_count_total,
         "editingNoteId": editing_note_id,
     }
     return {"snapshot": response_snapshot, "updateUUID": update_uuid}
