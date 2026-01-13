@@ -117,8 +117,8 @@ def build_view_state(
 
         if has_terms:
             search_active = True
-            matched_note_ids = search_index.query_note_ids(search)
-            search_allowed_note_ids = set(matched_note_ids)
+            positively_matched_note_ids = set(search_index.query_note_ids(search))
+            search_allowed_note_ids = set(positively_matched_note_ids)
 
             def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
                 to_visit = list(starting_ids)
@@ -134,7 +134,20 @@ def build_view_state(
                     note_ids.add(parent_id)
                     to_visit.append(parent_id)
 
+            def _include_descendants(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
+                to_visit = list(starting_ids)
+                while to_visit:
+                    current_id = to_visit.pop()
+                    if not note_store.has_note(current_id):
+                        continue
+                    for child_id in note_store.get_children(current_id):
+                        if child_id in note_ids:
+                            continue
+                        note_ids.add(child_id)
+                        to_visit.append(child_id)
+
             _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
+            _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
 
             ordered_root_ids = note_store.get_children(None)
             search_root_ids_ordered_for_count = [

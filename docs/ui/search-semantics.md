@@ -41,7 +41,7 @@ Forbidden terms exclude matches:
 The UI renders a tree, so search returns context:
 - All matching notes are included.
 - All ancestors of a matching note are included (so matches are reachable).
-- Descendants are included only when they themselves match.
+- All descendants of a matching note are included (so the full subtree under a match is visible).
 
 ## Windowing / Infinite Scroll
 
