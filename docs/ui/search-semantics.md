@@ -18,6 +18,11 @@ rules as the tag bar:
 - Wrapper tokens (e.g. `{{foo bar}}`) contribute inner terms (`foo` and `bar`).
 - `/* ... */` comment regions are ignored.
 
+In addition, notes implicitly inherit **non-meta** tag terms from their ancestors:
+- A note’s effective tags are: its own tag terms **plus** all ancestor tag terms that do **not** start with `@`.
+- Tags starting with `@` (meta tags like `@monospace`) are **not** inherited.
+- Tag-bar `/* ... */` comments are **not** inherited (they only affect text search for the note that contains them).
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`

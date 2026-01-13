@@ -1,4 +1,4 @@
-from app.services.search_index import SearchIndex, SearchRecord
+from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.search_query import parse_search_query
 from app.utils.text_utils import strip_html
 
@@ -20,9 +20,24 @@ def test_search_index_tag_and_text_queries() -> None:
     index = SearchIndex()
     index.rebuild(
         [
-            SearchRecord(note_id="n1", content_html="<div>Hello world</div>", tags="foo"),
-            SearchRecord(note_id="n2", content_html="<div>Other</div>", tags="bar"),
-            SearchRecord(note_id="n3", content_html="<div>Hello there</div>", tags="foo bar"),
+            SearchRecord(
+                note_id="n1",
+                content_html="<div>Hello world</div>",
+                tags="foo",
+                tag_terms=extract_tags_for_search("foo"),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_html="<div>Other</div>",
+                tags="bar",
+                tag_terms=extract_tags_for_search("bar"),
+            ),
+            SearchRecord(
+                note_id="n3",
+                content_html="<div>Hello there</div>",
+                tags="foo bar",
+                tag_terms=extract_tags_for_search("foo bar"),
+            ),
         ]
     )
 
@@ -37,8 +52,18 @@ def test_search_index_short_text_term_falls_back_to_verification() -> None:
     index = SearchIndex()
     index.rebuild(
         [
-            SearchRecord(note_id="n1", content_html="<div>Hello</div>", tags=""),
-            SearchRecord(note_id="n2", content_html="<div>Other</div>", tags=""),
+            SearchRecord(
+                note_id="n1",
+                content_html="<div>Hello</div>",
+                tags="",
+                tag_terms=extract_tags_for_search(""),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_html="<div>Other</div>",
+                tags="",
+                tag_terms=extract_tags_for_search(""),
+            ),
         ]
     )
     assert index.query_note_ids('"ll"') == {"n1"}

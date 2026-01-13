@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+import app.services.note_store as note_store_module
+from app.services.note_store import NoteStore
+from app.services.search_index import SearchIndex
+
+
+def _load_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    content_by_id: dict[str, str],
+    tags_by_id: dict[str, str],
+    rows: list[dict[str, object]],
+) -> tuple[NoteStore, SearchIndex]:
+    index = SearchIndex()
+    monkeypatch.setattr(note_store_module, "search_index", index)
+    monkeypatch.setattr(note_store_module, "get_cached_content", lambda note_id: content_by_id[note_id])
+    monkeypatch.setattr(note_store_module, "get_cached_tags", lambda note_id: tags_by_id[note_id])
+
+    store = NoteStore()
+    store._timing_enabled = False
+    store.load_from_db(None, prefetched_rows=rows)
+    return store, index
+
+
+def test_implicit_tag_inheritance_excludes_meta_and_comments(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tree:
+    # a(@monospace x /*secret*/)
+    #   b(y)
+    #     c(z)
+    content_by_id = {"a": "<div>a</div>", "b": "<div>b</div>", "c": "<div>c</div>"}
+    tags_by_id = {"a": "@monospace x /*secret*/", "b": "y", "c": "z"}
+    rows = [
+        {"id": "a", "parent_id": None, "prev_id": None, "next_id": None, "is_collapsed": 0},
+        {"id": "b", "parent_id": "a", "prev_id": None, "next_id": None, "is_collapsed": 0},
+        {"id": "c", "parent_id": "b", "prev_id": None, "next_id": None, "is_collapsed": 0},
+    ]
+    _, index = _load_store(
+        monkeypatch,
+        content_by_id=content_by_id,
+        tags_by_id=tags_by_id,
+        rows=rows,
+    )
+
+    assert index.query_note_ids("x y z") == {"c"}
+    assert index.query_note_ids("@monospace x y z") == set()
+    assert index.query_note_ids('"secret"') == {"a"}
+
+
+def test_implicit_tag_inheritance_updates_when_ancestor_tags_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tree:
+    # a(x)
+    #   b(y)
+    #     c(z)
+    content_by_id = {"a": "<div>a</div>", "b": "<div>b</div>", "c": "<div>c</div>"}
+    tags_by_id = {"a": "x", "b": "y", "c": "z"}
+    rows = [
+        {"id": "a", "parent_id": None, "prev_id": None, "next_id": None, "is_collapsed": 0},
+        {"id": "b", "parent_id": "a", "prev_id": None, "next_id": None, "is_collapsed": 0},
+        {"id": "c", "parent_id": "b", "prev_id": None, "next_id": None, "is_collapsed": 0},
+    ]
+    store, index = _load_store(
+        monkeypatch,
+        content_by_id=content_by_id,
+        tags_by_id=tags_by_id,
+        rows=rows,
+    )
+
+    assert index.query_note_ids("x y z") == {"c"}
+
+    store.update_note_from_db(SimpleNamespace(id="a"), "<div>a</div>", "x2")
+    assert index.query_note_ids("x y z") == set()
+    assert index.query_note_ids("x2 y z") == {"c"}
+
+
+def test_implicit_tag_inheritance_updates_when_notes_move(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tree:
+    # a(x)
+    # d
+    #   b(y)
+    #     c(z)
+    content_by_id = {
+        "a": "<div>a</div>",
+        "d": "<div>d</div>",
+        "b": "<div>b</div>",
+        "c": "<div>c</div>",
+    }
+    tags_by_id = {"a": "x", "d": "", "b": "y", "c": "z"}
+    rows = [
+        {"id": "a", "parent_id": None, "prev_id": None, "next_id": "d", "is_collapsed": 0},
+        {"id": "d", "parent_id": None, "prev_id": "a", "next_id": None, "is_collapsed": 0},
+        {"id": "b", "parent_id": "d", "prev_id": None, "next_id": None, "is_collapsed": 0},
+        {"id": "c", "parent_id": "b", "prev_id": None, "next_id": None, "is_collapsed": 0},
+    ]
+    store, index = _load_store(
+        monkeypatch,
+        content_by_id=content_by_id,
+        tags_by_id=tags_by_id,
+        rows=rows,
+    )
+
+    assert index.query_note_ids("x y z") == set()
+
+    store.update_metadata_from_db(
+        SimpleNamespace(id="b", parent_id="a", prev_id=None, next_id=None),
+        rebuild=False,
+    )
+
+    assert index.query_note_ids("x y z") == {"c"}
+

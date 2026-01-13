@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from app.services.search_index import SearchIndex, SearchRecord
+from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.snapshot import build_view_state
 
 
@@ -61,7 +61,12 @@ def test_search_includes_descendants_of_matching_root(monkeypatch: pytest.Monkey
     index = SearchIndex()
     index.rebuild(
         [
-            SearchRecord(note_id=n.id, content_html=n.content, tags=n.tags)
+            SearchRecord(
+                note_id=n.id,
+                content_html=n.content,
+                tags=n.tags,
+                tag_terms=extract_tags_for_search(n.tags),
+            )
             for n in notes.values()
         ]
     )
@@ -103,7 +108,12 @@ def test_search_includes_descendants_of_matching_non_root(monkeypatch: pytest.Mo
     index = SearchIndex()
     index.rebuild(
         [
-            SearchRecord(note_id=n.id, content_html=n.content, tags=n.tags)
+            SearchRecord(
+                note_id=n.id,
+                content_html=n.content,
+                tags=n.tags,
+                tag_terms=extract_tags_for_search(n.tags),
+            )
             for n in notes.values()
         ]
     )

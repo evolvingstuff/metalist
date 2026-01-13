@@ -21,6 +21,7 @@ class SearchRecord:
     note_id: str
     content_html: str
     tags: str
+    tag_terms: FrozenSet[str]
 
 
 def _canonical_codepoint(char: str) -> int:
@@ -103,7 +104,12 @@ class SearchIndex:
             self._revision += 1
 
             for record in materialized:
-                self._insert_new_locked(record.note_id, record.content_html, record.tags)
+                self._insert_new_locked(
+                    record.note_id,
+                    record.content_html,
+                    record.tags,
+                    record.tag_terms,
+                )
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.bind(
@@ -116,7 +122,7 @@ class SearchIndex:
             }
         ).info("search.index.rebuild.finish")
 
-    def upsert(self, *, note_id: str, content_html: str, tags: str) -> None:
+    def upsert(self, *, note_id: str, content_html: str, tags: str, tag_terms: FrozenSet[str]) -> None:
         t0 = time.perf_counter()
         with self._lock:
             if note_id in self._uuid_to_id:
@@ -125,9 +131,9 @@ class SearchIndex:
                     # Notes can be deleted and later restored (undo/redo) with the same UUID.
                     # Treat this as a revive instead of an error.
                     self._alive.add(note_int_id)
-                self._update_existing_locked(note_int_id, content_html, tags)
+                self._update_existing_locked(note_int_id, content_html, tags, tag_terms)
             else:
-                self._insert_new_locked(note_id, content_html, tags)
+                self._insert_new_locked(note_id, content_html, tags, tag_terms)
 
             self._revision += 1
             self._result_cache.clear()
@@ -136,6 +142,52 @@ class SearchIndex:
         logger.bind(
             metrics={"elapsed_ms": elapsed_ms, "note_id": note_id, "revision": self._revision}
         ).info("search.index.upsert.finish")
+
+    def update_tag_terms(self, *, note_id: str, tag_terms: FrozenSet[str]) -> None:
+        self.bulk_update_tag_terms({note_id: tag_terms})
+
+    def bulk_update_tag_terms(self, updates: Dict[str, FrozenSet[str]]) -> None:
+        if not updates:
+            return
+
+        t0 = time.perf_counter()
+        touched = 0
+        with self._lock:
+            for note_id, new_tag_terms in updates.items():
+                note_int_id = self._uuid_to_id.get(note_id)
+                if note_int_id is None:
+                    continue
+                if note_int_id not in self._alive:
+                    continue
+
+                old_tag_terms = self._note_tag_terms[note_int_id]
+                if old_tag_terms == new_tag_terms:
+                    continue
+
+                for term in old_tag_terms:
+                    bucket = self._tag_notes.get(term)
+                    if bucket is None:
+                        continue
+                    bucket.discard(note_int_id)
+                for term in new_tag_terms:
+                    self._tag_notes[term].add(note_int_id)
+
+                self._note_tag_terms[note_int_id] = new_tag_terms
+                touched += 1
+
+            if touched:
+                self._revision += 1
+                self._result_cache.clear()
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.bind(
+            metrics={
+                "elapsed_ms": elapsed_ms,
+                "revision": self._revision,
+                "touched": touched,
+                "update_count": len(updates),
+            }
+        ).info("search.index.bulk_update_tag_terms.finish")
 
     def remove_many(self, note_ids: Set[str]) -> None:
         if not note_ids:
@@ -261,13 +313,19 @@ class SearchIndex:
 
     # Internal ----------------------------------------------------------------
 
-    def _insert_new_locked(self, note_id: str, content_html: str, tags: str) -> None:
+    def _insert_new_locked(
+        self,
+        note_id: str,
+        content_html: str,
+        tags: str,
+        tag_terms: FrozenSet[str],
+    ) -> None:
         note_int_id = len(self._id_to_uuid)
         self._uuid_to_id[note_id] = note_int_id
         self._id_to_uuid.append(note_id)
         self._alive.add(note_int_id)
 
-        text_casefold, tag_terms, trigrams = self._build_note_state(content_html, tags)
+        text_casefold, trigrams = self._build_note_text_state(content_html, tags)
         self._note_text_casefold.append(text_casefold)
         self._note_tag_terms.append(tag_terms)
         self._note_trigrams.append(trigrams)
@@ -277,11 +335,17 @@ class SearchIndex:
         for trigram in trigrams:
             self._tri_notes[trigram].add(note_int_id)
 
-    def _update_existing_locked(self, note_int_id: int, content_html: str, tags: str) -> None:
+    def _update_existing_locked(
+        self,
+        note_int_id: int,
+        content_html: str,
+        tags: str,
+        new_tag_terms: FrozenSet[str],
+    ) -> None:
         if note_int_id not in self._alive:
             raise RuntimeError("Cannot update deleted note")
 
-        new_text_casefold, new_tag_terms, new_trigrams = self._build_note_state(content_html, tags)
+        new_text_casefold, new_trigrams = self._build_note_text_state(content_html, tags)
         old_tag_terms = self._note_tag_terms[note_int_id]
         old_trigrams = self._note_trigrams[note_int_id]
 
@@ -327,20 +391,15 @@ class SearchIndex:
         self._note_tag_terms[note_int_id] = frozenset()
         self._note_trigrams[note_int_id] = set()
 
-    def _build_note_state(
-        self,
-        content_html: str,
-        tags: str,
-    ) -> Tuple[str, FrozenSet[str], Set[int]]:
+    def _build_note_text_state(self, content_html: str, tags: str) -> Tuple[str, Set[int]]:
         if not isinstance(content_html, str):
             raise TypeError(f"content_html must be a string, got {type(content_html)}")
         if not isinstance(tags, str):
             raise TypeError(f"tags must be a string, got {type(tags)}")
 
         text_casefold = build_searchable_text_casefold(content_html, tags)
-        tag_terms = extract_tags_for_search(tags)
         trigrams = _extract_trigram_keys(text_casefold)
-        return text_casefold, tag_terms, trigrams
+        return text_casefold, trigrams
 
     def _candidate_note_ids_locked(self, parsed: ParsedSearchQuery) -> Set[int]:
         constraints: List[Set[int]] = []
