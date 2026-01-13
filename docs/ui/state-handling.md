@@ -457,8 +457,13 @@ Undo/redo is **server-side** and scoped by a client-computed `undoContext` (curr
 
 Edit-mode transitions are recorded too:
 - Selecting a note (enter edit mode) records an `edit_mode` op.
-- Exiting edit mode (Esc/click-outside) records an `edit_mode` op.
+- Exiting edit mode (Esc/click-outside/Cmd+P/tab switches/etc) records an `edit_mode` op.
 - Undo/redo of these ops uses `scrollRestore.editingNoteId` (string or null) to enter/exit editing deterministically.
+
+The server also coalesces “empty” edit sessions:
+- If you enter edit mode and then immediately exit without any intervening edits, the history keeps **one** `edit_mode` op.
+  - Undo re-enters edit mode.
+  - Redo exits edit mode.
 
 ### Context Boundary Rules
 

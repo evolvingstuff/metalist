@@ -360,13 +360,33 @@ def record_edit_mode(
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
-    ctx.history.append({
+
+    op = {
         "type": "edit_mode",
         "before_editing_note_id": before_editing_note_id,
         "after_editing_note_id": after_editing_note_id,
         "viewport": normalized_viewport,
         "viewAnchorRootId": view_anchor_root_id,
-    })
+    }
+
+    # Coalesce "empty" edit sessions (enter → exit with no intervening ops) into a
+    # single undo/redo stage so the user doesn't have to traverse two history
+    # entries for a no-op open/close.
+    #
+    # Intended behavior:
+    # - Select then deselect with no edits => one history entry.
+    #   Undo re-enters edit mode; redo exits.
+    if (
+        before_editing_note_id is not None
+        and after_editing_note_id is None
+        and ctx.history
+        and ctx.history[-1].get("type") == "edit_mode"
+        and ctx.history[-1].get("before_editing_note_id") is None
+        and ctx.history[-1].get("after_editing_note_id") == before_editing_note_id
+    ):
+        ctx.history[-1] = op
+    else:
+        ctx.history.append(op)
     ctx.redo.clear()
 
 
