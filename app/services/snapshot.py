@@ -146,8 +146,33 @@ def build_view_state(
                         note_ids.add(child_id)
                         to_visit.append(child_id)
 
+            excluded_note_ids: Set[str] = set()
+
+            def _quote_text_term_for_query(phrase: str) -> str:
+                if not isinstance(phrase, str):
+                    raise TypeError(f"search phrase must be a string, got {type(phrase)}")
+
+                if '"' not in phrase:
+                    escaped = phrase.replace('\\', '\\\\')
+                    return f'"{escaped}"'
+
+                if "'" not in phrase:
+                    escaped = phrase.replace('\\', '\\\\').replace("'", "\\'")
+                    return f"'{escaped}'"
+
+                escaped = phrase.replace('\\', '\\\\').replace('\"', '\\"')
+                return f'"{escaped}"'
+
+            for tag in parsed.forbidden_tags:
+                excluded_note_ids.update(search_index.query_note_ids(tag))
+
+            for phrase in parsed.forbidden_text:
+                excluded_note_ids.update(search_index.query_note_ids(_quote_text_term_for_query(phrase)))
+
             _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
             _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
+            if excluded_note_ids:
+                search_allowed_note_ids.difference_update(excluded_note_ids)
 
             ordered_root_ids = note_store.get_children(None)
             search_root_ids_ordered_for_count = [
