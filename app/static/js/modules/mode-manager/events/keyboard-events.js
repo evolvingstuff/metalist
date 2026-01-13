@@ -148,19 +148,12 @@ function handleKeyDown(event) {
         }
     }
     
-    const hoveredDetails = getHoveredNoteDetails(event);
+	    const hoveredDetails = getHoveredNoteDetails(event);
 
-    const isArrowKey = UP_DOWN_KEYS.has(event.key);
-    const intendsHoverMove = (
-        isArrowKey &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !ModeContext.isEditing &&
-        Boolean(hoveredDetails.noteId)
-    );
-    const isDeleteKey = DELETE_KEYS.has(event.key);
-    const intendsHoverDelete = (
-        isDeleteKey &&
+	    const isArrowKey = UP_DOWN_KEYS.has(event.key);
+	    const isDeleteKey = DELETE_KEYS.has(event.key);
+	    const intendsHoverDelete = (
+	        isDeleteKey &&
         !event.metaKey &&
         !event.ctrlKey &&
         !ModeContext.isEditing &&
@@ -174,10 +167,10 @@ function handleKeyDown(event) {
             needsServer = true;
         } else if (isDeleteKey && (metaOrCtrl || intendsHoverDelete)) {
             needsServer = true;
-        } else if (isArrowKey && (metaOrCtrl || intendsHoverMove)) {
-            needsServer = true;
-        } else if (event.key === 'v' && metaOrCtrl) {
-            needsServer = true;
+	        } else if (isArrowKey && metaOrCtrl) {
+	            needsServer = true;
+	        } else if (event.key === 'v' && metaOrCtrl) {
+	            needsServer = true;
         } else if (event.key === 'c' && metaOrCtrl) {
             needsServer = true;
         } else if ((event.key === 'z' || event.key === 'y') && metaOrCtrl) {
@@ -230,20 +223,16 @@ function handleKeyDown(event) {
                 handleSearchShortcut();
             }
             break;
-        case 'ArrowUp':
-            if (event.metaKey || event.ctrlKey) {
-                handleMoveNoteUpShortcut(event);
-            } else if (!ModeContext.isEditing && hoveredDetails.noteId) {
-                handleMoveHoveredNote(event, 'up', hoveredDetails);
-            }
-            break;
-        case 'ArrowDown':
-            if (event.metaKey || event.ctrlKey) {
-                handleMoveNoteDownShortcut(event);
-            } else if (!ModeContext.isEditing && hoveredDetails.noteId) {
-                handleMoveHoveredNote(event, 'down', hoveredDetails);
-            }
-            break;
+	        case 'ArrowUp':
+	            if (event.metaKey || event.ctrlKey) {
+	                handleMoveNoteUpShortcut(event);
+	            }
+	            break;
+	        case 'ArrowDown':
+	            if (event.metaKey || event.ctrlKey) {
+	                handleMoveNoteDownShortcut(event);
+	            }
+	            break;
         case 'v':
             if (event.metaKey || event.ctrlKey) {
                 if (event.shiftKey) {
@@ -439,54 +428,6 @@ function getHoveredNoteDetails(event) {
     }
 
     return { noteId: null, element: null };
-}
-
-function handleMoveHoveredNote(event, direction, prefetchedDetails) {
-    if (!event) {
-        throw new Error('handleMoveHoveredNote called without an event object');
-    }
-
-    if (ModeContext.isEditing) {
-        return;
-    }
-
-	let resolvedDetails = prefetchedDetails;
-	if (!resolvedDetails) {
-		resolvedDetails = getHoveredNoteDetails(event);
-	}
-	const hoveredNoteId = resolvedDetails.noteId;
-	if (!hoveredNoteId) {
-		Logger.logNoop('Move note shortcut ignored: no hovered note', {
-			direction
-		});
-		return;
-	}
-
-    if (!ModeContext.isConnected) {
-        Logger.logNoop('Move note shortcut ignored while disconnected from server', {
-            direction,
-            hoveredNoteId
-        });
-        return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    Logger.logDebug(
-        direction === 'up' ? 'Move hovered note up shortcut triggered' : 'Move hovered note down shortcut triggered',
-        {
-            hoveredNoteId,
-            currentNoteId: ModeContext.currentNoteId
-        },
-        Logger.LogCategory.EVENT
-    );
-
-    if (direction === 'up') {
-        moveNoteUp(hoveredNoteId);
-    } else {
-        moveNoteDown(hoveredNoteId);
-    }
 }
 
 function handleDeleteHoveredNote(event, prefetchedDetails) {
