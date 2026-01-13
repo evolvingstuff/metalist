@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, collapseNote, expandNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
+import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -252,11 +252,6 @@ function handleKeyDown(event) {
                     handlePasteNoteSiblingShortcut(event);
                 }
             }
-            break;
-        case ' ':
-        case 'Space':
-        case 'Spacebar':
-            handleToggleCollapseShortcut(event);
             break;
         case 'z':
             if (event.metaKey || event.ctrlKey) {
@@ -529,82 +524,6 @@ function handleDeleteHoveredNote(event, prefetchedDetails) {
     }, Logger.LogCategory.EVENT);
 
     deleteNoteOutsideEdit(hoveredNoteId);
-}
-
-function handleToggleCollapseShortcut(event) {
-    if (!event) {
-        throw new Error('handleToggleCollapseShortcut called without an event object');
-    }
-
-    if (ModeContext.isEditing) {
-        Logger.logNoop('Toggle collapse shortcut ignored while editing', {
-            currentNoteId: ModeContext.currentNoteId
-        });
-        return;
-    }
-
-    let hoveredNoteId = ModeContext.hoveredNoteId;
-    let hoveredElement = null;
-
-    if (!hoveredNoteId) {
-        const elementFromEvent = typeof event.target?.closest === 'function' ? event.target.closest('.note') : null;
-        if (elementFromEvent && elementFromEvent.dataset.noteId) {
-            hoveredElement = elementFromEvent;
-            hoveredNoteId = elementFromEvent.dataset.noteId;
-            if (ModeContext.hoveredNoteId !== hoveredNoteId) {
-                ModeContext.setHoveredNoteId(hoveredNoteId);
-            }
-        }
-    }
-
-    if (!hoveredNoteId) {
-        const hoveredCandidates = Array.from(document.querySelectorAll('.note:hover'));
-        if (hoveredCandidates.length > 0) {
-            const deepest = hoveredCandidates[hoveredCandidates.length - 1];
-            if (deepest && deepest.dataset.noteId) {
-                hoveredElement = deepest;
-                hoveredNoteId = deepest.dataset.noteId;
-                if (ModeContext.hoveredNoteId !== hoveredNoteId) {
-                    ModeContext.setHoveredNoteId(hoveredNoteId);
-                }
-            }
-        }
-    }
-
-    if (!hoveredNoteId) {
-        Logger.logNoop('Toggle collapse shortcut ignored: no hovered note', {
-            isEditing: ModeContext.isEditing
-        });
-        return;
-    }
-
-    if (!hoveredElement) {
-        hoveredElement = document.querySelector(`[data-note-id="${hoveredNoteId}"]`);
-    }
-
-    const isCurrentlyCollapsed = hoveredElement?.dataset?.isCollapsed === 'true';
-    const canCollapse = hoveredElement?.dataset?.canCollapse !== 'false';
-
-    Logger.logDebug('Toggle collapse shortcut triggered', {
-        hoveredNoteId,
-        isCurrentlyCollapsed,
-        canCollapse
-    }, Logger.LogCategory.EVENT);
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (isCurrentlyCollapsed) {
-        expandNote(hoveredNoteId);
-    } else {
-        if (!canCollapse) {
-            Logger.logNoop('Toggle collapse shortcut ignored: note cannot collapse', {
-                hoveredNoteId
-            });
-            return;
-        }
-        collapseNote(hoveredNoteId);
-    }
 }
 
 function handleEscapeKey() {
