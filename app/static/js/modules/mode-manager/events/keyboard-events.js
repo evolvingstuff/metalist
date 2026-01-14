@@ -71,9 +71,14 @@ function handleKeyDown(event) {
 	                isTextInput = true;
 	            }
 	            const isSearchInput = tagName === 'INPUT' && target.id === 'search-input';
+	            const isTagBarInput = tagName === 'INPUT' && target.classList.contains('note-tag-bar-input');
 
 	            if (isTextInput && !(isSearchInput && event.key === 'Enter')) {
-	                return;
+	                const isCreateShortcut = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
+	                const isTabToggleShortcut = event.key === 'Tab';
+	                if (!(isTagBarInput && (isCreateShortcut || isTabToggleShortcut))) {
+	                    return;
+	                }
 	            }
 	        }
 	    }

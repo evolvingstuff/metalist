@@ -61,3 +61,6 @@ Unclosed comments behave like unclosed wrappers:
 ## Focus / Tab Behavior
 - `Tab` toggles focus between the note content and the tag bar.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
+- While the tag bar is focused, note-creation shortcuts still work:
+  - `Cmd/Ctrl+Enter`: create sibling
+  - `Cmd/Ctrl+Shift+Enter`: create child
