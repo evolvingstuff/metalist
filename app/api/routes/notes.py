@@ -405,8 +405,10 @@ def copy_note_endpoint(note_id: str, body: dict):
 def paste_sibling_endpoint(request: Request, target_note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
+    search_query = body["search_query"]
     cmd = CmdPasteSibling(
         target_note_id=target_note_id,
+        search_query=search_query,
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -419,8 +421,10 @@ def paste_sibling_endpoint(request: Request, target_note_id: str, body: dict):
 def paste_child_endpoint(request: Request, target_note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
+    search_query = body["search_query"]
     cmd = CmdPasteChild(
         target_note_id=target_note_id,
+        search_query=search_query,
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],

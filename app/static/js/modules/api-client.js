@@ -430,16 +430,24 @@ export const NotesAPI = {
     },
 
     async pasteNoteSibling(targetNoteId) {
+        const body = {
+            search_query: ModeContext.searchQuery,
+        };
         return this._apiCall(CONFIG.API.NOTES.PASTE_SIBLING(targetNoteId), {
             method: 'POST',
             claimSession: true,
+            body: JSON.stringify(body),
         });
     },
 
     async pasteNoteChild(targetNoteId) {
+        const body = {
+            search_query: ModeContext.searchQuery,
+        };
         return this._apiCall(CONFIG.API.NOTES.PASTE_CHILD(targetNoteId), {
             method: 'POST',
             claimSession: true,
+            body: JSON.stringify(body),
         });
     },
 

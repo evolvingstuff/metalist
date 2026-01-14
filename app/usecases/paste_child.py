@@ -14,6 +14,7 @@ from app.services.undo_state import record_paste
 @dataclass
 class CmdPasteChild(QueryCommand):
     target_note_id: str
+    search_query: str | None
     token: str
     client_id: str
     undo_context: str
@@ -30,7 +31,13 @@ class CmdPasteChild(QueryCommand):
         target = store.get(self.target_note_id)
         children = store.children(target.id)
         prev_id = None
-        new_root_id = _insert_cloned_subtree_at(snapshot, target.id, prev_id, self.token)
+        new_root_id = _insert_cloned_subtree_at(
+            snapshot,
+            target.id,
+            prev_id,
+            self.token,
+            search_query=self.search_query,
+        )
 
         new_ids = _collect_subtree_ids(new_root_id)
         records: List[NodeRecord] = [store.get(nid) for nid in new_ids]
