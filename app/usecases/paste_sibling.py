@@ -10,6 +10,36 @@ from app.services.sync import get_clipboard, generate_new_uuid
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import _collect_subtree_ids
 from app.services.undo_state import record_paste
+from app.services.search_index import extract_tags_for_search
+
+
+def _merge_tags_with_inherited_non_meta_terms(tags: str, inherited_non_meta_tag_terms: object) -> str:
+    if inherited_non_meta_tag_terms is None:
+        return tags
+    if not isinstance(inherited_non_meta_tag_terms, list):
+        raise ValueError("Clipboard snapshot inherited_non_meta_tag_terms must be a list")
+
+    inherited_terms: list[str] = []
+    for term in inherited_non_meta_tag_terms:
+        if not isinstance(term, str):
+            raise ValueError("Clipboard snapshot inherited_non_meta_tag_terms must contain strings")
+        if term.startswith("@"):  # meta tags do not inherit
+            continue
+        inherited_terms.append(term)
+
+    if not inherited_terms:
+        return tags
+
+    existing_terms = extract_tags_for_search(tags)
+    to_add = [term for term in inherited_terms if term not in existing_terms]
+    if not to_add:
+        return tags
+
+    tags_stripped = tags.strip()
+    suffix = " ".join(to_add)
+    if tags_stripped == "":
+        return suffix
+    return f"{tags_stripped} {suffix}"
 
 
 def _insert_cloned_subtree_at(
@@ -86,6 +116,17 @@ def _insert_cloned_subtree_at(
         tags = rec["tags"]
         if not isinstance(tags, str):
             raise ValueError("Clipboard snapshot tags must be a string")
+
+        is_new_root = new_root_id is None and new_parent == dest_parent
+        if is_new_root:
+            if "inherited_non_meta_tag_terms" not in rec:
+                raise ValueError(
+                    "Clipboard snapshot missing required key: inherited_non_meta_tag_terms"
+                )
+            tags = _merge_tags_with_inherited_non_meta_terms(
+                tags,
+                rec["inherited_non_meta_tag_terms"],
+            )
 
         apply_insert_note(
             new_id,

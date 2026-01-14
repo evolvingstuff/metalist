@@ -5,6 +5,7 @@ from typing import Dict, List, Any
 
 from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
+from app.services.search_index import extract_tags_for_search
 from app.services.sync import set_clipboard, generate_new_uuid
 from app.models.utils import (
     render_note_data_read_only,
@@ -44,6 +45,22 @@ def _build_serialized_tree(root_id: str) -> Dict[str, Any]:
     }
 
 
+def _compute_inherited_non_meta_tag_terms(note_id: str) -> tuple[str, ...]:
+    root = store.get(note_id)
+    assert isinstance(root.tags, str)
+    inherited_non_meta: set[str] = set()
+    current_id = root.parent_id
+    while current_id is not None:
+        ancestor = store.get(current_id)
+        assert isinstance(ancestor.tags, str)
+        for term in extract_tags_for_search(ancestor.tags):
+            if term.startswith("@"):  # meta tags do not inherit
+                continue
+            inherited_non_meta.add(term)
+        current_id = ancestor.parent_id
+    return tuple(sorted(inherited_non_meta))
+
+
 @dataclass
 class CmdCopyNote(QueryCommand):
     note_id: str
@@ -53,6 +70,8 @@ class CmdCopyNote(QueryCommand):
         return f"CmdCopyNote(note={self.note_id}, client={self.client_id})"
 
     def execute(self) -> Dict[str, Any]:
+        inherited_non_meta_tag_terms = _compute_inherited_non_meta_tag_terms(self.note_id)
+
         # Snapshot for server-side clipboard (structure + plaintext content)
         records = snapshot_subtree_preorder(self.note_id)
         payload = [
@@ -64,6 +83,7 @@ class CmdCopyNote(QueryCommand):
                 "is_collapsed": bool(r.is_collapsed),
                 "content": r.content,
                 "tags": r.tags,
+                "inherited_non_meta_tag_terms": list(inherited_non_meta_tag_terms) if r.id == self.note_id else [],
             }
             for r in records
         ]
