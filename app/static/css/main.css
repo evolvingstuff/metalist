@@ -432,17 +432,18 @@ body {
     position: relative;
     margin: 2px 0;
     padding: 4px;
-    border: 1px solid #cccccc;  /* Darker border for better visibility */
+    border: 1px solid #e6e6e6;  /* Lighter default border (closer to white) */
     border-radius: 4px;
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 2px;
     background-color: #ffffff;
+    transition: border-color 120ms ease;
 }
 
-.note:hover:not(:has(.note:hover)) {
-    border-color: #999999;
+.note:not(.editing):not(.memory-selected):not(.locked):hover:not(:has(.note:hover)) {
+    border-color: #b0b0b0;
 }
 
 .note-collapse-toggle {
