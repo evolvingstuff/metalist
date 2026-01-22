@@ -4,7 +4,8 @@ Goal: Build a fast, keyboard-first, CLI-like palette for configuring preferences
 Design is consistent with the app’s existing **flat, AND-based search semantics**.
 
 Target UX:
-- Open with a single shortcut (e.g. Cmd+/)
+- Open with a single shortcut (Cmd+/)
+- Feels like typing into a TUI: black bg, monospace, dense
 - Reach any endpoint in ~3–4 keystrokes
 - No hierarchy, no OR/NOT, no commands-as-language
 - Same mental model as search elsewhere in the app
@@ -31,6 +32,8 @@ A single configurable or executable unit. One of:
 2. **Select** — choose exactly one option from a finite set
 3. **Action** — one-step commit, no extra input
 4. **Form action** — requires additional input and/or validation (opens a form/modal)
+
+Important: endpoints are the *things you can do*. Tags are *metadata attached to endpoints*.
 
 ### Tag (facet)
 A manually authored keyword. Query tokens are matched via boolean AND across tags.
@@ -110,6 +113,9 @@ All **tag mappings** are defined in config files.
 
 Endpoint definitions (kind/select options/labels/behavior) remain in code; config exists only to tune discoverability.
 
+Hard rule: do not add endpoints that duplicate always-visible UI affordances.
+The palette exists to expose "hidden" preferences/actions via keyboard.
+
 ### Goals
 - Adding or tuning discoverability is a data-editing task
 - Tag iteration is cheap and encouraged
@@ -149,6 +155,10 @@ Optional dev tooling:
 - Trim punctuation
 - Ignore empty tokens
 
+Prefix state:
+- While the user is mid-token (e.g. `sea`), treat it as a prefix, not a committed tag.
+- Only committed tags participate in endpoint matching.
+
 ### Matching rule
 An endpoint matches if **all query tokens** are contained in its tag set.
 
@@ -170,6 +180,10 @@ Purpose: help users narrow large result sets without hierarchy.
   - Exist on currently matching endpoints
   - Reduce the result set
 
+Prefix narrowing:
+- If the user is mid-token (not at a tag boundary), suggestions are filtered to tags with that prefix.
+- This is purely assistive; it must not change matching until the tag is committed.
+
 ### Ordering
 Blend of:
 - Narrowing power
@@ -178,9 +192,8 @@ Blend of:
 - Alphabetical tie-break
 
 Suggested tags:
-- Clickable
-- Keyboard-navigable
-- Append token to query input
+- Rendered as compact inline text (not big chips)
+- Narrow in real time as the user types
 
 ---
 
@@ -190,6 +203,10 @@ Each result row shows:
 - Label
 - Current value or affordance
 - Optional secondary hint (description, scope, status)
+
+TUI constraint:
+- Dense rows, minimal decoration, monospace
+- No large UI elements that consume vertical space
 
 ### Boolean
 - Checkbox-like
@@ -221,7 +238,8 @@ Global:
 
 Inside palette:
 - Typing edits query
-- Tab / Shift+Tab moves focus between regions
+- Space is just space (same as tag entry elsewhere in app)
+- Optional: Up/Down navigates results when query input is focused
 - Up / Down navigates within focused list
 - Enter activates focused item
 - Space toggles boolean
