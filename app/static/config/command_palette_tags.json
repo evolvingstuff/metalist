@@ -1,0 +1,48 @@
+{
+  "endpoints": [
+    {
+      "id": "pref.show_backlinks",
+      "tags": ["backlinks", "links", "show", "hide", "view", "notes"]
+    },
+    {
+      "id": "pref.show_note_tags",
+      "tags": ["tags", "show", "hide", "view", "notes", "list"]
+    },
+    {
+      "id": "pref.auto_collapse_long_notes",
+      "tags": ["collapse", "long", "notes", "auto", "view"]
+    },
+    {
+      "id": "pref.sort_order",
+      "tags": ["sort", "order", "newest", "oldest", "updated", "view"]
+    },
+    {
+      "id": "pref.theme",
+      "tags": ["theme", "appearance", "light", "dark", "system", "ui"]
+    },
+    {
+      "id": "action.expand_all",
+      "tags": ["expand", "all", "collapsed", "notes", "view"]
+    },
+    {
+      "id": "action.collapse_all",
+      "tags": ["collapse", "all", "notes", "view"]
+    },
+    {
+      "id": "action.reset_view_filters",
+      "tags": ["reset", "clear", "filters", "search", "view"]
+    },
+    {
+      "id": "action.reset_all_preferences",
+      "tags": ["reset", "clear", "preferences", "settings", "defaults"]
+    },
+    {
+      "id": "form.change_password",
+      "tags": ["password", "change", "security", "auth", "encryption"]
+    },
+    {
+      "id": "form.password_protection",
+      "tags": ["password", "protect", "protection", "enable", "disable", "security"]
+    }
+  ]
+}

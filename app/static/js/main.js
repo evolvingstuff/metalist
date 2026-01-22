@@ -4,6 +4,7 @@ import { DOMUtils } from './modules/dom-utils.js';
 import { Auth } from './modules/auth.js';
 import { ErrorHandler } from './modules/error-handler.js';
 import { ActivityTracker } from './modules/activity-tracker.js';
+import { CommandPalette } from './modules/command-palette/command-palette-controller.js';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
 
@@ -23,6 +24,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: About to initialize ModeManager');
         ModeManager.init({});
         console.log('+++ main.js: ModeManager init() completed');
+
+        await CommandPalette.init();
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
     }

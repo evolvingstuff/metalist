@@ -6,6 +6,7 @@ const CONTENT_ELEMENT_CACHE = new WeakMap();
 const CHILD_CONTAINER_CACHE = new WeakMap();
 const COLLAPSE_TOGGLE_CACHE = new WeakMap();
 const LOCK_ICON_CACHE = new WeakMap();
+const TAGS_ELEMENT_CACHE = new WeakMap();
 
 function logVDOM(action, details) {
     console.log(` [VDOM] ${action}`, details);
@@ -288,6 +289,13 @@ function createNoteElement(noteId) {
     noteElement.appendChild(contentElement);
     CONTENT_ELEMENT_CACHE.set(noteElement, contentElement);
 
+    const tagsElement = document.createElement('div');
+    tagsElement.classList.add('note-tags');
+    tagsElement.setAttribute('aria-hidden', 'true');
+    tagsElement.textContent = '';
+    noteElement.appendChild(tagsElement);
+    TAGS_ELEMENT_CACHE.set(noteElement, tagsElement);
+
     return noteElement;
 }
 
@@ -325,6 +333,24 @@ function getCollapseToggle(noteElement) {
     }
     COLLAPSE_TOGGLE_CACHE.set(noteElement, collapseToggle);
     return collapseToggle;
+}
+
+function getTagsElement(noteElement) {
+    if (TAGS_ELEMENT_CACHE.has(noteElement)) {
+        return TAGS_ELEMENT_CACHE.get(noteElement);
+    }
+    const tagsElement = getDirectChildByClass(noteElement, 'note-tags');
+    if (!tagsElement) {
+        throw new Error(`Note ${noteElement.dataset.noteId || '<unknown>'} missing tags element`);
+    }
+    TAGS_ELEMENT_CACHE.set(noteElement, tagsElement);
+    return tagsElement;
+}
+
+function syncTagsElement(noteElement) {
+    const tagsElement = getTagsElement(noteElement);
+    const tags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
+    tagsElement.textContent = tags;
 }
 
 function getChildContainer(noteElement) {
@@ -586,6 +612,7 @@ export function applyDifferentialView(payload, options) {
                 throw new Error(`Note ${noteId} payload tags must be a string`);
             }
             noteElement.dataset.noteTags = noteData.tags;
+            syncTagsElement(noteElement);
         }
 
         if (!incomingHash) {
@@ -784,6 +811,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
         throw new Error(`Note ${noteId} payload tags must be a string`);
     }
     noteElement.dataset.noteTags = noteData.tags;
+    syncTagsElement(noteElement);
     let flags = noteData.flags;
     if (!flags || typeof flags !== 'object') {
         flags = {};

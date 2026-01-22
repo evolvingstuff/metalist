@@ -15,6 +15,7 @@ import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearC
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
+import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -72,8 +73,9 @@ function handleKeyDown(event) {
 	            }
 	            const isSearchInput = tagName === 'INPUT' && target.id === 'search-input';
 	            const isTagBarInput = tagName === 'INPUT' && target.classList.contains('note-tag-bar-input');
+	            const isCommandPaletteShortcut = event.key === '/' && (event.metaKey || event.ctrlKey);
 
-	            if (isTextInput && !(isSearchInput && event.key === 'Enter')) {
+	            if (isTextInput && !(isSearchInput && event.key === 'Enter') && !isCommandPaletteShortcut) {
 	                const isCreateShortcut = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
 	                const isTabToggleShortcut = event.key === 'Tab';
 	                if (!(isTagBarInput && (isCreateShortcut || isTabToggleShortcut))) {
@@ -225,7 +227,9 @@ function handleKeyDown(event) {
             break;
         case '/':
             if (event.metaKey || event.ctrlKey) {
-                handleSearchShortcut();
+                event.preventDefault();
+                event.stopPropagation();
+                void CommandPalette.toggle();
             }
             break;
 	        case 'ArrowUp':

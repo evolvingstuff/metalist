@@ -306,6 +306,31 @@ export const NotesAPI = {
         });
     },
 
+    async setCollapsedBulk(noteIds, collapsed) {
+        if (!Array.isArray(noteIds)) {
+            throw new Error('NotesAPI.setCollapsedBulk requires noteIds array');
+        }
+        for (const noteId of noteIds) {
+            if (typeof noteId !== 'string' || noteId.length === 0) {
+                throw new Error('NotesAPI.setCollapsedBulk requires noteIds to be non-empty strings');
+            }
+        }
+        if (typeof collapsed !== 'boolean') {
+            throw new Error('NotesAPI.setCollapsedBulk requires collapsed boolean');
+        }
+
+        const body = {
+            note_ids: noteIds,
+            collapsed: collapsed,
+        };
+
+        return this._apiCall(CONFIG.API.NOTES.SET_COLLAPSED_BULK, {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async undo() {
         const undoContext = captureUndoContext();
         const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&undoContext=${encodeURIComponent(undoContext)}`;

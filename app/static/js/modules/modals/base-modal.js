@@ -34,8 +34,7 @@ export class BaseModal {
      */
     open() {
         if (this.isOpen) {
-            console.warn(`[BaseModal] ${this.modalName} is already open`);
-            return;
+            throw new Error(`[BaseModal] ${this.modalName} is already open`);
         }
         
         // Enforce clean state requirement
@@ -63,8 +62,7 @@ export class BaseModal {
      */
     close() {
         if (!this.isOpen) {
-            console.warn(`[BaseModal] ${this.modalName} is not open`);
-            return;
+            throw new Error(`[BaseModal] ${this.modalName} is not open`);
         }
         
         // Call subclass hook
@@ -82,6 +80,10 @@ export class BaseModal {
         
         this.isOpen = false;
         console.log(`[BaseModal] ${this.modalName} closed`);
+
+        document.dispatchEvent(new CustomEvent('metalist:modal-closed', {
+            detail: { modalName: this.modalName }
+        }));
     }
     
     /**

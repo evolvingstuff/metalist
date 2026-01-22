@@ -14,6 +14,7 @@ export const CONFIG = {
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
             COLLAPSE: (noteId) => `${API_NOTES_BASE}/${noteId}/collapse`,
             EXPAND: (noteId) => `${API_NOTES_BASE}/${noteId}/expand`,
+            SET_COLLAPSED_BULK: `${API_NOTES_BASE}/set-collapsed-bulk`,
             DELETE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             COPY: (noteId) => `${API_NOTES_BASE}/${noteId}/copy`,
             EXPORT_HTML: (noteId) => `${API_NOTES_BASE}/${noteId}/export-html`,

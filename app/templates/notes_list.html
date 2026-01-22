@@ -25,12 +25,14 @@
     <div class="${css_classes}" 
          data-note-id="${note['id']}" 
          data-parent-id="${note.get('parent_id', '')}"
-         data-is-collapsed="${'true' if note['flags'].get('isCollapsed') else 'false'}">
+         data-is-collapsed="${'true' if note['flags'].get('isCollapsed') else 'false'}"
+         data-note-tags="${note['tags'] | h}">
         % if locked_by_other:
             <span class="lock-icon">🔒</span>
         % endif
         <button class="note-collapse-toggle" type="button" aria-label="${'Expand note' if note['flags'].get('isCollapsed') else 'Collapse note'}" title="${'Expand' if note['flags'].get('isCollapsed') else 'Collapse'}"></button>
         <div class="note-content" contenteditable="${'true' if is_editing_by_me else 'false'}">${note['content'] | n}</div>
+        <div class="note-tags" aria-hidden="true">${note['tags'] | h}</div>
         % if note.get('children'):
             <div class="note-children">
                 % for child in note['children']:

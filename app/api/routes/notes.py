@@ -15,6 +15,7 @@ from app.usecases.delete_subtree import CmdDeleteSubtree
 from app.usecases.move import CmdMove
 from app.usecases.collapse import CmdCollapse
 from app.usecases.expand import CmdExpand
+from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
@@ -383,6 +384,32 @@ def expand_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.expand")
     cmd = CmdExpand(note_id=note_id, client_id=body["clientId"], undo_context=body["undoContext"], viewport=viewport)
+    return cmd.execute()
+
+
+@router.post("/notes/set-collapsed-bulk")
+def set_collapsed_bulk_endpoint(body: dict):
+    viewport = _require_viewport(body)
+    note_ids = body["note_ids"]
+    collapsed = body["collapsed"]
+
+    if not isinstance(note_ids, list) or len(note_ids) == 0:
+        raise TypeError("note_ids must be a non-empty list")
+    if not isinstance(collapsed, bool):
+        raise TypeError("collapsed must be a bool")
+
+    for note_id in note_ids:
+        if not isinstance(note_id, str) or not note_id:
+            raise TypeError("note_ids must be non-empty strings")
+        _require_note_present(note_id, context="notes.set_collapsed_bulk")
+
+    cmd = CmdSetCollapseBulk(
+        note_ids=note_ids,
+        collapsed=collapsed,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
     return cmd.execute()
 
 
