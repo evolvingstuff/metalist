@@ -11,7 +11,20 @@ Fix the undo bug:
 …while enforcing the intended invariant:
 
 - The client must never allow a second user command to execute while a prior server-bound command is in-flight.
-- Extra inputs during in-flight are ignored/dropped (NO queuing/coalescing).
+- Extra inputs during in-flight are ignored/dropped.
+- NO queuing/coalescing/replay of user commands.
+- Background traffic (heartbeat/polling/infinite-scroll refresh) must not run while a user command is in-flight.
+
+
+## Why Phase 2 Comes First
+Historically, “Phase 1 repro test first” was unreliable because there is no single authoritative command gate today:
+
+- Not every server-bound UI action is serialized behind one busy flag.
+- Some background loops can issue network calls independently.
+
+This makes undo behavior appear timing-dependent even when the user is not “pressing fast”, because unrelated background calls can interleave with user commands and/or transiently trip the “busy” condition.
+
+So we first make the client deterministic (Phase 2), then add the failing Cypress repro (Phase 1).
 
 
 ## Non-Goals
@@ -19,46 +32,44 @@ Fix the undo bug:
 - Do not change existing Cypress specs.
 
 
-## Phase 1 — Repro + Observability (Confirm Actual Failure Mode)
-1. Add a new Cypress spec that reproduces the bug without relying on “pressing fast”.
-   - Drive Cmd-Z twice with an explicit “wait for not-loading” signal between them.
-   - Assert that the note is not in editing state after the second undo.
-2. Add temporary, fail-fast client-side instrumentation to record:
-   - Every user command start/end (undo, delete, edit-mode transitions).
-   - Every time we drop an input due to “in-flight”.
-   - Whether we actually sent 0/1/2 `/api2/notes/undo` requests.
-   - Remove this instrumentation once the bug is fixed and test is stable.
-
-Success criteria:
-- We can reproduce the bug reliably.
-- We know whether the problem is:
-  - (A) second Cmd-Z is not sent (input dropped), OR
-  - (B) second Cmd-Z is sent but undo history semantics keep the note selected.
-
-
 ## Phase 2 — Enforce a Single Command Gate (Drop Inputs While In Flight)
-3. Implement a single client-side command gate (mutex) with a tiny API, e.g.:
+1. Implement a single client-side command gate (mutex) with a tiny API:
    - `CommandGate.run(name, asyncFn)`
    - `CommandGate.isBusy()`
    - It must set/unset the busy flag in a `finally`.
-4. Route ALL user-initiated server-bound actions through the gate:
+   - It must NEVER queue or replay commands.
+2. Route ALL user-initiated server-bound actions through the gate:
    - Delete, undo/redo, create, move, edit-mode transitions, save.
    - Ensure click handlers don’t “fire and forget” async actions without going through the gate.
-5. Update keyboard/mouse handlers to:
-   - If gate busy: drop the input, log a single structured “dropped input” event, and return.
-   - Never queue.
+3. Update keyboard/mouse handlers:
+   - If gate busy: drop the input and return immediately.
+   - (Optional) log one structured “dropped input” event for diagnosis.
+4. Stop background traffic while gate busy:
+   - Polling/heartbeat: skip ticks while `CommandGate.isBusy()`.
+   - Infinite scroll: skip polling while `CommandGate.isBusy()`.
+   - Any other periodic refresh must be similarly blocked.
 
 Success criteria:
-- It is impossible to send two user commands concurrently.
-- DevTools Network shows at most one in-flight command request at any time.
+- DevTools Network shows at most one in-flight *user command* request at a time.
+- Heartbeats/refreshes do not fire during a user command.
+- Inputs during in-flight are dropped (not queued).
+
+
+## Phase 1 — Cypress Repro (Now Deterministic)
+5. Add a new Cypress spec that reproduces the bug without relying on “pressing fast”.
+   - Drive Cmd-Z twice with an explicit wait for the gate to be idle between presses.
+   - Assert that the note is not in editing state after the second undo.
+6. If needed, add minimal temporary instrumentation to help debug ordering (remove once fixed).
+
+Success criteria:
+- The new spec fails against current semantics and passes after the fix.
 
 
 ## Phase 3 — Fix Undo Semantics (Deselect on 2nd Undo)
-6. If the bug is semantic (case B):
-   - Verify what undo stack entries exist for: select → delete.
+7. Verify undo stack entries for: select → delete.
    - Confirm whether selection transitions are recorded as `edit_mode` ops.
-   - Ensure the second undo corresponds to “undo selection” (i.e., `editingNoteId` becomes null), not some other entry.
-7. Patch either:
+   - Ensure the second undo corresponds to “undo selection” (i.e., `editingNoteId` becomes null).
+8. Patch either:
    - client-side recording of edit-mode transitions, OR
    - server-side coalescing rules in `app/services/undo_state.py`,
    so the history is: [select/edit_mode] then [delete_subtree], enabling:
@@ -66,14 +77,13 @@ Success criteria:
    - undo(edit_mode) => deselected
 
 Success criteria:
-- The new Cypress test passes.
 - Manual repro matches expected behavior.
+- Cypress spec passes.
 
 
 ## Phase 4 — Regression Sweep
-8. Run full Cypress suite.
-9. Run `./sanitycheck/run`.
+9. Run full Cypress suite.
+10. Run `./sanitycheck/run`.
 
 Success criteria:
 - All tests pass and sanitycheck is clean.
-
