@@ -104,38 +104,35 @@ Note: “Form action” is a semantic category, not a UI mandate. Modal presenta
 
 ---
 
-## 3) Configuration-first authoring (critical)
+## 3) Tag-mapping configuration (critical)
 
-All endpoints, tags, labels, and option metadata are defined in **config files**, not hard-coded.
+All **tag mappings** are defined in config files.
+
+Endpoint definitions (kind/select options/labels/behavior) remain in code; config exists only to tune discoverability.
 
 ### Goals
-- Adding or tuning settings is a data-editing task
+- Adding or tuning discoverability is a data-editing task
 - Tag iteration is cheap and encouraged
-- No code changes required to adjust discoverability
+- No code changes required to adjust tags
 
 ### What config defines
-For each endpoint:
+For each endpoint id:
 - `id` (stable, unique)
-- `label`
-- `description` (optional)
-- `kind` (boolean / select / action / form_action)
 - `tags` (manually curated)
-- `scope` (global / view / contextual)
-- Defaults (for persistent endpoints)
-- Options (for select endpoints)
-- Symbolic action key (string identifier)
 
 ### What config does NOT define
 - Business logic
 - Side effects
-- Validation rules beyond metadata
+- UI behavior or endpoint taxonomy (`kind`, `options`, etc.)
+- Labels/descriptions
+- Scope rules (`global` / `view` / `contextual`)
 - Persistence mechanisms
-- UI layout beyond endpoint type
 
 ### Runtime responsibilities
 - Load and validate config
-- Bind symbolic action keys to implementations
-- Fail loudly in dev if config and implementation diverge
+- Fail loudly in dev if:
+  - config references an unknown endpoint id
+  - an endpoint id has no tags mapping
 
 Optional dev tooling:
 - Config linter (duplicate ids, empty tags, unused tags)
