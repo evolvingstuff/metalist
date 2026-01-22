@@ -67,6 +67,25 @@ function endpointMatchesTags(endpoint, committedTokens) {
     return true;
 }
 
+function endpointMatchesPrefix(endpoint, prefix) {
+    if (!endpoint || typeof endpoint !== 'object') {
+        throw new Error('endpointMatchesPrefix requires endpoint');
+    }
+    if (typeof prefix !== 'string' || prefix.length === 0) {
+        throw new Error('endpointMatchesPrefix requires prefix string');
+    }
+    if (!(endpoint.tags instanceof Set)) {
+        throw new Error('Endpoint missing tags Set');
+    }
+
+    for (const tag of endpoint.tags) {
+        if (tag.startsWith(prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function sortMatchesByUsage(matches, usageSnapshot) {
     if (!Array.isArray(matches)) {
         throw new Error('sortMatchesByUsage requires matches array');
@@ -523,14 +542,20 @@ class CommandPaletteController {
         const committedTokens = tokenization.committed;
         const prefix = tokenization.prefix;
 
-        let matches = this._endpoints.filter((e) => endpointMatchesTags(e, committedTokens));
+        const baseMatches = this._endpoints.filter((e) => endpointMatchesTags(e, committedTokens));
+
+        let matches = baseMatches;
+        if (typeof prefix === 'string' && prefix.length > 0) {
+            matches = baseMatches.filter((e) => endpointMatchesPrefix(e, prefix));
+        }
+
         if (committedTokens.length === 0) {
             matches = sortMatchesByUsage(matches, usageSnapshot);
         } else {
             matches = matches.slice().sort((a, b) => a.label.localeCompare(b.label));
         }
 
-        const suggested = computeSuggestedTags(matches, committedTokens, prefix, usageSnapshot);
+        const suggested = computeSuggestedTags(baseMatches, committedTokens, prefix, usageSnapshot);
         suggestions.innerHTML = '';
         for (const tag of suggested) {
             const el = document.createElement('span');
@@ -716,8 +741,15 @@ class CommandPaletteController {
         const { input } = this._elements;
         const tokenization = tokenizeQuery(input.value);
         const committed = tokenization.committed;
+        const prefix = tokenization.prefix;
         const usageSnapshot = this._usage.getUsageSnapshot();
-        let matches = this._endpoints.filter((e) => endpointMatchesTags(e, committed));
+
+        const baseMatches = this._endpoints.filter((e) => endpointMatchesTags(e, committed));
+        let matches = baseMatches;
+        if (typeof prefix === 'string' && prefix.length > 0) {
+            matches = baseMatches.filter((e) => endpointMatchesPrefix(e, prefix));
+        }
+
         if (committed.length === 0) {
             matches = sortMatchesByUsage(matches, usageSnapshot);
         } else {
@@ -736,7 +768,15 @@ class CommandPaletteController {
         const endpoint = matches[normalized];
 
         const tokenization = tokenizeQuery(this._elements.input.value);
-        this._usage.recordUse(endpoint.id, tokenization.committed);
+
+        const usageTokens = [];
+        for (const token of tokenization.committed) {
+            usageTokens.push(token);
+        }
+        if (typeof tokenization.prefix === 'string' && tokenization.prefix.length > 0) {
+            usageTokens.push(tokenization.prefix);
+        }
+        this._usage.recordUse(endpoint.id, usageTokens);
 
         if (endpoint.kind === 'boolean') {
             const current = this._getBoolean(endpoint.persistenceKey, endpoint.defaultValue);
