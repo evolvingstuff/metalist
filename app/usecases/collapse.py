@@ -13,11 +13,23 @@ from app.db.session import begin_writer
 from app.db.notes_sql import update_links as db_update_links
 
 
-def apply_set_collapse(note_id: str, collapsed: bool) -> None:
+def apply_set_collapse_bulk(note_ids: list[str], collapsed: bool) -> None:
+    if not isinstance(note_ids, list) or len(note_ids) == 0:
+        raise TypeError("note_ids must be a non-empty list")
+    for note_id in note_ids:
+        if not isinstance(note_id, str) or not note_id:
+            raise TypeError("note_ids must contain non-empty strings")
+
     now = datetime.now(timezone.utc)
     with begin_writer() as connection:
-        db_update_links(connection, note_id, is_collapsed=bool(collapsed), updated_at=now)
-    store.set_collapsed(note_id, bool(collapsed))
+        for note_id in note_ids:
+            db_update_links(connection, note_id, is_collapsed=bool(collapsed), updated_at=now)
+    for note_id in note_ids:
+        store.set_collapsed(note_id, bool(collapsed))
+
+
+def apply_set_collapse(note_id: str, collapsed: bool) -> None:
+    apply_set_collapse_bulk([note_id], collapsed)
 
 
 @dataclass

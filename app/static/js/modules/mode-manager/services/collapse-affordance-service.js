@@ -69,13 +69,23 @@ export function updateCollapseAffordanceForNote(noteElement) {
 
     const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
 
+    // Determine collapsibility based on the *expanded* layout.
+    // A note should not become "collapsible" merely because it is marked collapsed.
+    // This keeps bulk-collapse operations from introducing toggles on short notes.
+    const hadCollapsedClass = noteElement.classList.contains('collapsed');
+    if (hadCollapsedClass) {
+        noteElement.classList.remove('collapsed');
+    }
+
     let canCollapse = false;
-    if (isCollapsed) {
-        canCollapse = true;
-    } else if (hasChildren(noteElement)) {
+    if (hasChildren(noteElement)) {
         canCollapse = true;
     } else if (contentHasAdditionalLines(contentElement)) {
         canCollapse = true;
+    }
+
+    if (hadCollapsedClass) {
+        noteElement.classList.add('collapsed');
     }
     noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
 

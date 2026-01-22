@@ -16,6 +16,7 @@ from app.usecases.move import CmdMove
 from app.usecases.collapse import CmdCollapse
 from app.usecases.expand import CmdExpand
 from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
+from app.usecases.set_collapse_in_context import CmdSetCollapseInContext
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
@@ -405,6 +406,32 @@ def set_collapsed_bulk_endpoint(body: dict):
 
     cmd = CmdSetCollapseBulk(
         note_ids=note_ids,
+        collapsed=collapsed,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/set-collapsed-in-context")
+def set_collapsed_in_context_endpoint(body: dict):
+    viewport = _require_viewport(body)
+    search_query = body["search_query"]
+    collapsed = body["collapsed"]
+
+    if not isinstance(collapsed, bool):
+        raise TypeError("collapsed must be a bool")
+
+    normalized_search: str | None = search_query
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search_query must be a string or null")
+
+    cmd = CmdSetCollapseInContext(
+        search_query=normalized_search,
         collapsed=collapsed,
         client_id=body["clientId"],
         undo_context=body["undoContext"],

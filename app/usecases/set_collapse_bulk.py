@@ -8,7 +8,7 @@ from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.undo_state import record_collapse
 from app.usecases.base import QueryCommand
-from app.usecases.collapse import apply_set_collapse
+from app.usecases.collapse import apply_set_collapse_bulk
 
 
 @dataclass
@@ -23,15 +23,21 @@ class CmdSetCollapseBulk(QueryCommand):
         return f"CmdSetCollapseBulk(count={len(self.note_ids)}, collapsed={self.collapsed}, client={self.client_id})"
 
     def execute(self) -> Dict[str, object]:
-        updated_count = 0
+        note_ids_to_update: List[str] = []
+        before_by_id: Dict[str, bool] = {}
 
         for note_id in self.note_ids:
             before = bool(store.get(note_id).is_collapsed)
             if before is bool(self.collapsed):
                 continue
+            note_ids_to_update.append(note_id)
+            before_by_id[note_id] = before
 
-            apply_set_collapse(note_id, bool(self.collapsed))
+        if note_ids_to_update:
+            apply_set_collapse_bulk(note_ids_to_update, bool(self.collapsed))
 
+        updated_count = 0
+        for note_id in note_ids_to_update:
             after = bool(store.get(note_id).is_collapsed)
             if after is not bool(self.collapsed):
                 print(f"FATAL: bulk collapse failed for {note_id}")
@@ -41,7 +47,7 @@ class CmdSetCollapseBulk(QueryCommand):
                 self.client_id,
                 self.undo_context,
                 note_id,
-                before=before,
+                before=before_by_id[note_id],
                 after=after,
                 viewport=self.viewport,
             )

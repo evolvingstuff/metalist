@@ -331,6 +331,26 @@ export const NotesAPI = {
         });
     },
 
+    async setCollapsedInContext(searchQuery, collapsed) {
+        if (typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.setCollapsedInContext requires searchQuery string');
+        }
+        if (typeof collapsed !== 'boolean') {
+            throw new Error('NotesAPI.setCollapsedInContext requires collapsed boolean');
+        }
+
+        const body = {
+            search_query: searchQuery,
+            collapsed: collapsed,
+        };
+
+        return this._apiCall(CONFIG.API.NOTES.SET_COLLAPSED_IN_CONTEXT, {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async undo() {
         const undoContext = captureUndoContext();
         const url = `${CONFIG.API.NOTES.UNDO}?client_id=${encodeURIComponent(ModeContext.clientId)}&undoContext=${encodeURIComponent(undoContext)}`;

@@ -867,37 +867,17 @@ class CommandPaletteController {
     }
 
     async collapseAll() {
-        const noteElements = Array.from(document.querySelectorAll('#notes-container .note'));
-        const noteIds = [];
-        for (const el of noteElements) {
-            if (!(el instanceof HTMLElement)) {
-                continue;
-            }
-            const noteId = el.dataset.noteId;
-            if (typeof noteId !== 'string' || noteId.length === 0) {
-                continue;
-            }
-            const hasChildren = el.querySelector(':scope > .note-children > .note') instanceof HTMLElement;
-            if (!hasChildren) {
-                continue;
-            }
-
-            let collapsed = false;
-            if (el.dataset.isCollapsed === 'true') {
-                collapsed = true;
-            } else if (el.classList.contains('collapsed')) {
-                collapsed = true;
-            }
-            if (!collapsed) {
-                noteIds.push(noteId);
-            }
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
         }
-        if (noteIds.length === 0) {
-            return;
+
+        const searchQuery = ModeContext.searchQuery;
+        if (typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string');
         }
 
         ModeContext.setLoading(true);
-        await NotesAPI.setCollapsedBulk(noteIds, true).finally(() => {
+        await NotesAPI.setCollapsedInContext(searchQuery, true).finally(() => {
             if (ModeContext.isLoading) {
                 ModeContext.setLoading(false);
             }
@@ -906,24 +886,17 @@ class CommandPaletteController {
     }
 
     async expandAll() {
-        const noteElements = Array.from(document.querySelectorAll('#notes-container .note.collapsed'));
-        const noteIds = [];
-        for (const el of noteElements) {
-            if (!(el instanceof HTMLElement)) {
-                continue;
-            }
-            const noteId = el.dataset.noteId;
-            if (typeof noteId !== 'string' || noteId.length === 0) {
-                continue;
-            }
-            noteIds.push(noteId);
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
         }
-        if (noteIds.length === 0) {
-            return;
+
+        const searchQuery = ModeContext.searchQuery;
+        if (typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string');
         }
 
         ModeContext.setLoading(true);
-        await NotesAPI.setCollapsedBulk(noteIds, false).finally(() => {
+        await NotesAPI.setCollapsedInContext(searchQuery, false).finally(() => {
             if (ModeContext.isLoading) {
                 ModeContext.setLoading(false);
             }
