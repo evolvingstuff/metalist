@@ -20,6 +20,7 @@
 |----------|--------|
 | `Enter` | Add new note at top (when not editing) |
 | `Space` | Toggle collapse/expand hovered note |
+| `⌘ + /` | Open command palette |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 
