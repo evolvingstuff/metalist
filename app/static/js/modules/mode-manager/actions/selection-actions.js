@@ -179,6 +179,9 @@ export async function actionSwitchNotes(newNoteId, options) {
     }
         
     const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        throw new Error('Cannot switch notes: currentNoteId is required');
+    }
 
     if (currentNoteId === newNoteId) {
         Logger.logDebug('Already on this note, not switching', { noteId: newNoteId });
@@ -188,6 +191,8 @@ export async function actionSwitchNotes(newNoteId, options) {
     if (currentNoteId) {
         await actionSaveNote(currentNoteId);
     }
+
+    await NotesAPI.recordEditModeTransition(currentNoteId, newNoteId);
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
 

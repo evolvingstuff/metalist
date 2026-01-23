@@ -16,6 +16,37 @@ from app.services.sync import generate_new_uuid
 logger = logging.getLogger(__name__)
 
 
+def _summarize_op(op: dict) -> str:
+    op_type = op.get("type", "?")
+    if op_type == "edit_mode":
+        before = op.get("before_editing_note_id", None)
+        after = op.get("after_editing_note_id", None)
+        return f"edit_mode({before}->{after})"
+    if op_type in {"update_content", "move", "collapse"}:
+        note_id = op.get("note_id", None)
+        return f"{op_type}({note_id})"
+    if op_type == "create_note":
+        record = op.get("record", {})
+        if isinstance(record, dict):
+            created_id = record.get("id", None)
+            return f"create_note({created_id})"
+        return "create_note(?)"
+    if op_type in {"delete_subtree", "paste_subtree"}:
+        records = op.get("records", [])
+        if isinstance(records, list) and records:
+            root_id = getattr(records[0], "id", None)
+            return f"{op_type}({root_id})"
+        return f"{op_type}(?)"
+    return str(op_type)
+
+
+def _summarize_stack(ops: List[dict], max_items: int) -> str:
+    if not isinstance(max_items, int) or max_items <= 0:
+        raise ValueError("max_items must be a positive integer")
+    start = max(0, len(ops) - max_items)
+    return "[" + ", ".join(_summarize_op(op) for op in ops[start:]) + "]"
+
+
 def _normalize_viewport_snapshot(viewport: Dict[str, object]) -> Dict[str, object]:
     if not isinstance(viewport, dict):
         raise ValueError("viewport must be an object")
@@ -368,6 +399,15 @@ def record_collapse(
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
+
+    # Selecting a collapsed note triggers an automatic expand request so the user can
+    # see/edit its contents. That auto-expand should not consume a separate undo step.
+    if before is True and after is False and ctx.history:
+        last_op = ctx.history[-1]
+        if last_op.get("type") == "edit_mode" and last_op.get("after_editing_note_id") == note_id:
+            ctx.redo.clear()
+            return
+
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -470,6 +510,16 @@ def record_edit_mode(
         ctx.history.append(op)
     ctx.redo.clear()
 
+    logger.info(
+        "undo.stack record_edit_mode client=%s before=%s after=%s history_len=%s redo_len=%s history_tail=%s",
+        client_id,
+        before_editing_note_id,
+        after_editing_note_id,
+        len(ctx.history),
+        len(ctx.redo),
+        _summarize_stack(ctx.history, 12),
+    )
+
 
 def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
     ctx = _ctx(client_id)
@@ -479,6 +529,12 @@ def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
         raise ValueError("undo_context must be a non-empty string")
 
     if ctx.last_undo_context != undo_context:
+        logger.info(
+            "undo.stack reset client=%s from=%s to=%s",
+            client_id,
+            ctx.last_undo_context,
+            undo_context,
+        )
         ctx.history.clear()
         ctx.redo.clear()
         ctx.last_undo_context = undo_context
@@ -488,7 +544,25 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     ctx = _ctx(client_id)
     if not ctx.history:
         return None
+
+    logger.info(
+        "undo.stack undo_start client=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+        client_id,
+        len(ctx.history),
+        len(ctx.redo),
+        _summarize_stack(ctx.history, 12),
+        _summarize_stack(ctx.redo, 12),
+    )
+
     op = ctx.history.pop()
+
+    logger.info(
+        "undo.stack undo_pop client=%s op=%s history_len=%s redo_len=%s",
+        client_id,
+        _summarize_op(op),
+        len(ctx.history),
+        len(ctx.redo),
+    )
 
     if "type" not in op:
         raise RuntimeError(f"Undo op missing required key: type | op={op}")
@@ -528,6 +602,16 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
                     if "type" not in op:
                         raise RuntimeError(f"Undo op missing required key: type | op={op}")
                     op_type = op["type"]
+
+                    logger.info(
+                        "undo.stack undo_coalesce client=%s coalesced_op=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+                        client_id,
+                        _summarize_op(op),
+                        len(ctx.history),
+                        len(ctx.redo),
+                        _summarize_stack(ctx.history, 12),
+                        _summarize_stack(ctx.redo, 12),
+                    )
 
     undo_viewport = op["viewport"]
 
@@ -602,6 +686,18 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         focus_note_id,
         view_anchor_root_id,
     )
+
+    logger.info(
+        "undo.stack undo_finish client=%s opType=%s focusNoteId=%s editingNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+        client_id,
+        op_type,
+        focus_note_id,
+        editing_note_id,
+        len(ctx.history),
+        len(ctx.redo),
+        _summarize_stack(ctx.history, 12),
+        _summarize_stack(ctx.redo, 12),
+    )
     return payload
 
 
@@ -609,7 +705,25 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     ctx = _ctx(client_id)
     if not ctx.redo:
         return None
+
+    logger.info(
+        "undo.stack redo_start client=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+        client_id,
+        len(ctx.history),
+        len(ctx.redo),
+        _summarize_stack(ctx.history, 12),
+        _summarize_stack(ctx.redo, 12),
+    )
+
     op = ctx.redo.pop()
+
+    logger.info(
+        "undo.stack redo_pop client=%s op=%s history_len=%s redo_len=%s",
+        client_id,
+        _summarize_op(op),
+        len(ctx.history),
+        len(ctx.redo),
+    )
     redo_viewport = op["viewport"]
 
     if "type" not in op:
@@ -712,5 +826,17 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         op_type,
         focus_note_id,
         view_anchor_root_id,
+    )
+
+    logger.info(
+        "undo.stack redo_finish client=%s opType=%s focusNoteId=%s editingNoteId=%s history_len=%s redo_len=%s history_tail=%s redo_tail=%s",
+        client_id,
+        op_type,
+        focus_note_id,
+        editing_note_id,
+        len(ctx.history),
+        len(ctx.redo),
+        _summarize_stack(ctx.history, 12),
+        _summarize_stack(ctx.redo, 12),
     )
     return payload
