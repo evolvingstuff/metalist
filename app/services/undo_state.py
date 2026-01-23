@@ -401,10 +401,15 @@ def record_collapse(
     ctx = _ctx(client_id)
 
     # Selecting a collapsed note triggers an automatic expand request so the user can
-    # see/edit its contents. That auto-expand should not consume a separate undo step.
+    # see/edit its contents. That auto-expand should not consume a separate undo step;
+    # instead, fold the collapse-state change into the preceding edit_mode op so a
+    # single undo step both exits edit mode and restores the prior collapsed state.
     if before is True and after is False and ctx.history:
         last_op = ctx.history[-1]
         if last_op.get("type") == "edit_mode" and last_op.get("after_editing_note_id") == note_id:
+            last_op["auto_expand_note_id"] = note_id
+            last_op["auto_expand_before_collapsed"] = True
+            last_op["auto_expand_after_collapsed"] = False
             ctx.redo.clear()
             return
 
@@ -658,6 +663,18 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "edit_mode":
         ctx.redo.append(op)
+
+        auto_expand_note_id = op.get("auto_expand_note_id")
+        if auto_expand_note_id is not None:
+            if not isinstance(auto_expand_note_id, str) or not auto_expand_note_id:
+                raise RuntimeError(f"Undo op edit_mode.auto_expand_note_id must be a non-empty string | op={op}")
+            before_collapsed = op.get("auto_expand_before_collapsed")
+            if not isinstance(before_collapsed, bool):
+                raise RuntimeError(
+                    f"Undo op edit_mode.auto_expand_before_collapsed must be a bool | op={op}"
+                )
+            apply_set_collapse(auto_expand_note_id, bool(before_collapsed))
+            generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported undo op: {op_type}")
 
@@ -799,6 +816,18 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "edit_mode":
         ctx.history.append(op)
+
+        auto_expand_note_id = op.get("auto_expand_note_id")
+        if auto_expand_note_id is not None:
+            if not isinstance(auto_expand_note_id, str) or not auto_expand_note_id:
+                raise RuntimeError(f"Redo op edit_mode.auto_expand_note_id must be a non-empty string | op={op}")
+            after_collapsed = op.get("auto_expand_after_collapsed")
+            if not isinstance(after_collapsed, bool):
+                raise RuntimeError(
+                    f"Redo op edit_mode.auto_expand_after_collapsed must be a bool | op={op}"
+                )
+            apply_set_collapse(auto_expand_note_id, bool(after_collapsed))
+            generate_new_uuid()
     else:
         raise RuntimeError(f"Unsupported redo op: {op_type}")
 

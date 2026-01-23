@@ -460,6 +460,15 @@ Edit-mode transitions are recorded too:
 - Exiting edit mode (Esc/click-outside/Cmd+P/tab switches/etc) records an `edit_mode` op.
 - Undo/redo of these ops uses `scrollRestore.editingNoteId` (string or null) to enter/exit editing deterministically.
 
+Important UX rule:
+- If selecting a note triggers an automatic **expand** request (because the note was collapsed), that expand is treated as part of “enter edit mode” and **must not** consume its own undo step.
+  - Otherwise, `Cmd+Z` appears to “undo selection twice” (first undoing the expand, then undoing the selection).
+  - Undoing that selection should also restore the previous collapsed state.
+
+Concrete expectations:
+- Select collapsed note `N` (auto-expands) → `Cmd+Z` exits edit mode and re-collapses `N`.
+- Select collapsed note `N` → delete `N` → `Cmd+Z` restores `N` (expanded+selected) → `Cmd+Z` exits edit mode and re-collapses `N`.
+
 The server also coalesces “empty” edit sessions:
 - If you enter edit mode and then immediately exit without any intervening edits, the history keeps **one** `edit_mode` op.
   - Undo re-enters edit mode.
@@ -487,6 +496,7 @@ async function actionSelectNote(noteId) {
 
   await actionRefreshView();
 }
+
 
 // Exit edit mode (Esc / click-outside)
 async function actionDeselectNote() {

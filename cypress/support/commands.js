@@ -11,5 +11,10 @@ Cypress.Commands.add('visitApp', (path) => {
     throw new Error(`visitApp expects a string path, got ${typeof path}`)
   }
   const separator = path.includes('?') ? '&' : '?'
-  cy.visit(`${path}${separator}${cacheBuster()}`)
+  cy.visit(`${path}${separator}${cacheBuster()}`, {
+    onBeforeLoad(win) {
+      win.localStorage.clear()
+      win.sessionStorage.clear()
+    },
+  })
 })

@@ -1,73 +1,81 @@
 describe('Undo selection after delete', () => {
-  it('restores the previously selected note after undoing a delete', () => {
+  it('restores then exits edit mode on the second undo', () => {
     cy.resetTestState()
 
-    cy.intercept('POST', '/api2/notes/view').as('initialView')
+    cy.intercept('POST', '/api2/notes/view').as('view')
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
-    cy.intercept('POST', '/api2/notes/new-sibling/*').as('createSibling')
-    cy.intercept('POST', '/api2/notes/*/move').as('moveNote')
+    cy.intercept('POST', '/api2/notes/new-child/*').as('createChild')
+    cy.intercept('POST', '/api2/notes/*/collapse').as('collapse')
+    cy.intercept('POST', '/api2/notes/*/expand').as('expand')
     cy.intercept('DELETE', '/api2/notes/*').as('deleteNote')
     cy.intercept('POST', '/api2/notes/undo*').as('undo')
 
     cy.clearLocalStorage()
     cy.visitApp('/')
-    cy.wait('@initialView')
+    cy.wait('@view')
 
-    cy.get('body').type('{meta}{enter}')
+    cy.get('#search-input').should('exist').focus().type('aa{enter}')
     cy.wait('@createRoot').then((interception) => {
       expect(interception.response).to.exist
       expect(interception.response.body).to.have.property('id')
-      cy.wrap(interception.response.body.id).as('noteIdA')
+      cy.wrap(interception.response.body.id).as('noteId')
     })
 
-    cy.get('body').type('{meta}{enter}')
-    cy.wait('@createSibling').then((interception) => {
-      expect(interception.response).to.exist
-      expect(interception.response.body).to.have.property('id')
-      cy.wrap(interception.response.body.id).as('noteIdB')
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"]`, { timeout: 10000 }).should('have.class', 'editing')
     })
 
-    cy.get('@noteIdA').then((noteIdA) => {
-      cy.get(`[data-note-id="${noteIdA}"] > .note-content`, { timeout: 10000 }).click()
-      cy.get(`[data-note-id="${noteIdA}"]`, { timeout: 10000 }).should('have.class', 'editing')
-    })
-
-    cy.get('body').trigger('keydown', {
-      key: 'ArrowDown',
-      keyCode: 40,
-      which: 40,
+    // Make the root note collapsible by giving it a child, then collapse it.
+    cy.document().trigger('keydown', {
+      key: 'Enter',
+      keyCode: 13,
+      which: 13,
       metaKey: true,
+      ctrlKey: false,
+      shiftKey: true,
       bubbles: true,
       cancelable: true,
     })
-    cy.wait('@moveNote')
+    cy.wait('@createChild')
 
-    cy.get('@noteIdB').then((noteIdB) => {
-      cy.get(`[data-note-id="${noteIdB}"] > .note-content`, { timeout: 10000 }).click()
-      cy.get(`[data-note-id="${noteIdB}"]`, { timeout: 10000 }).should('have.class', 'editing')
-    })
+    cy.get('#search-input').click()
+    cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
 
-    cy.get('body').trigger('keydown', {
-      key: 'Backspace',
-      keyCode: 8,
-      which: 8,
-      metaKey: true,
-      bubbles: true,
-      cancelable: true,
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"] > .note-collapse-toggle`, { timeout: 10000 })
+        .should('exist')
+        .click({ force: true })
     })
+    cy.wait('@collapse')
+    cy.wait('@view')
+
+    // Select the collapsed note; it auto-expands into edit mode.
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"] > .note-content`, { timeout: 10000 }).click()
+    })
+    cy.wait('@expand')
+    cy.wait('@view')
+
+    cy.get('body').type('{meta}{backspace}')
     cy.wait('@deleteNote')
+    cy.wait('@view')
+
+    // After delete+refresh the search input may be focused; Cmd+Z is ignored inside inputs.
+    cy.get('#notes-container').click('topLeft', { force: true })
 
     cy.get('body').type('{meta}z')
     cy.wait('@undo')
-    cy.get('@noteIdB').then((noteIdB) => {
-      cy.get(`[data-note-id="${noteIdB}"]`, { timeout: 10000 }).should('have.class', 'editing')
+    cy.wait('@view')
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"]`, { timeout: 10000 }).should('have.class', 'editing')
     })
 
     cy.get('body').type('{meta}z')
     cy.wait('@undo')
-    cy.get('@noteIdA').then((noteIdA) => {
-      cy.get(`[data-note-id="${noteIdA}"]`, { timeout: 10000 }).should('have.class', 'editing')
+    cy.wait('@view')
+    cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"]`, { timeout: 10000 }).should('have.class', 'collapsed')
     })
   })
 })
-

@@ -114,7 +114,7 @@ export async function createNote() {
         isDirty: ModeContext.isDirty
     });
 
-    const currentNoteId = ModeContext.currentNoteId;
+    const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
     const shouldScrollToTopAfterCreate = !currentNoteId;
 
     if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
