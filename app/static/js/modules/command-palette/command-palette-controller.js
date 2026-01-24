@@ -422,6 +422,10 @@ class CommandPaletteController {
             return;
         }
 
+        // Entering the command palette is a global context boundary.
+        // Any subsequent undo/redo should not traverse operations from before.
+        ModeContext.bumpUndoContextEpoch('commandPalette.open');
+
         this._previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         this._previousScrollY = Math.max(0, Math.round(window.scrollY));
 

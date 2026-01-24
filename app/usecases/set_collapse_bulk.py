@@ -6,7 +6,7 @@ from typing import Dict, List
 
 from app.services.store import store
 from app.services.sync import generate_new_uuid
-from app.services.undo_state import record_collapse
+from app.services.undo_state import reset_undo_stack
 from app.usecases.base import QueryCommand
 from app.usecases.collapse import apply_set_collapse_bulk
 
@@ -23,6 +23,7 @@ class CmdSetCollapseBulk(QueryCommand):
         return f"CmdSetCollapseBulk(count={len(self.note_ids)}, collapsed={self.collapsed}, client={self.client_id})"
 
     def execute(self) -> Dict[str, object]:
+        reset_undo_stack(self.client_id, self.undo_context)
         note_ids_to_update: List[str] = []
         before_by_id: Dict[str, bool] = {}
 
@@ -42,15 +43,6 @@ class CmdSetCollapseBulk(QueryCommand):
             if after is not bool(self.collapsed):
                 print(f"FATAL: bulk collapse failed for {note_id}")
                 os._exit(1)
-
-            record_collapse(
-                self.client_id,
-                self.undo_context,
-                note_id,
-                before=before_by_id[note_id],
-                after=after,
-                viewport=self.viewport,
-            )
             updated_count += 1
 
         status = "unchanged"

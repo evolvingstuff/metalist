@@ -159,12 +159,17 @@ async function maybeFetchMore(state, previousKnownCount, nearEndFlag) {
         state.lastKnownCount = currentKnown;
         state.noMoreRoots = false;
         refreshOverlayMetrics();
-    } else if (nearEndFlag && searchActive) {
-        // Search results can legitimately be complete: stop polling for this context.
-        state.noMoreRoots = true;
     } else if (nearEndFlag) {
-        // Fail fast: at visual end, but server did not extend
-        throw new Error('Infinite scroll blocked: near end but server returned no new roots');
+        const totalRoots = searchActive ? ModeContext.searchRootCountTotal : ModeContext.rootCountTotal;
+        if (totalRoots < currentKnown) {
+            throw new Error(`Invariant violation: knownRootCount (${currentKnown}) exceeds totalRoots (${totalRoots})`);
+        }
+        if (totalRoots === currentKnown) {
+            state.noMoreRoots = true;
+        } else {
+            // Fail fast: at visual end, but server did not extend
+            throw new Error('Infinite scroll blocked: near end but server returned no new roots');
+        }
     }
     state.pendingFetch = false;
 }

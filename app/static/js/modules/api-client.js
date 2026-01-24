@@ -17,13 +17,18 @@ function captureUndoContext() {
         throw new Error('ModeContext.activeTabId must be a non-empty string');
     }
 
+    const epoch = ModeContext.undoContextEpoch;
+    if (!Number.isInteger(epoch) || epoch < 0) {
+        throw new Error('ModeContext.undoContextEpoch must be a non-negative integer');
+    }
+
     const searchQuery = ModeContext.searchQuery;
     if (searchQuery !== null && typeof searchQuery !== 'string') {
         throw new Error('ModeContext.searchQuery must be a string or null');
     }
 
     const normalizedSearch = searchQuery === null ? '' : searchQuery;
-    return `tab:${tabId}|search:${normalizedSearch}`;
+    return `tab:${tabId}|search:${normalizedSearch}|epoch:${epoch}`;
 }
 
 export const NotesAPI = {

@@ -48,6 +48,8 @@ class ModeContext {
         // Multi-device sync
         this._clientId = this._generateClientId();
         this._lastUpdateUUID = null;
+
+        this._undoContextEpoch = this._loadUndoContextEpoch();
         
         // Clipboard mode tracking
         this._clipboardMode = 'system'; // 'system' for text, 'note' for note copying
@@ -64,6 +66,8 @@ class ModeContext {
         this._tabKnownRootIds = Object.create(null);
         this._tabSeenRootIds = Object.create(null);
         this._tabRootOrder = Object.create(null);
+        this._tabRootCountTotals = Object.create(null);
+        this._tabSearchRootCountTotals = Object.create(null);
         this._tabExecutedSearchQuery = Object.create(null);
         this._ensureTabContainers(this._activeTabId);
         this._lowestVisibleRootId = null;
@@ -92,9 +96,49 @@ class ModeContext {
         if (!Array.isArray(this._tabRootOrder[tabId])) {
             this._tabRootOrder[tabId] = [];
         }
+        if (!Object.prototype.hasOwnProperty.call(this._tabRootCountTotals, tabId)) {
+            this._tabRootCountTotals[tabId] = null;
+        }
+        if (!Object.prototype.hasOwnProperty.call(this._tabSearchRootCountTotals, tabId)) {
+            this._tabSearchRootCountTotals[tabId] = null;
+        }
         if (typeof this._tabExecutedSearchQuery[tabId] !== 'string') {
             this._tabExecutedSearchQuery[tabId] = '';
         }
+    }
+
+    setRootCountTotals(rootCountTotal, searchRootCountTotal, tabId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        this._ensureTabContainers(tabId);
+        if (!Number.isInteger(rootCountTotal) || rootCountTotal < 0) {
+            throw new Error('rootCountTotal must be a non-negative integer');
+        }
+        if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
+            throw new Error('searchRootCountTotal must be a non-negative integer');
+        }
+        this._tabRootCountTotals[tabId] = rootCountTotal;
+        this._tabSearchRootCountTotals[tabId] = searchRootCountTotal;
+        return this;
+    }
+
+    get rootCountTotal() {
+        this._ensureTabContainers(this._activeTabId);
+        const value = this._tabRootCountTotals[this._activeTabId];
+        if (!Number.isInteger(value) || value < 0) {
+            throw new Error('ModeContext.rootCountTotal is unavailable (notes.view not processed yet)');
+        }
+        return value;
+    }
+
+    get searchRootCountTotal() {
+        this._ensureTabContainers(this._activeTabId);
+        const value = this._tabSearchRootCountTotals[this._activeTabId];
+        if (!Number.isInteger(value) || value < 0) {
+            throw new Error('ModeContext.searchRootCountTotal is unavailable (notes.view not processed yet)');
+        }
+        return value;
     }
 
     getExecutedSearchQuery(tabId) {
@@ -1383,6 +1427,37 @@ class ModeContext {
             sessionStorage.setItem('metalist_client_id', clientId);
         }
         return clientId;
+    }
+
+    _loadUndoContextEpoch() {
+        const raw = sessionStorage.getItem('metalist_undo_context_epoch');
+        if (raw === null) {
+            sessionStorage.setItem('metalist_undo_context_epoch', '0');
+            return 0;
+        }
+        const parsed = Number(raw);
+        if (!Number.isInteger(parsed) || parsed < 0) {
+            throw new Error('metalist_undo_context_epoch must be a non-negative integer string');
+        }
+        return parsed;
+    }
+
+    bumpUndoContextEpoch(reason) {
+        if (typeof reason !== 'string' || reason.length === 0) {
+            throw new Error('bumpUndoContextEpoch requires reason string');
+        }
+        const next = this._undoContextEpoch + 1;
+        if (!Number.isInteger(next) || next < 0) {
+            throw new Error('Undo context epoch overflow');
+        }
+        this._undoContextEpoch = next;
+        sessionStorage.setItem('metalist_undo_context_epoch', String(next));
+        Logger.logAction('undo_context_epoch.bump', { reason, epoch: next });
+        return this;
+    }
+
+    get undoContextEpoch() {
+        return this._undoContextEpoch;
     }
 
     get clientId() {

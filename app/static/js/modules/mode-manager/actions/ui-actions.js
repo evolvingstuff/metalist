@@ -147,147 +147,149 @@ export async function actionRefreshAndMaybeSelect(options) {
         return null;
     }
     ModeContext.setLoading(true);
-
-    const requestStartedAt = performance.now();
-    const forcedAnchorId = typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0
-        ? options.visibleRootAnchorId
-        : null;
-    let anchorId = forcedAnchorId;
-    if (!anchorId) {
-        anchorId = ModeContext.getRootAnchorId();
-    }
-    if (!anchorId) {
-        anchorId = ModeContext.getLastKnownRootId();
-    }
-    const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, anchorId);
-    if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
-        throw new Error('notes.view response missing snapshot payload');
-    }
-    if (ModeContext.activeTabId !== requestTabId) {
-        Logger.logDebug('Discarding snapshot for inactive tab', {
-            requestTabId,
-            activeTabId: ModeContext.activeTabId,
-        });
-        ModeContext.setLoading(false);
-        return null;
-    }
-    const { snapshot } = viewResponse;
-    const hasDiffOps = Array.isArray(snapshot.diffOps);
-    const previousHashes = ModeContext.getNoteHashPayload();
-    if (!hasDiffOps) {
-        ModeContext.syncNoteHashesFromSnapshot(snapshot);
-        if (!Array.isArray(snapshot.structure)) {
-            throw new Error('notes.view snapshot missing structure array');
+    return await (async () => {
+        const requestStartedAt = performance.now();
+        const forcedAnchorId = typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0
+            ? options.visibleRootAnchorId
+            : null;
+        let anchorId = forcedAnchorId;
+        if (!anchorId) {
+            anchorId = ModeContext.getRootAnchorId();
         }
-    } else if (Array.isArray(snapshot.rootIds)) {
-        ModeContext.syncRootIds(snapshot.rootIds);
-    }
-
-    updateSearchResultsCount(snapshot, requestTabId);
-    const rootNotesKnown = ModeContext.knownRootCount;
-    const rootNotesSeen = ModeContext.seenRootCount;
-    const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'
-        ? Object.keys(snapshot.notes).length
-        : 0;
-    const roundtripMs = performance.now() - requestStartedAt;
-    console.log(' [PERF] notes.view roundtrip:', {
-        ms: Number(roundtripMs.toFixed(2))
-    });
-
-    if (CONFIG.DEBUG.LOG_API_CALLS) {
-        console.log(' [SNAPSHOT] notes.view summary:', {
-            treeHash: snapshot.treeHash,
-            structureCount: Array.isArray(snapshot.structure) ? snapshot.structure.length : 0,
-            notesCount: snapshot.notes && typeof snapshot.notes === 'object' ? Object.keys(snapshot.notes).length : 0,
-            locksCount: snapshot.locks && typeof snapshot.locks === 'object' ? Object.keys(snapshot.locks).length : 0,
-            editingNoteId: snapshot.editingNoteId
-        });
-    }
-
-    const renderStartedAt = performance.now();
-    const diffResult = applyDifferentialView(snapshot, { previousHashes });
-    const notesContainer = diffResult.notesContainer;
-    if (!notesContainer) {
-        throw new Error('Notes container not found after diff application');
-    }
-
-    syncTagBar(diffResult.editingNoteElement);
-
-    // If this is initial page load, fade in the entire app
-    if (ModeContext.isInitialPageLoad) {
-        const appContainer = document.getElementById('app');
-        if (appContainer) {
-            appContainer.classList.add('loaded');
+        if (!anchorId) {
+            anchorId = ModeContext.getLastKnownRootId();
         }
-        ModeContext.markInitialPageLoadComplete();
-    }
-
-    let contentHtml = null;
-    let result = null;
-
-    if (noteId) {
-        const noteElement = DOMUtils.getNoteById(noteId);
-        contentHtml = DOMUtils.getNoteContentHTML(noteElement);
-        const noteContentElement = DOMUtils.getNoteContent(noteElement);
-
-        if (ModeContext.isEditing) {
-                        
-            DOMUtils.setNoteEditable(noteElement, true);
-            syncTagBar(noteElement);
-
-            if (ModeContext.isCaretHidden) {
-                DOMUtils.hideCaret(noteElement);
-            } else {
-                DOMUtils.revealCaret(noteElement);
+        const viewResponse = await NotesAPI.fetchView(noteId, requestSearchQuery, requestTabId, anchorId);
+        if (!viewResponse || typeof viewResponse.snapshot !== 'object') {
+            throw new Error('notes.view response missing snapshot payload');
+        }
+        if (ModeContext.activeTabId !== requestTabId) {
+            Logger.logDebug('Discarding snapshot for inactive tab', {
+                requestTabId,
+                activeTabId: ModeContext.activeTabId,
+            });
+            return null;
+        }
+        const { snapshot } = viewResponse;
+        const hasDiffOps = Array.isArray(snapshot.diffOps);
+        const previousHashes = ModeContext.getNoteHashPayload();
+        if (!hasDiffOps) {
+            ModeContext.syncNoteHashesFromSnapshot(snapshot);
+            if (!Array.isArray(snapshot.structure)) {
+                throw new Error('notes.view snapshot missing structure array');
             }
-            
-            if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {
-                DOMUtils.focusNoteEdge(noteElement, 'start');
+        } else if (Array.isArray(snapshot.rootIds)) {
+            ModeContext.syncRootIds(snapshot.rootIds);
+        }
+
+        updateSearchResultsCount(snapshot, requestTabId);
+        ModeContext.setRootCountTotals(snapshot.rootCountTotal, snapshot.searchRootCountTotal, requestTabId);
+        const rootNotesKnown = ModeContext.knownRootCount;
+        const rootNotesSeen = ModeContext.seenRootCount;
+        const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'
+            ? Object.keys(snapshot.notes).length
+            : 0;
+        const roundtripMs = performance.now() - requestStartedAt;
+        console.log(' [PERF] notes.view roundtrip:', {
+            ms: Number(roundtripMs.toFixed(2))
+        });
+
+        if (CONFIG.DEBUG.LOG_API_CALLS) {
+            console.log(' [SNAPSHOT] notes.view summary:', {
+                treeHash: snapshot.treeHash,
+                structureCount: Array.isArray(snapshot.structure) ? snapshot.structure.length : 0,
+                notesCount: snapshot.notes && typeof snapshot.notes === 'object' ? Object.keys(snapshot.notes).length : 0,
+                locksCount: snapshot.locks && typeof snapshot.locks === 'object' ? Object.keys(snapshot.locks).length : 0,
+                editingNoteId: snapshot.editingNoteId
+            });
+        }
+
+        const renderStartedAt = performance.now();
+        const diffResult = applyDifferentialView(snapshot, { previousHashes });
+        const notesContainer = diffResult.notesContainer;
+        if (!notesContainer) {
+            throw new Error('Notes container not found after diff application');
+        }
+
+        syncTagBar(diffResult.editingNoteElement);
+
+        // If this is initial page load, fade in the entire app
+        if (ModeContext.isInitialPageLoad) {
+            const appContainer = document.getElementById('app');
+            if (appContainer) {
+                appContainer.classList.add('loaded');
+            }
+            ModeContext.markInitialPageLoadComplete();
+        }
+
+        let contentHtml = null;
+        let result = null;
+
+        if (noteId) {
+            const noteElement = DOMUtils.getNoteById(noteId);
+            contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+            const noteContentElement = DOMUtils.getNoteContent(noteElement);
+
+            if (ModeContext.isEditing) {
+                DOMUtils.setNoteEditable(noteElement, true);
+                syncTagBar(noteElement);
+
+                if (ModeContext.isCaretHidden) {
+                    DOMUtils.hideCaret(noteElement);
+                } else {
+                    DOMUtils.revealCaret(noteElement);
+                }
+
+                if (CONFIG.EDITOR.DEFAULT_CURSOR_POSITION === 'START') {
+                    DOMUtils.focusNoteEdge(noteElement, 'start');
+                } else {
+                    DOMUtils.focusNoteEdge(noteElement, 'end');
+                }
+
+                attachEditorSurface(noteId, noteContentElement);
             } else {
-                DOMUtils.focusNoteEdge(noteElement, 'end');
+                detachEditorSurface();
+                clearTagBar();
             }
 
-            attachEditorSurface(noteId, noteContentElement);
+            result = contentHtml;
         } else {
             detachEditorSurface();
             clearTagBar();
+            result = null;
         }
 
-        result = contentHtml;
-    } else {
-                
-        detachEditorSurface();
-        clearTagBar();
-        result = null;
-    }
+        if (options.startedAt) {  //otherwise called by ending editing polling?
+            const renderEndedAt = performance.now();
+            const renderMs = renderEndedAt - renderStartedAt;
+            const totalMs = renderEndedAt - options.startedAt;
+            const context = options.context ? options.context : '???';
 
-    if (options.startedAt) {  //otherwise called by ending editing polling?
-        const renderEndedAt = performance.now();
-        const renderMs = renderEndedAt - renderStartedAt;
-        const totalMs = renderEndedAt - options.startedAt;
-        const context = options.context ? options.context : '???';
+            const vdom_ops = Number.isInteger(diffResult.vdomOperations) ? diffResult.vdomOperations : 0;
 
-        const vdom_ops = Number.isInteger(diffResult.vdomOperations) ? diffResult.vdomOperations : 0;
+            if (typeof options.expectedUpdatedNotesMax === 'number' && updatedNotesCount > options.expectedUpdatedNotesMax) {
+                throw new Error(
+                    `Invariant violation: expected <=${options.expectedUpdatedNotesMax} updated notes but got ${updatedNotesCount} (context=${context})`
+                );
+            }
+            if (typeof options.expectedVdomOpsMax === 'number' && vdom_ops > options.expectedVdomOpsMax) {
+                throw new Error(
+                    `Invariant violation: expected <=${options.expectedVdomOpsMax} vdom ops but got ${vdom_ops} (context=${context})`
+                );
+            }
 
-        if (typeof options.expectedUpdatedNotesMax === 'number' && updatedNotesCount > options.expectedUpdatedNotesMax) {
-            throw new Error(
-                `Invariant violation: expected <=${options.expectedUpdatedNotesMax} updated notes but got ${updatedNotesCount} (context=${context})`
-            );
+            console.log(' [PERF] notes.view render:', {
+                ms: Number(renderMs.toFixed(2))
+            });
+            const totalNotesCount = ModeContext.noteCount;
+            updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
+                rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
         }
-        if (typeof options.expectedVdomOpsMax === 'number' && vdom_ops > options.expectedVdomOpsMax) {
-            throw new Error(
-                `Invariant violation: expected <=${options.expectedVdomOpsMax} vdom ops but got ${vdom_ops} (context=${context})`
-            );
+
+        return result;
+    })().finally(() => {
+        if (ModeContext.isLoading) {
+            ModeContext.setLoading(false);
         }
-
-        console.log(' [PERF] notes.view render:', {
-            ms: Number(renderMs.toFixed(2))
-        });
-        const totalNotesCount = ModeContext.noteCount;
-        updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
-            rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
-    }
-
-    ModeContext.setLoading(false);
-    return result;
+    });
 }

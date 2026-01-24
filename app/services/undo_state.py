@@ -523,27 +523,7 @@ def record_edit_mode(
         "viewAnchorRootId": view_anchor_root_id,
     }
 
-    # Coalesce "empty" edit sessions (enter → exit with no intervening ops) into a
-    # single undo/redo stage so the user doesn't have to traverse two history
-    # entries for a no-op open/close.
-    #
-    # Intended behavior:
-    # - Select then deselect with no edits => one history entry.
-    #   Undo re-enters edit mode; redo exits.
-    if (
-        before_editing_note_id is not None
-        and after_editing_note_id is None
-        and ctx.history
-        and "type" in ctx.history[-1]
-        and ctx.history[-1]["type"] == "edit_mode"
-        and "before_editing_note_id" in ctx.history[-1]
-        and ctx.history[-1]["before_editing_note_id"] is None
-        and "after_editing_note_id" in ctx.history[-1]
-        and ctx.history[-1]["after_editing_note_id"] == before_editing_note_id
-    ):
-        ctx.history[-1] = op
-    else:
-        ctx.history.append(op)
+    ctx.history.append(op)
     ctx.redo.clear()
 
     logger.info(
@@ -574,6 +554,18 @@ def maybe_reset_on_context(client_id: str, undo_context: str) -> None:
         ctx.history.clear()
         ctx.redo.clear()
         ctx.last_undo_context = undo_context
+
+
+def reset_undo_stack(client_id: str, undo_context: str) -> None:
+    if not isinstance(undo_context, str):
+        raise TypeError('undo_context must be a string')
+    if undo_context == "":
+        raise ValueError('undo_context must be a non-empty string')
+
+    ctx = _ctx(client_id)
+    ctx.history.clear()
+    ctx.redo.clear()
+    ctx.last_undo_context = undo_context
 
 
 def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:

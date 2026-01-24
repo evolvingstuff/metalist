@@ -137,14 +137,13 @@ export async function actionUndo() {
     }
 
     ModeContext.setLoading(true);
-
     Logger.logAction('undo_api_call_start', { timestamp: Date.now() });
-    
-    const result = await NotesAPI.undo();
-    
+    const result = await NotesAPI.undo().finally(() => {
+        if (ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+        }
+    });
     Logger.logDebug('Undo API response', result, Logger.LogCategory.DEBUG);
-
-    ModeContext.setLoading(false);
 
     if (result.status === 'noop') {
         Logger.logAction('undo_noop', { message: result.message });
@@ -248,14 +247,13 @@ export async function actionRedo() {
     }
 
     ModeContext.setLoading(true);
-
     Logger.logAction('redo_api_call_start', { timestamp: Date.now() });
-    
-    const result = await NotesAPI.redo();
-    
+    const result = await NotesAPI.redo().finally(() => {
+        if (ModeContext.isLoading) {
+            ModeContext.setLoading(false);
+        }
+    });
     Logger.logDebug('Redo API response', result, Logger.LogCategory.DEBUG);
-
-    ModeContext.setLoading(false);
 
     if (result.status === 'noop') {
         Logger.logAction('redo_noop', { message: result.message });
