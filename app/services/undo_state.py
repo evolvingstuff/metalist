@@ -17,27 +17,57 @@ logger = logging.getLogger(__name__)
 
 
 def _summarize_op(op: dict) -> str:
-    op_type = op.get("type", "?")
+    if not isinstance(op, dict):
+        raise TypeError(f"Undo op must be a dict, got {type(op)}")
+    if "type" not in op:
+        raise RuntimeError(f"Undo op missing required key 'type' | op={op}")
+
+    op_type = op["type"]
+    if not isinstance(op_type, str) or not op_type:
+        raise RuntimeError(f"Undo op type must be a non-empty string | op={op}")
+
     if op_type == "edit_mode":
-        before = op.get("before_editing_note_id", None)
-        after = op.get("after_editing_note_id", None)
+        before = op["before_editing_note_id"]
+        after = op["after_editing_note_id"]
+        if before is not None and (not isinstance(before, str) or not before):
+            raise RuntimeError(
+                f"Undo op edit_mode.before_editing_note_id must be a non-empty string or null | op={op}"
+            )
+        if after is not None and (not isinstance(after, str) or not after):
+            raise RuntimeError(
+                f"Undo op edit_mode.after_editing_note_id must be a non-empty string or null | op={op}"
+            )
         return f"edit_mode({before}->{after})"
+
     if op_type in {"update_content", "move", "collapse"}:
-        note_id = op.get("note_id", None)
+        note_id = op["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise RuntimeError(f"Undo op {op_type}.note_id must be a non-empty string | op={op}")
         return f"{op_type}({note_id})"
+
     if op_type == "create_note":
-        record = op.get("record", {})
-        if isinstance(record, dict):
-            created_id = record.get("id", None)
-            return f"create_note({created_id})"
-        return "create_note(?)"
+        record = op["record"]
+        if not isinstance(record, dict):
+            raise RuntimeError(f"Undo op create_note.record must be a dict | op={op}")
+        if "id" not in record:
+            raise RuntimeError(f"Undo op create_note.record missing id | op={op}")
+        created_id = record["id"]
+        if not isinstance(created_id, str) or not created_id:
+            raise RuntimeError(
+                f"Undo op create_note.record.id must be a non-empty string | op={op}"
+            )
+        return f"create_note({created_id})"
+
     if op_type in {"delete_subtree", "paste_subtree"}:
-        records = op.get("records", [])
-        if isinstance(records, list) and records:
-            root_id = getattr(records[0], "id", None)
-            return f"{op_type}({root_id})"
-        return f"{op_type}(?)"
-    return str(op_type)
+        records = op["records"]
+        if not isinstance(records, list) or not records:
+            raise RuntimeError(f"Undo op {op_type}.records must be a non-empty list | op={op}")
+        root_id = records[0].id
+        if not isinstance(root_id, str) or not root_id:
+            raise RuntimeError(f"Undo op {op_type}.records[0].id must be a non-empty string | op={op}")
+        return f"{op_type}({root_id})"
+
+    return op_type
 
 
 def _summarize_stack(ops: List[dict], max_items: int) -> str:
@@ -406,7 +436,8 @@ def record_collapse(
     # single undo step both exits edit mode and restores the prior collapsed state.
     if before is True and after is False and ctx.history:
         last_op = ctx.history[-1]
-        if last_op.get("type") == "edit_mode" and last_op.get("after_editing_note_id") == note_id:
+        last_op_type = last_op["type"]
+        if last_op_type == "edit_mode" and last_op["after_editing_note_id"] == note_id:
             last_op["auto_expand_note_id"] = note_id
             last_op["auto_expand_before_collapsed"] = True
             last_op["auto_expand_after_collapsed"] = False
@@ -664,11 +695,11 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     elif op_type == "edit_mode":
         ctx.redo.append(op)
 
-        auto_expand_note_id = op.get("auto_expand_note_id")
-        if auto_expand_note_id is not None:
+        if "auto_expand_note_id" in op:
+            auto_expand_note_id = op["auto_expand_note_id"]
             if not isinstance(auto_expand_note_id, str) or not auto_expand_note_id:
                 raise RuntimeError(f"Undo op edit_mode.auto_expand_note_id must be a non-empty string | op={op}")
-            before_collapsed = op.get("auto_expand_before_collapsed")
+            before_collapsed = op["auto_expand_before_collapsed"]
             if not isinstance(before_collapsed, bool):
                 raise RuntimeError(
                     f"Undo op edit_mode.auto_expand_before_collapsed must be a bool | op={op}"
@@ -817,11 +848,11 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
     elif op_type == "edit_mode":
         ctx.history.append(op)
 
-        auto_expand_note_id = op.get("auto_expand_note_id")
-        if auto_expand_note_id is not None:
+        if "auto_expand_note_id" in op:
+            auto_expand_note_id = op["auto_expand_note_id"]
             if not isinstance(auto_expand_note_id, str) or not auto_expand_note_id:
                 raise RuntimeError(f"Redo op edit_mode.auto_expand_note_id must be a non-empty string | op={op}")
-            after_collapsed = op.get("auto_expand_after_collapsed")
+            after_collapsed = op["auto_expand_after_collapsed"]
             if not isinstance(after_collapsed, bool):
                 raise RuntimeError(
                     f"Redo op edit_mode.auto_expand_after_collapsed must be a bool | op={op}"
