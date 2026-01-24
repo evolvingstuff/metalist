@@ -1,89 +1,93 @@
 # PLAN
 
 ## Goal
-Fix the undo bug:
-
-- Select note
-- Cmd-Del to delete
-- Cmd-Z to undo (note reappears)
-- Cmd-Z to undo (note should be deselected, but remains selected)
-
-…while enforcing the intended invariant:
-
-- The client must never allow a second user command to execute while a prior server-bound command is in-flight.
-- Extra inputs during in-flight are ignored/dropped.
-- NO queuing/coalescing/replay of user commands.
-- Background traffic (heartbeat/polling/infinite-scroll refresh) must not run while a user command is in-flight.
+Eliminate “UI locks” caused by leaked loading/busy state, and make undo/redo boundaries explicit and predictable.
 
 
-## Why Phase 2 Comes First
-Historically, “Phase 1 repro test first” was unreliable because there is no single authoritative command gate today:
+## Problems We’re Fixing
+1. **UI hard-freeze**
+   - Global keyboard handler drops all input while `ModeContext.isLoading` is true.
+   - If any async path forgets to clear loading, the UI becomes permanently non-interactive.
 
-- Not every server-bound UI action is serialized behind one busy flag.
-- Some background loops can issue network calls independently.
+2. **Too many global invariants scattered across the client**
+   - Multiple independent loops: polling, infinite-scroll, tab-state persistence, undo/redo, view refresh.
+   - Each has its own early-return rules, so it’s easy to miss a “clear loading” or “skip while busy”.
 
-This makes undo behavior appear timing-dependent even when the user is not “pressing fast”, because unrelated background calls can interleave with user commands and/or transiently trip the “busy” condition.
+3. **Undo stack scope is unclear for global operations**
+   - Bulk/global operations (expand/collapse all, command palette actions, etc.) can create huge undo histories or mix unrelated contexts.
+   - Desired behavior: global view-changing operations should reset undo/redo, not be undoable step-by-step.
 
-So we first make the client deterministic (Phase 2), then add the failing Cypress repro (Phase 1).
+
+## Success Criteria
+- It is impossible (or extremely difficult) for the UI to remain stuck in a “loading” state.
+- Background traffic never runs during a user command.
+- Undo/redo boundaries are explicit and deterministic:
+  - Opening the Cmd+/ command palette resets undo/redo history.
+  - Global actions (expand all / collapse all / similar) reset undo/redo history.
+  - No bulk action can generate tens-of-thousands of undo entries.
 
 
 ## Non-Goals
-- Do not introduce queued/coalesced command behavior.
-- Do not change existing Cypress specs.
+- Don’t add “helpful” fallbacks; internal invariant violations should crash loudly.
+- Don’t add queued/coalesced command behavior for user commands.
 
 
-## Phase 2 — Enforce a Single Command Gate (Drop Inputs While In Flight)
-1. Implement a single client-side command gate (mutex) with a tiny API:
+## Phase 1 — Inventory and Normalize Entry Points
+1. Inventory **all server-bound user actions** and ensure each goes through a single boundary wrapper.
+   - Create / save / delete / move / collapse / expand / undo / redo.
+2. Inventory **all background request loops**.
+   - Polling service, infinite scroll, tab-state persistence, any other timers.
+
+Deliverable:
+- A checklist of entry points and which wrapper they use.
+
+
+## Phase 2 — Single Client Command Gate
+3. Implement a single client-side gate with a small, strict API:
    - `CommandGate.run(name, asyncFn)`
    - `CommandGate.isBusy()`
-   - It must set/unset the busy flag in a `finally`.
-   - It must NEVER queue or replay commands.
-2. Route ALL user-initiated server-bound actions through the gate:
-   - Delete, undo/redo, create, move, edit-mode transitions, save.
-   - Ensure click handlers don’t “fire and forget” async actions without going through the gate.
-3. Update keyboard/mouse handlers:
-   - If gate busy: drop the input and return immediately.
-   - (Optional) log one structured “dropped input” event for diagnosis.
-4. Stop background traffic while gate busy:
-   - Polling/heartbeat: skip ticks while `CommandGate.isBusy()`.
-   - Infinite scroll: skip polling while `CommandGate.isBusy()`.
-   - Any other periodic refresh must be similarly blocked.
+   - No queueing: if busy, inputs are dropped.
+4. Route all user-initiated server-bound actions through `CommandGate.run(...)`.
+5. Block background traffic while `CommandGate.isBusy()`.
 
-Success criteria:
-- DevTools Network shows at most one in-flight *user command* request at a time.
-- Heartbeats/refreshes do not fire during a user command.
-- Inputs during in-flight are dropped (not queued).
+Deliverable:
+- One authoritative “busy” source-of-truth.
+- DevTools Network: never more than one in-flight *user command* request.
 
 
-## Phase 1 — Cypress Repro (Now Deterministic)
-5. Add a new Cypress spec that reproduces the bug without relying on “pressing fast”.
-   - Drive Cmd-Z twice with an explicit wait for the gate to be idle between presses.
-   - Assert that the note is not in editing state after the second undo.
-6. If needed, add minimal temporary instrumentation to help debug ordering (remove once fixed).
+## Phase 3 — Make Loading State Un-leakable
+6. Replace ad-hoc `setLoading(true/false)` patterns with a single helper that cannot leak.
+   - Prefer a `.finally(...)` wrapper (JS sanitycheck forbids `try` without `catch`).
+   - Add an invariant that loading can only be enabled/disabled by this helper.
+7. Add a watchdog:
+   - If loading remains enabled past a threshold, throw with the last known loading reason.
 
-Success criteria:
-- The new spec fails against current semantics and passes after the fix.
-
-
-## Phase 3 — Fix Undo Semantics (Deselect on 2nd Undo)
-7. Verify undo stack entries for: select → delete.
-   - Confirm whether selection transitions are recorded as `edit_mode` ops.
-   - Ensure the second undo corresponds to “undo selection” (i.e., `editingNoteId` becomes null).
-8. Patch either:
-   - client-side recording of edit-mode transitions, OR
-   - server-side coalescing rules in `app/services/undo_state.py`,
-   so the history is: [select/edit_mode] then [delete_subtree], enabling:
-   - undo(delete) => note restored + selected
-   - undo(edit_mode) => deselected
-
-Success criteria:
-- Manual repro matches expected behavior.
-- Cypress spec passes.
+Deliverable:
+- UI can’t remain “stuck” without a loud crash and a clear reason.
 
 
-## Phase 4 — Regression Sweep
-9. Run full Cypress suite.
-10. Run `./sanitycheck/run`.
+## Phase 4 — Define Undo/Redo Boundaries (Global Reset Semantics)
+8. Add an explicit client-side undo boundary token (epoch) that is included in the `undoContext`.
+9. On boundary events, bump the epoch:
+   - Cmd+/ command palette open.
+   - Expand all / collapse all.
+   - Any other “global view change” action we agree is non-undoable.
+10. Ensure bulk endpoints reset server-side undo stack at the start of execution (so they never append per-note ops).
 
-Success criteria:
-- All tests pass and sanitycheck is clean.
+Deliverable:
+- Global actions never create massive undo histories.
+- Undo/redo after a boundary returns `noop`.
+
+
+## Phase 5 — Cypress Regression Suite Additions
+11. Add/keep focused Cypress specs:
+   - Selection/deselect undo returns to “none selected”.
+   - Cmd+/ boundary: after opening palette, undo is `noop`.
+   - Expand all / collapse all boundary: undo is `noop`.
+12. Run full Cypress suite.
+13. Run `./sanitycheck/run`.
+
+
+## Notes / Open Questions
+- Which other actions besides expand/collapse-all should be “global boundary” actions?
+  - Examples to decide: reset view filters, reset all preferences, tab creation/deletion, etc.
