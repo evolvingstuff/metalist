@@ -271,6 +271,7 @@ def build_view_state(
             flags = {
                 "isCollapsed": bool(rec.is_collapsed),
                 "isEditing": bool(editing_note_id == rec.id),
+                "hasChildren": bool(note_store.get_children(rec.id)),
                 "memoryMode": False,
                 "memorySelected": False,
                 "searchRedacted": bool(is_search_redacted),

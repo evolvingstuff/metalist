@@ -274,6 +274,7 @@ function createNoteElement(noteId) {
     noteElement.dataset.noteId = noteId;
     noteElement.dataset.parentId = '';
     noteElement.dataset.isCollapsed = 'false';
+    noteElement.dataset.hasChildren = 'false';
     noteElement.dataset.noteTags = '';
 
     const collapseToggle = document.createElement('button');
@@ -623,6 +624,9 @@ export function applyDifferentialView(payload, options) {
         noteElement.dataset.lockOwner = nextLockOwner;
         noteElement.dataset.parentId = parentId;
         noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
+        if (Object.prototype.hasOwnProperty.call(flags, 'hasChildren')) {
+            noteElement.dataset.hasChildren = Boolean(flags.hasChildren).toString();
+        }
 
         noteElement.classList.add(CONFIG.CLASSES.NOTE);
         noteElement.classList.toggle('locked', lockedByOther);

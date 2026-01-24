@@ -15,6 +15,9 @@ function parsePixels(value) {
 }
 
 function hasChildren(noteElement) {
+    if (noteElement.dataset.hasChildren === 'true') {
+        return true;
+    }
     const childrenContainer = noteElement.querySelector(':scope > .note-children');
     if (!childrenContainer) {
         return false;
