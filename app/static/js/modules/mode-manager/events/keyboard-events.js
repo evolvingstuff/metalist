@@ -16,6 +16,7 @@ import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { CommandGate } from '../services/command-gate-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -473,7 +474,9 @@ function handleDeleteHoveredNote(event, prefetchedDetails) {
         currentNoteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    deleteNoteOutsideEdit(hoveredNoteId);
+    void CommandGate.run('keyboard.delete_hovered', async () => {
+        await deleteNoteOutsideEdit(hoveredNoteId);
+    });
 }
 
 function handleEscapeKey() {
@@ -486,14 +489,15 @@ function handleEscapeKey() {
         ModeContext.validate();
         Logger.logDebug('Search cancelled via Escape key', {}, Logger.LogCategory.EVENT);
     }
-    else if (ModeContext.isEditing) {
-                
-        actionDeselectNote();
-                
-        Logger.logDebug('Editing cancelled via Escape key', {
-            previousNoteId: ModeContext.currentNoteId 
-        }, Logger.LogCategory.EVENT);
-    }
+	else if (ModeContext.isEditing) {
+	    void CommandGate.run('keyboard.escape.deselect', async () => {
+	        await actionDeselectNote();
+	    });
+	            
+		Logger.logDebug('Editing cancelled via Escape key', {
+			previousNoteId: ModeContext.currentNoteId 
+		}, Logger.LogCategory.EVENT);
+	}
     else {
                 
         Logger.logNoop('Escape key pressed but had no effect', {
@@ -524,11 +528,13 @@ function handleEnterKey(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    if (ModeContext.isSearching) {
-        actionExitSearchMode();
-    }
+	if (ModeContext.isSearching) {
+		actionExitSearchMode();
+	}
 
-    createNote();
+	void CommandGate.run('keyboard.enter.create', async () => {
+		await createNote();
+	});
 }
 
 function handleCreateNoteShortcut(event) {
@@ -543,11 +549,13 @@ function handleCreateNoteShortcut(event) {
 
     event.preventDefault();
 
-    if (ModeContext.isSearching) {
-        actionExitSearchMode();
-    }
+	if (ModeContext.isSearching) {
+		actionExitSearchMode();
+	}
 
-    createNote();
+	void CommandGate.run('keyboard.create_note', async () => {
+		await createNote();
+	});
 }
 
 function handleCreateChildNoteShortcut(event) {
@@ -562,11 +570,13 @@ function handleCreateChildNoteShortcut(event) {
 
     event.preventDefault();
 
-    if (ModeContext.isSearching) {
-        actionExitSearchMode();
-    }
+	if (ModeContext.isSearching) {
+		actionExitSearchMode();
+	}
 
-    createChildNote();
+	void CommandGate.run('keyboard.create_child', async () => {
+		await createChildNote();
+	});
 }
 
 function handleDeleteNoteShortcut(event) {
@@ -583,10 +593,11 @@ function handleDeleteNoteShortcut(event) {
 
     event.preventDefault();
 
-    if (noteId) {
-                
-        deleteNote(noteId);
-    } else {
+	if (noteId) {
+	    void CommandGate.run('keyboard.delete', async () => {
+	        await deleteNote(noteId);
+	    });
+	} else {
                 
         Logger.logNoop('Delete shortcut pressed but no note is selected', {
             isEditing: ModeContext.isEditing,
@@ -627,7 +638,9 @@ function handleMoveNoteUpShortcut(event) {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    moveNoteUp(noteId);
+	void CommandGate.run('keyboard.move_up', async () => {
+		await moveNoteUp(noteId);
+	});
 }
 
 function handleMoveNoteDownShortcut(event) {
@@ -647,11 +660,13 @@ function handleMoveNoteDownShortcut(event) {
         return;
     }
 
-    Logger.logDebug('Move note down shortcut triggered', {
-        noteId: ModeContext.currentNoteId
-    }, Logger.LogCategory.EVENT);
+	Logger.logDebug('Move note down shortcut triggered', {
+		noteId: ModeContext.currentNoteId
+	}, Logger.LogCategory.EVENT);
 
-    moveNoteDown(noteId);
+	void CommandGate.run('keyboard.move_down', async () => {
+		await moveNoteDown(noteId);
+	});
 }
 
 function handleUndoShortcut(event) {
@@ -674,9 +689,11 @@ function handleUndoShortcut(event) {
         event.preventDefault();
         event.stopPropagation();
 
-        actionUndo();
-        return;
-    }
+		void CommandGate.run('keyboard.undo', async () => {
+			await actionUndo();
+		});
+		return;
+	}
 
     Logger.logDebug('Undo shortcut triggered', {
         isEditing: ModeContext.isEditing,
@@ -687,7 +704,9 @@ function handleUndoShortcut(event) {
 
     event.stopPropagation();
 
-    actionUndo();
+	void CommandGate.run('keyboard.undo', async () => {
+		await actionUndo();
+	});
 }
 
 function handleRedoShortcut(event) {
@@ -710,9 +729,11 @@ function handleRedoShortcut(event) {
         event.preventDefault();
         event.stopPropagation();
 
-        actionRedo();
-        return;
-    }
+		void CommandGate.run('keyboard.redo', async () => {
+			await actionRedo();
+		});
+		return;
+	}
 
     Logger.logDebug('Redo shortcut triggered', {
         isEditing: ModeContext.isEditing,
@@ -723,7 +744,9 @@ function handleRedoShortcut(event) {
 
     event.stopPropagation();
 
-    actionRedo();
+	void CommandGate.run('keyboard.redo', async () => {
+		await actionRedo();
+	});
 }
 
 async function handleCopyNoteShortcut(event) {
@@ -772,7 +795,12 @@ async function handleCopyNoteShortcut(event) {
         ModeContext.setClipboardMode('note');
     }
 
-    const copyResult = await actionCopyNote();
+    const copyResult = await CommandGate.run('keyboard.copy_note', async () => {
+        return await actionCopyNote();
+    });
+    if (copyResult === null) {
+        return;
+    }
 
     Logger.logDebug('Note copied to server clipboard', {
         noteId: ModeContext.currentNoteId
@@ -882,34 +910,39 @@ async function handleCutNoteShortcut(event) {
         ModeContext.setClipboardMode('note');
     }
 
-    const copyResult = await actionCopyNote();
-    const renderedHtml = copyResult?.html;
-    const renderedPlainText = copyResult?.plain_text;
+    const cutResult = await CommandGate.run('keyboard.cut_note', async () => {
+        const copyResult = await actionCopyNote();
+        const renderedHtml = copyResult?.html;
+        const renderedPlainText = copyResult?.plain_text;
 
-    if (renderedHtml || renderedPlainText) {
-        if (
-            renderedHtml
-            && typeof ClipboardItem !== 'undefined'
-            && navigator.clipboard
-            && typeof navigator.clipboard.write === 'function'
-        ) {
-            const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
-            const plainText = typeof renderedPlainText === 'string' ? renderedPlainText : '';
-            const plainTextBlob = new Blob([
-                plainText,
-            ], { type: 'text/plain' });
-            await navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': htmlBlob,
-                    'text/plain': plainTextBlob,
-                })
-            ]);
-        } else if (typeof renderedPlainText === 'string' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(renderedPlainText);
+        if (renderedHtml || renderedPlainText) {
+            if (
+                renderedHtml
+                && typeof ClipboardItem !== 'undefined'
+                && navigator.clipboard
+                && typeof navigator.clipboard.write === 'function'
+            ) {
+                const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+                const plainText = typeof renderedPlainText === 'string' ? renderedPlainText : '';
+                const plainTextBlob = new Blob([
+                    plainText,
+                ], { type: 'text/plain' });
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': htmlBlob,
+                        'text/plain': plainTextBlob,
+                    })
+                ]);
+            } else if (typeof renderedPlainText === 'string' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                await navigator.clipboard.writeText(renderedPlainText);
+            }
         }
-    }
 
-    await deleteNote(currentNoteId);
+        await deleteNote(currentNoteId);
+    });
+    if (cutResult === null) {
+        return;
+    }
 }
 
 function handlePasteNoteSiblingShortcut(event) {
@@ -941,7 +974,9 @@ function handlePasteNoteSiblingShortcut(event) {
 
     // YES preventDefault - prevent browser, do note paste
     event.preventDefault();
-    actionPasteNoteSibling();
+    void CommandGate.run('keyboard.paste_sibling', async () => {
+        await actionPasteNoteSibling();
+    });
 }
 
 function handlePasteNoteChildShortcut(event) {
@@ -973,7 +1008,9 @@ function handlePasteNoteChildShortcut(event) {
     
     // YES preventDefault - prevent browser, do note paste
     event.preventDefault();
-    actionPasteNoteChild();
+    void CommandGate.run('keyboard.paste_child', async () => {
+        await actionPasteNoteChild();
+    });
 }
 
 async function handlePasswordModalShortcut(event) {
@@ -991,10 +1028,15 @@ async function handlePasswordModalShortcut(event) {
         actionExitSearchMode();
     }
 
-    // Exit editing mode if active
-    if (ModeContext.isEditing) {
-        await actionSaveAndExitEditingWithoutRefreshing();
-    }
+	// Exit editing mode if active
+	if (ModeContext.isEditing) {
+		const result = await CommandGate.run('keyboard.password_modal.exit_editing', async () => {
+			await actionSaveAndExitEditingWithoutRefreshing();
+		});
+		if (result === null) {
+			return;
+		}
+	}
 
     // Open the password modal
     const passwordModal = new PasswordModal();
@@ -1087,14 +1129,18 @@ function handlePasteEvent(event) {
         if (ModeContext.isEditing && ModeContext.currentNoteId) {
             event.preventDefault();
             
-            // Determine if shift is held for child paste
-            if (event.shiftKey) {
-                actionPasteNoteChild();
-            } else {
-                actionPasteNoteSibling();
-            }
-        }
-    } else {
+			// Determine if shift is held for child paste
+			if (event.shiftKey) {
+				void CommandGate.run('paste_event.child', async () => {
+					await actionPasteNoteChild();
+				});
+			} else {
+				void CommandGate.run('paste_event.sibling', async () => {
+					await actionPasteNoteSibling();
+				});
+			}
+		}
+	} else {
         // External content - allow default paste behavior
         Logger.logDebug('External content detected - using browser default paste', {
             hasHtml: !!html
@@ -1189,9 +1235,11 @@ export function updateSearchContextsList() {
                 if (!tabId || tabId === ModeContext.activeTabId) {
                     return;
                 }
-				void switchToTabContext(tabId, {});
-            });
-        });
+					void CommandGate.run('tab.switch', async () => {
+						await switchToTabContext(tabId, {});
+					});
+	            });
+	        });
         
         // Add click handlers for per-tab + (duplicate)
         searchContextsList.querySelectorAll('.duplicate-context').forEach(addBtn => {
@@ -1201,9 +1249,11 @@ export function updateSearchContextsList() {
                     return;
                 }
                 const sourceTabId = e.currentTarget.getAttribute('data-source-tab-id');
-                void duplicateTabContext(sourceTabId);
-            });
-        });
+	                void CommandGate.run('tab.duplicate', async () => {
+	                    await duplicateTabContext(sourceTabId);
+	                });
+	            });
+	        });
         
         // Add click handler for delete buttons
         searchContextsList.querySelectorAll('.delete-context').forEach(deleteBtn => {
@@ -1213,25 +1263,31 @@ export function updateSearchContextsList() {
                     return;
                 }
                 const deleteTabId = e.currentTarget.getAttribute('data-delete-tab-id');
-                void deleteTabContext(deleteTabId);
-            });
-        });
+	                void CommandGate.run('tab.delete', async () => {
+	                    await deleteTabContext(deleteTabId);
+	                });
+	            });
+	        });
 
         searchContextsList.querySelectorAll('.move-up-context').forEach(moveBtn => {
             moveBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
-                void moveTabContext(moveTabId, -1);
-            });
-        });
+	                void CommandGate.run('tab.move_up', async () => {
+	                    await moveTabContext(moveTabId, -1);
+	                });
+	            });
+	        });
 
-        searchContextsList.querySelectorAll('.move-down-context').forEach(moveBtn => {
-            moveBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
-                void moveTabContext(moveTabId, 1);
-            });
-        });
+	        searchContextsList.querySelectorAll('.move-down-context').forEach(moveBtn => {
+	            moveBtn.addEventListener('click', (e) => {
+	                e.stopPropagation();
+	                const moveTabId = e.currentTarget.getAttribute('data-move-tab-id');
+	                void CommandGate.run('tab.move_down', async () => {
+	                    await moveTabContext(moveTabId, 1);
+	                });
+	            });
+	        });
         
     } else {
         searchContextsList.style.display = 'none';
@@ -1242,13 +1298,6 @@ async function switchToTabContext(tabId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('switchToTabContext requires options object');
 	}
-    if (ModeContext.isLoading) {
-        Logger.logNoop('Tab switch ignored while request in-flight', {
-            requestedTab: tabId,
-            activeTab: ModeContext.activeTabId
-        });
-        return;
-    }
 
     if (ModeContext.isEditing) {
         await actionSaveAndExitEditingWithoutRefreshing();
@@ -1305,15 +1354,7 @@ function snapshotActiveTabScrollState() {
 }
 
 async function duplicateTabContext(sourceTabId) {
-    const startedEditing = ModeContext.isEditing;
-
-    if (ModeContext.isLoading) {
-        Logger.logNoop('Tab duplication ignored while request in-flight', {
-            activeTab: ModeContext.activeTabId,
-            sourceTabId,
-        });
-        return;
-    }
+	const startedEditing = ModeContext.isEditing;
 
     if (startedEditing) {
         await actionSaveAndExitEditingWithoutRefreshing();
@@ -1430,17 +1471,9 @@ async function duplicateTabContext(sourceTabId) {
 }
 
 async function moveTabContext(tabId, delta) {
-    if (ModeContext.isLoading) {
-        Logger.logNoop('Tab reorder ignored while request in-flight', {
-            activeTab: ModeContext.activeTabId,
-            tabId,
-        });
-        return;
-    }
-
-    if (ModeContext.isEditing) {
-        await actionSaveAndExitEditingWithoutRefreshing();
-    }
+	if (ModeContext.isEditing) {
+		await actionSaveAndExitEditingWithoutRefreshing();
+	}
     if (typeof tabId !== 'string' || tabId.length === 0) {
         throw new Error('tabId is required for tab reorder');
     }
@@ -1475,17 +1508,9 @@ async function moveTabContext(tabId, delta) {
 }
 
 async function deleteTabContext(deleteTabId) {
-    if (ModeContext.isLoading) {
-        Logger.logNoop('Tab deletion ignored while request in-flight', {
-            activeTab: ModeContext.activeTabId,
-            deleteTabId,
-        });
-        return;
-    }
-
-    if (ModeContext.isEditing) {
-        await actionSaveAndExitEditingWithoutRefreshing();
-    }
+	if (ModeContext.isEditing) {
+		await actionSaveAndExitEditingWithoutRefreshing();
+	}
     if (typeof deleteTabId !== 'string' || deleteTabId.length === 0) {
         throw new Error('deleteTabId is required for tab deletion');
     }

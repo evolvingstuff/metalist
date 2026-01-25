@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { CONFIG } from '../../config.js';
+import { CommandGate } from './command-gate-service.js';
 
 let pollingInterval = null;
 let lastTokenRefreshAt = 0;
@@ -57,6 +58,9 @@ async function refreshTokenOnActivity() {
 }
 
 async function checkConnectivityAndUpdates() {
+    if (CommandGate.isBusy()) {
+        return;
+    }
     if (ModeContext.userActivity) {
         const now = Date.now();
         if (now - lastTokenRefreshAt >= TOKEN_REFRESH_INTERVAL_MS) {

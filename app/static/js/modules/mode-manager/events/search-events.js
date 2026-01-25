@@ -6,6 +6,7 @@ import { updateSearchContextsList } from './keyboard-events.js';
 import { initializeTabStateService } from '../services/tab-state-service.js';
 import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
+import { CommandGate } from '../services/command-gate-service.js';
 
 let searchTimeoutId = null;
 
@@ -45,13 +46,24 @@ export function handleSearchInput(event) {
     // Update search contexts list display
     updateSearchContextsList();
 
+    if (!ModeContext.isSearching) {
+        if (searchTimeoutId) {
+            clearTimeout(searchTimeoutId);
+            searchTimeoutId = null;
+        }
+        return;
+    }
+
     // Clear existing timeout
     if (searchTimeoutId) {
         clearTimeout(searchTimeoutId);
     }
 
     // Set new timeout for debounced search
-    searchTimeoutId = setTimeout(async () => {
+    searchTimeoutId = setTimeout(() => {
+        if (!ModeContext.isSearching) {
+            return;
+        }
         const currentSearch = ModeContext.searchQuery;
         const currentAnalysis = analyzeSearchQueryInput(currentSearch);
 
@@ -63,15 +75,17 @@ export function handleSearchInput(event) {
             return;
         }
 
-        Logger.logAction('executeSearch', { searchQuery: currentSearch });
-        ModeContext.clearActiveTabDiffCacheForSearchExecution(currentSearch);
-        ModeContext.resetRootTracking({ clear: true });
-        window.scrollTo(0, 0);
-        ModeContext.updateActiveTabScroll(0);
-        ModeContext.updateActiveTabScrollAnchor(null, true);
-        ModeContext.setRootAnchorId(null);
-        // Refresh the view with the search query (let errors crash)
-        await actionRefreshAndMaybeSelect({});
+        void CommandGate.run('search.execute', async () => {
+            Logger.logAction('executeSearch', { searchQuery: currentSearch });
+            ModeContext.clearActiveTabDiffCacheForSearchExecution(currentSearch);
+            ModeContext.resetRootTracking({ clear: true });
+            window.scrollTo(0, 0);
+            ModeContext.updateActiveTabScroll(0);
+            ModeContext.updateActiveTabScrollAnchor(null, true);
+            ModeContext.setRootAnchorId(null);
+            // Refresh the view with the search query (let errors crash)
+            await actionRefreshAndMaybeSelect({});
+        });
     }, CONFIG.SEARCH.DEBOUNCE_MS);
 }
 
@@ -110,8 +124,13 @@ export async function initializeSearchEvents() {
     Logger.logAction('initialPageLoad', { searchQuery: initialQueryLogValue });
 
     ModeContext.setExecutedSearchQuery(analysis.normalizedText);
-    await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'init search' });
-    ModeContext.restoreScrollForActiveTab();
+    const initResult = await CommandGate.run('search.init_view', async () => {
+        await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'init search' });
+        ModeContext.restoreScrollForActiveTab();
+    });
+    if (initResult === null) {
+        throw new Error('Initialization should not be blocked by CommandGate');
+    }
 
     Logger.logDebug('Search events initialized', {
         activeTab: ModeContext.activeTabId,

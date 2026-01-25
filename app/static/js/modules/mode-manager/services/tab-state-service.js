@@ -2,6 +2,7 @@ import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { computeScrollAnchor } from './scroll-anchor-service.js';
+import { CommandGate } from './command-gate-service.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
@@ -157,6 +158,9 @@ function startScrollPolling() {
 
 async function pollPersistScroll() {
     if (document.hidden) {
+        return;
+    }
+    if (CommandGate.isBusy()) {
         return;
     }
     if (ModeContext.shouldIgnoreScrollEvents()) {

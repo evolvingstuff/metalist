@@ -1,6 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { actionSaveNoteOnIdle } from '../actions/content-actions.js';
+import { CommandGate } from '../services/command-gate-service.js';
 
 const CHECK_INTERVAL = 500;
 const CONTENT_INACTIVITY_THRESHOLD = 60000;  // 60 seconds for debugging 
@@ -30,7 +31,9 @@ function checkAndSaveContent() {
             inactivityDuration: timeSinceLastChange
         });
 
-        actionSaveNoteOnIdle(ModeContext.currentNoteId);
+        void CommandGate.run('autosave', async () => {
+            await actionSaveNoteOnIdle(ModeContext.currentNoteId);
+        });
 
     }
 }

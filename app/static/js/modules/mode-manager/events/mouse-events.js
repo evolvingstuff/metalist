@@ -5,6 +5,7 @@ import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../acti
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
+import { CommandGate } from '../services/command-gate-service.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
@@ -377,11 +378,15 @@ function handleClick(event) {
                 // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully 
                 // to cursor position in source text
 
-			if (ModeContext.currentNoteId) {
-				actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
-			} else {
-				actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
-			}
+				if (ModeContext.currentNoteId) {
+					void CommandGate.run('mouse.switch_note', async () => {
+						await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+					});
+				} else {
+					void CommandGate.run('mouse.select_note', async () => {
+						await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+					});
+				}
                                 
                 Logger.logDebug('Click in note content - selecting note', { 
                     noteId,
@@ -400,11 +405,13 @@ function handleClick(event) {
                     isEditing: true
                 });
             }
-        } else {
-                        
-            if (ModeContext.isEditing) {
-                actionDeselectNote();
-            }
+		} else {
+			            
+			if (ModeContext.isEditing) {
+				void CommandGate.run('mouse.deselect', async () => {
+					await actionDeselectNote();
+				});
+			}
                         
             Logger.logDebug('Click near note but outside content bounds', {
                 noteId,
@@ -418,12 +425,13 @@ function handleClick(event) {
                 isEditing: false
             }, Logger.LogCategory.EVENT);
         }
-    } else if (searchField) {
-
-        actionEnterSearchMode();
-                
-        Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
-    } else if (createButton) {
+	} else if (searchField) {
+		void CommandGate.run('mouse.enter_search_mode', async () => {
+			await actionEnterSearchMode();
+		});
+	                
+		Logger.logDebug('Click in search field', { coordinates }, Logger.LogCategory.EVENT);
+	} else if (createButton) {
         
         if (ModeContext.isLoading) {
             Logger.logNoop('Create button clicked while system is loading - ignoring', {
@@ -447,14 +455,18 @@ function handleClick(event) {
         }
                 
         Logger.logDebug('Create note button clicked', { coordinates }, Logger.LogCategory.EVENT);
-        createNote();
-    } else {
+		void CommandGate.run('mouse.create_note', async () => {
+			await createNote();
+		});
+	} else {
 
-        if (ModeContext.isEditing) {
-            actionDeselectNote();
-                        
-            Logger.logDebug('Click outside any note - exiting edit mode', {
-                coordinates,
+		if (ModeContext.isEditing) {
+			void CommandGate.run('mouse.deselect', async () => {
+				await actionDeselectNote();
+			});
+			            
+			Logger.logDebug('Click outside any note - exiting edit mode', {
+				coordinates,
                 isEditing: false,
                 currentNoteId: null
             }, Logger.LogCategory.EVENT);
@@ -524,15 +536,19 @@ function handleCollapseToggleInteraction(event, collapseToggle, interactionSourc
     event.preventDefault();
     event.stopPropagation();
 
-    if (isCurrentlyCollapsed) {
-        expandNote(noteId);
-        return;
-    }
+	if (isCurrentlyCollapsed) {
+		void CommandGate.run('mouse.expand_note', async () => {
+			await expandNote(noteId);
+		});
+		return;
+	}
 
-    if (canCollapse) {
-        collapseNote(noteId);
-        return;
-    }
+	if (canCollapse) {
+		void CommandGate.run('mouse.collapse_note', async () => {
+			await collapseNote(noteId);
+		});
+		return;
+	}
 
     Logger.logNoop('Collapse toggle ignored: note cannot collapse', {
         noteId

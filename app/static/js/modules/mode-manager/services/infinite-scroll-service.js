@@ -1,5 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
+import { CommandGate } from './command-gate-service.js';
 
 const POLL_INTERVAL_MS = 800;
 const ROOT_BUFFER_THRESHOLD = 25;
@@ -89,6 +90,7 @@ function collectRootVisibility() {
 
 async function handlePoll() {
     if (document.hidden) return;
+    if (CommandGate.isBusy()) return;
     if (ModeContext.isLoading) return;
 
     const searchQuery = (ModeContext.searchQuery || '').toString();

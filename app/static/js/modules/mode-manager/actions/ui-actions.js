@@ -7,6 +7,8 @@ import { applyDifferentialView } from '../services/differential-view-service.js'
 import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 
+let viewRequestInFlight = false;
+
 function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
                            rootNotesKnown, rootNotesSeen, updatedNotes,
                            context, vdom_ops) {
@@ -139,14 +141,15 @@ export async function actionRefreshAndMaybeSelect(options) {
     const requestTabId = ModeContext.activeTabId;
     const requestSearchQuery = ModeContext.searchQuery;
 
-    if (ModeContext.isLoading) {
-        Logger.logNoop('notes.view ignored while request in-flight', {
+    if (viewRequestInFlight) {
+        Logger.logNoop('notes.view ignored while view request in-flight', {
             activeTabId: ModeContext.activeTabId,
             context: options.context || 'refresh'
         });
         return null;
     }
-    ModeContext.setLoading(true);
+
+    viewRequestInFlight = true;
     return await (async () => {
         const requestStartedAt = performance.now();
         const forcedAnchorId = typeof options.visibleRootAnchorId === 'string' && options.visibleRootAnchorId.length > 0
@@ -288,8 +291,6 @@ export async function actionRefreshAndMaybeSelect(options) {
 
         return result;
     })().finally(() => {
-        if (ModeContext.isLoading) {
-            ModeContext.setLoading(false);
-        }
+        viewRequestInFlight = false;
     });
 }

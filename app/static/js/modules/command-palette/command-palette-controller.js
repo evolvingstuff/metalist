@@ -4,6 +4,7 @@ import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actio
 import { NotesAPI } from '../api-client.js';
 import { PasswordModal } from '../modals/password-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
+import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -850,62 +851,73 @@ class CommandPaletteController {
     }
 
     async resetViewFilters() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
+        const result = await CommandGate.run('commandPalette.resetViewFilters', async () => {
+            ModeContext.bumpUndoContextEpoch('commandPalette.resetViewFilters');
 
-        const searchInput = document.getElementById('search-input');
-        if (!(searchInput instanceof HTMLInputElement)) {
-            throw new Error('search-input missing from DOM');
-        }
-        const analysis = syncSearchInputValue(searchInput, '');
-        ModeContext.setSearchQuery(analysis.normalizedText);
-        ModeContext.clearActiveTabDiffCacheForSearchExecution(analysis.normalizedText);
-        ModeContext.resetRootTracking({ clear: true });
-        window.scrollTo(0, 0);
-        ModeContext.updateActiveTabScroll(0);
-        ModeContext.updateActiveTabScrollAnchor(null, true);
-        ModeContext.setRootAnchorId(null);
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
 
-        await actionRefreshAndMaybeSelect({});
+            const searchInput = document.getElementById('search-input');
+            if (!(searchInput instanceof HTMLInputElement)) {
+                throw new Error('search-input missing from DOM');
+            }
+            const analysis = syncSearchInputValue(searchInput, '');
+            ModeContext.setSearchQuery(analysis.normalizedText);
+            ModeContext.clearActiveTabDiffCacheForSearchExecution(analysis.normalizedText);
+            ModeContext.resetRootTracking({ clear: true });
+            window.scrollTo(0, 0);
+            ModeContext.updateActiveTabScroll(0);
+            ModeContext.updateActiveTabScrollAnchor(null, true);
+            ModeContext.setRootAnchorId(null);
+
+            await actionRefreshAndMaybeSelect({});
+        });
+        if (result === null) {
+            return;
+        }
     }
 
     async collapseAll() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
+        const result = await CommandGate.run('commandPalette.collapseAll', async () => {
+            ModeContext.bumpUndoContextEpoch('commandPalette.collapseAll');
 
-        const searchQuery = ModeContext.searchQuery;
-        if (typeof searchQuery !== 'string') {
-            throw new Error('ModeContext.searchQuery must be a string');
-        }
-
-        ModeContext.setLoading(true);
-        await NotesAPI.setCollapsedInContext(searchQuery, true).finally(() => {
-            if (ModeContext.isLoading) {
-                ModeContext.setLoading(false);
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
             }
+
+            const searchQuery = ModeContext.searchQuery;
+            if (typeof searchQuery !== 'string') {
+                throw new Error('ModeContext.searchQuery must be a string');
+            }
+
+            await NotesAPI.setCollapsedInContext(searchQuery, true);
+            await actionRefreshAndMaybeSelect({});
         });
-        await actionRefreshAndMaybeSelect({});
+        if (result === null) {
+            return;
+        }
     }
 
     async expandAll() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
+        const result = await CommandGate.run('commandPalette.expandAll', async () => {
+            ModeContext.bumpUndoContextEpoch('commandPalette.expandAll');
 
-        const searchQuery = ModeContext.searchQuery;
-        if (typeof searchQuery !== 'string') {
-            throw new Error('ModeContext.searchQuery must be a string');
-        }
-
-        ModeContext.setLoading(true);
-        await NotesAPI.setCollapsedInContext(searchQuery, false).finally(() => {
-            if (ModeContext.isLoading) {
-                ModeContext.setLoading(false);
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
             }
+
+            const searchQuery = ModeContext.searchQuery;
+            if (typeof searchQuery !== 'string') {
+                throw new Error('ModeContext.searchQuery must be a string');
+            }
+
+            await NotesAPI.setCollapsedInContext(searchQuery, false);
+            await actionRefreshAndMaybeSelect({});
         });
-        await actionRefreshAndMaybeSelect({});
+        if (result === null) {
+            return;
+        }
     }
 
     async openPasswordManager() {

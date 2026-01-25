@@ -40,19 +40,15 @@ export async function deleteNote(noteId) {
         ModeContext.setCurrentContent(null);
     }
         
-    if (ModeContext.isDirty) {
-        ModeContext.setDirty(false);
-    }
+	    if (ModeContext.isDirty) {
+	        ModeContext.setDirty(false);
+	    }
 
-    ModeContext.setLoading(true);
+	    let t2 = performance.now();
 
-    let t2 = performance.now();
+	    await NotesAPI.deleteNote(noteId);
 
-    await NotesAPI.deleteNote(noteId);
-
-    let t3 = performance.now()
-
-    ModeContext.setLoading(false);
+	    let t3 = performance.now()
 
     await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'deleteNote'});
 
@@ -81,12 +77,6 @@ export async function deleteNoteOutsideEdit(noteId) {
         throw new Error(`Programming error: deleteNoteOutsideEdit called while editing note ${ModeContext.currentNoteId}`);
     }
 
-	const shouldManageLoading = !ModeContext.isLoading;
-	if (shouldManageLoading) {
-		ModeContext.setLoading(true);
-	}
-
-	await (async () => {
 		await NotesAPI.deleteNote(noteId);
 
 		if (ModeContext.currentNoteId === noteId) {
@@ -97,13 +87,8 @@ export async function deleteNoteOutsideEdit(noteId) {
 			ModeContext.setCurrentContent(null);
 		}
 
-		await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
-	})().finally(() => {
-		if (shouldManageLoading && ModeContext.isLoading) {
-			ModeContext.setLoading(false);
-		}
-	});
-}
+			await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
+	}
 
 export async function createNote() {
     let startedAt = performance.now();
@@ -121,11 +106,7 @@ export async function createNote() {
         await actionSaveNote(currentNoteId);
     }
 
-    if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
-        ModeContext.setLoading(true);
-    }
-
-    let data;
+	    let data;
     if (currentNoteId) {
                 
         Logger.logDebug('Creating new sibling note after note', { 
@@ -147,9 +128,7 @@ export async function createNote() {
 
     const newNoteId = data.id;
 
-    ModeContext.setLoading(false);
-
-    const caretOptions = { initialCaretVisibility: 'visible' };
+	    const caretOptions = { initialCaretVisibility: 'visible' };
     if (ModeContext.isEditing) {
         await actionSwitchNotes(newNoteId, caretOptions);
     } else {
@@ -181,20 +160,14 @@ export async function createChildNote() {
         await actionSaveNote(currentNoteId);
     }
 
-    if (!(ModeContext.isEditing && ModeContext.isDirty && currentNoteId)) {
-        ModeContext.setLoading(true);
-    }
-
-    Logger.logDebug('Creating new child note under parent', { 
+	    Logger.logDebug('Creating new child note under parent', { 
         parentNoteId: currentNoteId 
     }, Logger.LogCategory.DEBUG);
     
     const data = await NotesAPI.createChild(currentNoteId, ModeContext.searchQuery);
     const newNoteId = data.id;
 
-    ModeContext.setLoading(false);
-
-    const caretOptions = { initialCaretVisibility: 'visible' };
+	    const caretOptions = { initialCaretVisibility: 'visible' };
     if (ModeContext.isEditing) {
         return await actionSwitchNotes(newNoteId, caretOptions);
     } else {
@@ -220,11 +193,7 @@ export async function moveNoteUp(noteId) {
         await actionSaveNote(noteId);
     }
 
-	ModeContext.setLoading(true);
-
-	await NotesAPI.moveNoteUp(noteId).finally(() => {
-		ModeContext.setLoading(false);
-	});
+		await NotesAPI.moveNoteUp(noteId);
 
     if (ModeContext.isEditing) {
         ModeContext.markCaretHidden();
@@ -255,11 +224,7 @@ export async function moveNoteDown(noteId) {
         await actionSaveNote(noteId);
     }
 
-	ModeContext.setLoading(true);
-
-	await NotesAPI.moveNoteDown(noteId).finally(() => {
-		ModeContext.setLoading(false);
-	});
+		await NotesAPI.moveNoteDown(noteId);
 
     if (ModeContext.isEditing) {
         ModeContext.markCaretHidden();
@@ -286,16 +251,7 @@ async function setNoteCollapse(noteId, collapsed) {
         throw new Error('Cannot change collapse state: noteId is required');
     }
 
-    if (ModeContext.isLoading) {
-        Logger.logNoop('Collapse/expand ignored while request in-flight', {
-            noteId,
-            collapsed,
-            activeTab: ModeContext.activeTabId
-        });
-        return;
-    }
-
-    if (ModeContext.isEditing) {
+	    if (ModeContext.isEditing) {
         const editingNoteId = ModeContext.currentNoteId;
         if (!editingNoteId) {
             throw new Error('Invariant violation: isEditing is true but currentNoteId is null');
@@ -324,16 +280,12 @@ async function setNoteCollapse(noteId, collapsed) {
         }
     }
 
-    // Block UI while performing the collapse/expand operation
-    ModeContext.setLoading(true);
-    if (collapsed) {
-        await NotesAPI.collapseNote(noteId);
-    } else {
-        await NotesAPI.expandNote(noteId);
-    }
-    // Release the lock before asking for a view refresh; refresh manages its own lock
-    ModeContext.setLoading(false);
-    await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'setNoteCollapse' });
+	    if (collapsed) {
+	        await NotesAPI.collapseNote(noteId);
+	    } else {
+	        await NotesAPI.expandNote(noteId);
+	    }
+	    await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'setNoteCollapse' });
 }
 
 export async function collapseNote(noteId) {
@@ -387,9 +339,7 @@ export async function actionPasteNoteSibling() {
         await actionSaveNote(currentNoteId);
     }
 
-    ModeContext.setLoading(true);
-    const response = await NotesAPI.pasteNoteSibling(currentNoteId);
-    ModeContext.setLoading(false);
+	    const response = await NotesAPI.pasteNoteSibling(currentNoteId);
 
     const newNoteId = response.id;
     if (typeof newNoteId !== 'string' || newNoteId.length === 0) {
@@ -418,9 +368,7 @@ export async function actionPasteNoteChild() {
         await actionSaveNote(currentNoteId);
     }
 
-    ModeContext.setLoading(true);
-    const response = await NotesAPI.pasteNoteChild(currentNoteId);
-    ModeContext.setLoading(false);
+	    const response = await NotesAPI.pasteNoteChild(currentNoteId);
 
     const newNoteId = response.id;
     if (typeof newNoteId !== 'string' || newNoteId.length === 0) {

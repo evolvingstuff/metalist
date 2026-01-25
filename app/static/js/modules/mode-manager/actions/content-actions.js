@@ -31,8 +31,6 @@ export async function actionSaveNote(noteId) {
         return Promise.resolve(); 
     }
 
-    ModeContext.setLoading(true);
-
     const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
 
     if (ModeContext.isDirty) {
@@ -42,8 +40,6 @@ export async function actionSaveNote(noteId) {
     if (tagsChanged) {
         setTagBarValue(noteElement, tags);
     }
-
-    ModeContext.setLoading(false);
 
     return response;
 }
@@ -81,9 +77,7 @@ export async function actionSaveNoteOnIdle(noteId) {
         tagsLength: tags.length,
     }, Logger.LogCategory.STATE);
 
-    ModeContext.setLoading(true);
     const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
-    ModeContext.setLoading(false);
 
     ModeContext.setLastSavedContent(contentHTML);
     ModeContext.setDirty(false);
