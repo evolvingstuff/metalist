@@ -2,6 +2,10 @@
 
 Open with `⌘ + /`.
 
+## Undo/Redo Boundary
+Opening the command palette creates an explicit undo/redo boundary.
+After you open it, subsequent undo/redo should not traverse operations that occurred before.
+
 ## Semantics
 - Query is an unordered bag of words.
 - AND-only matching against manually-authored tags.
@@ -20,3 +24,6 @@ Open with `⌘ + /`.
 "(current view)" means the full active search context (not just rendered DOM).
 The implementation uses `POST /api2/notes/set-collapsed-in-context`.
 
+These are treated as **global** actions:
+- The client bumps the undo-context epoch.
+- The server clears undo/redo history for the active undo context.

@@ -15,9 +15,10 @@ The ModeManager is a modular state management system designed to replace the com
 
 ### Separation of Concerns
 
-- **Event Handlers** detect user interaction but DO NOT modify state directly
+- **Event Handlers** detect user interaction and delegate to actions
 - **Actions** encapsulate complex operations including state changes, server calls, and UI updates
 - **ModeContext** manages the actual state and validates invariants
+- **CommandGate** is the single “busy” boundary for all user-initiated server calls
 
 This separation creates a flow that is more complex than a simple linear progression:
 
@@ -42,7 +43,7 @@ User Interaction → Event Handler → Action
    - Determine what action to take based on context
    - Perform basic filtering to avoid unnecessary actions
    - Can chain multiple actions together for complex interactions
-   - NEVER modify state directly
+   - For server-bound actions: call `CommandGate.run(...)` and do not touch loading state
 
 2. **Actions**:
    - Encapsulate complex operations that may include:
@@ -112,20 +113,10 @@ A key advantage of the boolean flags approach is **contextual memory**:
 
 ```javascript
 // In an action method:
-function saveAndSyncNote(noteId) {
-  // Set a temporary flag that affects the system
-  ModeContext.setLoading(true);
-  
-  api.saveNote(noteId)
-    .then(() => {
-      // When done, we can simply unset the flag and KEEP other context
-      ModeContext.setLoading(false);
-      
-      // We're still in editing mode with the current note!
-      // We didn't lose our context by entering a "loading state"
-      showSuccessNotification(`Note ${ModeContext.currentNoteId} saved`);
-    });
-}
+void CommandGate.run('note.save', async () => {
+  await NotesAPI.saveNote(noteId, contentHTML, tags)
+  await actionRefreshAndMaybeSelect({ context: 'note.save' })
+})
 ```
 
 With a traditional state machine:
@@ -193,7 +184,27 @@ All logs are prefixed with `+++ ModeManager` for easy filtering in the console.
 
 ## Asynchronous Code Pattern
 
-The ModeManager uses the `async/await` pattern for all asynchronous operations rather than Promise chains:
+The ModeManager uses `async/await` for readability, but cleanup must be written in the project’s allowed style.
+
+### Cleanup (No Leaked Busy State)
+
+The sanitycheck rules disallow `try { ... } finally { ... }` without a `catch` in JS, so cleanup should use `.finally(...)`:
+
+```javascript
+await somePromise.finally(() => {
+  // cleanup
+})
+```
+
+When you need a multi-step block with cleanup:
+
+```javascript
+await (async () => {
+  // ...multiple awaits...
+})().finally(() => {
+  // cleanup
+})
+```
 
 ### Key Benefits
 
