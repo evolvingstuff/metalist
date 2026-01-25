@@ -5,6 +5,7 @@ import { NotesAPI } from '../api-client.js';
 import { PasswordModal } from '../modals/password-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -426,6 +427,7 @@ class CommandPaletteController {
         // Entering the command palette is a global context boundary.
         // Any subsequent undo/redo should not traverse operations from before.
         ModeContext.bumpUndoContextEpoch('commandPalette.open');
+        cancelDebouncedSearchExecution();
 
         this._previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         this._previousScrollY = Math.max(0, Math.round(window.scrollY));

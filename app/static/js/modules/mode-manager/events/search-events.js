@@ -7,8 +7,7 @@ import { initializeTabStateService } from '../services/tab-state-service.js';
 import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
-
-let searchTimeoutId = null;
+import { scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
 
 export function handleSearchInput(event) {
     if (ModeContext.isLoading) {
@@ -46,24 +45,18 @@ export function handleSearchInput(event) {
     // Update search contexts list display
     updateSearchContextsList();
 
-    if (!ModeContext.isSearching) {
-        if (searchTimeoutId) {
-            clearTimeout(searchTimeoutId);
-            searchTimeoutId = null;
-        }
-        return;
-    }
+    const searchRequestedAt = performance.now();
 
-    // Clear existing timeout
-    if (searchTimeoutId) {
-        clearTimeout(searchTimeoutId);
-    }
-
-    // Set new timeout for debounced search
-    searchTimeoutId = setTimeout(() => {
-        if (!ModeContext.isSearching) {
+    const executeSearchWhenIdle = () => {
+        const waitedMs = performance.now() - searchRequestedAt;
+        if (CommandGate.isBusy()) {
+            if (waitedMs > 5000) {
+                throw new Error('Search execution delayed >5s waiting for CommandGate');
+            }
+            scheduleDebouncedSearchExecution(50, executeSearchWhenIdle);
             return;
         }
+
         const currentSearch = ModeContext.searchQuery;
         const currentAnalysis = analyzeSearchQueryInput(currentSearch);
 
@@ -86,7 +79,9 @@ export function handleSearchInput(event) {
             // Refresh the view with the search query (let errors crash)
             await actionRefreshAndMaybeSelect({});
         });
-    }, CONFIG.SEARCH.DEBOUNCE_MS);
+    };
+
+    scheduleDebouncedSearchExecution(CONFIG.SEARCH.DEBOUNCE_MS, executeSearchWhenIdle);
 }
 
 export async function initializeSearchEvents() {

@@ -117,7 +117,18 @@ def build_view_state(
 
         if has_terms:
             search_active = True
-            positively_matched_note_ids = set(search_index.query_note_ids(search))
+            has_positive_terms = False
+            if len(parsed.required_tags) > 0:
+                has_positive_terms = True
+            if len(parsed.required_text) > 0:
+                has_positive_terms = True
+
+            if has_positive_terms:
+                positively_matched_note_ids = set(search_index.query_note_ids(search))
+            else:
+                ordered_root_ids = note_store.get_children(None)
+                positively_matched_note_ids = set(ordered_root_ids)
+                _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
             search_allowed_note_ids = set(positively_matched_note_ids)
 
             def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
