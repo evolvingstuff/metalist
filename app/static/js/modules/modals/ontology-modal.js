@@ -1,4 +1,5 @@
 import { BaseModal } from './base-modal.js';
+import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 
 const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
@@ -329,6 +330,11 @@ export class OntologyModal extends BaseModal {
 
                 <div class="ontology-error" id="ontology-error" style="display:none"></div>
 
+                <div class="ontology-busy" id="ontology-busy">
+                    <div class="ontology-spinner"></div>
+                    <div>Updating search index…</div>
+                </div>
+
                 <div class="ontology-search">
                     <input
                         type="text"
@@ -414,6 +420,37 @@ export class OntologyModal extends BaseModal {
 
         target.textContent = message;
         target.style.display = 'block';
+    }
+
+    setBusy(isBusy) {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const target = modalElement.querySelector('#ontology-busy');
+        if (!target) {
+            return;
+        }
+
+        if (isBusy) {
+            target.classList.add('is-visible');
+        } else {
+            target.classList.remove('is-visible');
+        }
+    }
+
+    runBlockingCommand(name, asyncFn) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            throw new Error('runBlockingCommand requires name');
+        }
+        if (typeof asyncFn !== 'function') {
+            throw new Error('runBlockingCommand requires async function');
+        }
+
+        this.setBusy(true);
+        return CommandGate.run(name, asyncFn).finally(() => {
+            this.setBusy(false);
+        });
     }
 
     renderCounts({ shown, total }) {
@@ -859,11 +896,16 @@ export class OntologyModal extends BaseModal {
             throw new Error('createRule requires non-empty text');
         }
 
-        const payload = await fetchJson(`${ONTOLOGY_BASE}/rules`, {
-            method: 'POST',
-            headers: buildAuthHeaders(),
-            body: JSON.stringify({ text }),
+        const payload = await this.runBlockingCommand('ontologyModal.createRule', async () => {
+            return fetchJson(`${ONTOLOGY_BASE}/rules`, {
+                method: 'POST',
+                headers: buildAuthHeaders(),
+                body: JSON.stringify({ text }),
+            });
         });
+        if (payload === null) {
+            return;
+        }
 
         const id = payload.id;
         if (!Number.isInteger(id) || id < 0) {
@@ -933,11 +975,16 @@ export class OntologyModal extends BaseModal {
             return;
         }
 
-        await fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
-            method: 'PUT',
-            headers: buildAuthHeaders(),
-            body: JSON.stringify({ text: next }),
+        const payload = await this.runBlockingCommand('ontologyModal.editRule', async () => {
+            return fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
+                method: 'PUT',
+                headers: buildAuthHeaders(),
+                body: JSON.stringify({ text: next }),
+            });
         });
+        if (payload === null) {
+            return;
+        }
         this._rulesCache = null;
     }
 
@@ -1004,11 +1051,16 @@ export class OntologyModal extends BaseModal {
             updatedText = `(${atoms.join(' ')}) => ${rhs}`;
         }
 
-        await fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
-            method: 'PUT',
-            headers: buildAuthHeaders(),
-            body: JSON.stringify({ text: updatedText }),
+        const payload = await this.runBlockingCommand('ontologyModal.editIncomingRule', async () => {
+            return fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
+                method: 'PUT',
+                headers: buildAuthHeaders(),
+                body: JSON.stringify({ text: updatedText }),
+            });
         });
+        if (payload === null) {
+            return;
+        }
         this._rulesCache = null;
 
         const focusTag = state.focusTag;
@@ -1045,16 +1097,21 @@ export class OntologyModal extends BaseModal {
             return;
         }
 
-        await fetchJson(`${ONTOLOGY_BASE}/rename-tag`, {
-            method: 'POST',
-            headers: buildAuthHeaders(),
-            body: JSON.stringify({ old: focusTag, new: trimmed }),
+        const payload = await this.runBlockingCommand('ontologyModal.renameTag', async () => {
+            return fetchJson(`${ONTOLOGY_BASE}/rename-tag`, {
+                method: 'POST',
+                headers: buildAuthHeaders(),
+                body: JSON.stringify({ old: focusTag, new: trimmed }),
+            });
         });
+        if (payload === null) {
+            return;
+        }
         this._rulesCache = null;
         await this.setFocusTag(trimmed);
     }
 
-    async _deleteRule(ruleId) {
+    async _deleteRuleRequest(ruleId) {
         if (!Number.isInteger(ruleId) || ruleId < 0) {
             throw new Error('deleteRule requires non-negative integer ruleId');
         }
@@ -1074,8 +1131,14 @@ export class OntologyModal extends BaseModal {
             }
         }
 
-        for (const ruleId of ruleIds) {
-            await this._deleteRule(ruleId);
+        const payload = await this.runBlockingCommand('ontologyModal.deleteRules', async () => {
+            for (const ruleId of ruleIds) {
+                await this._deleteRuleRequest(ruleId);
+            }
+            return { ok: true };
+        });
+        if (payload === null) {
+            return;
         }
         this._rulesCache = null;
     }

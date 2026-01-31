@@ -154,4 +154,5 @@ incident => urgent
 urgent => priority-high
 priority-high => important
 smart-guy => philosopher
-("asdf" eeee) => asdf
+"Lorem" => asdf
+asdf => foo
