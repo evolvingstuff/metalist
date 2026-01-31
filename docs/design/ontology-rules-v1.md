@@ -104,3 +104,40 @@ Behavior:
 - If input is a single unquoted tag token: shows left/equal/right graph view.
 - Otherwise: treats unquoted tokens as tags, and quoted strings as plaintext, then shows inferred tags.
 
+## UI Interaction Spec (v1)
+
+This section defines the initial UI interaction model for exploring and editing ontology rules.
+
+### Concepts
+
+- **Focus tag**: the tag currently centered in the UI.
+- **Selected rule**: the rule currently shown in the center editor.
+
+### Columns
+
+- **Left column (incoming, direct-only)**
+  - Direct tag implications: tags `A` where `A => focusTag`.
+  - Direct derivation rules: rules with `RHS == focusTag` where the LHS is not a single tag.
+    - Display only the LHS expression (RHS is redundant with the current focus).
+- **Center column (focus + editor)**
+  - Default: focus tag view (including equal/SCC members).
+  - When a rule is selected: show the full rule and editing controls.
+  - Editing only happens in the center column.
+- **Right column (outgoing, direct-only)**
+  - Only direct tag implications: tags `B` where `focusTag => B`.
+  - Rules never appear in the right column in v1.
+
+### Click behavior
+
+Rule rows in the left column are clickable as a whole:
+- Clicking the row (background/parentheses/whitespace) selects the rule for editing in the center.
+
+Tag atoms inside rule rows are styled as chips and are clickable:
+- Clicking a tag chip changes the focus tag to that tag.
+- Clicking a tag chip must not also select the rule.
+
+Text/regex atoms are styled but not clickable.
+
+Implementation note (DOM):
+- Rule row has an onClick handler for selecting the rule.
+- Tag chips have their own onClick handler and call `event.stopPropagation()` to prevent the row click.
