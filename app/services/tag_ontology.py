@@ -49,7 +49,7 @@ class Rule:
 @dataclass(frozen=True, slots=True)
 class MatcherRule:
     required_tags: FrozenSet[str]
-    required_phrases: Tuple[str, ...]
+    required_text_patterns: Tuple[re.Pattern[str], ...]
     required_regexes: Tuple[re.Pattern[str], ...]
     rhs: str
 
@@ -57,13 +57,35 @@ class MatcherRule:
         for required in self.required_tags:
             if required not in tags:
                 return False
-        for phrase in self.required_phrases:
-            if phrase not in plaintext:
+        for pattern in self.required_text_patterns:
+            if pattern.search(plaintext) is None:
                 return False
         for compiled in self.required_regexes:
             if compiled.search(plaintext) is None:
                 return False
         return True
+
+
+def _compile_quoted_text_as_word_match(phrase: str) -> re.Pattern[str]:
+    if not isinstance(phrase, str):
+        raise TypeError(f"phrase must be a string, got {type(phrase)}")
+    if phrase == "":
+        raise ValueError("phrase must be non-empty")
+
+    # "TODO" should not match "TODORS".
+    # Use word boundaries by default.
+    #
+    # Case heuristics:
+    # - all-lowercase phrase => case-insensitive match
+    # - otherwise => case-sensitive match
+    #
+    # (This keeps "Todo" distinct from "TODO" by default, but allows "todo" to match any case.)
+    flags = 0
+    if phrase == phrase.lower():
+        flags |= re.IGNORECASE
+
+    escaped = re.escape(phrase)
+    return re.compile(rf"\b{escaped}\b", flags)
 
 
 _DISALLOWED_TAG_CHARS = set(':"\\><=[]{}()*|;~`')
@@ -473,7 +495,7 @@ def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
             continue
 
         required_tags: Set[str] = set()
-        required_phrases: List[str] = []
+        required_text_patterns: List[re.Pattern[str]] = []
         required_regexes: List[re.Pattern[str]] = []
 
         for atom in rule.lhs:
@@ -481,7 +503,7 @@ def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
                 required_tags.add(atom.tag)
                 continue
             if isinstance(atom, TextAtom):
-                required_phrases.append(atom.phrase)
+                required_text_patterns.append(_compile_quoted_text_as_word_match(atom.phrase))
                 continue
             if isinstance(atom, RegexAtom):
                 required_regexes.append(_compile_regex(atom.pattern, atom.flags))
@@ -491,7 +513,7 @@ def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
         matcher_rules.append(
             MatcherRule(
                 required_tags=frozenset(required_tags),
-                required_phrases=tuple(required_phrases),
+                required_text_patterns=tuple(required_text_patterns),
                 required_regexes=tuple(required_regexes),
                 rhs=rule.rhs,
             )

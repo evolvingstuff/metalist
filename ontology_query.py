@@ -46,6 +46,13 @@ def _parse_query_atoms(text: str) -> tuple[list[str], list[str]]:
         if index >= len(text):
             break
 
+        # Allow users to paste rule-style conjunction groups like:
+        #   ("some text" contact)
+        # Parentheses are just grouping in the DSL; for ad-hoc queries we ignore them.
+        if text[index] in ("(", ")"):
+            index += 1
+            continue
+
         if text[index] in ("\"", "'"):
             quote = text[index]
             index += 1
@@ -77,8 +84,15 @@ def _parse_query_atoms(text: str) -> tuple[list[str], list[str]]:
 
         start = index
         while index < len(text) and not text[index].isspace():
+            if text[index] in ("(", ")"):
+                break
             index += 1
         token = text[start:index]
+        if token.endswith(")") and token != ")":
+            # Rare case: user typed `tag)` without whitespace.
+            token = token.rstrip(")")
+        if token.startswith("(") and token != "(":
+            token = token.lstrip("(")
         if not is_valid_tag_token(token):
             raise ValueError(f"Invalid tag token: {token!r}")
         tags.append(token)

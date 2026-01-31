@@ -90,7 +90,9 @@ Per note (independent evaluation):
 3) Tags only accumulate (fixed-point termination).
 
 Plaintext matching:
-- `TEXT` atoms use case-sensitive substring search against `strip_html(note.content_html)`.
+- `TEXT` atoms match as whole-word patterns (word boundaries), equivalent to `/\bTEXT\b/`.
+  - If the quoted phrase is all lowercase, it is treated as case-insensitive (equivalent to `/\btext\b/i`).
+  - Otherwise it is case-sensitive.
 - `REGEX` atoms run against the same plaintext; `/.../i` enables case-insensitive matching.
 
 Composition rule:

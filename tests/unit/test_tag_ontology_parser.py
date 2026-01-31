@@ -65,6 +65,40 @@ greeting => salutation
     assert "greeting-world" in inferred
 
 
+def test_quoted_text_matches_whole_words_only() -> None:
+    rules = parse_rules_text(
+        text='"TODO" => todo',
+        filename="ontology_rules.txt",
+    )
+    ontology = compile_rules(rules=rules, filename="ontology_rules.txt")
+
+    assert "todo" in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="TODO")
+    assert "todo" not in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="TODORS")
+    assert "todo" in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="TODO,")
+
+
+def test_quoted_text_case_heuristic_lowercase_is_case_insensitive() -> None:
+    rules = parse_rules_text(
+        text='"todo" => todo',
+        filename="ontology_rules.txt",
+    )
+    ontology = compile_rules(rules=rules, filename="ontology_rules.txt")
+
+    assert "todo" in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="TODO")
+    assert "todo" in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="Todo")
+
+
+def test_quoted_text_case_heuristic_mixed_case_is_case_sensitive() -> None:
+    rules = parse_rules_text(
+        text='"Todo" => todo',
+        filename="ontology_rules.txt",
+    )
+    ontology = compile_rules(rules=rules, filename="ontology_rules.txt")
+
+    assert "todo" in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="Todo")
+    assert "todo" not in ontology.infer_effective_tags(base_tags=frozenset(), plaintext="TODO")
+
+
 def test_focus_view_splits_left_equals_right() -> None:
     rules = parse_rules_text(
         text="""
