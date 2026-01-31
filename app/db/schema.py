@@ -58,7 +58,6 @@ CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
 );
 """
 
-
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]

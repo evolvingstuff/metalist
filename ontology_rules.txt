@@ -1,0 +1,25 @@
+# MetaList ontology rules (Phase-1 scaffolding)
+#
+# Syntax:
+#   LHS => RHS
+#   LHS = RHS        (sugar for bidirectional implication)
+#
+# Atoms on LHS:
+#   tag-token
+#   "simple quoted phrase"
+#   /regex/ or /regex/i
+#
+# Conjunction:
+#   (atom atom atom) => rhs
+#
+# Notes:
+# - Tags are plain tokens (no `#tag` prefix)
+# - Lines starting with `#` or `//` are comments
+# - No inline comments
+# - Edits require server restart
+
+Socrates => man
+man => mortal
+human = man
+"Socrates" => Socrates
+
