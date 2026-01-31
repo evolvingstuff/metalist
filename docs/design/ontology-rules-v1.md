@@ -141,3 +141,7 @@ Text/regex atoms are styled but not clickable.
 Implementation note (DOM):
 - Rule row has an onClick handler for selecting the rule.
 - Tag chips have their own onClick handler and call `event.stopPropagation()` to prevent the row click.
+
+### UI Mock
+
+![Ontology UI mock](../tag-ui.jpg)

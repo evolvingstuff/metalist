@@ -242,16 +242,12 @@ def _parse_atom(
 
     ch = line[index]
     if ch in ("\"", "'"):
-        try:
-            phrase, next_index = _read_quoted_phrase(line, index)
-        except ValueError as e:
-            raise OntologyParseError(
-                filename=filename,
-                line=line_number,
-                column=index + 1,
-                message=str(e),
-                source_line=line,
-            ) from e
+        phrase, next_index = _read_quoted_phrase(
+            line=line,
+            index=index,
+            filename=filename,
+            line_number=line_number,
+        )
         if phrase == "":
             raise OntologyParseError(
                 filename=filename,
@@ -263,26 +259,12 @@ def _parse_atom(
         return TextAtom(phrase=phrase), next_index
 
     if ch == "/":
-        try:
-            pattern, flags, next_index = _read_regex_literal(line, index)
-        except ValueError as e:
-            raise OntologyParseError(
-                filename=filename,
-                line=line_number,
-                column=index + 1,
-                message=str(e),
-                source_line=line,
-            ) from e
-        try:
-            _compile_regex(pattern, flags)
-        except re.error as e:
-            raise OntologyParseError(
-                filename=filename,
-                line=line_number,
-                column=index + 1,
-                message=f"Invalid regex: {e}",
-                source_line=line,
-            ) from e
+        pattern, flags, next_index = _read_regex_literal(
+            line=line,
+            index=index,
+            filename=filename,
+            line_number=line_number,
+        )
         return RegexAtom(pattern=pattern, flags=flags), next_index
 
     token, next_index = _read_bare_token(line, index)
@@ -315,8 +297,9 @@ def _read_bare_token(line: str, index: int) -> tuple[str, int]:
     return line[start:index], index
 
 
-def _read_quoted_phrase(line: str, index: int) -> tuple[str, int]:
+def _read_quoted_phrase(*, line: str, index: int, filename: str, line_number: int) -> tuple[str, int]:
     quote = line[index]
+    start_index = index
     index += 1
     out = ""
     while index < len(line):
@@ -338,11 +321,19 @@ def _read_quoted_phrase(line: str, index: int) -> tuple[str, int]:
             continue
         out += ch
         index += 1
-    raise ValueError(f"Unclosed quote {quote!r}")
+
+    raise OntologyParseError(
+        filename=filename,
+        line=line_number,
+        column=start_index + 1,
+        message=f"Unclosed quote {quote!r}",
+        source_line=line,
+    )
 
 
-def _read_regex_literal(line: str, index: int) -> tuple[str, str, int]:
+def _read_regex_literal(*, line: str, index: int, filename: str, line_number: int) -> tuple[str, str, int]:
     assert line[index] == "/"
+    start_index = index
     index += 1
     pattern = ""
     while index < len(line):
@@ -366,8 +357,15 @@ def _read_regex_literal(line: str, index: int) -> tuple[str, str, int]:
         pattern += ch
         index += 1
     else:
-        raise ValueError("Unclosed regex literal")
+        raise OntologyParseError(
+            filename=filename,
+            line=line_number,
+            column=start_index + 1,
+            message="Unclosed regex literal",
+            source_line=line,
+        )
 
+    flags_start_index = index
     flags = ""
     while index < len(line):
         ch = line[index]
@@ -376,9 +374,15 @@ def _read_regex_literal(line: str, index: int) -> tuple[str, str, int]:
         flags += ch
         index += 1
 
-    for flag in flags:
+    for offset, flag in enumerate(flags):
         if flag != "i":
-            raise ValueError(f"Unsupported regex flag: {flag}")
+            raise OntologyParseError(
+                filename=filename,
+                line=line_number,
+                column=flags_start_index + offset + 1,
+                message=f"Unsupported regex flag: {flag}",
+                source_line=line,
+            )
     return pattern, flags, index
 
 
@@ -611,18 +615,17 @@ def _compute_implication_closure_and_scc_members(
     reachable_comps_memo: Dict[int, FrozenSet[int]] = {}
 
     def reach(comp_id: int) -> FrozenSet[int]:
-        cached = reachable_comps_memo.get(comp_id)
-        if cached is not None:
-            return cached
+        if comp_id in reachable_comps_memo:
+            return reachable_comps_memo[comp_id]
 
         reached: Set[int] = set()
-        stack = list(comp_out.get(comp_id, set()))
+        stack = list(comp_out[comp_id])
         while stack:
             nxt = stack.pop()
             if nxt in reached:
                 continue
             reached.add(nxt)
-            stack.extend(comp_out.get(nxt, set()))
+            stack.extend(comp_out[nxt])
         frozen = frozenset(reached)
         reachable_comps_memo[comp_id] = frozen
         return frozen

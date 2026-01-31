@@ -164,6 +164,239 @@ body.memory-modal-open #memory-modal {
     pointer-events: auto;
 }
 
+body.ontology-modal-open #main-app {
+    filter: blur(4px);
+    pointer-events: none;
+    user-select: none;
+}
+
+body.ontology-modal-open #ontology-modal {
+    pointer-events: auto;
+}
+
+#ontology-modal .modal-content.ontology-modal-content {
+    width: min(1100px, 95vw);
+    max-height: 90vh;
+    margin: 3vh auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(25, 25, 35, 0.98), rgba(18, 18, 28, 0.98));
+    backdrop-filter: blur(16px);
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#ontology-modal .ontology-modal-content button {
+    width: auto;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: inherit;
+    font: inherit;
+}
+
+#ontology-modal .ontology-modal-content button:hover {
+    background: transparent;
+}
+
+.ontology-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ontology-modal-header h2 {
+    margin: 0;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.ontology-close {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.8);
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+}
+
+.ontology-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.ontology-search {
+    position: relative;
+}
+
+#ontology-search-input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.35);
+    color: rgba(255, 255, 255, 0.92);
+}
+
+#ontology-search-input:focus {
+    outline: none;
+    border-color: rgba(99, 179, 237, 0.85);
+    box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.25);
+}
+
+.ontology-search-results {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.ontology-search-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.95rem;
+}
+
+.ontology-search-result:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.ontology-columns {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    overflow: hidden;
+}
+
+.ontology-column {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+}
+
+.ontology-column-title {
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.ontology-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.ontology-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 2px;
+}
+
+.ontology-tag {
+    flex: 1;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
+.ontology-tag:hover {
+    color: rgba(99, 179, 237, 0.95);
+}
+
+.ontology-focus .ontology-tag {
+    font-weight: 600;
+}
+
+.ontology-remove {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(245, 101, 101, 0.12);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+}
+
+.ontology-remove:hover {
+    background: rgba(245, 101, 101, 0.22);
+}
+
+.ontology-spacer {
+    width: 28px;
+    height: 28px;
+}
+
+.ontology-add {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.ontology-add:hover {
+    color: rgba(255, 255, 255, 0.82);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ontology-placeholder {
+    color: rgba(255, 255, 255, 0.45);
+    padding: 18px 0;
+    font-size: 0.9rem;
+}
+
+.ontology-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.85rem;
+}
+
 #memory-modal .modal-content.memory-modal {
     width: min(960px, 90vw);
     max-height: 90vh;

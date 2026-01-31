@@ -208,6 +208,15 @@ class SearchIndex:
             metrics={"elapsed_ms": elapsed_ms, "count": len(note_ids), "revision": self._revision}
         ).info("search.index.remove_many.finish")
 
+    def list_non_meta_tag_terms(self) -> FrozenSet[str]:
+        """Return all tag terms currently indexed (excluding @meta tags)."""
+        with self._lock:
+            return frozenset(
+                term
+                for term in self._tag_notes.keys()
+                if term and not term.startswith("@")
+            )
+
     def query_note_ids(self, search: str) -> Set[str]:
         t0 = time.perf_counter()
         if not isinstance(search, str):

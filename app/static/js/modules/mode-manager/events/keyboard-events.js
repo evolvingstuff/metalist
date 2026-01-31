@@ -7,6 +7,7 @@ import { actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
+import { OntologyModal } from '../../modals/ontology-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { ErrorHandler } from '../../error-handler.js';
@@ -20,6 +21,7 @@ import { CommandGate } from '../services/command-gate-service.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
+const ontologyModal = new OntologyModal();
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 const NAVIGATION_KEYS = new Set([
@@ -279,6 +281,11 @@ function handleKeyDown(event) {
         case 'p':
             if (event.metaKey || event.ctrlKey) {
                 void handlePasswordModalShortcut(event);
+            }
+            break;
+        case 't':
+            if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
+                void handleOntologyModalShortcut(event);
             }
             break;
         case 'm':
@@ -1041,6 +1048,32 @@ async function handlePasswordModalShortcut(event) {
     // Open the password modal
     const passwordModal = new PasswordModal();
     passwordModal.open();
+}
+
+async function handleOntologyModalShortcut(event) {
+    if (!event) {
+        throw new Error('handleOntologyModalShortcut called without an event object');
+    }
+
+    Logger.logDebug('Ontology modal shortcut triggered (Cmd+T)', {}, Logger.LogCategory.EVENT);
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
+    if (ModeContext.isEditing) {
+        const result = await CommandGate.run('keyboard.ontology_modal.exit_editing', async () => {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        });
+        if (result === null) {
+            return;
+        }
+    }
+
+    ontologyModal.open();
 }
 
 function handleMemoryModalShortcut(event) {

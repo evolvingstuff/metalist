@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860">
+  <defs>
+    <style>
+      .bg { fill: #0b0f14; }
+      .panel { fill: #101826; stroke: #223146; stroke-width: 2; }
+      .header { fill: #162235; }
+      .htext { fill: #d7e3f4; font: 700 16px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .text { fill: #d7e3f4; font: 500 14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .muted { fill: #94a3b8; font: 500 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .chip { fill: #0b2a3a; stroke: #1b5b7a; stroke-width: 1.5; }
+      .chipText { fill: #bfe8ff; font: 600 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .atomText { fill: #d7e3f4; font: 600 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .atomBox { fill: #172036; stroke: #2a3b55; stroke-width: 1.5; }
+      .ruleRow { fill: #121a2a; stroke: #27364d; stroke-width: 1.5; }
+      .ruleRowHover { fill: #152137; stroke: #3a4f70; stroke-width: 2; }
+      .accent { fill: #22c55e; }
+      .warn { fill: #f59e0b; }
+      .danger { fill: #ef4444; }
+      .divider { stroke: #223146; stroke-width: 1; }
+      .callout { fill: #0f172a; stroke: #475569; stroke-width: 1.5; }
+      .calloutTitle { fill: #e2e8f0; font: 700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .calloutText { fill: #cbd5e1; font: 500 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .arrow { stroke: #94a3b8; stroke-width: 2; fill: none; marker-end: url(#arrowHead); }
+      .arrow2 { stroke: #22c55e; stroke-width: 2; fill: none; marker-end: url(#arrowHeadGreen); }
+    </style>
+    <marker id="arrowHead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+    </marker>
+    <marker id="arrowHeadGreen" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="860" />
+
+  <!-- Title -->
+  <text class="htext" x="28" y="40">Ontology UI (v1) — Direct-only exploration + center editing</text>
+  <text class="muted" x="28" y="62">Click row = select rule for center editor · Click tag chip = focus tag · Text/regex atoms are not clickable · Right column shows tags only</text>
+
+  <!-- Panels -->
+  <rect class="panel" x="24" y="90" width="430" height="740" rx="10" />
+  <rect class="panel" x="485" y="90" width="430" height="740" rx="10" />
+  <rect class="panel" x="946" y="90" width="430" height="740" rx="10" />
+
+  <!-- Headers -->
+  <rect class="header" x="24" y="90" width="430" height="54" rx="10" />
+  <rect class="header" x="485" y="90" width="430" height="54" rx="10" />
+  <rect class="header" x="946" y="90" width="430" height="54" rx="10" />
+  <text class="htext" x="44" y="124">Left (Incoming)</text>
+  <text class="htext" x="505" y="124">Center (Focus + Editor)</text>
+  <text class="htext" x="966" y="124">Right (Outgoing)</text>
+
+  <!-- Focus tag badge -->
+  <rect class="chip" x="660" y="108" width="230" height="26" rx="13" />
+  <text class="chipText" x="676" y="126">focusTag: seattle-phone-number</text>
+
+  <!-- Left: section headers -->
+  <text class="text" x="44" y="176">Direct tag implies focusTag</text>
+  <text class="muted" x="44" y="196">(single-tag LHS only)</text>
+
+  <!-- Left: implies list (empty example) -->
+  <rect class="atomBox" x="44" y="212" width="390" height="42" rx="8" />
+  <text class="muted" x="60" y="238">(none)</text>
+
+  <line class="divider" x1="44" y1="270" x2="434" y2="270" />
+
+  <text class="text" x="44" y="302">Direct derivation LHS (RHS is focusTag)</text>
+  <text class="muted" x="44" y="322">(rules that produce focusTag)</text>
+
+  <!-- Left: rule row (clickable row + clickable chips) -->
+  <rect class="ruleRowHover" x="44" y="340" width="390" height="86" rx="10" />
+  <text class="muted" x="60" y="362">click row → select rule (edit in center)</text>
+  <!-- LHS tokens -->
+  <text class="atomText" x="60" y="392">(</text>
+  <rect class="chip" x="78" y="374" width="120" height="26" rx="13" />
+  <text class="chipText" x="92" y="392">phone-number</text>
+  <rect class="chip" x="210" y="374" width="160" height="26" rx="13" />
+  <text class="chipText" x="224" y="392">seattle-area-code</text>
+  <text class="atomText" x="378" y="392">)</text>
+  <text class="muted" x="60" y="416">tag chips clickable → focus tag (stopPropagation)</text>
+
+  <!-- Center: Tag focus view -->
+  <text class="text" x="505" y="176">Tag focus view</text>
+  <rect class="atomBox" x="505" y="196" width="390" height="118" rx="10" />
+  <text class="text" x="525" y="224">Tag: seattle-phone-number</text>
+  <text class="muted" x="525" y="246">Equal-to-X (SCC)</text>
+  <rect class="chip" x="525" y="258" width="170" height="26" rx="13" />
+  <text class="chipText" x="539" y="276">seattle-phone-number</text>
+  <text class="muted" x="525" y="302">Note: equals are tags only</text>
+
+  <line class="divider" x1="505" y1="332" x2="895" y2="332" />
+
+  <!-- Center: Rule selected view (editor) -->
+  <text class="text" x="505" y="362">Rule selected (center editor)</text>
+  <rect class="atomBox" x="505" y="380" width="390" height="220" rx="10" />
+  <text class="muted" x="525" y="404">selectedRuleId: 42</text>
+
+  <!-- Full rule display -->
+  <text class="atomText" x="525" y="438">(</text>
+  <rect class="chip" x="542" y="420" width="120" height="26" rx="13" />
+  <text class="chipText" x="556" y="438">phone-number</text>
+  <rect class="chip" x="674" y="420" width="160" height="26" rx="13" />
+  <text class="chipText" x="688" y="438">seattle-area-code</text>
+  <text class="atomText" x="842" y="438">)  ⇒  seattle-phone-number</text>
+
+  <!-- Buttons -->
+  <rect class="chip" x="525" y="470" width="70" height="26" rx="8" />
+  <text class="chipText" x="545" y="488">Edit</text>
+  <rect class="chip" x="605" y="470" width="80" height="26" rx="8" />
+  <text class="chipText" x="627" y="488">Save</text>
+  <rect class="chip" x="695" y="470" width="90" height="26" rx="8" />
+  <text class="chipText" x="715" y="488">Delete</text>
+  <text class="muted" x="525" y="516">Editing happens only here (center column)</text>
+
+  <!-- Rule provenance list (context) -->
+  <text class="muted" x="525" y="546">(optional context shown elsewhere):</text>
+  <text class="muted" x="525" y="566">/phone-num-pattern/ ⇒ phone-number</text>
+  <text class="muted" x="525" y="586">"206" ⇒ seattle-area-code</text>
+
+  <!-- Right: outgoing tags only -->
+  <text class="text" x="966" y="176">Direct implied tags</text>
+  <text class="muted" x="966" y="196">(tags only; rules never shown here)</text>
+  <rect class="atomBox" x="966" y="212" width="390" height="42" rx="8" />
+  <text class="muted" x="982" y="238">(none)</text>
+
+  <line class="divider" x1="966" y1="270" x2="1356" y2="270" />
+
+  <text class="text" x="966" y="302">Direct implied-by-focus via tag edges</text>
+  <rect class="atomBox" x="966" y="322" width="390" height="90" rx="10" />
+  <text class="muted" x="982" y="350">Example if present:</text>
+  <rect class="chip" x="982" y="360" width="170" height="26" rx="13" />
+  <text class="chipText" x="996" y="378">contact</text>
+  <rect class="chip" x="1160" y="360" width="170" height="26" rx="13" />
+  <text class="chipText" x="1174" y="378">important</text>
+
+  <!-- Callouts -->
+  <rect class="callout" x="30" y="720" width="410" height="105" rx="10" />
+  <text class="calloutTitle" x="46" y="746">Click priority</text>
+  <text class="calloutText" x="46" y="770">- Click a tag chip ⇒ change focusTag</text>
+  <text class="calloutText" x="46" y="790">- Click row background/parentheses ⇒ select rule</text>
+  <text class="calloutText" x="46" y="810">- Regex/text atoms are display-only</text>
+
+  <rect class="callout" x="490" y="640" width="410" height="185" rx="10" />
+  <text class="calloutTitle" x="506" y="666">State model</text>
+  <text class="calloutText" x="506" y="690">- focusTag drives left/center/right columns</text>
+  <text class="calloutText" x="506" y="710">- selectedRuleId only changes center editor</text>
+  <text class="calloutText" x="506" y="730">- Right column shows tags only (no rules)</text>
+  <text class="calloutText" x="506" y="750">- LHS in left column omits RHS (redundant)</text>
+  <text class="calloutText" x="506" y="770">Implementation: tag chip click uses stopPropagation</text>
+
+  <!-- Arrows -->
+  <path class="arrow2" d="M 350 380 C 430 380, 470 420, 505 430" />
+  <text class="muted" x="382" y="360">select rule</text>
+  <path class="arrow" d="M 180 388 C 240 420, 350 520, 505 520" />
+  <text class="muted" x="190" y="416">chip click changes focusTag</text>
+</svg>
+

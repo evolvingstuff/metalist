@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.services.tag_ontology import (
-    OntologyParseError,
     compile_rules,
     is_valid_tag_token,
     parse_rules_text,
@@ -101,10 +100,7 @@ def _parse_query_atoms(text: str) -> tuple[list[str], list[str]]:
 
 
 def main() -> None:
-    try:
-        ontology = _load_ontology_from_file()
-    except OntologyParseError as e:
-        raise SystemExit(str(e))
+    ontology = _load_ontology_from_file()
 
     print(
         "Ontology query (Phase-1).\n"
@@ -127,11 +123,7 @@ def main() -> None:
             )
             continue
 
-        try:
-            tags, phrases = _parse_query_atoms(raw)
-        except ValueError as e:
-            print(f"error: {e}")
-            continue
+        tags, phrases = _parse_query_atoms(raw)
 
         if not phrases and len(tags) == 1:
             _print_focus(ontology, tags[0])

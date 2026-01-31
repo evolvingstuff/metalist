@@ -26,6 +26,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const expandAll = requireAction(actions, 'expandAll');
     const resetViewFilters = requireAction(actions, 'resetViewFilters');
     const resetAllPreferences = requireAction(actions, 'resetAllPreferences');
+    const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
 
     const defaults = {
         showBacklinks: false,
@@ -121,6 +122,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Enable/disable password protection…',
             execute: async () => openPasswordManager(),
+        },
+        {
+            id: 'action.edit_tag_relationships',
+            kind: 'action',
+            label: 'Edit tag relationships…',
+            execute: async () => openOntologyEditor(),
         },
     ];
 }

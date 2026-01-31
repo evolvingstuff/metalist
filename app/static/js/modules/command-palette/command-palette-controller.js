@@ -3,6 +3,7 @@ import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.
 import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actions/selection-actions.js';
 import { NotesAPI } from '../api-client.js';
 import { PasswordModal } from '../modals/password-modal.js';
+import { OntologyModal } from '../modals/ontology-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -208,6 +209,8 @@ class CommandPaletteController {
         this._preferences = new PreferencesStore();
         this._usage = new UsageStore();
 
+        this._ontologyModal = null;
+
         this._elements = null;
 
         this._handleKeyDown = this._handleKeyDown.bind(this);
@@ -233,6 +236,7 @@ class CommandPaletteController {
             actions: {
                 applyPreference: this.applyPreference.bind(this),
                 openPasswordManager: this.openPasswordManager.bind(this),
+                openOntologyEditor: this.openOntologyEditor.bind(this),
                 collapseAll: this.collapseAll.bind(this),
                 expandAll: this.expandAll.bind(this),
                 resetViewFilters: this.resetViewFilters.bind(this),
@@ -920,6 +924,38 @@ class CommandPaletteController {
         if (result === null) {
             return;
         }
+    }
+
+    async openOntologyEditor() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+
+        const restoreQuery = this._elements.input.value;
+        const restoreIndex = this._previousSelection.selectedIndex;
+        this.close();
+
+        const modalClosedHandler = (event) => {
+            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
+            if (!detail || detail.modalName !== 'ontologyModal') {
+                return;
+            }
+            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
+            void this.open().then(() => {
+                this._elements.input.value = restoreQuery;
+                this._previousSelection.selectedIndex = restoreIndex;
+                this._render();
+            });
+        };
+        document.addEventListener('metalist:modal-closed', modalClosedHandler);
+
+        if (this._ontologyModal === null) {
+            this._ontologyModal = new OntologyModal();
+        }
+        this._ontologyModal.open();
     }
 
     async openPasswordManager() {

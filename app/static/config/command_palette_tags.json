@@ -43,6 +43,10 @@
     {
       "id": "form.password_protection",
       "tags": ["password", "protect", "protection", "enable", "disable", "security"]
+    },
+    {
+      "id": "action.edit_tag_relationships",
+      "tags": ["tag", "tags", "ontology", "relationships", "synonym", "imply", "graph"]
     }
   ]
 }

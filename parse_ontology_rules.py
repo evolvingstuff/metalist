@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.services.tag_ontology import OntologyParseError, compile_rules, parse_rules_text
+from app.services.tag_ontology import compile_rules, parse_rules_text
 
 
 def main() -> None:
@@ -12,11 +12,8 @@ def main() -> None:
         raise RuntimeError(f"Missing rules file: {rules_path}")
 
     text = rules_path.read_text(encoding="utf-8")
-    try:
-        rules = parse_rules_text(text=text, filename=str(rules_path))
-        ontology = compile_rules(rules=rules, filename=str(rules_path))
-    except OntologyParseError as e:
-        raise SystemExit(str(e))
+    rules = parse_rules_text(text=text, filename=str(rules_path))
+    ontology = compile_rules(rules=rules, filename=str(rules_path))
 
     edge_count = sum(len(v) for v in ontology.implication_out_edges.values())
     node_count = len(ontology.implication_out_edges)
