@@ -20,7 +20,9 @@ from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
 from app.services.content_cache import get_cached_content, get_cached_tags
+from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index
+from app.utils.text_utils import strip_html
 
 
 def _derive_own_tag_terms(tags: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
@@ -262,16 +264,25 @@ class NoteStore:
                     f"[startup] note_store hydration loop processed {processed} notes in {total_elapsed:.2f}s"
                 )
         search_records: List[SearchRecord] = []
+        ontology = get_ontology()
+        matcher_rules_enabled = bool(ontology.matcher_rules)
         for record in note_map.values():
             effective_terms = effective_tag_terms_by_id.get(record.id)
             if effective_terms is None:
                 raise RuntimeError(f"Integrity failure: missing effective tags for note {record.id}")
+            plaintext = ""
+            if matcher_rules_enabled:
+                plaintext = strip_html(record.content)
+            effective_with_ontology = ontology.infer_effective_tags(
+                base_tags=effective_terms,
+                plaintext=plaintext,
+            )
             search_records.append(
                 SearchRecord(
                     note_id=record.id,
                     content_html=record.content,
                     tags=record.tags,
-                    tag_terms=effective_terms,
+                    tag_terms=effective_with_ontology,
                 )
             )
 
@@ -319,11 +330,21 @@ class NoteStore:
             effective_tag_terms = record.tag_terms | inherited_non_meta
             self._effective_non_meta_tag_terms[record.id] = inherited_non_meta | record.non_meta_tag_terms
         assert effective_tag_terms is not None
+
+        ontology = get_ontology()
+        matcher_rules_enabled = bool(ontology.matcher_rules)
+        inferred_plaintext = ""
+        if matcher_rules_enabled:
+            inferred_plaintext = strip_html(record.content)
+        effective_with_ontology = ontology.infer_effective_tags(
+            base_tags=effective_tag_terms,
+            plaintext=inferred_plaintext,
+        )
         search_index.upsert(
             note_id=record.id,
             content_html=record.content,
             tags=record.tags,
-            tag_terms=effective_tag_terms,
+            tag_terms=effective_with_ontology,
         )
 
     def update_note_from_db(self, note: SimpleNamespace, plaintext: str, tags: str) -> None:
@@ -371,8 +392,21 @@ class NoteStore:
 
         if tags_changed:
             assert effective_tag_terms_by_id is not None
-            effective_for_note = effective_tag_terms_by_id.get(updated.id)
-            assert effective_for_note is not None
+
+            ontology = get_ontology()
+            matcher_rules_enabled = bool(ontology.matcher_rules)
+            effective_with_ontology_by_id: Dict[str, FrozenSet[str]] = {}
+            for note_id, base_terms in effective_tag_terms_by_id.items():
+                record = self.get_note(note_id)
+                inferred_plaintext = ""
+                if matcher_rules_enabled:
+                    inferred_plaintext = strip_html(record.content)
+                effective_with_ontology_by_id[note_id] = ontology.infer_effective_tags(
+                    base_tags=base_terms,
+                    plaintext=inferred_plaintext,
+                )
+
+            effective_for_note = effective_with_ontology_by_id[updated.id]
             search_index.upsert(
                 note_id=updated.id,
                 content_html=updated.content,
@@ -382,7 +416,7 @@ class NoteStore:
 
             descendant_updates = {
                 note_id: terms
-                for note_id, terms in effective_tag_terms_by_id.items()
+                for note_id, terms in effective_with_ontology_by_id.items()
                 if note_id != updated.id
             }
             if descendant_updates:
@@ -391,11 +425,21 @@ class NoteStore:
 
         assert inherited_non_meta is not None
         effective_tag_terms = updated.tag_terms | inherited_non_meta
+
+        ontology = get_ontology()
+        matcher_rules_enabled = bool(ontology.matcher_rules)
+        inferred_plaintext = ""
+        if matcher_rules_enabled:
+            inferred_plaintext = strip_html(updated.content)
+        effective_with_ontology = ontology.infer_effective_tags(
+            base_tags=effective_tag_terms,
+            plaintext=inferred_plaintext,
+        )
         search_index.upsert(
             note_id=updated.id,
             content_html=updated.content,
             tags=updated.tags,
-            tag_terms=effective_tag_terms,
+            tag_terms=effective_with_ontology,
         )
 
     def update_metadata_from_db(self, note: SimpleNamespace, *, rebuild: bool) -> None:
@@ -445,7 +489,19 @@ class NoteStore:
                 tag_updates = self._recompute_effective_tag_terms_subtree_locked(note.id)
 
         if tag_updates:
-            search_index.bulk_update_tag_terms(tag_updates)
+            ontology = get_ontology()
+            matcher_rules_enabled = bool(ontology.matcher_rules)
+            inferred_updates: Dict[str, FrozenSet[str]] = {}
+            for note_id, base_terms in tag_updates.items():
+                record = self.get_note(note_id)
+                inferred_plaintext = ""
+                if matcher_rules_enabled:
+                    inferred_plaintext = strip_html(record.content)
+                inferred_updates[note_id] = ontology.infer_effective_tags(
+                    base_tags=base_terms,
+                    plaintext=inferred_plaintext,
+                )
+            search_index.bulk_update_tag_terms(inferred_updates)
 
     def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool) -> None:
         """Apply pointer metadata for multiple notes without repeated rebuilds."""
@@ -522,7 +578,19 @@ class NoteStore:
                     tag_updates.update(self._recompute_effective_tag_terms_subtree_locked(root_id))
 
         if tag_updates:
-            search_index.bulk_update_tag_terms(tag_updates)
+            ontology = get_ontology()
+            matcher_rules_enabled = bool(ontology.matcher_rules)
+            inferred_updates: Dict[str, FrozenSet[str]] = {}
+            for note_id, base_terms in tag_updates.items():
+                record = self.get_note(note_id)
+                inferred_plaintext = ""
+                if matcher_rules_enabled:
+                    inferred_plaintext = strip_html(record.content)
+                inferred_updates[note_id] = ontology.infer_effective_tags(
+                    base_tags=base_terms,
+                    plaintext=inferred_plaintext,
+                )
+            search_index.bulk_update_tag_terms(inferred_updates)
 
     def remove_note(self, note_id: str) -> None:
         if not self._loaded:
@@ -889,6 +957,36 @@ class NoteStore:
     def list_note_ids(self) -> List[str]:
         with self._lock:
             return list(self._note_map.keys())
+
+    def rebuild_search_index_tag_terms(self) -> None:
+        """Recompute search-index tag terms for all notes.
+
+        This applies hierarchical inheritance first, then overlays ontology inference.
+        """
+        if not self._loaded:
+            return
+
+        with self._lock:
+            effective_tag_terms_by_id = self._rebuild_effective_tag_terms_locked()
+            content_by_id = {
+                note_id: record.content for note_id, record in self._note_map.items()
+            }
+
+        ontology = get_ontology()
+        matcher_rules_enabled = bool(ontology.matcher_rules)
+        inferred_updates: Dict[str, FrozenSet[str]] = {}
+        for note_id, base_terms in effective_tag_terms_by_id.items():
+            if note_id not in content_by_id:
+                raise RuntimeError(f"Integrity failure: missing note content for {note_id}")
+            inferred_plaintext = ""
+            if matcher_rules_enabled:
+                inferred_plaintext = strip_html(content_by_id[note_id])
+            inferred_updates[note_id] = ontology.infer_effective_tags(
+                base_tags=base_terms,
+                plaintext=inferred_plaintext,
+            )
+
+        search_index.bulk_update_tag_terms(inferred_updates)
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:

@@ -3,6 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from app.services.search_index import search_index
+from app.services.note_store import store as note_store
+from app.services.sync import generate_new_uuid
+from app.services.view_cache import view_cache
 from app.services.tag_ontology import RegexAtom, TagAtom, TextAtom, parse_rules_text
 from app.services.ontology_rules_store import (
     build_direct_edge_rule_map,
@@ -43,6 +46,11 @@ def create_rule(payload: dict) -> dict:
     if text.strip() == "":
         raise HTTPException(status_code=400, detail="text must be non-empty")
     rule_id, normalized = create_rule_line(text=text)
+    if note_store.loaded:
+        note_store.rebuild_search_index_tag_terms()
+        view_cache.clear()
+        update_uuid = generate_new_uuid()
+        return {"id": rule_id, "text": normalized, "updateUUID": update_uuid}
     return {"id": rule_id, "text": normalized}
 
 
@@ -59,6 +67,11 @@ def update_rule(rule_id: int, payload: dict) -> dict:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
 
     updated_id, normalized = update_rule_line(rule_id=rule_id, text=text)
+    if note_store.loaded:
+        note_store.rebuild_search_index_tag_terms()
+        view_cache.clear()
+        update_uuid = generate_new_uuid()
+        return {"id": updated_id, "text": normalized, "updateUUID": update_uuid}
     return {"id": updated_id, "text": normalized}
 
 
@@ -69,6 +82,11 @@ def delete_rule(rule_id: int) -> dict:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
 
     delete_rule_line(rule_id=rule_id)
+    if note_store.loaded:
+        note_store.rebuild_search_index_tag_terms()
+        view_cache.clear()
+        update_uuid = generate_new_uuid()
+        return {"ok": True, "updateUUID": update_uuid}
     return {"ok": True}
 
 
