@@ -15,6 +15,212 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function escapeQuotedPhrase(phrase) {
+    if (typeof phrase !== 'string') {
+        throw new Error('escapeQuotedPhrase requires string');
+    }
+    return phrase.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeRegexPattern(pattern) {
+    if (typeof pattern !== 'string') {
+        throw new Error('escapeRegexPattern requires string');
+    }
+    return pattern.replace(/\\/g, '\\\\').replace(/\//g, '\\/');
+}
+
+function isValidTagToken(token) {
+    if (typeof token !== 'string') {
+        throw new Error('isValidTagToken requires string');
+    }
+    if (token.trim() !== token) {
+        return false;
+    }
+    if (token.length === 0) {
+        return false;
+    }
+    if (/\s/.test(token)) {
+        return false;
+    }
+    if (token.startsWith('-') || token.startsWith('+') || token.startsWith('/')) {
+        return false;
+    }
+    if (token.startsWith('"') || token.startsWith("'")) {
+        return false;
+    }
+    if (token.startsWith('(') || token.startsWith(')')) {
+        return false;
+    }
+    if (token.includes('#')) {
+        return false;
+    }
+
+    const disallowed = new Set([':', '"', '\\', '>', '<', '=', '[', ']', '{', '}', '(', ')', '*', '|', ';', '~', '`']);
+    for (const ch of token) {
+        if (disallowed.has(ch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function parseIncomingAtoms(raw) {
+    if (typeof raw !== 'string') {
+        throw new Error('parseIncomingAtoms requires string');
+    }
+
+    const atoms = [];
+    let index = 0;
+    while (index < raw.length) {
+        while (index < raw.length && raw[index].match(/\s/)) {
+            index += 1;
+        }
+        if (index >= raw.length) {
+            break;
+        }
+        const ch = raw[index];
+        if (ch === '(' || ch === ')') {
+            index += 1;
+            continue;
+        }
+        if (ch === '"' || ch === "'") {
+            const quote = ch;
+            let token = quote;
+            index += 1;
+            while (index < raw.length) {
+                const c = raw[index];
+                token += c;
+                if (c === '\\') {
+                    if (index + 1 < raw.length) {
+                        token += raw[index + 1];
+                        index += 2;
+                        continue;
+                    }
+                    index += 1;
+                    continue;
+                }
+                if (c === quote) {
+                    index += 1;
+                    break;
+                }
+                index += 1;
+            }
+            if (token.length < 2 || token[token.length - 1] !== quote) {
+                throw new Error(`Unclosed quote: ${quote}`);
+            }
+            atoms.push(token);
+            continue;
+        }
+        if (ch === '/') {
+            let token = '/';
+            index += 1;
+            while (index < raw.length) {
+                const c = raw[index];
+                token += c;
+                if (c === '\\') {
+                    if (index + 1 < raw.length) {
+                        token += raw[index + 1];
+                        index += 2;
+                        continue;
+                    }
+                    index += 1;
+                    continue;
+                }
+                if (c === '/') {
+                    index += 1;
+                    break;
+                }
+                index += 1;
+            }
+            if (token[token.length - 1] !== '/') {
+                throw new Error('Unclosed regex literal');
+            }
+
+            let flags = '';
+            while (index < raw.length) {
+                const c = raw[index];
+                if (c.match(/\s/) || c === ')') {
+                    break;
+                }
+                flags += c;
+                index += 1;
+            }
+            if (flags !== '' && flags !== 'i') {
+                throw new Error(`Unsupported regex flags: ${flags}`);
+            }
+            atoms.push(token + flags);
+            continue;
+        }
+
+        const start = index;
+        while (index < raw.length) {
+            const c = raw[index];
+            if (c.match(/\s/) || c === '(' || c === ')') {
+                break;
+            }
+            index += 1;
+        }
+        const token = raw.slice(start, index);
+        if (token === '=>' || token === '=') {
+            throw new Error('Do not include operators; only enter the condition.');
+        }
+        if (token !== '') {
+            atoms.push(token);
+        }
+    }
+
+    return atoms;
+}
+
+function renderIncomingAtoms(atoms) {
+    if (!Array.isArray(atoms)) {
+        throw new Error('renderIncomingAtoms requires array');
+    }
+    const parts = [];
+    for (const atom of atoms) {
+        if (!atom || typeof atom !== 'object') {
+            throw new Error('incoming atom must be object');
+        }
+        const kind = atom.kind;
+        if (typeof kind !== 'string' || kind.trim() === '') {
+            throw new Error('incoming atom missing kind');
+        }
+
+        if (kind === 'tag') {
+            const tag = atom.tag;
+            if (typeof tag !== 'string' || tag.trim() === '') {
+                throw new Error('incoming tag atom missing tag');
+            }
+            parts.push(
+                `<button class="ontology-atom ontology-atom-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
+            );
+            continue;
+        }
+
+        if (kind === 'text') {
+            const text = atom.text;
+            if (typeof text !== 'string' || text.trim() === '') {
+                throw new Error('incoming text atom missing text');
+            }
+            parts.push(`<span class="ontology-atom ontology-atom-text">${escapeHtml(text)}</span>`);
+            continue;
+        }
+
+        if (kind === 'regex') {
+            const regex = atom.regex;
+            if (typeof regex !== 'string' || regex.trim() === '') {
+                throw new Error('incoming regex atom missing regex');
+            }
+            parts.push(`<span class="ontology-atom ontology-atom-regex">${escapeHtml(regex)}</span>`);
+            continue;
+        }
+
+        throw new Error(`Unknown incoming atom kind: ${kind}`);
+    }
+
+    return parts.join('<span class="ontology-atom-sep"> </span>');
+}
+
 function buildAuthHeaders() {
     const tabId = sessionStorage.getItem('metalist_tab_id');
     if (!tabId) {
@@ -56,6 +262,7 @@ export class OntologyModal extends BaseModal {
     constructor() {
         super('ontologyModal', 'ontology-modal');
         this._abortController = null;
+        this._rulesCache = null;
 
         this._handleSearchInput = this._handleSearchInput.bind(this);
         this._handleSearchKeydown = this._handleSearchKeydown.bind(this);
@@ -86,6 +293,21 @@ export class OntologyModal extends BaseModal {
             this._abortController.abort();
             this._abortController = null;
         }
+
+        this._rulesCache = null;
+    }
+
+    focusSearchInput() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const input = modalElement.querySelector('#ontology-search-input');
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+        input.focus();
+        input.select();
     }
 
     showModalElement() {
@@ -104,6 +326,8 @@ export class OntologyModal extends BaseModal {
                     <h2>Edit Tag Relationships</h2>
                     <button class="ontology-close" data-action="close" aria-label="Close">×</button>
                 </div>
+
+                <div class="ontology-error" id="ontology-error" style="display:none"></div>
 
                 <div class="ontology-search">
                     <input
@@ -166,6 +390,30 @@ export class OntologyModal extends BaseModal {
         this.renderFocusView(null);
         this.renderTagSearchResults([]);
         this.renderCounts({ shown: 0, total: 0 });
+        this.renderError(null);
+    }
+
+    renderError(message) {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const target = modalElement.querySelector('#ontology-error');
+        if (!target) {
+            return;
+        }
+
+        if (message === null) {
+            target.textContent = '';
+            target.style.display = 'none';
+            return;
+        }
+        if (typeof message !== 'string' || message.trim() === '') {
+            throw new Error('renderError requires string or null');
+        }
+
+        target.textContent = message;
+        target.style.display = 'block';
     }
 
     renderCounts({ shown, total }) {
@@ -383,32 +631,54 @@ export class OntologyModal extends BaseModal {
         middleTitle.textContent = `'${focusTag}' and synonyms`;
         rightTitle.textContent = `Tags that '${focusTag}' implies`;
 
-        leftList.innerHTML = this._renderTagList(view.leftDirect, view.leftIndirect);
+        leftList.innerHTML = this._renderIncomingRules(view);
         middleList.innerHTML = this._renderMiddleList(view);
         rightList.innerHTML = this._renderTagList(view.rightDirect, view.rightIndirect);
     }
 
-    _renderTagList(directRows, indirectTags) {
-        if (!Array.isArray(directRows)) {
-            throw new Error('directRows must be an array');
+    _renderIncomingRules(view) {
+        const incoming = view.incomingRules;
+        const indirectTags = view.leftIndirect;
+        if (!Array.isArray(incoming)) {
+            throw new Error('incomingRules must be array');
         }
         if (!Array.isArray(indirectTags)) {
-            throw new Error('indirectTags must be an array');
+            throw new Error('leftIndirect must be array');
         }
 
-        const directHtml = directRows.map((row) => {
-            const tag = row.tag;
-            const ruleId = row.ruleId;
-            if (typeof tag !== 'string') {
-                throw new Error('direct tag must be string');
-            }
+        const directHtml = incoming.map((rule) => {
+            const ruleId = rule.id;
+            const kind = rule.kind;
+            const display = rule.display;
+            const lhsAtoms = rule.lhsAtoms;
+            const lhsTag = rule.lhsTag;
             if (!Number.isInteger(ruleId) || ruleId < 0) {
-                throw new Error('direct ruleId must be non-negative integer');
+                throw new Error('incoming rule id must be non-negative integer');
             }
+            if (typeof kind !== 'string' || kind.trim() === '') {
+                throw new Error('incoming rule kind must be non-empty string');
+            }
+            if (typeof display !== 'string' || display.trim() === '') {
+                throw new Error('incoming rule display must be non-empty string');
+            }
+            if (!Array.isArray(lhsAtoms) || lhsAtoms.length === 0) {
+                throw new Error('incoming rule lhsAtoms must be non-empty array');
+            }
+            if (lhsTag !== null && typeof lhsTag !== 'string') {
+                throw new Error('incoming rule lhsTag must be string or null');
+            }
+
+            const lhs = renderIncomingAtoms(lhsAtoms);
+
             return `
                 <div class="ontology-row">
-                    <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
-                    <button class="ontology-remove" data-action="remove" data-rule-id="${ruleId}" aria-label="Remove">−</button>
+                    <div class="ontology-rule-left">
+                        ${lhs}
+                    </div>
+                    <div class="ontology-row-actions">
+                        <button class="ontology-edit" data-action="edit-incoming" data-rule-id="${ruleId}" aria-label="Edit">✎</button>
+                        <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleId}" aria-label="Remove">−</button>
+                    </div>
                 </div>
             `;
         });
@@ -425,7 +695,77 @@ export class OntologyModal extends BaseModal {
             `;
         });
 
-        const combined = directHtml.concat(indirectHtml);
+        const combined = [];
+        if (directHtml.length === 0) {
+            combined.push('<div class="ontology-placeholder">(no direct rules)</div>');
+        } else {
+            combined.push(...directHtml);
+        }
+        if (directHtml.length > 0 && indirectHtml.length > 0) {
+            combined.push('<div class="ontology-divider"></div>');
+        }
+        combined.push(...indirectHtml);
+
+        if (combined.length === 0) {
+            return '<div class="ontology-placeholder">(none)</div>';
+        }
+        return combined.join('');
+    }
+
+    _renderTagList(directRows, indirectTags) {
+        if (!Array.isArray(directRows)) {
+            throw new Error('directRows must be an array');
+        }
+        if (!Array.isArray(indirectTags)) {
+            throw new Error('indirectTags must be an array');
+        }
+
+        const directHtml = directRows.map((row) => {
+            const tag = row.tag;
+            const ruleIds = row.ruleIds;
+            if (typeof tag !== 'string') {
+                throw new Error('direct tag must be string');
+            }
+            if (!Array.isArray(ruleIds) || ruleIds.length === 0) {
+                throw new Error('direct ruleIds must be non-empty array');
+            }
+            for (const ruleId of ruleIds) {
+                if (!Number.isInteger(ruleId) || ruleId < 0) {
+                    throw new Error('direct ruleId must be non-negative integer');
+                }
+            }
+
+            const ruleIdsAttr = ruleIds.join(',');
+            const canEdit = ruleIds.length === 1;
+            return `
+                <div class="ontology-row">
+                    <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
+                    <div class="ontology-row-actions">
+                        ${canEdit ? `<button class="ontology-edit" data-action="edit" data-rule-id="${ruleIds[0]}" aria-label="Edit">✎</button>` : ''}
+                        <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleIdsAttr}" aria-label="Remove">−</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        const indirectHtml = indirectTags.map((tag) => {
+            if (typeof tag !== 'string') {
+                throw new Error('indirect tag must be string');
+            }
+            return `
+                <div class="ontology-row">
+                    <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
+                    <span class="ontology-spacer"></span>
+                </div>
+            `;
+        });
+
+        const combined = [];
+        combined.push(...directHtml);
+        if (directHtml.length > 0 && indirectHtml.length > 0) {
+            combined.push('<div class="ontology-divider"></div>');
+        }
+        combined.push(...indirectHtml);
         if (combined.length === 0) {
             return '<div class="ontology-placeholder">(none)</div>';
         }
@@ -451,21 +791,29 @@ export class OntologyModal extends BaseModal {
         const directByTag = new Map();
         for (const row of direct) {
             const tag = row.tag;
-            const ruleId = row.ruleId;
+            const ruleIds = row.ruleIds;
             if (typeof tag !== 'string') {
                 throw new Error('middleDirect tag must be string');
             }
-            if (!Number.isInteger(ruleId) || ruleId < 0) {
-                throw new Error('middleDirect ruleId must be non-negative integer');
+            if (!Array.isArray(ruleIds) || ruleIds.length === 0) {
+                throw new Error('middleDirect ruleIds must be non-empty array');
             }
-            directByTag.set(tag, ruleId);
+            for (const ruleId of ruleIds) {
+                if (!Number.isInteger(ruleId) || ruleId < 0) {
+                    throw new Error('middleDirect ruleId must be non-negative integer');
+                }
+            }
+            directByTag.set(tag, ruleIds);
         }
 
         const rows = [];
         rows.push(`
             <div class="ontology-row ontology-focus">
                 <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(focusTag)}">${escapeHtml(focusTag)}</button>
-                <span class="ontology-spacer"></span>
+                <div class="ontology-row-actions">
+                    <button class="ontology-edit" data-action="rename-focus" aria-label="Rename">✎</button>
+                    <span class="ontology-spacer"></span>
+                </div>
             </div>
         `);
 
@@ -477,12 +825,17 @@ export class OntologyModal extends BaseModal {
                 throw new Error('middle tag must be string');
             }
 
-            const maybeRuleId = directByTag.get(tag);
-            if (maybeRuleId !== undefined) {
+            const maybeRuleIds = directByTag.get(tag);
+            if (maybeRuleIds !== undefined) {
+                const ruleIdsAttr = maybeRuleIds.join(',');
+                const canEdit = maybeRuleIds.length === 1;
                 rows.push(`
                     <div class="ontology-row">
                         <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
-                        <button class="ontology-remove" data-action="remove" data-rule-id="${maybeRuleId}" aria-label="Remove">−</button>
+                        <div class="ontology-row-actions">
+                            ${canEdit ? `<button class="ontology-edit" data-action="edit" data-rule-id="${maybeRuleIds[0]}" aria-label="Edit">✎</button>` : ''}
+                            <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleIdsAttr}" aria-label="Remove">−</button>
+                        </div>
                     </div>
                 `);
             } else {
@@ -516,6 +869,189 @@ export class OntologyModal extends BaseModal {
         if (!Number.isInteger(id) || id < 0) {
             throw new Error('Invalid create rule response');
         }
+
+        this._rulesCache = null;
+    }
+
+    async _loadRulesCache() {
+        if (this._rulesCache !== null) {
+            return this._rulesCache;
+        }
+
+        const response = await fetch(`${ONTOLOGY_BASE}/rules`, {
+            method: 'GET',
+            headers: buildAuthHeaders(),
+        });
+        if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            if (payload && typeof payload.detail === 'string') {
+                throw new Error(payload.detail);
+            }
+            throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const payload = await response.json();
+        const rules = payload.rules;
+        if (!Array.isArray(rules)) {
+            throw new Error('rules payload missing rules array');
+        }
+        const map = new Map();
+        for (const rule of rules) {
+            const id = rule.id;
+            const text = rule.text;
+            if (!Number.isInteger(id) || id < 0) {
+                throw new Error('invalid rule id from server');
+            }
+            if (typeof text !== 'string') {
+                throw new Error('invalid rule text from server');
+            }
+            map.set(id, text);
+        }
+        this._rulesCache = map;
+        return map;
+    }
+
+    async _editRule(ruleId) {
+        if (!Number.isInteger(ruleId) || ruleId < 0) {
+            throw new Error('editRule requires non-negative integer ruleId');
+        }
+
+        const rules = await this._loadRulesCache();
+        const existing = rules.get(ruleId);
+        if (typeof existing !== 'string') {
+            throw new Error(`Unknown rule id: ${ruleId}`);
+        }
+
+        const next = window.prompt('Edit rule:', existing);
+        if (next === null) {
+            return;
+        }
+        if (typeof next !== 'string') {
+            throw new Error('prompt must return string or null');
+        }
+        if (next.trim() === '') {
+            return;
+        }
+
+        await fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
+            method: 'PUT',
+            headers: buildAuthHeaders(),
+            body: JSON.stringify({ text: next }),
+        });
+        this._rulesCache = null;
+    }
+
+    async _editIncomingRule(ruleId) {
+        if (!Number.isInteger(ruleId) || ruleId < 0) {
+            throw new Error('editIncomingRule requires non-negative integer ruleId');
+        }
+
+        const state = this.getModalState();
+        const focusView = state.focusView;
+        if (!focusView || typeof focusView !== 'object') {
+            throw new Error('focusView missing');
+        }
+        const incoming = focusView.incomingRules;
+        if (!Array.isArray(incoming)) {
+            throw new Error('focusView.incomingRules must be array');
+        }
+        const match = incoming.find((rule) => rule && typeof rule === 'object' && rule.id === ruleId);
+        if (!match) {
+            throw new Error(`Unknown rule id: ${ruleId}`);
+        }
+
+        const kind = match.kind;
+        const rhs = match.rhs;
+        const editValue = match.editValue;
+
+        if (typeof kind !== 'string' || kind.trim() === '') {
+            throw new Error('incoming rule kind missing');
+        }
+        if (typeof rhs !== 'string' || rhs.trim() === '') {
+            throw new Error('incoming rule rhs missing');
+        }
+        if (typeof editValue !== 'string') {
+            throw new Error('incoming rule editValue missing');
+        }
+
+        if (kind !== 'tag' && kind !== 'text' && kind !== 'regex' && kind !== 'and') {
+            throw new Error(`Unknown incoming rule kind: ${kind}`);
+        }
+
+        const promptValue = typeof editValue === 'string' ? editValue : '';
+        const raw = window.prompt(`Condition that implies '${rhs}' (no =>, no parentheses required):`, promptValue);
+        if (raw === null) {
+            return;
+        }
+        if (typeof raw !== 'string') {
+            throw new Error('prompt must return string or null');
+        }
+
+        const trimmed = raw.trim();
+        if (trimmed === '') {
+            return;
+        }
+
+        const atoms = parseIncomingAtoms(trimmed);
+        if (atoms.length === 0) {
+            return;
+        }
+
+        let updatedText = null;
+        if (atoms.length === 1) {
+            updatedText = `${atoms[0]} => ${rhs}`;
+        } else {
+            updatedText = `(${atoms.join(' ')}) => ${rhs}`;
+        }
+
+        await fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
+            method: 'PUT',
+            headers: buildAuthHeaders(),
+            body: JSON.stringify({ text: updatedText }),
+        });
+        this._rulesCache = null;
+
+        const focusTag = state.focusTag;
+        if (typeof focusTag === 'string' && focusTag.trim() !== '') {
+            await this.setFocusTag(focusTag);
+        }
+    }
+
+    async _renameFocusedTag() {
+        const state = this.getModalState();
+        const focusTag = state.focusTag;
+        if (typeof focusTag !== 'string' || focusTag.trim() === '') {
+            throw new Error('Focus tag missing');
+        }
+
+        const next = window.prompt('Rename tag (rules only):', focusTag);
+        if (next === null) {
+            return;
+        }
+        if (typeof next !== 'string') {
+            throw new Error('prompt must return string or null');
+        }
+        const trimmed = next.trim();
+        if (trimmed === '' || trimmed === focusTag) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Rename tag '${focusTag}' → '${trimmed}' in ontology_rules.txt?\n\n` +
+            'This renames the tag in BOTH ontology rules and all note tag bars.\n' +
+            'This cannot be undone automatically.'
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        await fetchJson(`${ONTOLOGY_BASE}/rename-tag`, {
+            method: 'POST',
+            headers: buildAuthHeaders(),
+            body: JSON.stringify({ old: focusTag, new: trimmed }),
+        });
+        this._rulesCache = null;
+        await this.setFocusTag(trimmed);
     }
 
     async _deleteRule(ruleId) {
@@ -526,6 +1062,22 @@ export class OntologyModal extends BaseModal {
             method: 'DELETE',
             headers: buildAuthHeaders(),
         });
+    }
+
+    async _deleteRules(ruleIds) {
+        if (!Array.isArray(ruleIds) || ruleIds.length === 0) {
+            throw new Error('deleteRules requires non-empty array');
+        }
+        for (const ruleId of ruleIds) {
+            if (!Number.isInteger(ruleId) || ruleId < 0) {
+                throw new Error('deleteRules requires non-negative integer ids');
+            }
+        }
+
+        for (const ruleId of ruleIds) {
+            await this._deleteRule(ruleId);
+        }
+        this._rulesCache = null;
     }
 
     async _promptForTag(promptText) {
@@ -546,49 +1098,158 @@ export class OntologyModal extends BaseModal {
         return trimmed;
     }
 
+    async _promptForSingleTagToken(promptText) {
+        const response = await this._promptForTag(promptText);
+        if (!response) {
+            return null;
+        }
+
+        const trimmed = response.trim();
+        if (!isValidTagToken(trimmed)) {
+            throw new Error(
+                'That input is not a valid tag token. ' +
+                'This action only supports a single tag (no spaces, quotes, regex, or parentheses).'
+            );
+        }
+        return trimmed;
+    }
+
+    async _promptForIncomingRule(focusTag) {
+        if (typeof focusTag !== 'string' || focusTag.trim() === '') {
+            throw new Error('focusTag must be non-empty string');
+        }
+
+        const raw = window.prompt(
+            `Condition that implies '${focusTag}' (no =>, no parentheses required):\n` +
+            `- Tag: smart-guy\n` +
+            `- Text: "asdf"\n` +
+            `- Regex: /foo.*/i\n` +
+            `- AND: "asdf" bbbb`,
+            ''
+        );
+        if (raw === null) {
+            return null;
+        }
+        if (typeof raw !== 'string') {
+            throw new Error('prompt must return string or null');
+        }
+        const trimmed = raw.trim();
+        if (trimmed === '') {
+            return null;
+        }
+
+        const atoms = parseIncomingAtoms(trimmed);
+        if (atoms.length === 0) {
+            return null;
+        }
+
+        if (atoms.length === 1) {
+            return `${atoms[0]} => ${focusTag}`;
+        }
+        return `(${atoms.join(' ')}) => ${focusTag}`;
+    }
+
     async _handleClick(event) {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) {
-            return;
-        }
-        const action = target.dataset.action;
-        if (typeof action !== 'string') {
-            return;
-        }
-
-        if (action === 'close') {
-            this.close();
-            return;
-        }
-
-        if (action === 'focus') {
-            const tag = target.dataset.tag;
-            if (typeof tag !== 'string' || tag.trim() === '') {
-                throw new Error('focus action missing tag');
+        await (async () => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) {
+                return;
             }
-            void this.setFocusTag(tag);
-            return;
-        }
+            const action = target.dataset.action;
+            if (typeof action !== 'string') {
+                return;
+            }
 
-        if (action === 'remove') {
+            this.renderError(null);
+
+            if (action === 'close') {
+                this.close();
+                return;
+            }
+
+            if (action === 'focus') {
+                const tag = target.dataset.tag;
+                if (typeof tag !== 'string' || tag.trim() === '') {
+                    throw new Error('focus action missing tag');
+                }
+                void this.setFocusTag(tag);
+                return;
+            }
+
+            if (action === 'rename-focus') {
+                await this._renameFocusedTag();
+                return;
+            }
+
+            if (action === 'remove') {
+            const rawRuleIds = target.dataset.ruleIds;
+            if (typeof rawRuleIds !== 'string' || rawRuleIds.trim() === '') {
+                throw new Error('remove action missing ruleIds');
+            }
+            const ruleIds = rawRuleIds
+                .split(',')
+                .map((value) => value.trim())
+                .filter((value) => value !== '')
+                .map((value) => Number.parseInt(value, 10));
+            if (ruleIds.length === 0) {
+                throw new Error('remove action missing ruleIds');
+            }
+            for (const ruleId of ruleIds) {
+                if (!Number.isInteger(ruleId) || ruleId < 0) {
+                    throw new Error(`invalid rule id: ${rawRuleIds}`);
+                }
+            }
+
+            const confirmed = window.confirm(
+                ruleIds.length === 1
+                    ? `Delete rule ${ruleIds[0]}? This cannot be undone.`
+                    : `Delete ${ruleIds.length} rules (${ruleIds.join(', ')})? This cannot be undone.`
+            );
+            if (!confirmed) {
+                return;
+            }
+
+            await this._deleteRules(ruleIds);
+            const focusTag = this.getModalState().focusTag;
+            if (typeof focusTag === 'string' && focusTag.trim() !== '') {
+                await this.setFocusTag(focusTag);
+            }
+                return;
+            }
+
+            if (action === 'edit') {
             const rawRuleId = target.dataset.ruleId;
             if (typeof rawRuleId !== 'string' || rawRuleId.trim() === '') {
-                throw new Error('remove action missing ruleId');
+                throw new Error('edit action missing ruleId');
             }
             const ruleId = Number.parseInt(rawRuleId, 10);
             if (!Number.isInteger(ruleId) || ruleId < 0) {
                 throw new Error(`invalid rule id: ${rawRuleId}`);
             }
 
-            await this._deleteRule(ruleId);
+            await this._editRule(ruleId);
             const focusTag = this.getModalState().focusTag;
             if (typeof focusTag === 'string' && focusTag.trim() !== '') {
                 await this.setFocusTag(focusTag);
             }
-            return;
-        }
+                return;
+            }
 
-        if (action === 'add-left' || action === 'add-right' || action === 'add-middle') {
+            if (action === 'edit-incoming') {
+            const rawRuleId = target.dataset.ruleId;
+            if (typeof rawRuleId !== 'string' || rawRuleId.trim() === '') {
+                throw new Error('edit action missing ruleId');
+            }
+            const ruleId = Number.parseInt(rawRuleId, 10);
+            if (!Number.isInteger(ruleId) || ruleId < 0) {
+                throw new Error(`invalid rule id: ${rawRuleId}`);
+            }
+
+            await this._editIncomingRule(ruleId);
+                return;
+            }
+
+            if (action === 'add-left' || action === 'add-right' || action === 'add-middle') {
             const state = this.getModalState();
             const focusTag = state.focusTag;
             if (typeof focusTag !== 'string' || focusTag.trim() === '') {
@@ -596,19 +1257,23 @@ export class OntologyModal extends BaseModal {
             }
 
             if (action === 'add-left') {
-                const newTag = await this._promptForTag(`Tag that implies '${focusTag}':`);
-                if (!newTag) {
+                const ruleText = await this._promptForIncomingRule(focusTag);
+                if (!ruleText) {
                     return;
                 }
-                await this._createRule(`${newTag} => ${focusTag}`);
+                await this._createRule(ruleText);
             } else if (action === 'add-right') {
-                const newTag = await this._promptForTag(`Tag implied by '${focusTag}':`);
+                const newTag = await this._promptForSingleTagToken(
+                    `Tag implied by '${focusTag}' (single token only):`
+                );
                 if (!newTag) {
                     return;
                 }
                 await this._createRule(`${focusTag} => ${newTag}`);
             } else {
-                const newTag = await this._promptForTag(`Synonym for '${focusTag}':`);
+                const newTag = await this._promptForSingleTagToken(
+                    `Synonym for '${focusTag}' (single token only):`
+                );
                 if (!newTag) {
                     return;
                 }
@@ -616,6 +1281,16 @@ export class OntologyModal extends BaseModal {
             }
 
             await this.setFocusTag(focusTag);
-        }
+            }
+        })().catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('Ontology modal action failed', error);
+            this.renderError(
+                message +
+                (message.includes('single tag')
+                    ? ' Use the LEFT column for text/regex/AND matchers.'
+                    : '')
+            );
+        });
     }
 }

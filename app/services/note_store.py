@@ -886,6 +886,10 @@ class NoteStore:
         with self._lock:
             return note_id in self._note_map
 
+    def list_note_ids(self) -> List[str]:
+        with self._lock:
+            return list(self._note_map.keys())
+
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:
             head = self._heads.get(parent_id)

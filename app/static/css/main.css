@@ -327,6 +327,57 @@ body.ontology-modal-open #ontology-modal {
     padding: 6px 2px;
 }
 
+.ontology-rule-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ontology-atom {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ontology-atom-sep {
+    color: rgba(255, 255, 255, 0.25);
+}
+
+.ontology-atom-tag {
+    color: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+}
+
+.ontology-atom-tag:hover {
+    color: rgba(99, 179, 237, 0.95);
+}
+
+.ontology-atom-text,
+.ontology-atom-regex {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.ontology-rule-text {
+    flex: 1;
+    min-width: 0;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.78);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ontology-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .ontology-tag {
     flex: 1;
     text-align: left;
@@ -338,6 +389,12 @@ body.ontology-modal-open #ontology-modal {
     cursor: pointer;
 }
 
+.ontology-rule-left .ontology-tag {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .ontology-tag:hover {
     color: rgba(99, 179, 237, 0.95);
 }
@@ -347,17 +404,34 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .ontology-remove {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(245, 101, 101, 0.12);
-    color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.02);
+    color: rgba(255, 255, 255, 0.7);
     cursor: pointer;
 }
 
 .ontology-remove:hover {
-    background: rgba(245, 101, 101, 0.22);
+    background: rgba(245, 101, 101, 0.16);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.ontology-edit {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.02);
+    color: rgba(255, 255, 255, 0.65);
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.ontology-edit:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .ontology-spacer {
@@ -380,6 +454,13 @@ body.ontology-modal-open #ontology-modal {
     border-color: rgba(255, 255, 255, 0.3);
 }
 
+.ontology-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.24);
+    margin: 10px 0;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
 .ontology-placeholder {
     color: rgba(255, 255, 255, 0.45);
     padding: 18px 0;
@@ -395,6 +476,15 @@ body.ontology-modal-open #ontology-modal {
     border-top: 1px solid rgba(255, 255, 255, 0.06);
     color: rgba(255, 255, 255, 0.45);
     font-size: 0.85rem;
+}
+
+.ontology-error {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(245, 101, 101, 0.35);
+    background: rgba(245, 101, 101, 0.12);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
 }
 
 #memory-modal .modal-content.memory-modal {

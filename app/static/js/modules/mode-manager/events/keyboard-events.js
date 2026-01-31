@@ -41,6 +41,34 @@ let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
 let savedEditingCursorOffset = null;
 
+function isOntologyModalShortcut(event) {
+    if (!event) {
+        throw new Error('isOntologyModalShortcut called without event');
+    }
+    if (typeof event.key !== 'string') {
+        throw new Error('isOntologyModalShortcut requires event.key');
+    }
+    if (event.key !== 't') {
+        return false;
+    }
+    if (!(event.metaKey || event.ctrlKey)) {
+        return false;
+    }
+    if (event.shiftKey) {
+        return false;
+    }
+    return true;
+}
+
+async function openOntologyModalFromShortcut() {
+    if (ontologyModal.isOpen) {
+        ontologyModal.focusSearchInput();
+        return;
+    }
+    ontologyModal.open();
+    ontologyModal.focusSearchInput();
+}
+
 export function initKeyboardEvents() {
         
     document.addEventListener('keydown', handleKeyDown, { capture: true });
@@ -77,8 +105,9 @@ function handleKeyDown(event) {
 	            const isSearchInput = tagName === 'INPUT' && target.id === 'search-input';
 	            const isTagBarInput = tagName === 'INPUT' && target.classList.contains('note-tag-bar-input');
 	            const isCommandPaletteShortcut = event.key === '/' && (event.metaKey || event.ctrlKey);
+	            const isTagEditorShortcut = isOntologyModalShortcut(event);
 
-	            if (isTextInput && !(isSearchInput && event.key === 'Enter') && !isCommandPaletteShortcut) {
+	            if (isTextInput && !(isSearchInput && event.key === 'Enter') && !isCommandPaletteShortcut && !isTagEditorShortcut) {
 	                const isCreateShortcut = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
 	                const isTabToggleShortcut = event.key === 'Tab';
 	                if (!(isTagBarInput && (isCreateShortcut || isTabToggleShortcut))) {
@@ -120,6 +149,14 @@ function handleKeyDown(event) {
     if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
         const targetElement = event.target instanceof HTMLElement ? event.target.closest('.modal') : null;
         if (targetElement) {
+            if (isOntologyModalShortcut(event)) {
+                event.preventDefault();
+                event.stopPropagation();
+                const topModal = ModeContext.modalStack[ModeContext.modalStack.length - 1];
+                if (topModal === 'ontologyModal') {
+                    void openOntologyModalFromShortcut();
+                }
+            }
             return;
         }
 
@@ -1073,7 +1110,7 @@ async function handleOntologyModalShortcut(event) {
         }
     }
 
-    ontologyModal.open();
+    await openOntologyModalFromShortcut();
 }
 
 function handleMemoryModalShortcut(event) {

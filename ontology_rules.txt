@@ -18,9 +18,9 @@
 # - No inline comments
 # - Edits require server restart
 
-Socrates => man
-man => mortal
-human = man
+Socrates => manz
+manz => mortal
+human = manz
 "Socrates" => Socrates
 
 # --------------------------------------------
@@ -153,3 +153,5 @@ critical => incident
 incident => urgent
 urgent => priority-high
 priority-high => important
+smart-guy => philosopher
+("asdf" eeee) => asdf

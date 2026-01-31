@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import re
+
+from app.services.content_formatting import _unwrap_tag_token
+
+
+def rename_tag_in_tag_bar(*, tags: str, old: str, new: str) -> tuple[str, bool]:
+    if not isinstance(tags, str):
+        raise TypeError('tags must be a string')
+    if not isinstance(old, str) or old == '':
+        raise TypeError('old must be a non-empty string')
+    if not isinstance(new, str) or new == '':
+        raise TypeError('new must be a non-empty string')
+
+    if old == new:
+        return tags, False
+
+    out = ''
+    changed = False
+    index = 0
+    while index < len(tags):
+        if tags.startswith('/*', index):
+            end = tags.find('*/', index + 2)
+            if end == -1:
+                out += tags[index:]
+                break
+            out += tags[index : end + 2]
+            index = end + 2
+            continue
+
+        ch = tags[index]
+        if ch.isspace():
+            out += ch
+            index += 1
+            continue
+
+        start = index
+        opener = tags[index]
+        token_end = None
+
+        if opener in {'[', '{', '('}:
+            opener_run = 1
+            while index + opener_run < len(tags) and tags[index + opener_run] == opener:
+                opener_run += 1
+            if opener_run <= 3:
+                closer = {"[": "]", "{": "}", "(": ")"}[opener]
+                needle = closer * opener_run
+                close_at = tags.find(needle, index + opener_run)
+                if close_at != -1:
+                    token_end = close_at + opener_run
+
+        if token_end is None:
+            token_end = start
+            while token_end < len(tags) and not tags[token_end].isspace():
+                token_end += 1
+
+        token = tags[start:token_end]
+        base, wrapper = _unwrap_tag_token(token)
+
+        if wrapper is None:
+            if base == old:
+                out += new
+                changed = True
+            else:
+                out += token
+        else:
+            replaced = _replace_inner_tokens(inner=base, old=old, new=new)
+            if replaced != base:
+                changed = True
+                opener_char, depth = wrapper
+                closer_char = {"[": "]", "{": "}", "(": ")"}[opener_char]
+                out += (opener_char * depth) + replaced + (closer_char * depth)
+            else:
+                out += token
+
+        index = token_end
+
+    return out, changed
+
+
+def _replace_inner_tokens(*, inner: str, old: str, new: str) -> str:
+    parts = re.split(r'(\s+)', inner)
+    out: list[str] = []
+    for part in parts:
+        if part == old:
+            out.append(new)
+        else:
+            out.append(part)
+    return ''.join(out)
+

@@ -23,6 +23,82 @@ def _is_comment_or_blank(line: str) -> bool:
     return False
 
 
+def _replace_tag_tokens_in_line(*, line: str, old: str, new: str) -> str:
+    if not isinstance(line, str):
+        raise TypeError('line must be a string')
+    if not isinstance(old, str) or old == '':
+        raise TypeError('old must be a non-empty string')
+    if not isinstance(new, str) or new == '':
+        raise TypeError('new must be a non-empty string')
+
+    if _is_comment_or_blank(line):
+        return line
+
+    out = ''
+    i = 0
+    in_quote: Optional[str] = None
+    in_regex = False
+    while i < len(line):
+        ch = line[i]
+
+        if in_quote is not None:
+            out += ch
+            if ch == '\\':
+                if i + 1 < len(line):
+                    out += line[i + 1]
+                    i += 2
+                    continue
+            if ch == in_quote:
+                in_quote = None
+            i += 1
+            continue
+
+        if in_regex:
+            out += ch
+            if ch == '\\':
+                if i + 1 < len(line):
+                    out += line[i + 1]
+                    i += 2
+                    continue
+            if ch == '/':
+                in_regex = False
+            i += 1
+            continue
+
+        if ch in ('\"', "'"):
+            in_quote = ch
+            out += ch
+            i += 1
+            continue
+
+        if ch == '/':
+            in_regex = True
+            out += ch
+            i += 1
+            continue
+
+        if ch.isspace() or ch in '()':
+            out += ch
+            i += 1
+            continue
+
+        start = i
+        while i < len(line):
+            nxt = line[i]
+            if nxt.isspace() or nxt in '()':
+                break
+            if nxt in ('\"', "'", '/'):  # start of quoted phrase/regex
+                break
+            i += 1
+        token = line[start:i]
+        if token == old:
+            out += new
+        else:
+            out += token
+
+    return out
+
+
 def _read_lines(path: Path) -> List[str]:
     if not path.exists():
         return []
@@ -217,6 +293,26 @@ def build_direct_edge_rule_map() -> Mapping[tuple[str, str], int]:
                 if edge not in out:
                     out[edge] = rule_id
         return out
+
+
+def rename_tag_everywhere(*, old: str, new: str) -> None:
+    if not isinstance(old, str) or old.strip() == '':
+        raise TypeError('old must be a non-empty string')
+    if not isinstance(new, str) or new.strip() == '':
+        raise TypeError('new must be a non-empty string')
+
+    old_tag = old.strip()
+    new_tag = new.strip()
+
+    if old_tag == new_tag:
+        raise ValueError('old and new tags must differ')
+
+    with _LOCK:
+        state = _load_state_locked()
+        lines = list(state.lines)
+        for idx, line in enumerate(lines):
+            lines[idx] = _replace_tag_tokens_in_line(line=line, old=old_tag, new=new_tag)
+        _update_rules_locked(new_lines=lines)
 
 
 def extract_ontology_tags(ontology: TagOntology) -> set[str]:
