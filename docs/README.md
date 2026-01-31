@@ -7,7 +7,8 @@
 ## Design
 - Differential view (diff/snapshot payload): `docs/design/differential-view-protocol.md`
 - In-memory store + read guard: `docs/design/in_memory_store.md`
-- Ontology / query language notes: `docs/design/ontology.md`
+- Ontology (long-term reference): `docs/design/ontology.md`
+- Ontology rules (implemented v1 DSL): `docs/design/ontology-rules-v1.md`
 
 ## UI
 - Keyboard + mouse controls: `docs/ui/controls.md`

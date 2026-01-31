@@ -1,5 +1,10 @@
 # Personal Knowledge System - Tag Ontology Reference
 
+Status: this document describes the long-term ontology design (including `#tag` and `~`).
+
+For the currently-implemented v1 rule DSL (plain tag tokens, `=>` and `=`, no `~`, no negation), see:
+- `docs/design/ontology-rules-v1.md`
+
 ## Core Operators
 
 ### Implication (`=>`)

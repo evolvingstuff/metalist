@@ -59,6 +59,9 @@ python main.py
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
 - DB guard: `app/db/session.py` (begin_writer/connect_reader + post-startup SELECT guard).
 - Undo: `app/services/undo_state.py`.
+- Ontology rules (v1): `app/services/tag_ontology.py` + `ontology_rules.txt`.
+  - Parse check: `parse_ontology_rules.py`.
+  - Interactive query: `ontology_query.py`.
 
 ## Layer Boundaries
 - `app/api/`: HTTP delivery only. FastAPI/Pydantic imports ok. Depends on `app/usecases/`.
