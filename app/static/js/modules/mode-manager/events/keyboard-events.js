@@ -48,7 +48,10 @@ function isOntologyModalShortcut(event) {
     if (typeof event.key !== 'string') {
         throw new Error('isOntologyModalShortcut requires event.key');
     }
-    if (event.key !== 't') {
+
+    const keyMatches = event.key === ';';
+    const codeMatches = typeof event.code === 'string' && event.code === 'Semicolon';
+    if (!keyMatches && !codeMatches) {
         return false;
     }
     if (!(event.metaKey || event.ctrlKey)) {
@@ -237,6 +240,11 @@ function handleKeyDown(event) {
         // Allow ESC, search, and password modal even when disconnected
     }
 
+    if (isOntologyModalShortcut(event)) {
+        void handleOntologyModalShortcut(event);
+        return;
+    }
+
     switch (event.key) {
         case 'Tab':
             if (ModeContext.isEditing) {
@@ -318,11 +326,6 @@ function handleKeyDown(event) {
         case 'p':
             if (event.metaKey || event.ctrlKey) {
                 void handlePasswordModalShortcut(event);
-            }
-            break;
-        case 't':
-            if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
-                void handleOntologyModalShortcut(event);
             }
             break;
         case 'm':
@@ -1092,7 +1095,7 @@ async function handleOntologyModalShortcut(event) {
         throw new Error('handleOntologyModalShortcut called without an event object');
     }
 
-    Logger.logDebug('Ontology modal shortcut triggered (Cmd+T)', {}, Logger.LogCategory.EVENT);
+    Logger.logDebug('Ontology modal shortcut triggered (Cmd/Ctrl+;)', {}, Logger.LogCategory.EVENT);
 
     event.preventDefault();
     event.stopPropagation();

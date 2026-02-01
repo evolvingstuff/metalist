@@ -19,7 +19,7 @@
 # - Edits require server restart
 
 Socrates => manz
-manz => mortal
+man => mortal
 human = manz
 "Socrates" => Socrates
 
@@ -154,5 +154,5 @@ incident => urgent
 urgent => priority-high
 priority-high => important
 smart-guy => philosopher
-"Lorem" => asdf
+("Lorem" bbb) => asdf
 asdf => foo

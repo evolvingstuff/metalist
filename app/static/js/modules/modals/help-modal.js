@@ -118,7 +118,7 @@ export class HelpModal extends BaseModal {
                 category: 'Special Modals',
                 items: [
                     { keys: `${modKey}+P`, description: 'Open password management' },
-                    { keys: `${modKey}+T`, description: 'Edit tag relationships' },
+                    { keys: `${modKey}+;`, description: 'Edit tag relationships' },
                     { keys: 'M', description: 'Open memory/search contexts (when idle)' }
                 ]
             }
