@@ -7,6 +7,7 @@ import pytest
 import app.services.note_store as note_store_module
 from app.services.note_store import NoteStore
 from app.services.search_index import SearchIndex
+from app.services.tag_ontology import TagOntology
 
 
 def _load_store(
@@ -20,6 +21,7 @@ def _load_store(
     monkeypatch.setattr(note_store_module, "search_index", index)
     monkeypatch.setattr(note_store_module, "get_cached_content", lambda note_id: content_by_id[note_id])
     monkeypatch.setattr(note_store_module, "get_cached_tags", lambda note_id: tags_by_id[note_id])
+    monkeypatch.setattr(note_store_module, "get_ontology", lambda: TagOntology.empty())
 
     store = NoteStore()
     store._timing_enabled = False
@@ -111,4 +113,3 @@ def test_implicit_tag_inheritance_updates_when_notes_move(monkeypatch: pytest.Mo
     )
 
     assert index.query_note_ids("x y z") == {"c"}
-

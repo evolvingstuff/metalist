@@ -13,6 +13,8 @@ from app.models.database import SafeSession
 from app.config import PW_PBKDF2_ITERATIONS
 from app.db.session import begin_writer
 from app.db.notes_sql import fetch_all_for_cache, update_note_fields
+from app.db.ontology_rules_sql import fetch_all_rules as fetch_all_ontology_rules
+from app.db.ontology_rules_sql import update_rule as update_ontology_rule
 from app.db.settings_sql import (
     clear_password_settings,
     fetch_settings,
@@ -213,6 +215,7 @@ class AuthService:
 
         maintenance_service.enter_maintenance("Encrypting all notes with new password")
         encrypted_count = 0
+        encrypted_rule_count = 0
         try:
             with begin_writer() as connection:
                 with SafeSession.allow_reads("auth:set_password:fetch_notes"):
@@ -267,6 +270,45 @@ class AuthService:
                     update_note_fields(connection, note_id, **update_payload)
                     encrypted_count += 1
 
+                with SafeSession.allow_reads("auth:set_password:fetch_ontology_rules"):
+                    ontology_rules = fetch_all_ontology_rules(connection)
+
+                for rule in ontology_rules:
+                    rule_id = rule["id"]
+                    rule_text = rule["rule_text"]
+                    nonce = rule["rule_encryption_nonce"]
+                    tag = rule["rule_encryption_tag"]
+
+                    if not isinstance(rule_id, int):
+                        raise TypeError("ontology_rules.id must be an int")
+                    if rule_text is None:
+                        raise RuntimeError(f"Password setup failed: ontology rule {rule_id} has NULL rule_text")
+                    if not isinstance(rule_text, str):
+                        raise TypeError(f"ontology_rules.rule_text must be a string: {type(rule_text)}")
+
+                    encrypted = nonce is not None
+                    if not encrypted:
+                        encrypted = tag is not None
+
+                    if encrypted and (nonce is None or tag is None):
+                        raise RuntimeError(
+                            "Password setup failed: ontology rule has incomplete encryption metadata: "
+                            f"rule_id={rule_id} nonce={nonce is not None} tag={tag is not None}"
+                        )
+                    if encrypted:
+                        continue
+
+                    ciphertext, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(rule_text)
+                    update_ontology_rule(
+                        connection,
+                        rule_id,
+                        rule_text=ciphertext,
+                        rule_encryption_nonce=nonce_bytes,
+                        rule_encryption_tag=tag_bytes,
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    encrypted_rule_count += 1
+
                 update_password_settings(
                     connection,
                     auth_verifier=auth_verifier,
@@ -286,7 +328,10 @@ class AuthService:
             with SafeSession.allow_reads("auth:set_password:refresh_store"):
                 note_store.load_from_db(self.db, prefetched_rows=None)
 
-        return True, f"Password set successfully. Encrypted {encrypted_count} notes."
+        return (
+            True,
+            f"Password set successfully. Encrypted {encrypted_count} notes and {encrypted_rule_count} ontology rules.",
+        )
 
     def change_password(
         self,
@@ -415,6 +460,7 @@ class AuthService:
         cache_tag_updates: dict[str, str] = {}
         try:
             decrypted_count = 0
+            decrypted_rule_count = 0
             with begin_writer() as connection:
                 with SafeSession.allow_reads("auth:remove_password:fetch_notes"):
                     notes = fetch_all_for_cache(connection)
@@ -483,6 +529,47 @@ class AuthService:
                     update_note_fields(connection, note_id, **update_payload)
                     decrypted_count += 1
 
+                with SafeSession.allow_reads("auth:remove_password:fetch_ontology_rules"):
+                    ontology_rules = fetch_all_ontology_rules(connection)
+
+                for rule in ontology_rules:
+                    rule_id = rule["id"]
+                    rule_text = rule["rule_text"]
+                    nonce = rule["rule_encryption_nonce"]
+                    tag = rule["rule_encryption_tag"]
+
+                    if not isinstance(rule_id, int):
+                        raise TypeError("ontology_rules.id must be an int")
+                    if rule_text is None:
+                        raise RuntimeError(
+                            f"Password removal failed: ontology rule {rule_id} has NULL rule_text"
+                        )
+                    if not isinstance(rule_text, str):
+                        raise TypeError(f"ontology_rules.rule_text must be a string: {type(rule_text)}")
+
+                    encrypted = nonce is not None
+                    if not encrypted:
+                        encrypted = tag is not None
+                    if not encrypted:
+                        continue
+
+                    if nonce is None or tag is None:
+                        raise RuntimeError(
+                            "Password removal failed: encrypted ontology rule has incomplete metadata: "
+                            f"rule_id={rule_id} nonce={nonce is not None} tag={tag is not None}"
+                        )
+
+                    plaintext = self.encryption.decrypt_from_storage(rule_text, nonce, tag)
+                    update_ontology_rule(
+                        connection,
+                        rule_id,
+                        rule_text=plaintext,
+                        rule_encryption_nonce=None,
+                        rule_encryption_tag=None,
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    decrypted_rule_count += 1
+
                 clear_password_settings(connection)
             self.encryption.clear_keys()
         finally:
@@ -497,4 +584,7 @@ class AuthService:
             with SafeSession.allow_reads("auth:remove_password:refresh_store"):
                 note_store.load_from_db(self.db, prefetched_rows=None)
 
-        return True, f"Password removed successfully. Decrypted {decrypted_count} notes."
+        return (
+            True,
+            f"Password removed successfully. Decrypted {decrypted_count} notes and {decrypted_rule_count} ontology rules.",
+        )

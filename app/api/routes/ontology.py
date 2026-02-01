@@ -39,13 +39,14 @@ def list_rules() -> dict:
 
 
 @router.post("/rules")
-def create_rule(payload: dict) -> dict:
+def create_rule(request: Request, payload: dict) -> dict:
     text = payload["text"]
     if not isinstance(text, str):
         raise HTTPException(status_code=400, detail="text must be a string")
     if text.strip() == "":
         raise HTTPException(status_code=400, detail="text must be non-empty")
-    rule_id, normalized = create_rule_line(text=text)
+    token = _maybe_bearer_token(request)
+    rule_id, normalized = create_rule_line(text=text, token=token)
     if note_store.loaded:
         note_store.rebuild_search_index_tag_terms()
         view_cache.clear()
@@ -55,18 +56,19 @@ def create_rule(payload: dict) -> dict:
 
 
 @router.put("/rules/{rule_id}")
-def update_rule(rule_id: int, payload: dict) -> dict:
+def update_rule(request: Request, rule_id: int, payload: dict) -> dict:
     text = payload["text"]
     if not isinstance(text, str):
         raise HTTPException(status_code=400, detail="text must be a string")
     if text.strip() == "":
         raise HTTPException(status_code=400, detail="text must be non-empty")
 
-    existing = list_rule_lines()
-    if rule_id < 0 or rule_id >= len(existing):
+    existing_by_id = {existing_id for existing_id, _text in list_rule_lines()}
+    if rule_id not in existing_by_id:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
 
-    updated_id, normalized = update_rule_line(rule_id=rule_id, text=text)
+    token = _maybe_bearer_token(request)
+    updated_id, normalized = update_rule_line(rule_id=rule_id, text=text, token=token)
     if note_store.loaded:
         note_store.rebuild_search_index_tag_terms()
         view_cache.clear()
@@ -77,8 +79,8 @@ def update_rule(rule_id: int, payload: dict) -> dict:
 
 @router.delete("/rules/{rule_id}")
 def delete_rule(rule_id: int) -> dict:
-    existing = list_rule_lines()
-    if rule_id < 0 or rule_id >= len(existing):
+    existing_by_id = {existing_id for existing_id, _text in list_rule_lines()}
+    if rule_id not in existing_by_id:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
 
     delete_rule_line(rule_id=rule_id)
@@ -158,7 +160,7 @@ def focus_view(tag: str) -> dict:
         if "=>" not in text and "=" in text:
             continue
 
-        rules = parse_rules_text(text=f"{text}\n", filename=f"ontology_rules.txt:{rule_id}")
+        rules = parse_rules_text(text=f"{text}\n", filename=f"ontology_rules:{rule_id}")
         matched_rhs: str | None = None
         lhs_tag: str | None = None
 

@@ -32,7 +32,7 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
     if not note_store.loaded:
         raise RuntimeError('NoteStore must be loaded before renaming tags')
 
-    rename_tag_everywhere(old=old_tag, new=new_tag)
+    rename_tag_everywhere(old=old_tag, new=new_tag, token=token)
 
     updates: list[tuple[str, str, str]] = []
     for note_id in note_store.list_note_ids():

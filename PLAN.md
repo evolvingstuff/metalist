@@ -33,7 +33,20 @@ This feature adds **ontology rules** on top:
 - **Matcher rules run on plaintext content** (derived from note HTML).
 - Plaintext is defined as `strip_html(content_html)` (see `app/utils/text_utils.py`).
 - **Tags are case-sensitive** (match current behavior).
-- **Rule source in v1**: a single human-editable UTF-8 text file at repo root (server restart required after edits).
+- **Rule source (current)**: SQLite-backed rules table, cached in-memory.
+  - Legacy `ontology_rules.txt` is treated as an importer seed (only if the DB table is empty).
+
+## Read Guard Principle (critical)
+
+MetaList’s core principle is: **DB reads happen only at startup (or explicit rare maintenance windows).**
+
+- Normal runtime operation must not `SELECT` from SQLite.
+  - Enforced by the post-startup read guard described in `docs/design/in_memory_store.md`.
+- Writes (`INSERT`/`UPDATE`/`DELETE`) are allowed during runtime.
+- For ontology rules specifically:
+  - A single startup load hydrates an in-memory cache.
+  - All API reads are served from the in-memory cache.
+  - All API writes update SQLite + update the in-memory cache (no read-back).
 
 ---
 
@@ -48,6 +61,8 @@ This feature adds **ontology rules** on top:
 ---
 
 ## Phase 0 — Finalize DSL + Semantics (spec-first)
+
+Status: ✅ DONE (implemented in `app/services/tag_ontology.py` + docs in `docs/design/ontology-rules-v1.md`).
 
 ### Goals
 - Make the rule language unambiguous and easy to edit.
@@ -109,6 +124,8 @@ Composition rule:
 
 ## Phase 1 — DSL + Parser + File Loader (scaffolding)
 
+Status: ✅ DONE (parser/compiler complete; file-loader approach superseded by DB store).
+
 ### Goals
 - Load rules from a **human-editable text file**.
 - Parse rule lines into a strict AST.
@@ -142,6 +159,11 @@ Loader behavior:
 ---
 
 ## Phase 2 — Integrate Ontology Inference with Search (no UI)
+
+Status: ✅ DONE (NoteStore computes ontology-inferred tag terms for search).
+Notes:
+- Test coverage exists for search + inference (`tests/unit/test_tag_ontology_search_integration.py`).
+- Inheritance × ontology composition tests can be expanded later if needed.
 
 ### Goals
 - Make ontology rules affect search results without changing the tag-bar UX.
@@ -178,13 +200,16 @@ Use `search_index.bulk_update_tag_terms(...)` for subtree updates.
 
 ## Phase 3 — Persistence (SQLite) (before any UI)
 
+Status: 🟡 IN PROGRESS (core implemented; see “Remaining Work”).
+
 ### Goals
-- Store rules in SQLite.
-- (If/when encryption is enabled) store rules encrypted at rest.
+- Store ontology rules in SQLite.
+- Keep runtime reads at zero (cache at startup).
+- If encryption is enabled: keep rules encrypted at rest.
 
-### Proposed schema
+### Schema (implemented)
 
-New table (name TBD, e.g. `ontology_rules`):
+Table: `ontology_rules`:
 - `id INTEGER PRIMARY KEY`
 - `rule_text TEXT NOT NULL`
 - `rule_encryption_nonce BLOB`
@@ -192,29 +217,56 @@ New table (name TBD, e.g. `ontology_rules`):
 - `created_at TEXT NOT NULL`
 - `updated_at TEXT NOT NULL`
 
+Implemented in:
+- `app/db/schema.py`
+- `app/db/ontology_rules_sql.py`
+
 Storage pattern:
 - Encryption enabled: `rule_text` stores base64 ciphertext + nonce/tag populated.
 - Encryption disabled: `rule_text` stores plaintext + nonce/tag NULL.
 
-### Important timing constraint
+### Important timing constraint (handled)
 
-If encryption is enabled, rule text cannot be decrypted at process start (no DEK).
-Rules must load after the auth login endpoint (i.e., after `set_session_dek(dek)` has run).
+If encryption is enabled, rule text cannot be decrypted/compiled at process start (no DEK).
 
-### Proposed code
-- `app/db/schema.py`: create/ensure the new table.
-- `app/db/ontology_sql.py` (new): CRUD helpers.
-- `app/services/ontology_service.py` (new): encrypt/decrypt + parse + compile.
-- Mirror the existing “cache is ready” pattern used by `auth_cache_state`.
+Implementation approach:
+- Startup loads rule rows into memory, but if any are encrypted the ontology engine stays “not ready”.
+- After login (`set_session_dek(dek)`), decrypt + compile once, then serve from memory.
+
+### Code (implemented)
+- DB schema + CRUD: `app/db/schema.py`, `app/db/ontology_rules_sql.py`
+- In-memory cached store + compiler: `app/services/ontology_rules_store.py`
+- Startup bootstrap: `app/main.py`
+- Post-login decrypt/compile hook: `app/api/routes/auth.py`
+- Password transitions encrypt/decrypt rules too: `app/services/auth_service.py`
 
 ### Migration path (scaffolding → DB)
 
-- Add a one-shot importer that reads `ontology_rules.txt` and writes rows to SQLite.
-- Once DB load is stable, remove (or disable) the file loader.
+Implemented:
+- On startup, if `ontology_rules` table is empty, import non-comment lines from `ontology_rules.txt`.
+
+Remaining:
+- Decide whether to keep `ontology_rules.txt` around long-term (as a backup/export), or remove it.
+- If removed, update any docs that still mention file-backed rules.
+
+### Remaining Work (Phase 3)
+
+- Enforce/verify “no runtime reads” for ontology rules:
+  - Confirm ontology API never calls `connect_reader(...)`.
+  - Optionally add a small regression test that read guard trips if a runtime SELECT is introduced.
+- Decide final encryption behavior for rule writes:
+  - Current behavior encrypts rules when a DEK is available (token/global DEK).
+  - Confirm we want to *require* encryption when `encryption_enabled=1` (vs allowing plaintext rule rows).
+- Add a minimal UI/UX affordance for “ontology not ready until login” (only relevant when encryption is enabled).
 
 ---
 
 ## Phase 4 — UI + API (single “real” UI, no intermediate explorer)
+
+Status: ✅ DONE (API endpoints + UI modal are implemented).
+
+Notes:
+- Rule IDs are SQLite IDs (not contiguous line numbers). Frontend treats them as opaque integers.
 
 ### Goals
 - Provide a UI that both:
@@ -244,7 +296,37 @@ Server behavior:
 - After successful recompile, recompute ontology-derived tags for search index and refresh views.
 
 ### Code
-- `app/api/routes/ontology.py` (new router).
-- `app/main.py`: include router under `API_PREFIX`.
-- `app/static/js/modules/modals/ontology-modal.js` (new) or a dedicated panel.
-- Wire into command palette / keybinding.
+- Backend routes: `app/api/routes/ontology.py`
+- UI modal: `app/static/js/modules/modals/ontology-modal.js`
+- Shortcut: `Cmd+;` (and `Ctrl+;`) in `app/static/js/modules/mode-manager/events/keyboard-events.js`
+
+---
+
+## Session Handoff Notes
+
+### What’s Done (high level)
+
+- Phase 0/1/2/4 implemented: DSL + parser/compiler + search integration + UI/API.
+- Phase 3 mostly implemented: rules stored in SQLite and cached in memory (startup load, runtime write-only).
+
+### New/Changed Core Files (Phase 3)
+
+- `app/db/schema.py`
+- `app/db/ontology_rules_sql.py`
+- `app/services/ontology_rules_store.py`
+- `app/main.py`
+- `app/api/routes/auth.py`
+- `app/api/routes/ontology.py`
+- `app/services/auth_service.py`
+- `app/usecases/rename_tag.py`
+
+### Tests Added (Phase 3)
+
+- `tests/unit/test_ontology_rules_store_sqlite.py`
+
+## Known Local Tooling Notes
+
+- `./sanitycheck/run` currently fails locally unless the repo’s sanitycheck deps are installed (it asks for `./sanitycheck/install.sh`).
+- `pytest` currently has known failures unrelated to ontology work; don’t treat them as regressions from this feature.
+  - `tests/unit/test_snapshot_search_negative_terms.py`
+  - `tests/unit/test_undo_state_edit_mode_coalescing.py`

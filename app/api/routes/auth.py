@@ -13,6 +13,7 @@ from app.services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.services.sync import clear_all_locks
 from app.services import auth_cache_state
+from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
 from app.security.encryption import clear_encryption_key, set_session_dek
 
 
@@ -100,6 +101,7 @@ def login(
     dek = auth.unwrap_dek_for_password(payload.password)
 
     set_session_dek(dek)
+    ensure_rules_decrypted_and_compiled(token="")
 
     if auth_cache_state.cache_refresh_needed():
         prefetched_rows = populate_cache_from_db(None)
