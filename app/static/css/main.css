@@ -320,6 +320,20 @@ body.ontology-modal-open #ontology-modal {
     font-size: 0.95rem;
 }
 
+.ontology-search-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ontology-search-count {
+    font-size: 0.8rem;
+    letter-spacing: 0.01em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+}
+
 .ontology-search-result:hover {
     background: rgba(255, 255, 255, 0.12);
 }

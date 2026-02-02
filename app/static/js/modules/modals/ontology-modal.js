@@ -587,17 +587,40 @@ export class OntologyModal extends BaseModal {
         if (!container) {
             return;
         }
-        const query = this.getModalState().searchQuery;
         if (!Array.isArray(tags) || tags.length === 0) {
             container.innerHTML = '';
             container.style.display = 'none';
             return;
         }
 
-        container.innerHTML = tags
-            .map((tag) => (
-                `<button class="ontology-search-result" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
-            ))
+        const rows = tags.map((entry) => {
+            if (typeof entry === 'string') {
+                return { tag: entry, count: null };
+            }
+            if (!entry || typeof entry !== 'object') {
+                throw new Error('Ontology tag entry must be string or object');
+            }
+            const tag = entry.tag;
+            const count = entry.count;
+            if (typeof tag !== 'string' || tag.trim() === '') {
+                throw new Error('Ontology tag entry missing tag');
+            }
+            if (!Number.isInteger(count) || count < 0) {
+                throw new Error('Ontology tag entry missing count');
+            }
+            return { tag, count };
+        });
+
+        container.innerHTML = rows
+            .map((row) => {
+                const countBadge = row.count === null ? '' : `<span class="ontology-search-count">${row.count}</span>`;
+                return (
+                    `<button class="ontology-search-result" data-action="focus" data-tag="${escapeHtml(row.tag)}">` +
+                    `<span class="ontology-search-label">${escapeHtml(row.tag)}</span>` +
+                    `${countBadge}` +
+                    `</button>`
+                );
+            })
             .join('');
         container.style.display = 'flex';
     }

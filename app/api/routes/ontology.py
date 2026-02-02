@@ -296,7 +296,11 @@ def list_tags(q: str, limit: int) -> dict:
         ordered = sorted(tags, key=lambda tag: (-tag_counts.get(tag, 0), tag))
         if limit > 0:
             ordered = ordered[:limit]
-        return {"totalCount": len(tags), "tags": ordered}
+        payload = [
+            {"tag": tag, "count": tag_counts.get(tag, 0)}
+            for tag in ordered
+        ]
+        return {"totalCount": len(tags), "tags": payload}
 
     matches: list[tuple[int, int, str]] = []
     for tag in tags:
@@ -317,4 +321,8 @@ def list_tags(q: str, limit: int) -> dict:
     if limit > 0:
         results = results[:limit]
 
-    return {"totalCount": len(tags), "tags": results}
+    payload = [
+        {"tag": tag, "count": tag_counts.get(tag, 0)}
+        for tag in results
+    ]
+    return {"totalCount": len(tags), "tags": payload}
