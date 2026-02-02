@@ -29,6 +29,7 @@ from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.undo_state import maybe_reset_on_context
+from app.services.search_index import search_index
 
 
 logger = logging.getLogger(__name__)
@@ -246,6 +247,15 @@ def delete_tab(payload: dict) -> Dict[str, object]:
         raise HTTPException(status_code=400, detail="tabId is required")
     tab_id = payload["tabId"]
     return tab_state_store.delete_tab(tab_id=tab_id)
+
+
+@router.post("/notes/search-suggestions")
+def search_suggestions(payload: dict) -> Dict[str, object]:
+    query = payload["query"]
+    if not isinstance(query, str):
+        raise TypeError("query must be a string")
+    suggestions = search_index.suggest_tag_completions(query=query, limit=20)
+    return {"suggestions": suggestions}
 
 
 def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dict[str, str]:

@@ -426,6 +426,17 @@ export const NotesAPI = {
         return response;
     },
 
+    async fetchSearchSuggestions(query) {
+        if (typeof query !== 'string') {
+            throw new Error('NotesAPI.fetchSearchSuggestions requires query string');
+        }
+        const payload = { query };
+        return this._apiCall(CONFIG.API.NOTES.SEARCH_SUGGESTIONS, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
     async moveNoteUp(noteId) {
         const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;

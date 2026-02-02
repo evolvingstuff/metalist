@@ -8,6 +8,7 @@ import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
+import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 
 export function handleSearchInput(event) {
     if (ModeContext.isLoading) {
@@ -32,6 +33,7 @@ export function handleSearchInput(event) {
     const enforcedValue = enforceSearchInputElement(searchInput);
     const analysis = analyzeSearchQueryInput(enforcedValue);
     setSearchValidationState(searchInput, analysis);
+    updateSearchSuggestions(searchInput);
 
     Logger.logDebug('Search input changed', {
         searchQuery: analysis.normalizedText,
@@ -94,6 +96,7 @@ export async function initializeSearchEvents() {
 
     // Add input event listener
     searchInput.addEventListener('input', handleSearchInput);
+    initializeSearchSuggestions();
 
     await initializeTabStateService();
 

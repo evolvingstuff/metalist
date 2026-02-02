@@ -87,9 +87,13 @@ function handleKeyDown(event) {
     if (!event) {
         throw new Error('handleKeyDown called without an event object');
     }
-        
+
     if (typeof event.key !== 'string') {
-        throw new Error(`Invalid KeyboardEvent: missing or invalid key property: ${event.key}`);
+        Logger.logNoop('Ignoring keyboard event missing key', {
+            eventType: event.type,
+            keyValue: event.key,
+        });
+        return;
     }
 
     // Never interpret typing/navigation within inputs as global shortcuts.

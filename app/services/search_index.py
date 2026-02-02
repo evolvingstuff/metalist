@@ -14,6 +14,72 @@ from app.services.search_text import build_searchable_text_casefold
 
 
 _UNICODE_TRIGRAM_SENTINEL = 0xE000
+_QUOTE_CHARS = {"'", '"'}
+
+
+def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...], Optional[str]]:
+    if not isinstance(raw_input, str):
+        raise TypeError(f"raw_input must be a string, got {type(raw_input)}")
+
+    anchors: List[str] = []
+    partial_prefix: Optional[str] = None
+    has_trailing_whitespace = len(raw_input) > 0 and raw_input[-1].isspace()
+
+    index = 0
+    length = len(raw_input)
+    while index < length:
+        while index < length and raw_input[index].isspace():
+            index += 1
+        if index >= length:
+            break
+
+        prefix: Optional[str] = None
+        if raw_input[index] in ("+", "-"):
+            prefix = raw_input[index]
+            index += 1
+            if index >= length or raw_input[index].isspace():
+                return tuple(anchors), None
+
+        if raw_input[index] in _QUOTE_CHARS:
+            quote_char = raw_input[index]
+            index += 1
+            closed = False
+            while index < length:
+                char = raw_input[index]
+                if char == quote_char:
+                    closed = True
+                    index += 1
+                    break
+                if char == "\\" and index + 1 < length:
+                    next_char = raw_input[index + 1]
+                    if next_char in (quote_char, "\\"):
+                        index += 2
+                        continue
+                index += 1
+            if not closed:
+                return tuple(anchors), None
+            continue
+
+        start = index
+        while index < length and not raw_input[index].isspace():
+            index += 1
+
+        token = raw_input[start:index]
+        if token == "":
+            continue
+
+        is_partial = index >= length and not raw_input[-1].isspace()
+        if is_partial:
+            partial_prefix = token
+            continue
+
+        if prefix == "-":
+            continue
+        anchors.append(token)
+
+    if partial_prefix is None and has_trailing_whitespace:
+        partial_prefix = ""
+    return tuple(anchors), partial_prefix
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +291,105 @@ class SearchIndex:
                 for term, note_ids in self._tag_notes.items()
                 if term and not term.startswith("@")
             }
+
+    def suggest_tag_completions(self, *, query: str, limit: int) -> List[str]:
+        if not isinstance(query, str):
+            raise TypeError(f"query must be a string, got {type(query)}")
+        if not isinstance(limit, int) or limit <= 0:
+            raise TypeError("limit must be a positive integer")
+
+        anchors, partial_prefix = _parse_search_query_for_suggestions(query)
+        if partial_prefix is None:
+            if query.strip() != "":
+                return []
+            partial_prefix = ""
+
+        prefix_casefold = partial_prefix.casefold()
+        anchor_set = {anchor for anchor in anchors if anchor and not anchor.startswith("@")}
+
+        with self._lock:
+            is_exact_anchor = False
+            if partial_prefix != "":
+                if partial_prefix in self._tag_notes and not partial_prefix.startswith("@"):
+                    anchor_set.add(partial_prefix)
+                    is_exact_anchor = True
+
+            candidates: List[str] = []
+            for term in self._tag_notes.keys():
+                if not term or term.startswith("@"):
+                    continue
+                if term in anchor_set:
+                    continue
+                if partial_prefix != "" and not is_exact_anchor and not term.casefold().startswith(prefix_casefold):
+                    continue
+                candidates.append(term)
+
+            if not candidates and partial_prefix != "":
+                return []
+
+            if not anchor_set:
+                candidates.sort(key=lambda term: (-len(self._tag_notes[term]), term))
+                return candidates[:limit]
+
+            note_count = len(self._note_tag_terms)
+            anchor_counts = [0] * note_count
+            for anchor in anchor_set:
+                note_ids = self._tag_notes.get(anchor)
+                if not note_ids:
+                    continue
+                for note_id in note_ids:
+                    if note_id in self._alive:
+                        anchor_counts[note_id] += 1
+
+            max_anchor_count = len(anchor_set)
+            counts_by_anchor = [0] * (max_anchor_count + 1)
+            for note_id in self._alive:
+                count = anchor_counts[note_id]
+                if count > max_anchor_count:
+                    count = max_anchor_count
+                counts_by_anchor[count] += 1
+
+            support_counts = [0] * (max_anchor_count + 1)
+            running = 0
+            for k in range(max_anchor_count, 0, -1):
+                running += counts_by_anchor[k]
+                support_counts[k] = running
+
+            scored: List[Tuple[int, float, str]] = []
+            for term in candidates:
+                note_ids = self._tag_notes.get(term)
+                if not note_ids:
+                    continue
+                candidate_count = 0
+                max_k = 0
+                intersection_count = 0
+                for note_id in note_ids:
+                    if note_id not in self._alive:
+                        continue
+                    candidate_count += 1
+                    count = anchor_counts[note_id]
+                    if count > max_k:
+                        max_k = count
+                        intersection_count = 1 if count > 0 else 0
+                    elif count == max_k and count > 0:
+                        intersection_count += 1
+
+                if candidate_count == 0:
+                    continue
+
+                if max_k == 0 and (partial_prefix == "" or is_exact_anchor):
+                    continue
+
+                jaccard = 0.0
+                if max_k > 0:
+                    union_count = candidate_count + support_counts[max_k] - intersection_count
+                    if union_count > 0:
+                        jaccard = intersection_count / union_count
+
+                scored.append((-max_k, -jaccard, term))
+
+            scored.sort()
+            return [term for _, __, term in scored[:limit]]
 
     def query_note_ids(self, search: str) -> Set[str]:
         t0 = time.perf_counter()

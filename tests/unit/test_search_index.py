@@ -67,3 +67,64 @@ def test_search_index_short_text_term_falls_back_to_verification() -> None:
         ]
     )
     assert index.query_note_ids('"ll"') == {"n1"}
+
+
+def test_search_index_tag_suggestions_rank_by_anchor_overlap() -> None:
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id="n1",
+                content_html="<div>Alpha</div>",
+                tags="a b c alpine",
+                tag_terms=extract_tags_for_search("a b c alpine"),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_html="<div>Beta</div>",
+                tags="a b alpha",
+                tag_terms=extract_tags_for_search("a b alpha"),
+            ),
+            SearchRecord(
+                note_id="n3",
+                content_html="<div>Gamma</div>",
+                tags="alto",
+                tag_terms=extract_tags_for_search("alto"),
+            ),
+        ]
+    )
+
+    suggestions = index.suggest_tag_completions(query="a b c al")
+    assert suggestions[:3] == ["alpine", "alpha", "alto"]
+
+    suggestions = index.suggest_tag_completions(query="alpha ")
+    assert suggestions == ["a", "b"]
+
+    suggestions = index.suggest_tag_completions(query="alpha")
+    assert suggestions == ["a", "b"]
+
+
+def test_search_index_tag_suggestions_ignore_quotes_and_include_prefix_only() -> None:
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id="n1",
+                content_html="<div>Socrates</div>",
+                tags="socrates philosopher",
+                tag_terms=extract_tags_for_search("socrates philosopher"),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_html="<div>Other</div>",
+                tags="journal",
+                tag_terms=extract_tags_for_search("journal"),
+            ),
+        ]
+    )
+
+    suggestions = index.suggest_tag_completions(query="socrates \"ancient greece\" phil")
+    assert suggestions == ["philosopher"]
+
+    suggestions = index.suggest_tag_completions(query="a b c jour")
+    assert suggestions == ["journal"]
