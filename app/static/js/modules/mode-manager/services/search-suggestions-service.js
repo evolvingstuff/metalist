@@ -1,9 +1,11 @@
 import { NotesAPI } from '../../api-client.js';
+import { analyzeSearchQueryInput } from './search-syntax-service.js';
 import { syncSearchInputValue } from './search-input-service.js';
 
 const SUGGESTION_DEBOUNCE_MS = 50;
 let pendingTimer = null;
 let requestSerial = 0;
+let selectedIndex = -1;
 
 function getSearchSuggestionsContainer() {
     const container = document.getElementById('search-suggestions');
@@ -103,7 +105,9 @@ function parseSuggestionContext(rawValue, cursorIndex) {
 function hideSuggestions() {
     const container = getSearchSuggestionsContainer();
     container.hidden = true;
+    container.style.display = 'none';
     container.innerHTML = '';
+    selectedIndex = -1;
 }
 
 function applySuggestion(searchInput, suggestion) {
@@ -128,12 +132,11 @@ function applySuggestion(searchInput, suggestion) {
     const before = rawValue.slice(0, context.replaceStart);
     const after = rawValue.slice(context.replaceEnd);
     const replacement = `${prefixText}${suggestion}`;
-    const needsSpace = after.length === 0 || !after.startsWith(' ');
-    const nextValue = `${before}${replacement}${needsSpace ? ' ' : ''}${after}`;
+    const nextValue = `${before}${replacement}${after}`;
 
     syncSearchInputValue(searchInput, nextValue);
 
-    const nextCursor = before.length + replacement.length + (needsSpace ? 1 : 0);
+    const nextCursor = before.length + replacement.length;
     if (typeof searchInput.setSelectionRange === 'function') {
         searchInput.setSelectionRange(nextCursor, nextCursor);
     }
@@ -141,6 +144,20 @@ function applySuggestion(searchInput, suggestion) {
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     searchInput.focus();
     hideSuggestions();
+}
+
+function updateSelectedSuggestion(container) {
+    const items = Array.from(container.querySelectorAll('.search-suggestion'));
+    if (items.length === 0) {
+        selectedIndex = -1;
+        return;
+    }
+    if (selectedIndex < 0 || selectedIndex >= items.length) {
+        selectedIndex = 0;
+    }
+    items.forEach((item, index) => {
+        item.classList.toggle('is-selected', index === selectedIndex);
+    });
 }
 
 function renderSuggestions(searchInput, suggestions) {
@@ -161,6 +178,9 @@ function renderSuggestions(searchInput, suggestions) {
 
     container.innerHTML = items;
     container.hidden = false;
+    container.style.display = 'flex';
+    selectedIndex = 0;
+    updateSelectedSuggestion(container);
 
     container.querySelectorAll('.search-suggestion').forEach((button) => {
         button.addEventListener('mousedown', (event) => {
@@ -189,6 +209,16 @@ export function updateSearchSuggestions(searchInput) {
     }
 
     const rawValue = searchInput.value;
+    const analysis = analyzeSearchQueryInput(rawValue);
+    if (!analysis.isComplete && typeof analysis.warningMessage === 'string') {
+        if (pendingTimer) {
+            clearTimeout(pendingTimer);
+            pendingTimer = null;
+        }
+        requestSerial += 1;
+        hideSuggestions();
+        return;
+    }
     if (!Number.isInteger(searchInput.selectionStart)) {
         throw new Error('searchInput.selectionStart missing');
     }
@@ -255,5 +285,40 @@ export function initializeSearchSuggestions() {
 
     searchInput.addEventListener('focus', () => {
         updateSearchSuggestions(searchInput);
+    });
+
+    searchInput.addEventListener('keydown', (event) => {
+        if (container.hidden) {
+            return;
+        }
+        const items = Array.from(container.querySelectorAll('.search-suggestion'));
+        if (items.length === 0) {
+            return;
+        }
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            updateSelectedSuggestion(container);
+            return;
+        }
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            updateSelectedSuggestion(container);
+            return;
+        }
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            const button = items[selectedIndex] || items[0];
+            const tag = button.dataset.tag;
+            if (typeof tag !== 'string' || tag.length === 0) {
+                throw new Error('Suggestion tag missing from dataset');
+            }
+            applySuggestion(searchInput, tag);
+        }
     });
 }

@@ -308,19 +308,15 @@ class SearchIndex:
         anchor_set = {anchor for anchor in anchors if anchor and not anchor.startswith("@")}
 
         with self._lock:
-            is_exact_anchor = False
-            if partial_prefix != "":
-                if partial_prefix in self._tag_notes and not partial_prefix.startswith("@"):
-                    anchor_set.add(partial_prefix)
-                    is_exact_anchor = True
-
             candidates: List[str] = []
             for term in self._tag_notes.keys():
                 if not term or term.startswith("@"):
                     continue
                 if term in anchor_set:
                     continue
-                if partial_prefix != "" and not is_exact_anchor and not term.casefold().startswith(prefix_casefold):
+                if partial_prefix != "" and term == partial_prefix:
+                    continue
+                if partial_prefix != "" and not term.casefold().startswith(prefix_casefold):
                     continue
                 candidates.append(term)
 
@@ -377,7 +373,7 @@ class SearchIndex:
                 if candidate_count == 0:
                     continue
 
-                if max_k == 0 and (partial_prefix == "" or is_exact_anchor):
+                if max_k == 0 and partial_prefix == "":
                     continue
 
                 jaccard = 0.0

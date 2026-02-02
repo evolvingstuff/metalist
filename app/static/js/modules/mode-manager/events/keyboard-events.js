@@ -96,6 +96,15 @@ function handleKeyDown(event) {
         return;
     }
 
+    if (event.key === 'Enter') {
+        const searchInput = document.getElementById('search-input');
+        const suggestions = document.getElementById('search-suggestions');
+        if (searchInput && suggestions && !suggestions.hidden && document.activeElement === searchInput) {
+            Logger.logNoop('Ignoring Enter for global shortcuts while search suggestions are open');
+            return;
+        }
+    }
+
     // Never interpret typing/navigation within inputs as global shortcuts.
     // In particular, Backspace/Delete must not delete notes while editing the search box.
     // Exception: Enter in the search input is treated like a global "create note" action.

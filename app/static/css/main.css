@@ -1246,6 +1246,11 @@ body {
     border-color: rgba(0, 0, 0, 0.08);
 }
 
+.controls .search-suggestion.is-selected {
+    background: rgba(0, 0, 0, 0.14);
+    border-color: rgba(0, 0, 0, 0.16);
+}
+
 .controls .search-results-count {
     position: absolute;
     right: 6px;
