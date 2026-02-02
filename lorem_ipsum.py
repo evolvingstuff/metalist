@@ -31,7 +31,9 @@ from tqdm import tqdm
 
 from app.config import DATABASE_URL
 from app.db.notes_sql import insert_note, update_links
+from app.db.ontology_rules_sql import insert_rule
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
+from app.db.engine import begin_writer
 from app.db.settings_sql import fetch_settings, insert_default_settings
 from app.models.database import SafeSession
 from app.services.content_cache import (
@@ -42,11 +44,51 @@ from app.services.content_cache import (
     populate_cache_from_db,
 )
 from app.services.note_store import store as note_store
+from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 
 
 default_root_count =  10_000  # 1000
 default_child_probability = 0.3
 default_image_probability = 0.05
+_TAG_ASSIGNMENT_PROBABILITY = 0.6
+_TAG_MIN_COUNT = 1
+_TAG_MAX_COUNT = 3
+_EXTRA_ONTOLOGY_RULES = 8
+
+_TAG_POOL: Sequence[str] = (
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "omega",
+    "project",
+    "work",
+    "priority",
+    "urgent",
+    "bug",
+    "fix",
+    "feature",
+    "idea",
+    "research",
+    "meeting",
+    "draft",
+    "review",
+    "lorem",
+    "ipsum",
+    "dolor",
+    "magna",
+)
+
+_BASE_ONTOLOGY_RULES: Sequence[str] = (
+    "project => work",
+    "work => priority",
+    "urgent => priority",
+    "bug => fix",
+    "(bug urgent) => hotfix",
+    "\"Lorem\" => lorem_match",
+    "\"ipsum\" => ipsum_match",
+    "/dolor/i => dolor_match",
+)
 
 # Static lorem ipsum blocks to keep seeded notes varied
 _LOREM_PARAGRAPHS: Sequence[str] = (
@@ -222,6 +264,33 @@ def build_note_content(
     return content, image_count
 
 
+def build_note_tags(rng: random.Random) -> str:
+    if rng.random() >= _TAG_ASSIGNMENT_PROBABILITY:
+        return ""
+    tag_count = rng.randint(_TAG_MIN_COUNT, _TAG_MAX_COUNT)
+    chosen = rng.sample(_TAG_POOL, k=min(tag_count, len(_TAG_POOL)))
+    return " ".join(chosen)
+
+
+def build_ontology_rules(rng: random.Random) -> List[str]:
+    rules = list(_BASE_ONTOLOGY_RULES)
+    pairs: set[tuple[str, str]] = set()
+    attempts = 0
+    while len(pairs) < _EXTRA_ONTOLOGY_RULES:
+        attempts += 1
+        if attempts > 200:
+            break
+        src, dst = rng.sample(_TAG_POOL, k=2)
+        if src == dst:
+            continue
+        pair = (src, dst)
+        if pair in pairs:
+            continue
+        pairs.add(pair)
+        rules.append(f"{src} => {dst}")
+    return rules
+
+
 ROOT_KEY = "__root__"
 
 
@@ -300,7 +369,7 @@ def create_note(
     ciphertext = content
     nonce = None
     tag = None
-    tags_ciphertext = ""
+    tags_ciphertext = build_note_tags(rng)
     tags_nonce = None
     tags_tag = None
     timestamp = datetime.now(timezone.utc)
@@ -324,7 +393,7 @@ def create_note(
     )
 
     cache_note(note_id, content)
-    cache_note_tags(note_id, "")
+    cache_note_tags(note_id, tags_ciphertext)
 
     if note_store.loaded:
         note_store.add_note_from_db(
@@ -344,7 +413,7 @@ def create_note(
                 updated_at=timestamp,
             ),
             content,
-            "",
+            tags_ciphertext,
         )
 
     register_note_order(order_map, parent_id, note_id, rng)
@@ -414,6 +483,23 @@ def seed_notes(args: argparse.Namespace) -> SeedStats:
     return stats
 
 
+def seed_ontology_rules(rng: random.Random) -> int:
+    rules = build_ontology_rules(rng)
+    now = datetime.now(timezone.utc)
+    with begin_writer() as connection:
+        for rule_text in rules:
+            insert_rule(
+                connection,
+                rule_text=rule_text,
+                rule_encryption_nonce=None,
+                rule_encryption_tag=None,
+                created_at=now,
+                updated_at=now,
+            )
+        bootstrap_ontology_rules_store(connection=connection)
+    return len(rules)
+
+
 def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     db_path = ensure_sqlite_file()
@@ -424,6 +510,7 @@ def main(argv: Sequence[str]) -> int:
     clear_cache()
     reset_schema()
     ensure_default_settings()
+    ontology_rule_count = seed_ontology_rules(random.Random(args.seed))
 
     stats = seed_notes(args)
 
@@ -435,7 +522,8 @@ def main(argv: Sequence[str]) -> int:
         f"  Root notes: {args.root_count}\n"
         f"  Total notes: {stats.note_count}\n"
         f"  Embedded images: {stats.image_count}\n"
-        f"  Deepest level: {stats.deepest_level}"
+        f"  Deepest level: {stats.deepest_level}\n"
+        f"  Ontology rules: {ontology_rule_count}"
     )
     return 0
 

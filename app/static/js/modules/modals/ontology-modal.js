@@ -1089,7 +1089,7 @@ export class OntologyModal extends BaseModal {
         }
 
         const confirmed = window.confirm(
-            `Rename tag '${focusTag}' → '${trimmed}' in ontology_rules.txt?\n\n` +
+            `Rename tag '${focusTag}' → '${trimmed}' in ontology rules?\n\n` +
             'This renames the tag in BOTH ontology rules and all note tag bars.\n' +
             'This cannot be undone automatically.'
         );

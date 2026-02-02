@@ -1,18 +1,14 @@
 # Ontology Rules (v1)
 
-Status: implemented as Phase-1 scaffolding (file-backed + restart required).
+Status: DB-backed (SQLite) and hot-editable via API/UI; rules are cached in memory.
 
 ## Scope
 
 This document describes the ontology rule language currently implemented in:
 - `app/services/tag_ontology.py`
 
-Rules are loaded from:
-- `ontology_rules.txt` (repo root)
-
-Helpers:
-- Parse/compile check: `parse_ontology_rules.py`
-- Interactive query tool: `ontology_query.py`
+Rules are stored in:
+- SQLite `ontology_rules` table (loaded at startup into memory; edits update cache)
 
 ## Syntax
 
@@ -88,21 +84,7 @@ This prevents accidental substring matches (e.g. `"TODO"` does not match `TODORS
 
 ## Testing
 
-### Parse/compile check
-
-```bash
-.venv/bin/python parse_ontology_rules.py
-```
-
-### Interactive query tool
-
-```bash
-.venv/bin/python ontology_query.py
-```
-
-Behavior:
-- If input is a single unquoted tag token: shows left/equal/right graph view.
-- Otherwise: treats unquoted tokens as tags, and quoted strings as plaintext, then shows inferred tags.
+- Unit tests: `tests/unit/test_ontology_rules_store_sqlite.py`
 
 ## UI Interaction Spec (v1)
 

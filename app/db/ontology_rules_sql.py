@@ -10,7 +10,9 @@ from app.db.engine import GuardedConnection
 from app.db.schema import ONTOLOGY_RULES_TABLE
 
 
-def _conn(connection: GuardedConnection | sqlite3.Connection) -> sqlite3.Connection:
+def _conn(connection: GuardedConnection | sqlite3.Connection) -> GuardedConnection | sqlite3.Connection:
+    if isinstance(connection, GuardedConnection):
+        return connection
     raw_connection = getattr(connection, "raw_connection", None)
     if isinstance(raw_connection, sqlite3.Connection):
         return raw_connection
@@ -149,4 +151,3 @@ def update_rules_bulk(
         """,
         payload,
     )
-

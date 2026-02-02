@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from threading import RLock
 from typing import List, Mapping, Optional, Sequence, Tuple
 
@@ -38,34 +37,6 @@ class OntologyRulesState:
 
 _LOCK = RLock()
 _STATE: Optional[OntologyRulesState] = None
-
-
-def _legacy_rules_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "ontology_rules.txt"
-
-
-def _is_comment_or_blank(line: str) -> bool:
-    stripped = line.strip()
-    if stripped == "":
-        return True
-    if stripped.startswith("#"):
-        return True
-    if stripped.startswith("//"):
-        return True
-    return False
-
-
-def _read_legacy_file_rules() -> List[str]:
-    path = _legacy_rules_path()
-    if not path.exists():
-        return []
-    text = path.read_text(encoding="utf-8")
-    out: list[str] = []
-    for raw in text.splitlines():
-        if _is_comment_or_blank(raw):
-            continue
-        out.append(raw.strip())
-    return out
 
 
 def _require_rule_text(text: str) -> str:
@@ -160,30 +131,6 @@ def bootstrap_ontology_rules_store(*, connection) -> None:
 
     global _STATE
     rows = fetch_all_rules(connection)
-    if not rows:
-        legacy_rules = _read_legacy_file_rules()
-        if legacy_rules:
-            now = datetime.now(timezone.utc)
-            for rule_text in legacy_rules:
-                normalized = _require_rule_text(rule_text)
-                rule_id = db_insert_rule(
-                    connection,
-                    rule_text=normalized,
-                    rule_encryption_nonce=None,
-                    rule_encryption_tag=None,
-                    created_at=now,
-                    updated_at=now,
-                )
-                rows.append(
-                    {
-                        "id": rule_id,
-                        "rule_text": normalized,
-                        "rule_encryption_nonce": None,
-                        "rule_encryption_tag": None,
-                        "created_at": now,
-                        "updated_at": now,
-                    }
-                )
     rules: list[OntologyRuleRow] = []
     for row in rows:
         rule_id = row["id"]

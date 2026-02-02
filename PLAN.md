@@ -33,8 +33,7 @@ This feature adds **ontology rules** on top:
 - **Matcher rules run on plaintext content** (derived from note HTML).
 - Plaintext is defined as `strip_html(content_html)` (see `app/utils/text_utils.py`).
 - **Tags are case-sensitive** (match current behavior).
-- **Rule source (current)**: SQLite-backed rules table, cached in-memory.
-  - Legacy `ontology_rules.txt` is treated as an importer seed (only if the DB table is empty).
+- **Rule source (current)**: SQLite-backed rules table, cached in-memory (legacy file removed).
 
 ## Read Guard Principle (critical)
 
@@ -122,29 +121,17 @@ Composition rule:
 
 ---
 
-## Phase 1 — DSL + Parser + File Loader (scaffolding)
+## Phase 1 — DSL + Parser (scaffolding)
 
-Status: ✅ DONE (parser/compiler complete; file-loader approach superseded by DB store).
+Status: ✅ DONE (parser/compiler complete; legacy file loader removed).
 
 ### Goals
-- Load rules from a **human-editable text file**.
 - Parse rule lines into a strict AST.
 - Build compiled indices for fast inference + UI graph queries.
 - Unit-test parsing and error reporting.
 
-### Rule source (v1)
-
-- File path: `ontology_rules.txt` (repo root).
-- Edits require a server restart.
-- This loader is **temporary scaffolding** and is expected to be removed later (DB-backed rules and/or UI editor).
-
-Loader behavior:
-- If `ontology_rules.txt` is missing: treat as “no rules” (empty rule set).
-- If file exists but has parse errors: fail-fast on startup with a precise error.
-
 ### Proposed code
 - `app/services/tag_ontology.py` (new): parser + compiler + core engine types.
-- `app/services/ontology_rules_loader.py` (new): file reading + wiring into a singleton engine.
 
 ### Compilation outputs
 - `implication_edges`: `TAG => TAG` rules where LHS is exactly one TAG atom.
@@ -243,18 +230,11 @@ Implementation approach:
 ### Migration path (scaffolding → DB)
 
 Implemented:
-- On startup, if `ontology_rules` table is empty, import non-comment lines from `ontology_rules.txt`.
-
-Remaining:
-- Decide whether to keep `ontology_rules.txt` around long-term (as a backup/export), or remove it.
-- If removed, update any docs that still mention file-backed rules.
+- Legacy file import removed; rules now live exclusively in SQLite.
 
 ### Remaining Work (Phase 3)
 
-- Enforce/verify “no runtime reads” for ontology rules:
-  - Confirm ontology API never calls `connect_reader(...)`.
-  - Optionally add a small regression test that read guard trips if a runtime SELECT is introduced.
-- Decide final encryption behavior for rule writes:
+- Confirm final encryption behavior for rule writes:
   - Current behavior encrypts rules when a DEK is available (token/global DEK).
   - Confirm we want to *require* encryption when `encryption_enabled=1` (vs allowing plaintext rule rows).
 - Add a minimal UI/UX affordance for “ontology not ready until login” (only relevant when encryption is enabled).
@@ -308,6 +288,8 @@ Server behavior:
 
 - Phase 0/1/2/4 implemented: DSL + parser/compiler + search integration + UI/API.
 - Phase 3 mostly implemented: rules stored in SQLite and cached in memory (startup load, runtime write-only).
+- Legacy file importer + tooling removed; ontology rules live exclusively in SQLite.
+- Seeder now generates sample ontology rules + tags for testing (`lorem_ipsum.py`).
 
 ### New/Changed Core Files (Phase 3)
 
@@ -319,10 +301,11 @@ Server behavior:
 - `app/api/routes/ontology.py`
 - `app/services/auth_service.py`
 - `app/usecases/rename_tag.py`
+- `lorem_ipsum.py`
 
 ### Tests Added (Phase 3)
 
-- `tests/unit/test_ontology_rules_store_sqlite.py`
+- `tests/unit/test_ontology_rules_store_sqlite.py` (CRUD + read-guard regression + encrypted bootstrap/write coverage)
 
 ## Known Local Tooling Notes
 

@@ -13,11 +13,10 @@ Run headless UI tests via `./run_cypress_tests.sh` (starts the server with
 If we decide to rebuild automated backend coverage, treat this file as
 the starting point for a new plan.
 
-## Ontology (Phase-1)
+## Ontology
 
-Ontology rules currently have a lightweight, file-backed test harness:
+Ontology rules are DB-backed and editable via the UI/API. Unit coverage lives in:
 
-- Parse/compile check: `.venv/bin/python parse_ontology_rules.py`
-- Interactive query tool: `.venv/bin/python ontology_query.py`
+- `tests/unit/test_ontology_rules_store_sqlite.py`
 
 See `docs/design/ontology-rules-v1.md`.
