@@ -268,6 +268,7 @@ export class OntologyModal extends BaseModal {
         this._handleSearchInput = this._handleSearchInput.bind(this);
         this._handleSearchKeydown = this._handleSearchKeydown.bind(this);
         this._handleClick = this._handleClick.bind(this);
+        this._handleMouseDownOutside = this._handleMouseDownOutside.bind(this);
     }
 
     getInitialModalState() {
@@ -374,6 +375,7 @@ export class OntologyModal extends BaseModal {
 
         modalElement.style.display = 'block';
         modalElement.addEventListener('click', this._handleClick);
+        modalElement.addEventListener('mousedown', this._handleMouseDownOutside);
 
         const input = modalElement.querySelector('#ontology-search-input');
         if (!(input instanceof HTMLInputElement)) {
@@ -388,6 +390,7 @@ export class OntologyModal extends BaseModal {
         const modalElement = document.getElementById(this.modalElementId);
         if (modalElement) {
             modalElement.removeEventListener('click', this._handleClick);
+            modalElement.removeEventListener('mousedown', this._handleMouseDownOutside);
         }
         super.hideModalElement();
     }
@@ -468,6 +471,21 @@ export class OntologyModal extends BaseModal {
         if (target) {
             const suffix = total > shown ? '+' : '';
             target.textContent = `Showing ${shown} of ${total}${suffix} total tags`;
+        }
+    }
+
+    shouldCloseOnClickOutside() {
+        return false;
+    }
+
+    _handleMouseDownOutside(event) {
+        const modalElement = event.currentTarget;
+        if (!(modalElement instanceof HTMLElement)) {
+            return;
+        }
+        const modalContent = modalElement.querySelector('.modal-content');
+        if (modalContent && !modalContent.contains(event.target)) {
+            this.close();
         }
     }
 
@@ -1236,7 +1254,11 @@ export class OntologyModal extends BaseModal {
 
     async _handleClick(event) {
         await (async () => {
-            const target = event.target;
+            const rawTarget = event.target;
+            if (!(rawTarget instanceof HTMLElement)) {
+                return;
+            }
+            const target = rawTarget.closest('[data-action]');
             if (!(target instanceof HTMLElement)) {
                 return;
             }
