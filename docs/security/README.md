@@ -105,11 +105,19 @@ notes table:
 - tags_encryption_nonce: Tags nonce for AES-GCM
 - tags_encryption_tag: Tags authentication tag
 
+ontology_rules table:
+- rule_text: Encrypted rule text (Base64) when password protection is enabled
+- rule_encryption_nonce: Per-rule nonce for AES-GCM
+- rule_encryption_tag: Per-rule authentication tag
+
 Important: if any note rows have `encryption_nonce/encryption_tag` (content)
 or `tags_encryption_nonce/tags_encryption_tag` (tags) set, that field is
-encrypted and unrecoverable without the DEK. If the `app_settings.encrypted_dek`
-fields are cleared while encrypted notes remain, the server should refuse to
-start rather than display placeholders.
+encrypted and unrecoverable without the DEK. The same applies to ontology rule
+rows with `rule_encryption_nonce/rule_encryption_tag`. If the
+`app_settings.encrypted_dek` fields are cleared while encrypted rows remain,
+the server should refuse to start rather than display placeholders. When
+password protection is enabled, new rule writes must be encrypted (no plaintext
+writes).
 ```
 
 ## Security Properties

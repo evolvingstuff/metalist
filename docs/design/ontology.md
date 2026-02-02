@@ -155,13 +155,15 @@ Equivalent to:
 
 ## Search Behavior
 
-Implementation status: **future work**.
+Implementation status: **partial**.
 
 This document describes the planned ontology/implication search model.
-The current implementation is a simpler tag + quoted-text search without ontology.
-See:
+The current implementation includes v1 ontology **implication + matcher** rules
+and uses them to infer effective tags during search, but **association search**
+(`~`) is still future work. See:
 - Syntax: `docs/ui/search-syntax.md`
 - Current semantics: `docs/ui/search-semantics.md`
+- Rule language: `docs/design/ontology-rules-v1.md`
 
 For the current UI-level query grammar and warnings (syntax-only, not semantics), see:
 - `docs/ui/search-syntax.md`

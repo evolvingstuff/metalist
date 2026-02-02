@@ -23,6 +23,10 @@ In addition, notes implicitly inherit **non-meta** tag terms from their ancestor
 - Tags starting with `@` (meta tags like `@monospace`) are **not** inherited.
 - Tag-bar `/* ... */` comments are **not** inherited (they only affect text search for the note that contains them).
 
+Ontology rules also add **inferred tags** before search matching:
+- Implication + matcher rules are applied per note, and inferred tags are added to the effective tag set.
+- See `docs/design/ontology-rules-v1.md` for the rule language and semantics.
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`

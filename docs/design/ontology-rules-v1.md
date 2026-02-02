@@ -124,6 +124,12 @@ Implementation note (DOM):
 - Rule row has an onClick handler for selecting the rule.
 - Tag chips have their own onClick handler and call `event.stopPropagation()` to prevent the row click.
 
+### Tag search
+
+- The search box opens with a dropdown showing **all tags**, sorted by frequency (most used first).
+- While typing, results prioritize **prefix matches**, then substring matches, then fuzzy (subsequence) matches.
+- Each suggestion shows a count badge with the number of notes containing that tag.
+
 ### UI Mock
 
 ![Ontology UI mock](../tag-ui.jpg)
