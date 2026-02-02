@@ -234,9 +234,6 @@ Implemented:
 
 ### Remaining Work (Phase 3)
 
-- Confirm final encryption behavior for rule writes:
-  - Current behavior encrypts rules when a DEK is available (token/global DEK).
-  - Confirm we want to *require* encryption when `encryption_enabled=1` (vs allowing plaintext rule rows).
 - Add a minimal UI/UX affordance for “ontology not ready until login” (only relevant when encryption is enabled).
 
 ---
@@ -290,6 +287,8 @@ Server behavior:
 - Phase 3 mostly implemented: rules stored in SQLite and cached in memory (startup load, runtime write-only).
 - Legacy file importer + tooling removed; ontology rules live exclusively in SQLite.
 - Seeder now generates sample ontology rules + tags for testing (`lorem_ipsum.py`).
+- Rule writes now require an active DEK when encryption is enabled (no plaintext rule writes).
+- Ontology tag search shows full tag list on open, sorted by frequency with prefix-first matching.
 
 ### New/Changed Core Files (Phase 3)
 

@@ -217,6 +217,15 @@ class SearchIndex:
                 if term and not term.startswith("@")
             )
 
+    def list_tag_frequencies(self) -> Dict[str, int]:
+        """Return tag term -> note count (excluding @meta tags)."""
+        with self._lock:
+            return {
+                term: len(note_ids)
+                for term, note_ids in self._tag_notes.items()
+                if term and not term.startswith("@")
+            }
+
     def query_note_ids(self, search: str) -> Set[str]:
         t0 = time.perf_counter()
         if not isinstance(search, str):

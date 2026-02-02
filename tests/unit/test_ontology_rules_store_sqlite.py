@@ -8,7 +8,7 @@ import pytest
 from app.db.engine import GuardedConnection, begin_writer
 from app.db.ontology_rules_sql import fetch_all_rules, insert_rule
 from app.models.database import SafeSession
-from app.security.encryption import clear_encryption_key, encrypt
+from app.security.encryption import clear_encryption_key, encrypt, set_encryption_required
 from app.services.ontology_rules_store import (
     bootstrap_ontology_rules_store,
     create_rule_line,
@@ -22,6 +22,7 @@ from app.services.tokens import token_service
 
 
 def test_ontology_rules_store_bootstrap_and_crud() -> None:
+    set_encryption_required(False)
     SafeSession.use_memory_db()
     try:
         now = datetime.now(timezone.utc)
@@ -54,10 +55,12 @@ def test_ontology_rules_store_bootstrap_and_crud() -> None:
         final_rules = dict(list_rule_lines())
         assert created_id not in final_rules
     finally:
+        set_encryption_required(False)
         SafeSession.use_file_db()
 
 
 def test_ontology_rules_store_respects_read_guard() -> None:
+    set_encryption_required(False)
     SafeSession.use_memory_db()
     try:
         now = datetime.now(timezone.utc)
@@ -95,10 +98,12 @@ def test_ontology_rules_store_respects_read_guard() -> None:
         finally:
             SafeSession.disable_read_guard()
     finally:
+        set_encryption_required(False)
         SafeSession.use_file_db()
 
 
 def test_ontology_rules_store_encrypted_bootstrap_and_decrypt() -> None:
+    set_encryption_required(True)
     SafeSession.use_memory_db()
     token_service.reset()
     clear_encryption_key()
@@ -141,6 +146,7 @@ def test_ontology_rules_store_encrypted_bootstrap_and_decrypt() -> None:
         assert stored_row["rule_encryption_tag"] is not None
         assert stored_row["rule_text"] != "beta => gamma"
     finally:
+        set_encryption_required(False)
         token_service.reset()
         clear_encryption_key()
         SafeSession.use_file_db()

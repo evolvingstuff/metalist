@@ -16,6 +16,7 @@ from app.services.tokens import token_service
 # Global encryption service instance (per-request)
 _encryption_service: Optional[EncryptionService] = None
 _current_token: Optional[str] = None
+_encryption_required: bool = False
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,17 @@ def get_encryption_service() -> Optional[EncryptionService]:
     return _encryption_service
 
 
+def set_encryption_required(required: bool) -> None:
+    if not isinstance(required, bool):
+        raise TypeError("required must be a bool")
+    global _encryption_required
+    _encryption_required = required
+
+
+def is_encryption_required() -> bool:
+    return _encryption_required
+
+
 def encrypt(content: str, token: str) -> Tuple[str, Optional[bytes], Optional[bytes]]:
     """Encrypt note content using DEK from token.
     
@@ -83,7 +95,10 @@ def encrypt(content: str, token: str) -> Tuple[str, Optional[bytes], Optional[by
     
     if service and service.dek:
         return service.encrypt_for_storage(content)
-    
+
+    if _encryption_required:
+        raise RuntimeError("Encryption is required but no DEK is available")
+
     # No encryption available, return as-is
     return content, None, None
 

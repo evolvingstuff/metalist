@@ -32,6 +32,23 @@ def _maybe_bearer_token(request: Request) -> str:
 router = APIRouter(prefix="/ontology", tags=["ontology2"])
 
 
+def _fuzzy_match(needle: str, haystack: str) -> bool:
+    if not isinstance(needle, str):
+        raise TypeError("needle must be a string")
+    if not isinstance(haystack, str):
+        raise TypeError("haystack must be a string")
+    if needle == "":
+        return True
+
+    index = 0
+    for ch in needle:
+        index = haystack.find(ch, index)
+        if index < 0:
+            return False
+        index += 1
+    return True
+
+
 @router.get("/rules")
 def list_rules() -> dict:
     rules = [{"id": rule_id, "text": text} for rule_id, text in list_rule_lines()]
@@ -261,22 +278,43 @@ def focus_view(tag: str) -> dict:
 
 @router.get("/tags")
 def list_tags(q: str, limit: int) -> dict:
+    if not isinstance(q, str):
+        raise TypeError("q must be a string")
     if not isinstance(limit, int):
         raise TypeError("limit must be an int")
     if limit < 0:
         raise ValueError("limit must be >= 0")
 
     ontology = get_ontology()
-    tags = set(search_index.list_non_meta_tag_terms())
+    tag_counts = search_index.list_tag_frequencies()
+    tags = set(tag_counts.keys())
     tags.update(extract_ontology_tags(ontology))
 
-    needle = q.casefold()
-    matches: list[str] = []
-    for tag in sorted(tags):
-        if needle and needle not in tag.casefold():
-            continue
-        matches.append(tag)
-        if len(matches) >= limit:
-            break
+    needle = q.casefold().strip()
 
-    return {"totalCount": len(tags), "tags": matches}
+    if needle == "":
+        ordered = sorted(tags, key=lambda tag: (-tag_counts.get(tag, 0), tag))
+        if limit > 0:
+            ordered = ordered[:limit]
+        return {"totalCount": len(tags), "tags": ordered}
+
+    matches: list[tuple[int, int, str]] = []
+    for tag in tags:
+        folded = tag.casefold()
+        if folded.startswith(needle):
+            rank = 0
+        elif needle in folded:
+            rank = 1
+        elif _fuzzy_match(needle, folded):
+            rank = 2
+        else:
+            continue
+        count = tag_counts.get(tag, 0)
+        matches.append((rank, -count, tag))
+
+    matches.sort(key=lambda item: (item[0], item[1], item[2]))
+    results = [item[2] for item in matches]
+    if limit > 0:
+        results = results[:limit]
+
+    return {"totalCount": len(tags), "tags": results}

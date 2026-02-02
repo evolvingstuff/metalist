@@ -18,6 +18,7 @@ from .services.note_store import store as note_store
 from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
+from app.security.encryption import set_encryption_required
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
@@ -104,8 +105,11 @@ with begin_writer() as connection:
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 startup_has_password = False
+encryption_enabled = False
 if settings:
-    startup_has_password = bool(settings["encryption_enabled"])
+    encryption_enabled = bool(settings["encryption_enabled"])
+    startup_has_password = encryption_enabled
+set_encryption_required(encryption_enabled)
 
 if startup_has_password:
     logger.info("[startup] password set; skipping cache + store hydration until login")

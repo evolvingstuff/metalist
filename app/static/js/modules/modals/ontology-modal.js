@@ -588,8 +588,7 @@ export class OntologyModal extends BaseModal {
             return;
         }
         const query = this.getModalState().searchQuery;
-        const trimmed = typeof query === 'string' ? query.trim() : '';
-        if (trimmed === '' || !Array.isArray(tags) || tags.length === 0) {
+        if (!Array.isArray(tags) || tags.length === 0) {
             container.innerHTML = '';
             container.style.display = 'none';
             return;

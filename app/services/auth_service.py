@@ -25,6 +25,7 @@ from app.services.content_cache import cache_note, cache_note_tags
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
+from app.security.encryption import set_encryption_required
 
 
 class AuthService:
@@ -39,8 +40,11 @@ class AuthService:
         with SafeSession.allow_reads("auth:get_settings"):
             row = fetch_settings(self.db.connection())
         if not row:
+            set_encryption_required(False)
             return None
-        return SimpleNamespace(**row)
+        settings = SimpleNamespace(**row)
+        set_encryption_required(bool(settings.encryption_enabled))
+        return settings
 
     def initialize_settings(self) -> SimpleNamespace:
         """Ensure settings exist before continuing."""
@@ -324,6 +328,8 @@ class AuthService:
         finally:
             maintenance_service.exit_maintenance()
 
+        set_encryption_required(True)
+
         if note_store.loaded:
             with SafeSession.allow_reads("auth:set_password:refresh_store"):
                 note_store.load_from_db(self.db, prefetched_rows=None)
@@ -574,6 +580,8 @@ class AuthService:
             self.encryption.clear_keys()
         finally:
             maintenance_service.exit_maintenance()
+
+        set_encryption_required(False)
 
         for note_id, content in cache_content_updates.items():
             cache_note(note_id, content)
