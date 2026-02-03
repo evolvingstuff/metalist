@@ -29,6 +29,13 @@
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
 - When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
 
+### Search Suggestions
+- Suggestions are **tag-only** (no text suggestions).
+- While typing a partial tag token (e.g. `jour`), suggestions are prefix completions.
+- After completing a tag and adding a space, suggestions are ordered by tag co-occurrence with all existing tag tokens in the query (strict overlap count > Jaccard within overlap).
+- Suggestions appear only when the search input is focused.
+- Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
+
 ### Mouse Controls
 | Action | Result |
 |--------|--------|

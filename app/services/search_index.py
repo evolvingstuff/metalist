@@ -366,7 +366,10 @@ class SearchIndex:
                     count = anchor_counts[note_id]
                     if count > max_k:
                         max_k = count
-                        intersection_count = 1 if count > 0 else 0
+                        if count > 0:
+                            intersection_count = 1
+                        else:
+                            intersection_count = 0
                     elif count == max_k and count > 0:
                         intersection_count += 1
 

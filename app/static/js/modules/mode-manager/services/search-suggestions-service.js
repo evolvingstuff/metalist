@@ -313,7 +313,10 @@ export function initializeSearchSuggestions() {
             if (typeof event.stopImmediatePropagation === 'function') {
                 event.stopImmediatePropagation();
             }
-            const button = items[selectedIndex] || items[0];
+            let button = items[selectedIndex];
+            if (!button) {
+                button = items[0];
+            }
             const tag = button.dataset.tag;
             if (typeof tag !== 'string' || tag.length === 0) {
                 throw new Error('Suggestion tag missing from dataset');
