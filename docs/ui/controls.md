@@ -36,6 +36,14 @@
 - Suggestions appear only when the search input is focused.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
 
+### Tag Suggestions
+- Suggestions appear only when the tag bar is focused.
+- Prefix behavior mirrors search suggestions (prefix completions while typing, co-occurrence after a space).
+- Content matches (tag phrases found in the note body) are listed first.
+- Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
+- Suggestions may render above the tag bar if space below is tight; the ordering reverses so the closest suggestion sits nearest the input.
+- Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
+
 ### Mouse Controls
 | Action | Result |
 |--------|--------|

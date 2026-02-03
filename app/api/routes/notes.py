@@ -30,6 +30,7 @@ from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_index import search_index
+from app.services.tag_suggestions import suggest_tags_for_note
 
 
 logger = logging.getLogger(__name__)
@@ -255,6 +256,33 @@ def search_suggestions(payload: dict) -> Dict[str, object]:
     if not isinstance(query, str):
         raise TypeError("query must be a string")
     suggestions = search_index.suggest_tag_completions(query=query, limit=20)
+    return {"suggestions": suggestions}
+
+
+@router.post("/notes/tag-suggestions")
+def tag_suggestions(payload: dict) -> Dict[str, object]:
+    note_id = payload["note_id"]
+    anchors = payload["anchors"]
+    prefix = payload["prefix"]
+    content_html = payload["content_html"]
+
+    if not isinstance(note_id, str) or not note_id:
+        raise TypeError("note_id must be a non-empty string")
+    if not isinstance(anchors, list):
+        raise TypeError("anchors must be a list")
+    if not isinstance(prefix, str):
+        raise TypeError("prefix must be a string")
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+
+    _require_note_present(note_id, context="notes.tag-suggestions")
+
+    suggestions = suggest_tags_for_note(
+        note_id=note_id,
+        anchors=anchors,
+        prefix=prefix,
+        content_html=content_html,
+    )
     return {"suggestions": suggestions}
 
 

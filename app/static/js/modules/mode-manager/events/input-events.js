@@ -4,6 +4,7 @@ import { actionSelectNote } from '../actions/selection-actions.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { enforceTagBarInputElement, validateAndRenderTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
+import { initializeTagSuggestions, updateTagSuggestions } from '../services/tag-suggestions-service.js';
 
 let lastKeyPressed = null;
 
@@ -74,6 +75,7 @@ function ensureEditingCaretVisible(noteContentElement) {
 export function initInputEvents() {
         
     document.addEventListener('input', handleInput, { capture: true });
+    initializeTagSuggestions();
         
     Logger.logInit('Input events handler');
 }
@@ -123,6 +125,7 @@ function handleInput(event) {
         enforceTagBarInputElement(tagBarInput);
         ensureEditingCaretVisible(tagBarInput);
         validateAndRenderTagBar(noteElement);
+        updateTagSuggestions(tagBarInput);
         return;
     }
 

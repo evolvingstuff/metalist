@@ -58,6 +58,14 @@ Unclosed comments behave like unclosed wrappers:
 - Once there is content (e.g. `/*comment`), the tag bar warns.
 - Unclosed comments are omitted from the saved tag string and are removed when leaving the tag bar.
 
+## Tag Suggestions
+- Suggestions appear only while the tag bar input is focused.
+- Prefix completions appear while typing; after a space, suggestions are ranked by tag co-occurrence.
+- Tags that match phrases in the note content are listed first.
+- Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
+- Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward and the ordering reverses so the closest suggestion sits nearest the input.
+- The connector characters used for content matching are configurable via `TAG_SUGGESTION_CONNECTORS` in `app/config.py`.
+
 ## Focus / Tab Behavior
 - `Tab` toggles focus between the note content and the tag bar.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.

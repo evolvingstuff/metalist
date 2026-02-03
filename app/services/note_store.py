@@ -958,6 +958,30 @@ class NoteStore:
         with self._lock:
             return list(self._note_map.keys())
 
+    def get_inherited_non_meta_tag_terms(self, note_id: str) -> FrozenSet[str]:
+        if not isinstance(note_id, str) or not note_id:
+            raise TypeError("note_id must be a non-empty string")
+
+        with self._lock:
+            if not self._loaded:
+                raise RuntimeError("NoteStore is not loaded")
+
+            record = self._note_map.get(note_id)
+            if record is None:
+                raise KeyError(f"Note {note_id} not present in NoteStore")
+
+            parent_id = record.parent_id
+            if parent_id is None:
+                return frozenset()
+
+            inherited = self._effective_non_meta_tag_terms.get(parent_id)
+            if inherited is None:
+                raise RuntimeError(
+                    "Integrity failure: missing effective tag terms for parent "
+                    f"{parent_id} (child {note_id})"
+                )
+            return inherited
+
     def rebuild_search_index_tag_terms(self) -> None:
         """Recompute search-index tag terms for all notes.
 

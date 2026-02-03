@@ -348,6 +348,107 @@ function scanTagBarSegments(rawInput) {
     return { segments, unclosedCommentText: null };
 }
 
+function scanTagBarTokensWithPositions(rawInput) {
+    const tokens = [];
+    const commentRanges = [];
+    let index = 0;
+
+    while (index < rawInput.length) {
+        while (index < rawInput.length && isWhitespace(rawInput[index])) {
+            index += 1;
+        }
+        if (index >= rawInput.length) {
+            break;
+        }
+
+        if (rawInput.startsWith('/*', index)) {
+            const end = rawInput.indexOf('*/', index + 2);
+            if (end === -1) {
+                break;
+            }
+            commentRanges.push({ start: index, end: end + 2 });
+            index = end + 2;
+            continue;
+        }
+
+        const start = index;
+        const opener = rawInput[index];
+        if (TAG_WRAPPER_OPENERS.has(opener)) {
+            let openerCount = 1;
+            while (index + openerCount < rawInput.length && rawInput[index + openerCount] === opener && openerCount < 3) {
+                openerCount += 1;
+            }
+            if (openerCount <= 3) {
+                const closer = TAG_WRAPPER_PAIRS.get(opener);
+                if (typeof closer !== 'string') {
+                    throw new Error(`Unknown tag wrapper opener: ${opener}`);
+                }
+                const needle = closer.repeat(openerCount);
+                const closeAt = rawInput.indexOf(needle, index + openerCount);
+                if (closeAt !== -1) {
+                    index = closeAt + openerCount;
+                    tokens.push({ text: rawInput.slice(start, index), start, end: index });
+                    continue;
+                }
+            }
+        }
+
+        while (index < rawInput.length && !isWhitespace(rawInput[index])) {
+            index += 1;
+        }
+        tokens.push({ text: rawInput.slice(start, index), start, end: index });
+    }
+
+    return { tokens, commentRanges };
+}
+
+function unwrapWrapperToken(token) {
+    if (!token) {
+        return null;
+    }
+
+    const opener = token[0];
+    if (!TAG_WRAPPER_OPENERS.has(opener)) {
+        return null;
+    }
+
+    let openerCount = 1;
+    while (openerCount < token.length && token[openerCount] === opener) {
+        openerCount += 1;
+    }
+    if (openerCount > 3) {
+        return null;
+    }
+
+    const closer = TAG_WRAPPER_PAIRS.get(opener);
+    if (typeof closer !== 'string') {
+        throw new Error(`Unknown tag wrapper opener: ${opener}`);
+    }
+
+    if (token.length < openerCount * 2) {
+        return null;
+    }
+
+    if (!token.endsWith(closer.repeat(openerCount))) {
+        return null;
+    }
+
+    let closerCount = 0;
+    while (closerCount < token.length && token[token.length - 1 - closerCount] === closer) {
+        closerCount += 1;
+    }
+    if (closerCount !== openerCount) {
+        return null;
+    }
+
+    const inner = token.slice(openerCount, token.length - openerCount);
+    if (!inner) {
+        return null;
+    }
+
+    return { inner, depth: openerCount };
+}
+
 export function analyzeTagBarInput(rawInput) {
     if (typeof rawInput !== 'string') {
         throw new Error('analyzeTagBarInput expects a string');
@@ -402,4 +503,93 @@ export function normalizeTagBarInput(rawInput) {
     }
 
     return analyzeTagBarInput(rawInput).normalizedText;
+}
+
+export function parseTagBarSuggestionContext(rawInput, cursorIndex) {
+    if (typeof rawInput !== 'string') {
+        throw new Error('parseTagBarSuggestionContext expects a string');
+    }
+    if (!Number.isInteger(cursorIndex)) {
+        throw new Error('parseTagBarSuggestionContext expects cursorIndex integer');
+    }
+    if (cursorIndex < 0 || cursorIndex > rawInput.length) {
+        throw new Error('parseTagBarSuggestionContext cursorIndex out of bounds');
+    }
+
+    const analysis = analyzeTagBarInput(rawInput);
+    if (!analysis.isValid) {
+        return null;
+    }
+
+    const { tokens, commentRanges } = scanTagBarTokensWithPositions(rawInput);
+    for (const range of commentRanges) {
+        if (cursorIndex >= range.start && cursorIndex < range.end) {
+            return null;
+        }
+    }
+
+    const atoms = [];
+    for (const token of tokens) {
+        const wrapperInfo = unwrapWrapperToken(token.text);
+        if (wrapperInfo) {
+            const inner = wrapperInfo.inner;
+            let innerIndex = 0;
+            while (innerIndex < inner.length) {
+                while (innerIndex < inner.length && isWhitespace(inner[innerIndex])) {
+                    innerIndex += 1;
+                }
+                if (innerIndex >= inner.length) {
+                    break;
+                }
+                const start = innerIndex;
+                while (innerIndex < inner.length && !isWhitespace(inner[innerIndex])) {
+                    innerIndex += 1;
+                }
+                const text = inner.slice(start, innerIndex);
+                if (text.length > 0) {
+                    const absoluteStart = token.start + wrapperInfo.depth + start;
+                    const absoluteEnd = token.start + wrapperInfo.depth + innerIndex;
+                    atoms.push({ text, start: absoluteStart, end: absoluteEnd });
+                }
+            }
+            continue;
+        }
+        if (token.text.length > 0) {
+            atoms.push({ text: token.text, start: token.start, end: token.end });
+        }
+    }
+
+    let currentAtom = null;
+    for (const atom of atoms) {
+        if (cursorIndex >= atom.start && cursorIndex <= atom.end) {
+            currentAtom = atom;
+            break;
+        }
+    }
+
+    const anchors = [];
+    for (const atom of atoms) {
+        if (currentAtom && atom === currentAtom) {
+            continue;
+        }
+        if (atom.text.length > 0) {
+            anchors.push(atom.text);
+        }
+    }
+
+    let prefix = '';
+    let replaceStart = cursorIndex;
+    let replaceEnd = cursorIndex;
+    if (currentAtom) {
+        prefix = rawInput.slice(currentAtom.start, cursorIndex);
+        replaceStart = currentAtom.start;
+        replaceEnd = cursorIndex;
+    }
+
+    return {
+        anchors,
+        prefix,
+        replaceStart,
+        replaceEnd
+    };
 }

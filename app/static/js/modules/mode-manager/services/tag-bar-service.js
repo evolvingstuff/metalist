@@ -50,6 +50,12 @@ function ensureTagBarElement(noteElement) {
 
     tagBar.appendChild(input);
 
+    const suggestions = document.createElement('div');
+    suggestions.classList.add('note-tag-suggestions');
+    suggestions.hidden = true;
+    suggestions.style.display = 'none';
+    tagBar.appendChild(suggestions);
+
     const contentElement = getDirectChildByClass(noteElement, CONFIG.CLASSES.NOTE_CONTENT);
     const childContainer = getDirectChildByClass(noteElement, 'note-children');
 

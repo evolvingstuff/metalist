@@ -24,6 +24,9 @@ CRASH_SERVER_ON_FAIL = _env_flag("CRASH_SERVER_ON_FAIL", True)
 DEV_ENFORCE_INTEGRITY_CHECKS = _env_flag("DEV_ENFORCE_INTEGRITY_CHECKS", False)
 DISABLE_UNDO_SNAPSHOT = _env_flag("DISABLE_UNDO_SNAPSHOT", True)
 
+# Tag suggestions
+TAG_SUGGESTION_CONNECTORS = "-_/."
+
 # Authentication configuration
 TOKEN_EXPIRY_MINUTES = 30  # Token expires after 30 minutes of inactivity
 PW_PBKDF2_ITERATIONS = 1_000_000  # Number of iterations for app password hashing

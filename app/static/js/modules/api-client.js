@@ -437,6 +437,31 @@ export const NotesAPI = {
         });
     },
 
+    async fetchTagSuggestions(noteId, anchors, prefix, contentHtml) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');
+        }
+        if (!Array.isArray(anchors)) {
+            throw new Error('NotesAPI.fetchTagSuggestions requires anchors array');
+        }
+        if (typeof prefix !== 'string') {
+            throw new Error('NotesAPI.fetchTagSuggestions requires prefix string');
+        }
+        if (typeof contentHtml !== 'string') {
+            throw new Error('NotesAPI.fetchTagSuggestions requires contentHtml string');
+        }
+        const payload = {
+            note_id: noteId,
+            anchors: anchors,
+            prefix: prefix,
+            content_html: contentHtml
+        };
+        return this._apiCall(CONFIG.API.NOTES.TAG_SUGGESTIONS, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
     async moveNoteUp(noteId) {
         const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;
