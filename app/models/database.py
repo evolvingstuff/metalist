@@ -11,7 +11,7 @@ from threading import RLock
 import traceback
 from typing import Iterator, Optional
 
-from app.config import DATABASE_URL
+from app.config import DATABASE_URL, SQL_TRACE_ENABLED
 from app.db.schema import initialize_schema
 from loguru import logger
 
@@ -43,6 +43,8 @@ def _configure_sql_logging(conn: sqlite3.Connection) -> None:
             },
         )
 
+    if not SQL_TRACE_ENABLED:
+        return
     # Raw trace callback logs *every* statement; keep it DEBUG-only to avoid
     # drowning the logs in polling traffic.
     conn.set_trace_callback(lambda statement: logger.debug("sqlite.raw", extra={"sql": statement}))

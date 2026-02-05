@@ -9,6 +9,7 @@ legacy JSON format. Use with care: this is destructive.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import sys
 import re
@@ -182,48 +183,41 @@ def _has_implies_tag(tags: str) -> bool:
     return "@implies" in tokens
 
 
-def _extract_rule_texts(raw_content: str, *, context: str) -> list[str]:
-    text = strip_html(raw_content)
-    parts = re.split(r"\s*(=>|=)\s*", text)
-    if len(parts) < 3:
-        raise ValueError(
-            "Rule content must include '=>' or '='. "
-            f"context={context} content={text!r}"
+def _split_rule_lines(raw_content: str) -> list[str]:
+    text = raw_content
+    if "<" in text and ">" in text:
+        text = re.sub(r"(?i)<\s*br\s*/?>", "\n", text)
+        text = re.sub(
+            r"(?i)<\s*/?\s*(div|p|li|h[1-6])\b[^>]*>",
+            "\n",
+            text,
         )
+        text = re.sub(r"(?is)<[^>]+>", "", text)
+    text = html.unescape(text)
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _extract_rule_texts_from_line(line: str, *, context: str) -> list[str]:
+    parts = re.split(r"\s*(=>|=)\s*", line)
+    if len(parts) < 3:
+        return []
 
     segments = [segment.strip() for segment in parts[0::2]]
     operators = [operator.strip() for operator in parts[1::2]]
 
     if len(segments) != len(operators) + 1:
-        raise ValueError(
-            "Rule content must include operators between segments. "
-            f"context={context} content={text!r}"
-        )
-
-    if any(segment == "" for segment in segments):
-        raise ValueError(
-            "Rule content must include tokens on both sides. "
-            f"context={context} content={text!r}"
-        )
+        return []
 
     token_groups: list[list[str]] = []
     for segment in segments:
         tokens = [token for token in segment.split() if token]
         if not tokens:
-            raise ValueError(
-                "Rule content must include tokens on both sides. "
-                f"context={context} content={text!r}"
-            )
+            return []
         token_groups.append(tokens)
 
     rules: set[str] = set()
     current_tokens = token_groups[0]
     for idx, operator in enumerate(operators):
-        if operator not in {"=>", "="}:
-            raise ValueError(
-                "Rule content must use '=>' or '=' operators. "
-                f"context={context} content={text!r}"
-            )
         next_tokens = token_groups[idx + 1]
         if operator == "=":
             for left in current_tokens:
@@ -232,17 +226,47 @@ def _extract_rule_texts(raw_content: str, *, context: str) -> list[str]:
                         continue
                     rules.add(f"{left} => {right}")
                     rules.add(f"{right} => {left}")
-            merged = list(dict.fromkeys(current_tokens + next_tokens))
-            current_tokens = merged
-        else:
+            current_tokens = [next_tokens[-1]]
+            continue
+        if operator == "=>":
             for left in current_tokens:
                 for right in next_tokens:
                     if left == right:
                         continue
                     rules.add(f"{left} => {right}")
             current_tokens = next_tokens
+            continue
+        raise ValueError(
+            "Rule content must use '=>' or '=' operators. "
+            f"context={context} content={line!r}"
+        )
 
     return sorted(rules)
+
+
+def _extract_rule_texts(raw_content: str, *, context: str) -> list[str]:
+    lines = _split_rule_lines(raw_content)
+    rules: set[str] = set()
+    for idx, line in enumerate(lines, start=1):
+        rules.update(_extract_rule_texts_from_line(line, context=f"{context} line={idx}"))
+    return sorted(rules)
+
+
+def _rule_mentions_python(rule_text: str) -> bool:
+    if not isinstance(rule_text, str):
+        raise TypeError("rule_text must be a string")
+    if "=>" not in rule_text:
+        return False
+    left, _, right = rule_text.partition("=>")
+    left_tag = left.strip()
+    right_tag = right.strip()
+    return left_tag.casefold() == "python" or right_tag.casefold() == "python"
+
+
+def _content_mentions_python(raw_content: str) -> bool:
+    if not isinstance(raw_content, str):
+        raise TypeError("raw_content must be a string")
+    return "python" in strip_html(raw_content).casefold()
 
 
 def _is_effectively_empty(content: str) -> bool:
@@ -335,8 +359,23 @@ def _import_item(
         context = f"item_id={legacy_id} subitem_index={idx}"
 
         if _has_implies_tag(tags) and not _is_effectively_empty(content):
+            if _content_mentions_python(content):
+                print(f"[import] python raw html: {content}")
+                lines = _split_rule_lines(content)
+                for line in lines:
+                    if "python" not in line.casefold():
+                        continue
+                    parsed = _extract_rule_texts_from_line(line, context=f"{context} line=python-debug")
+                    print(f"[import] python line: {line}")
+                    if parsed:
+                        for rule_text in parsed:
+                            print(f"[import] python parsed: {rule_text}")
+                    else:
+                        print(f"[import] python parsed: <no rules>")
             rule_texts = _extract_rule_texts(content, context=context)
             for rule_text in rule_texts:
+                if _rule_mentions_python(rule_text):
+                    print(f"[import] rule with Python: {rule_text}")
                 insert_rule(
                     db.connection(),
                     rule_text=rule_text,
