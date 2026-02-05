@@ -1012,6 +1012,49 @@ class NoteStore:
 
         search_index.bulk_update_tag_terms(inferred_updates)
 
+    def rebuild_search_index_tag_terms_for_notes(self, note_ids: Iterable[str]) -> int:
+        """Recompute search-index tag terms for a subset of notes."""
+        if not self._loaded:
+            return 0
+
+        note_id_list = list(dict.fromkeys(note_ids))
+        if not note_id_list:
+            return 0
+
+        with self._lock:
+            base_terms_by_id: Dict[str, FrozenSet[str]] = {}
+            content_by_id: Dict[str, str] = {}
+            for note_id in note_id_list:
+                record = self._note_map.get(note_id)
+                if record is None:
+                    continue
+                inherited = self._effective_non_meta_tag_terms.get(note_id)
+                if inherited is None:
+                    raise RuntimeError(
+                        "Integrity failure: missing inherited tag terms for "
+                        f"note {note_id}"
+                    )
+                base_terms_by_id[note_id] = record.tag_terms | inherited
+                content_by_id[note_id] = record.content
+
+        if not base_terms_by_id:
+            return 0
+
+        ontology = get_ontology()
+        matcher_rules_enabled = bool(ontology.matcher_rules)
+        inferred_updates: Dict[str, FrozenSet[str]] = {}
+        for note_id, base_terms in base_terms_by_id.items():
+            inferred_plaintext = ""
+            if matcher_rules_enabled:
+                inferred_plaintext = strip_html(content_by_id[note_id])
+            inferred_updates[note_id] = ontology.infer_effective_tags(
+                base_tags=base_terms,
+                plaintext=inferred_plaintext,
+            )
+
+        search_index.bulk_update_tag_terms(inferred_updates)
+        return len(inferred_updates)
+
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         with self._lock:
             head = self._heads.get(parent_id)

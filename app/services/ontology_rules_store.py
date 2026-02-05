@@ -45,8 +45,6 @@ def _require_rule_text(text: str) -> str:
     stripped = text.strip()
     if stripped == "":
         raise ValueError("rule text must be non-empty")
-    if stripped.startswith("#") or stripped.startswith("//"):
-        raise ValueError("rule text must not start with a comment marker")
     return stripped
 
 

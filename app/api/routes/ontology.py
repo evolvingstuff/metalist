@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+import re
 
 from app.services.search_index import search_index
 from app.services.note_store import store as note_store
@@ -17,6 +18,7 @@ from app.services.ontology_rules_store import (
     update_rule_line,
 )
 from app.usecases.rename_tag import apply_rename_tag_everywhere
+from app.utils.text_utils import strip_html
 
 
 def _maybe_bearer_token(request: Request) -> str:
@@ -30,6 +32,67 @@ def _maybe_bearer_token(request: Request) -> str:
 
 
 router = APIRouter(prefix="/ontology", tags=["ontology2"])
+
+
+def _escape_search_phrase(phrase: str) -> str:
+    return phrase.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _compile_regex(pattern: str, flags: str) -> re.Pattern[str]:
+    re_flags = 0
+    if "i" in flags:
+        re_flags |= re.IGNORECASE
+    return re.compile(pattern, re_flags)
+
+
+def _collect_candidate_note_ids_for_rules(rules: list) -> set[str]:
+    candidates: set[str] = set()
+    for rule in rules:
+        tags: list[str] = []
+        phrases: list[str] = []
+        regexes: list[re.Pattern[str]] = []
+        for atom in rule.lhs:
+            if isinstance(atom, TagAtom):
+                tags.append(atom.tag)
+                continue
+            if isinstance(atom, TextAtom):
+                phrases.append(atom.phrase)
+                continue
+            if isinstance(atom, RegexAtom):
+                regexes.append(_compile_regex(atom.pattern, atom.flags))
+                continue
+            raise TypeError(f"Unknown atom: {type(atom)}")
+
+        query_parts: list[str] = []
+        query_parts.extend(tags)
+        for phrase in phrases:
+            query_parts.append(f"\"{_escape_search_phrase(phrase)}\"")
+
+        if query_parts:
+            query = " ".join(query_parts)
+            note_ids = search_index.query_note_ids(query)
+        else:
+            note_ids = set(note_store.list_note_ids())
+
+        if regexes:
+            filtered: set[str] = set()
+            for note_id in note_ids:
+                record = note_store.get_note(note_id)
+                plaintext = strip_html(record.content)
+                if all(regex.search(plaintext) for regex in regexes):
+                    filtered.add(note_id)
+            note_ids = filtered
+
+        candidates.update(note_ids)
+    return candidates
+
+
+def _collect_candidate_note_ids_for_texts(texts: list[str], *, filename: str) -> set[str]:
+    candidates: set[str] = set()
+    for text in texts:
+        rules = parse_rules_text(text=f"{text}\n", filename=filename)
+        candidates.update(_collect_candidate_note_ids_for_rules(rules))
+    return candidates
 
 
 def _fuzzy_match(needle: str, haystack: str) -> bool:
@@ -62,10 +125,16 @@ def create_rule(request: Request, payload: dict) -> dict:
         raise HTTPException(status_code=400, detail="text must be a string")
     if text.strip() == "":
         raise HTTPException(status_code=400, detail="text must be non-empty")
+    candidate_note_ids: set[str] = set()
+    if note_store.loaded:
+        candidate_note_ids = _collect_candidate_note_ids_for_texts(
+            [text],
+            filename="ontology_rules:new",
+        )
     token = _maybe_bearer_token(request)
     rule_id, normalized = create_rule_line(text=text, token=token)
     if note_store.loaded:
-        note_store.rebuild_search_index_tag_terms()
+        note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
         view_cache.clear()
         update_uuid = generate_new_uuid()
         return {"id": rule_id, "text": normalized, "updateUUID": update_uuid}
@@ -80,14 +149,29 @@ def update_rule(request: Request, rule_id: int, payload: dict) -> dict:
     if text.strip() == "":
         raise HTTPException(status_code=400, detail="text must be non-empty")
 
-    existing_by_id = {existing_id for existing_id, _text in list_rule_lines()}
+    existing_lines = list_rule_lines()
+    existing_by_id = {existing_id for existing_id, _text in existing_lines}
     if rule_id not in existing_by_id:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
+
+    candidate_note_ids: set[str] = set()
+    if note_store.loaded:
+        old_text = None
+        for existing_id, line in existing_lines:
+            if existing_id == rule_id:
+                old_text = line
+                break
+        if old_text is None:
+            raise RuntimeError("Expected rule text for update")
+        candidate_note_ids = _collect_candidate_note_ids_for_texts(
+            [old_text, text],
+            filename=f"ontology_rules:{rule_id}",
+        )
 
     token = _maybe_bearer_token(request)
     updated_id, normalized = update_rule_line(rule_id=rule_id, text=text, token=token)
     if note_store.loaded:
-        note_store.rebuild_search_index_tag_terms()
+        note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
         view_cache.clear()
         update_uuid = generate_new_uuid()
         return {"id": updated_id, "text": normalized, "updateUUID": update_uuid}
@@ -96,13 +180,28 @@ def update_rule(request: Request, rule_id: int, payload: dict) -> dict:
 
 @router.delete("/rules/{rule_id}")
 def delete_rule(rule_id: int) -> dict:
-    existing_by_id = {existing_id for existing_id, _text in list_rule_lines()}
+    existing_lines = list_rule_lines()
+    existing_by_id = {existing_id for existing_id, _text in existing_lines}
     if rule_id not in existing_by_id:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
 
+    candidate_note_ids: set[str] = set()
+    if note_store.loaded:
+        old_text = None
+        for existing_id, line in existing_lines:
+            if existing_id == rule_id:
+                old_text = line
+                break
+        if old_text is None:
+            raise RuntimeError("Expected rule text for delete")
+        candidate_note_ids = _collect_candidate_note_ids_for_texts(
+            [old_text],
+            filename=f"ontology_rules:{rule_id}",
+        )
+
     delete_rule_line(rule_id=rule_id)
     if note_store.loaded:
-        note_store.rebuild_search_index_tag_terms()
+        note_store.rebuild_search_index_tag_terms_for_notes(candidate_note_ids)
         view_cache.clear()
         update_uuid = generate_new_uuid()
         return {"ok": True, "updateUUID": update_uuid}
