@@ -19,7 +19,7 @@ from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
-from app.services.content_cache import get_cached_content, get_cached_tags
+from app.services.content_cache import get_cached_content, get_cached_tags, get_cached_text
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index
 from app.utils.text_utils import strip_html
@@ -272,7 +272,8 @@ class NoteStore:
                 raise RuntimeError(f"Integrity failure: missing effective tags for note {record.id}")
             plaintext = ""
             if matcher_rules_enabled:
-                plaintext = strip_html(record.content)
+                plaintext = get_cached_text(record.id)
+            raw_text = get_cached_text(record.id)
             effective_with_ontology = ontology.infer_effective_tags(
                 base_tags=effective_terms,
                 plaintext=plaintext,
@@ -280,7 +281,7 @@ class NoteStore:
             search_records.append(
                 SearchRecord(
                     note_id=record.id,
-                    content_html=record.content,
+                    content_text=raw_text,
                     tags=record.tags,
                     tag_terms=effective_with_ontology,
                 )
@@ -300,6 +301,7 @@ class NoteStore:
             return
         tag_terms, non_meta_tag_terms = _derive_own_tag_terms(tags)
         effective_tag_terms: FrozenSet[str] | None = None
+        content_text = strip_html(plaintext)
         with self._lock:
             if note.parent_id is None:
                 inherited_non_meta: FrozenSet[str] = frozenset()
@@ -335,14 +337,14 @@ class NoteStore:
         matcher_rules_enabled = bool(ontology.matcher_rules)
         inferred_plaintext = ""
         if matcher_rules_enabled:
-            inferred_plaintext = strip_html(record.content)
+            inferred_plaintext = content_text
         effective_with_ontology = ontology.infer_effective_tags(
             base_tags=effective_tag_terms,
             plaintext=inferred_plaintext,
         )
         search_index.upsert(
             note_id=record.id,
-            content_html=record.content,
+            content_text=content_text,
             tags=record.tags,
             tag_terms=effective_with_ontology,
         )
@@ -398,9 +400,10 @@ class NoteStore:
             effective_with_ontology_by_id: Dict[str, FrozenSet[str]] = {}
             for note_id, base_terms in effective_tag_terms_by_id.items():
                 record = self.get_note(note_id)
+                content_text = strip_html(record.content)
                 inferred_plaintext = ""
                 if matcher_rules_enabled:
-                    inferred_plaintext = strip_html(record.content)
+                    inferred_plaintext = content_text
                 effective_with_ontology_by_id[note_id] = ontology.infer_effective_tags(
                     base_tags=base_terms,
                     plaintext=inferred_plaintext,
@@ -409,7 +412,7 @@ class NoteStore:
             effective_for_note = effective_with_ontology_by_id[updated.id]
             search_index.upsert(
                 note_id=updated.id,
-                content_html=updated.content,
+                content_text=strip_html(updated.content),
                 tags=updated.tags,
                 tag_terms=effective_for_note,
             )
@@ -429,15 +432,16 @@ class NoteStore:
         ontology = get_ontology()
         matcher_rules_enabled = bool(ontology.matcher_rules)
         inferred_plaintext = ""
+        content_text = strip_html(updated.content)
         if matcher_rules_enabled:
-            inferred_plaintext = strip_html(updated.content)
+            inferred_plaintext = content_text
         effective_with_ontology = ontology.infer_effective_tags(
             base_tags=effective_tag_terms,
             plaintext=inferred_plaintext,
         )
         search_index.upsert(
             note_id=updated.id,
-            content_html=updated.content,
+            content_text=content_text,
             tags=updated.tags,
             tag_terms=effective_with_ontology,
         )

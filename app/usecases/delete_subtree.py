@@ -15,6 +15,7 @@ from app.db.notes_sql import (
     update_links as db_update_links,
 )
 from app.security.encryption import encrypt
+from app.utils.text_utils import strip_html
 
 
 def _collect_subtree_ids(root_id: str) -> List[str]:
@@ -85,6 +86,7 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
             assert isinstance(rec.tags, str)
             ciphertext, nonce, tag = encrypt(rec.content, token)
             tags_ciphertext, tags_nonce, tags_tag = encrypt(rec.tags, token)
+            content_text = strip_html(rec.content)
 
             created_at = rec.created_at
             if created_at is None:
@@ -93,6 +95,7 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
                 connection,
                 note_id=rec.id,
                 content=ciphertext,
+                content_text=content_text,
                 encryption_nonce=nonce,
                 encryption_tag=tag,
                 tags=tags_ciphertext,

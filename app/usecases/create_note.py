@@ -15,6 +15,7 @@ from app.services.sync import generate_new_uuid
 from app.db.session import begin_writer
 from app.db.notes_sql import insert_note as db_insert_note, update_links as db_update_links
 from app.security.encryption import encrypt
+from app.utils.text_utils import strip_html
 
 
 def apply_insert_note(
@@ -29,12 +30,14 @@ def apply_insert_note(
 ) -> None:
     ciphertext, nonce, tag = encrypt(content, token)
     tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
+    content_text = strip_html(content)
     now = datetime.now(timezone.utc)
     with begin_writer() as connection:
         db_insert_note(
             connection,
             note_id=note_id,
             content=ciphertext,
+            content_text=content_text,
             encryption_nonce=nonce,
             encryption_tag=tag,
             tags=tags_ciphertext,

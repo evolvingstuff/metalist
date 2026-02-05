@@ -355,6 +355,7 @@ def _import_item(
             db.connection(),
             note_id=note_id,
             content=content,
+            content_text=strip_html(content),
             encryption_nonce=None,
             encryption_tag=None,
             tags=tags,

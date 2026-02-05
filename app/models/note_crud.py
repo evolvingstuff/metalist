@@ -14,7 +14,13 @@ from app.db.notes_sql import (
 from app.models.database import SafeSession
 from .enums import MovePosition
 from ..utils.encryption import encrypt
-from ..services.content_cache import cache_note, cache_note_tags, remove_cached_note
+from ..services.content_cache import (
+    cache_note,
+    cache_note_tags,
+    cache_note_text,
+    remove_cached_note,
+)
+from app.utils.text_utils import strip_html
 from ..services.note_store import store as note_store
 
 
@@ -39,6 +45,7 @@ class NoteCRUD:
                 next_id = ordered[0]["id"]
 
         plaintext = ""
+        content_text = ""
         ciphertext, nonce, tag = encrypt(plaintext, "")
         tags_ciphertext, tags_nonce, tags_tag = encrypt("", "")
         timestamp = datetime.now(timezone.utc)
@@ -47,6 +54,7 @@ class NoteCRUD:
             db.connection(),
             note_id=note_id,
             content=ciphertext,
+            content_text=content_text,
             encryption_nonce=nonce,
             encryption_tag=tag,
             tags=tags_ciphertext,
@@ -62,6 +70,7 @@ class NoteCRUD:
 
         cache_note(note_id, plaintext)
         cache_note_tags(note_id, "")
+        cache_note_text(note_id, content_text)
 
         if next_id:
             update_links(
@@ -155,12 +164,14 @@ class NoteCRUD:
             db.connection(),
             note_id,
             content=ciphertext,
+            content_text=strip_html(content),
             encryption_nonce=nonce,
             encryption_tag=tag,
             updated_at=timestamp,
         )
 
         cache_note(note_id, content)
+        cache_note_text(note_id, strip_html(content))
 
         if note_store.loaded:
             note_store.update_note_from_db(

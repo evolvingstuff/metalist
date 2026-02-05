@@ -36,6 +36,7 @@ def _deserialize_row(row: sqlite3.Row) -> dict:
     return {
         "id": note_id,
         "content": row["content"],
+        "content_text": row["content_text"],
         "tags": row["tags"],
         "encryption_nonce": row["encryption_nonce"],
         "encryption_tag": row["encryption_tag"],
@@ -55,6 +56,7 @@ def insert_note(
     *,
     note_id: str,
     content: str,
+    content_text: str,
     encryption_nonce: Optional[bytes],
     encryption_tag: Optional[bytes],
     tags: str,
@@ -73,6 +75,7 @@ def insert_note(
         INSERT INTO {NOTES_TABLE} (
             id,
             content,
+            content_text,
             tags,
             encryption_nonce,
             encryption_tag,
@@ -84,11 +87,12 @@ def insert_note(
             is_collapsed,
             created_at,
             updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             note_id,
             content,
+            content_text,
             tags,
             encryption_nonce,
             encryption_tag,
@@ -109,6 +113,7 @@ def update_note_content(
     note_id: str,
     *,
     content: str,
+    content_text: str,
     encryption_nonce: Optional[bytes],
     encryption_tag: Optional[bytes],
     updated_at: datetime,
@@ -117,6 +122,7 @@ def update_note_content(
         connection,
         note_id,
         content=content,
+        content_text=content_text,
         encryption_nonce=encryption_nonce,
         encryption_tag=encryption_tag,
         updated_at=updated_at,
@@ -202,6 +208,7 @@ def update_note_fields(
 
     allowed_fields = {
         "content",
+        "content_text",
         "encryption_nonce",
         "encryption_tag",
         "tags",
@@ -216,6 +223,9 @@ def update_note_fields(
     if "content" in updates:
         fields.append("content = ?")
         values.append(updates["content"])
+    if "content_text" in updates:
+        fields.append("content_text = ?")
+        values.append(updates["content_text"])
     if "encryption_nonce" in updates:
         fields.append("encryption_nonce = ?")
         values.append(updates["encryption_nonce"])
@@ -237,6 +247,20 @@ def update_note_fields(
     conn = _conn(connection)
     sql = f"UPDATE {NOTES_TABLE} SET " + ", ".join(fields) + " WHERE id = ?"
     conn.execute(sql, tuple(values))
+
+
+def update_note_content_text_bulk(
+    connection: GuardedConnection | sqlite3.Connection,
+    updates: Iterable[tuple[str, str]],
+) -> None:
+    payload = list(updates)
+    if not payload:
+        return
+    conn = _conn(connection)
+    conn.executemany(
+        f"UPDATE {NOTES_TABLE} SET content_text = ? WHERE id = ?",
+        payload,
+    )
 
 
 def delete_notes(

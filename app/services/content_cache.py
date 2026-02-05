@@ -10,16 +10,18 @@ import time
 from typing import Dict, Mapping, Optional, Sequence
 
 from app.db.session import connect_reader
-from app.db.notes_sql import fetch_all_for_cache
+from app.db.notes_sql import fetch_all_for_cache, update_note_content_text_bulk
 
 from ..models.database import SafeSession
 from ..utils.encryption import get_encryption_service
+from app.utils.text_utils import strip_html
 
 logger = logging.getLogger(__name__)
 
 # Global in-memory caches: {note_id: decrypted_string}
 _search_cache: Dict[str, str] = {}
 _tag_cache: Dict[str, str] = {}
+_text_cache: Dict[str, str] = {}
 
 _CACHE_TIMING_ENABLED = True
 
@@ -34,6 +36,12 @@ def get_cached_tags(note_id: str) -> str:
     if note_id not in _tag_cache:
         raise RuntimeError(f"Cache missing tags for note {note_id}")
     return _tag_cache[note_id]
+
+
+def get_cached_text(note_id: str) -> str:
+    if note_id not in _text_cache:
+        raise RuntimeError(f"Cache missing raw text for note {note_id}")
+    return _text_cache[note_id]
 
 
 def cache_note(note_id: str, decrypted_content: str) -> None:
@@ -52,6 +60,11 @@ def cache_note_tags(note_id: str, tags: str) -> None:
     logger.debug(f"Cached tags for note {note_id[:8]}...")
 
 
+def cache_note_text(note_id: str, raw_text: str) -> None:
+    _text_cache[note_id] = raw_text
+    logger.debug(f"Cached raw text for note {note_id[:8]}...")
+
+
 def remove_cached_note(note_id: str) -> None:
     """Remove note from cache.
     
@@ -64,6 +77,9 @@ def remove_cached_note(note_id: str) -> None:
     if note_id in _tag_cache:
         del _tag_cache[note_id]
         logger.debug(f"Removed cached tags for note {note_id[:8]}...")
+    if note_id in _text_cache:
+        del _text_cache[note_id]
+        logger.debug(f"Removed cached raw text for note {note_id[:8]}...")
 
 
 def get_cache_size() -> int:
@@ -77,9 +93,10 @@ def get_cache_size() -> int:
 
 def clear_cache() -> None:
     """Clear all cached content."""
-    global _search_cache, _tag_cache
+    global _search_cache, _tag_cache, _text_cache
     _search_cache = {}
     _tag_cache = {}
+    _text_cache = {}
     logger.info("Cache cleared")
 
 
@@ -93,8 +110,12 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
     logger.info("Populating content cache from database...")
 
     fetch_start = time.perf_counter()
-    with connect_reader("cache:populate") as connection:
-        notes = list(fetch_all_for_cache(connection))
+    if db is None:
+        with connect_reader("cache:populate") as connection:
+            notes = list(fetch_all_for_cache(connection))
+    else:
+        with SafeSession.allow_reads("cache:populate"):
+            notes = list(fetch_all_for_cache(db.connection()))
     if _CACHE_TIMING_ENABLED:
         fetch_duration = time.perf_counter() - fetch_start
         print(f"[startup] cache query returned {len(notes)} rows in {fetch_duration:.2f}s")
@@ -111,6 +132,8 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
     loop_started = time.perf_counter()
     processed = 0
     last_checkpoint = loop_started
+    pending_text_updates: list[tuple[str, str]] = []
+
     for note in notes:
         note_id = note["id"]
         content = note["content"]
@@ -175,8 +198,15 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         else:
             decrypted_tags = tags
 
+        raw_text = note.get("content_text")
+        if not isinstance(raw_text, str):
+            raw_text = strip_html(decrypted_content)
+            if db is not None:
+                pending_text_updates.append((raw_text, note_id))
+
         cache_note(note_id, decrypted_content)
         cache_note_tags(note_id, decrypted_tags)
+        cache_note_text(note_id, raw_text)
 
         processed += 1
         if _CACHE_TIMING_ENABLED and processed % 1000 == 0:
@@ -206,6 +236,13 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         )
 
     logger.info(f"Content cache populated with {len(notes)} notes")
+
+    if pending_text_updates:
+        if db is None:
+            raise RuntimeError(
+                "Raw text backfill required but no writable DB session was provided."
+            )
+        update_note_content_text_bulk(db.connection(), pending_text_updates)
 
     return notes
 
@@ -271,6 +308,10 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
                 tag,
             )
             cache_note(note_id, decrypted_content)
+            raw_text = note.get("content_text")
+            if not isinstance(raw_text, str):
+                raw_text = strip_html(decrypted_content)
+            cache_note_text(note_id, raw_text)
 
         if (tags_nonce is None) != (tags_tag is None):
             raise RuntimeError(

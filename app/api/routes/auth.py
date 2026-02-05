@@ -8,9 +8,8 @@ from app.api.deps import get_db
 from app.models.database import SafeSession
 from app.services.auth_service import AuthService
 from app.services.tokens import token_service
-from app.services.content_cache import populate_cache_from_db, get_cached_content
+from app.services.content_cache import populate_cache_from_db
 from app.services.note_store import store as note_store
-from app.services.store import hydrate_from_prefetched as v2_hydrate
 from app.services.sync import clear_all_locks
 from app.services import auth_cache_state
 from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
@@ -104,13 +103,9 @@ def login(
     ensure_rules_decrypted_and_compiled(token="")
 
     if auth_cache_state.cache_refresh_needed():
-        prefetched_rows = populate_cache_from_db(None)
+        prefetched_rows = populate_cache_from_db(db)
+        db.commit()
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
-
-        def _get_plaintext(note_id: str, row: dict) -> str:
-            return get_cached_content(note_id)
-
-        v2_hydrate(prefetched_rows, get_plaintext=_get_plaintext)
         auth_cache_state.mark_cache_ready()
 
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)

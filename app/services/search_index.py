@@ -10,7 +10,7 @@ from loguru import logger
 
 from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token
 from app.services.search_query import ParsedSearchQuery, parse_search_query
-from app.services.search_text import build_searchable_text_casefold
+from app.services.search_text import build_searchable_text_casefold_from_plaintext
 
 
 _UNICODE_TRIGRAM_SENTINEL = 0xE000
@@ -85,7 +85,7 @@ def _parse_search_query_for_suggestions(raw_input: str) -> tuple[Tuple[str, ...]
 @dataclass(frozen=True, slots=True)
 class SearchRecord:
     note_id: str
-    content_html: str
+    content_text: str
     tags: str
     tag_terms: FrozenSet[str]
 
@@ -172,7 +172,7 @@ class SearchIndex:
             for record in materialized:
                 self._insert_new_locked(
                     record.note_id,
-                    record.content_html,
+                    record.content_text,
                     record.tags,
                     record.tag_terms,
                 )
@@ -188,7 +188,7 @@ class SearchIndex:
             }
         ).info("search.index.rebuild.finish")
 
-    def upsert(self, *, note_id: str, content_html: str, tags: str, tag_terms: FrozenSet[str]) -> None:
+    def upsert(self, *, note_id: str, content_text: str, tags: str, tag_terms: FrozenSet[str]) -> None:
         t0 = time.perf_counter()
         with self._lock:
             if note_id in self._uuid_to_id:
@@ -197,9 +197,9 @@ class SearchIndex:
                     # Notes can be deleted and later restored (undo/redo) with the same UUID.
                     # Treat this as a revive instead of an error.
                     self._alive.add(note_int_id)
-                self._update_existing_locked(note_int_id, content_html, tags, tag_terms)
+                self._update_existing_locked(note_int_id, content_text, tags, tag_terms)
             else:
-                self._insert_new_locked(note_id, content_html, tags, tag_terms)
+                self._insert_new_locked(note_id, content_text, tags, tag_terms)
 
             self._revision += 1
             self._result_cache.clear()
@@ -498,7 +498,7 @@ class SearchIndex:
     def _insert_new_locked(
         self,
         note_id: str,
-        content_html: str,
+        content_text: str,
         tags: str,
         tag_terms: FrozenSet[str],
     ) -> None:
@@ -507,7 +507,7 @@ class SearchIndex:
         self._id_to_uuid.append(note_id)
         self._alive.add(note_int_id)
 
-        text_casefold, trigrams = self._build_note_text_state(content_html, tags)
+        text_casefold, trigrams = self._build_note_text_state(content_text, tags)
         self._note_text_casefold.append(text_casefold)
         self._note_tag_terms.append(tag_terms)
         self._note_trigrams.append(trigrams)
@@ -520,14 +520,14 @@ class SearchIndex:
     def _update_existing_locked(
         self,
         note_int_id: int,
-        content_html: str,
+        content_text: str,
         tags: str,
         new_tag_terms: FrozenSet[str],
     ) -> None:
         if note_int_id not in self._alive:
             raise RuntimeError("Cannot update deleted note")
 
-        new_text_casefold, new_trigrams = self._build_note_text_state(content_html, tags)
+        new_text_casefold, new_trigrams = self._build_note_text_state(content_text, tags)
         old_tag_terms = self._note_tag_terms[note_int_id]
         old_trigrams = self._note_trigrams[note_int_id]
 
@@ -573,13 +573,13 @@ class SearchIndex:
         self._note_tag_terms[note_int_id] = frozenset()
         self._note_trigrams[note_int_id] = set()
 
-    def _build_note_text_state(self, content_html: str, tags: str) -> Tuple[str, Set[int]]:
-        if not isinstance(content_html, str):
-            raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    def _build_note_text_state(self, content_text: str, tags: str) -> Tuple[str, Set[int]]:
+        if not isinstance(content_text, str):
+            raise TypeError(f"content_text must be a string, got {type(content_text)}")
         if not isinstance(tags, str):
             raise TypeError(f"tags must be a string, got {type(tags)}")
 
-        text_casefold = build_searchable_text_casefold(content_html, tags)
+        text_casefold = build_searchable_text_casefold_from_plaintext(content_text, tags)
         trigrams = _extract_trigram_keys(text_casefold)
         return text_casefold, trigrams
 

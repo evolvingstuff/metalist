@@ -12,6 +12,7 @@ _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
+    content_text TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '',
     is_collapsed INTEGER NOT NULL DEFAULT 0,
     encryption_nonce BLOB,
@@ -93,6 +94,7 @@ def initialize_schema(connection: Connection) -> None:
         connection,
         NOTES_TABLE,
         {
+            "content_text": "TEXT",
             "tags": "TEXT NOT NULL DEFAULT ''",
             "tags_encryption_nonce": "BLOB",
             "tags_encryption_tag": "BLOB",

@@ -21,7 +21,8 @@ from app.db.settings_sql import (
     insert_default_settings,
     update_password_settings,
 )
-from app.services.content_cache import cache_note, cache_note_tags
+from app.services.content_cache import cache_note, cache_note_tags, cache_note_text
+from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
@@ -585,6 +586,7 @@ class AuthService:
 
         for note_id, content in cache_content_updates.items():
             cache_note(note_id, content)
+            cache_note_text(note_id, strip_html(content))
         for note_id, tags in cache_tag_updates.items():
             cache_note_tags(note_id, tags)
 

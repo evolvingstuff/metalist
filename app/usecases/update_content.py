@@ -11,6 +11,7 @@ from app.services.sync import generate_new_uuid
 from app.db.session import begin_writer
 from app.db.notes_sql import update_note_fields as db_update_note_fields
 from app.security.encryption import encrypt
+from app.utils.text_utils import strip_html
 
 
 def apply_update_content(note_id: str, content: str, tags: str, token: str) -> None:
@@ -27,6 +28,7 @@ def apply_update_content(note_id: str, content: str, tags: str, token: str) -> N
     # Encrypt (or pass-through if encryption unavailable)
     ciphertext, nonce, tag = encrypt(content, token)
     tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
+    content_text = strip_html(content)
     now = datetime.now(timezone.utc)
 
     # Single SQL transaction
@@ -35,6 +37,7 @@ def apply_update_content(note_id: str, content: str, tags: str, token: str) -> N
             connection,
             note_id,
             content=ciphertext,
+            content_text=content_text,
             encryption_nonce=nonce,
             encryption_tag=tag,
             tags=tags_ciphertext,
