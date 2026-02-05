@@ -13,6 +13,7 @@
 - Indent defines hierarchy; indent never jumps by more than 1 (assert).
 - `creation` + `last_edit` (epoch ms) exist on each top-level item (assert).
 - All new notes get new UUIDs; `tags` are copied as-is.
+- Subitems tagged `@implies` become ontology rules and are not imported as notes.
 
 ## Plan
 1. Implement `convert-from-legacy.py` with CLI + picker:
@@ -23,8 +24,9 @@
    - Resolve SQLite path from `DATABASE_URL`; require sqlite URL.
    - Delete the existing DB file (if present), create parent dir.
    - Open `SafeSession` to initialize schema; insert default settings.
-3. Convert and insert notes:
+3. Convert and insert notes/rules:
    - For each top-level item, create the root note from the first subitem.
+   - If a subitem has `@implies`, parse `A => B` / `A = B` rules into ontology entries and skip note creation.
    - Build nested notes using an indent stack; insert notes with `insert_note`.
    - Track sibling order per parent; apply `prev/next` links with `update_links`.
    - Use `creation`/`last_edit` timestamps for all notes in that item.

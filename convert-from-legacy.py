@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,8 +30,10 @@ else:
 
 from app.config import DATABASE_URL
 from app.db.notes_sql import insert_note, update_links
+from app.db.ontology_rules_sql import insert_rule
 from app.db.settings_sql import insert_default_settings
 from app.models.database import SafeSession
+from app.utils.text_utils import strip_html
 
 
 @dataclass(frozen=True)
@@ -174,6 +177,82 @@ def _parse_collapse(subitem: dict[str, Any]) -> bool:
     raise TypeError("collapse must be 0/1 or boolean when provided.")
 
 
+def _has_implies_tag(tags: str) -> bool:
+    tokens = tags.split()
+    return "@implies" in tokens
+
+
+def _extract_rule_texts(raw_content: str, *, context: str) -> list[str]:
+    text = strip_html(raw_content)
+    parts = re.split(r"\s*(=>|=)\s*", text)
+    if len(parts) < 3:
+        raise ValueError(
+            "Rule content must include '=>' or '='. "
+            f"context={context} content={text!r}"
+        )
+
+    segments = [segment.strip() for segment in parts[0::2]]
+    operators = [operator.strip() for operator in parts[1::2]]
+
+    if len(segments) != len(operators) + 1:
+        raise ValueError(
+            "Rule content must include operators between segments. "
+            f"context={context} content={text!r}"
+        )
+
+    if any(segment == "" for segment in segments):
+        raise ValueError(
+            "Rule content must include tokens on both sides. "
+            f"context={context} content={text!r}"
+        )
+
+    token_groups: list[list[str]] = []
+    for segment in segments:
+        tokens = [token for token in segment.split() if token]
+        if not tokens:
+            raise ValueError(
+                "Rule content must include tokens on both sides. "
+                f"context={context} content={text!r}"
+            )
+        token_groups.append(tokens)
+
+    rules: set[str] = set()
+    current_tokens = token_groups[0]
+    for idx, operator in enumerate(operators):
+        if operator not in {"=>", "="}:
+            raise ValueError(
+                "Rule content must use '=>' or '=' operators. "
+                f"context={context} content={text!r}"
+            )
+        next_tokens = token_groups[idx + 1]
+        if operator == "=":
+            for left in current_tokens:
+                for right in next_tokens:
+                    if left == right:
+                        continue
+                    rules.add(f"{left} => {right}")
+                    rules.add(f"{right} => {left}")
+            merged = list(dict.fromkeys(current_tokens + next_tokens))
+            current_tokens = merged
+        else:
+            for left in current_tokens:
+                for right in next_tokens:
+                    if left == right:
+                        continue
+                    rules.add(f"{left} => {right}")
+            current_tokens = next_tokens
+
+    return sorted(rules)
+
+
+def _is_effectively_empty(content: str) -> bool:
+    if content.strip() == "":
+        return True
+    if "<img" in content.lower():
+        return False
+    return strip_html(content) == ""
+
+
 def _prepare_database() -> Path:
     db_path = _resolve_sqlite_path(DATABASE_URL)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,7 +279,7 @@ def _import_item(
     item: dict[str, Any],
     order_map: dict[str | None, list[str]],
     meta: dict[str, NoteMeta],
-) -> int:
+) -> tuple[int, int]:
     created_ms = _require_int(item, "creation")
     updated_ms = _require_int(item, "last_edit")
     created_at = _parse_epoch_ms(created_ms, "creation")
@@ -213,8 +292,14 @@ def _import_item(
         raise ValueError("Each item must include at least one subitem.")
 
     indent_stack: list[str] = []
+    skipped_indents: list[int] = []
     previous_indent: int | None = None
     root_count = 0
+
+    note_count = 0
+    rule_count = 0
+
+    legacy_id = item.get("id", "<unknown>")
 
     for idx, raw in enumerate(subitems):
         if not isinstance(raw, dict):
@@ -231,15 +316,39 @@ def _import_item(
         if previous_indent is not None and indent > previous_indent + 1:
             raise ValueError("Indent jumps larger than 1 are not allowed.")
 
-        while len(indent_stack) > indent:
+        while skipped_indents and indent <= skipped_indents[-1]:
+            skipped_indents.pop()
+
+        effective_indent = indent - len(skipped_indents)
+        if effective_indent < 0:
+            raise ValueError("Indent underflow after skipping implies notes.")
+
+        while len(indent_stack) > effective_indent:
             indent_stack.pop()
-        if len(indent_stack) != indent:
+        if len(indent_stack) != effective_indent:
             raise ValueError("Indent stack mismatch; legacy data is malformed.")
 
-        parent_id = indent_stack[-1] if indent > 0 else None
+        parent_id = indent_stack[-1] if effective_indent > 0 else None
         content = _require_str(raw, "data")
         tags = _require_str(raw, "tags")
         is_collapsed = _parse_collapse(raw)
+        context = f"item_id={legacy_id} subitem_index={idx}"
+
+        if _has_implies_tag(tags) and not _is_effectively_empty(content):
+            rule_texts = _extract_rule_texts(content, context=context)
+            for rule_text in rule_texts:
+                insert_rule(
+                    db.connection(),
+                    rule_text=rule_text,
+                    rule_encryption_nonce=None,
+                    rule_encryption_tag=None,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                )
+                rule_count += 1
+            skipped_indents.append(indent)
+            previous_indent = indent
+            continue
 
         note_id = str(uuid.uuid4())
         insert_note(
@@ -266,11 +375,12 @@ def _import_item(
         )
         indent_stack.append(note_id)
         previous_indent = indent
+        note_count += 1
 
     if root_count != 1:
         raise ValueError("Each item must contain exactly one indent=0 subitem.")
 
-    return len(subitems)
+    return note_count, rule_count
 
 
 def _apply_order(db: SafeSession, order_map: dict[str | None, list[str]], meta: dict[str, NoteMeta]) -> None:
@@ -307,17 +417,20 @@ def main(argv: list[str]) -> int:
     note_meta: dict[str, NoteMeta] = {}
     order_map: dict[str | None, list[str]] = {}
     total_notes = 0
+    total_rules = 0
     try:
         for raw_item in items:
             if not isinstance(raw_item, dict):
                 raise TypeError("Each entry in data must be an object.")
-            total_notes += _import_item(session, raw_item, order_map, note_meta)
+            item_notes, item_rules = _import_item(session, raw_item, order_map, note_meta)
+            total_notes += item_notes
+            total_rules += item_rules
         _apply_order(session, order_map, note_meta)
         session.commit()
     finally:
         session.close()
 
-    print(f"Imported {len(items)} root items and {total_notes} total notes.")
+    print(f"Imported {len(items)} root items, {total_notes} notes, {total_rules} rules.")
     return 0
 
 

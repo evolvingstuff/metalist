@@ -102,8 +102,6 @@ def _is_valid_tag_token(token: str) -> bool:
         return False
     if token[0] in ("(", ")"):
         return False
-    if "#" in token:
-        return False
     for ch in token:
         if ch in _DISALLOWED_TAG_CHARS:
             return False
@@ -131,8 +129,6 @@ def parse_rules_text(*, text: str, filename: str) -> List[Rule]:
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
         stripped = raw_line.lstrip()
         if stripped == "":
-            continue
-        if stripped.startswith("#") or stripped.startswith("//"):
             continue
         rules.extend(
             _parse_rule_line(raw_line=raw_line, filename=filename, line_number=line_number)

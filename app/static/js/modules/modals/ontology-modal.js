@@ -52,10 +52,6 @@ function isValidTagToken(token) {
     if (token.startsWith('(') || token.startsWith(')')) {
         return false;
     }
-    if (token.includes('#')) {
-        return false;
-    }
-
     const disallowed = new Set([':', '"', '\\', '>', '<', '=', '[', ']', '{', '}', '(', ')', '*', '|', ';', '~', '`']);
     for (const ch of token) {
         if (disallowed.has(ch)) {

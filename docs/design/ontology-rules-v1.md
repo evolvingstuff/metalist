@@ -20,12 +20,12 @@ Operators:
 
 Comments:
 - Blank lines are ignored
-- Comment-only lines may start with `#` or `//`
-- Inline comments are not supported
+- Comment syntax is not supported in v1
 
 ### Tags
 
-- Tags are plain tokens (no `#tag` prefix).
+- Tags are plain tokens (no special prefix required).
+- `#` is allowed in tag tokens.
 - Tags must be a single token with no spaces.
 
 ### LHS forms

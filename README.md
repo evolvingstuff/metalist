@@ -65,6 +65,7 @@ python convert-from-legacy.py --input /path/to/legacy-export.json
 ```
 
 If `--input` is omitted, a file picker opens (when `tkinter` is available).
+Notes tagged with `@implies` are converted into ontology rules and are not imported as notes.
 
 ### Run Tests (Cypress)
 
