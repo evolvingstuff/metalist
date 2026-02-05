@@ -61,4 +61,5 @@ if TEST_MODE:
     print("🧪 Running in TEST MODE - using test.db")
 else:
     # Use production database
-    DATABASE_URL = "sqlite:///./notes.db"
+    DEFAULT_DB_PATH = os.path.expanduser("~/MetaList/metalist2.db")
+    DATABASE_URL = f"sqlite:///{DEFAULT_DB_PATH}"

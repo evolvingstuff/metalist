@@ -82,7 +82,7 @@ pyinstaller --onefile \
 ```
 
 ## Data Storage (Desktop)
-- Current dev/prod default is `notes.db` in the repo root (`app/config.py`).
+- Current dev/prod default is `~/MetaList/metalist2.db` (`app/config.py`).
 - A real desktop build should store the database under the OS app data directory (would require a code/config change).
 
 ## Product Notes

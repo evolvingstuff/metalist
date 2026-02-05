@@ -19,16 +19,12 @@ var/
 .installed.cfg
 *.egg
 .env
-*.db
-*.db-wal
-*.db-shm
 .pytest_cache/
 .hypothesis/
 .coverage
 .idea/
 *.log
 logs/
-app/sql_app.db
 package-lock.json
 node_modules/
 # Symlinked agents config

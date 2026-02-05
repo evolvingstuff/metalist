@@ -19,7 +19,7 @@ graph TB
     
     subgraph "File System"
         AppCode[Application Code<br/>Python, JS, CSS]
-        SQLiteFile[notes.db<br/>SQLite Database]
+        SQLiteFile[~/MetaList/metalist2.db<br/>SQLite Database]
         Logs[server.log<br/>Application Logs]
         StaticAssets[Static Assets<br/>Images, Fonts]
     end
