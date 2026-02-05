@@ -31,6 +31,35 @@ def _derive_own_tag_terms(tags: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
     return tag_terms, non_meta_tag_terms
 
 
+def _escape_search_phrase(phrase: str) -> str:
+    if not isinstance(phrase, str):
+        raise TypeError(f"phrase must be a string, got {type(phrase)}")
+    if phrase == "":
+        raise ValueError("phrase must be non-empty")
+    return phrase.replace("\\", "\\\\").replace("\"", "\\\"")
+
+
+def _build_search_query(*, required_tags: Iterable[str], required_phrases: Iterable[str]) -> str:
+    tokens: List[str] = []
+    tokens.extend(required_tags)
+    for phrase in required_phrases:
+        tokens.append(f"\"{_escape_search_phrase(phrase)}\"")
+    return " ".join(tokens)
+
+
+def _collect_matcher_generated_tags(ontology) -> FrozenSet[str]:
+    if not ontology.matcher_rules:
+        return frozenset()
+
+    generated: Set[str] = set()
+    for rule in ontology.matcher_rules:
+        generated.add(rule.rhs)
+        implied = ontology.implication_closure.get(rule.rhs)
+        if implied:
+            generated.update(implied)
+    return frozenset(generated)
+
+
 @dataclass(frozen=True)
 class NoteRecord:
     id: str
@@ -254,8 +283,19 @@ class NoteStore:
                     )
 
             self._note_map = note_map
+            index_start = time.perf_counter()
             self._rebuild_indexes_locked()
+            if timing_enabled:
+                print(
+                    f"[startup] note_store link index rebuild in {time.perf_counter() - index_start:.2f}s"
+                )
+
+            tags_start = time.perf_counter()
             effective_tag_terms_by_id = self._rebuild_effective_tag_terms_locked()
+            if timing_enabled:
+                print(
+                    f"[startup] note_store inherited tag rebuild in {time.perf_counter() - tags_start:.2f}s"
+                )
             self._loaded = True
 
             if timing_enabled:
@@ -265,29 +305,119 @@ class NoteStore:
                 )
         search_records: List[SearchRecord] = []
         ontology = get_ontology()
-        matcher_rules_enabled = bool(ontology.matcher_rules)
+        tag_only_terms_by_id: Dict[str, FrozenSet[str]] = {}
+        tag_only_start = time.perf_counter()
         for record in note_map.values():
             effective_terms = effective_tag_terms_by_id.get(record.id)
             if effective_terms is None:
                 raise RuntimeError(f"Integrity failure: missing effective tags for note {record.id}")
-            plaintext = ""
-            if matcher_rules_enabled:
-                plaintext = get_cached_text(record.id)
-            raw_text = get_cached_text(record.id)
-            effective_with_ontology = ontology.infer_effective_tags(
-                base_tags=effective_terms,
-                plaintext=plaintext,
-            )
+            tag_only_terms = ontology.infer_implication_only(base_tags=effective_terms)
+            tag_only_terms_by_id[record.id] = tag_only_terms
             search_records.append(
                 SearchRecord(
                     note_id=record.id,
-                    content_text=raw_text,
+                    content_text=get_cached_text(record.id),
                     tags=record.tags,
-                    tag_terms=effective_with_ontology,
+                    tag_terms=tag_only_terms,
                 )
             )
+        if timing_enabled:
+            print(
+                f"[startup] note_store tag-only inference for {len(search_records)} notes in "
+                f"{time.perf_counter() - tag_only_start:.2f}s"
+            )
 
+        index_start = time.perf_counter()
         search_index.rebuild(search_records)
+        if timing_enabled:
+            print(
+                f"[startup] search index rebuild in {time.perf_counter() - index_start:.2f}s"
+            )
+
+        if not ontology.matcher_rules:
+            return
+
+        candidate_start = time.perf_counter()
+        matcher_generated_tags = _collect_matcher_generated_tags(ontology)
+        candidate_note_ids: Set[str] = set()
+        all_note_ids: Set[str] | None = None
+        needs_plaintext = any(
+            rule.required_text_patterns or rule.required_regexes for rule in ontology.matcher_rules
+        )
+        raw_text_cache: Dict[str, str] = {}
+
+        for rule in ontology.matcher_rules:
+            required_tags = [tag for tag in rule.required_tags if tag not in matcher_generated_tags]
+            required_phrases = list(rule.required_text_phrases)
+
+            if not required_tags and not required_phrases:
+                if all_note_ids is None:
+                    all_note_ids = set(note_map.keys())
+                candidate_note_ids = all_note_ids
+                break
+
+            query = _build_search_query(
+                required_tags=required_tags,
+                required_phrases=required_phrases,
+            )
+            rule_candidates = search_index.query_note_ids(query)
+
+            if rule.required_regexes:
+                filtered: Set[str] = set()
+                for note_id in rule_candidates:
+                    raw_text = raw_text_cache.get(note_id)
+                    if raw_text is None:
+                        raw_text = get_cached_text(note_id)
+                        raw_text_cache[note_id] = raw_text
+                    matched = True
+                    for regex in rule.required_regexes:
+                        if regex.search(raw_text) is None:
+                            matched = False
+                            break
+                    if matched:
+                        filtered.add(note_id)
+                rule_candidates = filtered
+
+            candidate_note_ids.update(rule_candidates)
+
+        if timing_enabled:
+            print(
+                f"[startup] matcher candidate selection found {len(candidate_note_ids)} notes in "
+                f"{time.perf_counter() - candidate_start:.2f}s"
+            )
+
+        if not candidate_note_ids:
+            return
+
+        inference_start = time.perf_counter()
+        updates: Dict[str, FrozenSet[str]] = {}
+        for note_id in candidate_note_ids:
+            base_terms = tag_only_terms_by_id.get(note_id)
+            if base_terms is None:
+                raise RuntimeError(
+                    f"Integrity failure: missing tag terms for candidate note {note_id}"
+                )
+            inferred_plaintext = ""
+            if needs_plaintext:
+                inferred_plaintext = raw_text_cache.get(note_id)
+                if inferred_plaintext is None:
+                    inferred_plaintext = get_cached_text(note_id)
+                    raw_text_cache[note_id] = inferred_plaintext
+            effective_with_ontology = ontology.infer_effective_tags(
+                base_tags=base_terms,
+                plaintext=inferred_plaintext,
+            )
+            if effective_with_ontology != base_terms:
+                updates[note_id] = effective_with_ontology
+
+        if timing_enabled:
+            print(
+                f"[startup] matcher inference for {len(candidate_note_ids)} notes in "
+                f"{time.perf_counter() - inference_start:.2f}s (updates={len(updates)})"
+            )
+
+        if updates:
+            search_index.bulk_update_tag_terms(updates)
 
     def snapshot(self) -> Dict[str, NoteRecord]:
         """Return a shallow copy of the current note map."""

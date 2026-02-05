@@ -49,6 +49,7 @@ class Rule:
 @dataclass(frozen=True, slots=True)
 class MatcherRule:
     required_tags: FrozenSet[str]
+    required_text_phrases: Tuple[str, ...]
     required_text_patterns: Tuple[re.Pattern[str], ...]
     required_regexes: Tuple[re.Pattern[str], ...]
     rhs: str
@@ -479,6 +480,17 @@ class TagOntology:
 
         return frozenset(tags)
 
+    def infer_implication_only(self, *, base_tags: FrozenSet[str]) -> FrozenSet[str]:
+        if self.is_empty:
+            return base_tags
+
+        tags: Set[str] = set(base_tags)
+        for tag in base_tags:
+            implied = self.implication_closure.get(tag)
+            if implied:
+                tags.update(implied)
+        return frozenset(tags)
+
 
 def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
     if not rules:
@@ -495,6 +507,7 @@ def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
             continue
 
         required_tags: Set[str] = set()
+        required_text_phrases: List[str] = []
         required_text_patterns: List[re.Pattern[str]] = []
         required_regexes: List[re.Pattern[str]] = []
 
@@ -503,6 +516,7 @@ def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
                 required_tags.add(atom.tag)
                 continue
             if isinstance(atom, TextAtom):
+                required_text_phrases.append(atom.phrase)
                 required_text_patterns.append(_compile_quoted_text_as_word_match(atom.phrase))
                 continue
             if isinstance(atom, RegexAtom):
@@ -513,6 +527,7 @@ def compile_rules(*, rules: Sequence[Rule], filename: str) -> TagOntology:
         matcher_rules.append(
             MatcherRule(
                 required_tags=frozenset(required_tags),
+                required_text_phrases=tuple(required_text_phrases),
                 required_text_patterns=tuple(required_text_patterns),
                 required_regexes=tuple(required_regexes),
                 rhs=rule.rhs,

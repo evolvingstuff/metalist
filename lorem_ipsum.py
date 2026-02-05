@@ -39,12 +39,14 @@ from app.models.database import SafeSession
 from app.services.content_cache import (
     cache_note,
     cache_note_tags,
+    cache_note_text,
     clear_cache,
     get_cached_content,
     populate_cache_from_db,
 )
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
+from app.utils.text_utils import strip_html
 
 
 default_root_count =  10_000  # 1000
@@ -365,6 +367,7 @@ def create_note(
 
     note_id = str(uuid.uuid4())
     content, image_count = build_note_content(rng, images, image_probability, max_images)
+    content_text = strip_html(content)
 
     ciphertext = content
     nonce = None
@@ -379,6 +382,7 @@ def create_note(
         db_session.connection(),
         note_id=note_id,
         content=ciphertext,
+        content_text=content_text,
         encryption_nonce=nonce,
         encryption_tag=tag,
         tags=tags_ciphertext,
@@ -394,6 +398,7 @@ def create_note(
 
     cache_note(note_id, content)
     cache_note_tags(note_id, tags_ciphertext)
+    cache_note_text(note_id, content_text)
 
     if note_store.loaded:
         note_store.add_note_from_db(
