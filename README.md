@@ -54,6 +54,18 @@ Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
 
+### Legacy Import
+`convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL` and imports notes from a legacy JSON export.
+
+This is destructive. It deletes the existing DB file before rebuilding it.
+
+Example usage:
+```bash
+python convert-from-legacy.py --input /path/to/legacy-export.json
+```
+
+If `--input` is omitted, a file picker opens (when `tkinter` is available).
+
 ### Run Tests (Cypress)
 
 **Headless (recommended)**: starts the server in `TEST_MODE=1` and runs Cypress:

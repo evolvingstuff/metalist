@@ -1,7 +1,7 @@
 # PLAN
 
 ## Goal
-- Build `convert.py` to import legacy JSON into the current SQLite schema at `~/MetaList/metalist2.db` (via `app.config.DATABASE_URL`).
+- Build `convert-from-legacy.py` to import legacy JSON into the current SQLite schema at `~/MetaList/metalist2.db` (via `app.config.DATABASE_URL`).
 - Default to a native file picker; support `--input /path/to/file.json` as a fallback.
 - Conversion is destructive: delete the existing DB file and rebuild from scratch.
 
@@ -15,7 +15,7 @@
 - All new notes get new UUIDs; `tags` are copied as-is.
 
 ## Plan
-1. Implement `convert.py` with CLI + picker:
+1. Implement `convert-from-legacy.py` with CLI + picker:
    - `argparse` with optional `--input`.
    - If `--input` missing, open a `tkinter` file dialog; if GUI fails, raise with instructions to pass `--input`.
    - Load JSON + validate invariants, including `encryption.encrypted == false`.
