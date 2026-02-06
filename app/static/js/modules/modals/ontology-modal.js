@@ -337,12 +337,15 @@ export class OntologyModal extends BaseModal {
                 </div>
 
                 <div class="ontology-search">
-                    <input
-                        type="text"
-                        id="ontology-search-input"
-                        placeholder="Search tags…"
-                        autocomplete="off"
-                    />
+                    <div class="ontology-search-row">
+                        <input
+                            type="text"
+                            id="ontology-search-input"
+                            placeholder="Search tags…"
+                            autocomplete="off"
+                        />
+                        <button class="ontology-add ontology-add-inline" data-action="add-tag">+ Add new tag…</button>
+                    </div>
                     <div class="ontology-search-results" id="ontology-search-results"></div>
                 </div>
 
@@ -839,15 +842,47 @@ export class OntologyModal extends BaseModal {
             }
 
             const lhs = renderIncomingAtoms(lhsAtoms);
+            const sortKey = (() => {
+                if (Array.isArray(lhsAtoms) && lhsAtoms.length > 0) {
+                    const atom = lhsAtoms[0];
+                    if (atom && typeof atom === 'object') {
+                        if (atom.kind === 'tag' && typeof atom.tag === 'string') {
+                            return atom.tag;
+                        }
+                        if (atom.kind === 'text' && typeof atom.text === 'string') {
+                            return atom.text;
+                        }
+                        if (atom.kind === 'regex' && typeof atom.regex === 'string') {
+                            return atom.regex;
+                        }
+                    }
+                }
+                if (typeof display === 'string') {
+                    return display;
+                }
+                return '';
+            })();
 
+            return {
+                ruleId,
+                lhs,
+                sortKey,
+            };
+        }).sort((a, b) => {
+            const keyCompare = a.sortKey.localeCompare(b.sortKey, undefined, { sensitivity: 'base' });
+            if (keyCompare !== 0) {
+                return keyCompare;
+            }
+            return a.ruleId - b.ruleId;
+        }).map((row) => {
             return `
                 <div class="ontology-row">
                     <div class="ontology-rule-left">
-                        ${lhs}
+                        ${row.lhs}
                     </div>
                     <div class="ontology-row-actions">
-                        <button class="ontology-edit" data-action="edit-incoming" data-rule-id="${ruleId}" aria-label="Edit">✎</button>
-                        <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleId}" aria-label="Remove">−</button>
+                        <button class="ontology-edit" data-action="edit-incoming" data-rule-id="${row.ruleId}" aria-label="Edit">✎</button>
+                        <button class="ontology-remove" data-action="remove" data-rule-ids="${row.ruleId}" aria-label="Remove">−</button>
                     </div>
                 </div>
             `;
@@ -857,6 +892,8 @@ export class OntologyModal extends BaseModal {
             if (typeof tag !== 'string') {
                 throw new Error('indirect tag must be string');
             }
+            return tag;
+        }).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map((tag) => {
             return `
                 <div class="ontology-row">
                     <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
@@ -904,7 +941,10 @@ export class OntologyModal extends BaseModal {
                     throw new Error('direct ruleId must be non-negative integer');
                 }
             }
-
+            return row;
+        }).sort((a, b) => a.tag.localeCompare(b.tag, undefined, { sensitivity: 'base' })).map((row) => {
+            const tag = row.tag;
+            const ruleIds = row.ruleIds;
             const ruleIdsAttr = ruleIds.join(',');
             const canEdit = ruleIds.length === 1;
             return `
@@ -922,6 +962,8 @@ export class OntologyModal extends BaseModal {
             if (typeof tag !== 'string') {
                 throw new Error('indirect tag must be string');
             }
+            return tag;
+        }).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).map((tag) => {
             return `
                 <div class="ontology-row">
                     <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
@@ -1381,6 +1423,26 @@ export class OntologyModal extends BaseModal {
 
             if (action === 'rename-focus') {
                 await this._renameFocusedTag();
+                return;
+            }
+
+            if (action === 'add-tag') {
+                const newTag = await this._promptForSingleTagToken('New tag (single token only):');
+                if (!newTag) {
+                    return;
+                }
+                if (this._abortController) {
+                    this._abortController.abort();
+                    this._abortController = null;
+                }
+                const modalElement = document.getElementById(this.modalElementId);
+                const input = modalElement ? modalElement.querySelector('#ontology-search-input') : null;
+                if (input instanceof HTMLInputElement) {
+                    input.value = '';
+                }
+                this.updateModalState({ searchQuery: '' });
+                this.renderTagSearchResults([]);
+                await this.setFocusTag(newTag);
                 return;
             }
 
