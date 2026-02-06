@@ -593,3 +593,69 @@ export function parseTagBarSuggestionContext(rawInput, cursorIndex) {
         replaceEnd
     };
 }
+
+export function findTagAtIndexInTagBar(rawInput, cursorIndex) {
+    if (typeof rawInput !== 'string') {
+        throw new Error('findTagAtIndexInTagBar expects a string');
+    }
+    if (!Number.isInteger(cursorIndex)) {
+        throw new Error('findTagAtIndexInTagBar expects cursorIndex integer');
+    }
+    if (cursorIndex < 0 || cursorIndex > rawInput.length) {
+        throw new Error('findTagAtIndexInTagBar cursorIndex out of bounds');
+    }
+
+    const analysis = analyzeTagBarInput(rawInput);
+    if (!analysis.isValid) {
+        return null;
+    }
+
+    const { tokens, commentRanges } = scanTagBarTokensWithPositions(rawInput);
+    for (const range of commentRanges) {
+        if (cursorIndex >= range.start && cursorIndex < range.end) {
+            return null;
+        }
+    }
+
+    const atoms = [];
+    for (const token of tokens) {
+        const wrapperInfo = unwrapWrapperToken(token.text);
+        if (wrapperInfo) {
+            const inner = wrapperInfo.inner;
+            let innerIndex = 0;
+            while (innerIndex < inner.length) {
+                while (innerIndex < inner.length && isWhitespace(inner[innerIndex])) {
+                    innerIndex += 1;
+                }
+                if (innerIndex >= inner.length) {
+                    break;
+                }
+                const start = innerIndex;
+                while (innerIndex < inner.length && !isWhitespace(inner[innerIndex])) {
+                    innerIndex += 1;
+                }
+                const text = inner.slice(start, innerIndex);
+                const enforced = enforceTagToken(text);
+                if (enforced.length > 0) {
+                    const absoluteStart = token.start + wrapperInfo.depth + start;
+                    const absoluteEnd = token.start + wrapperInfo.depth + innerIndex;
+                    atoms.push({ text: enforced, start: absoluteStart, end: absoluteEnd });
+                }
+            }
+            continue;
+        }
+
+        const enforced = enforceTagToken(token.text);
+        if (enforced.length > 0) {
+            atoms.push({ text: enforced, start: token.start, end: token.end });
+        }
+    }
+
+    for (const atom of atoms) {
+        if (cursorIndex >= atom.start && cursorIndex <= atom.end) {
+            return atom;
+        }
+    }
+
+    return null;
+}

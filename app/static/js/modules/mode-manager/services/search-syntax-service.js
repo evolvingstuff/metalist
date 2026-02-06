@@ -226,3 +226,74 @@ export function enforceSearchQueryInputForEditing(rawInput) {
 export function normalizeSearchQueryInput(rawInput) {
     return analyzeSearchQueryInput(rawInput).normalizedText;
 }
+
+export function findSearchTagAtIndex(rawInput, cursorIndex) {
+    if (typeof rawInput !== 'string') {
+        throw new Error('findSearchTagAtIndex expects a string');
+    }
+    if (!Number.isInteger(cursorIndex)) {
+        throw new Error('findSearchTagAtIndex expects cursorIndex integer');
+    }
+    if (cursorIndex < 0 || cursorIndex > rawInput.length) {
+        throw new Error('findSearchTagAtIndex cursorIndex out of bounds');
+    }
+
+    let index = 0;
+    while (index < rawInput.length) {
+        while (index < rawInput.length && isWhitespace(rawInput[index])) {
+            index += 1;
+        }
+        if (index >= rawInput.length) {
+            break;
+        }
+
+        const tokenStart = index;
+        let prefix = null;
+        const firstChar = rawInput[index];
+        if (firstChar === '+' || firstChar === '-') {
+            prefix = firstChar;
+            index += 1;
+            if (index >= rawInput.length || isWhitespace(rawInput[index])) {
+                continue;
+            }
+        }
+
+        const nextChar = rawInput[index];
+        const isQuoteStart = QUOTE_CHARS.has(nextChar);
+        if (isQuoteStart) {
+            if (prefix === '+') {
+                prefix = null;
+            }
+            if (prefix === null || prefix === '-') {
+                const quoteChar = nextChar;
+                index += 1;
+                const { nextIndex } = readQuotedInner(rawInput, index, quoteChar);
+                index = nextIndex;
+                continue;
+            }
+        }
+
+        while (index < rawInput.length && !isWhitespace(rawInput[index])) {
+            index += 1;
+        }
+        const tokenEnd = index;
+        if (cursorIndex >= tokenStart && cursorIndex <= tokenEnd) {
+            let tokenText = rawInput.slice(tokenStart, tokenEnd);
+            if (prefix) {
+                tokenText = tokenText.slice(1);
+            }
+            const enforced = enforceTagToken(tokenText);
+            if (enforced.length > 0) {
+                return {
+                    tag: enforced,
+                    start: tokenStart,
+                    end: tokenEnd,
+                    prefix,
+                };
+            }
+            return null;
+        }
+    }
+
+    return null;
+}

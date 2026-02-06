@@ -53,6 +53,9 @@
 | Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
 | Drag-select text in note | Releasing mouse outside note keeps edit mode + selection |
+| Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
+
+> Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 

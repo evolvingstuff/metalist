@@ -5,6 +5,7 @@ import * as Logger from './mode-logger.js';
 
 import { initKeyboardEvents } from './events/keyboard-events.js';
 import { initMouseEvents } from './events/mouse-events.js';
+import { initContextMenuEvents } from './events/context-menu-events.js';
 import { initInputEvents } from './events/input-events.js';
 import { initFocusEvents } from './events/focus-events.js';
 import { initContentAutoSave } from './events/inactivity-events.js';
@@ -50,6 +51,7 @@ const ModeManager = {
     async _registerEventListeners(config) {
         initKeyboardEvents();
         initMouseEvents();
+        initContextMenuEvents();
         initInputEvents();
         initFocusEvents();
         initContentAutoSave();
