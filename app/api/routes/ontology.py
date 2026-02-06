@@ -234,6 +234,7 @@ def focus_view(tag: str) -> dict:
     direct_middle: list[dict] = []
 
     incoming_rules: list[dict] = []
+    equality_rule_ids_by_edge: dict[tuple[str, str], set[int]] = {}
 
     equals = set(middle)
 
@@ -271,12 +272,30 @@ def focus_view(tag: str) -> dict:
             return f"/{escaped}/{atom.flags}"
         raise TypeError(f"Unknown atom: {type(atom)}")
 
+    def record_equality_rule_ids(rules: list, rule_id: int) -> bool:
+        if len(rules) != 2:
+            return False
+        first, second = rules
+        if len(first.lhs) != 1 or len(second.lhs) != 1:
+            return False
+        if not isinstance(first.lhs[0], TagAtom) or not isinstance(second.lhs[0], TagAtom):
+            return False
+        first_lhs = first.lhs[0].tag
+        first_rhs = first.rhs
+        second_lhs = second.lhs[0].tag
+        second_rhs = second.rhs
+        if first_lhs != second_rhs or first_rhs != second_lhs:
+            return False
+        equality_rule_ids_by_edge.setdefault((first_lhs, first_rhs), set()).add(rule_id)
+        equality_rule_ids_by_edge.setdefault((first_rhs, first_lhs), set()).add(rule_id)
+        return True
+
     for rule_id, text in list_rule_lines():
+        rules = parse_rules_text(text=f"{text}\n", filename=f"ontology_rules:{rule_id}")
         # Avoid duplicating SCC/equality rows; the middle column handles synonyms.
-        if "=>" not in text and "=" in text:
+        if record_equality_rule_ids(rules, rule_id):
             continue
 
-        rules = parse_rules_text(text=f"{text}\n", filename=f"ontology_rules:{rule_id}")
         matched_rhs: str | None = None
         lhs_tag: str | None = None
 
@@ -352,6 +371,10 @@ def focus_view(tag: str) -> dict:
 
     for candidate in sorted(equals):
         if candidate == tag:
+            continue
+        equality_rule_ids = equality_rule_ids_by_edge.get((tag, candidate))
+        if equality_rule_ids:
+            direct_middle.append({"tag": candidate, "ruleIds": sorted(equality_rule_ids)})
             continue
         forward_key = (tag, candidate)
         backward_key = (candidate, tag)
