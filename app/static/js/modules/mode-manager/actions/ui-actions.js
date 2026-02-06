@@ -8,11 +8,30 @@ import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 
 let viewRequestInFlight = false;
+let lastPerfOverlayPayload = null;
 
 function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
                            rootNotesKnown, rootNotesSeen, updatedNotes,
                            context, vdom_ops) {
+    lastPerfOverlayPayload = {
+        roundtripMs,
+        renderMs,
+        totalMs,
+        totalNotes,
+        rootNotesKnown,
+        rootNotesSeen,
+        updatedNotes,
+        context,
+        vdom_ops,
+    };
+    const shouldShow = document.body.classList.contains('pref-show-perf-overlay');
     let overlay = document.getElementById('perf-overlay');
+    if (!shouldShow) {
+        if (overlay) {
+            overlay.remove();
+        }
+        return;
+    }
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'perf-overlay';
@@ -87,6 +106,24 @@ function updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotes,
             </tbody>
         </table>
     `;
+}
+
+export function showPerfOverlayFromCache() {
+    if (!lastPerfOverlayPayload) {
+        return false;
+    }
+    updatePerfOverlay(
+        lastPerfOverlayPayload.roundtripMs,
+        lastPerfOverlayPayload.renderMs,
+        lastPerfOverlayPayload.totalMs,
+        lastPerfOverlayPayload.totalNotes,
+        lastPerfOverlayPayload.rootNotesKnown,
+        lastPerfOverlayPayload.rootNotesSeen,
+        lastPerfOverlayPayload.updatedNotes,
+        lastPerfOverlayPayload.context,
+        lastPerfOverlayPayload.vdom_ops
+    );
+    return true;
 }
 
 function updateSearchResultsCount(snapshot, tabId) {
@@ -262,32 +299,33 @@ export async function actionRefreshAndMaybeSelect(options) {
             result = null;
         }
 
-        if (options.startedAt) {  //otherwise called by ending editing polling?
-            const renderEndedAt = performance.now();
-            const renderMs = renderEndedAt - renderStartedAt;
-            const totalMs = renderEndedAt - options.startedAt;
-            const context = options.context ? options.context : '???';
+        const renderEndedAt = performance.now();
+        const renderMs = renderEndedAt - renderStartedAt;
+        const metricsStartedAt = typeof options.startedAt === 'number' ? options.startedAt : requestStartedAt;
+        const totalMs = renderEndedAt - metricsStartedAt;
+        const context = options.context ? options.context : 'refresh';
 
-            const vdom_ops = Number.isInteger(diffResult.vdomOperations) ? diffResult.vdomOperations : 0;
+        const vdom_ops = Number.isInteger(diffResult.vdomOperations) ? diffResult.vdomOperations : 0;
 
-            if (typeof options.expectedUpdatedNotesMax === 'number' && updatedNotesCount > options.expectedUpdatedNotesMax) {
-                throw new Error(
-                    `Invariant violation: expected <=${options.expectedUpdatedNotesMax} updated notes but got ${updatedNotesCount} (context=${context})`
-                );
-            }
-            if (typeof options.expectedVdomOpsMax === 'number' && vdom_ops > options.expectedVdomOpsMax) {
-                throw new Error(
-                    `Invariant violation: expected <=${options.expectedVdomOpsMax} vdom ops but got ${vdom_ops} (context=${context})`
-                );
-            }
+        if (typeof options.expectedUpdatedNotesMax === 'number' && updatedNotesCount > options.expectedUpdatedNotesMax) {
+            throw new Error(
+                `Invariant violation: expected <=${options.expectedUpdatedNotesMax} updated notes but got ${updatedNotesCount} (context=${context})`
+            );
+        }
+        if (typeof options.expectedVdomOpsMax === 'number' && vdom_ops > options.expectedVdomOpsMax) {
+            throw new Error(
+                `Invariant violation: expected <=${options.expectedVdomOpsMax} vdom ops but got ${vdom_ops} (context=${context})`
+            );
+        }
 
+        if (options.startedAt) {  // otherwise called by background polling or palette actions
             console.log(' [PERF] notes.view render:', {
                 ms: Number(renderMs.toFixed(2))
             });
-            const totalNotesCount = ModeContext.noteCount;
-            updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
-                rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
         }
+        const totalNotesCount = ModeContext.noteCount;
+        updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
+            rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
 
         return result;
     })().finally(() => {

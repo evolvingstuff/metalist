@@ -31,6 +31,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const defaults = {
         showBacklinks: false,
         showNoteTags: false,
+        showTabUi: false,
+        showPerfOverlay: false,
         autoCollapseLongNotes: false,
         sortOrder: 'updated',
         theme: 'system',
@@ -52,6 +54,22 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_note_tags',
             defaultValue: defaults.showNoteTags,
             apply: (next) => applyPreference('pref.show_note_tags', next),
+        },
+        {
+            id: 'pref.show_tab_ui',
+            kind: 'boolean',
+            label: 'Toggle tab UI',
+            persistenceKey: 'pref.show_tab_ui',
+            defaultValue: defaults.showTabUi,
+            apply: (next) => applyPreference('pref.show_tab_ui', next),
+        },
+        {
+            id: 'pref.show_perf_overlay',
+            kind: 'boolean',
+            label: 'Toggle perf overlay',
+            persistenceKey: 'pref.show_perf_overlay',
+            defaultValue: defaults.showPerfOverlay,
+            apply: (next) => applyPreference('pref.show_perf_overlay', next),
         },
         {
             id: 'pref.auto_collapse_long_notes',

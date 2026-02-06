@@ -1,5 +1,5 @@
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
-import { actionRefreshAndMaybeSelect } from '../mode-manager/actions/ui-actions.js';
+import { actionRefreshAndMaybeSelect, showPerfOverlayFromCache } from '../mode-manager/actions/ui-actions.js';
 import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actions/selection-actions.js';
 import { NotesAPI } from '../api-client.js';
 import { PasswordModal } from '../modals/password-modal.js';
@@ -344,14 +344,42 @@ class CommandPaletteController {
         const showTags = this._getBoolean('pref.show_note_tags', false);
         document.body.classList.toggle('pref-show-note-tags', showTags);
 
+        const showTabUi = this._getBoolean('pref.show_tab_ui', false);
+        document.body.classList.toggle('pref-show-tab-ui', showTabUi);
+
         const autoCollapse = this._getBoolean('pref.auto_collapse_long_notes', false);
         document.body.classList.toggle('pref-auto-collapse-long-notes', autoCollapse);
+
+        const showPerfOverlay = this._getBoolean('pref.show_perf_overlay', false);
+        document.body.classList.toggle('pref-show-perf-overlay', showPerfOverlay);
+        if (!showPerfOverlay) {
+            const perfOverlay = document.getElementById('perf-overlay');
+            if (perfOverlay) {
+                perfOverlay.remove();
+            }
+        }
 
         const theme = this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system');
         if (theme === 'system') {
             document.documentElement.removeAttribute('data-theme');
         } else {
             document.documentElement.setAttribute('data-theme', theme);
+        }
+
+        const tabIndicator = document.getElementById('tab-indicator');
+        if (tabIndicator) {
+            tabIndicator.style.display = 'none';
+        }
+
+        const searchContextsList = document.getElementById('search-contexts-list');
+        if (searchContextsList) {
+            if (showTabUi) {
+                if (searchContextsList.innerHTML.trim().length > 0) {
+                    searchContextsList.style.display = 'block';
+                }
+            } else {
+                searchContextsList.style.display = 'none';
+            }
         }
     }
 
@@ -631,9 +659,9 @@ class CommandPaletteController {
             value.textContent = this._formatEndpointValue(endpoint);
             row.appendChild(value);
 
-            row.addEventListener('click', () => {
+            row.addEventListener('click', async () => {
                 this._previousSelection.selectedIndex = idx;
-                this._render();
+                await this._activateSelected();
             });
 
             results.appendChild(row);
@@ -834,13 +862,22 @@ class CommandPaletteController {
         this._render();
     }
 
-    applyPreference(prefKey, value) {
+    async applyPreference(prefKey, value) {
         if (typeof prefKey !== 'string' || prefKey.length === 0) {
             throw new Error('applyPreference requires prefKey string');
         }
         if (typeof value === 'boolean') {
             this._preferences.setRaw(prefKey, value ? 'true' : 'false');
             this._applyPreferenceEffectsFromStorage();
+            if (prefKey === 'pref.show_perf_overlay' && value) {
+                const hadCache = showPerfOverlayFromCache();
+                if (!hadCache) {
+                    await actionRefreshAndMaybeSelect({
+                        startedAt: performance.now(),
+                        context: 'pref.show_perf_overlay',
+                    });
+                }
+            }
             return;
         }
         if (typeof value === 'string') {
