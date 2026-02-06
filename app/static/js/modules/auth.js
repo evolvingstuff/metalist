@@ -143,7 +143,6 @@ export const Auth = {
         const loadingPanel = document.getElementById('login-loading');
         const loginForm = document.getElementById('login-form');
         const message = document.getElementById('login-loading-message');
-        const count = document.getElementById('login-loading-count');
         const bar = document.getElementById('login-progress-bar');
         const firstLoad = document.getElementById('login-loading-first');
         if (loadingPanel) {
@@ -154,9 +153,6 @@ export const Auth = {
         }
         if (message) {
             message.textContent = '';
-        }
-        if (count) {
-            count.textContent = '';
         }
         if (bar) {
             bar.style.width = '0%';
@@ -179,13 +175,18 @@ export const Auth = {
 
     _updateHydrationUI(status) {
         const message = document.getElementById('login-loading-message');
-        const count = document.getElementById('login-loading-count');
         const bar = document.getElementById('login-progress-bar');
         const firstLoad = document.getElementById('login-loading-first');
 
         if (message) {
             if (typeof status.message === 'string') {
-                message.textContent = status.message;
+                const trimmed = status.message.trim();
+                if (trimmed.length > 0) {
+                    const needsEllipsis = !(trimmed.endsWith('...') || trimmed.endsWith('…'));
+                    message.textContent = needsEllipsis ? `${trimmed}...` : trimmed;
+                } else {
+                    message.textContent = '';
+                }
             } else {
                 message.textContent = '';
             }
@@ -193,20 +194,25 @@ export const Auth = {
         if (firstLoad) {
             firstLoad.style.display = status.first_load ? 'block' : 'none';
         }
-        if (typeof status.total === 'number' && status.total > 0) {
+        if (typeof status.overall_percent === 'number') {
+            let percent = Math.floor(status.overall_percent);
+            if (percent > 100) {
+                percent = 100;
+            }
+            if (percent < 0) {
+                percent = 0;
+            }
+            if (bar) {
+                bar.style.width = `${percent}%`;
+            }
+        } else if (typeof status.total === 'number' && status.total > 0) {
             const percent = Math.min(100, Math.floor((status.processed / status.total) * 100));
             if (bar) {
                 bar.style.width = `${percent}%`;
             }
-            if (count) {
-                count.textContent = `${status.processed.toLocaleString()} / ${status.total.toLocaleString()} notes`;
-            }
         } else {
             if (bar) {
                 bar.style.width = '0%';
-            }
-            if (count) {
-                count.textContent = '';
             }
         }
     },

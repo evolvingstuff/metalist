@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from threading import RLock
 import time
-from typing import DefaultDict, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
+from typing import Callable, DefaultDict, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from loguru import logger
 
@@ -153,7 +153,15 @@ class SearchIndex:
 
         self._result_cache: Dict[str, tuple[int, FrozenSet[str]]] = {}
 
-    def rebuild(self, records: Iterable[SearchRecord]) -> None:
+    def rebuild(
+        self,
+        records: Iterable[SearchRecord],
+        *,
+        progress_update: Callable[[int], None],
+        progress_interval: int,
+    ) -> None:
+        if progress_interval <= 0:
+            raise ValueError("progress_interval must be > 0")
         t0 = time.perf_counter()
         materialized = list(records)
         with self._lock:
@@ -169,6 +177,8 @@ class SearchIndex:
 
             self._revision += 1
 
+            processed = 0
+            last_reported = 0
             for record in materialized:
                 self._insert_new_locked(
                     record.note_id,
@@ -176,6 +186,13 @@ class SearchIndex:
                     record.tags,
                     record.tag_terms,
                 )
+                processed += 1
+                if processed - last_reported >= progress_interval:
+                    last_reported = processed
+                    progress_update(processed)
+
+            if processed != last_reported:
+                progress_update(processed)
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.bind(

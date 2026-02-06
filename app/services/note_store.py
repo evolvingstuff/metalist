@@ -356,13 +356,20 @@ class NoteStore:
                 total=len(search_records),
             )
         index_start = time.perf_counter()
-        search_index.rebuild(search_records)
+
+        def _update_search_index_progress(processed: int) -> None:
+            if hydration_state.is_running():
+                hydration_state.update(processed)
+
+        search_index.rebuild(
+            search_records,
+            progress_update=_update_search_index_progress,
+            progress_interval=1000,
+        )
         if timing_enabled:
             print(
                 f"[startup] search index rebuild in {time.perf_counter() - index_start:.2f}s"
             )
-        if hydration_state.is_running():
-            hydration_state.update(len(search_records))
 
         if not ontology.matcher_rules:
             return

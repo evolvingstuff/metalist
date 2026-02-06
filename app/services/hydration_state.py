@@ -3,6 +3,39 @@ from __future__ import annotations
 from threading import Lock
 from typing import Dict
 
+_PHASE_ORDER = (
+    "decrypt",
+    "note_store",
+    "tag_inference",
+    "search_index",
+    "matcher_inference",
+)
+_PHASE_INDEX = {phase: index for index, phase in enumerate(_PHASE_ORDER)}
+_PHASE_COUNT = len(_PHASE_ORDER)
+
+
+def _calculate_overall_percent(
+    *, status: str, phase: str, processed: int, total: int
+) -> int:
+    if status == "ready":
+        return 100
+    if phase == "complete":
+        return 100
+    if phase in _PHASE_INDEX:
+        index = _PHASE_INDEX[phase]
+        if total > 0:
+            phase_progress = processed / total
+        else:
+            phase_progress = 0
+        fraction = (index + phase_progress) / _PHASE_COUNT
+        percent = int(fraction * 100)
+        if status == "running" and percent > 99:
+            return 99
+        if percent < 0:
+            return 0
+        return percent
+    return 0
+
 
 class HydrationState:
     def __init__(self) -> None:
@@ -76,6 +109,12 @@ class HydrationState:
 
     def snapshot(self) -> Dict[str, object]:
         with self._lock:
+            overall_percent = _calculate_overall_percent(
+                status=self._status,
+                phase=self._phase,
+                processed=self._processed,
+                total=self._total,
+            )
             return {
                 "status": self._status,
                 "phase": self._phase,
@@ -84,6 +123,7 @@ class HydrationState:
                 "total": self._total,
                 "first_load": self._first_load,
                 "error": self._error,
+                "overall_percent": overall_percent,
             }
 
 

@@ -45,6 +45,7 @@ class HydrationStatusResponse(BaseModel):
     total: int
     first_load: bool
     error: str
+    overall_percent: int
 
 
 class PasswordCreateRequest(BaseModel):
@@ -107,6 +108,7 @@ def _build_hydration_status() -> HydrationStatusResponse:
         snapshot["status"] = "ready"
         snapshot["phase"] = "complete"
         snapshot["message"] = "Hydration complete"
+        snapshot["overall_percent"] = 100
     return HydrationStatusResponse(**snapshot)
 
 

@@ -34,6 +34,7 @@ At a high level (`app/main.py`):
    - Skip cache + note-store hydration at startup.
    - Enable the read guard immediately.
    - Hydration happens after login via `/api2/auth/hydrate`, and the UI shows a first-load progress indicator.
+   - Progress is reported across hydration phases (decrypt, note store, tag inference, search index, matcher inference) to keep the bar monotonic.
 
 ## View / Diff Flow
 - Route: `POST /api2/notes/view` (`app/api/routes/notes.py`)
