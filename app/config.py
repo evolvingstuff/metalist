@@ -65,4 +65,7 @@ else:
     DATABASE_URL = f"sqlite:///{DEFAULT_DB_PATH}"
 
 # Enable verbose SQLite trace logging only when explicitly requested.
-SQL_TRACE_ENABLED = os.environ.get("SQL_TRACE", "0") == "1"
+if "SQL_TRACE" in os.environ:
+    SQL_TRACE_ENABLED = os.environ["SQL_TRACE"] == "1"
+else:
+    SQL_TRACE_ENABLED = False

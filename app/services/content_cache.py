@@ -198,11 +198,15 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         else:
             decrypted_tags = tags
 
-        raw_text = note.get("content_text")
-        if not isinstance(raw_text, str):
+        if "content_text" not in note:
+            raise KeyError(f"Missing content_text for note {note_id}")
+        raw_text = note["content_text"]
+        if raw_text is None:
             raw_text = strip_html(decrypted_content)
             if db is not None:
                 pending_text_updates.append((raw_text, note_id))
+        elif not isinstance(raw_text, str):
+            raise TypeError(f"content_text must be a string or NULL for note {note_id}")
 
         cache_note(note_id, decrypted_content)
         cache_note_tags(note_id, decrypted_tags)
@@ -264,17 +268,20 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
     with SafeSession.allow_reads("cache:refresh_encrypted"):
         rows = fetch_all_for_cache(db.connection())
 
-    encrypted_notes = [
-        row
-        for row in rows
-        if (
-            row.get("encryption_nonce") is not None
-            and row.get("encryption_tag") is not None
-        ) or (
-            row.get("tags_encryption_nonce") is not None
-            and row.get("tags_encryption_tag") is not None
+    encrypted_notes = []
+    for row in rows:
+        if "encryption_nonce" not in row or "encryption_tag" not in row:
+            raise KeyError("Missing encryption metadata columns in cache row.")
+        if "tags_encryption_nonce" not in row or "tags_encryption_tag" not in row:
+            raise KeyError("Missing tag encryption metadata columns in cache row.")
+        has_content_encryption = (
+            row["encryption_nonce"] is not None and row["encryption_tag"] is not None
         )
-    ]
+        has_tags_encryption = (
+            row["tags_encryption_nonce"] is not None and row["tags_encryption_tag"] is not None
+        )
+        if has_content_encryption or has_tags_encryption:
+            encrypted_notes.append(row)
 
     refreshed_count = 0
 
@@ -308,9 +315,13 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
                 tag,
             )
             cache_note(note_id, decrypted_content)
-            raw_text = note.get("content_text")
-            if not isinstance(raw_text, str):
+            if "content_text" not in note:
+                raise KeyError(f"Missing content_text for note {note_id}")
+            raw_text = note["content_text"]
+            if raw_text is None:
                 raw_text = strip_html(decrypted_content)
+            elif not isinstance(raw_text, str):
+                raise TypeError(f"content_text must be a string or NULL for note {note_id}")
             cache_note_text(note_id, raw_text)
 
         if (tags_nonce is None) != (tags_tag is None):

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import importlib.util
 import json
 import sys
 import re
@@ -19,15 +20,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
+tk = None  # type: ignore[assignment]
+filedialog = None  # type: ignore[assignment]
+_TK_IMPORT_ERROR = None
+
+if importlib.util.find_spec("tkinter") is not None:
     import tkinter as tk
     from tkinter import filedialog
-except Exception as exc:  # External dependency may be missing in headless envs.
-    tk = None  # type: ignore[assignment]
-    filedialog = None  # type: ignore[assignment]
-    _TK_IMPORT_ERROR = exc
 else:
-    _TK_IMPORT_ERROR = None
+    _TK_IMPORT_ERROR = RuntimeError("tkinter is not available")
 
 from app.config import DATABASE_URL
 from app.db.notes_sql import insert_note, update_links
@@ -83,13 +84,7 @@ def _pick_input_path() -> Path:
             f"tkinter is unavailable for the file picker ({_TK_IMPORT_ERROR}). "
             "Run again with --input /path/to/export.json."
         )
-    try:
-        root = tk.Tk()
-    except Exception as exc:
-        raise RuntimeError(
-            "Unable to open the file picker. "
-            "Run again with --input /path/to/export.json."
-        ) from exc
+    root = tk.Tk()
     try:
         root.withdraw()
         root.attributes("-topmost", True)
@@ -252,21 +247,6 @@ def _extract_rule_texts(raw_content: str, *, context: str) -> list[str]:
     return sorted(rules)
 
 
-def _rule_mentions_python(rule_text: str) -> bool:
-    if not isinstance(rule_text, str):
-        raise TypeError("rule_text must be a string")
-    if "=>" not in rule_text:
-        return False
-    left, _, right = rule_text.partition("=>")
-    left_tag = left.strip()
-    right_tag = right.strip()
-    return left_tag.casefold() == "python" or right_tag.casefold() == "python"
-
-
-def _content_mentions_python(raw_content: str) -> bool:
-    if not isinstance(raw_content, str):
-        raise TypeError("raw_content must be a string")
-    return "python" in strip_html(raw_content).casefold()
 
 
 def _is_effectively_empty(content: str) -> bool:
@@ -293,8 +273,9 @@ def _prepare_database() -> Path:
 
 def _assert_encryption_disabled(payload: dict[str, Any]) -> None:
     encryption = _require_dict(payload, "encryption")
-    encrypted = encryption.get("encrypted")
-    if encrypted is not False:
+    if "encrypted" not in encryption:
+        raise KeyError("Missing required field: encryption.encrypted")
+    if encryption["encrypted"] is not False:
         raise ValueError("Legacy export must have encryption.encrypted = false.")
 
 
@@ -323,7 +304,7 @@ def _import_item(
     note_count = 0
     rule_count = 0
 
-    legacy_id = item.get("id", "<unknown>")
+    legacy_id = _require_int(item, "id")
 
     for idx, raw in enumerate(subitems):
         if not isinstance(raw, dict):
@@ -352,30 +333,18 @@ def _import_item(
         if len(indent_stack) != effective_indent:
             raise ValueError("Indent stack mismatch; legacy data is malformed.")
 
-        parent_id = indent_stack[-1] if effective_indent > 0 else None
+        if effective_indent > 0:
+            parent_id = indent_stack[-1]
+        else:
+            parent_id = None
         content = _require_str(raw, "data")
         tags = _require_str(raw, "tags")
         is_collapsed = _parse_collapse(raw)
         context = f"item_id={legacy_id} subitem_index={idx}"
 
         if _has_implies_tag(tags) and not _is_effectively_empty(content):
-            if _content_mentions_python(content):
-                print(f"[import] python raw html: {content}")
-                lines = _split_rule_lines(content)
-                for line in lines:
-                    if "python" not in line.casefold():
-                        continue
-                    parsed = _extract_rule_texts_from_line(line, context=f"{context} line=python-debug")
-                    print(f"[import] python line: {line}")
-                    if parsed:
-                        for rule_text in parsed:
-                            print(f"[import] python parsed: {rule_text}")
-                    else:
-                        print(f"[import] python parsed: <no rules>")
             rule_texts = _extract_rule_texts(content, context=context)
             for rule_text in rule_texts:
-                if _rule_mentions_python(rule_text):
-                    print(f"[import] rule with Python: {rule_text}")
                 insert_rule(
                     db.connection(),
                     rule_text=rule_text,
@@ -428,8 +397,14 @@ def _apply_order(db: SafeSession, order_map: dict[str | None, list[str]], meta: 
         if not ordered_ids:
             continue
         for idx, note_id in enumerate(ordered_ids):
-            prev_id = ordered_ids[idx - 1] if idx > 0 else None
-            next_id = ordered_ids[idx + 1] if idx + 1 < len(ordered_ids) else None
+            if idx > 0:
+                prev_id = ordered_ids[idx - 1]
+            else:
+                prev_id = None
+            if idx + 1 < len(ordered_ids):
+                next_id = ordered_ids[idx + 1]
+            else:
+                next_id = None
             note_meta = meta[note_id]
             update_links(
                 db.connection(),

@@ -250,9 +250,13 @@ def _copy_note_recursive(
     timestamp = datetime.now(timezone.utc)
     is_collapsed = bool(source_row["is_collapsed"])
     plaintext = get_cached_content(source_row["id"])
-    content_text = source_row.get("content_text")
-    if not isinstance(content_text, str):
+    if "content_text" not in source_row:
+        raise KeyError("Missing content_text for source note.")
+    content_text = source_row["content_text"]
+    if content_text is None:
         content_text = strip_html(plaintext)
+    elif not isinstance(content_text, str):
+        raise TypeError("content_text must be a string or NULL.")
 
     insert_note(
         db.connection(),

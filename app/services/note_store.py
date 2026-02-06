@@ -365,8 +365,9 @@ class NoteStore:
             if rule.required_regexes:
                 filtered: Set[str] = set()
                 for note_id in rule_candidates:
-                    raw_text = raw_text_cache.get(note_id)
-                    if raw_text is None:
+                    if note_id in raw_text_cache:
+                        raw_text = raw_text_cache[note_id]
+                    else:
                         raw_text = get_cached_text(note_id)
                         raw_text_cache[note_id] = raw_text
                     matched = True
@@ -392,15 +393,16 @@ class NoteStore:
         inference_start = time.perf_counter()
         updates: Dict[str, FrozenSet[str]] = {}
         for note_id in candidate_note_ids:
-            base_terms = tag_only_terms_by_id.get(note_id)
-            if base_terms is None:
+            if note_id not in tag_only_terms_by_id:
                 raise RuntimeError(
                     f"Integrity failure: missing tag terms for candidate note {note_id}"
                 )
+            base_terms = tag_only_terms_by_id[note_id]
             inferred_plaintext = ""
             if needs_plaintext:
-                inferred_plaintext = raw_text_cache.get(note_id)
-                if inferred_plaintext is None:
+                if note_id in raw_text_cache:
+                    inferred_plaintext = raw_text_cache[note_id]
+                else:
                     inferred_plaintext = get_cached_text(note_id)
                     raw_text_cache[note_id] = inferred_plaintext
             effective_with_ontology = ontology.infer_effective_tags(
