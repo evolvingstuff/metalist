@@ -219,14 +219,23 @@ body.ontology-modal-open #main-app {
     user-select: none;
 }
 
+html.ontology-modal-open {
+    overflow: hidden;
+}
+
+body.ontology-modal-open {
+    overflow: hidden;
+}
+
 body.ontology-modal-open #ontology-modal {
     pointer-events: auto;
 }
 
 #ontology-modal .modal-content.ontology-modal-content {
     width: min(1100px, 95vw);
-    max-height: 90vh;
-    margin: 3vh auto;
+    height: calc(100vh - 120px);
+    max-height: calc(100vh - 120px);
+    margin: 60px auto;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -236,6 +245,7 @@ body.ontology-modal-open #ontology-modal {
     color: rgba(255, 255, 255, 0.92);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.05);
+    overflow: hidden;
 }
 
 .ontology-busy {
@@ -354,7 +364,7 @@ body.ontology-modal-open #ontology-modal {
     overflow-y: auto;
 }
 
-.ontology-search-result {
+#ontology-modal button.ontology-search-result {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -383,8 +393,13 @@ body.ontology-modal-open #ontology-modal {
     color: rgba(255, 255, 255, 0.75);
 }
 
-.ontology-search-result:hover {
+#ontology-modal button.ontology-search-result:hover {
     background: rgba(255, 255, 255, 0.12);
+}
+
+#ontology-modal button.ontology-search-result.is-selected {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.22);
 }
 
 .ontology-columns {

@@ -260,6 +260,7 @@ export class OntologyModal extends BaseModal {
         super('ontologyModal', 'ontology-modal');
         this._abortController = null;
         this._rulesCache = null;
+        this._searchSelectedIndex = -1;
 
         this._handleSearchInput = this._handleSearchInput.bind(this);
         this._handleSearchKeydown = this._handleSearchKeydown.bind(this);
@@ -280,12 +281,14 @@ export class OntologyModal extends BaseModal {
     }
 
     onOpen() {
+        document.documentElement.classList.add('ontology-modal-open');
         document.body.classList.add('ontology-modal-open');
         this.renderSkeleton();
         void this.refreshTagSearch('');
     }
 
     onClose() {
+        document.documentElement.classList.remove('ontology-modal-open');
         document.body.classList.remove('ontology-modal-open');
         if (this._abortController) {
             this._abortController.abort();
@@ -293,6 +296,7 @@ export class OntologyModal extends BaseModal {
         }
 
         this._rulesCache = null;
+        this._searchSelectedIndex = -1;
     }
 
     focusSearchInput() {
@@ -499,11 +503,76 @@ export class OntologyModal extends BaseModal {
     }
 
     _handleSearchKeydown(event) {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const container = modalElement.querySelector('#ontology-search-results');
+        const hasContainer = container instanceof HTMLElement;
+        let items = [];
+        if (hasContainer) {
+            items = Array.from(container.querySelectorAll('.ontology-search-result'));
+        }
+        const hasSuggestions = hasContainer && container.style.display !== 'none' && items.length > 0;
+
+        if (event.key === 'ArrowDown' && hasSuggestions) {
+            event.preventDefault();
+            let currentIndex = this._searchSelectedIndex;
+            if (!Number.isInteger(currentIndex)) {
+                currentIndex = -1;
+            }
+            let nextIndex = currentIndex + 1;
+            if (nextIndex < 0) {
+                nextIndex = 0;
+            }
+            if (nextIndex > items.length - 1) {
+                nextIndex = items.length - 1;
+            }
+            this._searchSelectedIndex = nextIndex;
+            this._updateSearchSelection(container);
+            return;
+        }
+
+        if (event.key === 'ArrowUp' && hasSuggestions) {
+            event.preventDefault();
+            let currentIndex = this._searchSelectedIndex;
+            if (!Number.isInteger(currentIndex)) {
+                currentIndex = 0;
+            }
+            let nextIndex = currentIndex - 1;
+            if (nextIndex < 0) {
+                nextIndex = 0;
+            }
+            this._searchSelectedIndex = nextIndex;
+            this._updateSearchSelection(container);
+            return;
+        }
+
         if (event.key !== 'Enter') {
             return;
         }
         event.preventDefault();
         event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+        }
+        if (hasSuggestions) {
+            let selectedIndex = this._searchSelectedIndex;
+            if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= items.length) {
+                selectedIndex = 0;
+            }
+            const button = items[selectedIndex];
+            if (!button) {
+                return;
+            }
+            const tag = button.dataset.tag;
+            if (typeof tag !== 'string' || tag.trim() === '') {
+                throw new Error('ontology search suggestion missing tag');
+            }
+            this._applySearchSelection(tag);
+            void this.setFocusTag(tag);
+            return;
+        }
         const state = this.getModalState();
         const query = state.searchQuery;
         if (typeof query !== 'string') {
@@ -513,6 +582,7 @@ export class OntologyModal extends BaseModal {
         if (trimmed === '') {
             return;
         }
+        this._applySearchSelection(trimmed);
         void this.setFocusTag(trimmed);
     }
 
@@ -604,6 +674,7 @@ export class OntologyModal extends BaseModal {
         if (!Array.isArray(tags) || tags.length === 0) {
             container.innerHTML = '';
             container.style.display = 'none';
+            this._searchSelectedIndex = -1;
             return;
         }
 
@@ -637,6 +708,32 @@ export class OntologyModal extends BaseModal {
             })
             .join('');
         container.style.display = 'flex';
+        this._searchSelectedIndex = 0;
+        this._updateSearchSelection(container);
+    }
+
+    _updateSearchSelection(container) {
+        if (!(container instanceof HTMLElement)) {
+            throw new Error('ontology search results container missing');
+        }
+        const items = Array.from(container.querySelectorAll('.ontology-search-result'));
+        if (items.length === 0) {
+            this._searchSelectedIndex = -1;
+            return;
+        }
+        if (!Number.isInteger(this._searchSelectedIndex)) {
+            this._searchSelectedIndex = 0;
+        }
+        if (this._searchSelectedIndex < 0 || this._searchSelectedIndex >= items.length) {
+            this._searchSelectedIndex = 0;
+        }
+        items.forEach((item, index) => {
+            item.classList.toggle('is-selected', index === this._searchSelectedIndex);
+        });
+        const selected = items[this._searchSelectedIndex];
+        if (selected && typeof selected.scrollIntoView === 'function') {
+            selected.scrollIntoView({ block: 'nearest' });
+        }
     }
 
     async setFocusTag(tag) {
@@ -1275,6 +1372,9 @@ export class OntologyModal extends BaseModal {
                 if (typeof tag !== 'string' || tag.trim() === '') {
                     throw new Error('focus action missing tag');
                 }
+                if (target.classList.contains('ontology-search-result')) {
+                    this._applySearchSelection(tag);
+                }
                 void this.setFocusTag(tag);
                 return;
             }
@@ -1395,5 +1495,22 @@ export class OntologyModal extends BaseModal {
                     : '')
             );
         });
+    }
+
+    _applySearchSelection(tag) {
+        if (typeof tag !== 'string' || tag.trim() === '') {
+            throw new Error('applySearchSelection requires non-empty tag');
+        }
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const input = modalElement.querySelector('#ontology-search-input');
+        if (!(input instanceof HTMLInputElement)) {
+            throw new Error('ontology search input missing');
+        }
+        input.value = tag;
+        this.updateModalState({ searchQuery: tag });
+        input.blur();
     }
 }

@@ -129,6 +129,7 @@ Implementation note (DOM):
 - The search box opens with a dropdown showing **all tags**, sorted by frequency (most used first).
 - While typing, results prioritize **prefix matches**, then substring matches, then fuzzy (subsequence) matches.
 - Each suggestion shows a count badge with the number of notes containing that tag.
+- Arrow keys move selection (first item is selected by default); `Enter` applies the selected suggestion, fills the input, and blurs the field.
 
 ### UI Mock
 
