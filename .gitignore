@@ -42,3 +42,5 @@ sanitycheck/js/.npm-cache/
 
 # Local tooling (copied from claude-md)
 sanitycheck/
+
+test.db
