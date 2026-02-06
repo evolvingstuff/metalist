@@ -382,7 +382,6 @@ def create_note(
         db_session.connection(),
         note_id=note_id,
         content=ciphertext,
-        content_text=content_text,
         encryption_nonce=nonce,
         encryption_tag=tag,
         tags=tags_ciphertext,

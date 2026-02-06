@@ -1408,7 +1408,7 @@ async function switchToTabContext(tabId, options) {
 	await (async () => {
 		await persistCurrentTabState();
 
-		ModeContext.switchToTab(tabId);
+		ModeContext.switchToTab(tabId, { force: true });
 		cacheNotesDomForTab(previousTabId);
 		restoreNotesDomForTab(tabId);
 

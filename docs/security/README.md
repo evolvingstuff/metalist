@@ -47,6 +47,9 @@ Login Flow:
 5. Decrypt DEK using KEK
 6. Discard KEK; keep only DEK in memory for session
 7. Use DEK for all note operations
+8. If the server started with encryption enabled, cache + note-store hydration is deferred.
+   - The client calls `/api2/auth/hydrate` after login.
+   - A progress UI is shown while the cache + note store are populated.
 
 Password Change Flow:
 1. Verify old password using stored iteration count

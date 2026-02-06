@@ -98,10 +98,19 @@ export const Auth = {
         const loginPage = document.getElementById('login-page');
         const mainApp = document.getElementById('main-app');
         const passwordInput = document.getElementById('login-password');
+        const loginForm = document.getElementById('login-form');
+        const loadingPanel = document.getElementById('login-loading');
         
         // Hide main app and show login page
         mainApp.style.display = 'none';
         loginPage.style.display = 'flex';
+        if (loginForm) {
+            loginForm.style.display = 'block';
+        }
+        if (loadingPanel) {
+            loadingPanel.style.display = 'none';
+        }
+        this._resetHydrationUI();
         
         // Focus password input after a short delay
         setTimeout(() => {
@@ -124,9 +133,126 @@ export const Auth = {
         // Show main app and hide login page
         loginPage.style.display = 'none';
         mainApp.style.display = 'block';
+        this._resetHydrationUI();
         
         // Clear the password input
         document.getElementById('login-password').value = '';
+    },
+
+    _resetHydrationUI() {
+        const loadingPanel = document.getElementById('login-loading');
+        const loginForm = document.getElementById('login-form');
+        const message = document.getElementById('login-loading-message');
+        const count = document.getElementById('login-loading-count');
+        const bar = document.getElementById('login-progress-bar');
+        const firstLoad = document.getElementById('login-loading-first');
+        if (loadingPanel) {
+            loadingPanel.style.display = 'none';
+        }
+        if (loginForm) {
+            loginForm.style.display = 'block';
+        }
+        if (message) {
+            message.textContent = '';
+        }
+        if (count) {
+            count.textContent = '';
+        }
+        if (bar) {
+            bar.style.width = '0%';
+        }
+        if (firstLoad) {
+            firstLoad.style.display = 'none';
+        }
+    },
+
+    _showHydrationUI() {
+        const loadingPanel = document.getElementById('login-loading');
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) {
+            loginForm.style.display = 'none';
+        }
+        if (loadingPanel) {
+            loadingPanel.style.display = 'block';
+        }
+    },
+
+    _updateHydrationUI(status) {
+        const message = document.getElementById('login-loading-message');
+        const count = document.getElementById('login-loading-count');
+        const bar = document.getElementById('login-progress-bar');
+        const firstLoad = document.getElementById('login-loading-first');
+
+        if (message) {
+            if (typeof status.message === 'string') {
+                message.textContent = status.message;
+            } else {
+                message.textContent = '';
+            }
+        }
+        if (firstLoad) {
+            firstLoad.style.display = status.first_load ? 'block' : 'none';
+        }
+        if (typeof status.total === 'number' && status.total > 0) {
+            const percent = Math.min(100, Math.floor((status.processed / status.total) * 100));
+            if (bar) {
+                bar.style.width = `${percent}%`;
+            }
+            if (count) {
+                count.textContent = `${status.processed.toLocaleString()} / ${status.total.toLocaleString()} notes`;
+            }
+        } else {
+            if (bar) {
+                bar.style.width = '0%';
+            }
+            if (count) {
+                count.textContent = '';
+            }
+        }
+    },
+
+    async _runHydrationFlow() {
+        this._showHydrationUI();
+
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            throw new Error('Missing auth token for hydration');
+        }
+
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'X-Metalist-Tab-Id': this._tabId,
+        };
+
+        const startResponse = await fetch(CONFIG.API.AUTH.HYDRATE, {
+            method: 'POST',
+            headers,
+        });
+
+        if (!startResponse.ok) {
+            const detail = await startResponse.text();
+            throw new Error(`Failed to start hydration: ${startResponse.status} ${detail}`);
+        }
+
+        let status = await startResponse.json();
+        this._updateHydrationUI(status);
+
+        while (status.status !== 'ready') {
+            if (status.status === 'error') {
+                if (typeof status.error === 'string' && status.error.length > 0) {
+                    throw new Error(status.error);
+                }
+                throw new Error('Hydration failed');
+            }
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            const pollResponse = await fetch(CONFIG.API.AUTH.HYDRATION_STATUS, { headers });
+            if (!pollResponse.ok) {
+                const detail = await pollResponse.text();
+                throw new Error(`Hydration status failed: ${pollResponse.status} ${detail}`);
+            }
+            status = await pollResponse.json();
+            this._updateHydrationUI(status);
+        }
     },
     
     /**
@@ -154,7 +280,7 @@ export const Auth = {
         
         document.body.classList.add('loading');
 
-        await (async () => {
+        try {
             const response = await fetch(CONFIG.API.AUTH.LOGIN, {
                 method: 'POST',
                 headers: {
@@ -182,6 +308,10 @@ export const Auth = {
 
                 console.log('[Auth] Login successful');
 
+                if (data.hydration_required) {
+                    await this._runHydrationFlow();
+                }
+
                 this.hideLoginModal();
 
                 console.log('[Auth] Login successful, initializing ModeManager');
@@ -201,9 +331,19 @@ export const Auth = {
                 throw new Error('Login error response missing detail');
             }
             this.showLoginError(errorBody.detail);
-        })().finally(() => {
+        } catch (error) {
+            this._resetHydrationUI();
+            if (error instanceof Error) {
+                this.showLoginError(error.message);
+            }
+            if (!(error instanceof Error)) {
+                this.showLoginError('Login failed');
+                throw new Error('Login failed');
+            }
+            throw error;
+        } finally {
             document.body.classList.remove('loading');
-        });
+        }
     },
     
     /**

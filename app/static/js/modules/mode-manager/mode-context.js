@@ -1355,15 +1355,22 @@ class ModeContext {
         });
     }
 
-    switchToTab(tabId) {
+    switchToTab(tabId, options) {
         if (typeof tabId !== 'string' || tabId.length === 0) {
             throw new Error('Invalid tab ID: must be a non-empty string');
         }
         if (!this._tabs[tabId]) {
             throw new Error(`Invalid tab ID: ${tabId} not found`);
         }
+        if (typeof options === 'undefined') {
+            options = {};
+        }
+        if (options === null || typeof options !== 'object') {
+            throw new Error('switchToTab requires options object');
+        }
+        const force = options.force === true;
 
-        if (this._loading) {
+        if (this._loading && !force) {
             Logger.logNoop('Tab switch ignored while request is in-flight', {
                 requestedTab: tabId,
                 activeTab: this._activeTabId

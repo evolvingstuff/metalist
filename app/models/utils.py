@@ -122,7 +122,6 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
         db.connection(),
         note_id=new_id,
         content=ciphertext,
-        content_text=content_text,
         encryption_nonce=nonce,
         encryption_tag=tag,
         tags=tags_ciphertext,
@@ -250,19 +249,12 @@ def _copy_note_recursive(
     timestamp = datetime.now(timezone.utc)
     is_collapsed = bool(source_row["is_collapsed"])
     plaintext = get_cached_content(source_row["id"])
-    if "content_text" not in source_row:
-        raise KeyError("Missing content_text for source note.")
-    content_text = source_row["content_text"]
-    if content_text is None:
-        content_text = strip_html(plaintext)
-    elif not isinstance(content_text, str):
-        raise TypeError("content_text must be a string or NULL.")
+    content_text = strip_html(plaintext)
 
     insert_note(
         db.connection(),
         note_id=new_id,
         content=source_row["content"],
-        content_text=content_text,
         encryption_nonce=source_row["encryption_nonce"],
         encryption_tag=source_row["encryption_tag"],
         tags=source_row["tags"],

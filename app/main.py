@@ -15,6 +15,7 @@ from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
 from .services.auth import AuthService
 from .services.note_store import store as note_store
+from app.services import auth_cache_state
 from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.security.encryption import set_encryption_required
@@ -112,6 +113,7 @@ set_encryption_required(encryption_enabled)
 
 if startup_has_password:
     logger.info("[startup] password set; skipping cache + store hydration until login")
+    auth_cache_state.reset_cache_state()
     guard_start = time.perf_counter()
     enable_read_guard()
     _log_startup_step("read guard enable", time.perf_counter() - guard_start)
@@ -145,6 +147,7 @@ else:
     store_start = time.perf_counter()
     note_store.load_from_db(None, prefetched_rows=prefetched_rows)
     _log_startup_step("note store hydration", time.perf_counter() - store_start)
+    auth_cache_state.mark_cache_ready()
 
     guard_start = time.perf_counter()
     enable_read_guard()

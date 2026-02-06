@@ -40,13 +40,21 @@ sequenceDiagram
         TokenSvc->>TokenSvc: Store token + DEK in memory dict<br/>with 30min expiry
         TokenSvc-->>AuthSvc: Plain token string
         
-        AuthSvc->>Cache: populate_cache_from_db()
-        Cache->>DB: Load all notes
-        Cache->>Cache: Decrypt with DEK
-        
-        AuthSvc-->>API: {token, message}
-        API-->>Browser: 200 OK with token
+        AuthSvc-->>API: {token, message, hydration_required}
+        API-->>Browser: 200 OK with token + hydration_required
         Browser->>Browser: localStorage.setItem('auth_token', token)
+        alt hydration_required
+            Browser->>API: POST /api2/auth/hydrate
+            API-->>Browser: 200 {status: running}
+            loop Poll until ready
+                Browser->>API: GET /api2/auth/hydration-status
+                API-->>Browser: {status, processed, total, phase}
+            end
+            API->>Cache: populate_cache_from_db()
+            Cache->>DB: Load all notes
+            Cache->>Cache: Decrypt with DEK
+            API->>Browser: Hydration complete
+        end
         Browser->>Browser: Remove loading cursor
         Browser->>Browser: Hide login, show app
     else Invalid Password

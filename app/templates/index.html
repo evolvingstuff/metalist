@@ -10,6 +10,19 @@
             <button type="submit">Login</button>
             <div id="login-error" class="error-message" style="display: none;"></div>
         </form>
+        <div id="login-loading" class="login-loading" style="display: none;">
+            <div id="login-loading-title" class="login-loading-title">
+                Loading encrypted data…
+            </div>
+            <div id="login-loading-first" class="login-loading-first" style="display: none;">
+                First-time load after a server restart. This only happens once per restart.
+            </div>
+            <div id="login-loading-message" class="login-loading-message"></div>
+            <div class="login-progress-track">
+                <div id="login-progress-bar" class="login-progress-bar"></div>
+            </div>
+            <div id="login-loading-count" class="login-loading-count"></div>
+        </div>
     </div>
 </div>
 

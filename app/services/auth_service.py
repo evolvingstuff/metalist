@@ -511,6 +511,12 @@ class AuthService:
                             }
                         )
                         cache_content_updates[note_id] = plaintext
+                    else:
+                        if content is None:
+                            raise RuntimeError(
+                                f"Password removal failed: note {note_id} has NULL content"
+                            )
+                        plaintext = content
 
                     if tags_encrypted:
                         if tags_nonce is None or tags_tag is None:

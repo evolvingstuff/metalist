@@ -45,7 +45,7 @@ class NoteCRUD:
                 next_id = ordered[0]["id"]
 
         plaintext = ""
-        content_text = ""
+        content_text = strip_html(plaintext)
         ciphertext, nonce, tag = encrypt(plaintext, "")
         tags_ciphertext, tags_nonce, tags_tag = encrypt("", "")
         timestamp = datetime.now(timezone.utc)
@@ -54,7 +54,6 @@ class NoteCRUD:
             db.connection(),
             note_id=note_id,
             content=ciphertext,
-            content_text=content_text,
             encryption_nonce=nonce,
             encryption_tag=tag,
             tags=tags_ciphertext,
@@ -164,7 +163,6 @@ class NoteCRUD:
             db.connection(),
             note_id,
             content=ciphertext,
-            content_text=strip_html(content),
             encryption_nonce=nonce,
             encryption_tag=tag,
             updated_at=timestamp,

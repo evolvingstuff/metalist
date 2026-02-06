@@ -37,6 +37,8 @@ export const CONFIG = {
             LOGOUT: `${API_AUTH_BASE}/logout`,
             SESSION: `${API_AUTH_BASE}/session`,
             SESSIONS: `${API_AUTH_BASE}/sessions`,
+            HYDRATE: `${API_AUTH_BASE}/hydrate`,
+            HYDRATION_STATUS: `${API_AUTH_BASE}/hydration-status`,
             SETTINGS: {
                 PASSWORD: {
                     CREATE: `${API_AUTH_BASE}/settings/password/create`,

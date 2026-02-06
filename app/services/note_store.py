@@ -20,6 +20,7 @@ from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
 from app.services.content_cache import get_cached_content, get_cached_tags, get_cached_text
+from app.services.hydration_state import hydration_state
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index
 from app.utils.text_utils import strip_html
@@ -236,6 +237,12 @@ class NoteStore:
             loop_start = time.perf_counter()
             processed = 0
             last_checkpoint = loop_start
+            if hydration_state.is_running():
+                hydration_state.set_phase(
+                    phase="note_store",
+                    message="Hydrating note store",
+                    total=len(rows),
+                )
 
             for row in rows:
                 note = SimpleNamespace(**row)
@@ -266,6 +273,11 @@ class NoteStore:
                         f"[startup] note_store hydrated {processed} notes | last 1000 in {batch_elapsed:.2f}s | total {total_elapsed:.2f}s"
                     )
                     last_checkpoint = now
+                if hydration_state.is_running() and processed % 1000 == 0:
+                    hydration_state.update(processed)
+
+            if hydration_state.is_running():
+                hydration_state.update(processed)
 
             known_ids = set(note_map.keys())
             for record in note_map.values():
@@ -307,6 +319,12 @@ class NoteStore:
         ontology = get_ontology()
         tag_only_terms_by_id: Dict[str, FrozenSet[str]] = {}
         tag_only_start = time.perf_counter()
+        if hydration_state.is_running():
+            hydration_state.set_phase(
+                phase="tag_inference",
+                message="Applying ontology implications",
+                total=len(note_map),
+            )
         for record in note_map.values():
             effective_terms = effective_tag_terms_by_id.get(record.id)
             if effective_terms is None:
@@ -321,18 +339,30 @@ class NoteStore:
                     tag_terms=tag_only_terms,
                 )
             )
+            if hydration_state.is_running() and len(search_records) % 1000 == 0:
+                hydration_state.update(len(search_records))
         if timing_enabled:
             print(
                 f"[startup] note_store tag-only inference for {len(search_records)} notes in "
                 f"{time.perf_counter() - tag_only_start:.2f}s"
             )
+        if hydration_state.is_running():
+            hydration_state.update(len(search_records))
 
+        if hydration_state.is_running():
+            hydration_state.set_phase(
+                phase="search_index",
+                message="Building search index",
+                total=len(search_records),
+            )
         index_start = time.perf_counter()
         search_index.rebuild(search_records)
         if timing_enabled:
             print(
                 f"[startup] search index rebuild in {time.perf_counter() - index_start:.2f}s"
             )
+        if hydration_state.is_running():
+            hydration_state.update(len(search_records))
 
         if not ontology.matcher_rules:
             return
@@ -392,6 +422,13 @@ class NoteStore:
 
         inference_start = time.perf_counter()
         updates: Dict[str, FrozenSet[str]] = {}
+        if hydration_state.is_running():
+            hydration_state.set_phase(
+                phase="matcher_inference",
+                message="Applying ontology matcher rules",
+                total=len(candidate_note_ids),
+            )
+        processed_candidates = 0
         for note_id in candidate_note_ids:
             if note_id not in tag_only_terms_by_id:
                 raise RuntimeError(
@@ -411,12 +448,17 @@ class NoteStore:
             )
             if effective_with_ontology != base_terms:
                 updates[note_id] = effective_with_ontology
+            processed_candidates += 1
+            if hydration_state.is_running() and processed_candidates % 1000 == 0:
+                hydration_state.update(processed_candidates)
 
         if timing_enabled:
             print(
                 f"[startup] matcher inference for {len(candidate_note_ids)} notes in "
                 f"{time.perf_counter() - inference_start:.2f}s (updates={len(updates)})"
             )
+        if hydration_state.is_running():
+            hydration_state.update(processed_candidates)
 
         if updates:
             search_index.bulk_update_tag_terms(updates)

@@ -10,10 +10,11 @@ import time
 from typing import Dict, Mapping, Optional, Sequence
 
 from app.db.session import connect_reader
-from app.db.notes_sql import fetch_all_for_cache, update_note_content_text_bulk
+from app.db.notes_sql import fetch_all_for_cache
 
 from ..models.database import SafeSession
 from ..utils.encryption import get_encryption_service
+from app.services.hydration_state import hydration_state
 from app.utils.text_utils import strip_html
 
 logger = logging.getLogger(__name__)
@@ -127,13 +128,18 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
 
     clear_cache()
 
+    if hydration_state.is_running():
+        hydration_state.set_phase(
+            phase="decrypt",
+            message="Decrypting notes into memory",
+            total=len(notes),
+        )
+
     encryption_service = get_encryption_service()
 
     loop_started = time.perf_counter()
     processed = 0
     last_checkpoint = loop_started
-    pending_text_updates: list[tuple[str, str]] = []
-
     for note in notes:
         note_id = note["id"]
         content = note["content"]
@@ -198,15 +204,7 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         else:
             decrypted_tags = tags
 
-        if "content_text" not in note:
-            raise KeyError(f"Missing content_text for note {note_id}")
-        raw_text = note["content_text"]
-        if raw_text is None:
-            raw_text = strip_html(decrypted_content)
-            if db is not None:
-                pending_text_updates.append((raw_text, note_id))
-        elif not isinstance(raw_text, str):
-            raise TypeError(f"content_text must be a string or NULL for note {note_id}")
+        raw_text = strip_html(decrypted_content)
 
         cache_note(note_id, decrypted_content)
         cache_note_tags(note_id, decrypted_tags)
@@ -227,6 +225,11 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
                 total_elapsed,
             )
             last_checkpoint = now
+            if hydration_state.is_running():
+                hydration_state.update(processed)
+
+    if hydration_state.is_running():
+        hydration_state.update(processed)
 
     if _CACHE_TIMING_ENABLED:
         total_loop = time.perf_counter() - loop_started
@@ -240,13 +243,6 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         )
 
     logger.info(f"Content cache populated with {len(notes)} notes")
-
-    if pending_text_updates:
-        if db is None:
-            raise RuntimeError(
-                "Raw text backfill required but no writable DB session was provided."
-            )
-        update_note_content_text_bulk(db.connection(), pending_text_updates)
 
     return notes
 
@@ -315,13 +311,7 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
                 tag,
             )
             cache_note(note_id, decrypted_content)
-            if "content_text" not in note:
-                raise KeyError(f"Missing content_text for note {note_id}")
-            raw_text = note["content_text"]
-            if raw_text is None:
-                raw_text = strip_html(decrypted_content)
-            elif not isinstance(raw_text, str):
-                raise TypeError(f"content_text must be a string or NULL for note {note_id}")
+            raw_text = strip_html(decrypted_content)
             cache_note_text(note_id, raw_text)
 
         if (tags_nonce is None) != (tags_tag is None):

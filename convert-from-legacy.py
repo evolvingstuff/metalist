@@ -9,6 +9,7 @@ legacy JSON format. Use with care: this is destructive.
 from __future__ import annotations
 
 import argparse
+import getpass
 import html
 import importlib.util
 import json
@@ -35,6 +36,7 @@ from app.db.notes_sql import insert_note, update_links
 from app.db.ontology_rules_sql import insert_rule
 from app.db.settings_sql import insert_default_settings
 from app.models.database import SafeSession
+from app.services.auth_service import AuthService
 from app.utils.text_utils import strip_html
 
 
@@ -109,6 +111,23 @@ def _resolve_input_path(input_path: str | None) -> Path:
     if not path.is_file():
         raise RuntimeError(f"Legacy export is not a file: {path}")
     return path
+
+
+def _prompt_for_password() -> str | None:
+    response = input("Enable password protection? [y/N]: ").strip().lower()
+    if response not in {"y", "yes"}:
+        return None
+
+    while True:
+        password = getpass.getpass("Enter new password: ")
+        if password == "":
+            print("Password cannot be empty.")
+            continue
+        confirmation = getpass.getpass("Confirm password: ")
+        if password != confirmation:
+            print("Passwords do not match. Please try again.")
+            continue
+        return password
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -363,7 +382,6 @@ def _import_item(
             db.connection(),
             note_id=note_id,
             content=content,
-            content_text=strip_html(content),
             encryption_nonce=None,
             encryption_tag=None,
             tags=tags,
@@ -417,10 +435,24 @@ def _apply_order(db: SafeSession, order_map: dict[str | None, list[str]], meta: 
             )
 
 
+def _enable_password(password: str) -> None:
+    session = SafeSession()
+    try:
+        auth = AuthService(session)
+        success, message = auth.set_password(password)
+        if not success:
+            raise RuntimeError(message)
+        session.commit()
+        print(message)
+    finally:
+        session.close()
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     input_path = _resolve_input_path(args.input_path)
     payload = _load_json(input_path)
+    password = _prompt_for_password()
     _assert_encryption_disabled(payload)
     items = _require_list(payload, "data")
 
@@ -444,6 +476,9 @@ def main(argv: list[str]) -> int:
         session.commit()
     finally:
         session.close()
+
+    if password is not None:
+        _enable_password(password)
 
     print(f"Imported {len(items)} root items, {total_notes} notes, {total_rules} rules.")
     return 0

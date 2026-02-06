@@ -25,10 +25,15 @@ The in-memory store maintains enough indices to:
 ## Startup Flow
 At a high level (`app/main.py`):
 1. Initialize DB schema + ensure settings exist.
-2. Prefetch all note rows.
-3. Populate the decrypted content cache.
-4. Hydrate the in-memory note store from the prefetched rows.
-5. Enable the read guard so accidental runtime `SELECT` crashes loudly.
+2. If encryption is **disabled**:
+   - Prefetch all note rows.
+   - Populate the decrypted content cache.
+   - Hydrate the in-memory note store from the prefetched rows.
+   - Enable the read guard so accidental runtime `SELECT` crashes loudly.
+3. If encryption is **enabled**:
+   - Skip cache + note-store hydration at startup.
+   - Enable the read guard immediately.
+   - Hydration happens after login via `/api2/auth/hydrate`, and the UI shows a first-load progress indicator.
 
 ## View / Diff Flow
 - Route: `POST /api2/notes/view` (`app/api/routes/notes.py`)
