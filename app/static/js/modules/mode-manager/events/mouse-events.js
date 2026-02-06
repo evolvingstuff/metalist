@@ -6,6 +6,7 @@ import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-a
 import { DOMUtils } from '../../dom-utils.js'; 
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
@@ -196,6 +197,14 @@ function handleClick(event) {
         ignoreClickAfterSelectionDrag = null;
         event.preventDefault();
         event.stopPropagation();
+        return;
+    }
+
+    const menuButton = event.target.closest('#menu-button');
+    if (menuButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        void CommandPalette.toggle();
         return;
     }
 

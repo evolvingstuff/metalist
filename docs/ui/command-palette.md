@@ -1,6 +1,6 @@
 # Command Palette
 
-Open with `⌘ + /`.
+Open with `⌘ + /` or the menu (`≡`) button in the upper right.
 
 ## Undo/Redo Boundary
 Opening the command palette creates an explicit undo/redo boundary.
