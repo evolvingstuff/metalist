@@ -295,6 +295,9 @@ def focus_view(tag: str) -> dict:
         if matched_rule is None:
             raise RuntimeError('Expected matched_rule to be set when matched_rhs is present')
 
+        if lhs_tag is not None and lhs_tag in equals:
+            continue
+
         lhs_atoms_payload = [atom_payload(atom) for atom in matched_rule.lhs]
 
         if len(matched_rule.lhs) == 1:

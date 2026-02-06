@@ -98,7 +98,7 @@ This section defines the initial UI interaction model for exploring and editing 
 ### Columns
 
 - **Left column (incoming, direct-only)**
-  - Direct tag implications: tags `A` where `A => focusTag`.
+  - Direct tag implications: tags `A` where `A => focusTag`, excluding tags already in the focus SCC (synonyms).
   - Direct derivation rules: rules with `RHS == focusTag` where the LHS is not a single tag.
     - Display only the LHS expression (RHS is redundant with the current focus).
 - **Center column (focus + editor)**
