@@ -12,7 +12,7 @@
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
-| `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view) |
+| `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note is empty with no tags, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
 
 ### General Shortcuts

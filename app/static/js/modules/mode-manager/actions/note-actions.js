@@ -346,6 +346,18 @@ export async function actionPasteNoteSibling() {
         throw new Error('Paste sibling response missing new note id');
     }
 
+    if (newNoteId === currentNoteId) {
+        const startedAt = performance.now();
+        const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'pasteNoteSiblingInto' });
+        if (ModeContext.currentContent !== newContent && newContent !== null) {
+            ModeContext.setCurrentContent(newContent);
+        }
+        window.requestAnimationFrame(() => {
+            scrollNoteIntoView(newNoteId, {});
+        });
+        return;
+    }
+
     await actionSwitchNotes(newNoteId, { initialCaretVisibility: 'hidden' });
     window.requestAnimationFrame(() => {
         scrollNoteIntoView(newNoteId, {});

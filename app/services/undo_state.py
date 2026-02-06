@@ -9,7 +9,7 @@ from app.usecases.collapse import apply_set_collapse
 from app.usecases.delete_subtree import apply_delete_subtree, apply_restore_records
 from app.usecases.move import apply_move
 from app.usecases.update_content import apply_update_content
-from app.services.store import store
+from app.services.store import store, NodeRecord
 from app.services.sync import generate_new_uuid
 
 
@@ -39,7 +39,7 @@ def _summarize_op(op: dict) -> str:
             )
         return f"edit_mode({before}->{after})"
 
-    if op_type in {"update_content", "move", "collapse"}:
+    if op_type in {"update_content", "move", "collapse", "paste_into"}:
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
             raise RuntimeError(f"Undo op {op_type}.note_id must be a non-empty string | op={op}")
@@ -180,7 +180,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         raise RuntimeError(f"Redo op missing required key: type | op={op}")
     op_type = op["type"]
 
-    if op_type in {"update_content", "move", "collapse"}:
+    if op_type in {"update_content", "move", "collapse", "paste_into"}:
         if "note_id" not in op:
             raise RuntimeError(f"Undo op missing required key: note_id | op={op}")
         note_id = op["note_id"]
@@ -477,6 +477,52 @@ def record_paste(
     ctx.redo.clear()
 
 
+def record_paste_into(
+    client_id: str,
+    undo_context: str,
+    *,
+    note_id: str,
+    before_content: str,
+    before_tags: str,
+    after_content: str,
+    after_tags: str,
+    inserted_records: List[NodeRecord],
+    viewport: Dict[str, object],
+) -> None:
+    if not isinstance(note_id, str) or not note_id:
+        raise ValueError("note_id must be a non-empty string")
+    if not isinstance(before_content, str):
+        raise TypeError("before_content must be a string")
+    if not isinstance(before_tags, str):
+        raise TypeError("before_tags must be a string")
+    if not isinstance(after_content, str):
+        raise TypeError("after_content must be a string")
+    if not isinstance(after_tags, str):
+        raise TypeError("after_tags must be a string")
+    if not isinstance(inserted_records, list):
+        raise TypeError("inserted_records must be a list")
+    for record in inserted_records:
+        if not isinstance(record, NodeRecord):
+            raise TypeError("inserted_records entries must be NodeRecord objects")
+
+    maybe_reset_on_context(client_id, undo_context)
+    ctx = _ctx(client_id)
+    normalized_viewport = _normalize_viewport_snapshot(viewport)
+    view_anchor_root_id = _anchor_root_id(normalized_viewport)
+    ctx.history.append({
+        "type": "paste_into",
+        "note_id": note_id,
+        "before_content": before_content,
+        "before_tags": before_tags,
+        "after_content": after_content,
+        "after_tags": after_tags,
+        "inserted_records": inserted_records,
+        "viewport": normalized_viewport,
+        "viewAnchorRootId": view_anchor_root_id,
+    })
+    ctx.redo.clear()
+
+
 def record_edit_mode(
     client_id: str,
     undo_context: str,
@@ -672,6 +718,36 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         apply_set_collapse(op["note_id"], bool(op["before"]))
         ctx.redo.append(op)
         generate_new_uuid()
+    elif op_type == "paste_into":
+        note_id = op["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise RuntimeError(f"Undo op paste_into.note_id must be a non-empty string | op={op}")
+        before_content = op["before_content"]
+        before_tags = op["before_tags"]
+        if not isinstance(before_content, str):
+            raise RuntimeError(f"Undo op paste_into.before_content must be a string | op={op}")
+        if not isinstance(before_tags, str):
+            raise RuntimeError(f"Undo op paste_into.before_tags must be a string | op={op}")
+        inserted_records = op["inserted_records"]
+        if not isinstance(inserted_records, list):
+            raise RuntimeError(f"Undo op paste_into.inserted_records must be a list | op={op}")
+
+        apply_update_content(note_id, before_content, before_tags, token)
+
+        inserted_root_ids: list[str] = []
+        for record in inserted_records:
+            if not isinstance(record, NodeRecord):
+                raise RuntimeError(
+                    f"Undo op paste_into.inserted_records must contain NodeRecords | op={op}"
+                )
+            if record.parent_id == note_id:
+                inserted_root_ids.append(record.id)
+
+        for root_id in inserted_root_ids:
+            apply_delete_subtree(root_id)
+
+        ctx.redo.append(op)
+        generate_new_uuid()
     elif op_type == "paste_subtree":
         # delete the pasted subtree
         if op["records"]:
@@ -830,6 +906,25 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         generate_new_uuid()
     elif op_type == "collapse":
         apply_set_collapse(op["note_id"], bool(op["after"]))
+        ctx.history.append(op)
+        generate_new_uuid()
+    elif op_type == "paste_into":
+        note_id = op["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise RuntimeError(f"Redo op paste_into.note_id must be a non-empty string | op={op}")
+        after_content = op["after_content"]
+        after_tags = op["after_tags"]
+        if not isinstance(after_content, str):
+            raise RuntimeError(f"Redo op paste_into.after_content must be a string | op={op}")
+        if not isinstance(after_tags, str):
+            raise RuntimeError(f"Redo op paste_into.after_tags must be a string | op={op}")
+        inserted_records = op["inserted_records"]
+        if not isinstance(inserted_records, list):
+            raise RuntimeError(f"Redo op paste_into.inserted_records must be a list | op={op}")
+
+        apply_update_content(note_id, after_content, after_tags, token)
+        if inserted_records:
+            apply_restore_records(inserted_records, token)
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "paste_subtree":

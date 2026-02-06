@@ -12,7 +12,9 @@ from app.services.search_text import build_searchable_text_casefold
 from app.services.sync import get_clipboard, generate_new_uuid
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import _collect_subtree_ids
-from app.services.undo_state import record_paste
+from app.usecases.update_content import apply_update_content
+from app.services.undo_state import record_paste, record_paste_into
+from app.utils.text_utils import strip_html
 
 
 def _compute_inherited_non_meta_tag_terms(parent_id: Optional[str]) -> set[str]:
@@ -35,6 +37,39 @@ def _note_has_positive_matching_ancestor(parent_id: Optional[str], positive_matc
             return True
         current_id = store.get(current_id).parent_id
     return False
+
+
+def _should_force_root_match(parent_id: Optional[str], search_query: str | None) -> bool:
+    if search_query is None:
+        return False
+    if not isinstance(search_query, str):
+        raise TypeError(f"search_query must be a string or None, got {type(search_query)}")
+    if search_query.strip() == "":
+        return False
+    positive_matches = set(search_index.query_note_ids(search_query))
+    return not _note_has_positive_matching_ancestor(parent_id, positive_matches)
+
+
+def _is_empty_target_note(target: NodeRecord) -> bool:
+    if not isinstance(target, NodeRecord):
+        raise TypeError(f"target must be a NodeRecord, got {type(target)}")
+    if strip_html(target.content) != "":
+        return False
+    if target.tags.strip() != "":
+        return False
+    if store.children(target.id):
+        return False
+    return True
+
+
+def _collect_inserted_records(parent_id: str) -> List[NodeRecord]:
+    if not isinstance(parent_id, str) or not parent_id:
+        raise TypeError("parent_id must be a non-empty string")
+    records: List[NodeRecord] = []
+    for root_id in store.children(parent_id):
+        for note_id in _collect_subtree_ids(root_id):
+            records.append(store.get(note_id))
+    return records
 
 
 def _ensure_tags_match_search_query(
@@ -242,6 +277,62 @@ class CmdPasteSibling(QueryCommand):
             raise RuntimeError("Clipboard empty")
 
         target = store.get(self.target_note_id)
+        if _is_empty_target_note(target):
+            root_snapshot = snapshot[0]
+            if not isinstance(root_snapshot, dict):
+                raise ValueError("Clipboard root entry must be an object")
+            if "content" not in root_snapshot:
+                raise ValueError("Clipboard root missing required key: content")
+            if "tags" not in root_snapshot:
+                raise ValueError("Clipboard root missing required key: tags")
+
+            content = root_snapshot["content"]
+            if not isinstance(content, str):
+                raise ValueError("Clipboard root content must be a string")
+            tags = root_snapshot["tags"]
+            if not isinstance(tags, str):
+                raise ValueError("Clipboard root tags must be a string")
+
+            if _should_force_root_match(target.parent_id, self.search_query):
+                if not isinstance(self.search_query, str):
+                    raise TypeError(
+                        f"search_query must be a string when forcing root match, got {type(self.search_query)}"
+                    )
+                tags = _ensure_tags_match_search_query(
+                    parent_id=target.parent_id,
+                    content=content,
+                    tags=tags,
+                    search_query=self.search_query,
+                )
+
+            before_content = target.content
+            before_tags = target.tags
+            apply_update_content(target.id, content, tags, self.token)
+
+            inserted_records: List[NodeRecord] = []
+            if len(snapshot) > 1:
+                _insert_cloned_subtree_at(
+                    snapshot[1:],
+                    target.id,
+                    None,
+                    self.token,
+                    search_query=None,
+                )
+                inserted_records = _collect_inserted_records(target.id)
+
+            record_paste_into(
+                self.client_id,
+                self.undo_context,
+                note_id=target.id,
+                before_content=before_content,
+                before_tags=before_tags,
+                after_content=content,
+                after_tags=tags,
+                inserted_records=inserted_records,
+                viewport=self.viewport,
+            )
+
+            return {"status": "pasted", "id": target.id, "updateUUID": generate_new_uuid()}
         siblings = store.children(target.parent_id)
         if target.id not in siblings:
             raise RuntimeError(
