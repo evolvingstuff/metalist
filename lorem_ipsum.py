@@ -32,7 +32,7 @@ from tqdm import tqdm
 from app.config import DATABASE_URL
 from app.db.notes_sql import insert_note, update_links
 from app.db.ontology_rules_sql import insert_rule
-from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, initialize_schema
+from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, ONTOLOGY_RULES_TABLE, initialize_schema
 from app.db.engine import begin_writer
 from app.db.settings_sql import fetch_settings, insert_default_settings
 from app.models.database import SafeSession
@@ -195,6 +195,7 @@ def reset_schema() -> None:
         conn = session.connection()
         conn.execute(f"DROP TABLE IF EXISTS {NOTES_TABLE}")
         conn.execute(f"DROP TABLE IF EXISTS {APP_SETTINGS_TABLE}")
+        conn.execute(f"DROP TABLE IF EXISTS {ONTOLOGY_RULES_TABLE}")
         initialize_schema(conn)
         session.commit()
     finally:
