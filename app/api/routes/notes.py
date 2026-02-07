@@ -126,11 +126,14 @@ def view_diff(payload: dict):
 
     if not cached_state or force_full_snapshot:
         view_cache.set(state=state, **cache_key)
-        filtered_notes = {
-            note_id: data
-            for note_id, data in state.payloads.items()
-            if client_hashes.get(note_id) != data.get("hash")
-        }
+        if force_full_snapshot:
+            filtered_notes = dict(state.payloads)
+        else:
+            filtered_notes = {
+                note_id: data
+                for note_id, data in state.payloads.items()
+                if client_hashes.get(note_id) != data.get("hash")
+            }
 
         # Optimization: when the server cache is cold but the client already has a
         # complete, matching hash map for the visible window, avoid resending the
@@ -418,6 +421,7 @@ def indent_note_endpoint(note_id: str, body: dict):
     _require_note_present(note_id, context="notes.indent")
     cmd = CmdIndent(
         note_id=note_id,
+        visible_prev_id=body["visible_prev_id"],
         client_id=body["clientId"],
         undo_context=body["undoContext"],
         viewport=viewport,

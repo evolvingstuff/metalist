@@ -500,10 +500,17 @@ export const NotesAPI = {
         );
     },
 
-    async indentNote(noteId) {
+    async indentNote(noteId, visiblePrevId) {
+        if (typeof visiblePrevId !== 'string' || visiblePrevId.length === 0) {
+            throw new Error('NotesAPI.indentNote requires visiblePrevId string');
+        }
+        const body = {
+            visible_prev_id: visiblePrevId,
+        };
         return this._apiCall(CONFIG.API.NOTES.INDENT(noteId), {
             method: 'POST',
             claimSession: true,
+            body: JSON.stringify(body)
         });
     },
 

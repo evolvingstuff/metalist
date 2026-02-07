@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
+import { CONFIG } from '../../config.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
@@ -251,11 +252,28 @@ export async function indentNote(noteId) {
         throw new Error('Cannot indent note: noteId is required');
     }
 
+    const noteElement = DOMUtils.getNoteById(noteId);
+    let prevElement = noteElement.previousElementSibling;
+    while (prevElement && !prevElement.classList.contains(CONFIG.CLASSES.NOTE)) {
+        prevElement = prevElement.previousElementSibling;
+    }
+    if (!prevElement) {
+        Logger.logNoop('Indent shortcut ignored: no visible sibling above', {
+            noteId,
+            isEditing: ModeContext.isEditing
+        });
+        return;
+    }
+    const visiblePrevId = DOMUtils.getNoteId(prevElement);
+    if (typeof visiblePrevId !== 'string' || visiblePrevId.length === 0) {
+        throw new Error('Visible previous sibling missing note id');
+    }
+
     if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
 
-    await NotesAPI.indentNote(noteId);
+    await NotesAPI.indentNote(noteId, visiblePrevId);
 
     if (ModeContext.isEditing) {
         ModeContext.markCaretHidden();

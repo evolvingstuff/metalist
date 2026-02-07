@@ -13,6 +13,7 @@ from app.services.undo_state import record_move
 @dataclass
 class CmdIndent(QueryCommand):
     note_id: str
+    visible_prev_id: str
     client_id: str
     undo_context: str
     viewport: Dict[str, object]
@@ -29,11 +30,25 @@ class CmdIndent(QueryCommand):
                 "Integrity failure: indent target missing from siblings list: "
                 f"note_id={self.note_id} parent_id={parent_id}"
             )
+        if not isinstance(self.visible_prev_id, str) or not self.visible_prev_id:
+            raise TypeError("visible_prev_id must be a non-empty string")
+        if not store.contains(self.visible_prev_id):
+            raise RuntimeError(f"visible_prev_id missing from store: {self.visible_prev_id}")
+
         index = siblings.index(self.note_id)
-        if index == 0:
+        prev_index = siblings.index(self.visible_prev_id)
+        if prev_index >= index:
             return {"status": "noop"}
 
-        new_parent_id = siblings[index - 1]
+        prev_record = store.get(self.visible_prev_id)
+        if prev_record.parent_id != parent_id:
+            raise RuntimeError(
+                "Indent visible_prev_id must share parent with note: "
+                f"note_id={self.note_id} parent_id={parent_id} visible_prev_id={self.visible_prev_id} "
+                f"visible_prev_parent={prev_record.parent_id}"
+            )
+
+        new_parent_id = self.visible_prev_id
         destination_children = store.children(new_parent_id)
         dest_prev = None
         if destination_children:

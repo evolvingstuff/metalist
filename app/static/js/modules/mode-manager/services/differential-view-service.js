@@ -107,24 +107,27 @@ function applyServerDiffOps(payload) {
             const index = typeof op.toIndex === 'number' ? op.toIndex : parentContainer.children.length;
             const reference = findNoteChildAt(parentContainer, index);
             const noteData = noteUpdates[op.noteId];
-            if (!noteData) {
+            const existingElement = getOrCacheElement(op.noteId);
+            if (!noteData && !existingElement) {
                 throw new Error(`Insert operation missing payload for ${op.noteId}`);
             }
-            const existingElement = getOrCacheElement(op.noteId);
             let element = existingElement;
             if (!element) {
                 element = createNoteElement(op.noteId);
             }
             element.dataset.parentId = normalizeParentIdForDataset(op.parentId);
-            const contentChanged = applyNoteDataFromPayload(
-                element,
-                op.noteId,
-                noteData,
-                noteLocks,
-                payload.currentClientId,
-                affordanceDirtyElements,
-                !existingElement,
-            );
+            let contentChanged = false;
+            if (noteData) {
+                contentChanged = applyNoteDataFromPayload(
+                    element,
+                    op.noteId,
+                    noteData,
+                    noteLocks,
+                    payload.currentClientId,
+                    affordanceDirtyElements,
+                    !existingElement,
+                );
+            }
             parentContainer.insertBefore(element, reference);
             noteElements.set(op.noteId, element);
             touchedParentIds.add(parentId);
@@ -132,7 +135,9 @@ function applyServerDiffOps(payload) {
             if (contentChanged) {
                 vdomOperations += 1;
             }
-            delete noteUpdates[op.noteId];
+            if (noteData) {
+                delete noteUpdates[op.noteId];
+            }
             continue;
         }
 
@@ -445,6 +450,7 @@ export function applyDifferentialView(payload, options) {
         notePayload = {};
     }
     const desired = buildDesiredForest(payload.structure, notePayload);
+    const desiredIds = new Set(desired.nodeById.keys());
 
     const diffResults = diffNoteForest(currentForest, desired.roots, null, []);
     let vdomOperations = 0;
@@ -487,6 +493,12 @@ export function applyDifferentialView(payload, options) {
                 if (!node) {
                     throw new Error(`Remove operation missing node for ${op.id}`);
                 }
+                if (desiredIds.has(op.id)) {
+                    if (parentId) {
+                        touchedParentIds.add(parentId);
+                    }
+                    continue;
+                }
                 const element = elementCache.get(op.id);
                 if (!element) {
                     continue;
@@ -513,8 +525,23 @@ export function applyDifferentialView(payload, options) {
                     throw new Error(`Insert operation missing node for ${op.id}`);
                 }
                 const reference = findNoteChildAt(parentContainer, op.toIndex);
-                const element = createNoteSubtree(node, desired.nodeById, elementCache, insertedIds, affordanceDirtyElements);
-                parentContainer.insertBefore(element, reference);
+                let element = elementCache.get(op.id);
+                if (!element) {
+                    element = document.querySelector(`[data-note-id="${op.id}"]`);
+                }
+                if (element) {
+                    parentContainer.insertBefore(element, reference);
+                    elementCache.set(op.id, element);
+                    logVDOM('moved note', { noteId: op.id, parentId, index: op.toIndex });
+                    vdomOperations += 1;
+                    if (parentId) {
+                        touchedParentIds.add(parentId);
+                    }
+                    continue;
+                }
+
+                const newElement = createNoteSubtree(node, desired.nodeById, elementCache, insertedIds, affordanceDirtyElements);
+                parentContainer.insertBefore(newElement, reference);
                 logVDOM('inserted note', { noteId: op.id, parentId, index: op.toIndex });
                 vdomOperations += 1;
                 if (parentId) {
