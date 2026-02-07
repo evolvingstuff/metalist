@@ -371,13 +371,19 @@ def record_move(
     before_parent: Optional[str],
     before_prev: Optional[str],
     before_next: Optional[str],
+    before_tags: str,
     after_parent: Optional[str],
     after_prev: Optional[str],
     after_next: Optional[str],
+    after_tags: str,
     viewport: Dict[str, object],
 ) -> None:
     maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
+    if not isinstance(before_tags, str):
+        raise TypeError("before_tags must be a string")
+    if not isinstance(after_tags, str):
+        raise TypeError("after_tags must be a string")
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
@@ -386,9 +392,11 @@ def record_move(
         "before_parent": before_parent,
         "before_prev": before_prev,
         "before_next": before_next,
+        "before_tags": before_tags,
         "after_parent": after_parent,
         "after_prev": after_prev,
         "after_next": after_next,
+        "after_tags": after_tags,
         "viewport": normalized_viewport,
         "viewAnchorRootId": view_anchor_root_id,
     })
@@ -416,6 +424,27 @@ def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optiona
             note_id, exp_parent, exp_prev, exp_next, parent_id, prev_id, next_id,
         )
         os._exit(1)
+
+
+def _apply_move_tags(op: dict, *, tags_key: str, token: str) -> None:
+    if not isinstance(op, dict):
+        raise TypeError(f"Undo op must be a dict, got {type(op)}")
+    if tags_key not in op:
+        return
+    tags_value = op[tags_key]
+    if not isinstance(tags_value, str):
+        raise RuntimeError(f"Undo op move.{tags_key} must be a string | op={op}")
+    note_id = op["note_id"]
+    if not isinstance(note_id, str) or not note_id:
+        raise RuntimeError(f"Undo op move.note_id must be a non-empty string | op={op}")
+    record = store.get(note_id)
+    if not isinstance(record.tags, str):
+        raise RuntimeError(f"Note tags must be a string | note_id={note_id}")
+    if record.tags == tags_value:
+        return
+    if not isinstance(record.content, str):
+        raise RuntimeError(f"Note content must be a string | note_id={note_id}")
+    apply_update_content(note_id, record.content, tags_value, token)
 
 
 def record_collapse(
@@ -711,6 +740,7 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
             op["before_next"],
         )
         _assert_neighbors(op["note_id"], op["before_parent"], op["before_prev"], op["before_next"]) 
+        _apply_move_tags(op, tags_key="before_tags", token=token)
         ctx.redo.append(op)
         generate_new_uuid()
     elif op_type == "collapse":
@@ -902,6 +932,7 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
             op["after_next"],
         )
         _assert_neighbors(op["note_id"], op["after_parent"], op["after_prev"], op["after_next"]) 
+        _apply_move_tags(op, tags_key="after_tags", token=token)
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "collapse":

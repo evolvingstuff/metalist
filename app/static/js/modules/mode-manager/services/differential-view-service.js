@@ -34,6 +34,16 @@ function applyServerDiffOps(payload) {
     const affordanceDirtyElements = new Set();
     const noteElements = new Map();
     let vdomOperations = 0;
+    const insertedIds = new Set();
+
+    for (const op of payload.diffOps) {
+        if (!op || typeof op !== 'object') {
+            continue;
+        }
+        if (op.type === 'insert' && typeof op.noteId === 'string') {
+            insertedIds.add(op.noteId);
+        }
+    }
 
     const normalizeParentId = (parentId) => {
         return typeof parentId === 'string' && parentId.length > 0 ? parentId : null;
@@ -70,6 +80,10 @@ function applyServerDiffOps(payload) {
         }
 
         if (op.type === 'remove') {
+            if (insertedIds.has(op.noteId)) {
+                touchedParentIds.add(normalizeParentId(op.parentId));
+                continue;
+            }
             const element = getOrCacheElement(op.noteId);
             if (!element) {
                 continue;
@@ -96,7 +110,11 @@ function applyServerDiffOps(payload) {
             if (!noteData) {
                 throw new Error(`Insert operation missing payload for ${op.noteId}`);
             }
-            const element = createNoteElement(op.noteId);
+            const existingElement = getOrCacheElement(op.noteId);
+            let element = existingElement;
+            if (!element) {
+                element = createNoteElement(op.noteId);
+            }
             element.dataset.parentId = normalizeParentIdForDataset(op.parentId);
             const contentChanged = applyNoteDataFromPayload(
                 element,
@@ -105,7 +123,7 @@ function applyServerDiffOps(payload) {
                 noteLocks,
                 payload.currentClientId,
                 affordanceDirtyElements,
-                true,
+                !existingElement,
             );
             parentContainer.insertBefore(element, reference);
             noteElements.set(op.noteId, element);

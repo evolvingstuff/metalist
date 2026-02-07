@@ -237,6 +237,68 @@ export async function moveNoteDown(noteId) {
     }
 }
 
+export async function indentNote(noteId) {
+    let startedAt = performance.now();
+
+    Logger.logAction('indentNote', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isDirty: ModeContext.isDirty
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot indent note: noteId is required');
+    }
+
+    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+        await actionSaveNote(noteId);
+    }
+
+    await NotesAPI.indentNote(noteId);
+
+    if (ModeContext.isEditing) {
+        ModeContext.markCaretHidden();
+    }
+
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'indentNote'});
+
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
+}
+
+export async function outdentNote(noteId) {
+    let startedAt = performance.now();
+
+    Logger.logAction('outdentNote', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isDirty: ModeContext.isDirty
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot outdent note: noteId is required');
+    }
+
+    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+        await actionSaveNote(noteId);
+    }
+
+    await NotesAPI.outdentNote(noteId, ModeContext.searchQuery);
+
+    if (ModeContext.isEditing) {
+        ModeContext.markCaretHidden();
+    }
+
+    const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'outdentNote'});
+
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
+}
+
 async function setNoteCollapse(noteId, collapsed) {
     let startedAt = performance.now();
 

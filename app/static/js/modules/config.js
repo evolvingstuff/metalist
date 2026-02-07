@@ -12,6 +12,8 @@ export const CONFIG = {
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
+            INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
+            OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,
             COLLAPSE: (noteId) => `${API_NOTES_BASE}/${noteId}/collapse`,
             EXPAND: (noteId) => `${API_NOTES_BASE}/${noteId}/expand`,
             SET_COLLAPSED_BULK: `${API_NOTES_BASE}/set-collapsed-bulk`,

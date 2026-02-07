@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
+import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -34,7 +34,7 @@ const NAVIGATION_KEYS = new Set([
     'PageUp',
     'PageDown',
 ]);
-const UP_DOWN_KEYS = new Set(['ArrowUp', 'ArrowDown']);
+const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const DELETE_KEYS = new Set(['Backspace', 'Delete']);
 
 let savedEditingRange = null;
@@ -213,7 +213,7 @@ function handleKeyDown(event) {
     
 	    const hoveredDetails = getHoveredNoteDetails(event);
 
-	    const isArrowKey = UP_DOWN_KEYS.has(event.key);
+	    const isMoveKey = MOVE_KEYS.has(event.key);
 	    const isDeleteKey = DELETE_KEYS.has(event.key);
 	    const intendsHoverDelete = (
 	        isDeleteKey &&
@@ -230,7 +230,7 @@ function handleKeyDown(event) {
             needsServer = true;
         } else if (isDeleteKey && (metaOrCtrl || intendsHoverDelete)) {
             needsServer = true;
-	        } else if (isArrowKey && metaOrCtrl) {
+	        } else if (isMoveKey && metaOrCtrl) {
 	            needsServer = true;
 	        } else if (event.key === 'v' && metaOrCtrl) {
 	            needsServer = true;
@@ -301,6 +301,16 @@ function handleKeyDown(event) {
 	        case 'ArrowDown':
 	            if (event.metaKey || event.ctrlKey) {
 	                handleMoveNoteDownShortcut(event);
+	            }
+	            break;
+	        case 'ArrowLeft':
+	            if (event.metaKey || event.ctrlKey) {
+	                handleOutdentNoteShortcut(event);
+	            }
+	            break;
+	        case 'ArrowRight':
+	            if (event.metaKey || event.ctrlKey) {
+	                handleIndentNoteShortcut(event);
 	            }
 	            break;
         case 'v':
@@ -726,6 +736,58 @@ function handleMoveNoteDownShortcut(event) {
 
 	void CommandGate.run('keyboard.move_down', async () => {
 		await moveNoteDown(noteId);
+	});
+}
+
+function handleIndentNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleIndentNoteShortcut called without an event object');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        Logger.logNoop('Indent shortcut pressed but no note is selected', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: null
+        });
+        return;
+    }
+
+    Logger.logDebug('Indent note shortcut triggered', {
+        noteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+	void CommandGate.run('keyboard.indent', async () => {
+		await indentNote(noteId);
+	});
+}
+
+function handleOutdentNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleOutdentNoteShortcut called without an event object');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        Logger.logNoop('Outdent shortcut pressed but no note is selected', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: null
+        });
+        return;
+    }
+
+    Logger.logDebug('Outdent note shortcut triggered', {
+        noteId: ModeContext.currentNoteId
+    }, Logger.LogCategory.EVENT);
+
+	void CommandGate.run('keyboard.outdent', async () => {
+		await outdentNote(noteId);
 	});
 }
 

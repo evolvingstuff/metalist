@@ -500,6 +500,24 @@ export const NotesAPI = {
         );
     },
 
+    async indentNote(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.INDENT(noteId), {
+            method: 'POST',
+            claimSession: true,
+        });
+    },
+
+    async outdentNote(noteId, searchQuery) {
+        const body = {
+            search_query: searchQuery,
+        };
+        return this._apiCall(CONFIG.API.NOTES.OUTDENT(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body)
+        });
+    },
+
     async copyNote(noteId) {
         return this._apiCall(CONFIG.API.NOTES.COPY(noteId), {
             method: 'POST'

@@ -6,28 +6,14 @@ import uuid
 
 from app.usecases.base import QueryCommand
 from app.services.store import store, NodeRecord
-from app.services.search_index import search_index, extract_tags_for_search
-from app.services.search_query import parse_search_query
-from app.services.search_text import build_searchable_text_casefold
+from app.services.search_index import search_index
 from app.services.sync import get_clipboard, generate_new_uuid
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import _collect_subtree_ids
+from app.usecases.search_context_tags import ensure_tags_match_search_query
 from app.usecases.update_content import apply_update_content
 from app.services.undo_state import record_paste, record_paste_into
 from app.utils.text_utils import strip_html
-
-
-def _compute_inherited_non_meta_tag_terms(parent_id: Optional[str]) -> set[str]:
-    inherited: set[str] = set()
-    current_id = parent_id
-    while current_id is not None:
-        ancestor = store.get(current_id)
-        for term in extract_tags_for_search(ancestor.tags):
-            if term.startswith("@"):  # meta tags do not inherit
-                continue
-            inherited.add(term)
-        current_id = ancestor.parent_id
-    return inherited
 
 
 def _note_has_positive_matching_ancestor(parent_id: Optional[str], positive_matches: set[str]) -> bool:
@@ -70,75 +56,6 @@ def _collect_inserted_records(parent_id: str) -> List[NodeRecord]:
         for note_id in _collect_subtree_ids(root_id):
             records.append(store.get(note_id))
     return records
-
-
-def _ensure_tags_match_search_query(
-    *,
-    parent_id: Optional[str],
-    content: str,
-    tags: str,
-    search_query: str,
-) -> str:
-    if not isinstance(content, str):
-        raise TypeError(f"content must be a string, got {type(content)}")
-    if not isinstance(tags, str):
-        raise TypeError(f"tags must be a string, got {type(tags)}")
-    if not isinstance(search_query, str):
-        raise TypeError(f"search_query must be a string, got {type(search_query)}")
-
-    parsed = parse_search_query(search_query)
-    if not parsed.required_tags and not parsed.required_text:
-        return tags
-
-    inherited_non_meta = _compute_inherited_non_meta_tag_terms(parent_id)
-    explicit_terms = extract_tags_for_search(tags)
-
-    additions: list[str] = []
-    for term in sorted(parsed.required_tags):
-        if term.startswith("@"):
-            if term in explicit_terms:
-                continue
-            additions.append(term)
-            continue
-        if term in inherited_non_meta or term in explicit_terms:
-            continue
-        additions.append(term)
-
-    next_tags = tags.strip()
-    if additions:
-        if next_tags == "":
-            next_tags = " ".join(additions)
-        else:
-            next_tags = f"{next_tags} {' '.join(additions)}"
-
-    if not parsed.required_text:
-        return next_tags
-
-    searchable = build_searchable_text_casefold(content, next_tags)
-    missing_phrases: list[str] = []
-    for phrase in parsed.required_text:
-        if phrase.casefold() in searchable:
-            continue
-        missing_phrases.append(phrase)
-
-    if not missing_phrases:
-        return next_tags
-
-    comment_tokens: list[str] = []
-    for phrase in missing_phrases:
-        if not isinstance(phrase, str):
-            raise TypeError(f"search phrase must be a string, got {type(phrase)}")
-        if "/*" in phrase or "*/" in phrase:
-            continue
-        comment_tokens.append(f"/*{phrase}*/")
-
-    if not comment_tokens:
-        return next_tags
-
-    suffix = " ".join(comment_tokens)
-    if next_tags == "":
-        return suffix
-    return f"{next_tags} {suffix}"
 
 
 def _insert_cloned_subtree_at(
@@ -230,7 +147,7 @@ def _insert_cloned_subtree_at(
 
         is_new_root = new_root_id is None and new_parent == dest_parent
         if is_new_root and should_force_root_match:
-            tags = _ensure_tags_match_search_query(
+            tags = ensure_tags_match_search_query(
                 parent_id=dest_parent,
                 content=content,
                 tags=tags,
@@ -298,7 +215,7 @@ class CmdPasteSibling(QueryCommand):
                     raise TypeError(
                         f"search_query must be a string when forcing root match, got {type(self.search_query)}"
                     )
-                tags = _ensure_tags_match_search_query(
+                tags = ensure_tags_match_search_query(
                     parent_id=target.parent_id,
                     content=content,
                     tags=tags,

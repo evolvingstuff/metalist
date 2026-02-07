@@ -104,6 +104,11 @@ class CmdMove(QueryCommand):
 
         # Record move for undo
         old_parent, old_prev, old_next = _neighbors(self.note_id)
+        record = store.get(self.note_id)
+        if not isinstance(record.tags, str):
+            raise RuntimeError(f"Note tags must be a string | note_id={self.note_id}")
+        before_tags = record.tags
+        after_tags = record.tags
 
         apply_move(self.note_id, dest_parent, prev_id, next_id)
         _assert_neighbors(self.note_id, dest_parent, prev_id, next_id)
@@ -116,9 +121,11 @@ class CmdMove(QueryCommand):
             before_parent=old_parent,
             before_prev=old_prev,
             before_next=old_next,
+            before_tags=before_tags,
             after_parent=dest_parent,
             after_prev=prev_id,
             after_next=next_id,
+            after_tags=after_tags,
             viewport=self.viewport,
         )
 

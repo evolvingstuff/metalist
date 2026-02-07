@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict
+
+from app.usecases.base import QueryCommand
+from app.services.store import store
+from app.services.sync import generate_new_uuid
+from app.usecases.move import apply_move, _neighbors, _assert_neighbors
+from app.services.undo_state import record_move
+
+
+@dataclass
+class CmdIndent(QueryCommand):
+    note_id: str
+    client_id: str
+    undo_context: str
+    viewport: Dict[str, object]
+
+    def describe(self) -> str:
+        return f"CmdIndent(note={self.note_id}, client={self.client_id})"
+
+    def execute(self) -> Dict[str, str]:
+        record = store.get(self.note_id)
+        parent_id = record.parent_id
+        siblings = store.children(parent_id)
+        if self.note_id not in siblings:
+            raise RuntimeError(
+                "Integrity failure: indent target missing from siblings list: "
+                f"note_id={self.note_id} parent_id={parent_id}"
+            )
+        index = siblings.index(self.note_id)
+        if index == 0:
+            return {"status": "noop"}
+
+        new_parent_id = siblings[index - 1]
+        destination_children = store.children(new_parent_id)
+        dest_prev = None
+        if destination_children:
+            dest_prev = destination_children[-1]
+        dest_next = None
+
+        before_parent, before_prev, before_next = _neighbors(self.note_id)
+        if not isinstance(record.tags, str):
+            raise RuntimeError(f"Note tags must be a string | note_id={self.note_id}")
+        before_tags = record.tags
+        after_tags = record.tags
+
+        apply_move(self.note_id, new_parent_id, dest_prev, dest_next)
+        _assert_neighbors(self.note_id, new_parent_id, dest_prev, dest_next)
+
+        record_move(
+            self.client_id,
+            self.undo_context,
+            self.note_id,
+            before_parent=before_parent,
+            before_prev=before_prev,
+            before_next=before_next,
+            before_tags=before_tags,
+            after_parent=new_parent_id,
+            after_prev=dest_prev,
+            after_next=dest_next,
+            after_tags=after_tags,
+            viewport=self.viewport,
+        )
+
+        update_uuid = generate_new_uuid()
+        return {"status": "moved", "updateUUID": update_uuid}

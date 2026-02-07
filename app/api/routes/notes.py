@@ -13,6 +13,8 @@ from app.usecases.create_child import CmdCreateChild
 from app.usecases.update_content import CmdUpdateContent
 from app.usecases.delete_subtree import CmdDeleteSubtree
 from app.usecases.move import CmdMove
+from app.usecases.indent import CmdIndent
+from app.usecases.outdent import CmdOutdent
 from app.usecases.collapse import CmdCollapse
 from app.usecases.expand import CmdExpand
 from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
@@ -403,6 +405,35 @@ def move_note_endpoint(note_id: str, body: dict):
         sibling_id=body["sibling_id"],
         position=body["position"],
         new_parent_id=body["new_parent_id"],
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/indent")
+def indent_note_endpoint(note_id: str, body: dict):
+    viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.indent")
+    cmd = CmdIndent(
+        note_id=note_id,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/outdent")
+def outdent_note_endpoint(request: Request, note_id: str, body: dict):
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.outdent")
+    cmd = CmdOutdent(
+        note_id=note_id,
+        search_query=body["search_query"],
+        token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
         viewport=viewport,
