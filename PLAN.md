@@ -66,11 +66,12 @@
   - `new_parent_id = null` (explicit)
 - Child drop (target has children):
   - `new_parent_id = targetNoteId`
-  - `sibling_id = lastChildId` (append) or `firstChildId` (prepend)
-  - `position = AFTER` (append) or `BEFORE` (prepend)
+  - Insert at the **front** of the child list.
+  - `sibling_id = firstChildId`
+  - `position = BEFORE`
 - Child drop (target has **no** children):
   - Requires backend change to allow `sibling_id = null` and `position = null`
-  - Semantics: insert as first child under `new_parent_id`.
+  - Semantics: insert as **first** child under `new_parent_id`.
 
 ## Backend Adjustments
 - `app/api/routes/notes.py`:
