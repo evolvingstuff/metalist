@@ -165,11 +165,18 @@ function handleMoveDragMouseMove(event) {
     if (shouldBeActive && !context.dragActive) {
         context.dragActive = true;
         setMoveDragCursorActive(true);
-        return;
     }
     if (!shouldBeActive && context.dragActive) {
         context.dragActive = false;
         setMoveDragCursorActive(false);
+    }
+
+    if (context.dragActive) {
+        event.preventDefault();
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+            selection.removeAllRanges();
+        }
     }
 }
 

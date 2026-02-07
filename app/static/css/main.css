@@ -1763,10 +1763,14 @@ body.loading * {
 
 body.note-drag-active {
     cursor: grabbing !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
 }
 
 body.note-drag-active * {
     cursor: grabbing !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
 }
 
 /* Optional overlay effect for loading state - uncommment if you want a semi-transparent overlay */
