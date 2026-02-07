@@ -383,6 +383,8 @@ export class OntologyModal extends BaseModal {
         this._abortController = null;
         this._rulesCache = null;
         this._searchSelectedIndex = -1;
+        this._suppressNextSearchResults = false;
+        this._shouldFocusSearchInput = true;
         this._dialogState = null;
         this._dialogAbortController = null;
         this._dialogSuggestionTimer = null;
@@ -392,6 +394,7 @@ export class OntologyModal extends BaseModal {
 
         this._handleSearchInput = this._handleSearchInput.bind(this);
         this._handleSearchKeydown = this._handleSearchKeydown.bind(this);
+        this._handleSearchBlur = this._handleSearchBlur.bind(this);
         this._handleClick = this._handleClick.bind(this);
         this._handleMouseDownOutside = this._handleMouseDownOutside.bind(this);
         this._handleDialogInput = this._handleDialogInput.bind(this);
@@ -430,6 +433,8 @@ export class OntologyModal extends BaseModal {
         this._closeDialog(null);
         this._rulesCache = null;
         this._searchSelectedIndex = -1;
+        this._suppressNextSearchResults = false;
+        this._shouldFocusSearchInput = true;
     }
 
     focusSearchInput() {
@@ -443,6 +448,28 @@ export class OntologyModal extends BaseModal {
         }
         input.focus();
         input.select();
+    }
+
+    suppressSearchFocusOnce() {
+        this._shouldFocusSearchInput = false;
+    }
+
+    suppressSearchResultsOnce() {
+        this._suppressNextSearchResults = true;
+    }
+
+    clearSearchInput() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const input = modalElement.querySelector('#ontology-search-input');
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+        input.value = '';
+        this.updateModalState({ searchQuery: '' });
+        this.renderTagSearchResults([]);
     }
 
     showModalElement() {
@@ -544,7 +571,14 @@ export class OntologyModal extends BaseModal {
         }
         input.addEventListener('input', this._handleSearchInput);
         input.addEventListener('keydown', this._handleSearchKeydown);
-        setTimeout(() => input.focus(), 50);
+        input.addEventListener('blur', this._handleSearchBlur);
+        setTimeout(() => {
+            if (this._shouldFocusSearchInput) {
+                input.focus();
+            } else {
+                this._shouldFocusSearchInput = true;
+            }
+        }, 50);
     }
 
     hideModalElement() {
@@ -552,6 +586,10 @@ export class OntologyModal extends BaseModal {
         if (modalElement) {
             modalElement.removeEventListener('click', this._handleClick);
             modalElement.removeEventListener('mousedown', this._handleMouseDownOutside);
+            const input = modalElement.querySelector('#ontology-search-input');
+            if (input instanceof HTMLInputElement) {
+                input.removeEventListener('blur', this._handleSearchBlur);
+            }
         }
         super.hideModalElement();
     }
@@ -659,6 +697,7 @@ export class OntologyModal extends BaseModal {
         if (typeof query !== 'string') {
             throw new Error('Ontology search query must be a string');
         }
+        this._suppressNextSearchResults = false;
         this.updateModalState({ searchQuery: query });
         this.refreshTagSearch(query);
     }
@@ -747,6 +786,27 @@ export class OntologyModal extends BaseModal {
         void this.setFocusTag(trimmed);
     }
 
+    _handleSearchBlur(event) {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+        const related = event.relatedTarget;
+        if (related instanceof HTMLElement) {
+            const modalElement = document.getElementById(this.modalElementId);
+            const results = modalElement ? modalElement.querySelector('#ontology-search-results') : null;
+            if (results instanceof HTMLElement && results.contains(related)) {
+                return;
+            }
+        }
+        this._suppressNextSearchResults = true;
+        if (this._abortController) {
+            this._abortController.abort();
+            this._abortController = null;
+        }
+        this.renderTagSearchResults([]);
+    }
+
     async refreshTagSearch(query) {
         if (typeof query !== 'string') {
             throw new Error('refreshTagSearch requires query string');
@@ -806,6 +866,13 @@ export class OntologyModal extends BaseModal {
                 tagsShownCount: tags.length,
                 error: null,
             });
+
+            if (this._suppressNextSearchResults) {
+                this._suppressNextSearchResults = false;
+                this.renderTagSearchResults([]);
+                this.renderCounts({ shown: 0, total: totalCount });
+                return;
+            }
 
             this.renderTagSearchResults(tags);
             this.renderCounts({ shown: tags.length, total: totalCount });
@@ -949,8 +1016,8 @@ export class OntologyModal extends BaseModal {
             throw new Error('Dialog description must be string');
         }
         const label = config.label;
-        if (typeof label !== 'string' || label.trim() === '') {
-            throw new Error('Dialog label must be non-empty string');
+        if (typeof label !== 'string') {
+            throw new Error('Dialog label must be string');
         }
         const placeholder = config.placeholder;
         if (typeof placeholder !== 'string') {
@@ -965,8 +1032,16 @@ export class OntologyModal extends BaseModal {
             throw new Error('Dialog initialValue must be string');
         }
         const mode = config.mode;
-        if (mode !== 'single-tag' && mode !== 'incoming' && mode !== 'rule') {
+        if (mode !== 'single-tag' && mode !== 'incoming' && mode !== 'rule' && mode !== 'confirm') {
             throw new Error(`Unknown dialog mode: ${mode}`);
+        }
+        const showInput = config.showInput;
+        if (typeof showInput !== 'boolean') {
+            throw new Error('Dialog showInput must be boolean');
+        }
+        const allowSuggestions = config.allowSuggestions;
+        if (typeof allowSuggestions !== 'boolean') {
+            throw new Error('Dialog allowSuggestions must be boolean');
         }
         const helpText = config.helpText;
         if (!Array.isArray(helpText)) {
@@ -1007,6 +1082,8 @@ export class OntologyModal extends BaseModal {
                 initialValue,
                 mode,
                 helpText,
+                showInput,
+                allowSuggestions,
                 focusTag,
                 resolve,
                 suggestOnEmpty,
@@ -1016,6 +1093,41 @@ export class OntologyModal extends BaseModal {
         });
     }
 
+    async _openConfirmDialog(config) {
+        if (!config || typeof config !== 'object') {
+            throw new Error('openConfirmDialog requires config object');
+        }
+        const title = config.title;
+        const description = config.description;
+        const confirmLabel = config.confirmLabel;
+        if (typeof title !== 'string' || title.trim() === '') {
+            throw new Error('Confirm title must be non-empty string');
+        }
+        if (typeof description !== 'string') {
+            throw new Error('Confirm description must be string');
+        }
+        if (typeof confirmLabel !== 'string' || confirmLabel.trim() === '') {
+            throw new Error('Confirm label must be non-empty string');
+        }
+
+        const result = await this._openDialog({
+            title,
+            description,
+            label: '',
+            placeholder: '',
+            submitLabel: confirmLabel,
+            initialValue: '',
+            mode: 'confirm',
+            helpText: [],
+            focusTag: null,
+            suggestOnEmpty: false,
+            autoSubmitOnSuggestion: false,
+            showInput: false,
+            allowSuggestions: false,
+        });
+        return result === true;
+    }
+
     _renderDialog() {
         const state = this._dialogState;
         if (!state) {
@@ -1023,6 +1135,10 @@ export class OntologyModal extends BaseModal {
         }
 
         const elements = this._getDialogElements();
+        const topOffset = Math.max(32, Math.min(140, Math.round(window.innerHeight * 0.12)));
+        elements.overlay.style.paddingTop = `${topOffset}px`;
+        elements.overlay.style.paddingBottom = '32px';
+        elements.dialog.style.maxHeight = `calc(100vh - ${topOffset + 64}px)`;
         elements.overlay.classList.add('is-visible');
         elements.overlay.setAttribute('aria-hidden', 'false');
 
@@ -1040,7 +1156,24 @@ export class OntologyModal extends BaseModal {
         elements.input.value = state.initialValue;
         elements.submitButton.textContent = state.submitLabel;
 
-        if (state.helpText.length === 0) {
+        if (!state.showInput) {
+            elements.label.style.display = 'none';
+            elements.input.style.display = 'none';
+            elements.help.style.display = 'none';
+            elements.suggestions.classList.add('is-hidden');
+            elements.suggestions.style.display = 'none';
+        } else {
+            elements.label.style.display = '';
+            elements.input.style.display = '';
+            elements.suggestions.style.display = '';
+        }
+
+        if (!state.allowSuggestions) {
+            elements.suggestions.classList.add('is-hidden');
+            elements.suggestions.style.display = 'none';
+        }
+
+        if (!state.showInput || state.helpText.length === 0) {
             elements.help.innerHTML = '';
             elements.help.style.display = 'none';
         } else {
@@ -1055,12 +1188,16 @@ export class OntologyModal extends BaseModal {
         this._attachDialogListeners(elements);
 
         setTimeout(() => {
-            elements.input.focus();
-            const length = elements.input.value.length;
-            if (typeof elements.input.setSelectionRange === 'function') {
-                elements.input.setSelectionRange(length, length);
+            if (state.showInput) {
+                elements.input.focus();
+                const length = elements.input.value.length;
+                if (typeof elements.input.setSelectionRange === 'function') {
+                    elements.input.setSelectionRange(length, length);
+                }
+                this._updateDialogSuggestions();
+            } else {
+                elements.submitButton.focus();
             }
-            this._updateDialogSuggestions();
         }, 30);
     }
 
@@ -1150,7 +1287,7 @@ export class OntologyModal extends BaseModal {
     _hideDialogSuggestions() {
         const elements = this._getDialogElements();
         elements.suggestions.innerHTML = '';
-        elements.suggestions.style.display = 'none';
+        elements.suggestions.classList.add('is-hidden');
         this._dialogSelectedIndex = -1;
         this._dialogSuggestionContext = null;
     }
@@ -1191,13 +1328,17 @@ export class OntologyModal extends BaseModal {
                 );
             })
             .join('');
-        elements.suggestions.style.display = 'flex';
+        elements.suggestions.classList.remove('is-hidden');
         this._dialogSelectedIndex = 0;
         this._updateDialogSuggestionSelection(elements.suggestions);
 
         elements.suggestions.querySelectorAll('.ontology-dialog-suggestion').forEach((button) => {
             button.addEventListener('mousedown', (event) => {
                 event.preventDefault();
+                event.stopPropagation();
+                if (typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                }
                 const tag = button.dataset.tag;
                 if (typeof tag !== 'string' || tag.trim() === '') {
                     throw new Error('Ontology dialog suggestion missing tag');
@@ -1207,6 +1348,10 @@ export class OntologyModal extends BaseModal {
                 if (state && state.autoSubmitOnSuggestion) {
                     this._submitDialog();
                 }
+            });
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
             });
         });
     }
@@ -1285,6 +1430,10 @@ export class OntologyModal extends BaseModal {
         if (!(target instanceof HTMLInputElement)) {
             throw new Error('Expected dialog input element');
         }
+        const state = this._dialogState;
+        if (!state || !state.showInput) {
+            return;
+        }
         this._clearDialogError();
         this._updateDialogSuggestions();
     }
@@ -1294,10 +1443,30 @@ export class OntologyModal extends BaseModal {
         if (!state) {
             return;
         }
+        if (state.mode === 'confirm') {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                }
+                this._submitDialog();
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                }
+                this._closeDialog(null);
+            }
+            return;
+        }
         const elements = this._getDialogElements();
         const container = elements.suggestions;
         const items = Array.from(container.querySelectorAll('.ontology-dialog-suggestion'));
-        const hasSuggestions = container.style.display !== 'none' && items.length > 0;
+        const hasSuggestions = !container.classList.contains('is-hidden') && items.length > 0;
 
         if (event.key === 'ArrowDown' && hasSuggestions) {
             event.preventDefault();
@@ -1359,9 +1528,18 @@ export class OntologyModal extends BaseModal {
         if (!(overlay instanceof HTMLElement)) {
             return;
         }
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+        if (target.closest('.ontology-dialog')) {
+            event.stopPropagation();
+            return;
+        }
         const dialog = overlay.querySelector('.ontology-dialog');
-        if (dialog && !dialog.contains(event.target)) {
+        if (dialog) {
             event.preventDefault();
+            event.stopPropagation();
             this._closeDialog(null);
         }
     }
@@ -1381,6 +1559,9 @@ export class OntologyModal extends BaseModal {
     _updateDialogSuggestions() {
         const state = this._dialogState;
         if (!state) {
+            return;
+        }
+        if (!state.showInput || !state.allowSuggestions) {
             return;
         }
         const elements = this._getDialogElements();
@@ -1509,6 +1690,10 @@ export class OntologyModal extends BaseModal {
         if (!state) {
             return;
         }
+        if (state.mode === 'confirm') {
+            this._closeDialog(true);
+            return;
+        }
         const elements = this._getDialogElements();
         const input = elements.input;
         const rawValue = input.value;
@@ -1611,6 +1796,15 @@ export class OntologyModal extends BaseModal {
         const url = `${ONTOLOGY_BASE}/focus?tag=${encodeURIComponent(normalized)}`;
 
         await (async () => {
+            this._suppressNextSearchResults = true;
+            this.clearSearchInput();
+            const modalElement = document.getElementById(this.modalElementId);
+            if (modalElement) {
+                const input = modalElement.querySelector('#ontology-search-input');
+                if (input instanceof HTMLInputElement && document.activeElement === input) {
+                    input.blur();
+                }
+            }
             const response = await fetch(url, {
                 method: 'GET',
                 headers: buildAuthHeaders(),
@@ -1811,11 +2005,11 @@ export class OntologyModal extends BaseModal {
             const ruleIdsAttr = ruleIds.join(',');
             const canEdit = ruleIds.length === 1;
             return `
-                <div class="ontology-row">
+                    <div class="ontology-row">
                     <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
                     <div class="ontology-row-actions">
-                        ${canEdit ? `<button class="ontology-edit" data-action="edit" data-rule-id="${ruleIds[0]}" aria-label="Edit">✎</button>` : ''}
-                        <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleIdsAttr}" aria-label="Remove">−</button>
+                        ${canEdit ? `<button class="ontology-edit" data-action="edit" data-rule-id="${ruleIds[0]}" data-related-tag="${escapeHtml(tag)}" data-relation-kind="implies" aria-label="Edit">✎</button>` : ''}
+                        <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleIdsAttr}" data-related-tag="${escapeHtml(tag)}" data-relation-kind="implies" aria-label="Remove">−</button>
                     </div>
                 </div>
             `;
@@ -1905,11 +2099,11 @@ export class OntologyModal extends BaseModal {
                 const ruleIdsAttr = maybeRuleIds.join(',');
                 const canEdit = maybeRuleIds.length === 1;
                 rows.push(`
-                    <div class="ontology-row">
+                        <div class="ontology-row">
                         <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
                         <div class="ontology-row-actions">
-                            ${canEdit ? `<button class="ontology-edit" data-action="edit" data-rule-id="${maybeRuleIds[0]}" aria-label="Edit">✎</button>` : ''}
-                            <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleIdsAttr}" aria-label="Remove">−</button>
+                            ${canEdit ? `<button class="ontology-edit" data-action="edit" data-rule-id="${maybeRuleIds[0]}" data-related-tag="${escapeHtml(tag)}" data-relation-kind="synonym" aria-label="Edit">✎</button>` : ''}
+                            <button class="ontology-remove" data-action="remove" data-rule-ids="${ruleIdsAttr}" data-related-tag="${escapeHtml(tag)}" data-relation-kind="synonym" aria-label="Remove">−</button>
                         </div>
                     </div>
                 `);
@@ -1991,49 +2185,66 @@ export class OntologyModal extends BaseModal {
         return map;
     }
 
-    async _editRule(ruleId) {
+    async _editTagRelation(ruleId, relatedTag, relationKind) {
         if (!Number.isInteger(ruleId) || ruleId < 0) {
-            throw new Error('editRule requires non-negative integer ruleId');
+            throw new Error('editTagRelation requires non-negative integer ruleId');
+        }
+        if (typeof relatedTag !== 'string' || relatedTag.trim() === '') {
+            throw new Error('editTagRelation requires relatedTag');
+        }
+        if (relationKind !== 'synonym' && relationKind !== 'implies') {
+            throw new Error('editTagRelation requires relationKind');
         }
 
-        const rules = await this._loadRulesCache();
-        const existing = rules.get(ruleId);
-        if (typeof existing !== 'string') {
-            throw new Error(`Unknown rule id: ${ruleId}`);
+        const state = this.getModalState();
+        const focusTag = state.focusTag;
+        if (typeof focusTag !== 'string' || focusTag.trim() === '') {
+            throw new Error('Focus tag missing');
         }
+
+        const dialogTitle = relationKind === 'synonym'
+            ? `Edit synonym for '${focusTag}'`
+            : `Edit implied tag for '${focusTag}'`;
+        const dialogDescription = relationKind === 'synonym'
+            ? `Update the synonym tag for '${focusTag}'.`
+            : `Update the tag implied by '${focusTag}'.`;
+        const dialogLabel = relationKind === 'synonym' ? 'Synonym tag' : 'Implied tag';
 
         const next = await this._openDialog({
-            title: 'Edit rule',
-            description: 'Update the full rule text.',
-            label: 'Rule text',
-            placeholder: 'tag => other-tag',
-            submitLabel: 'Save rule',
-            initialValue: existing,
-            mode: 'rule',
-            helpText: [
-                'Use => for implications, = for synonyms.',
-                'Quoted text and /regex/ are allowed on the left side only.',
-            ],
+            title: dialogTitle,
+            description: dialogDescription,
+            label: dialogLabel,
+            placeholder: relatedTag,
+            submitLabel: 'Save',
+            initialValue: relatedTag,
+            mode: 'single-tag',
+            helpText: [],
             focusTag: null,
-            suggestOnEmpty: true,
+            allowSuggestions: false,
+            suggestOnEmpty: false,
             autoSubmitOnSuggestion: false,
+            showInput: true,
         });
         if (next === null) {
             return;
         }
         if (typeof next !== 'string' || next.trim() === '') {
-            throw new Error('Dialog returned invalid rule text');
+            throw new Error('Dialog returned invalid tag');
         }
-        const normalizedExisting = existing.trim();
-        if (next === normalizedExisting) {
+        const trimmedNext = next.trim();
+        if (trimmedNext === relatedTag) {
             return;
         }
+
+        const updatedText = relationKind === 'synonym'
+            ? `${focusTag} = ${trimmedNext}`
+            : `${focusTag} => ${trimmedNext}`;
 
         const payload = await this.runBlockingCommand('ontologyModal.editRule', async () => {
             return fetchJson(`${ONTOLOGY_BASE}/rules/${ruleId}`, {
                 method: 'PUT',
                 headers: buildAuthHeaders(),
-                body: JSON.stringify({ text: next }),
+                body: JSON.stringify({ text: updatedText }),
             });
         });
         if (payload === null) {
@@ -2087,14 +2298,12 @@ export class OntologyModal extends BaseModal {
             submitLabel: 'Save rule',
             initialValue: editValue,
             mode: 'incoming',
-            helpText: [
-                'Tags can be combined with spaces for AND.',
-                'Quoted text and /regex/ are allowed.',
-                'Tag suggestions appear only for tag tokens.',
-            ],
+            helpText: [],
             focusTag: rhs,
+            allowSuggestions: true,
             suggestOnEmpty: true,
             autoSubmitOnSuggestion: false,
+            showInput: true,
         });
         if (updatedText === null) {
             return;
@@ -2136,10 +2345,12 @@ export class OntologyModal extends BaseModal {
             submitLabel: 'Rename',
             initialValue: focusTag,
             mode: 'single-tag',
-            helpText: ['Single tag token only.'],
+            helpText: [],
             focusTag: null,
-            suggestOnEmpty: true,
-            autoSubmitOnSuggestion: true,
+            allowSuggestions: false,
+            suggestOnEmpty: false,
+            autoSubmitOnSuggestion: false,
+            showInput: true,
         });
         if (next === null) {
             return;
@@ -2213,12 +2424,40 @@ export class OntologyModal extends BaseModal {
             if (!(rawTarget instanceof HTMLElement)) {
                 return;
             }
+            const modalElement = document.getElementById(this.modalElementId);
+            let dialogIsOpen = false;
+            if (modalElement) {
+                const overlay = modalElement.querySelector('#ontology-dialog-overlay');
+                if (overlay instanceof HTMLElement && overlay.classList.contains('is-visible')) {
+                    const dialog = overlay.querySelector('.ontology-dialog');
+                    if (dialog instanceof HTMLElement) {
+                        dialogIsOpen = true;
+                        if (dialog.contains(rawTarget)) {
+                            const dialogActionTarget = rawTarget.closest('[data-action]');
+                            if (dialogActionTarget instanceof HTMLElement) {
+                                const dialogAction = dialogActionTarget.dataset.action;
+                                if (typeof dialogAction === 'string' && dialogAction.startsWith('dialog-')) {
+                                    // Allow dialog actions to be handled below.
+                                } else {
+                                    return;
+                                }
+                            } else {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
             const target = rawTarget.closest('[data-action]');
             if (!(target instanceof HTMLElement)) {
                 return;
             }
             const action = target.dataset.action;
             if (typeof action !== 'string') {
+                return;
+            }
+
+            if (dialogIsOpen && !action.startsWith('dialog-')) {
                 return;
             }
 
@@ -2265,10 +2504,12 @@ export class OntologyModal extends BaseModal {
                     submitLabel: 'Add tag',
                     initialValue: '',
                     mode: 'single-tag',
-                    helpText: ['Single tag token only.'],
+                    helpText: [],
                     focusTag: null,
-                    suggestOnEmpty: true,
-                    autoSubmitOnSuggestion: true,
+                    allowSuggestions: false,
+                    suggestOnEmpty: false,
+                    autoSubmitOnSuggestion: false,
+                    showInput: true,
                 });
                 if (newTag === null) {
                     return;
@@ -2310,19 +2551,39 @@ export class OntologyModal extends BaseModal {
                 }
             }
 
-            const confirmed = window.confirm(
-                ruleIds.length === 1
-                    ? `Delete rule ${ruleIds[0]}? This cannot be undone.`
-                    : `Delete ${ruleIds.length} rules (${ruleIds.join(', ')})? This cannot be undone.`
-            );
+            const state = this.getModalState();
+            const focusTag = state.focusTag;
+            const relatedTag = target.dataset.relatedTag;
+            const relationKind = target.dataset.relationKind;
+
+            let title = 'Delete relationship';
+            let description = 'Delete this relationship? This cannot be undone.';
+            let confirmLabel = 'Delete';
+            if (ruleIds.length > 1) {
+                title = 'Delete relationships';
+                description = `Delete ${ruleIds.length} relationships? This cannot be undone.`;
+                confirmLabel = `Delete ${ruleIds.length}`;
+            } else if (typeof focusTag === 'string' && focusTag.trim() !== '' && typeof relatedTag === 'string' && relatedTag.trim() !== '') {
+                if (relationKind === 'synonym') {
+                    description = `Remove synonym '${relatedTag}' from '${focusTag}'? This cannot be undone.`;
+                } else if (relationKind === 'implies') {
+                    description = `Remove relationship between '${focusTag}' and '${relatedTag}'? This cannot be undone.`;
+                }
+            }
+
+            const confirmed = await this._openConfirmDialog({
+                title,
+                description,
+                confirmLabel,
+            });
             if (!confirmed) {
                 return;
             }
 
             await this._deleteRules(ruleIds);
-            const focusTag = this.getModalState().focusTag;
-            if (typeof focusTag === 'string' && focusTag.trim() !== '') {
-                await this.setFocusTag(focusTag);
+            const focusTagAfter = this.getModalState().focusTag;
+            if (typeof focusTagAfter === 'string' && focusTagAfter.trim() !== '') {
+                await this.setFocusTag(focusTagAfter);
             }
                 return;
             }
@@ -2336,8 +2597,16 @@ export class OntologyModal extends BaseModal {
             if (!Number.isInteger(ruleId) || ruleId < 0) {
                 throw new Error(`invalid rule id: ${rawRuleId}`);
             }
+            const relatedTag = target.dataset.relatedTag;
+            if (typeof relatedTag !== 'string' || relatedTag.trim() === '') {
+                throw new Error('edit action missing related tag');
+            }
+            const relationKind = target.dataset.relationKind;
+            if (relationKind !== 'synonym' && relationKind !== 'implies') {
+                throw new Error('edit action missing relation kind');
+            }
 
-            await this._editRule(ruleId);
+            await this._editTagRelation(ruleId, relatedTag, relationKind);
             const focusTag = this.getModalState().focusTag;
             if (typeof focusTag === 'string' && focusTag.trim() !== '') {
                 await this.setFocusTag(focusTag);
@@ -2375,14 +2644,12 @@ export class OntologyModal extends BaseModal {
                     submitLabel: 'Add rule',
                     initialValue: '',
                     mode: 'incoming',
-                    helpText: [
-                        'Combine tags with spaces for AND.',
-                        'Quoted text and /regex/ are allowed.',
-                        'Tag suggestions appear only for tag tokens.',
-                    ],
+                    helpText: [],
                     focusTag: focusTag,
+                    allowSuggestions: true,
                     suggestOnEmpty: true,
                     autoSubmitOnSuggestion: false,
+                    showInput: true,
                 });
                 if (ruleText === null) {
                     return;
@@ -2400,10 +2667,12 @@ export class OntologyModal extends BaseModal {
                     submitLabel: 'Add implication',
                     initialValue: '',
                     mode: 'single-tag',
-                    helpText: ['Single tag token only.'],
+                    helpText: [],
                     focusTag: null,
+                    allowSuggestions: true,
                     suggestOnEmpty: true,
-                    autoSubmitOnSuggestion: true,
+                    autoSubmitOnSuggestion: false,
+                    showInput: true,
                 });
                 if (newTag === null) {
                     return;
@@ -2421,10 +2690,12 @@ export class OntologyModal extends BaseModal {
                     submitLabel: 'Add synonym',
                     initialValue: '',
                     mode: 'single-tag',
-                    helpText: ['Single tag token only.'],
+                    helpText: [],
                     focusTag: null,
+                    allowSuggestions: true,
                     suggestOnEmpty: true,
-                    autoSubmitOnSuggestion: true,
+                    autoSubmitOnSuggestion: false,
+                    showInput: true,
                 });
                 if (newTag === null) {
                     return;

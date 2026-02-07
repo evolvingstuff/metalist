@@ -112,6 +112,8 @@ async function openOntologyModalWithFocus(tag) {
         return;
     }
 
+    ontologyModal.suppressSearchFocusOnce();
+    ontologyModal.suppressSearchResultsOnce();
     ontologyModal.open();
     await ontologyModal.setFocusTag(tag);
 }
