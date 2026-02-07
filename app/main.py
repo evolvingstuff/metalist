@@ -16,6 +16,7 @@ from .services.content_cache import populate_cache_from_db
 from .services.auth import AuthService
 from .services.note_store import store as note_store
 from app.services import auth_cache_state
+from app.services.integrity import assert_linked_list_integrity
 from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.security.encryption import set_encryption_required
@@ -103,6 +104,15 @@ with begin_writer() as connection:
         insert_default_settings(connection)
     bootstrap_ontology_rules_store(connection=connection)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
+
+integrity_start = time.perf_counter()
+integrity_session = SafeSession()
+try:
+    assert_linked_list_integrity(integrity_session, "startup")
+    integrity_session.commit()
+finally:
+    integrity_session.close()
+_log_startup_step("linked list integrity check", time.perf_counter() - integrity_start)
 
 startup_has_password = False
 encryption_enabled = False

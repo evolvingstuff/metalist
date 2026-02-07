@@ -80,6 +80,9 @@
   - Allow `sibling_id is None` iff `new_parent_id` is provided and `position is None`.
   - Treat this as “insert at head of new_parent_id child list”.
   - Preserve fail-fast behavior for other invalid combinations.
+- Startup integrity gate:
+  - Run `assert_linked_list_integrity(..., \"startup\")` before enabling the read guard.
+  - Crash the server on any integrity failure (no soft recovery).
 
 ## Frontend Changes
 - `app/templates/notes_list.html`:
@@ -121,6 +124,13 @@
 8. Tighten API client validation to require explicit `new_parent_id` in move calls.
 9. After code is stable, update docs.
 
+## Failure Hypotheses (What We Tried, Why It Failed)
+- **Handle visibility:** Initial hover styling used CSS `:has(...)`, which is not supported in some browsers, so the drag handle never appeared and drag never started.
+- **Targeting logic:** We relied on `elementFromPoint` + basic zone logic. This still allowed self/no-op targets and failed to cleanly detect “between notes” gaps, so we emitted indicators for invalid positions (e.g., A between A/B).
+- **No-op moves not filtered early enough:** We still allowed requests that produce the same ordering; these should be blocked client-side to avoid server work and invariants risk.
+- **Potential persisted link corruption (not guaranteed):** The move endpoint updates DB links *before* the in-memory store mutates. There is no global linked-list integrity check on startup; those checks only run per-transaction when `DEV_ENFORCE_INTEGRITY_CHECKS` is enabled. So if invalid/no-op moves were sent, DB links could have been left inconsistent and would rehydrate on restart. This is a plausible explanation for Cmd+Up failing immediately after restart, but it needs confirmation.
+- **Empty-child move path:** We added support for `sibling_id = null` + `position = null`, but without a rock-solid target computation, that path was frequently hit by accident.
+
 ## Testing / Validation
 - Manual tests:
   - Drag root note before/after another root.
@@ -132,5 +142,4 @@
 - If time permits, add Cypress E2E for a basic drag/drop reorder.
 
 ## Open Decisions to Confirm
-- Child drop placement: append to end vs insert at top (plan assumes append).
 - Whether to show a drag ghost or rely on cursor + indicators only.
