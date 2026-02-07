@@ -3,6 +3,8 @@ import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 
 const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
+const DIALOG_SUGGESTION_LIMIT = 8;
+const DIALOG_SUGGESTION_DEBOUNCE_MS = 50;
 
 function escapeHtml(value) {
     if (typeof value !== 'string') {
@@ -59,6 +61,126 @@ function isValidTagToken(token) {
         }
     }
     return true;
+}
+
+function isSuggestionSeparator(ch) {
+    if (typeof ch !== 'string' || ch.length !== 1) {
+        throw new Error('isSuggestionSeparator requires single character');
+    }
+    if (/\s/.test(ch)) {
+        return true;
+    }
+    if (ch === '(' || ch === ')' || ch === '=' || ch === '>') {
+        return true;
+    }
+    return false;
+}
+
+function isValidTagPrefix(prefix) {
+    if (typeof prefix !== 'string') {
+        throw new Error('isValidTagPrefix requires string');
+    }
+    if (prefix === '') {
+        return true;
+    }
+    return isValidTagToken(prefix);
+}
+
+function parseDialogSuggestionContext(rawValue, cursorIndex) {
+    if (typeof rawValue !== 'string') {
+        throw new Error('parseDialogSuggestionContext requires rawValue string');
+    }
+    if (!Number.isInteger(cursorIndex)) {
+        throw new Error('parseDialogSuggestionContext requires cursorIndex integer');
+    }
+    if (cursorIndex < 0 || cursorIndex > rawValue.length) {
+        throw new Error('parseDialogSuggestionContext cursorIndex out of bounds');
+    }
+
+    let quoteChar = null;
+    let inRegex = false;
+    let prevSeparator = true;
+    let index = 0;
+    while (index < cursorIndex) {
+        const ch = rawValue[index];
+
+        if (quoteChar !== null) {
+            if (ch === '\\' && index + 1 < cursorIndex) {
+                index += 2;
+                continue;
+            }
+            if (ch === quoteChar) {
+                quoteChar = null;
+            }
+            index += 1;
+            prevSeparator = false;
+            continue;
+        }
+
+        if (inRegex) {
+            if (ch === '\\' && index + 1 < cursorIndex) {
+                index += 2;
+                continue;
+            }
+            if (ch === '/') {
+                inRegex = false;
+            }
+            index += 1;
+            prevSeparator = false;
+            continue;
+        }
+
+        if (ch === '"' || ch === "'") {
+            quoteChar = ch;
+            index += 1;
+            prevSeparator = false;
+            continue;
+        }
+        if (ch === '/' && prevSeparator) {
+            inRegex = true;
+            index += 1;
+            prevSeparator = false;
+            continue;
+        }
+        if (isSuggestionSeparator(ch)) {
+            prevSeparator = true;
+            index += 1;
+            continue;
+        }
+
+        prevSeparator = false;
+        index += 1;
+    }
+
+    if (quoteChar !== null || inRegex) {
+        return null;
+    }
+
+    let start = cursorIndex;
+    while (start > 0) {
+        const ch = rawValue[start - 1];
+        if (isSuggestionSeparator(ch)) {
+            break;
+        }
+        start -= 1;
+    }
+
+    const token = rawValue.slice(start, cursorIndex);
+    if (token === '') {
+        return {
+            partialPrefix: '',
+            replaceStart: cursorIndex,
+            replaceEnd: cursorIndex,
+        };
+    }
+    if (!isValidTagPrefix(token)) {
+        return null;
+    }
+    return {
+        partialPrefix: token,
+        replaceStart: start,
+        replaceEnd: cursorIndex,
+    };
 }
 
 function parseIncomingAtoms(raw) {
@@ -261,11 +383,21 @@ export class OntologyModal extends BaseModal {
         this._abortController = null;
         this._rulesCache = null;
         this._searchSelectedIndex = -1;
+        this._dialogState = null;
+        this._dialogAbortController = null;
+        this._dialogSuggestionTimer = null;
+        this._dialogRequestSerial = 0;
+        this._dialogSelectedIndex = -1;
+        this._dialogSuggestionContext = null;
 
         this._handleSearchInput = this._handleSearchInput.bind(this);
         this._handleSearchKeydown = this._handleSearchKeydown.bind(this);
         this._handleClick = this._handleClick.bind(this);
         this._handleMouseDownOutside = this._handleMouseDownOutside.bind(this);
+        this._handleDialogInput = this._handleDialogInput.bind(this);
+        this._handleDialogKeydown = this._handleDialogKeydown.bind(this);
+        this._handleDialogOverlayClick = this._handleDialogOverlayClick.bind(this);
+        this._handleDialogOverlayKeydown = this._handleDialogOverlayKeydown.bind(this);
     }
 
     getInitialModalState() {
@@ -295,6 +427,7 @@ export class OntologyModal extends BaseModal {
             this._abortController = null;
         }
 
+        this._closeDialog(null);
         this._rulesCache = null;
         this._searchSelectedIndex = -1;
     }
@@ -372,6 +505,31 @@ export class OntologyModal extends BaseModal {
                 <div class="ontology-modal-footer">
                     <div id="ontology-counts">Showing 0 of 0 tags</div>
                     <div class="ontology-hints">esc to cancel • enter to focus</div>
+                </div>
+
+                <div class="ontology-dialog-overlay" id="ontology-dialog-overlay">
+                    <div class="ontology-dialog" role="dialog" aria-modal="true" aria-labelledby="ontology-dialog-title">
+                        <div class="ontology-dialog-header">
+                            <h3 id="ontology-dialog-title"></h3>
+                            <button class="ontology-dialog-close" data-action="dialog-cancel" aria-label="Close">×</button>
+                        </div>
+                        <div class="ontology-dialog-body">
+                            <div class="ontology-dialog-description" id="ontology-dialog-description"></div>
+                            <label class="ontology-dialog-label" id="ontology-dialog-label" for="ontology-dialog-input"></label>
+                            <input
+                                type="text"
+                                id="ontology-dialog-input"
+                                autocomplete="off"
+                            />
+                            <div class="ontology-dialog-help" id="ontology-dialog-help"></div>
+                            <div class="ontology-dialog-suggestions" id="ontology-dialog-suggestions"></div>
+                            <div class="ontology-dialog-error" id="ontology-dialog-error" style="display:none"></div>
+                        </div>
+                        <div class="ontology-dialog-footer">
+                            <button class="ontology-dialog-secondary" data-action="dialog-cancel">Cancel</button>
+                            <button class="ontology-dialog-primary" data-action="dialog-submit">Save</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -713,6 +871,711 @@ export class OntologyModal extends BaseModal {
         container.style.display = 'flex';
         this._searchSelectedIndex = 0;
         this._updateSearchSelection(container);
+    }
+
+    _getDialogElements() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            throw new Error('ontology modal element missing');
+        }
+        const overlay = modalElement.querySelector('#ontology-dialog-overlay');
+        if (!(overlay instanceof HTMLElement)) {
+            throw new Error('ontology dialog overlay missing');
+        }
+        const dialog = overlay.querySelector('.ontology-dialog');
+        if (!(dialog instanceof HTMLElement)) {
+            throw new Error('ontology dialog panel missing');
+        }
+        const title = overlay.querySelector('#ontology-dialog-title');
+        if (!(title instanceof HTMLElement)) {
+            throw new Error('ontology dialog title missing');
+        }
+        const description = overlay.querySelector('#ontology-dialog-description');
+        if (!(description instanceof HTMLElement)) {
+            throw new Error('ontology dialog description missing');
+        }
+        const label = overlay.querySelector('#ontology-dialog-label');
+        if (!(label instanceof HTMLElement)) {
+            throw new Error('ontology dialog label missing');
+        }
+        const input = overlay.querySelector('#ontology-dialog-input');
+        if (!(input instanceof HTMLInputElement)) {
+            throw new Error('ontology dialog input missing');
+        }
+        const help = overlay.querySelector('#ontology-dialog-help');
+        if (!(help instanceof HTMLElement)) {
+            throw new Error('ontology dialog help missing');
+        }
+        const suggestions = overlay.querySelector('#ontology-dialog-suggestions');
+        if (!(suggestions instanceof HTMLElement)) {
+            throw new Error('ontology dialog suggestions missing');
+        }
+        const error = overlay.querySelector('#ontology-dialog-error');
+        if (!(error instanceof HTMLElement)) {
+            throw new Error('ontology dialog error missing');
+        }
+        const submitButton = overlay.querySelector('.ontology-dialog-primary');
+        if (!(submitButton instanceof HTMLElement)) {
+            throw new Error('ontology dialog submit button missing');
+        }
+        return {
+            overlay,
+            dialog,
+            title,
+            description,
+            label,
+            input,
+            help,
+            suggestions,
+            error,
+            submitButton,
+        };
+    }
+
+    _openDialog(config) {
+        if (!config || typeof config !== 'object') {
+            throw new Error('openDialog requires config object');
+        }
+        if (this._dialogState !== null) {
+            throw new Error('Ontology dialog already open');
+        }
+
+        const title = config.title;
+        if (typeof title !== 'string' || title.trim() === '') {
+            throw new Error('Dialog title must be non-empty string');
+        }
+        const description = config.description;
+        if (typeof description !== 'string') {
+            throw new Error('Dialog description must be string');
+        }
+        const label = config.label;
+        if (typeof label !== 'string' || label.trim() === '') {
+            throw new Error('Dialog label must be non-empty string');
+        }
+        const placeholder = config.placeholder;
+        if (typeof placeholder !== 'string') {
+            throw new Error('Dialog placeholder must be string');
+        }
+        const submitLabel = config.submitLabel;
+        if (typeof submitLabel !== 'string' || submitLabel.trim() === '') {
+            throw new Error('Dialog submitLabel must be non-empty string');
+        }
+        const initialValue = config.initialValue;
+        if (typeof initialValue !== 'string') {
+            throw new Error('Dialog initialValue must be string');
+        }
+        const mode = config.mode;
+        if (mode !== 'single-tag' && mode !== 'incoming' && mode !== 'rule') {
+            throw new Error(`Unknown dialog mode: ${mode}`);
+        }
+        const helpText = config.helpText;
+        if (!Array.isArray(helpText)) {
+            throw new Error('Dialog helpText must be array');
+        }
+        for (const line of helpText) {
+            if (typeof line !== 'string') {
+                throw new Error('Dialog helpText entries must be strings');
+            }
+        }
+        const suggestOnEmpty = config.suggestOnEmpty;
+        if (typeof suggestOnEmpty !== 'boolean') {
+            throw new Error('Dialog suggestOnEmpty must be boolean');
+        }
+        const autoSubmitOnSuggestion = config.autoSubmitOnSuggestion;
+        if (typeof autoSubmitOnSuggestion !== 'boolean') {
+            throw new Error('Dialog autoSubmitOnSuggestion must be boolean');
+        }
+
+        const focusTag = config.focusTag;
+        if (mode === 'incoming') {
+            if (typeof focusTag !== 'string' || focusTag.trim() === '') {
+                throw new Error('Dialog focusTag must be non-empty string for incoming rules');
+            }
+        } else {
+            if (focusTag !== null) {
+                throw new Error('Dialog focusTag must be null for non-incoming rules');
+            }
+        }
+
+        return new Promise((resolve) => {
+            this._dialogState = {
+                title,
+                description,
+                label,
+                placeholder,
+                submitLabel,
+                initialValue,
+                mode,
+                helpText,
+                focusTag,
+                resolve,
+                suggestOnEmpty,
+                autoSubmitOnSuggestion,
+            };
+            this._renderDialog();
+        });
+    }
+
+    _renderDialog() {
+        const state = this._dialogState;
+        if (!state) {
+            throw new Error('Dialog state missing');
+        }
+
+        const elements = this._getDialogElements();
+        elements.overlay.classList.add('is-visible');
+        elements.overlay.setAttribute('aria-hidden', 'false');
+
+        elements.title.textContent = state.title;
+        if (state.description.trim() === '') {
+            elements.description.textContent = '';
+            elements.description.style.display = 'none';
+        } else {
+            elements.description.textContent = state.description;
+            elements.description.style.display = 'block';
+        }
+
+        elements.label.textContent = state.label;
+        elements.input.placeholder = state.placeholder;
+        elements.input.value = state.initialValue;
+        elements.submitButton.textContent = state.submitLabel;
+
+        if (state.helpText.length === 0) {
+            elements.help.innerHTML = '';
+            elements.help.style.display = 'none';
+        } else {
+            elements.help.innerHTML = state.helpText
+                .map((line) => `<div>${escapeHtml(line)}</div>`)
+                .join('');
+            elements.help.style.display = 'block';
+        }
+
+        this._clearDialogError();
+        this._hideDialogSuggestions();
+        this._attachDialogListeners(elements);
+
+        setTimeout(() => {
+            elements.input.focus();
+            const length = elements.input.value.length;
+            if (typeof elements.input.setSelectionRange === 'function') {
+                elements.input.setSelectionRange(length, length);
+            }
+            this._updateDialogSuggestions();
+        }, 30);
+    }
+
+    _attachDialogListeners(elements) {
+        if (!elements || typeof elements !== 'object') {
+            throw new Error('attachDialogListeners requires elements');
+        }
+        this._detachDialogListeners();
+        elements.input.addEventListener('input', this._handleDialogInput);
+        elements.input.addEventListener('keydown', this._handleDialogKeydown);
+        elements.overlay.addEventListener('mousedown', this._handleDialogOverlayClick);
+        elements.overlay.addEventListener('keydown', this._handleDialogOverlayKeydown);
+    }
+
+    _detachDialogListeners() {
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!modalElement) {
+            return;
+        }
+        const overlay = modalElement.querySelector('#ontology-dialog-overlay');
+        if (!(overlay instanceof HTMLElement)) {
+            return;
+        }
+        const input = overlay.querySelector('#ontology-dialog-input');
+        if (input instanceof HTMLInputElement) {
+            input.removeEventListener('input', this._handleDialogInput);
+            input.removeEventListener('keydown', this._handleDialogKeydown);
+        }
+        overlay.removeEventListener('mousedown', this._handleDialogOverlayClick);
+        overlay.removeEventListener('keydown', this._handleDialogOverlayKeydown);
+    }
+
+    _hideDialogOverlay() {
+        const elements = this._getDialogElements();
+        elements.overlay.classList.remove('is-visible');
+        elements.overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    _closeDialog(result) {
+        const state = this._dialogState;
+        if (!state) {
+            return;
+        }
+        this._dialogState = null;
+        this._hideDialogSuggestions();
+        this._resetDialogSuggestionState();
+        this._clearDialogError();
+        this._detachDialogListeners();
+        this._hideDialogOverlay();
+
+        const resolve = state.resolve;
+        if (typeof resolve !== 'function') {
+            throw new Error('Dialog resolve missing');
+        }
+        resolve(result);
+    }
+
+    _setDialogError(message) {
+        if (typeof message !== 'string' || message.trim() === '') {
+            throw new Error('setDialogError requires non-empty string');
+        }
+        const elements = this._getDialogElements();
+        elements.error.textContent = message;
+        elements.error.style.display = 'block';
+    }
+
+    _clearDialogError() {
+        const elements = this._getDialogElements();
+        elements.error.textContent = '';
+        elements.error.style.display = 'none';
+    }
+
+    _resetDialogSuggestionState() {
+        if (this._dialogSuggestionTimer) {
+            clearTimeout(this._dialogSuggestionTimer);
+            this._dialogSuggestionTimer = null;
+        }
+        if (this._dialogAbortController) {
+            this._dialogAbortController.abort();
+            this._dialogAbortController = null;
+        }
+        this._dialogRequestSerial += 1;
+        this._dialogSelectedIndex = -1;
+        this._dialogSuggestionContext = null;
+    }
+
+    _hideDialogSuggestions() {
+        const elements = this._getDialogElements();
+        elements.suggestions.innerHTML = '';
+        elements.suggestions.style.display = 'none';
+        this._dialogSelectedIndex = -1;
+        this._dialogSuggestionContext = null;
+    }
+
+    _renderDialogSuggestions(tags) {
+        const elements = this._getDialogElements();
+        if (!Array.isArray(tags) || tags.length === 0) {
+            this._hideDialogSuggestions();
+            return;
+        }
+
+        const rows = tags.map((entry) => {
+            if (typeof entry === 'string') {
+                return { tag: entry, count: null };
+            }
+            if (!entry || typeof entry !== 'object') {
+                throw new Error('Ontology dialog suggestion entry must be string or object');
+            }
+            const tag = entry.tag;
+            const count = entry.count;
+            if (typeof tag !== 'string' || tag.trim() === '') {
+                throw new Error('Ontology dialog suggestion missing tag');
+            }
+            if (!Number.isInteger(count) || count < 0) {
+                throw new Error('Ontology dialog suggestion missing count');
+            }
+            return { tag, count };
+        });
+
+        elements.suggestions.innerHTML = rows
+            .map((row) => {
+                const countBadge = row.count === null ? '' : `<span class="ontology-dialog-suggestion-count">${row.count}</span>`;
+                return (
+                    `<button type="button" class="ontology-dialog-suggestion" data-tag="${escapeHtml(row.tag)}">` +
+                    `<span class="ontology-dialog-suggestion-label">${escapeHtml(row.tag)}</span>` +
+                    `${countBadge}` +
+                    `</button>`
+                );
+            })
+            .join('');
+        elements.suggestions.style.display = 'flex';
+        this._dialogSelectedIndex = 0;
+        this._updateDialogSuggestionSelection(elements.suggestions);
+
+        elements.suggestions.querySelectorAll('.ontology-dialog-suggestion').forEach((button) => {
+            button.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                const tag = button.dataset.tag;
+                if (typeof tag !== 'string' || tag.trim() === '') {
+                    throw new Error('Ontology dialog suggestion missing tag');
+                }
+                this._applyDialogSuggestion(tag);
+                const state = this._dialogState;
+                if (state && state.autoSubmitOnSuggestion) {
+                    this._submitDialog();
+                }
+            });
+        });
+    }
+
+    _updateDialogSuggestionSelection(container) {
+        if (!(container instanceof HTMLElement)) {
+            throw new Error('dialog suggestion container missing');
+        }
+        const items = Array.from(container.querySelectorAll('.ontology-dialog-suggestion'));
+        if (items.length === 0) {
+            this._dialogSelectedIndex = -1;
+            return;
+        }
+        if (!Number.isInteger(this._dialogSelectedIndex)) {
+            this._dialogSelectedIndex = 0;
+        }
+        if (this._dialogSelectedIndex < 0 || this._dialogSelectedIndex >= items.length) {
+            this._dialogSelectedIndex = 0;
+        }
+        items.forEach((item, index) => {
+            item.classList.toggle('is-selected', index === this._dialogSelectedIndex);
+        });
+        const selected = items[this._dialogSelectedIndex];
+        if (selected && typeof selected.scrollIntoView === 'function') {
+            selected.scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    _applyDialogSuggestion(tag) {
+        if (typeof tag !== 'string' || tag.trim() === '') {
+            throw new Error('applyDialogSuggestion requires non-empty tag');
+        }
+        const state = this._dialogState;
+        if (!state) {
+            throw new Error('Dialog state missing');
+        }
+        const elements = this._getDialogElements();
+        const input = elements.input;
+
+        if (state.mode === 'single-tag') {
+            input.value = tag;
+            const length = tag.length;
+            if (typeof input.setSelectionRange === 'function') {
+                input.setSelectionRange(length, length);
+            }
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+            this._hideDialogSuggestions();
+            return;
+        }
+
+        const context = this._dialogSuggestionContext;
+        if (!context || typeof context.replaceStart !== 'number' || typeof context.replaceEnd !== 'number') {
+            throw new Error('Dialog suggestion context missing');
+        }
+        const rawValue = input.value;
+        if (typeof rawValue !== 'string') {
+            throw new Error('Dialog input value missing');
+        }
+
+        const before = rawValue.slice(0, context.replaceStart);
+        const after = rawValue.slice(context.replaceEnd);
+        const nextValue = `${before}${tag}${after}`;
+        input.value = nextValue;
+        const nextCursor = before.length + tag.length;
+        if (typeof input.setSelectionRange === 'function') {
+            input.setSelectionRange(nextCursor, nextCursor);
+        }
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+        this._hideDialogSuggestions();
+    }
+
+    _handleDialogInput(event) {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            throw new Error('Expected dialog input element');
+        }
+        this._clearDialogError();
+        this._updateDialogSuggestions();
+    }
+
+    _handleDialogKeydown(event) {
+        const state = this._dialogState;
+        if (!state) {
+            return;
+        }
+        const elements = this._getDialogElements();
+        const container = elements.suggestions;
+        const items = Array.from(container.querySelectorAll('.ontology-dialog-suggestion'));
+        const hasSuggestions = container.style.display !== 'none' && items.length > 0;
+
+        if (event.key === 'ArrowDown' && hasSuggestions) {
+            event.preventDefault();
+            event.stopPropagation();
+            this._dialogSelectedIndex = Math.min(this._dialogSelectedIndex + 1, items.length - 1);
+            this._updateDialogSuggestionSelection(container);
+            return;
+        }
+
+        if (event.key === 'ArrowUp' && hasSuggestions) {
+            event.preventDefault();
+            event.stopPropagation();
+            this._dialogSelectedIndex = Math.max(this._dialogSelectedIndex - 1, 0);
+            this._updateDialogSuggestionSelection(container);
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            if (hasSuggestions) {
+                let selectedIndex = this._dialogSelectedIndex;
+                if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= items.length) {
+                    selectedIndex = 0;
+                }
+                const button = items[selectedIndex];
+                if (!button) {
+                    return;
+                }
+                const tag = button.dataset.tag;
+                if (typeof tag !== 'string' || tag.trim() === '') {
+                    throw new Error('Dialog suggestion missing tag');
+                }
+                this._applyDialogSuggestion(tag);
+                if (state.autoSubmitOnSuggestion) {
+                    this._submitDialog();
+                }
+                return;
+            }
+            this._submitDialog();
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            this._closeDialog(null);
+        }
+    }
+
+    _handleDialogOverlayClick(event) {
+        const overlay = event.currentTarget;
+        if (!(overlay instanceof HTMLElement)) {
+            return;
+        }
+        const dialog = overlay.querySelector('.ontology-dialog');
+        if (dialog && !dialog.contains(event.target)) {
+            event.preventDefault();
+            this._closeDialog(null);
+        }
+    }
+
+    _handleDialogOverlayKeydown(event) {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+        }
+        this._closeDialog(null);
+    }
+
+    _updateDialogSuggestions() {
+        const state = this._dialogState;
+        if (!state) {
+            return;
+        }
+        const elements = this._getDialogElements();
+        const input = elements.input;
+        const rawValue = input.value;
+        if (typeof rawValue !== 'string') {
+            throw new Error('Dialog input value missing');
+        }
+
+        let query = null;
+        let context = null;
+
+        if (state.mode === 'single-tag') {
+            const trimmed = rawValue.trim();
+            if (/\s/.test(trimmed)) {
+                this._hideDialogSuggestions();
+                return;
+            }
+            query = trimmed;
+        } else {
+            if (!Number.isInteger(input.selectionStart)) {
+                throw new Error('Dialog input selectionStart missing');
+            }
+            context = parseDialogSuggestionContext(rawValue, input.selectionStart);
+            if (context === null) {
+                this._hideDialogSuggestions();
+                return;
+            }
+            query = context.partialPrefix;
+        }
+
+        if (query === null) {
+            this._hideDialogSuggestions();
+            return;
+        }
+        if (query === '' && !state.suggestOnEmpty) {
+            this._hideDialogSuggestions();
+            return;
+        }
+
+        if (this._dialogSuggestionTimer) {
+            clearTimeout(this._dialogSuggestionTimer);
+            this._dialogSuggestionTimer = null;
+        }
+
+        const requestId = ++this._dialogRequestSerial;
+        this._dialogSuggestionTimer = setTimeout(() => {
+            this._dialogSuggestionTimer = null;
+            this._fetchDialogSuggestions(query).then((tags) => {
+                if (requestId !== this._dialogRequestSerial) {
+                    return;
+                }
+                if (!this._dialogState) {
+                    return;
+                }
+                if (tags === null) {
+                    return;
+                }
+                this._dialogSuggestionContext = context;
+                this._renderDialogSuggestions(tags);
+            }).catch((error) => {
+                if (requestId !== this._dialogRequestSerial) {
+                    return;
+                }
+                if (!this._dialogState) {
+                    return;
+                }
+                const message = error instanceof Error ? error.message : String(error);
+                this._setDialogError(message);
+                this._hideDialogSuggestions();
+            });
+        }, DIALOG_SUGGESTION_DEBOUNCE_MS);
+    }
+
+    async _fetchDialogSuggestions(query) {
+        if (typeof query !== 'string') {
+            throw new Error('fetchDialogSuggestions requires query string');
+        }
+        if (this._dialogAbortController) {
+            this._dialogAbortController.abort();
+        }
+        const controller = new AbortController();
+        this._dialogAbortController = controller;
+
+        const url = `${ONTOLOGY_BASE}/tags?q=${encodeURIComponent(query)}&limit=${DIALOG_SUGGESTION_LIMIT}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: buildAuthHeaders(),
+            signal: controller.signal,
+        }).catch((error) => {
+            if (error && error.name === 'AbortError') {
+                return null;
+            }
+            throw error;
+        });
+
+        if (response === null) {
+            return null;
+        }
+        if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            if (payload && typeof payload.detail === 'string') {
+                throw new Error(payload.detail);
+            }
+            throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const payload = await response.json();
+        if (this._dialogAbortController !== controller) {
+            return null;
+        }
+
+        const tags = payload.tags;
+        const totalCount = payload.totalCount;
+        if (!Array.isArray(tags)) {
+            throw new Error('Ontology tags payload missing tags array');
+        }
+        if (!Number.isInteger(totalCount) || totalCount < 0) {
+            throw new Error('Ontology tags payload missing totalCount');
+        }
+        return tags;
+    }
+
+    _submitDialog() {
+        const state = this._dialogState;
+        if (!state) {
+            return;
+        }
+        const elements = this._getDialogElements();
+        const input = elements.input;
+        const rawValue = input.value;
+        if (typeof rawValue !== 'string') {
+            throw new Error('Dialog input value missing');
+        }
+
+        this._clearDialogError();
+        const trimmed = rawValue.trim();
+
+        if (state.mode === 'single-tag') {
+            if (trimmed === '') {
+                this._setDialogError('Enter a tag.');
+                return;
+            }
+            if (!isValidTagToken(trimmed)) {
+                this._setDialogError(
+                    'That input is not a valid tag token. ' +
+                    'This action only supports a single tag (no spaces, quotes, regex, or parentheses).'
+                );
+                return;
+            }
+            this._closeDialog(trimmed);
+            return;
+        }
+
+        if (state.mode === 'incoming') {
+            if (trimmed === '') {
+                this._setDialogError('Enter at least one condition.');
+                return;
+            }
+            let atoms;
+            try {
+                atoms = parseIncomingAtoms(trimmed);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                this._setDialogError(message);
+                return;
+            }
+            if (!Array.isArray(atoms) || atoms.length === 0) {
+                this._setDialogError('Enter at least one condition.');
+                return;
+            }
+            const rhsTag = state.focusTag;
+            if (typeof rhsTag !== 'string' || rhsTag.trim() === '') {
+                throw new Error('Dialog focusTag missing');
+            }
+            let ruleText = null;
+            if (atoms.length === 1) {
+                ruleText = `${atoms[0]} => ${rhsTag}`;
+            } else {
+                ruleText = `(${atoms.join(' ')}) => ${rhsTag}`;
+            }
+            this._closeDialog(ruleText);
+            return;
+        }
+
+        if (state.mode === 'rule') {
+            if (trimmed === '') {
+                this._setDialogError('Enter a rule.');
+                return;
+            }
+            this._closeDialog(trimmed);
+            return;
+        }
+
+        throw new Error(`Unknown dialog mode: ${state.mode}`);
     }
 
     _updateSearchSelection(container) {
@@ -1139,14 +2002,30 @@ export class OntologyModal extends BaseModal {
             throw new Error(`Unknown rule id: ${ruleId}`);
         }
 
-        const next = window.prompt('Edit rule:', existing);
+        const next = await this._openDialog({
+            title: 'Edit rule',
+            description: 'Update the full rule text.',
+            label: 'Rule text',
+            placeholder: 'tag => other-tag',
+            submitLabel: 'Save rule',
+            initialValue: existing,
+            mode: 'rule',
+            helpText: [
+                'Use => for implications, = for synonyms.',
+                'Quoted text and /regex/ are allowed on the left side only.',
+            ],
+            focusTag: null,
+            suggestOnEmpty: true,
+            autoSubmitOnSuggestion: false,
+        });
         if (next === null) {
             return;
         }
-        if (typeof next !== 'string') {
-            throw new Error('prompt must return string or null');
+        if (typeof next !== 'string' || next.trim() === '') {
+            throw new Error('Dialog returned invalid rule text');
         }
-        if (next.trim() === '') {
+        const normalizedExisting = existing.trim();
+        if (next === normalizedExisting) {
             return;
         }
 
@@ -1200,30 +2079,28 @@ export class OntologyModal extends BaseModal {
             throw new Error(`Unknown incoming rule kind: ${kind}`);
         }
 
-        const promptValue = typeof editValue === 'string' ? editValue : '';
-        const raw = window.prompt(`Condition that implies '${rhs}' (no =>, no parentheses required):`, promptValue);
-        if (raw === null) {
+        const updatedText = await this._openDialog({
+            title: 'Edit incoming rule',
+            description: `Condition that implies '${rhs}'.`,
+            label: 'Condition',
+            placeholder: 'tag "text" /regex/ another-tag',
+            submitLabel: 'Save rule',
+            initialValue: editValue,
+            mode: 'incoming',
+            helpText: [
+                'Tags can be combined with spaces for AND.',
+                'Quoted text and /regex/ are allowed.',
+                'Tag suggestions appear only for tag tokens.',
+            ],
+            focusTag: rhs,
+            suggestOnEmpty: true,
+            autoSubmitOnSuggestion: false,
+        });
+        if (updatedText === null) {
             return;
         }
-        if (typeof raw !== 'string') {
-            throw new Error('prompt must return string or null');
-        }
-
-        const trimmed = raw.trim();
-        if (trimmed === '') {
-            return;
-        }
-
-        const atoms = parseIncomingAtoms(trimmed);
-        if (atoms.length === 0) {
-            return;
-        }
-
-        let updatedText = null;
-        if (atoms.length === 1) {
-            updatedText = `${atoms[0]} => ${rhs}`;
-        } else {
-            updatedText = `(${atoms.join(' ')}) => ${rhs}`;
+        if (typeof updatedText !== 'string' || updatedText.trim() === '') {
+            throw new Error('Dialog returned invalid incoming rule text');
         }
 
         const payload = await this.runBlockingCommand('ontologyModal.editIncomingRule', async () => {
@@ -1251,15 +2128,27 @@ export class OntologyModal extends BaseModal {
             throw new Error('Focus tag missing');
         }
 
-        const next = window.prompt('Rename tag (rules only):', focusTag);
+        const next = await this._openDialog({
+            title: 'Rename tag',
+            description: 'Renames the tag everywhere (rules and note tag bars).',
+            label: 'New tag',
+            placeholder: 'new-tag-name',
+            submitLabel: 'Rename',
+            initialValue: focusTag,
+            mode: 'single-tag',
+            helpText: ['Single tag token only.'],
+            focusTag: null,
+            suggestOnEmpty: true,
+            autoSubmitOnSuggestion: true,
+        });
         if (next === null) {
             return;
         }
-        if (typeof next !== 'string') {
-            throw new Error('prompt must return string or null');
+        if (typeof next !== 'string' || next.trim() === '') {
+            throw new Error('Dialog returned invalid tag');
         }
         const trimmed = next.trim();
-        if (trimmed === '' || trimmed === focusTag) {
+        if (trimmed === focusTag) {
             return;
         }
 
@@ -1318,75 +2207,6 @@ export class OntologyModal extends BaseModal {
         this._rulesCache = null;
     }
 
-    async _promptForTag(promptText) {
-        if (typeof promptText !== 'string' || promptText.trim() === '') {
-            throw new Error('promptText must be non-empty string');
-        }
-        const response = window.prompt(promptText);
-        if (response === null) {
-            return null;
-        }
-        if (typeof response !== 'string') {
-            throw new Error('prompt must return string or null');
-        }
-        const trimmed = response.trim();
-        if (trimmed === '') {
-            return null;
-        }
-        return trimmed;
-    }
-
-    async _promptForSingleTagToken(promptText) {
-        const response = await this._promptForTag(promptText);
-        if (!response) {
-            return null;
-        }
-
-        const trimmed = response.trim();
-        if (!isValidTagToken(trimmed)) {
-            throw new Error(
-                'That input is not a valid tag token. ' +
-                'This action only supports a single tag (no spaces, quotes, regex, or parentheses).'
-            );
-        }
-        return trimmed;
-    }
-
-    async _promptForIncomingRule(focusTag) {
-        if (typeof focusTag !== 'string' || focusTag.trim() === '') {
-            throw new Error('focusTag must be non-empty string');
-        }
-
-        const raw = window.prompt(
-            `Condition that implies '${focusTag}' (no =>, no parentheses required):\n` +
-            `- Tag: smart-guy\n` +
-            `- Text: "asdf"\n` +
-            `- Regex: /foo.*/i\n` +
-            `- AND: "asdf" bbbb`,
-            ''
-        );
-        if (raw === null) {
-            return null;
-        }
-        if (typeof raw !== 'string') {
-            throw new Error('prompt must return string or null');
-        }
-        const trimmed = raw.trim();
-        if (trimmed === '') {
-            return null;
-        }
-
-        const atoms = parseIncomingAtoms(trimmed);
-        if (atoms.length === 0) {
-            return null;
-        }
-
-        if (atoms.length === 1) {
-            return `${atoms[0]} => ${focusTag}`;
-        }
-        return `(${atoms.join(' ')}) => ${focusTag}`;
-    }
-
     async _handleClick(event) {
         await (async () => {
             const rawTarget = event.target;
@@ -1403,6 +2223,16 @@ export class OntologyModal extends BaseModal {
             }
 
             this.renderError(null);
+
+            if (action === 'dialog-cancel') {
+                this._closeDialog(null);
+                return;
+            }
+
+            if (action === 'dialog-submit') {
+                this._submitDialog();
+                return;
+            }
 
             if (action === 'close') {
                 this.close();
@@ -1427,9 +2257,24 @@ export class OntologyModal extends BaseModal {
             }
 
             if (action === 'add-tag') {
-                const newTag = await this._promptForSingleTagToken('New tag (single token only):');
-                if (!newTag) {
+                const newTag = await this._openDialog({
+                    title: 'Add new tag',
+                    description: 'Create a tag to focus on in the relationships editor.',
+                    label: 'Tag',
+                    placeholder: 'python',
+                    submitLabel: 'Add tag',
+                    initialValue: '',
+                    mode: 'single-tag',
+                    helpText: ['Single tag token only.'],
+                    focusTag: null,
+                    suggestOnEmpty: true,
+                    autoSubmitOnSuggestion: true,
+                });
+                if (newTag === null) {
                     return;
+                }
+                if (typeof newTag !== 'string' || newTag.trim() === '') {
+                    throw new Error('Dialog returned invalid tag');
                 }
                 if (this._abortController) {
                     this._abortController.abort();
@@ -1522,25 +2367,70 @@ export class OntologyModal extends BaseModal {
             }
 
             if (action === 'add-left') {
-                const ruleText = await this._promptForIncomingRule(focusTag);
-                if (!ruleText) {
+                const ruleText = await this._openDialog({
+                    title: `Add condition for '${focusTag}'`,
+                    description: `Create a condition that implies '${focusTag}'.`,
+                    label: 'Condition',
+                    placeholder: 'tag "text" /regex/ another-tag',
+                    submitLabel: 'Add rule',
+                    initialValue: '',
+                    mode: 'incoming',
+                    helpText: [
+                        'Combine tags with spaces for AND.',
+                        'Quoted text and /regex/ are allowed.',
+                        'Tag suggestions appear only for tag tokens.',
+                    ],
+                    focusTag: focusTag,
+                    suggestOnEmpty: true,
+                    autoSubmitOnSuggestion: false,
+                });
+                if (ruleText === null) {
                     return;
+                }
+                if (typeof ruleText !== 'string' || ruleText.trim() === '') {
+                    throw new Error('Dialog returned invalid incoming rule');
                 }
                 await this._createRule(ruleText);
             } else if (action === 'add-right') {
-                const newTag = await this._promptForSingleTagToken(
-                    `Tag implied by '${focusTag}' (single token only):`
-                );
-                if (!newTag) {
+                const newTag = await this._openDialog({
+                    title: `Tag implied by '${focusTag}'`,
+                    description: `Add a tag that '${focusTag}' implies.`,
+                    label: 'Implied tag',
+                    placeholder: 'related-tag',
+                    submitLabel: 'Add implication',
+                    initialValue: '',
+                    mode: 'single-tag',
+                    helpText: ['Single tag token only.'],
+                    focusTag: null,
+                    suggestOnEmpty: true,
+                    autoSubmitOnSuggestion: true,
+                });
+                if (newTag === null) {
                     return;
+                }
+                if (typeof newTag !== 'string' || newTag.trim() === '') {
+                    throw new Error('Dialog returned invalid tag');
                 }
                 await this._createRule(`${focusTag} => ${newTag}`);
             } else {
-                const newTag = await this._promptForSingleTagToken(
-                    `Synonym for '${focusTag}' (single token only):`
-                );
-                if (!newTag) {
+                const newTag = await this._openDialog({
+                    title: `Synonym for '${focusTag}'`,
+                    description: `Add a synonym for '${focusTag}'.`,
+                    label: 'Synonym tag',
+                    placeholder: 'alternate-tag',
+                    submitLabel: 'Add synonym',
+                    initialValue: '',
+                    mode: 'single-tag',
+                    helpText: ['Single tag token only.'],
+                    focusTag: null,
+                    suggestOnEmpty: true,
+                    autoSubmitOnSuggestion: true,
+                });
+                if (newTag === null) {
                     return;
+                }
+                if (typeof newTag !== 'string' || newTag.trim() === '') {
+                    throw new Error('Dialog returned invalid tag');
                 }
                 await this._createRule(`${focusTag} = ${newTag}`);
             }

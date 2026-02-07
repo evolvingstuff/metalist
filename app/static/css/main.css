@@ -608,6 +608,198 @@ body.ontology-modal-open #ontology-modal {
     font-size: 0.9rem;
 }
 
+.ontology-dialog-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 8, 12, 0.72);
+    backdrop-filter: blur(6px);
+    z-index: 30;
+}
+
+.ontology-dialog-overlay.is-visible {
+    display: flex;
+}
+
+.ontology-dialog {
+    width: min(520px, 92vw);
+    max-width: 600px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: linear-gradient(135deg, rgba(30, 30, 45, 0.98), rgba(16, 16, 28, 0.98));
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.ontology-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ontology-dialog-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+#ontology-modal .ontology-dialog-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.75);
+    cursor: pointer;
+    font-size: 18px;
+    display: grid;
+    place-items: center;
+}
+
+#ontology-modal .ontology-dialog-close:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.ontology-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ontology-dialog-description {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.ontology-dialog-label {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+#ontology-dialog-input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(0, 0, 0, 0.35);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+#ontology-dialog-input:focus {
+    outline: none;
+    border-color: rgba(99, 179, 237, 0.85);
+    box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.25);
+}
+
+.ontology-dialog-help {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.ontology-dialog-suggestions {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.6);
+}
+
+#ontology-modal button.ontology-dialog-suggestion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+}
+
+#ontology-modal button.ontology-dialog-suggestion:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+#ontology-modal button.ontology-dialog-suggestion.is-selected {
+    background: rgba(99, 179, 237, 0.2);
+    border-color: rgba(99, 179, 237, 0.45);
+}
+
+.ontology-dialog-suggestion-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ontology-dialog-suggestion-count {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.ontology-dialog-error {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(245, 101, 101, 0.35);
+    background: rgba(245, 101, 101, 0.12);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+}
+
+.ontology-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+#ontology-modal .ontology-dialog-footer button {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+#ontology-modal .ontology-dialog-footer button:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+#ontology-modal .ontology-dialog-secondary {
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+#ontology-modal .ontology-dialog-primary {
+    border: none;
+    color: #0a1724;
+    background: linear-gradient(135deg, rgba(99, 179, 237, 0.9), rgba(66, 153, 225, 0.95));
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.35);
+}
+
+#ontology-modal .ontology-dialog-primary:hover {
+    background: linear-gradient(135deg, rgba(129, 205, 255, 0.95), rgba(90, 170, 240, 0.95));
+}
+
 #memory-modal .modal-content.memory-modal {
     width: min(960px, 90vw);
     max-height: 90vh;
