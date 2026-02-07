@@ -8,6 +8,7 @@ const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
 const TAB_STATE_DELETE_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DELETE_TAB;
 const SCROLL_POLL_INTERVAL_MS = 1000;
+const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 
 let lastSignature = null;
 let scrollListenerAttached = false;
@@ -16,12 +17,14 @@ let lastScrollY = 0;
 let pendingTabId = null;
 let scrollPollId = null;
 const lastPersistedScrollByTab = Object.create(null);
+let pendingPersistTimeout = null;
 
 export async function initializeTabStateService() {
     const serverState = await fetchTabState();
     ModeContext.hydrateTabState(serverState, { emitUpdate: false });
     ModeContext.setTabStateVersion(typeof serverState.version === 'number' ? serverState.version : 0);
     lastSignature = serializeState(canonicalizeState(serverState));
+    ModeContext.setTabStateUpdateHook(handleTabStateMutation);
     startScrollWatcher();
     startScrollPolling();
     return serverState;
@@ -48,6 +51,27 @@ function canonicalizeState(state) {
         tabOrder: state.tabOrder,
         version: state.version,
     };
+}
+
+function handleTabStateMutation(event) {
+    if (!event || typeof event !== 'object') {
+        throw new Error('tab-state mutation hook requires event object');
+    }
+    const reason = event.reason;
+    if (reason !== 'searchQuery') {
+        return;
+    }
+    scheduleTabStatePersist();
+}
+
+function scheduleTabStatePersist() {
+    if (pendingPersistTimeout !== null) {
+        window.clearTimeout(pendingPersistTimeout);
+    }
+    pendingPersistTimeout = window.setTimeout(() => {
+        pendingPersistTimeout = null;
+        void persistTabStateSnapshot();
+    }, TAB_STATE_PERSIST_DEBOUNCE_MS);
 }
 
 function captureServerSignature(state) {

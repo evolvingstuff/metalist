@@ -3,6 +3,7 @@
  */
 import { CONFIG } from './config.js';
 import { createUuid } from './uuid.js';
+import { CommandPalette } from './command-palette/command-palette-controller.js';
 
 export const Auth = {
     hasPassword: null,
@@ -324,6 +325,7 @@ export const Auth = {
                 console.log('[Auth] Login successful, initializing ModeManager');
                 if (window.ModeManager) {
                     window.ModeManager.init({});
+                    await CommandPalette.init();
                 } else {
                     window.location.reload();
                 }
