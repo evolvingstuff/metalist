@@ -385,6 +385,11 @@ function handleClick(event) {
         throw new Error('Click event missing target element');
     }
 
+    const contextMenu = event.target.closest('#context-menu');
+    if (contextMenu) {
+        return;
+    }
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Click event ignored while system is loading', {
             eventType: event.type,
