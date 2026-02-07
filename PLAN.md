@@ -1,48 +1,65 @@
-# PLAN: Keyboard Indent/Outdent
+# PLAN: Mouse Drag Note Movement (Directional)
 
 ## Goals
-- Add `Cmd+Left` / `Cmd+Right` to outdent/indent the selected note (and subtree) while editing.
-- Introduce explicit endpoints: `POST /api2/notes/{id}/indent` and `POST /api2/notes/{id}/outdent`.
-- When outdenting to root in a non-empty search context, ensure the note’s tag bar includes required positive tag terms and `/*text*/` comments, without removing any existing tags.
-- Ensure undo/redo restores tags when outdent-to-root added tags.
+- Add mouse drag gesture to move a note (and subtree) exactly one step in a cardinal direction.
+- Drag gestures only apply when **not** editing and only when `mousedown` starts on the note body.
+- A drag is recognized only if the pointer moves beyond a distance threshold; otherwise it is a normal click.
+- When a drag is active, show a “grabbing” cursor; if the pointer returns within the threshold, revert and treat as a click.
+- Movement uses the same backend logic as keyboard moves (indent/outdent/up/down).
+- Indent should only happen if there is a **visible** sibling above; it should indent under that visible sibling.
 
 ## Non-Goals
-- Mouse/drag gesture movement.
+- Free-form drag/drop placement or reparenting by cursor position.
+- Drag gestures while editing.
+- Multi-step moves per drag (exactly one move per gesture).
 - Cypress tests in this iteration.
-- Reworking the entire undo/redo model.
+- Reworking undo/redo beyond existing move behavior.
 
 ## Behavioral Notes (from PLAN.note-movement.md)
-- Indent: selected note becomes the last child of the sibling immediately above it.
+- Indent: selected note becomes the last child of the **visible** sibling immediately above it.
 - Outdent: selected note becomes a sibling after its parent.
+- Move Up/Down: swap with the **visible** adjacent sibling. Hidden siblings keep their relative order.
+  - Example: `A (B) (C) D E`, move E up → `A (B) (C) E D`.
+  - Example: `A (B) C (D) E`, move E up → `A (B) E C (D)`.
 - No-ops are silent (no error, no move).
 - Only the selected note + subtree move.
 
+## Open Questions / Assumptions
+- For **Move Up/Down** in filtered views: assume “adjacent visible sibling” (like indent) rather than hidden siblings.
+
 ## Plan
-1. Backend: extract shared “ensure tags match search query” helper from `app/usecases/paste_sibling.py` to a reusable module.
-2. Backend: implement `CmdIndent` and `CmdOutdent` (or equivalent usecases) that compute new parent/prev/next via `store.children(...)` ordering, then call `apply_move`.
-3. Backend: when outdenting to root and `search_query` has required terms, update tags using the shared helper before returning.
-4. Backend: extend move undo recording to include `before_tags` and `after_tags`, and update undo/redo to restore tags when applying the inverse move.
-5. API: add `POST /notes/{note_id}/indent` and `POST /notes/{note_id}/outdent` routes.
-6. Frontend: add config endpoints, API client methods, and note actions for indent/outdent.
-7. Frontend: wire `Cmd+Left` and `Cmd+Right` in `keyboard-events.js` (active while editing).
-8. Manual test pass (no Cypress): verify indent/outdent, no-op edges, and tag/undo behavior in search contexts.
+1. **Gesture state**: add a drag tracker for `mousedown`/`mousemove`/`mouseup` on the note body.
+   - Ignore if editing or if `mousedown` is not on a note body.
+   - Store start coords and note id.
+2. **Threshold + cursor**:
+   - Compute distance from start on `mousemove`.
+   - If distance >= threshold, mark drag-active and set cursor to grabbing.
+   - If distance drops back below threshold, revert to click state and cursor.
+3. **Direction resolution**:
+   - On `mouseup`, if drag-active, compute angle or compare `abs(dx)` vs `abs(dy)` to pick cardinal direction.
+   - Prevent the click-from-triggering-edit in this path.
+4. **Execute move**:
+   - Use existing move actions:
+     - Up/Down: move by visible sibling (assumption above).
+     - Right/Left: indent/outdent (indent uses visible sibling above).
+   - Wrap in `CommandGate.run(...)` like keyboard actions.
+5. **Styling**:
+   - Add a CSS class on `body` or `#notes-container` for drag state to control cursor (`grab`/`grabbing`).
+6. **Manual test pass** (no Cypress):
+   - Drag within threshold → normal click/edit.
+   - Drag past threshold → move exactly one step; no click edit.
+   - Drag past threshold then back inside → normal click/edit.
+   - Move up/down/indent/outdent with visible sibling rules.
 
 ## Manual Test Checklist
-- Indent while editing: selected note with a previous sibling becomes its last child.
-- Indent no-op: first sibling does nothing.
-- Outdent while editing: selected note becomes sibling after parent.
-- Outdent no-op: root note does nothing.
-- Search context `foo "bar"`: outdent-to-root adds `foo` and `/*bar*/` to tag bar without removing existing tags.
-- Undo restores prior tags; redo re-applies tag additions.
+- `mousedown` on note body, tiny move, `mouseup`: behaves like click (enters edit).
+- Drag past threshold: cursor changes to grabbing, no click/edit fires.
+- Drag back near start then `mouseup`: acts like click (enters edit).
+- Indent only with visible sibling above.
+- Move up/down respects visible siblings in filtered views.
 
 ## Files (Expected Touch Points)
-- `app/usecases/paste_sibling.py` (helper extraction)
-- `app/usecases/indent.py` and `app/usecases/outdent.py` (new)
-- `app/usecases/move.py` (move undo capture)
-- `app/services/undo_state.py` (move undo/redo tags)
-- `app/api/routes/notes.py` (new endpoints)
-- `app/static/js/modules/config.js`
-- `app/static/js/modules/api-client.js`
+- `app/static/js/modules/mode-manager/events/keyboard-events.js` (or a new mouse/drag handler module)
 - `app/static/js/modules/mode-manager/actions/note-actions.js`
-- `app/static/js/modules/mode-manager/events/keyboard-events.js`
-
+- `app/static/js/modules/mode-manager/services/*` (if adding drag state helpers)
+- `app/static/css/*` (cursor classes)
