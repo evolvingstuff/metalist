@@ -2,6 +2,7 @@
  * Authentication module for handling login/logout and password management
  */
 import { CONFIG } from './config.js';
+import { createUuid } from './uuid.js';
 
 export const Auth = {
     hasPassword: null,
@@ -457,7 +458,7 @@ export const Auth = {
         }
         let tabId = sessionStorage.getItem('metalist_tab_id');
         if (!tabId) {
-            tabId = crypto.randomUUID();
+            tabId = createUuid();
             sessionStorage.setItem('metalist_tab_id', tabId);
         }
         this._tabId = tabId;

@@ -1,6 +1,7 @@
 import * as Logger from './mode-logger.js';
 import { CONFIG } from '../config.js';
 import { restoreScrollFromAnchor } from './services/scroll-restoration-service.js';
+import { createUuid } from '../uuid.js';
 
 class ModeContext {
     constructor() {
@@ -1430,7 +1431,7 @@ class ModeContext {
         // Get or create a unique client ID for this browser tab
         let clientId = sessionStorage.getItem('metalist_client_id');
         if (!clientId) {
-            clientId = crypto.randomUUID();
+            clientId = createUuid();
             sessionStorage.setItem('metalist_client_id', clientId);
         }
         return clientId;
