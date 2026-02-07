@@ -9,6 +9,8 @@
 | `Tab` | Toggle focus between note content and tag bar (restores cursor position) |
 | `⌘ + Enter` | Add new sibling note below current note |
 | `⇧ + ⌘ + Enter` | Add new child note under current note |
+| `⌘ + ←` | Outdent note (one level left) |
+| `⌘ + →` | Indent note (one level right) |
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
@@ -23,6 +25,8 @@
 | `⌘ + /` | Open command palette |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
+| `⌘ + ↑` | Move note up (one visible sibling) |
+| `⌘ + ↓` | Move note down (one visible sibling) |
 
 ### Search Input Behavior
 - Pressing `Enter` while focused in the search input creates a new **root** note.
@@ -52,6 +56,7 @@
 | Click `↑` button | Scroll to the top |
 | Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
+| Drag note body (while not editing) | Move note one step in the dragged cardinal direction (up/down/indent/outdent). Short drags act like clicks. |
 | Drag-select text in note | Releasing mouse outside note keeps edit mode + selection |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 
