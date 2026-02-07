@@ -225,7 +225,7 @@ function parseIncomingAtoms(raw) {
                 index += 1;
             }
             if (token.length < 2 || token[token.length - 1] !== quote) {
-                throw new Error(`Unclosed quote: ${quote}`);
+                return { atoms: null, error: `Unclosed quote: ${quote}` };
             }
             atoms.push(token);
             continue;
@@ -252,7 +252,7 @@ function parseIncomingAtoms(raw) {
                 index += 1;
             }
             if (token[token.length - 1] !== '/') {
-                throw new Error('Unclosed regex literal');
+                return { atoms: null, error: 'Unclosed regex literal' };
             }
 
             let flags = '';
@@ -265,7 +265,7 @@ function parseIncomingAtoms(raw) {
                 index += 1;
             }
             if (flags !== '' && flags !== 'i') {
-                throw new Error(`Unsupported regex flags: ${flags}`);
+                return { atoms: null, error: `Unsupported regex flags: ${flags}` };
             }
             atoms.push(token + flags);
             continue;
@@ -281,14 +281,14 @@ function parseIncomingAtoms(raw) {
         }
         const token = raw.slice(start, index);
         if (token === '=>' || token === '=') {
-            throw new Error('Do not include operators; only enter the condition.');
+            return { atoms: null, error: 'Do not include operators; only enter the condition.' };
         }
         if (token !== '') {
             atoms.push(token);
         }
     }
 
-    return atoms;
+    return { atoms, error: null };
 }
 
 function renderIncomingAtoms(atoms) {
@@ -1725,14 +1725,15 @@ export class OntologyModal extends BaseModal {
                 this._setDialogError('Enter at least one condition.');
                 return;
             }
-            let atoms;
-            try {
-                atoms = parseIncomingAtoms(trimmed);
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                this._setDialogError(message);
+            const parsed = parseIncomingAtoms(trimmed);
+            if (!parsed || typeof parsed !== 'object') {
+                throw new Error('parseIncomingAtoms returned invalid response');
+            }
+            if (typeof parsed.error === 'string' && parsed.error.trim() !== '') {
+                this._setDialogError(parsed.error);
                 return;
             }
+            const atoms = parsed.atoms;
             if (!Array.isArray(atoms) || atoms.length === 0) {
                 this._setDialogError('Enter at least one condition.');
                 return;
@@ -2086,6 +2087,9 @@ export class OntologyModal extends BaseModal {
             </div>
         `);
 
+        let synonymCount = 0;
+        const synonymRows = [];
+
         for (const tag of equals) {
             if (tag === focusTag) {
                 continue;
@@ -2098,7 +2102,7 @@ export class OntologyModal extends BaseModal {
             if (maybeRuleIds !== undefined) {
                 const ruleIdsAttr = maybeRuleIds.join(',');
                 const canEdit = maybeRuleIds.length === 1;
-                rows.push(`
+                synonymRows.push(`
                         <div class="ontology-row">
                         <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
                         <div class="ontology-row-actions">
@@ -2107,17 +2111,22 @@ export class OntologyModal extends BaseModal {
                         </div>
                     </div>
                 `);
+                synonymCount += 1;
             } else {
-                rows.push(`
+                synonymRows.push(`
                     <div class="ontology-row">
                         <button class="ontology-tag" data-action="focus" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
                         <span class="ontology-spacer"></span>
                     </div>
                 `);
+                synonymCount += 1;
             }
         }
 
-        if (rows.length === 1) {
+        if (synonymCount > 0) {
+            rows.push('<div class="ontology-divider"></div>');
+            rows.push(...synonymRows);
+        } else {
             rows.push('<div class="ontology-placeholder">(no synonyms)</div>');
         }
         return rows.join('');
@@ -2363,11 +2372,11 @@ export class OntologyModal extends BaseModal {
             return;
         }
 
-        const confirmed = window.confirm(
-            `Rename tag '${focusTag}' → '${trimmed}' in ontology rules?\n\n` +
-            'This renames the tag in BOTH ontology rules and all note tag bars.\n' +
-            'This cannot be undone automatically.'
-        );
+        const confirmed = await this._openConfirmDialog({
+            title: `Rename '${focusTag}' to '${trimmed}'?`,
+            description: 'This renames the tag in ontology rules and note tag bars. This cannot be undone.',
+            confirmLabel: 'Rename',
+        });
         if (!confirmed) {
             return;
         }
