@@ -1761,6 +1761,14 @@ body.loading * {
     cursor: wait !important;
 }
 
+body.note-drag-active {
+    cursor: grabbing !important;
+}
+
+body.note-drag-active * {
+    cursor: grabbing !important;
+}
+
 /* Optional overlay effect for loading state - uncommment if you want a semi-transparent overlay */
 
 body.loading::after {
