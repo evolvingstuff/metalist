@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import html
+import io
 import json
 import re
 from dataclasses import dataclass
@@ -94,8 +96,14 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     credential_tag = _find_global_credential_tag(tags)
     status_tag = _find_global_status_tag(tags)
     json_tag = _find_global_json_tag(tags)
+    csv_tag = _find_global_csv_tag(tags)
     if json_tag is not None:
         return _render_json_meta(
+            content_html=content_html,
+            formatting_tags=config.global_tags,
+        )
+    if csv_tag is not None:
+        return _render_csv_meta(
             content_html=content_html,
             formatting_tags=config.global_tags,
         )
@@ -258,7 +266,7 @@ def _find_global_json_tag(tags: str) -> str | None:
 
 
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
-    raw_text = _extract_json_text(content_html)
+    raw_text = _extract_plain_text(content_html)
 
     try:
         parsed = json.loads(raw_text)
@@ -305,17 +313,102 @@ def _format_json_error(error: json.JSONDecodeError) -> str:
     return f"Line {error.lineno}, column {error.colno}: {error.msg}"
 
 
-def _extract_json_text(content_html: str) -> str:
+def _extract_plain_text(content_html: str) -> str:
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
 
     text = re.sub(r"<br\s*/?>", "\n", content_html, flags=re.IGNORECASE)
-    text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<div[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<p[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<div[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<p[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</div>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", "", text)
-    return html.unescape(text)
+    text = html.unescape(text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text.strip("\n")
+
+
+def _find_global_csv_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if base == "@csv":
+            return "csv"
+    return None
+
+
+def _render_csv_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+    raw_text = _extract_plain_text(content_html)
+    rows, error = _parse_csv_rows(raw_text)
+    if error is not None:
+        return _render_csv_error(raw_text, error)
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    table_class = "meta-csv-table"
+    if extra_classes:
+        table_class = f"{table_class} {extra_classes}"
+
+    output: List[str] = [
+        '<div class="meta-csv">',
+        '<div class="meta-csv-table-wrap">',
+        f'<table class="{table_class}">',
+        "<tbody>",
+    ]
+
+    for row in rows:
+        output.append("<tr>")
+        for cell in row:
+            escaped = html.escape(cell, quote=False)
+            output.append(f"<td>{escaped}</td>")
+        output.append("</tr>")
+
+    output.append("</tbody></table></div></div>")
+    return "".join(output)
+
+
+def _parse_csv_rows(text: str) -> tuple[list[list[str]], str | None]:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    if text.strip() == "":
+        return [], "CSV is empty"
+
+    reader = csv.reader(io.StringIO(text))
+    rows = [list(row) for row in reader if not all(cell == "" for cell in row)]
+
+    if not rows:
+        return [], "CSV is empty"
+
+    expected_len = len(rows[0])
+    if expected_len == 0:
+        return [], "CSV has no columns"
+
+    for idx, row in enumerate(rows[1:], start=2):
+        if len(row) != expected_len:
+            return [], f"Row {idx} has {len(row)} columns, expected {expected_len}"
+
+    return rows, None
+
+
+def _render_csv_error(raw_text: str, message: str) -> str:
+    if not isinstance(raw_text, str):
+        raise TypeError("raw_text must be a string")
+    if not isinstance(message, str) or message == "":
+        raise TypeError("message must be a non-empty string")
+
+    escaped_message = html.escape(message, quote=True)
+    escaped_text = html.escape(raw_text, quote=False)
+    return (
+        '<div class="meta-csv meta-csv-error">'
+        f'<span class="meta-csv-badge" title="{escaped_message}">Invalid CSV</span>'
+        f'<pre class="meta-csv-pre"><code class="meta-csv-code">{escaped_text}</code></pre>'
+        "</div>"
+    )
 
 
 def _highlight_json(text: str) -> str:

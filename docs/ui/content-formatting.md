@@ -57,3 +57,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## JSON meta tags
 - `@json`: parses the note content as JSON and pretty-prints it in view mode.
 - Invalid JSON shows a red "Invalid JSON" badge and the raw content.
+
+## CSV meta tags
+- `@csv`: parses the note content as CSV and renders it as a table in view mode.
+- Invalid CSV shows a red "Invalid CSV" badge and the raw content.

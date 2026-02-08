@@ -2105,6 +2105,68 @@ body.loading::after {
     color: #4b5563;
 }
 
+/* CSV meta tags */
+.meta-csv {
+    display: block;
+    margin: 4px 0;
+}
+
+.meta-csv-table-wrap {
+    overflow-x: auto;
+}
+
+.meta-csv-table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    background: #ffffff;
+    font-size: 0.9rem;
+}
+
+.meta-csv-table td {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    padding: 6px 10px;
+    vertical-align: top;
+    white-space: pre-wrap;
+}
+
+.meta-csv-table tr:nth-child(even) td {
+    background: #f8fafc;
+}
+
+.meta-csv-pre {
+    margin: 6px 0 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #f7f8fa;
+    overflow-x: auto;
+}
+
+.meta-csv-code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+.meta-csv-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(211, 47, 47, 0.12);
+    color: #b3261e;
+}
+
+.meta-csv-error .meta-csv-pre {
+    border-color: rgba(211, 47, 47, 0.25);
+    background: #fff5f5;
+}
+
 
 /* Error Banner Styles */
 .error-banner {
