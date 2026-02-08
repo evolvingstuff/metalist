@@ -72,6 +72,11 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode (using markdown-it in the browser).
 
+## LaTeX meta tags
+- `@latex`: renders the note content as LaTeX in view mode (using KaTeX in the browser).
+- Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
+- Inline math uses `$...$`; display math uses `$$...$$`.
+
 ## JSON meta tags
 - `@json`: parses the note content as JSON and pretty-prints it in view mode.
 - Invalid JSON shows a red "Invalid JSON" badge and the raw content.

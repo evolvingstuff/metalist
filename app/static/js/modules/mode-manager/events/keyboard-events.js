@@ -17,6 +17,7 @@ import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 import { renderMarkdownHtml } from '../services/markdown-render-service.js';
+import { renderLatexHtml } from '../services/latex-render-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
 
@@ -934,6 +935,7 @@ async function handleCopyNoteShortcut(event) {
 
     if (typeof renderedHtml === 'string') {
         renderedHtml = renderMarkdownHtml(renderedHtml);
+        renderedHtml = renderLatexHtml(renderedHtml);
     }
 
     if (!renderedHtml && !renderedPlainText) {

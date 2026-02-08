@@ -100,6 +100,7 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
     terms.update(f"@{name}" for name in _STATUS_TAGS)
     terms.add("@markdown")
+    terms.add("@latex")
     terms.add("@json")
     terms.add("@csv")
     return frozenset(terms)
@@ -130,10 +131,16 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     credential_tag = _find_global_credential_tag(tags)
     status_tag = _find_global_status_tag(tags)
     markdown_tag = _find_global_markdown_tag(tags)
+    latex_tag = _find_global_latex_tag(tags)
     json_tag = _find_global_json_tag(tags)
     csv_tag = _find_global_csv_tag(tags)
     if markdown_tag is not None:
         return _render_markdown_meta(
+            content_html=content_html,
+            formatting_tags=config.global_tags,
+        )
+    if latex_tag is not None:
+        return _render_latex_meta(
             content_html=content_html,
             formatting_tags=config.global_tags,
         )
@@ -194,7 +201,7 @@ def find_list_style(tags: str) -> str | None:
         if wrapper is not None:
             continue
         if base.startswith("@"):
-            tag_name = base[1:]
+            tag_name = base[1:].casefold()
             if tag_name in _LIST_STYLE_TAGS:
                 list_style = _LIST_STYLE_TAGS[tag_name]
     return list_style
@@ -248,7 +255,7 @@ def _find_global_credential_tag(tags: str) -> str | None:
             continue
         if not base.startswith("@"):
             continue
-        tag_name = base[1:]
+        tag_name = base[1:].casefold()
         if tag_name == "password":
             found_password = True
             continue
@@ -308,7 +315,7 @@ def _find_global_status_tag(tags: str) -> str | None:
             continue
         if not base.startswith("@"):
             continue
-        tag_name = base[1:]
+        tag_name = base[1:].casefold()
         if tag_name == "done":
             found_done = True
             continue
@@ -357,7 +364,7 @@ def _find_global_json_tag(tags: str) -> str | None:
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is not None:
             continue
-        if base == "@json":
+        if base.casefold() == "@json":
             return "json"
     return None
 
@@ -368,7 +375,7 @@ def _find_global_markdown_tag(tags: str) -> str | None:
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is not None:
             continue
-        if base == "@markdown":
+        if base.casefold() == "@markdown":
             return "markdown"
     return None
 
@@ -382,6 +389,32 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
         extra_classes = _meta_classes_for_tag_names(formatting_tags)
 
     block_class = "meta-markdown"
+    if extra_classes:
+        block_class = f"{block_class} {extra_classes}"
+
+    return f'<div class="{block_class}">{escaped_text}</div>'
+
+
+def _find_global_latex_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if base.casefold() == "@latex":
+            return "latex"
+    return None
+
+
+def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+    raw_text = _extract_plain_text(content_html)
+    escaped_text = html.escape(raw_text, quote=False)
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    block_class = "meta-latex"
     if extra_classes:
         block_class = f"{block_class} {extra_classes}"
 
@@ -457,7 +490,7 @@ def _find_global_csv_tag(tags: str) -> str | None:
         base, wrapper = _unwrap_tag_token(token)
         if wrapper is not None:
             continue
-        if base == "@csv":
+        if base.casefold() == "@csv":
             return "csv"
     return None
 
@@ -469,9 +502,21 @@ def _render_csv_meta(
     inline: bool,
     cell_wrappers: FrozenSet[Tuple[str, int]] = frozenset(),
     cell_scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]] | None = None,
+    cell_scoped_renderers: Mapping[Tuple[str, int], str] | None = None,
 ) -> str:
     raw_text = _extract_plain_text(content_html)
-    rows, error = _parse_csv_rows(raw_text)
+    if cell_scoped_renderers is None:
+        cell_scoped_renderers = {}
+
+    placeholder_map: Dict[str, str] = {}
+    parse_text = raw_text
+    if cell_wrappers:
+        parse_text, placeholder_map = _extract_wrapper_placeholders(
+            text=raw_text,
+            wrappers_to_consume=cell_wrappers,
+        )
+
+    rows, error = _parse_csv_rows(parse_text)
     if error is not None:
         return _render_csv_error(raw_text=raw_text, message=error, inline=inline)
 
@@ -499,13 +544,18 @@ def _render_csv_meta(
     for row in rows:
         output.append("<tr>")
         for cell in row:
-            cell_html = html.escape(cell, quote=False)
+            cell_text = cell
+            if placeholder_map:
+                cell_text = _restore_wrapper_placeholders(cell_text, placeholder_map)
             if apply_cell_wrappers:
                 cell_html = _apply_scoped_meta_tags_to_plain_text(
-                    text=cell,
+                    text=cell_text,
                     wrappers_to_consume=cell_wrappers,
                     scoped_tags=effective_scoped_tags,
+                    scoped_renderers=cell_scoped_renderers,
                 )
+            else:
+                cell_html = html.escape(cell_text, quote=False)
             output.append(f"<td>{cell_html}</td>")
         output.append("</tr>")
 
@@ -526,6 +576,7 @@ def _render_scoped_renderer(
     if render_tag == "csv":
         filtered_wrappers = wrappers_to_consume
         filtered_scoped = scoped_tags
+        filtered_renderers = scoped_renderers
         if render_key is not None:
             filtered_wrappers = frozenset(
                 key for key in wrappers_to_consume if key != render_key
@@ -533,12 +584,16 @@ def _render_scoped_renderer(
             filtered_scoped = {
                 key: value for key, value in scoped_tags.items() if key != render_key
             }
+            filtered_renderers = {
+                key: value for key, value in scoped_renderers.items() if key != render_key
+            }
         return _render_csv_meta(
             content_html=content_html,
             formatting_tags=formatting_tags,
             inline=True,
             cell_wrappers=filtered_wrappers,
             cell_scoped_tags=filtered_scoped,
+            cell_scoped_renderers=filtered_renderers,
         )
     raise KeyError(f"Unknown scoped renderer: {render_tag}")
 
@@ -698,7 +753,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
         if wrapper is None:
             if not base.startswith("@"):
                 continue
-            tag_name = base[1:]
+            tag_name = base[1:].casefold()
             if tag_name not in _META_TAG_TO_CLASS:
                 continue
             global_tags.add(tag_name)
@@ -714,7 +769,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
         for inner in inner_tokens:
             if not inner.startswith("@"):
                 continue
-            tag_name = inner[1:]
+            tag_name = inner[1:].casefold()
             if tag_name not in _META_TAG_TO_CLASS:
                 if tag_name == "csv":
                     existing = scoped_renderers.get(key)
@@ -868,7 +923,10 @@ def _apply_scoped_meta_tags_to_plain_text(
     text: str,
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str] | None = None,
 ) -> str:
+    if scoped_renderers is None:
+        scoped_renderers = {}
     output: List[str] = []
     stack: List[_OpenFrame] = []
     _process_text_segment(
@@ -877,7 +935,7 @@ def _apply_scoped_meta_tags_to_plain_text(
         stack=stack,
         wrappers_to_consume=wrappers_to_consume,
         scoped_tags=scoped_tags,
-        scoped_renderers={},
+        scoped_renderers=scoped_renderers,
         escape_text=True,
     )
     for frame in stack:
@@ -999,6 +1057,84 @@ def _count_run(*, text: str, index: int, char: str) -> int:
     while index + run < len(text) and text[index + run] == char:
         run += 1
     return run
+
+
+def _extract_wrapper_placeholders(
+    *,
+    text: str,
+    wrappers_to_consume: FrozenSet[Tuple[str, int]],
+) -> tuple[str, Dict[str, str]]:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    if not wrappers_to_consume:
+        return text, {}
+
+    output: List[str] = []
+    placeholders: Dict[str, str] = {}
+    stack: List[Dict[str, object]] = []
+    index = 0
+    placeholder_index = 0
+
+    while index < len(text):
+        char = text[index]
+
+        if char in _OPEN_TO_CLOSE:
+            run = _count_run(text=text, index=index, char=char)
+            key = (char, run)
+            if run <= _MAX_DELIMITER_DEPTH and key in wrappers_to_consume:
+                stack.append({
+                    "opener": char,
+                    "closer": _OPEN_TO_CLOSE[char],
+                    "depth": run,
+                    "content": [],
+                })
+                index += run
+                continue
+
+        if char in _CLOSE_TO_OPEN:
+            run = _count_run(text=text, index=index, char=char)
+            if run <= _MAX_DELIMITER_DEPTH and stack:
+                top = stack[-1]
+                if top["closer"] == char and top["depth"] == run:
+                    stack.pop()
+                    inner = "".join(top["content"])
+                    opener_text = str(top["opener"]) * int(top["depth"])
+                    closer_text = char * run
+                    original = f"{opener_text}{inner}{closer_text}"
+                    placeholder = f"@@CSV_WRAPPER_{placeholder_index}@@"
+                    placeholder_index += 1
+                    placeholders[placeholder] = original
+                    if stack:
+                        stack[-1]["content"].append(placeholder)
+                    else:
+                        output.append(placeholder)
+                    index += run
+                    continue
+
+        target = stack[-1]["content"] if stack else output
+        target.append(char)
+        index += 1
+
+    if stack:
+        return text, {}
+
+    return "".join(output), placeholders
+
+
+def _restore_wrapper_placeholders(text: str, placeholders: Dict[str, str]) -> str:
+    if not placeholders:
+        return text
+
+    output = text
+    replaced = True
+    while replaced:
+        replaced = False
+        for key, value in placeholders.items():
+            if key in output:
+                output = output.replace(key, value)
+                replaced = True
+    return output
 
 
 def _meta_classes_for_tag_names(tag_names: Set[str] | FrozenSet[str]) -> str:

@@ -50,6 +50,9 @@ Examples (autocorrected while typing):
   - `@done` renders a checked box icon; clicking the icon toggles the tag to `@todo`.
 - Markdown meta tags:
   - `@markdown` renders note content as Markdown in view mode.
+- LaTeX meta tags:
+  - `@latex` renders note content as LaTeX in view mode (KaTeX).
+  - Use `$...$` for inline math and `$$...$$` for display math.
 - JSON meta tags:
   - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
 - CSV meta tags:

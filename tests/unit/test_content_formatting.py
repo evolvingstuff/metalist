@@ -134,6 +134,14 @@ def test_format_note_content_for_view_markdown_meta_renders_plain_text_container
     assert "<div># Title</div>" not in rendered
 
 
+def test_format_note_content_for_view_latex_meta_renders_plain_text_container() -> None:
+    html = "<div>\\frac{1}{2}</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@latex")
+    assert 'class="meta-latex"' in rendered
+    assert "\\frac{1}{2}" in rendered
+    assert "<div>\\frac{1}{2}</div>" not in rendered
+
+
 def test_format_note_content_for_view_json_meta_formats_and_highlights() -> None:
     html = '<div>{"name": "MetaList", "count": 2}</div>'
     rendered = format_note_content_for_view(content_html=html, tags="@json")
@@ -180,6 +188,13 @@ def test_format_note_content_for_view_scoped_csv_meta_applies_scoped_formatting(
     html = "<div>((a,b,c</div><div>1,2,[3]))</div>"
     rendered = format_note_content_for_view(content_html=html, tags="((@csv)) [@red]")
     assert '<span class="meta-scope meta-red">3</span>' in rendered
+
+
+def test_format_note_content_for_view_scoped_csv_meta_supports_nested_csv() -> None:
+    html = "<div>((a,b,c</div><div>1,2,[x,y</div><div>3,4]</div><div>))</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="((@csv)) [@csv]")
+    assert 'meta-csv-error' not in rendered
+    assert rendered.count("<table") >= 2
 
 
 def test_format_note_content_for_view_csv_meta_invalid_shows_error_badge() -> None:

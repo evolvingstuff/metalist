@@ -72,7 +72,7 @@ def compute_initial_tags_for_new_note(
     if parent_id is not None and required_tag_terms:
         meta_terms = list_known_meta_tag_terms()
         required_tag_terms = tuple(
-            term for term in required_tag_terms if term not in meta_terms
+            term for term in required_tag_terms if term.casefold() not in meta_terms
         )
 
     if not required_tag_terms and not required_text_terms:

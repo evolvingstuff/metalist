@@ -44,3 +44,4 @@ sanitycheck/js/.npm-cache/
 sanitycheck/
 
 test.db
+.DS_Store

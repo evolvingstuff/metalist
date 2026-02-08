@@ -2,6 +2,7 @@ import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { renderMarkdownBlocks } from './markdown-render-service.js';
+import { renderLatexBlocks } from './latex-render-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
 const CHILD_CONTAINER_CACHE = new WeakMap();
@@ -198,6 +199,7 @@ function applyServerDiffOps(payload) {
 
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
     renderMarkdownBlocks(notesContainer);
+    renderLatexBlocks(notesContainer);
 
     return {
         notesContainer,

@@ -2273,6 +2273,52 @@ body.loading::after {
     background: #f8fafc;
 }
 
+/* LaTeX meta tags */
+.meta-latex {
+    display: block;
+    margin: 4px 0;
+    overflow-x: auto;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.meta-latex .katex-display {
+    margin: 0;
+}
+
+.meta-latex-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(211, 47, 47, 0.12);
+    color: #b3261e;
+}
+
+.meta-latex-pre {
+    margin: 6px 0 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #f7f8fa;
+    overflow-x: auto;
+}
+
+.meta-latex-code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+.meta-latex-error .meta-latex-pre {
+    border-color: rgba(211, 47, 47, 0.25);
+    background: #fff5f5;
+}
+
 /* CSV meta tags */
 .meta-csv {
     display: block;
