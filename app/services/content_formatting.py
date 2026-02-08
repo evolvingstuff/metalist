@@ -100,7 +100,7 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
     terms.update(f"@{name}" for name in _STATUS_TAGS)
     terms.add("@markdown")
-    terms.add("@latex")
+    terms.add("@LaTeX")
     terms.add("@json")
     terms.add("@csv")
     return frozenset(terms)

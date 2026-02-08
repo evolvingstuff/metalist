@@ -137,7 +137,7 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
     suggestions = index.suggest_tag_completions(query="@")
     assert "@json" in suggestions
     assert "@markdown" in suggestions
-    assert "@latex" in suggestions
+    assert "@LaTeX" in suggestions
     assert "@heading" in suggestions
     assert "@list-bulleted" in suggestions
     assert "@list-numbered" in suggestions

@@ -73,7 +73,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@markdown`: renders the note content as Markdown in view mode (using markdown-it in the browser).
 
 ## LaTeX meta tags
-- `@latex`: renders the note content as LaTeX in view mode (using KaTeX in the browser).
+- `@LaTeX`: renders the note content as LaTeX in view mode (using KaTeX in the browser).
 - Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.
