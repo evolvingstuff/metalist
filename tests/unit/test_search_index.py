@@ -128,3 +128,16 @@ def test_search_index_tag_suggestions_ignore_quotes_and_include_prefix_only() ->
 
     suggestions = index.suggest_tag_completions(query="a b c jour")
     assert suggestions == ["journal"]
+
+
+def test_search_index_tag_suggestions_include_meta_tags() -> None:
+    index = SearchIndex()
+    index.rebuild([])
+
+    suggestions = index.suggest_tag_completions(query="@")
+    assert "@json" in suggestions
+    assert "@todo" in suggestions
+    assert "@monospace" in suggestions
+
+    suggestions = index.suggest_tag_completions(query="@d")
+    assert suggestions == ["@done"]

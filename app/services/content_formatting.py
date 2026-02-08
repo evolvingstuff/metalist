@@ -79,6 +79,15 @@ _STATUS_META = {
 
 _JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 
+
+def list_known_meta_tag_terms() -> FrozenSet[str]:
+    terms = {f"@{name}" for name in _META_TAG_TO_CLASS.keys()}
+    terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
+    terms.update(f"@{name}" for name in _STATUS_TAGS)
+    terms.add("@json")
+    terms.add("@csv")
+    return frozenset(terms)
+
 @dataclass(frozen=True, slots=True)
 class MetaTagConfig:
     global_tags: FrozenSet[str]
