@@ -741,6 +741,9 @@ export function applyDifferentialView(payload, options) {
         ModeContext.setRootHash(payload.treeHash);
     }
 
+    renderMarkdownBlocks(notesContainer);
+    renderLatexBlocks(notesContainer);
+
     return {
         notesContainer,
         editingNoteElement: payload.editingNoteId ? document.querySelector(`[data-note-id="${payload.editingNoteId}"]`) : null,
