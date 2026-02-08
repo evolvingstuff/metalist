@@ -34,6 +34,11 @@ _META_TAG_TO_CLASS = {
     "serif": "meta-serif",
 }
 
+_LIST_STYLE_TAGS = {
+    "list-bulleted": "bulleted",
+    "list-numbered": "numbered",
+}
+
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
 
 _CREDENTIAL_META = {
@@ -91,6 +96,7 @@ _JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 
 def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms = {f"@{name}" for name in _META_TAG_TO_CLASS.keys()}
+    terms.update(f"@{name}" for name in _LIST_STYLE_TAGS.keys())
     terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
     terms.update(f"@{name}" for name in _STATUS_TAGS)
     terms.add("@markdown")
@@ -175,6 +181,23 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             output = f'<span class="meta-global {classes}">{output}</span>'
 
     return output
+
+
+def find_list_style(tags: str) -> str | None:
+    if not isinstance(tags, str):
+        raise TypeError("tags must be a string")
+
+    list_style = None
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if base.startswith("@"):
+            tag_name = base[1:]
+            if tag_name in _LIST_STYLE_TAGS:
+                list_style = _LIST_STYLE_TAGS[tag_name]
+    return list_style
 
 
 def _infer_implied_meta_tags(tags: str) -> FrozenSet[str]:

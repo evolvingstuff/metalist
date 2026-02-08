@@ -38,6 +38,10 @@ Examples (autocorrected while typing):
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` apply text colors.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
+- List meta tags:
+  - `@list-bulleted` renders the note's immediate children with bullet markers.
+  - `@list-numbered` renders the note's immediate children with numbered markers.
+  - Only the **direct** children are affected (grandchildren are not).
 - Credential meta tags:
   - `@username` renders a view-only "Username:" row with a copyable value.
   - `@password` renders a view-only "Password:" row with a blurred, copyable value.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 from app.services.search_query import parse_search_query
+from app.services.content_formatting import list_known_meta_tag_terms
 from app.services.search_index import extract_tags_for_search
 from app.services.search_text import build_searchable_text_casefold
 from app.services.store import store
@@ -67,6 +68,13 @@ def compute_initial_tags_for_new_note(
 ) -> str:
     required_tag_terms = _extract_positive_tag_terms(search_query)
     required_text_terms = _extract_positive_text_terms(search_query)
+
+    if parent_id is not None and required_tag_terms:
+        meta_terms = list_known_meta_tag_terms()
+        required_tag_terms = tuple(
+            term for term in required_tag_terms if term not in meta_terms
+        )
+
     if not required_tag_terms and not required_text_terms:
         return ""
 

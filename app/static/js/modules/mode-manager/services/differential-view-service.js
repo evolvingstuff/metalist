@@ -683,6 +683,8 @@ export function applyDifferentialView(payload, options) {
         noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
         noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
         noteElement.classList.toggle('search-redacted', Boolean(flags.searchRedacted));
+        noteElement.classList.toggle('list-bulleted', flags.listStyle === 'bulleted');
+        noteElement.classList.toggle('list-numbered', flags.listStyle === 'numbered');
 
         updateLockIcon(noteElement, lockedByOther);
 
@@ -887,6 +889,8 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
     noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
     noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
+    noteElement.classList.toggle('list-bulleted', flags.listStyle === 'bulleted');
+    noteElement.classList.toggle('list-numbered', flags.listStyle === 'numbered');
 
     updateLockIcon(noteElement, lockedByOther);
 

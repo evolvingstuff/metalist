@@ -21,6 +21,11 @@
             css_classes += ' memory-mode'
         if note['flags'].get('memorySelected'):
             css_classes += ' memory-selected'
+        list_style = note['flags'].get('listStyle')
+        if list_style == 'bulleted':
+            css_classes += ' list-bulleted'
+        elif list_style == 'numbered':
+            css_classes += ' list-numbered'
     %>
     <div class="${css_classes}" 
          data-note-id="${note['id']}" 

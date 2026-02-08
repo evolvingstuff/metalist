@@ -8,7 +8,7 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 
 from loguru import logger
 
-from app.services.content_formatting import format_note_content_for_view
+from app.services.content_formatting import format_note_content_for_view, find_list_style
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
 from app.services.search_query import parse_search_query
@@ -286,6 +286,7 @@ def build_view_state(
                 "memoryMode": False,
                 "memorySelected": False,
                 "searchRedacted": bool(is_search_redacted),
+                "listStyle": find_list_style(rec.tags),
             }
 
             # If a descendant is being edited, force ancestors open so the editing note remains visible.

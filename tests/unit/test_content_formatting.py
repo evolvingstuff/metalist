@@ -1,4 +1,4 @@
-from app.services.content_formatting import format_note_content_for_view
+from app.services.content_formatting import find_list_style, format_note_content_for_view
 
 
 def test_format_note_content_for_view_no_matching_tag_keeps_delimiters() -> None:
@@ -188,3 +188,17 @@ def test_format_note_content_for_view_csv_meta_invalid_shows_error_badge() -> No
     assert 'meta-csv-error' in rendered
     assert "Invalid CSV" in rendered
     assert "a,b" in rendered
+
+
+def test_find_list_style_returns_none_without_list_tags() -> None:
+    assert find_list_style("@red foo") is None
+
+
+def test_find_list_style_prefers_last_tag() -> None:
+    assert find_list_style("@list-bulleted @list-numbered") == "numbered"
+    assert find_list_style("@list-numbered @list-bulleted") == "bulleted"
+
+
+def test_find_list_style_ignores_wrapped_tags() -> None:
+    assert find_list_style("((@list-bulleted))") is None
+    assert find_list_style("[[@list-numbered]]") is None

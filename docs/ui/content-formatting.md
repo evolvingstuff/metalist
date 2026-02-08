@@ -55,6 +55,11 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@grey`: renders text in grey.
 - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 
+## List meta tags
+- `@list-bulleted`: renders the note's immediate children as a bulleted list in view mode.
+- `@list-numbered`: renders the note's immediate children as a numbered list in view mode.
+- Only direct children are affected (grandchildren are not).
+
 ## Credential meta tags
 - `@username`: renders the note content as a credential row (user icon + "Username:") in view mode; the value is click-to-copy.
 - `@password`: renders the note content as a credential row (lock icon + "Password:") in view mode; the value is blurred and click-to-copy.
