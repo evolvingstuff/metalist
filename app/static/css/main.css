@@ -2106,6 +2106,106 @@ body.loading::after {
     color: #4b5563;
 }
 
+/* Markdown meta tags */
+.meta-markdown {
+    display: block;
+    margin: 4px 0;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.meta-markdown > *:first-child {
+    margin-top: 0;
+}
+
+.meta-markdown > *:last-child {
+    margin-bottom: 0;
+}
+
+.meta-markdown h1 {
+    font-size: 1.45rem;
+    font-weight: 650;
+    margin: 0.55em 0 0.35em;
+}
+
+.meta-markdown h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0.5em 0 0.3em;
+}
+
+.meta-markdown h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0.45em 0 0.25em;
+}
+
+.meta-markdown p {
+    margin: 0.35em 0;
+}
+
+.meta-markdown ul,
+.meta-markdown ol {
+    margin: 0.35em 0 0.35em 1.2em;
+    padding-left: 0.2em;
+}
+
+.meta-markdown li {
+    margin: 0.2em 0;
+}
+
+.meta-markdown code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.92em;
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 4px;
+    border-radius: 4px;
+}
+
+.meta-markdown pre {
+    margin: 0.35em 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #f7f8fa;
+    overflow-x: auto;
+}
+
+.meta-markdown pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.meta-markdown blockquote {
+    margin: 0.35em 0;
+    padding: 0.2em 0 0.2em 0.8em;
+    border-left: 3px solid rgba(0, 0, 0, 0.2);
+    color: #555555;
+}
+
+.meta-markdown a {
+    color: #0b62a4;
+    text-decoration: underline;
+}
+
+.meta-markdown table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.35em 0;
+    background: #ffffff;
+}
+
+.meta-markdown th,
+.meta-markdown td {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    padding: 6px 10px;
+    vertical-align: top;
+}
+
+.meta-markdown tr:nth-child(even) td {
+    background: #f8fafc;
+}
+
 /* CSV meta tags */
 .meta-csv {
     display: block;

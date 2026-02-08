@@ -136,6 +136,7 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
 
     suggestions = index.suggest_tag_completions(query="@")
     assert "@json" in suggestions
+    assert "@markdown" in suggestions
     assert "@todo" in suggestions
     assert "@monospace" in suggestions
 

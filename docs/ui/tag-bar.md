@@ -38,6 +38,8 @@ Examples (autocorrected while typing):
 - Status meta tags:
   - `@todo` renders an unchecked box icon; clicking the icon toggles the tag to `@done`.
   - `@done` renders a checked box icon; clicking the icon toggles the tag to `@todo`.
+- Markdown meta tags:
+  - `@markdown` renders note content as Markdown in view mode.
 - JSON meta tags:
   - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
 - CSV meta tags:

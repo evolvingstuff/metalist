@@ -109,6 +109,15 @@ def test_format_note_content_for_view_status_meta_applies_other_global_classes()
     assert 'meta-status-text meta-red' in rendered
 
 
+def test_format_note_content_for_view_markdown_meta_renders_plain_text_container() -> None:
+    html = "<div># Title</div><div>Paragraph</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@markdown")
+    assert 'class="meta-markdown"' in rendered
+    assert "# Title" in rendered
+    assert "Paragraph" in rendered
+    assert "<div># Title</div>" not in rendered
+
+
 def test_format_note_content_for_view_json_meta_formats_and_highlights() -> None:
     html = '<div>{"name": "MetaList", "count": 2}</div>'
     rendered = format_note_content_for_view(content_html=html, tags="@json")

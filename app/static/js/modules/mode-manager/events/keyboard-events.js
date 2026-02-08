@@ -16,6 +16,7 @@ import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearC
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
+import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
 
@@ -928,8 +929,12 @@ async function handleCopyNoteShortcut(event) {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    const renderedHtml = copyResult?.html;
+    let renderedHtml = copyResult?.html;
     const renderedPlainText = copyResult?.plain_text;
+
+    if (typeof renderedHtml === 'string') {
+        renderedHtml = renderMarkdownHtml(renderedHtml);
+    }
 
     if (!renderedHtml && !renderedPlainText) {
         Logger.logDebug('Copy endpoint returned no rendered content', {}, Logger.LogCategory.EVENT);
@@ -1034,8 +1039,12 @@ async function handleCutNoteShortcut(event) {
 
     const cutResult = await CommandGate.run('keyboard.cut_note', async () => {
         const copyResult = await actionCopyNote();
-        const renderedHtml = copyResult?.html;
+        let renderedHtml = copyResult?.html;
         const renderedPlainText = copyResult?.plain_text;
+
+        if (typeof renderedHtml === 'string') {
+            renderedHtml = renderMarkdownHtml(renderedHtml);
+        }
 
         if (renderedHtml || renderedPlainText) {
             if (

@@ -84,6 +84,7 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms = {f"@{name}" for name in _META_TAG_TO_CLASS.keys()}
     terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
     terms.update(f"@{name}" for name in _STATUS_TAGS)
+    terms.add("@markdown")
     terms.add("@json")
     terms.add("@csv")
     return frozenset(terms)
@@ -104,8 +105,14 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     config = _parse_meta_tags(tags)
     credential_tag = _find_global_credential_tag(tags)
     status_tag = _find_global_status_tag(tags)
+    markdown_tag = _find_global_markdown_tag(tags)
     json_tag = _find_global_json_tag(tags)
     csv_tag = _find_global_csv_tag(tags)
+    if markdown_tag is not None:
+        return _render_markdown_meta(
+            content_html=content_html,
+            formatting_tags=config.global_tags,
+        )
     if json_tag is not None:
         return _render_json_meta(
             content_html=content_html,
@@ -272,6 +279,32 @@ def _find_global_json_tag(tags: str) -> str | None:
         if base == "@json":
             return "json"
     return None
+
+
+def _find_global_markdown_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if base == "@markdown":
+            return "markdown"
+    return None
+
+
+def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+    raw_text = _extract_plain_text(content_html)
+    escaped_text = html.escape(raw_text, quote=False)
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    block_class = "meta-markdown"
+    if extra_classes:
+        block_class = f"{block_class} {extra_classes}"
+
+    return f'<div class="{block_class}">{escaped_text}</div>'
 
 
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
