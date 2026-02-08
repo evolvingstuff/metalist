@@ -53,6 +53,7 @@ Examples (autocorrected while typing):
 - LaTeX meta tags:
   - `@latex` renders note content as LaTeX in view mode (KaTeX).
   - Use `$...$` for inline math and `$$...$$` for display math.
+  - If no `$` delimiters are present, the entire note is rendered as display math.
 - JSON meta tags:
   - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
 - CSV meta tags:

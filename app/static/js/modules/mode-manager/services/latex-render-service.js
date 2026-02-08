@@ -94,6 +94,20 @@ function parseLatexSegments(text) {
     return segments;
 }
 
+function hasMathDelimiters(text) {
+    let cursor = 0;
+    while (cursor < text.length) {
+        if (text.startsWith('$$', cursor) && !isEscaped(text, cursor)) {
+            return true;
+        }
+        if (text[cursor] === '$' && !isEscaped(text, cursor) && text[cursor + 1] !== '$') {
+            return true;
+        }
+        cursor += 1;
+    }
+    return false;
+}
+
 function renderTextSegment(text) {
     if (text === '') {
         return '';
@@ -149,18 +163,27 @@ export function renderLatexBlocks(rootElement) {
         const rawText = block.textContent;
         const source = rawText === null ? '' : rawText;
         try {
-            const segments = parseLatexSegments(source);
-            const renderedParts = segments.map((segment) => {
-                if (segment.type === 'text') {
-                    return renderTextSegment(segment.value);
-                }
-                const displayMode = segment.type === 'display';
-                return katex.renderToString(segment.value, {
-                    displayMode,
+            let renderedHtml = '';
+            if (!hasMathDelimiters(source)) {
+                renderedHtml = katex.renderToString(source, {
+                    displayMode: true,
                     throwOnError: true,
                 });
-            });
-            block.innerHTML = renderedParts.join('');
+            } else {
+                const segments = parseLatexSegments(source);
+                const renderedParts = segments.map((segment) => {
+                    if (segment.type === 'text') {
+                        return renderTextSegment(segment.value);
+                    }
+                    const displayMode = segment.type === 'display';
+                    return katex.renderToString(segment.value, {
+                        displayMode,
+                        throwOnError: true,
+                    });
+                });
+                renderedHtml = renderedParts.join('');
+            }
+            block.innerHTML = renderedHtml;
             block.setAttribute(`data-${LATEX_RENDERED_ATTR}`, 'true');
         } catch (error) {
             renderLatexError(block, source, error);

@@ -76,6 +76,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@latex`: renders the note content as LaTeX in view mode (using KaTeX in the browser).
 - Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
 - Inline math uses `$...$`; display math uses `$$...$$`.
+- If no `$` delimiters are present, the entire note is rendered as display math.
 
 ## JSON meta tags
 - `@json`: parses the note content as JSON and pretty-prints it in view mode.
