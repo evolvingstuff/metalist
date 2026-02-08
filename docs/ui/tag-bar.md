@@ -32,6 +32,12 @@ Examples (autocorrected while typing):
 - Scoped meta tags apply only to regions of note content wrapped with the same bracket type + depth.
   - Example: tag bar `{{@monospace}}` applies monospace styling to `{{...}}` regions in the note.
   - Depth must match exactly: `[[...]]` matches `[[@tag]]`, not `[@tag]` or `[[[@tag]]]`.
+- Basic formatting tags:
+  - `@heading` increases font size and weight.
+  - `@bold`, `@italic`, `@strikethrough` apply basic text styling.
+  - `@serif` switches to a serif font.
+  - `@red`, `@green`, `@blue`, `@grey` apply text colors.
+  - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 - Credential meta tags:
   - `@username` renders a view-only "Username:" row with a copyable value.
   - `@password` renders a view-only "Password:" row with a blurred, copyable value.

@@ -61,6 +61,15 @@ def test_format_note_content_for_view_global_applies_entire_note() -> None:
     assert rendered == '<span class="meta-global meta-red"><div>hello</div></span>'
 
 
+def test_format_note_content_for_view_basic_meta_tags_apply_classes() -> None:
+    html = "<div>hello</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@bold @italic @heading @serif")
+    assert 'meta-bold' in rendered
+    assert 'meta-italic' in rendered
+    assert 'meta-heading' in rendered
+    assert 'meta-serif' in rendered
+
+
 def test_format_note_content_for_view_username_meta_renders_credential_row() -> None:
     html = "<div><b>tomlahore1</b></div>"
     rendered = format_note_content_for_view(content_html=html, tags="@username")

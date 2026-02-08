@@ -272,6 +272,14 @@ def get_ontology() -> TagOntology:
         return state.ontology
 
 
+def get_ontology_if_ready() -> TagOntology | None:
+    with _LOCK:
+        state = _STATE
+        if state is None or not state.is_decrypted:
+            return None
+        return state.ontology
+
+
 def list_rule_lines() -> List[Tuple[int, str]]:
     with _LOCK:
         state = _STATE

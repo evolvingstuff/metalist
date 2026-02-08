@@ -44,6 +44,16 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Initial meta tags
 - `@monospace`: renders the (scoped) region using a monospace/code font.
 - `@red`: renders the (scoped) region in red.
+## Basic formatting tags
+- `@heading`: increases font size and weight.
+- `@bold`: renders bold text.
+- `@italic`: renders italic text.
+- `@strikethrough`: renders struck-through text.
+- `@serif`: renders with a serif font.
+- `@green`: renders text in green.
+- `@blue`: renders text in blue.
+- `@grey`: renders text in grey.
+- Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 
 ## Credential meta tags
 - `@username`: renders the note content as a credential row (user icon + "Username:") in view mode; the value is click-to-copy.

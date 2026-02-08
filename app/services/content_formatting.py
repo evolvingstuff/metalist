@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
 from app.utils.text_utils import strip_html
+from app.services.ontology_rules_store import get_ontology_if_ready
 
 
 _OPEN_TO_CLOSE = {
@@ -22,7 +23,15 @@ _MAX_DELIMITER_DEPTH = 3
 
 _META_TAG_TO_CLASS = {
     "monospace": "meta-monospace",
+    "heading": "meta-heading",
     "red": "meta-red",
+    "green": "meta-green",
+    "blue": "meta-blue",
+    "grey": "meta-grey",
+    "bold": "meta-bold",
+    "italic": "meta-italic",
+    "strikethrough": "meta-strikethrough",
+    "serif": "meta-serif",
 }
 
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
@@ -103,6 +112,13 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         raise TypeError(f"tags must be a string, got {type(tags)}")
 
     config = _parse_meta_tags(tags)
+    implied_meta = _infer_implied_meta_tags(tags)
+    if implied_meta:
+        config = MetaTagConfig(
+            global_tags=frozenset(set(config.global_tags) | set(implied_meta)),
+            wrappers_to_consume=config.wrappers_to_consume,
+            scoped_tags=config.scoped_tags,
+        )
     credential_tag = _find_global_credential_tag(tags)
     status_tag = _find_global_status_tag(tags)
     markdown_tag = _find_global_markdown_tag(tags)
@@ -155,6 +171,42 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             output = f'<span class="meta-global {classes}">{output}</span>'
 
     return output
+
+
+def _infer_implied_meta_tags(tags: str) -> FrozenSet[str]:
+    if not isinstance(tags, str):
+        raise TypeError("tags must be a string")
+
+    base_terms = _extract_tag_terms(tags)
+    if not base_terms:
+        return frozenset()
+
+    ontology = get_ontology_if_ready()
+    if ontology is None or ontology.is_empty:
+        return frozenset()
+
+    implied = ontology.infer_implication_only(base_tags=base_terms)
+    meta: Set[str] = set()
+    for term in implied:
+        if not term.startswith("@"):
+            continue
+        tag_name = term[1:]
+        if tag_name in _META_TAG_TO_CLASS:
+            meta.add(tag_name)
+    return frozenset(meta)
+
+
+def _extract_tag_terms(tags: str) -> FrozenSet[str]:
+    terms: Set[str] = set()
+    for token in _tokenize_tag_bar(tags):
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is None:
+            terms.add(base)
+            continue
+        for inner in base.split():
+            if inner:
+                terms.add(inner)
+    return frozenset(terms)
 
 
 def _find_global_credential_tag(tags: str) -> str | None:

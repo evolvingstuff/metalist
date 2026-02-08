@@ -1941,8 +1941,43 @@ body.loading::after {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
+.meta-serif {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+}
+
+.meta-heading {
+    font-size: 1.35em;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+}
+
+.meta-bold {
+    font-weight: 700;
+}
+
+.meta-italic {
+    font-style: italic;
+}
+
+.meta-strikethrough {
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+}
+
 .meta-red {
     color: #d32f2f;
+}
+
+.meta-green {
+    color: #1a7f37;
+}
+
+.meta-blue {
+    color: #1d4ed8;
+}
+
+.meta-grey {
+    color: #6b7280;
 }
 
 /* Credential meta tags */
