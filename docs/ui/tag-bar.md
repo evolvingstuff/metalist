@@ -50,6 +50,7 @@ Examples (autocorrected while typing):
   - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
 - CSV meta tags:
   - `@csv` renders note content as a CSV table; invalid CSV shows an error badge and raw text.
+  - `((@csv))` renders only the wrapped content as a CSV table.
 
 Wrapper regions in note content are always allowed (e.g. `((foo))`), but they are only consumed/hidden in view mode when there is a matching scoped wrapper tag in the tag bar (meta tags like `{{@red}}` or regular tags like `{{foo}}`). Otherwise the wrappers remain literal text.
 

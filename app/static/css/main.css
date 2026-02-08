@@ -2248,6 +2248,21 @@ body.loading::after {
     max-width: 100%;
 }
 
+.meta-csv.meta-csv-inline {
+    margin: 0;
+    display: inline-block;
+    vertical-align: top;
+    line-height: 0;
+}
+
+.meta-csv.meta-csv-inline .meta-csv-table-wrap {
+    display: inline-block;
+}
+
+.meta-csv.meta-csv-inline .meta-csv-table {
+    line-height: 1.4;
+}
+
 .meta-csv-table-wrap {
     overflow-x: auto;
     max-width: 100%;

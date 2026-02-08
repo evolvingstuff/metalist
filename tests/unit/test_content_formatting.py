@@ -155,6 +155,20 @@ def test_format_note_content_for_view_csv_meta_renders_table() -> None:
     assert "<td>2</td>" in rendered
 
 
+def test_format_note_content_for_view_scoped_csv_meta_renders_table() -> None:
+    html = "<div>((a,b,c</div><div>1,2,3))</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="((@csv))")
+    assert 'meta-csv' in rendered
+    assert 'meta-csv-inline' in rendered
+    assert "<table" in rendered
+    assert "<td>a</td>" in rendered
+    assert "<td>b</td>" in rendered
+    assert "<td>c</td>" in rendered
+    assert "<td>1</td>" in rendered
+    assert "<td>2</td>" in rendered
+    assert "<td>3</td>" in rendered
+
+
 def test_format_note_content_for_view_csv_meta_invalid_shows_error_badge() -> None:
     html = "<div>a,b</div><div>1,2,3</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@csv")

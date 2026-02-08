@@ -74,3 +74,4 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## CSV meta tags
 - `@csv`: parses the note content as CSV and renders it as a table in view mode.
 - Invalid CSV shows a red "Invalid CSV" badge and the raw content.
+- Scoped wrappers (e.g. `((@csv))`) render only the wrapped region as a CSV table.

@@ -103,6 +103,7 @@ class MetaTagConfig:
     global_tags: FrozenSet[str]
     wrappers_to_consume: FrozenSet[Tuple[str, int]]
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]]
+    scoped_renderers: Mapping[Tuple[str, int], str]
 
 
 def format_note_content_for_view(*, content_html: str, tags: str) -> str:
@@ -118,6 +119,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             global_tags=frozenset(set(config.global_tags) | set(implied_meta)),
             wrappers_to_consume=config.wrappers_to_consume,
             scoped_tags=config.scoped_tags,
+            scoped_renderers=config.scoped_renderers,
         )
     credential_tag = _find_global_credential_tag(tags)
     status_tag = _find_global_status_tag(tags)
@@ -138,6 +140,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         return _render_csv_meta(
             content_html=content_html,
             formatting_tags=config.global_tags,
+            inline=False,
         )
 
     if not config.global_tags and not config.wrappers_to_consume and credential_tag is None and status_tag is None:
@@ -149,6 +152,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             content_html=output,
             wrappers_to_consume=config.wrappers_to_consume,
             scoped_tags=config.scoped_tags,
+            scoped_renderers=config.scoped_renderers,
         )
 
     if credential_tag is not None:
@@ -433,11 +437,16 @@ def _find_global_csv_tag(tags: str) -> str | None:
     return None
 
 
-def _render_csv_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+def _render_csv_meta(
+    *,
+    content_html: str,
+    formatting_tags: FrozenSet[str],
+    inline: bool,
+) -> str:
     raw_text = _extract_plain_text(content_html)
     rows, error = _parse_csv_rows(raw_text)
     if error is not None:
-        return _render_csv_error(raw_text, error)
+        return _render_csv_error(raw_text=raw_text, message=error, inline=inline)
 
     extra_classes = ""
     if formatting_tags:
@@ -447,8 +456,12 @@ def _render_csv_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> s
     if extra_classes:
         table_class = f"{table_class} {extra_classes}"
 
+    meta_classes = ["meta-csv"]
+    if inline:
+        meta_classes.append("meta-csv-inline")
+
     output: List[str] = [
-        '<div class="meta-csv">',
+        f'<div class="{" ".join(meta_classes)}">',
         '<div class="meta-csv-table-wrap">',
         f'<table class="{table_class}">',
         "<tbody>",
@@ -463,6 +476,21 @@ def _render_csv_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> s
 
     output.append("</tbody></table></div></div>")
     return "".join(output)
+
+
+def _render_scoped_renderer(
+    *,
+    render_tag: str,
+    content_html: str,
+    formatting_tags: FrozenSet[str],
+) -> str:
+    if render_tag == "csv":
+        return _render_csv_meta(
+            content_html=content_html,
+            formatting_tags=formatting_tags,
+            inline=True,
+        )
+    raise KeyError(f"Unknown scoped renderer: {render_tag}")
 
 
 def _parse_csv_rows(text: str) -> tuple[list[list[str]], str | None]:
@@ -489,7 +517,7 @@ def _parse_csv_rows(text: str) -> tuple[list[list[str]], str | None]:
     return rows, None
 
 
-def _render_csv_error(raw_text: str, message: str) -> str:
+def _render_csv_error(*, raw_text: str, message: str, inline: bool) -> str:
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string")
     if not isinstance(message, str) or message == "":
@@ -497,8 +525,11 @@ def _render_csv_error(raw_text: str, message: str) -> str:
 
     escaped_message = html.escape(message, quote=True)
     escaped_text = html.escape(raw_text, quote=False)
+    meta_classes = ["meta-csv", "meta-csv-error"]
+    if inline:
+        meta_classes.append("meta-csv-inline")
     return (
-        '<div class="meta-csv meta-csv-error">'
+        f'<div class="{" ".join(meta_classes)}">'
         f'<span class="meta-csv-badge" title="{escaped_message}">Invalid CSV</span>'
         f'<pre class="meta-csv-pre"><code class="meta-csv-code">{escaped_text}</code></pre>'
         "</div>"
@@ -610,6 +641,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
     global_tags: Set[str] = set()
     wrappers_to_consume: Set[Tuple[str, int]] = set()
     scoped: Dict[Tuple[str, int], Set[str]] = {}
+    scoped_renderers: Dict[Tuple[str, int], str] = {}
 
     for token in tokens:
         base, wrapper = _unwrap_tag_token(token)
@@ -634,6 +666,13 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
                 continue
             tag_name = inner[1:]
             if tag_name not in _META_TAG_TO_CLASS:
+                if tag_name == "csv":
+                    existing = scoped_renderers.get(key)
+                    if existing is not None and existing != "csv":
+                        raise ValueError(
+                            f"Wrapper {key} has conflicting scoped renderers: {existing} vs csv"
+                        )
+                    scoped_renderers[key] = "csv"
                 continue
             if key not in scoped:
                 scoped[key] = set()
@@ -646,6 +685,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
         global_tags=frozenset(global_tags),
         wrappers_to_consume=frozenset(wrappers_to_consume),
         scoped_tags=frozen_scoped,
+        scoped_renderers=dict(scoped_renderers),
     )
 
 
@@ -737,6 +777,8 @@ class _OpenFrame:
     opener_text: str
     open_html: str
     close_html: str
+    render_tag: str | None
+    formatting_tags: FrozenSet[str] | None
 
 
 def _apply_scoped_meta_tags(
@@ -744,6 +786,7 @@ def _apply_scoped_meta_tags(
     content_html: str,
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str],
 ) -> str:
     parts = re.split(r"(<[^>]+>)", content_html)
     output: List[str] = []
@@ -759,6 +802,7 @@ def _apply_scoped_meta_tags(
             stack=stack,
             wrappers_to_consume=wrappers_to_consume,
             scoped_tags=scoped_tags,
+            scoped_renderers=scoped_renderers,
         )
 
     for frame in stack:
@@ -774,6 +818,7 @@ def _process_text_segment(
     stack: List[_OpenFrame],
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str],
 ) -> None:
     index = 0
     while index < len(text):
@@ -784,6 +829,11 @@ def _process_text_segment(
                 key = (char, run)
                 open_html = ""
                 close_html = ""
+                render_tag = None
+                formatting_tags = None
+                if key in scoped_renderers:
+                    render_tag = scoped_renderers[key]
+                    formatting_tags = scoped_tags.get(key, frozenset())
                 if key in scoped_tags:
                     classes = _meta_classes_for_tag_names(scoped_tags[key])
                     assert classes, "Scoped meta tags must resolve to at least one CSS class"
@@ -801,6 +851,8 @@ def _process_text_segment(
                         opener_text=opener_text,
                         open_html=open_html,
                         close_html=close_html,
+                        render_tag=render_tag,
+                        formatting_tags=formatting_tags,
                     )
                 )
                 index += run
@@ -815,8 +867,19 @@ def _process_text_segment(
                 top = stack[-1]
                 if top.closer == char and top.depth == run:
                     stack.pop()
-                    output[top.placeholder_index] = top.open_html
-                    output.append(top.close_html)
+                    if top.render_tag is not None:
+                        inner_parts = output[top.placeholder_index + 1 :]
+                        inner_html = "".join(inner_parts)
+                        rendered = _render_scoped_renderer(
+                            render_tag=top.render_tag,
+                            content_html=inner_html,
+                            formatting_tags=top.formatting_tags or frozenset(),
+                        )
+                        del output[top.placeholder_index :]
+                        output.append(rendered)
+                    else:
+                        output[top.placeholder_index] = top.open_html
+                        output.append(top.close_html)
                     index += run
                     continue
             output.append(text[index : index + run])
