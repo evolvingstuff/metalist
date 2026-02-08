@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
@@ -74,6 +75,8 @@ _STATUS_META = {
     },
 }
 
+_JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
+
 @dataclass(frozen=True, slots=True)
 class MetaTagConfig:
     global_tags: FrozenSet[str]
@@ -90,6 +93,13 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     config = _parse_meta_tags(tags)
     credential_tag = _find_global_credential_tag(tags)
     status_tag = _find_global_status_tag(tags)
+    json_tag = _find_global_json_tag(tags)
+    if json_tag is not None:
+        return _render_json_meta(
+            content_html=content_html,
+            formatting_tags=config.global_tags,
+        )
+
     if not config.global_tags and not config.wrappers_to_consume and credential_tag is None and status_tag is None:
         return content_html
 
@@ -234,6 +244,178 @@ def _render_status_meta(
         f'<div class="{text_class}">{content_html}</div>'
         "</div>"
     )
+
+
+def _find_global_json_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if base == "@json":
+            return "json"
+    return None
+
+
+def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
+    raw_text = _extract_json_text(content_html)
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        return _render_json_error(raw_text, exc)
+
+    pretty = json.dumps(parsed, indent=2, ensure_ascii=False, sort_keys=False)
+    highlighted = _highlight_json(pretty)
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    code_class = "meta-json-code"
+    if extra_classes:
+        code_class = f"{code_class} {extra_classes}"
+
+    return (
+        '<div class="meta-json">'
+        f'<pre class="meta-json-pre"><code class="{code_class}">{highlighted}</code></pre>'
+        "</div>"
+    )
+
+
+def _render_json_error(raw_text: str, error: json.JSONDecodeError) -> str:
+    if not isinstance(raw_text, str):
+        raise TypeError("raw_text must be a string")
+    if not isinstance(error, json.JSONDecodeError):
+        raise TypeError("error must be a JSONDecodeError")
+
+    message = _format_json_error(error)
+    escaped_message = html.escape(message, quote=True)
+    escaped_text = html.escape(raw_text, quote=False)
+
+    return (
+        '<div class="meta-json meta-json-error">'
+        f'<span class="meta-json-badge" title="{escaped_message}">Invalid JSON</span>'
+        f'<pre class="meta-json-pre"><code class="meta-json-code">{escaped_text}</code></pre>'
+        "</div>"
+    )
+
+
+def _format_json_error(error: json.JSONDecodeError) -> str:
+    return f"Line {error.lineno}, column {error.colno}: {error.msg}"
+
+
+def _extract_json_text(content_html: str) -> str:
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+
+    text = re.sub(r"<br\s*/?>", "\n", content_html, flags=re.IGNORECASE)
+    text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<div[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<p[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    return html.unescape(text)
+
+
+def _highlight_json(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    output: List[str] = []
+    index = 0
+    length = len(text)
+
+    while index < length:
+        char = text[index]
+
+        if char == '"':
+            token, next_index = _consume_json_string(text, index)
+            is_key = _json_string_is_key(text, next_index)
+            css_class = "json-key" if is_key else "json-string"
+            output.append(_wrap_json_span(css_class, token))
+            index = next_index
+            continue
+
+        if char == "-" or char.isdigit():
+            match = _JSON_NUMBER_RE.match(text, index)
+            if match:
+                token = match.group(0)
+                output.append(_wrap_json_span("json-number", token))
+                index = match.end()
+                continue
+
+        word_match = _match_json_word(text, index)
+        if word_match is not None:
+            token, css_class = word_match
+            output.append(_wrap_json_span(css_class, token))
+            index += len(token)
+            continue
+
+        if char in "{}[]:,":
+            output.append(_wrap_json_span("json-punct", char))
+            index += 1
+            continue
+
+        output.append(html.escape(char, quote=False))
+        index += 1
+
+    return "".join(output)
+
+
+def _consume_json_string(text: str, start: int) -> tuple[str, int]:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(start, int) or start < 0:
+        raise TypeError("start must be a non-negative integer")
+
+    index = start + 1
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == '"':
+            index += 1
+            break
+        index += 1
+    return text[start:index], index
+
+
+def _json_string_is_key(text: str, index: int) -> bool:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int) or index < 0:
+        raise TypeError("index must be a non-negative integer")
+
+    probe = index
+    length = len(text)
+    while probe < length and text[probe].isspace():
+        probe += 1
+    return probe < length and text[probe] == ":"
+
+
+def _match_json_word(text: str, index: int) -> tuple[str, str] | None:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int) or index < 0:
+        raise TypeError("index must be a non-negative integer")
+
+    for word, css_class in (("true", "json-boolean"), ("false", "json-boolean"), ("null", "json-null")):
+        if text.startswith(word, index):
+            end = index + len(word)
+            if end == len(text) or not text[end].isalpha():
+                return word, css_class
+    return None
+
+
+def _wrap_json_span(css_class: str, token: str) -> str:
+    if not isinstance(css_class, str) or css_class == "":
+        raise TypeError("css_class must be a non-empty string")
+    if not isinstance(token, str):
+        raise TypeError("token must be a string")
+    return f'<span class="{css_class}">{html.escape(token, quote=False)}</span>'
 
 
 def _parse_meta_tags(tags: str) -> MetaTagConfig:

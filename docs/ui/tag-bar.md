@@ -38,6 +38,8 @@ Examples (autocorrected while typing):
 - Status meta tags:
   - `@todo` renders an unchecked box icon; clicking the icon toggles the tag to `@done`.
   - `@done` renders a checked box icon; clicking the icon toggles the tag to `@todo`.
+- JSON meta tags:
+  - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
 
 Wrapper regions in note content are always allowed (e.g. `((foo))`), but they are only consumed/hidden in view mode when there is a matching scoped wrapper tag in the tag bar (meta tags like `{{@red}}` or regular tags like `{{foo}}`). Otherwise the wrappers remain literal text.
 

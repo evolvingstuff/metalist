@@ -2042,6 +2042,69 @@ body.loading::after {
     display: inline-block;
 }
 
+/* JSON meta tags */
+.meta-json {
+    display: block;
+    margin: 4px 0;
+}
+
+.meta-json-pre {
+    margin: 6px 0 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #f7f8fa;
+    overflow-x: auto;
+}
+
+.meta-json-code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    white-space: pre;
+}
+
+.meta-json-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(211, 47, 47, 0.12);
+    color: #b3261e;
+}
+
+.meta-json-error .meta-json-pre {
+    border-color: rgba(211, 47, 47, 0.25);
+    background: #fff5f5;
+}
+
+.json-key {
+    color: #0b62a4;
+}
+
+.json-string {
+    color: #1a7f37;
+}
+
+.json-number {
+    color: #ad6800;
+}
+
+.json-boolean {
+    color: #7b2cbf;
+}
+
+.json-null {
+    color: #6b7280;
+}
+
+.json-punct {
+    color: #4b5563;
+}
+
 
 /* Error Banner Styles */
 .error-banner {

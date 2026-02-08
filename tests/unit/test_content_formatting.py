@@ -107,3 +107,20 @@ def test_format_note_content_for_view_status_meta_applies_other_global_classes()
     html = "<div>stuff</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@done @red")
     assert 'meta-status-text meta-red' in rendered
+
+
+def test_format_note_content_for_view_json_meta_formats_and_highlights() -> None:
+    html = '<div>{"name": "MetaList", "count": 2}</div>'
+    rendered = format_note_content_for_view(content_html=html, tags="@json")
+    assert 'meta-json' in rendered
+    assert '<span class="json-key">"name"</span>' in rendered
+    assert '<span class="json-string">"MetaList"</span>' in rendered
+    assert '<span class="json-number">2</span>' in rendered
+
+
+def test_format_note_content_for_view_json_meta_invalid_shows_error_badge() -> None:
+    html = "<div>{invalid}</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@json")
+    assert 'meta-json-error' in rendered
+    assert "Invalid JSON" in rendered
+    assert "{invalid}" in rendered

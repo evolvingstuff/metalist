@@ -53,3 +53,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Status meta tags
 - `@todo`: renders the note content with an unchecked box icon in view mode; clicking the icon toggles the tag to `@done`.
 - `@done`: renders the note content with a checked box icon in view mode; clicking the icon toggles the tag to `@todo`.
+
+## JSON meta tags
+- `@json`: parses the note content as JSON and pretty-prints it in view mode.
+- Invalid JSON shows a red "Invalid JSON" badge and the raw content.
