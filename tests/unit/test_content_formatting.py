@@ -70,6 +70,13 @@ def test_format_note_content_for_view_basic_meta_tags_apply_classes() -> None:
     assert 'meta-serif' in rendered
 
 
+def test_format_note_content_for_view_scoped_meta_tags_do_not_apply_globally() -> None:
+    html = "<div>foo [bar]</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="[@red]")
+    assert 'meta-global meta-red' not in rendered
+    assert '<span class="meta-scope meta-red">bar</span>' in rendered
+
+
 def test_format_note_content_for_view_username_meta_renders_credential_row() -> None:
     html = "<div><b>tomlahore1</b></div>"
     rendered = format_note_content_for_view(content_html=html, tags="@username")
@@ -167,6 +174,12 @@ def test_format_note_content_for_view_scoped_csv_meta_renders_table() -> None:
     assert "<td>1</td>" in rendered
     assert "<td>2</td>" in rendered
     assert "<td>3</td>" in rendered
+
+
+def test_format_note_content_for_view_scoped_csv_meta_applies_scoped_formatting() -> None:
+    html = "<div>((a,b,c</div><div>1,2,[3]))</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="((@csv)) [@red]")
+    assert '<span class="meta-scope meta-red">3</span>' in rendered
 
 
 def test_format_note_content_for_view_csv_meta_invalid_shows_error_badge() -> None:

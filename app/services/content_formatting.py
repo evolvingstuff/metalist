@@ -181,7 +181,9 @@ def _infer_implied_meta_tags(tags: str) -> FrozenSet[str]:
     if not isinstance(tags, str):
         raise TypeError("tags must be a string")
 
-    base_terms = _extract_tag_terms(tags)
+    base_terms = frozenset(
+        term for term in _extract_tag_terms(tags) if not term.startswith("@")
+    )
     if not base_terms:
         return frozenset()
 
@@ -442,6 +444,8 @@ def _render_csv_meta(
     content_html: str,
     formatting_tags: FrozenSet[str],
     inline: bool,
+    cell_wrappers: FrozenSet[Tuple[str, int]] = frozenset(),
+    cell_scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]] | None = None,
 ) -> str:
     raw_text = _extract_plain_text(content_html)
     rows, error = _parse_csv_rows(raw_text)
@@ -466,12 +470,20 @@ def _render_csv_meta(
         f'<table class="{table_class}">',
         "<tbody>",
     ]
+    effective_scoped_tags = cell_scoped_tags or {}
+    apply_cell_wrappers = bool(cell_wrappers)
 
     for row in rows:
         output.append("<tr>")
         for cell in row:
-            escaped = html.escape(cell, quote=False)
-            output.append(f"<td>{escaped}</td>")
+            cell_html = html.escape(cell, quote=False)
+            if apply_cell_wrappers:
+                cell_html = _apply_scoped_meta_tags_to_plain_text(
+                    text=cell,
+                    wrappers_to_consume=cell_wrappers,
+                    scoped_tags=effective_scoped_tags,
+                )
+            output.append(f"<td>{cell_html}</td>")
         output.append("</tr>")
 
     output.append("</tbody></table></div></div>")
@@ -483,12 +495,27 @@ def _render_scoped_renderer(
     render_tag: str,
     content_html: str,
     formatting_tags: FrozenSet[str],
+    wrappers_to_consume: FrozenSet[Tuple[str, int]],
+    scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str],
+    render_key: Tuple[str, int] | None,
 ) -> str:
     if render_tag == "csv":
+        filtered_wrappers = wrappers_to_consume
+        filtered_scoped = scoped_tags
+        if render_key is not None:
+            filtered_wrappers = frozenset(
+                key for key in wrappers_to_consume if key != render_key
+            )
+            filtered_scoped = {
+                key: value for key, value in scoped_tags.items() if key != render_key
+            }
         return _render_csv_meta(
             content_html=content_html,
             formatting_tags=formatting_tags,
             inline=True,
+            cell_wrappers=filtered_wrappers,
+            cell_scoped_tags=filtered_scoped,
         )
     raise KeyError(f"Unknown scoped renderer: {render_tag}")
 
@@ -779,6 +806,7 @@ class _OpenFrame:
     close_html: str
     render_tag: str | None
     formatting_tags: FrozenSet[str] | None
+    render_key: Tuple[str, int] | None
 
 
 def _apply_scoped_meta_tags(
@@ -803,11 +831,34 @@ def _apply_scoped_meta_tags(
             wrappers_to_consume=wrappers_to_consume,
             scoped_tags=scoped_tags,
             scoped_renderers=scoped_renderers,
+            escape_text=False,
         )
 
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
 
+    return "".join(output)
+
+
+def _apply_scoped_meta_tags_to_plain_text(
+    *,
+    text: str,
+    wrappers_to_consume: FrozenSet[Tuple[str, int]],
+    scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+) -> str:
+    output: List[str] = []
+    stack: List[_OpenFrame] = []
+    _process_text_segment(
+        text=text,
+        output=output,
+        stack=stack,
+        wrappers_to_consume=wrappers_to_consume,
+        scoped_tags=scoped_tags,
+        scoped_renderers={},
+        escape_text=True,
+    )
+    for frame in stack:
+        output[frame.placeholder_index] = frame.opener_text
     return "".join(output)
 
 
@@ -819,10 +870,46 @@ def _process_text_segment(
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
+    escape_text: bool,
 ) -> None:
     index = 0
     while index < len(text):
         char = text[index]
+        active_renderer: _OpenFrame | None = None
+        for frame in reversed(stack):
+            if frame.render_tag is not None:
+                active_renderer = frame
+                break
+        if active_renderer is not None:
+            run = 1
+            if char in _OPEN_TO_CLOSE or char in _CLOSE_TO_OPEN:
+                run = _count_run(text=text, index=index, char=char)
+            if char in _CLOSE_TO_OPEN:
+                if run <= _MAX_DELIMITER_DEPTH:
+                    if active_renderer.closer == char and active_renderer.depth == run:
+                        stack.pop()
+                        inner_parts = output[active_renderer.placeholder_index + 1 :]
+                        inner_html = "".join(inner_parts)
+                        rendered = _render_scoped_renderer(
+                            render_tag=active_renderer.render_tag,
+                            content_html=inner_html,
+                            formatting_tags=active_renderer.formatting_tags or frozenset(),
+                            wrappers_to_consume=wrappers_to_consume,
+                            scoped_tags=scoped_tags,
+                            scoped_renderers=scoped_renderers,
+                            render_key=active_renderer.render_key,
+                        )
+                        del output[active_renderer.placeholder_index :]
+                        output.append(rendered)
+                        index += run
+                        continue
+            segment = text[index : index + run]
+            if escape_text:
+                output.append(html.escape(segment, quote=False))
+            else:
+                output.append(segment)
+            index += run
+            continue
         if char in _OPEN_TO_CLOSE:
             run = _count_run(text=text, index=index, char=char)
             if run <= _MAX_DELIMITER_DEPTH and (char, run) in wrappers_to_consume:
@@ -831,9 +918,11 @@ def _process_text_segment(
                 close_html = ""
                 render_tag = None
                 formatting_tags = None
+                render_key = None
                 if key in scoped_renderers:
                     render_tag = scoped_renderers[key]
                     formatting_tags = scoped_tags.get(key, frozenset())
+                    render_key = key
                 if key in scoped_tags:
                     classes = _meta_classes_for_tag_names(scoped_tags[key])
                     assert classes, "Scoped meta tags must resolve to at least one CSS class"
@@ -853,11 +942,13 @@ def _process_text_segment(
                         close_html=close_html,
                         render_tag=render_tag,
                         formatting_tags=formatting_tags,
+                        render_key=render_key,
                     )
                 )
                 index += run
                 continue
-            output.append(text[index : index + run])
+            segment = text[index : index + run]
+            output.append(html.escape(segment, quote=False) if escape_text else segment)
             index += run
             continue
 
@@ -867,26 +958,16 @@ def _process_text_segment(
                 top = stack[-1]
                 if top.closer == char and top.depth == run:
                     stack.pop()
-                    if top.render_tag is not None:
-                        inner_parts = output[top.placeholder_index + 1 :]
-                        inner_html = "".join(inner_parts)
-                        rendered = _render_scoped_renderer(
-                            render_tag=top.render_tag,
-                            content_html=inner_html,
-                            formatting_tags=top.formatting_tags or frozenset(),
-                        )
-                        del output[top.placeholder_index :]
-                        output.append(rendered)
-                    else:
-                        output[top.placeholder_index] = top.open_html
-                        output.append(top.close_html)
+                    output[top.placeholder_index] = top.open_html
+                    output.append(top.close_html)
                     index += run
                     continue
-            output.append(text[index : index + run])
+            segment = text[index : index + run]
+            output.append(html.escape(segment, quote=False) if escape_text else segment)
             index += run
             continue
 
-        output.append(char)
+        output.append(html.escape(char, quote=False) if escape_text else char)
         index += 1
 
 
