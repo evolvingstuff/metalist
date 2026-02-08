@@ -89,3 +89,120 @@ def _replace_inner_tokens(*, inner: str, old: str, new: str) -> str:
             out.append(part)
     return ''.join(out)
 
+
+def toggle_meta_tag_pair_in_tag_bar(*, tags: str, tag_a: str, tag_b: str) -> tuple[str, bool]:
+    if not isinstance(tags, str):
+        raise TypeError('tags must be a string')
+    if not isinstance(tag_a, str) or tag_a == '':
+        raise TypeError('tag_a must be a non-empty string')
+    if not isinstance(tag_b, str) or tag_b == '':
+        raise TypeError('tag_b must be a non-empty string')
+    if tag_a == tag_b:
+        raise ValueError('tag_a and tag_b must be different')
+
+    has_a = _has_global_tag(tags=tags, target=tag_a)
+    has_b = _has_global_tag(tags=tags, target=tag_b)
+    if has_a and has_b:
+        raise RuntimeError(f"Both toggle tags present: {tag_a} {tag_b}")
+    if not has_a and not has_b:
+        raise KeyError(f"Missing toggle tags: {tag_a} {tag_b}")
+
+    from_tag = tag_a if has_a else tag_b
+    to_tag = tag_b if has_a else tag_a
+
+    out = ''
+    changed = False
+    index = 0
+    while index < len(tags):
+        if tags.startswith('/*', index):
+            end = tags.find('*/', index + 2)
+            if end == -1:
+                out += tags[index:]
+                break
+            out += tags[index : end + 2]
+            index = end + 2
+            continue
+
+        ch = tags[index]
+        if ch.isspace():
+            out += ch
+            index += 1
+            continue
+
+        start = index
+        opener = tags[index]
+        token_end = None
+
+        if opener in {'[', '{', '('}:
+            opener_run = 1
+            while index + opener_run < len(tags) and tags[index + opener_run] == opener:
+                opener_run += 1
+            if opener_run <= 3:
+                closer = {"[": "]", "{": "}", "(": ")"}[opener]
+                needle = closer * opener_run
+                close_at = tags.find(needle, index + opener_run)
+                if close_at != -1:
+                    token_end = close_at + opener_run
+
+        if token_end is None:
+            token_end = start
+            while token_end < len(tags) and not tags[token_end].isspace():
+                token_end += 1
+
+        token = tags[start:token_end]
+        base, wrapper = _unwrap_tag_token(token)
+
+        if wrapper is None and base == from_tag:
+            out += to_tag
+            changed = True
+        else:
+            out += token
+
+        index = token_end
+
+    return out, changed
+
+
+def _has_global_tag(*, tags: str, target: str) -> bool:
+    index = 0
+    while index < len(tags):
+        if tags.startswith('/*', index):
+            end = tags.find('*/', index + 2)
+            if end == -1:
+                return False
+            index = end + 2
+            continue
+
+        ch = tags[index]
+        if ch.isspace():
+            index += 1
+            continue
+
+        start = index
+        opener = tags[index]
+        token_end = None
+
+        if opener in {'[', '{', '('}:
+            opener_run = 1
+            while index + opener_run < len(tags) and tags[index + opener_run] == opener:
+                opener_run += 1
+            if opener_run <= 3:
+                closer = {"[": "]", "{": "}", "(": ")"}[opener]
+                needle = closer * opener_run
+                close_at = tags.find(needle, index + opener_run)
+                if close_at != -1:
+                    token_end = close_at + opener_run
+
+        if token_end is None:
+            token_end = start
+            while token_end < len(tags) and not tags[token_end].isspace():
+                token_end += 1
+
+        token = tags[start:token_end]
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is None and base == target:
+            return True
+
+        index = token_end
+
+    return False

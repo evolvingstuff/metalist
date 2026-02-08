@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, collapseNote, expandNote, moveNoteUp, moveNoteDown, indentNote, outdentNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, toggleTodoDone } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -18,6 +18,7 @@ let ignoreClickAfterMoveDrag = null;
 const MOVE_DRAG_THRESHOLD_PX = 20;
 const MOVE_DRAG_THRESHOLD_SQ = MOVE_DRAG_THRESHOLD_PX * MOVE_DRAG_THRESHOLD_PX;
 const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
+const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
 const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
 const copyFeedbackTimers = new WeakMap();
 
@@ -423,6 +424,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleTodoToggleClick(event)) {
+        return;
+    }
+
     if (handleCredentialCopyClick(event)) {
         return;
     }
@@ -721,6 +726,50 @@ function handleClick(event) {
             });
         }
     }
+}
+
+function handleTodoToggleClick(event) {
+    if (!event) {
+        throw new Error('handleTodoToggleClick called without an event object');
+    }
+    if (!event.target) {
+        throw new Error('Todo toggle click missing target element');
+    }
+
+    const toggleElement = event.target.closest(STATUS_TOGGLE_SELECTOR);
+    if (!toggleElement) {
+        return false;
+    }
+
+    if (ModeContext.isEditing) {
+        return false;
+    }
+
+    if (!ModeContext.isConnected) {
+        return false;
+    }
+
+    const noteElement = toggleElement.closest('.note');
+    if (!noteElement) {
+        throw new Error('Todo toggle missing parent note element');
+    }
+    if (noteElement.classList.contains('locked') || noteElement.classList.contains('search-redacted')) {
+        return false;
+    }
+
+    const noteId = noteElement.dataset.noteId;
+    if (!noteId) {
+        throw new Error('Todo toggle note missing data-note-id attribute');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    void CommandGate.run('mouse.toggle_todo', async () => {
+        await toggleTodoDone(noteId);
+    });
+
+    return true;
 }
 
 function handleCredentialCopyClick(event) {

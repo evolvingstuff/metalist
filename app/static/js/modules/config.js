@@ -11,6 +11,7 @@ export const CONFIG = {
             CREATE_CHILD: (noteId) => `${API_NOTES_BASE}/new-child/${noteId}`,
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
+            TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
             INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
             OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,

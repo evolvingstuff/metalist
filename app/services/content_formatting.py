@@ -49,6 +49,31 @@ _CREDENTIAL_META = {
     },
 }
 
+_STATUS_TAGS = frozenset({"todo", "done"})
+
+_STATUS_META = {
+    "todo": {
+        "icon": (
+            '<svg class="meta-status-icon-svg" viewBox="0 0 24 24" '
+            'aria-hidden="true" focusable="false">'
+            '<rect x="3" y="3" width="18" height="18" rx="3" ry="3" '
+            'fill="none" stroke="currentColor" stroke-width="2" />'
+            "</svg>"
+        ),
+    },
+    "done": {
+        "icon": (
+            '<svg class="meta-status-icon-svg" viewBox="0 0 24 24" '
+            'aria-hidden="true" focusable="false">'
+            '<rect x="3" y="3" width="18" height="18" rx="3" ry="3" '
+            'fill="none" stroke="currentColor" stroke-width="2" />'
+            '<path d="M7 12l3 3 7-7" fill="none" stroke="currentColor" '
+            'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />'
+            "</svg>"
+        ),
+    },
+}
+
 @dataclass(frozen=True, slots=True)
 class MetaTagConfig:
     global_tags: FrozenSet[str]
@@ -64,7 +89,8 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
 
     config = _parse_meta_tags(tags)
     credential_tag = _find_global_credential_tag(tags)
-    if not config.global_tags and not config.wrappers_to_consume and credential_tag is None:
+    status_tag = _find_global_status_tag(tags)
+    if not config.global_tags and not config.wrappers_to_consume and credential_tag is None and status_tag is None:
         return content_html
 
     output = content_html
@@ -79,6 +105,13 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         return _render_credential_meta(
             content_html=output,
             credential_tag=credential_tag,
+            formatting_tags=config.global_tags,
+        )
+
+    if status_tag is not None:
+        return _render_status_meta(
+            content_html=output,
+            status_tag=status_tag,
             formatting_tags=config.global_tags,
         )
 
@@ -146,6 +179,59 @@ def _render_credential_meta(
         f'<span class="{value_class}" data-copy-value="{escaped_value}">'
         f"{escaped_value}"
         "</span>"
+        "</div>"
+    )
+
+
+def _find_global_status_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    found_todo = False
+    found_done = False
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if not base.startswith("@"):
+            continue
+        tag_name = base[1:]
+        if tag_name == "done":
+            found_done = True
+            continue
+        if tag_name == "todo":
+            found_todo = True
+            continue
+
+    if found_done:
+        return "done"
+    if found_todo:
+        return "todo"
+    return None
+
+
+def _render_status_meta(
+    *,
+    content_html: str,
+    status_tag: str,
+    formatting_tags: FrozenSet[str],
+) -> str:
+    if status_tag not in _STATUS_TAGS:
+        raise KeyError(f"Unknown status meta tag: {status_tag}")
+
+    status_meta = _STATUS_META[status_tag]
+    icon_html = status_meta["icon"]
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    text_class = "meta-status-text"
+    if extra_classes:
+        text_class = f"{text_class} {extra_classes}"
+
+    return (
+        f'<div class="meta-status meta-status-{status_tag}">'
+        f'<span class="meta-status-toggle" data-status="{status_tag}">{icon_html}</span>'
+        f'<div class="{text_class}">{content_html}</div>'
         "</div>"
     )
 

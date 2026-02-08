@@ -11,6 +11,27 @@ import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
+export async function toggleTodoDone(noteId) {
+    const startedAt = performance.now();
+    Logger.logAction('toggleTodoDone', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isLoading: ModeContext.isLoading
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot toggle todo/done: noteId is required');
+    }
+
+    if (ModeContext.isEditing) {
+        throw new Error(`toggleTodoDone called while editing note ${ModeContext.currentNoteId}`);
+    }
+
+    await NotesAPI.toggleTodo(noteId);
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
+}
+
 export async function deleteNote(noteId) {
     let startedAt = performance.now();
 

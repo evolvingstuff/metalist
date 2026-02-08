@@ -238,6 +238,13 @@ export const NotesAPI = {
         }); 
     },
 
+    async toggleTodo(noteId) {
+        return this._apiCall(CONFIG.API.NOTES.TOGGLE_TODO(noteId), {
+            method: 'POST',
+            claimSession: true
+        });
+    },
+
     async moveNote(noteId, siblingId, position, newParentId) {
         const body = {
             sibling_id: siblingId,

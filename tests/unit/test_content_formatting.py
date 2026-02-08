@@ -83,3 +83,27 @@ def test_format_note_content_for_view_password_meta_applies_other_global_classes
     html = "<div>sekret</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@password @red")
     assert 'meta-credential-value meta-red' in rendered
+
+
+def test_format_note_content_for_view_todo_meta_renders_status_row() -> None:
+    html = "<div>stuff to do</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@todo")
+    assert 'meta-status-todo' in rendered
+    assert 'meta-status-toggle' in rendered
+    assert '<div class="meta-status-text">' in rendered
+    assert html in rendered
+
+
+def test_format_note_content_for_view_done_meta_renders_status_row() -> None:
+    html = "<div>stuff done</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@done")
+    assert 'meta-status-done' in rendered
+    assert 'meta-status-toggle' in rendered
+    assert '<div class="meta-status-text">' in rendered
+    assert html in rendered
+
+
+def test_format_note_content_for_view_status_meta_applies_other_global_classes() -> None:
+    html = "<div>stuff</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@done @red")
+    assert 'meta-status-text meta-red' in rendered

@@ -20,6 +20,7 @@ from app.usecases.expand import CmdExpand
 from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
 from app.usecases.set_collapse_in_context import CmdSetCollapseInContext
 from app.usecases.copy_note import CmdCopyNote
+from app.usecases.toggle_todo_done import CmdToggleTodoDone
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
 from app.usecases.undo import CmdUndo
@@ -391,6 +392,22 @@ def save_note(request: Request, note_id: str, body: dict):
         note_id=note_id,
         content=content,
         tags=tags,
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/toggle-todo")
+def toggle_todo_done(request: Request, note_id: str, body: dict):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.toggle-todo")
+    cmd = CmdToggleTodoDone(
+        note_id=note_id,
         token=token,
         client_id=client_id,
         undo_context=body["undoContext"],
