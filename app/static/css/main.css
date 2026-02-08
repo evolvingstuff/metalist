@@ -1944,6 +1944,72 @@ body.loading::after {
     color: #d32f2f;
 }
 
+/* Credential meta tags */
+.meta-credential {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.meta-credential-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    color: #444444;
+}
+
+.meta-credential-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+.meta-credential-label {
+    color: #5a5a5a;
+    font-weight: 600;
+}
+
+.meta-credential-value {
+    cursor: pointer;
+    user-select: text;
+    border-radius: 6px;
+    position: relative;
+}
+
+.meta-credential-value:hover {
+    text-decoration: underline;
+}
+
+.meta-credential-value.meta-credential-copied {
+    animation: meta-credential-copied 0.7s ease;
+}
+
+
+.meta-credential-password .meta-credential-value.meta-credential-copied {
+    filter: blur(4px);
+}
+
+.meta-credential-password .meta-credential-value {
+    filter: blur(4px);
+}
+
+@keyframes meta-credential-copied {
+    0% {
+        background-color: rgba(76, 175, 80, 0.0);
+        box-shadow: 0 0 0 rgba(76, 175, 80, 0.0);
+    }
+    40% {
+        background-color: rgba(76, 175, 80, 0.18);
+        box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+    }
+    100% {
+        background-color: rgba(76, 175, 80, 0.0);
+        box-shadow: 0 0 0 rgba(76, 175, 80, 0.0);
+    }
+}
+
+
 /* Error Banner Styles */
 .error-banner {
     position: fixed;

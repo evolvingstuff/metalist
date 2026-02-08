@@ -17,6 +17,9 @@ let ignoreClickAfterMoveDrag = null;
 
 const MOVE_DRAG_THRESHOLD_PX = 20;
 const MOVE_DRAG_THRESHOLD_SQ = MOVE_DRAG_THRESHOLD_PX * MOVE_DRAG_THRESHOLD_PX;
+const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
+const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
+const copyFeedbackTimers = new WeakMap();
 
 export function initMouseEvents() {
         
@@ -420,6 +423,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleCredentialCopyClick(event)) {
+        return;
+    }
+
     const menuButton = event.target.closest('#menu-button');
     if (menuButton) {
         event.preventDefault();
@@ -714,6 +721,130 @@ function handleClick(event) {
             });
         }
     }
+}
+
+function handleCredentialCopyClick(event) {
+    if (!event) {
+        throw new Error('handleCredentialCopyClick called without an event object');
+    }
+    if (!event.target) {
+        throw new Error('Credential copy click missing target element');
+    }
+
+    const valueElement = event.target.closest(CREDENTIAL_VALUE_SELECTOR);
+    if (!valueElement) {
+        return false;
+    }
+
+    const copyValue = valueElement.dataset.copyValue;
+    if (typeof copyValue !== 'string') {
+        throw new Error('Credential value missing data-copy-value attribute');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    triggerCopyFeedback(valueElement);
+    void copyTextToClipboard(copyValue, valueElement);
+    Logger.logAction('credential.copy', { valueLength: copyValue.length });
+    return true;
+}
+
+async function copyTextToClipboard(text, valueElement) {
+    if (typeof text !== 'string') {
+        throw new Error('copyTextToClipboard requires a string');
+    }
+
+    let copied = false;
+    const clipboard = navigator.clipboard;
+    if (clipboard && typeof clipboard.writeText === 'function') {
+        try {
+            await clipboard.writeText(text);
+            copied = true;
+        } catch (error) {
+            let errorMessage = String(error);
+            if (error && typeof error.message === 'string') {
+                errorMessage = error.message;
+            }
+            Logger.logDebug('Clipboard writeText failed', {
+                error: errorMessage
+            }, Logger.LogCategory.EVENT);
+        }
+    }
+
+    if (copied) {
+        triggerCopyFeedback(valueElement);
+        return;
+    }
+
+    const body = document.body;
+    if (!body) {
+        throw new Error('Document body missing during clipboard fallback');
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+
+    body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    let success = false;
+    try {
+        success = document.execCommand('copy');
+    } catch (error) {
+        let errorMessage = String(error);
+        if (error && typeof error.message === 'string') {
+            errorMessage = error.message;
+        }
+        Logger.logDebug('Clipboard fallback threw an error', {
+            error: errorMessage
+        }, Logger.LogCategory.EVENT);
+    } finally {
+        body.removeChild(textarea);
+    }
+
+    if (!success) {
+        Logger.logDebug('Clipboard fallback copy failed', {
+            valueLength: text.length
+        }, Logger.LogCategory.EVENT);
+        return;
+    }
+
+    triggerCopyFeedback(valueElement);
+}
+
+function triggerCopyFeedback(valueElement) {
+    if (!valueElement || !valueElement.classList) {
+        return;
+    }
+
+    if (!document.body.contains(valueElement)) {
+        return;
+    }
+
+    const existingTimer = copyFeedbackTimers.get(valueElement);
+    if (existingTimer) {
+        window.clearTimeout(existingTimer);
+    }
+
+    const alreadyAnimating = valueElement.classList.contains(CREDENTIAL_COPY_CLASS);
+    if (!alreadyAnimating) {
+        valueElement.classList.remove(CREDENTIAL_COPY_CLASS);
+        void valueElement.offsetWidth;
+        valueElement.classList.add(CREDENTIAL_COPY_CLASS);
+    }
+
+    const timer = window.setTimeout(() => {
+        valueElement.classList.remove(CREDENTIAL_COPY_CLASS);
+    }, 700);
+    copyFeedbackTimers.set(valueElement, timer);
 }
 
 function handleCollapseToggleInteraction(event, collapseToggle, interactionSource) {

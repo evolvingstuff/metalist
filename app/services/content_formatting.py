@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
+
+from app.utils.text_utils import strip_html
 
 
 _OPEN_TO_CLOSE = {
@@ -19,6 +22,32 @@ _META_TAG_TO_CLASS = {
     "red": "meta-red",
 }
 
+_CREDENTIAL_TAGS = frozenset({"username", "password"})
+
+_CREDENTIAL_META = {
+    "username": {
+        "label": "Username",
+        "icon": (
+            '<svg class="meta-credential-icon-svg" viewBox="0 0 24 24" '
+            'aria-hidden="true" focusable="false">'
+            '<path fill="currentColor" d="M12 12c2.761 0 5-2.239 5-5'
+            's-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5Zm0 2c-3.866 0-7'
+            ' 2.239-7 5v3h14v-3c0-2.761-3.134-5-7-5Z"/>'
+            "</svg>"
+        ),
+    },
+    "password": {
+        "label": "Password",
+        "icon": (
+            '<svg class="meta-credential-icon-svg" viewBox="0 0 24 24" '
+            'aria-hidden="true" focusable="false">'
+            '<path fill="currentColor" d="M7 10V7a5 5 0 0110 0v3h1a2'
+            ' 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8a2 2 0 012-2'
+            'h1zm2 0h6V7a3 3 0 00-6 0v3z"/>'
+            "</svg>"
+        ),
+    },
+}
 
 @dataclass(frozen=True, slots=True)
 class MetaTagConfig:
@@ -34,7 +63,8 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         raise TypeError(f"tags must be a string, got {type(tags)}")
 
     config = _parse_meta_tags(tags)
-    if not config.global_tags and not config.wrappers_to_consume:
+    credential_tag = _find_global_credential_tag(tags)
+    if not config.global_tags and not config.wrappers_to_consume and credential_tag is None:
         return content_html
 
     output = content_html
@@ -45,12 +75,79 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             scoped_tags=config.scoped_tags,
         )
 
+    if credential_tag is not None:
+        return _render_credential_meta(
+            content_html=output,
+            credential_tag=credential_tag,
+            formatting_tags=config.global_tags,
+        )
+
     if config.global_tags:
         classes = _meta_classes_for_tag_names(config.global_tags)
         if classes:
             output = f'<span class="meta-global {classes}">{output}</span>'
 
     return output
+
+
+def _find_global_credential_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    found_password = False
+    found_username = False
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if not base.startswith("@"):
+            continue
+        tag_name = base[1:]
+        if tag_name == "password":
+            found_password = True
+            continue
+        if tag_name == "username":
+            found_username = True
+            continue
+
+    if found_password:
+        return "password"
+    if found_username:
+        return "username"
+    return None
+
+
+def _render_credential_meta(
+    *,
+    content_html: str,
+    credential_tag: str,
+    formatting_tags: FrozenSet[str],
+) -> str:
+    if credential_tag not in _CREDENTIAL_TAGS:
+        raise KeyError(f"Unknown credential meta tag: {credential_tag}")
+
+    credential_meta = _CREDENTIAL_META[credential_tag]
+    label_text = credential_meta["label"]
+    icon_html = credential_meta["icon"]
+
+    value_text = strip_html(content_html)
+    escaped_value = html.escape(value_text, quote=True)
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    value_class = "meta-credential-value"
+    if extra_classes:
+        value_class = f"{value_class} {extra_classes}"
+
+    return (
+        f'<div class="meta-credential meta-credential-{credential_tag}">'
+        f'<span class="meta-credential-icon">{icon_html}</span>'
+        f'<span class="meta-credential-label">{label_text}:</span>'
+        f'<span class="{value_class}" data-copy-value="{escaped_value}">'
+        f"{escaped_value}"
+        "</span>"
+        "</div>"
+    )
 
 
 def _parse_meta_tags(tags: str) -> MetaTagConfig:

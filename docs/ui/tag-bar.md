@@ -32,6 +32,9 @@ Examples (autocorrected while typing):
 - Scoped meta tags apply only to regions of note content wrapped with the same bracket type + depth.
   - Example: tag bar `{{@monospace}}` applies monospace styling to `{{...}}` regions in the note.
   - Depth must match exactly: `[[...]]` matches `[[@tag]]`, not `[@tag]` or `[[[@tag]]]`.
+- Credential meta tags:
+  - `@username` renders a view-only "Username:" row with a copyable value.
+  - `@password` renders a view-only "Password:" row with a blurred, copyable value.
 
 Wrapper regions in note content are always allowed (e.g. `((foo))`), but they are only consumed/hidden in view mode when there is a matching scoped wrapper tag in the tag bar (meta tags like `{{@red}}` or regular tags like `{{foo}}`). Otherwise the wrappers remain literal text.
 

@@ -59,3 +59,27 @@ def test_format_note_content_for_view_global_applies_entire_note() -> None:
     html = "<div>hello</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@red")
     assert rendered == '<span class="meta-global meta-red"><div>hello</div></span>'
+
+
+def test_format_note_content_for_view_username_meta_renders_credential_row() -> None:
+    html = "<div><b>tomlahore1</b></div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@username")
+    assert 'meta-credential-username' in rendered
+    assert 'Username:' in rendered
+    assert 'data-copy-value="tomlahore1"' in rendered
+    assert ">tomlahore1<" in rendered
+
+
+def test_format_note_content_for_view_password_meta_renders_copyable_value() -> None:
+    html = "<div>sekret</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@password")
+    assert 'meta-credential-password' in rendered
+    assert 'Password:' in rendered
+    assert 'data-copy-value="sekret"' in rendered
+    assert ">sekret<" in rendered
+
+
+def test_format_note_content_for_view_password_meta_applies_other_global_classes() -> None:
+    html = "<div>sekret</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@password @red")
+    assert 'meta-credential-value meta-red' in rendered

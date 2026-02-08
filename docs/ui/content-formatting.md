@@ -44,3 +44,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Initial meta tags
 - `@monospace`: renders the (scoped) region using a monospace/code font.
 - `@red`: renders the (scoped) region in red.
+
+## Credential meta tags
+- `@username`: renders the note content as a credential row (user icon + "Username:") in view mode; the value is click-to-copy.
+- `@password`: renders the note content as a credential row (lock icon + "Password:") in view mode; the value is blurred and click-to-copy.
+- These are view-only: in edit mode you see just the raw value.
