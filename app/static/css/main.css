@@ -1229,6 +1229,7 @@ body {
     outline: none;
     padding-left: 15px; /* Add left padding for better readability */
     padding-right: 15px; /* Matching right padding for symmetry */
+    min-width: 0;
 }
 
 .note-content.caret-hidden {
@@ -2109,16 +2110,17 @@ body.loading::after {
 .meta-csv {
     display: block;
     margin: 4px 0;
+    max-width: 100%;
 }
 
 .meta-csv-table-wrap {
     overflow-x: auto;
+    max-width: 100%;
 }
 
 .meta-csv-table {
     border-collapse: collapse;
-    width: max-content;
-    min-width: 100%;
+    width: 100%;
     background: #ffffff;
     font-size: 0.9rem;
 }
@@ -2336,6 +2338,13 @@ body.pref-auto-collapse-long-notes .note:not(.editing) > .note-content {
     -webkit-line-clamp: 10;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+body.pref-auto-collapse-long-notes .note.has-meta-csv:not(.editing):not(.collapsed) > .note-content {
+    display: block;
+    -webkit-line-clamp: unset;
+    -webkit-box-orient: unset;
+    overflow: visible;
 }
 
 .command-palette-modal {

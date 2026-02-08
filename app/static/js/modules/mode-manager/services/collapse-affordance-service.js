@@ -5,6 +5,7 @@ const NOTE_CONTENT_SELECTOR = '.note-content';
 const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
 const DELTA_TOLERANCE = 1;
+const META_CSV_SELECTOR = '.meta-csv';
 
 function parsePixels(value) {
     if (!value) {
@@ -70,6 +71,9 @@ export function updateCollapseAffordanceForNote(noteElement) {
         return;
     }
 
+    const hasMetaCsv = Boolean(contentElement.querySelector(META_CSV_SELECTOR));
+    noteElement.classList.toggle('has-meta-csv', hasMetaCsv);
+
     const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
 
     // Determine collapsibility based on the *expanded* layout.
@@ -82,6 +86,8 @@ export function updateCollapseAffordanceForNote(noteElement) {
 
     let canCollapse = false;
     if (hasChildren(noteElement)) {
+        canCollapse = true;
+    } else if (hasMetaCsv) {
         canCollapse = true;
     } else if (contentHasAdditionalLines(contentElement)) {
         canCollapse = true;
