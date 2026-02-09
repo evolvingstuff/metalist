@@ -1054,17 +1054,22 @@ function handleShellRunClick(event) {
     renderShellRunning(outputElement);
     startShellElapsedTimer(outputElement);
 
-    void CommandGate.run('mouse.run_shell', async () => {
-        try {
-            const result = await runShellNote(noteId, SHELL_RUN_TIMEOUT_SECONDS);
-            renderShellOutput(outputElement, result);
-        } catch (error) {
-            renderShellError(outputElement, error);
-            throw error;
-        } finally {
-            stopShellElapsedTimer(outputElement);
-            shellElement.classList.remove(SHELL_RUNNING_CLASS);
-        }
+    void CommandGate.run('mouse.run_shell', () => {
+        const runPromise = runShellNote(noteId, SHELL_RUN_TIMEOUT_SECONDS)
+            .then((result) => {
+                renderShellOutput(outputElement, result);
+                return result;
+            })
+            .catch((error) => {
+                renderShellError(outputElement, error);
+                throw error;
+            })
+            .finally(() => {
+                stopShellElapsedTimer(outputElement);
+                shellElement.classList.remove(SHELL_RUNNING_CLASS);
+            });
+
+        return runPromise;
     }, { disableWatchdog: true });
 
     return true;
@@ -1075,26 +1080,28 @@ async function copyTextToClipboard(text, valueElement) {
         throw new Error('copyTextToClipboard requires a string');
     }
 
-    let copied = false;
     const clipboard = navigator.clipboard;
     if (clipboard && typeof clipboard.writeText === 'function') {
-        try {
-            await clipboard.writeText(text);
-            copied = true;
-        } catch (error) {
-            let errorMessage = String(error);
-            if (error && typeof error.message === 'string') {
-                errorMessage = error.message;
-            }
-            Logger.logDebug('Clipboard writeText failed', {
-                error: errorMessage
-            }, Logger.LogCategory.EVENT);
-        }
-    }
+        const writePromise = clipboard.writeText(text);
+        if (writePromise && typeof writePromise.then === 'function') {
+            const writeSucceeded = await writePromise
+                .then(() => true)
+                .catch((error) => {
+                    let errorMessage = String(error);
+                    if (error && typeof error.message === 'string') {
+                        errorMessage = error.message;
+                    }
+                    Logger.logDebug('Clipboard writeText failed', {
+                        error: errorMessage
+                    }, Logger.LogCategory.EVENT);
+                    return false;
+                });
 
-    if (copied) {
-        triggerCopyFeedback(valueElement);
-        return;
+            if (writeSucceeded) {
+                triggerCopyFeedback(valueElement);
+                return;
+            }
+        }
     }
 
     const body = document.body;
@@ -1115,20 +1122,21 @@ async function copyTextToClipboard(text, valueElement) {
     textarea.focus();
     textarea.select();
 
-    let success = false;
-    try {
-        success = document.execCommand('copy');
-    } catch (error) {
-        let errorMessage = String(error);
-        if (error && typeof error.message === 'string') {
-            errorMessage = error.message;
-        }
-        Logger.logDebug('Clipboard fallback threw an error', {
-            error: errorMessage
-        }, Logger.LogCategory.EVENT);
-    } finally {
-        body.removeChild(textarea);
-    }
+    const execPromise = Promise.resolve().then(() => document.execCommand('copy'));
+    const success = await execPromise
+        .catch((error) => {
+            let errorMessage = String(error);
+            if (error && typeof error.message === 'string') {
+                errorMessage = error.message;
+            }
+            Logger.logDebug('Clipboard fallback threw an error', {
+                error: errorMessage
+            }, Logger.LogCategory.EVENT);
+            return false;
+        })
+        .finally(() => {
+            body.removeChild(textarea);
+        });
 
     if (!success) {
         Logger.logDebug('Clipboard fallback copy failed', {

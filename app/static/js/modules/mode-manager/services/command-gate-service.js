@@ -37,14 +37,23 @@ export const CommandGate = {
         return busy;
     },
 
-    run(name, asyncFn, options = null) {
+    run(name, asyncFn, options) {
         if (typeof name !== 'string' || name.length === 0) {
             throw new Error('CommandGate.run requires non-empty name');
         }
         if (typeof asyncFn !== 'function') {
             throw new Error('CommandGate.run requires async function');
         }
-        if (options !== null && (typeof options !== 'object' || Array.isArray(options))) {
+
+        let resolvedOptions = null;
+        if (options !== undefined) {
+            resolvedOptions = options;
+        }
+
+        if (
+            resolvedOptions !== null
+            && (typeof resolvedOptions !== 'object' || Array.isArray(resolvedOptions))
+        ) {
             throw new Error('CommandGate.run options must be an object or null');
         }
 
@@ -64,10 +73,10 @@ export const CommandGate = {
         busyName = name;
         busyStartedAt = performance.now();
         let watchdogTimeoutMs = WATCHDOG_TIMEOUT_MS;
-        if (options && options.disableWatchdog === true) {
+        if (resolvedOptions !== null && resolvedOptions.disableWatchdog === true) {
             watchdogTimeoutMs = 0;
-        } else if (options && Number.isFinite(options.timeoutMs)) {
-            watchdogTimeoutMs = options.timeoutMs;
+        } else if (resolvedOptions !== null && Number.isFinite(resolvedOptions.timeoutMs)) {
+            watchdogTimeoutMs = resolvedOptions.timeoutMs;
         }
         armWatchdog(watchdogTimeoutMs);
 

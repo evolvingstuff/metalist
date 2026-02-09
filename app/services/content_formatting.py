@@ -3,8 +3,9 @@ from __future__ import annotations
 import csv
 import html
 import io
-import json
 import re
+import subprocess
+import sys
 import urllib.parse
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
@@ -179,6 +180,9 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             content_html=content_html,
             formatting_tags=config.global_tags,
             inline=False,
+            cell_wrappers=frozenset(),
+            cell_scoped_tags={},
+            cell_scoped_renderers={},
         )
 
     if (
@@ -537,13 +541,10 @@ def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
 
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
+    ok, pretty, error_message = _pretty_print_json(raw_text)
+    if not ok:
+        return _render_json_error(raw_text=raw_text, message=error_message)
 
-    try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        return _render_json_error(raw_text, exc)
-
-    pretty = json.dumps(parsed, indent=2, ensure_ascii=False, sort_keys=False)
     highlighted = _highlight_json(pretty)
 
     extra_classes = ""
@@ -561,13 +562,12 @@ def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> 
     )
 
 
-def _render_json_error(raw_text: str, error: json.JSONDecodeError) -> str:
+def _render_json_error(*, raw_text: str, message: str) -> str:
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string")
-    if not isinstance(error, json.JSONDecodeError):
-        raise TypeError("error must be a JSONDecodeError")
+    if not isinstance(message, str) or message == "":
+        raise TypeError("message must be a non-empty string")
 
-    message = _format_json_error(error)
     escaped_message = html.escape(message, quote=True)
     escaped_text = html.escape(raw_text, quote=False)
 
@@ -579,8 +579,53 @@ def _render_json_error(raw_text: str, error: json.JSONDecodeError) -> str:
     )
 
 
-def _format_json_error(error: json.JSONDecodeError) -> str:
-    return f"Line {error.lineno}, column {error.colno}: {error.msg}"
+def _pretty_print_json(raw_text: str) -> tuple[bool, str, str]:
+    if not isinstance(raw_text, str):
+        raise TypeError("raw_text must be a string")
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "json.tool"],
+        input=raw_text,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        error_message = completed.stderr.strip()
+        if error_message == "":
+            error_message = "Invalid JSON"
+        return False, "", error_message
+
+    pretty = completed.stdout
+    if pretty.endswith("\n"):
+        pretty = pretty[:-1]
+    pretty = _normalize_json_indent(pretty)
+    return True, pretty, ""
+
+
+def _normalize_json_indent(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    lines = text.splitlines()
+    if not lines:
+        return text
+
+    adjusted_lines: List[str] = []
+    for line in lines:
+        stripped = line.lstrip(" ")
+        leading_spaces = len(line) - len(stripped)
+        if leading_spaces == 0:
+            adjusted_lines.append(line)
+            continue
+        if leading_spaces % 4 != 0:
+            adjusted_lines.append(line)
+            continue
+        indent_level = leading_spaces // 4
+        adjusted_lines.append(("  " * indent_level) + stripped)
+
+    return "\n".join(adjusted_lines)
 
 
 def _extract_plain_text(content_html: str) -> str:
@@ -614,13 +659,11 @@ def _render_csv_meta(
     content_html: str,
     formatting_tags: FrozenSet[str],
     inline: bool,
-    cell_wrappers: FrozenSet[Tuple[str, int]] = frozenset(),
-    cell_scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]] | None = None,
-    cell_scoped_renderers: Mapping[Tuple[str, int], str] | None = None,
+    cell_wrappers: FrozenSet[Tuple[str, int]],
+    cell_scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    cell_scoped_renderers: Mapping[Tuple[str, int], str],
 ) -> str:
     raw_text = _extract_plain_text(content_html)
-    if cell_scoped_renderers is None:
-        cell_scoped_renderers = {}
 
     placeholder_map: Dict[str, str] = {}
     parse_text = raw_text
@@ -652,7 +695,7 @@ def _render_csv_meta(
         f'<table class="{table_class}">',
         "<tbody>",
     ]
-    effective_scoped_tags = cell_scoped_tags or {}
+    effective_scoped_tags = cell_scoped_tags
     apply_cell_wrappers = bool(cell_wrappers)
 
     for row in rows:
@@ -769,7 +812,10 @@ def _highlight_json(text: str) -> str:
         if char == '"':
             token, next_index = _consume_json_string(text, index)
             is_key = _json_string_is_key(text, next_index)
-            css_class = "json-key" if is_key else "json-string"
+            if is_key:
+                css_class = "json-key"
+            else:
+                css_class = "json-string"
             output.append(_wrap_json_span(css_class, token))
             index = next_index
             continue
@@ -886,7 +932,9 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
             tag_name = inner[1:].casefold()
             if tag_name not in _META_TAG_TO_CLASS:
                 if tag_name == "csv":
-                    existing = scoped_renderers.get(key)
+                    existing = None
+                    if key in scoped_renderers:
+                        existing = scoped_renderers[key]
                     if existing is not None and existing != "csv":
                         raise ValueError(
                             f"Wrapper {key} has conflicting scoped renderers: {existing} vs csv"
@@ -1037,10 +1085,8 @@ def _apply_scoped_meta_tags_to_plain_text(
     text: str,
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
-    scoped_renderers: Mapping[Tuple[str, int], str] | None = None,
+    scoped_renderers: Mapping[Tuple[str, int], str],
 ) -> str:
-    if scoped_renderers is None:
-        scoped_renderers = {}
     output: List[str] = []
     stack: List[_OpenFrame] = []
     _process_text_segment(
@@ -1085,10 +1131,13 @@ def _process_text_segment(
                         stack.pop()
                         inner_parts = output[active_renderer.placeholder_index + 1 :]
                         inner_html = "".join(inner_parts)
+                        formatting_tags = active_renderer.formatting_tags
+                        if formatting_tags is None:
+                            formatting_tags = frozenset()
                         rendered = _render_scoped_renderer(
                             render_tag=active_renderer.render_tag,
                             content_html=inner_html,
-                            formatting_tags=active_renderer.formatting_tags or frozenset(),
+                            formatting_tags=formatting_tags,
                             wrappers_to_consume=wrappers_to_consume,
                             scoped_tags=scoped_tags,
                             scoped_renderers=scoped_renderers,
@@ -1116,7 +1165,10 @@ def _process_text_segment(
                 render_key = None
                 if key in scoped_renderers:
                     render_tag = scoped_renderers[key]
-                    formatting_tags = scoped_tags.get(key, frozenset())
+                    if key in scoped_tags:
+                        formatting_tags = scoped_tags[key]
+                    else:
+                        formatting_tags = frozenset()
                     render_key = key
                 if key in scoped_tags:
                     classes = _meta_classes_for_tag_names(scoped_tags[key])
@@ -1143,7 +1195,10 @@ def _process_text_segment(
                 index += run
                 continue
             segment = text[index : index + run]
-            output.append(html.escape(segment, quote=False) if escape_text else segment)
+            if escape_text:
+                output.append(html.escape(segment, quote=False))
+            else:
+                output.append(segment)
             index += run
             continue
 
@@ -1158,11 +1213,17 @@ def _process_text_segment(
                     index += run
                     continue
             segment = text[index : index + run]
-            output.append(html.escape(segment, quote=False) if escape_text else segment)
+            if escape_text:
+                output.append(html.escape(segment, quote=False))
+            else:
+                output.append(segment)
             index += run
             continue
 
-        output.append(html.escape(char, quote=False) if escape_text else char)
+        if escape_text:
+            output.append(html.escape(char, quote=False))
+        else:
+            output.append(char)
         index += 1
 
 
@@ -1226,7 +1287,10 @@ def _extract_wrapper_placeholders(
                     index += run
                     continue
 
-        target = stack[-1]["content"] if stack else output
+        if stack:
+            target = stack[-1]["content"]
+        else:
+            target = output
         target.append(char)
         index += 1
 

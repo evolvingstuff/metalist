@@ -162,33 +162,28 @@ export function renderLatexBlocks(rootElement) {
     blocks.forEach((block) => {
         const rawText = block.textContent;
         const source = rawText === null ? '' : rawText;
-        try {
-            let renderedHtml = '';
-            if (!hasMathDelimiters(source)) {
-                renderedHtml = katex.renderToString(source, {
-                    displayMode: true,
-                    throwOnError: true,
+        let renderedHtml = '';
+        if (!hasMathDelimiters(source)) {
+            renderedHtml = katex.renderToString(source, {
+                displayMode: true,
+                throwOnError: false,
+            });
+        } else {
+            const segments = parseLatexSegments(source);
+            const renderedParts = segments.map((segment) => {
+                if (segment.type === 'text') {
+                    return renderTextSegment(segment.value);
+                }
+                const displayMode = segment.type === 'display';
+                return katex.renderToString(segment.value, {
+                    displayMode,
+                    throwOnError: false,
                 });
-            } else {
-                const segments = parseLatexSegments(source);
-                const renderedParts = segments.map((segment) => {
-                    if (segment.type === 'text') {
-                        return renderTextSegment(segment.value);
-                    }
-                    const displayMode = segment.type === 'display';
-                    return katex.renderToString(segment.value, {
-                        displayMode,
-                        throwOnError: true,
-                    });
-                });
-                renderedHtml = renderedParts.join('');
-            }
-            block.innerHTML = renderedHtml;
-            block.setAttribute(`data-${LATEX_RENDERED_ATTR}`, 'true');
-        } catch (error) {
-            renderLatexError(block, source, error);
-            block.setAttribute(`data-${LATEX_RENDERED_ATTR}`, 'true');
+            });
+            renderedHtml = renderedParts.join('');
         }
+        block.innerHTML = renderedHtml;
+        block.setAttribute(`data-${LATEX_RENDERED_ATTR}`, 'true');
     });
 }
 

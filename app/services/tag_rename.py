@@ -107,8 +107,12 @@ def toggle_meta_tag_pair_in_tag_bar(*, tags: str, tag_a: str, tag_b: str) -> tup
     if not has_a and not has_b:
         raise KeyError(f"Missing toggle tags: {tag_a} {tag_b}")
 
-    from_tag = tag_a if has_a else tag_b
-    to_tag = tag_b if has_a else tag_a
+    if has_a:
+        from_tag = tag_a
+        to_tag = tag_b
+    else:
+        from_tag = tag_b
+        to_tag = tag_a
 
     out = ''
     changed = False

@@ -54,43 +54,15 @@ class CmdRunShell(QueryCommand):
             }
 
         started_at = time.perf_counter()
-        timeout = None
-        if self.timeout_seconds > 0:
-            timeout = self.timeout_seconds
-        try:
-            completed = subprocess.run(
-                ["/bin/bash", "-lc", script_text],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            stdout_text = _normalize_subprocess_stream(exc.stdout)
-            stderr_text = _normalize_subprocess_stream(exc.stderr)
-
-            return {
-                "status": "timeout",
-                "exitCode": -1,
-                "stdout": stdout_text,
-                "stderr": stderr_text,
-                "durationMs": duration_ms,
-                "errorMessage": f"Shell command timed out after {self.timeout_seconds}s",
-            }
-        except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-            return {
-                "status": "error",
-                "exitCode": -1,
-                "stdout": "",
-                "stderr": "",
-                "durationMs": duration_ms,
-                "errorMessage": f"Shell execution failed: {exc}",
-            }
+        completed = subprocess.run(
+            ["/bin/bash", "-lc", script_text],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
 
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         stdout_text = _normalize_subprocess_stream(completed.stdout)
