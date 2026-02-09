@@ -78,6 +78,10 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.
 
+## Shell meta tags
+- `@shell`: renders the note content as a terminal-style script block in view mode.
+- Clicking the block runs the script on the server and shows the output inline (output is not saved).
+
 ## JSON meta tags
 - `@json`: parses the note content as JSON and pretty-prints it in view mode.
 - Invalid JSON shows a red "Invalid JSON" badge and the raw content.

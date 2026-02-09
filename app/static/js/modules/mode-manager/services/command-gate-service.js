@@ -16,8 +16,11 @@ function clearWatchdog() {
     watchdogId = null;
 }
 
-function armWatchdog() {
+function armWatchdog(timeoutMs) {
     clearWatchdog();
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        return;
+    }
     watchdogId = setTimeout(() => {
         if (!busy) {
             return;
@@ -26,7 +29,7 @@ function armWatchdog() {
         throw new Error(
             `CommandGate watchdog: command stuck busy name=${busyName} elapsedMs=${elapsedMs}`
         );
-    }, WATCHDOG_TIMEOUT_MS);
+    }, timeoutMs);
 }
 
 export const CommandGate = {
@@ -34,12 +37,15 @@ export const CommandGate = {
         return busy;
     },
 
-    run(name, asyncFn) {
+    run(name, asyncFn, options = null) {
         if (typeof name !== 'string' || name.length === 0) {
             throw new Error('CommandGate.run requires non-empty name');
         }
         if (typeof asyncFn !== 'function') {
             throw new Error('CommandGate.run requires async function');
+        }
+        if (options !== null && (typeof options !== 'object' || Array.isArray(options))) {
+            throw new Error('CommandGate.run options must be an object or null');
         }
 
         if (busy) {
@@ -57,7 +63,13 @@ export const CommandGate = {
         busy = true;
         busyName = name;
         busyStartedAt = performance.now();
-        armWatchdog();
+        let watchdogTimeoutMs = WATCHDOG_TIMEOUT_MS;
+        if (options && options.disableWatchdog === true) {
+            watchdogTimeoutMs = 0;
+        } else if (options && Number.isFinite(options.timeoutMs)) {
+            watchdogTimeoutMs = options.timeoutMs;
+        }
+        armWatchdog(watchdogTimeoutMs);
 
         Logger.logAction('command_gate.start', { name });
 
@@ -75,4 +87,3 @@ export const CommandGate = {
             });
     },
 };
-

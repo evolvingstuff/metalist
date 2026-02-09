@@ -142,6 +142,15 @@ def test_format_note_content_for_view_latex_meta_renders_plain_text_container() 
     assert "<div>\\frac{1}{2}</div>" not in rendered
 
 
+def test_format_note_content_for_view_shell_meta_renders_script_block() -> None:
+    html = "<div>echo hello</div><div>echo world</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@shell")
+    assert 'class="meta-shell"' in rendered
+    assert 'class="meta-shell-script"' in rendered
+    assert "echo hello" in rendered
+    assert "echo world" in rendered
+
+
 def test_format_note_content_for_view_json_meta_formats_and_highlights() -> None:
     html = '<div>{"name": "MetaList", "count": 2}</div>'
     rendered = format_note_content_for_view(content_html=html, tags="@json")

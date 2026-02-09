@@ -21,6 +21,7 @@ from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
 from app.usecases.set_collapse_in_context import CmdSetCollapseInContext
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.toggle_todo_done import CmdToggleTodoDone
+from app.usecases.run_shell import CmdRunShell
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
 from app.usecases.undo import CmdUndo
@@ -412,6 +413,17 @@ def toggle_todo_done(request: Request, note_id: str, body: dict):
         client_id=client_id,
         undo_context=body["undoContext"],
         viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/run-shell")
+def run_shell_endpoint(note_id: str, body: dict) -> Dict[str, object]:
+    _require_note_present(note_id, context="notes.run-shell")
+    timeout_seconds = body["timeoutSeconds"]
+    cmd = CmdRunShell(
+        note_id=note_id,
+        timeout_seconds=timeout_seconds,
     )
     return cmd.execute()
 

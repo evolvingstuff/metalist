@@ -32,6 +32,25 @@ export async function toggleTodoDone(noteId) {
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
 }
 
+export async function runShellNote(noteId, timeoutSeconds) {
+    Logger.logAction('runShellNote', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isLoading: ModeContext.isLoading
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot run shell: noteId is required');
+    }
+
+    if (ModeContext.isEditing) {
+        throw new Error(`runShellNote called while editing note ${ModeContext.currentNoteId}`);
+    }
+
+    return NotesAPI.runShell(noteId, timeoutSeconds);
+}
+
 export async function deleteNote(noteId) {
     let startedAt = performance.now();
 

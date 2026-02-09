@@ -12,6 +12,7 @@ export const CONFIG = {
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
+            RUN_SHELL: (noteId) => `${API_NOTES_BASE}/${noteId}/run-shell`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
             INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
             OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,

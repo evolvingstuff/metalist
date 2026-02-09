@@ -245,6 +245,21 @@ export const NotesAPI = {
         });
     },
 
+    async runShell(noteId, timeoutSeconds) {
+        if (!noteId) {
+            throw new Error('runShell requires noteId');
+        }
+        if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 0) {
+            throw new Error('runShell requires non-negative integer timeoutSeconds');
+        }
+        const body = { timeoutSeconds };
+
+        return this._apiCall(CONFIG.API.NOTES.RUN_SHELL(noteId), {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+    },
+
     async moveNote(noteId, siblingId, position, newParentId) {
         const body = {
             sibling_id: siblingId,
