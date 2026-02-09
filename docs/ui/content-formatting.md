@@ -65,6 +65,10 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@password`: renders the note content as a credential row (lock icon + "Password:") in view mode; the value is blurred and click-to-copy.
 - These are view-only: in edit mode you see just the raw value.
 
+## Email meta tags
+- `@email`: renders the note content as an email row (envelope icon + "Email:") in view mode.
+- Clicking the value opens the system email client (`mailto:`).
+
 ## Status meta tags
 - `@todo`: renders the note content with an unchecked box icon in view mode; clicking the icon toggles the tag to `@done`.
 - `@done`: renders the note content with a checked box icon in view mode; clicking the icon toggles the tag to `@todo`.

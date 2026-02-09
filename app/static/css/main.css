@@ -2038,6 +2038,41 @@ body.loading::after {
     font-weight: 600;
 }
 
+/* Email meta tag */
+.meta-email {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.meta-email-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    color: #444444;
+}
+
+.meta-email-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+.meta-email-label {
+    color: #5a5a5a;
+    font-weight: 600;
+}
+
+.meta-email-value {
+    color: #0b62a4;
+    text-decoration: none;
+}
+
+.meta-email-value:hover {
+    text-decoration: underline;
+}
+
 .meta-credential-value {
     cursor: pointer;
     user-select: text;

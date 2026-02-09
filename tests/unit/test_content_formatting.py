@@ -101,6 +101,15 @@ def test_format_note_content_for_view_password_meta_applies_other_global_classes
     assert 'meta-credential-value meta-red' in rendered
 
 
+def test_format_note_content_for_view_email_meta_renders_mailto_link() -> None:
+    html = "<div>hello@example.com</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@email")
+    assert 'meta-email' in rendered
+    assert 'Email:' in rendered
+    assert 'href="mailto:hello@example.com"' in rendered
+    assert ">hello@example.com<" in rendered
+
+
 def test_format_note_content_for_view_todo_meta_renders_status_row() -> None:
     html = "<div>stuff to do</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@todo")

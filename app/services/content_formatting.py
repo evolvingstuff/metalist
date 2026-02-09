@@ -5,6 +5,7 @@ import html
 import io
 import json
 import re
+import urllib.parse
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
@@ -40,6 +41,7 @@ _LIST_STYLE_TAGS = {
 }
 
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
+_EMAIL_TAGS = frozenset({"email"})
 
 _CREDENTIAL_META = {
     "username": {
@@ -61,6 +63,20 @@ _CREDENTIAL_META = {
             '<path fill="currentColor" d="M7 10V7a5 5 0 0110 0v3h1a2'
             ' 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8a2 2 0 012-2'
             'h1zm2 0h6V7a3 3 0 00-6 0v3z"/>'
+            "</svg>"
+        ),
+    },
+}
+
+_EMAIL_META = {
+    "email": {
+        "label": "Email",
+        "icon": (
+            '<svg class="meta-email-icon-svg" viewBox="0 0 24 24" '
+            'aria-hidden="true" focusable="false">'
+            '<path fill="currentColor" d="M4 4h16a2 2 0 012 2v12a2 2 '
+            '0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 4.236V18h16V8.236'
+            'l-7.4 5.18a1 1 0 01-1.2 0L4 8.236zm0-2.472l8 5.6 8-5.6V6H4v-.236z"/>'
             "</svg>"
         ),
     },
@@ -98,6 +114,7 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms = {f"@{name}" for name in _META_TAG_TO_CLASS.keys()}
     terms.update(f"@{name}" for name in _LIST_STYLE_TAGS.keys())
     terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
+    terms.update(f"@{name}" for name in _EMAIL_TAGS)
     terms.update(f"@{name}" for name in _STATUS_TAGS)
     terms.add("@markdown")
     terms.add("@LaTeX")
@@ -130,6 +147,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             scoped_renderers=config.scoped_renderers,
         )
     credential_tag = _find_global_credential_tag(tags)
+    email_tag = _find_global_email_tag(tags)
     status_tag = _find_global_status_tag(tags)
     shell_tag = _find_global_shell_tag(tags)
     markdown_tag = _find_global_markdown_tag(tags)
@@ -163,7 +181,13 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
             inline=False,
         )
 
-    if not config.global_tags and not config.wrappers_to_consume and credential_tag is None and status_tag is None:
+    if (
+        not config.global_tags
+        and not config.wrappers_to_consume
+        and credential_tag is None
+        and email_tag is None
+        and status_tag is None
+    ):
         return content_html
 
     output = content_html
@@ -179,6 +203,13 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         return _render_credential_meta(
             content_html=output,
             credential_tag=credential_tag,
+            formatting_tags=config.global_tags,
+        )
+
+    if email_tag is not None:
+        return _render_email_meta(
+            content_html=output,
+            email_tag=email_tag,
             formatting_tags=config.global_tags,
         )
 
@@ -277,6 +308,17 @@ def _find_global_credential_tag(tags: str) -> str | None:
     return None
 
 
+def _find_global_email_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if base.casefold() == "@email":
+            return "email"
+    return None
+
+
 def _render_credential_meta(
     *,
     content_html: str,
@@ -308,6 +350,40 @@ def _render_credential_meta(
         f'<span class="{value_class}" data-copy-value="{escaped_value}">'
         f"{escaped_value}"
         "</span>"
+        "</div>"
+    )
+
+
+def _render_email_meta(
+    *,
+    content_html: str,
+    email_tag: str,
+    formatting_tags: FrozenSet[str],
+) -> str:
+    if email_tag not in _EMAIL_TAGS:
+        raise KeyError(f"Unknown email meta tag: {email_tag}")
+
+    email_meta = _EMAIL_META[email_tag]
+    label_text = email_meta["label"]
+    icon_html = email_meta["icon"]
+
+    value_text = strip_html(content_html)
+    escaped_value = html.escape(value_text, quote=True)
+    href_value = urllib.parse.quote(value_text, safe="@._+-")
+
+    extra_classes = ""
+    if formatting_tags:
+        extra_classes = _meta_classes_for_tag_names(formatting_tags)
+
+    value_class = "meta-email-value"
+    if extra_classes:
+        value_class = f"{value_class} {extra_classes}"
+
+    return (
+        '<div class="meta-email">'
+        f'<span class="meta-email-icon">{icon_html}</span>'
+        f'<span class="meta-email-label">{label_text}:</span>'
+        f'<a class="{value_class}" href="mailto:{href_value}">{escaped_value}</a>'
         "</div>"
     )
 

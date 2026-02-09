@@ -18,6 +18,7 @@ let ignoreClickAfterMoveDrag = null;
 const MOVE_DRAG_THRESHOLD_PX = 20;
 const MOVE_DRAG_THRESHOLD_SQ = MOVE_DRAG_THRESHOLD_PX * MOVE_DRAG_THRESHOLD_PX;
 const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
+const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
 const SHELL_SELECTOR = '.meta-shell';
 const SHELL_OUTPUT_SELECTOR = '.meta-shell-output';
@@ -437,6 +438,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleEmailClick(event)) {
+        return;
+    }
+
     if (handleShellRunClick(event)) {
         return;
     }
@@ -805,6 +810,27 @@ function handleCredentialCopyClick(event) {
     triggerCopyFeedback(valueElement);
     void copyTextToClipboard(copyValue, valueElement);
     Logger.logAction('credential.copy', { valueLength: copyValue.length });
+    return true;
+}
+
+function handleEmailClick(event) {
+    if (!event) {
+        throw new Error('handleEmailClick called without an event object');
+    }
+    if (!event.target) {
+        throw new Error('Email click missing target element');
+    }
+
+    const emailElement = event.target.closest(EMAIL_VALUE_SELECTOR);
+    if (!emailElement) {
+        return false;
+    }
+
+    if (ModeContext.isEditing) {
+        return false;
+    }
+
+    event.stopPropagation();
     return true;
 }
 

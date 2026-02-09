@@ -45,6 +45,8 @@ Examples (autocorrected while typing):
 - Credential meta tags:
   - `@username` renders a view-only "Username:" row with a copyable value.
   - `@password` renders a view-only "Password:" row with a blurred, copyable value.
+- Email meta tags:
+  - `@email` renders a view-only "Email:" row with a mailto link.
 - Status meta tags:
   - `@todo` renders an unchecked box icon; clicking the icon toggles the tag to `@done`.
   - `@done` renders a checked box icon; clicking the icon toggles the tag to `@todo`.

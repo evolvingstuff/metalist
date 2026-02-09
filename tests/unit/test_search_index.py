@@ -139,6 +139,7 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
     assert "@markdown" in suggestions
     assert "@LaTeX" in suggestions
     assert "@shell" in suggestions
+    assert "@email" in suggestions
     assert "@heading" in suggestions
     assert "@list-bulleted" in suggestions
     assert "@list-numbered" in suggestions
