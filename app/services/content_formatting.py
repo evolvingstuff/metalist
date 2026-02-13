@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import csv
 import html
 import io
+import json
 import re
 import subprocess
 import sys
@@ -40,6 +42,8 @@ _LIST_STYLE_TAGS = {
     "list-bulleted": "bulleted",
     "list-numbered": "numbered",
 }
+
+_RENDERER_TAGS = frozenset({"markdown", "latex", "json", "csv", "shell"})
 
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
 _EMAIL_TAGS = frozenset({"email"})
@@ -109,6 +113,8 @@ _STATUS_META = {
 }
 
 _JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
+_LATEX_PLACEHOLDER_PREFIX = "@@MLLATEX["
+_LATEX_PLACEHOLDER_SUFFIX = "]@@"
 
 
 def list_known_meta_tag_terms() -> FrozenSet[str]:
@@ -150,43 +156,11 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     credential_tag = _find_global_credential_tag(tags)
     email_tag = _find_global_email_tag(tags)
     status_tag = _find_global_status_tag(tags)
-    shell_tag = _find_global_shell_tag(tags)
-    markdown_tag = _find_global_markdown_tag(tags)
-    latex_tag = _find_global_latex_tag(tags)
-    json_tag = _find_global_json_tag(tags)
-    csv_tag = _find_global_csv_tag(tags)
-    if shell_tag is not None:
-        return _render_shell_meta(
-            content_html=content_html,
-            formatting_tags=config.global_tags,
-        )
-    if markdown_tag is not None:
-        return _render_markdown_meta(
-            content_html=content_html,
-            formatting_tags=config.global_tags,
-        )
-    if latex_tag is not None:
-        return _render_latex_meta(
-            content_html=content_html,
-            formatting_tags=config.global_tags,
-        )
-    if json_tag is not None:
-        return _render_json_meta(
-            content_html=content_html,
-            formatting_tags=config.global_tags,
-        )
-    if csv_tag is not None:
-        return _render_csv_meta(
-            content_html=content_html,
-            formatting_tags=config.global_tags,
-            inline=False,
-            cell_wrappers=frozenset(),
-            cell_scoped_tags={},
-            cell_scoped_renderers={},
-        )
+    renderer_tag = _find_first_renderer_tag(tags)
 
     if (
-        not config.global_tags
+        renderer_tag is None
+        and not config.global_tags
         and not config.wrappers_to_consume
         and credential_tag is None
         and email_tag is None
@@ -195,13 +169,48 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         return content_html
 
     output = content_html
-    if config.wrappers_to_consume:
+    apply_wrappers = True
+    if renderer_tag == "csv":
+        apply_wrappers = False
+    if apply_wrappers and config.wrappers_to_consume:
         output = _apply_scoped_meta_tags(
             content_html=output,
             wrappers_to_consume=config.wrappers_to_consume,
             scoped_tags=config.scoped_tags,
             scoped_renderers=config.scoped_renderers,
         )
+
+    if renderer_tag is not None:
+        if renderer_tag == "shell":
+            return _render_shell_meta(
+                content_html=output,
+                formatting_tags=config.global_tags,
+            )
+        if renderer_tag == "markdown":
+            return _render_markdown_meta(
+                content_html=output,
+                formatting_tags=config.global_tags,
+            )
+        if renderer_tag == "latex":
+            return _render_latex_meta(
+                content_html=output,
+                formatting_tags=config.global_tags,
+            )
+        if renderer_tag == "json":
+            return _render_json_meta(
+                content_html=output,
+                formatting_tags=config.global_tags,
+            )
+        if renderer_tag == "csv":
+            return _render_csv_meta(
+                content_html=output,
+                formatting_tags=config.global_tags,
+                inline=False,
+                cell_wrappers=frozenset(),
+                cell_scoped_tags={},
+                cell_scoped_renderers={},
+            )
+        raise KeyError(f"Unknown renderer tag: {renderer_tag}")
 
     if credential_tag is not None:
         return _render_credential_meta(
@@ -285,6 +294,20 @@ def _extract_tag_terms(tags: str) -> FrozenSet[str]:
             if inner:
                 terms.add(inner)
     return frozenset(terms)
+
+
+def _find_first_renderer_tag(tags: str) -> str | None:
+    tokens = _tokenize_tag_bar(tags)
+    for token in tokens:
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if not base.startswith("@"):
+            continue
+        tag_name = base[1:].casefold()
+        if tag_name in _RENDERER_TAGS:
+            return tag_name
+    return None
 
 
 def _find_global_credential_tag(tags: str) -> str | None:
@@ -445,39 +468,6 @@ def _render_status_meta(
     )
 
 
-def _find_global_json_tag(tags: str) -> str | None:
-    tokens = _tokenize_tag_bar(tags)
-    for token in tokens:
-        base, wrapper = _unwrap_tag_token(token)
-        if wrapper is not None:
-            continue
-        if base.casefold() == "@json":
-            return "json"
-    return None
-
-
-def _find_global_markdown_tag(tags: str) -> str | None:
-    tokens = _tokenize_tag_bar(tags)
-    for token in tokens:
-        base, wrapper = _unwrap_tag_token(token)
-        if wrapper is not None:
-            continue
-        if base.casefold() == "@markdown":
-            return "markdown"
-    return None
-
-
-def _find_global_shell_tag(tags: str) -> str | None:
-    tokens = _tokenize_tag_bar(tags)
-    for token in tokens:
-        base, wrapper = _unwrap_tag_token(token)
-        if wrapper is not None:
-            continue
-        if base.casefold() == "@shell":
-            return "shell"
-    return None
-
-
 def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
     escaped_text = html.escape(raw_text, quote=False)
@@ -511,17 +501,6 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
         block_class = f"{block_class} {extra_classes}"
 
     return f'<div class="{block_class}">{escaped_text}</div>'
-
-
-def _find_global_latex_tag(tags: str) -> str | None:
-    tokens = _tokenize_tag_bar(tags)
-    for token in tokens:
-        base, wrapper = _unwrap_tag_token(token)
-        if wrapper is not None:
-            continue
-        if base.casefold() == "@latex":
-            return "latex"
-    return None
 
 
 def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
@@ -643,17 +622,6 @@ def _extract_plain_text(content_html: str) -> str:
     return text.strip("\n")
 
 
-def _find_global_csv_tag(tags: str) -> str | None:
-    tokens = _tokenize_tag_bar(tags)
-    for token in tokens:
-        base, wrapper = _unwrap_tag_token(token)
-        if wrapper is not None:
-            continue
-        if base.casefold() == "@csv":
-            return "csv"
-    return None
-
-
 def _render_csv_meta(
     *,
     content_html: str,
@@ -730,6 +698,12 @@ def _render_scoped_renderer(
     scoped_renderers: Mapping[Tuple[str, int], str],
     render_key: Tuple[str, int] | None,
 ) -> str:
+    if render_tag == "latex":
+        raw_text = _extract_plain_text(content_html)
+        extra_classes = ""
+        if formatting_tags:
+            extra_classes = _meta_classes_for_tag_names(formatting_tags)
+        return _encode_latex_placeholder(raw_text, extra_classes)
     if render_tag == "csv":
         filtered_wrappers = wrappers_to_consume
         filtered_scoped = scoped_tags
@@ -901,6 +875,18 @@ def _wrap_json_span(css_class: str, token: str) -> str:
     return f'<span class="{css_class}">{html.escape(token, quote=False)}</span>'
 
 
+def _encode_latex_placeholder(raw_text: str, extra_classes: str) -> str:
+    if not isinstance(raw_text, str):
+        raise TypeError("raw_text must be a string")
+    if not isinstance(extra_classes, str):
+        raise TypeError("extra_classes must be a string")
+    payload = {"text": raw_text, "classes": extra_classes}
+    encoded = base64.b64encode(
+        json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).decode("ascii")
+    return f"{_LATEX_PLACEHOLDER_PREFIX}{encoded}{_LATEX_PLACEHOLDER_SUFFIX}"
+
+
 def _parse_meta_tags(tags: str) -> MetaTagConfig:
     tokens = _tokenize_tag_bar(tags)
     global_tags: Set[str] = set()
@@ -931,15 +917,15 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
                 continue
             tag_name = inner[1:].casefold()
             if tag_name not in _META_TAG_TO_CLASS:
-                if tag_name == "csv":
+                if tag_name in {"csv", "latex"}:
                     existing = None
                     if key in scoped_renderers:
                         existing = scoped_renderers[key]
-                    if existing is not None and existing != "csv":
+                    if existing is not None and existing != tag_name:
                         raise ValueError(
-                            f"Wrapper {key} has conflicting scoped renderers: {existing} vs csv"
+                            f"Wrapper {key} has conflicting scoped renderers: {existing} vs {tag_name}"
                         )
-                    scoped_renderers[key] = "csv"
+                    scoped_renderers[key] = tag_name
                 continue
             if key not in scoped:
                 scoped[key] = set()

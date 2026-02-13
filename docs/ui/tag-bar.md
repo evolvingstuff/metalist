@@ -56,6 +56,7 @@ Examples (autocorrected while typing):
   - `@LaTeX` renders note content as LaTeX in view mode (KaTeX).
   - Use `$...$` for inline math and `$$...$$` for display math.
   - If no `$` delimiters are present, the entire note is rendered as display math.
+  - Scoped LaTeX works with wrappers (e.g. `{{@LaTeX}}` renders only `{{...}}` segments) and can be combined with `@markdown` to render math inside Markdown.
 - Shell meta tags:
   - `@shell` renders note content as a terminal-style script block in view mode.
   - Clicking the block runs the script on the server and shows output inline (output is not saved).

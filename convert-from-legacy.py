@@ -40,6 +40,18 @@ from app.services.auth_service import AuthService
 from app.utils.text_utils import strip_html
 
 
+_OPEN_TO_CLOSE = {
+    "[": "]",
+    "{": "}",
+    "(": ")",
+}
+_MAX_DELIMITER_DEPTH = 3
+_INLINE_MATH_LATEX_SIGNAL_RE = re.compile(r"[\\\\{}_^]")
+_INLINE_MATH_OPERATOR_RE = re.compile(r"[=+\-*/<>]")
+_INLINE_MATH_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+_INLINE_MATH_TOKEN_RE = re.compile(r"^[A-Za-z0-9(){}_^,./+=<>*\[\]\-]+$")
+
+
 @dataclass(frozen=True)
 class NoteMeta:
     parent_id: str | None
@@ -192,6 +204,85 @@ def _parse_collapse(subitem: dict[str, Any]) -> bool:
     raise TypeError("collapse must be 0/1 or boolean when provided.")
 
 
+def _tokenize_tag_bar(tags: str) -> list[str]:
+    tokens: list[str] = []
+    index = 0
+    while index < len(tags):
+        while index < len(tags) and tags[index].isspace():
+            index += 1
+        if index >= len(tags):
+            break
+
+        if tags.startswith("/*", index):
+            end = tags.find("*/", index + 2)
+            if end == -1:
+                break
+            index = end + 2
+            continue
+
+        start = index
+        opener = tags[index]
+        if opener in _OPEN_TO_CLOSE:
+            opener_run = 1
+            while index + opener_run < len(tags) and tags[index + opener_run] == opener:
+                opener_run += 1
+            if opener_run <= _MAX_DELIMITER_DEPTH:
+                closer = _OPEN_TO_CLOSE[opener]
+                needle = closer * opener_run
+                close_at = tags.find(needle, index + opener_run)
+                if close_at != -1:
+                    index = close_at + opener_run
+                    token = tags[start:index]
+                    if token:
+                        tokens.append(token)
+                    continue
+
+        while index < len(tags) and not tags[index].isspace():
+            index += 1
+        token = tags[start:index]
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _unwrap_tag_token(token: str) -> tuple[str, tuple[str, int] | None]:
+    if not token:
+        return token, None
+
+    opener = token[0]
+    if opener not in _OPEN_TO_CLOSE:
+        return token, None
+
+    opener_run = 1
+    while opener_run < len(token) and token[opener_run] == opener:
+        opener_run += 1
+    if opener_run > _MAX_DELIMITER_DEPTH:
+        return token, None
+    depth = opener_run
+
+    closer = _OPEN_TO_CLOSE[opener]
+    if len(token) < depth * 2:
+        return token, None
+
+    if token[-1] != closer:
+        return token, None
+
+    closer_run = 1
+    while closer_run < len(token) and token[-(closer_run + 1)] == closer:
+        closer_run += 1
+    if closer_run != depth:
+        return token, None
+
+    if token[-depth:] != closer * depth:
+        return token, None
+
+    inner = token[depth:-depth]
+    if not inner:
+        return token, None
+
+    return inner, (opener, depth)
+
+
 def _has_implies_tag(tags: str) -> bool:
     tokens = tags.split()
     return "@implies" in tokens
@@ -274,6 +365,137 @@ def _is_effectively_empty(content: str) -> bool:
     if "<img" in content.lower():
         return False
     return strip_html(content) == ""
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    count = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        count += 1
+        cursor -= 1
+    return count % 2 == 1
+
+
+def _find_closing_delimiter(text: str, start_index: int, delimiter: str) -> int:
+    cursor = start_index
+    while cursor < len(text):
+        if text.startswith(delimiter, cursor) and not _is_escaped(text, cursor):
+            return cursor
+        cursor += 1
+    return -1
+
+
+def _find_inline_closing(text: str, start_index: int, max_newlines: int) -> int:
+    cursor = start_index
+    newline_count = 0
+    while cursor < len(text):
+        if text[cursor] == "\n":
+            newline_count += 1
+            if newline_count > max_newlines:
+                return -1
+        if text[cursor] == "$" and not _is_escaped(text, cursor) and text[cursor + 1 : cursor + 2] != "$":
+            if cursor + 1 < len(text) and text[cursor + 1].isdigit():
+                cursor += 1
+                continue
+            return cursor
+        cursor += 1
+    return -1
+
+
+def _inline_math_looks_valid(content: str) -> bool:
+    stripped = content.strip()
+    if stripped == "":
+        return False
+    if _INLINE_MATH_LATEX_SIGNAL_RE.search(stripped) is not None:
+        return True
+    has_space = any(ch.isspace() for ch in stripped)
+    if not has_space:
+        if re.fullmatch(r"[A-Za-z]{1,4}", stripped):
+            return True
+        if _INLINE_MATH_TOKEN_RE.fullmatch(stripped):
+            if _INLINE_MATH_OPERATOR_RE.search(stripped) is not None:
+                return True
+            if any(ch in "[](){}_^" for ch in stripped):
+                return True
+            if any(ch.isdigit() for ch in stripped):
+                return True
+        return False
+    if _INLINE_MATH_WORD_RE.search(stripped) is not None:
+        return False
+    if _INLINE_MATH_OPERATOR_RE.search(stripped) is not None:
+        return True
+    if any(ch in "[](){}_^" for ch in stripped):
+        return True
+    return False
+
+
+def _wrap_latex_segments(text: str) -> tuple[str, bool]:
+    output: list[str] = []
+    cursor = 0
+    found = False
+    while cursor < len(text):
+        if text.startswith("$$", cursor) and not _is_escaped(text, cursor):
+            close_index = _find_closing_delimiter(text, cursor + 2, "$$")
+            if close_index != -1:
+                segment = text[cursor : close_index + 2]
+                output.append(f"[[{segment}]]")
+                found = True
+                cursor = close_index + 2
+                continue
+        if text[cursor] == "$" and not _is_escaped(text, cursor) and text[cursor + 1 : cursor + 2] != "$":
+            close_index = _find_inline_closing(text, cursor + 1, max_newlines=3)
+            if close_index != -1:
+                inner = text[cursor + 1 : close_index]
+                if _inline_math_looks_valid(inner):
+                    segment = text[cursor : close_index + 1]
+                    output.append(f"[[{segment}]]")
+                    found = True
+                    cursor = close_index + 1
+                    continue
+            output.append(text[cursor])
+            cursor += 1
+            continue
+        output.append(text[cursor])
+        cursor += 1
+    return "".join(output), found
+
+
+def _has_global_tag(tags: str, tag_name: str) -> bool:
+    token_name = tag_name.casefold()
+    for token in _tokenize_tag_bar(tags):
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is not None:
+            continue
+        if not base.startswith("@"):
+            continue
+        if base[1:].casefold() == token_name:
+            return True
+    return False
+
+
+def _has_scoped_renderer(tags: str, tag_name: str, opener: str, depth: int) -> bool:
+    token_name = tag_name.casefold()
+    for token in _tokenize_tag_bar(tags):
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is None:
+            continue
+        opener_char, wrapper_depth = wrapper
+        if opener_char != opener or wrapper_depth != depth:
+            continue
+        inner_tokens = [inner for inner in base.split() if inner]
+        for inner in inner_tokens:
+            if not inner.startswith("@"):
+                continue
+            if inner[1:].casefold() == token_name:
+                return True
+    return False
+
+
+def _append_tag_token(tags: str, token: str) -> str:
+    stripped = tags.strip()
+    if stripped == "":
+        return token
+    return f"{stripped} {token}"
 
 
 def _prepare_database() -> Path:
@@ -376,6 +598,13 @@ def _import_item(
             skipped_indents.append(indent)
             previous_indent = indent
             continue
+
+        content, has_latex = _wrap_latex_segments(content)
+        if has_latex:
+            if not _has_global_tag(tags, "markdown"):
+                tags = _append_tag_token(tags, "@markdown")
+            if not _has_scoped_renderer(tags, "latex", "[", 2):
+                tags = _append_tag_token(tags, "[[@LaTeX]]")
 
         note_id = str(uuid.uuid4())
         insert_note(

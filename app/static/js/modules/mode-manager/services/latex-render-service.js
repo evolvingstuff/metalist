@@ -1,5 +1,6 @@
 const META_LATEX_SELECTOR = '.meta-latex';
 const LATEX_RENDERED_ATTR = 'latex-rendered';
+const LATEX_PLACEHOLDER_RE = /@@MLLATEX\[([A-Za-z0-9+/=]+)\]@@/g;
 let warnedMissingKatex = false;
 
 function escapeHtml(value) {
@@ -29,6 +30,92 @@ function isEscaped(text, index) {
         cursor -= 1;
     }
     return count % 2 === 1;
+}
+
+function decodeLatexPlaceholderPayload(encoded) {
+    if (typeof encoded !== 'string') {
+        throw new Error('decodeLatexPlaceholderPayload requires encoded string');
+    }
+    let decodedText = '';
+    try {
+        decodedText = window.atob(encoded);
+    } catch (error) {
+        return null;
+    }
+    let payload = null;
+    try {
+        payload = JSON.parse(decodedText);
+    } catch (error) {
+        return null;
+    }
+    if (!payload || typeof payload !== 'object') {
+        return null;
+    }
+    if (typeof payload.text !== 'string') {
+        return null;
+    }
+    let classes = '';
+    if (typeof payload.classes === 'string') {
+        classes = payload.classes;
+    }
+    return { text: payload.text, classes };
+}
+
+export function replaceLatexPlaceholders(rootElement) {
+    if (!rootElement) {
+        throw new Error('replaceLatexPlaceholders requires a root element');
+    }
+    const walker = document.createTreeWalker(rootElement, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) {
+        textNodes.push(walker.currentNode);
+    }
+    textNodes.forEach((textNode) => {
+        const text = textNode.nodeValue;
+        if (typeof text !== 'string') {
+            return;
+        }
+        if (text.indexOf('@@MLLATEX[') === -1) {
+            return;
+        }
+        LATEX_PLACEHOLDER_RE.lastIndex = 0;
+        if (!LATEX_PLACEHOLDER_RE.exec(text)) {
+            return;
+        }
+        LATEX_PLACEHOLDER_RE.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let cursor = 0;
+        let match = LATEX_PLACEHOLDER_RE.exec(text);
+        while (match) {
+            const start = match.index;
+            if (start > cursor) {
+                fragment.appendChild(document.createTextNode(text.slice(cursor, start)));
+            }
+            const payload = decodeLatexPlaceholderPayload(match[1]);
+            if (!payload) {
+                fragment.appendChild(document.createTextNode(match[0]));
+            } else {
+                const span = document.createElement('span');
+                let className = 'meta-latex';
+                if (payload.classes !== '') {
+                    className = `${className} ${payload.classes}`;
+                }
+                span.className = className;
+                span.textContent = payload.text;
+                fragment.appendChild(span);
+            }
+            cursor = start + match[0].length;
+            match = LATEX_PLACEHOLDER_RE.exec(text);
+        }
+        if (cursor < text.length) {
+            fragment.appendChild(document.createTextNode(text.slice(cursor)));
+        }
+        const parent = textNode.parentNode;
+        if (!parent) {
+            return;
+        }
+        parent.replaceChild(fragment, textNode);
+    });
 }
 
 function findClosingDelimiter(text, startIndex, delimiter) {
@@ -143,6 +230,7 @@ export function renderLatexBlocks(rootElement) {
     if (!rootElement) {
         throw new Error('renderLatexBlocks requires a root element');
     }
+    replaceLatexPlaceholders(rootElement);
 
     const blocks = rootElement.querySelectorAll(
         `${META_LATEX_SELECTOR}:not([data-${LATEX_RENDERED_ATTR}="true"])`

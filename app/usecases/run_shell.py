@@ -7,7 +7,7 @@ from typing import Dict
 
 from app.usecases.base import QueryCommand
 from app.services.store import store
-from app.services.content_formatting import _extract_plain_text, _find_global_shell_tag
+from app.services.content_formatting import _extract_plain_text, _find_first_renderer_tag
 
 
 def _normalize_subprocess_stream(value: object) -> str:
@@ -33,7 +33,7 @@ class CmdRunShell(QueryCommand):
             raise TypeError("timeout_seconds must be a non-negative integer")
 
         record = store.get(self.note_id)
-        if _find_global_shell_tag(record.tags) is None:
+        if _find_first_renderer_tag(record.tags) != "shell":
             return {
                 "status": "error",
                 "exitCode": -1,
