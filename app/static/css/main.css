@@ -1969,8 +1969,66 @@ body.loading::after {
     display: contents;
 }
 
+.meta-global.meta-copyable,
+.meta-scope.meta-copyable,
+.meta-global.meta-dark-theme,
+.meta-scope.meta-dark-theme {
+    display: inline-block;
+    box-decoration-break: clone;
+}
+
 .meta-monospace {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.97em;
+    line-height: 1.35;
+}
+
+.meta-copyable {
+    cursor: pointer;
+    user-select: text;
+    border-radius: 6px;
+}
+
+.meta-copyable:hover {
+    background-color: rgba(0, 0, 0, 0.14);
+}
+
+.meta-copyable.meta-copyable-copied {
+    animation: meta-credential-copied 0.7s ease;
+}
+
+.meta-dark-theme {
+    background: #2a2a2a;
+    color: #f3f3f3;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px 8px;
+}
+
+.meta-dark-theme a {
+    color: #9bd3ff;
+}
+
+.meta-dark-theme.meta-copyable:hover {
+    background-color: rgba(255, 255, 255, 0.24);
+}
+
+.meta-dark-theme.meta-markdown table {
+    background: #151515;
+}
+
+.meta-dark-theme.meta-markdown th,
+.meta-dark-theme.meta-markdown td {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.meta-dark-theme.meta-markdown tr:nth-child(even) td {
+    background: #1e1e1e;
+}
+
+.meta-dark-theme.meta-markdown blockquote {
+    border-left-color: rgba(255, 255, 255, 0.25);
+    color: #cfcfcf;
 }
 
 .meta-serif {

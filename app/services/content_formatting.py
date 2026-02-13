@@ -36,6 +36,8 @@ _META_TAG_TO_CLASS = {
     "italic": "meta-italic",
     "strikethrough": "meta-strikethrough",
     "serif": "meta-serif",
+    "copyable": "meta-copyable",
+    "dark-theme": "meta-dark-theme",
 }
 
 _LIST_STYLE_TAGS = {
@@ -236,7 +238,11 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
     if config.global_tags:
         classes = _meta_classes_for_tag_names(config.global_tags)
         if classes:
-            output = f'<span class="meta-global {classes}">{output}</span>'
+            copy_attr = ""
+            if "copyable" in config.global_tags:
+                plain_text = _extract_plain_text(output)
+                copy_attr = _copyable_attr(config.global_tags, plain_text)
+            output = f'<span class="meta-global {classes}"{copy_attr}>{output}</span>'
 
     return output
 
@@ -471,6 +477,7 @@ def _render_status_meta(
 def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
     escaped_text = html.escape(raw_text, quote=False)
+    copy_attr = _copyable_attr(formatting_tags, raw_text)
 
     extra_classes = ""
     if formatting_tags:
@@ -481,7 +488,7 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
         code_class = f"{code_class} {extra_classes}"
 
     return (
-        '<div class="meta-shell">'
+        f'<div class="meta-shell"{copy_attr}>'
         f'<pre class="meta-shell-script"><code class="{code_class}">{escaped_text}</code></pre>'
         '<div class="meta-shell-output" aria-live="polite"></div>'
         "</div>"
@@ -491,6 +498,7 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
 def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
     escaped_text = html.escape(raw_text, quote=False)
+    copy_attr = _copyable_attr(formatting_tags, raw_text)
 
     extra_classes = ""
     if formatting_tags:
@@ -500,12 +508,13 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
     if extra_classes:
         block_class = f"{block_class} {extra_classes}"
 
-    return f'<div class="{block_class}">{escaped_text}</div>'
+    return f'<div class="{block_class}"{copy_attr}>{escaped_text}</div>'
 
 
 def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
     escaped_text = html.escape(raw_text, quote=False)
+    copy_attr = _copyable_attr(formatting_tags, raw_text)
 
     extra_classes = ""
     if formatting_tags:
@@ -515,16 +524,22 @@ def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
     if extra_classes:
         block_class = f"{block_class} {extra_classes}"
 
-    return f'<div class="{block_class}">{escaped_text}</div>'
+    return f'<div class="{block_class}"{copy_attr}>{escaped_text}</div>'
 
 
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
     ok, pretty, error_message = _pretty_print_json(raw_text)
     if not ok:
-        return _render_json_error(raw_text=raw_text, message=error_message)
+        copy_attr = _copyable_attr(formatting_tags, raw_text)
+        return _render_json_error(
+            raw_text=raw_text,
+            message=error_message,
+            copy_attr=copy_attr,
+        )
 
     highlighted = _highlight_json(pretty)
+    copy_attr = _copyable_attr(formatting_tags, raw_text)
 
     extra_classes = ""
     if formatting_tags:
@@ -535,23 +550,25 @@ def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> 
         code_class = f"{code_class} {extra_classes}"
 
     return (
-        '<div class="meta-json">'
+        f'<div class="meta-json"{copy_attr}>'
         f'<pre class="meta-json-pre"><code class="{code_class}">{highlighted}</code></pre>'
         "</div>"
     )
 
 
-def _render_json_error(*, raw_text: str, message: str) -> str:
+def _render_json_error(*, raw_text: str, message: str, copy_attr: str) -> str:
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string")
     if not isinstance(message, str) or message == "":
         raise TypeError("message must be a non-empty string")
+    if not isinstance(copy_attr, str):
+        raise TypeError("copy_attr must be a string")
 
     escaped_message = html.escape(message, quote=True)
     escaped_text = html.escape(raw_text, quote=False)
 
     return (
-        '<div class="meta-json meta-json-error">'
+        f'<div class="meta-json meta-json-error"{copy_attr}>'
         f'<span class="meta-json-badge" title="{escaped_message}">Invalid JSON</span>'
         f'<pre class="meta-json-pre"><code class="meta-json-code">{escaped_text}</code></pre>'
         "</div>"
@@ -632,6 +649,7 @@ def _render_csv_meta(
     cell_scoped_renderers: Mapping[Tuple[str, int], str],
 ) -> str:
     raw_text = _extract_plain_text(content_html)
+    copy_attr = _copyable_attr(formatting_tags, raw_text)
 
     placeholder_map: Dict[str, str] = {}
     parse_text = raw_text
@@ -643,7 +661,12 @@ def _render_csv_meta(
 
     rows, error = _parse_csv_rows(parse_text)
     if error is not None:
-        return _render_csv_error(raw_text=raw_text, message=error, inline=inline)
+        return _render_csv_error(
+            raw_text=raw_text,
+            message=error,
+            inline=inline,
+            copy_attr=copy_attr,
+        )
 
     extra_classes = ""
     if formatting_tags:
@@ -658,7 +681,7 @@ def _render_csv_meta(
         meta_classes.append("meta-csv-inline")
 
     output: List[str] = [
-        f'<div class="{" ".join(meta_classes)}">',
+        f'<div class="{" ".join(meta_classes)}"{copy_attr}>',
         '<div class="meta-csv-table-wrap">',
         f'<table class="{table_class}">',
         "<tbody>",
@@ -753,11 +776,13 @@ def _parse_csv_rows(text: str) -> tuple[list[list[str]], str | None]:
     return rows, None
 
 
-def _render_csv_error(*, raw_text: str, message: str, inline: bool) -> str:
+def _render_csv_error(*, raw_text: str, message: str, inline: bool, copy_attr: str) -> str:
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string")
     if not isinstance(message, str) or message == "":
         raise TypeError("message must be a non-empty string")
+    if not isinstance(copy_attr, str):
+        raise TypeError("copy_attr must be a string")
 
     escaped_message = html.escape(message, quote=True)
     escaped_text = html.escape(raw_text, quote=False)
@@ -765,7 +790,7 @@ def _render_csv_error(*, raw_text: str, message: str, inline: bool) -> str:
     if inline:
         meta_classes.append("meta-csv-inline")
     return (
-        f'<div class="{" ".join(meta_classes)}">'
+        f'<div class="{" ".join(meta_classes)}"{copy_attr}>'
         f'<span class="meta-csv-badge" title="{escaped_message}">Invalid CSV</span>'
         f'<pre class="meta-csv-pre"><code class="meta-csv-code">{escaped_text}</code></pre>'
         "</div>"
@@ -873,6 +898,13 @@ def _wrap_json_span(css_class: str, token: str) -> str:
     if not isinstance(token, str):
         raise TypeError("token must be a string")
     return f'<span class="{css_class}">{html.escape(token, quote=False)}</span>'
+
+
+def _copyable_attr(formatting_tags: FrozenSet[str], raw_text: str) -> str:
+    if "copyable" not in formatting_tags:
+        return ""
+    escaped_text = html.escape(raw_text, quote=True)
+    return f' data-copy-value="{escaped_text}"'
 
 
 def _encode_latex_placeholder(raw_text: str, extra_classes: str) -> str:

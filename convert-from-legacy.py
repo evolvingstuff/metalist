@@ -473,6 +473,23 @@ def _has_global_tag(tags: str, tag_name: str) -> bool:
     return False
 
 
+def _has_tag_anywhere(tags: str, tag_name: str) -> bool:
+    token_name = tag_name.casefold()
+    for token in _tokenize_tag_bar(tags):
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is None:
+            if base.startswith("@") and base[1:].casefold() == token_name:
+                return True
+            continue
+        inner_tokens = [inner for inner in base.split() if inner]
+        for inner in inner_tokens:
+            if not inner.startswith("@"):
+                continue
+            if inner[1:].casefold() == token_name:
+                return True
+    return False
+
+
 def _has_scoped_renderer(tags: str, tag_name: str, opener: str, depth: int) -> bool:
     token_name = tag_name.casefold()
     for token in _tokenize_tag_bar(tags):
@@ -605,6 +622,9 @@ def _import_item(
                 tags = _append_tag_token(tags, "@markdown")
             if not _has_scoped_renderer(tags, "latex", "[", 2):
                 tags = _append_tag_token(tags, "[[@LaTeX]]")
+        if _has_tag_anywhere(tags, "monospace"):
+            if not _has_global_tag(tags, "copyable"):
+                tags = _append_tag_token(tags, "@copyable")
 
         note_id = str(uuid.uuid4())
         insert_note(

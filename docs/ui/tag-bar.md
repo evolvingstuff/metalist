@@ -37,6 +37,8 @@ Examples (autocorrected while typing):
   - `@bold`, `@italic`, `@strikethrough` apply basic text styling.
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` apply text colors.
+  - `@copyable` makes the rendered content clickable to copy its raw text to the clipboard.
+  - `@dark-theme` renders the content with a dark background + light text.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 - List meta tags:
   - `@list-bulleted` renders the note's immediate children with bullet markers.

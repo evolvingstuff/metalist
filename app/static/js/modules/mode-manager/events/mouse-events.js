@@ -23,6 +23,8 @@ const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
 const SHELL_SELECTOR = '.meta-shell';
 const SHELL_OUTPUT_SELECTOR = '.meta-shell-output';
 const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
+const COPYABLE_SELECTOR = '.meta-copyable';
+const COPYABLE_COPY_CLASS = 'meta-copyable-copied';
 const SHELL_RUNNING_CLASS = 'meta-shell-running';
 const SHELL_RUN_TIMEOUT_SECONDS = 0;
 const shellRunTimers = new WeakMap();
@@ -442,6 +444,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleCopyableClick(event)) {
+        return;
+    }
+
     if (handleShellRunClick(event)) {
         return;
     }
@@ -807,8 +813,8 @@ function handleCredentialCopyClick(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    triggerCopyFeedback(valueElement);
-    void copyTextToClipboard(copyValue, valueElement);
+    triggerCopyFeedback(valueElement, CREDENTIAL_COPY_CLASS);
+    void copyTextToClipboard(copyValue, valueElement, CREDENTIAL_COPY_CLASS);
     Logger.logAction('credential.copy', { valueLength: copyValue.length });
     return true;
 }
@@ -832,6 +838,75 @@ function handleEmailClick(event) {
 
     event.stopPropagation();
     return true;
+}
+
+function handleCopyableClick(event) {
+    if (!event) {
+        throw new Error('handleCopyableClick called without an event object');
+    }
+    if (!event.target) {
+        throw new Error('Copyable click missing target element');
+    }
+
+    const copyableElement = event.target.closest(COPYABLE_SELECTOR);
+    if (!copyableElement) {
+        return false;
+    }
+
+    if (ModeContext.isEditing) {
+        return false;
+    }
+
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+        return false;
+    }
+
+    if (event.target.closest('a')) {
+        return false;
+    }
+
+    let copyValue = '';
+    if (typeof copyableElement.dataset.copyValue === 'string') {
+        copyValue = copyableElement.dataset.copyValue;
+    } else if (copyableElement.textContent !== null) {
+        copyValue = copyableElement.textContent;
+    }
+
+    copyValue = normalizeCopyableText(copyValue);
+    if (copyValue === '') {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    void copyTextToClipboard(copyValue, copyableElement, COPYABLE_COPY_CLASS);
+    Logger.logAction('copyable.copy', { valueLength: copyValue.length });
+    return true;
+}
+
+function normalizeCopyableText(text) {
+    if (typeof text !== 'string') {
+        return '';
+    }
+    const normalized = text.replace(/\u00a0/g, ' ');
+    if (!normalized.includes('\n')) {
+        return normalized.trimStart();
+    }
+    const lines = normalized.split('\n');
+    const nonEmpty = lines.filter((line) => line.trim() !== '');
+    if (nonEmpty.length === 0) {
+        return normalized;
+    }
+    const indents = nonEmpty.map((line) => line.match(/^[ \\t]*/)[0].length);
+    const minIndent = Math.min(...indents);
+    if (minIndent <= 0) {
+        return normalized;
+    }
+    return lines
+        .map((line) => (line.startsWith(' '.repeat(minIndent)) ? line.slice(minIndent) : line))
+        .join('\n');
 }
 
 function ensureShellOutputElement(shellElement) {
@@ -1075,9 +1150,12 @@ function handleShellRunClick(event) {
     return true;
 }
 
-async function copyTextToClipboard(text, valueElement) {
+async function copyTextToClipboard(text, valueElement, feedbackClass) {
     if (typeof text !== 'string') {
         throw new Error('copyTextToClipboard requires a string');
+    }
+    if (typeof feedbackClass !== 'string' || feedbackClass === '') {
+        throw new Error('copyTextToClipboard requires feedbackClass string');
     }
 
     const clipboard = navigator.clipboard;
@@ -1098,7 +1176,7 @@ async function copyTextToClipboard(text, valueElement) {
                 });
 
             if (writeSucceeded) {
-                triggerCopyFeedback(valueElement);
+                triggerCopyFeedback(valueElement, feedbackClass);
                 return;
             }
         }
@@ -1145,11 +1223,14 @@ async function copyTextToClipboard(text, valueElement) {
         return;
     }
 
-    triggerCopyFeedback(valueElement);
+    triggerCopyFeedback(valueElement, feedbackClass);
 }
 
-function triggerCopyFeedback(valueElement) {
+function triggerCopyFeedback(valueElement, feedbackClass) {
     if (!valueElement || !valueElement.classList) {
+        return;
+    }
+    if (typeof feedbackClass !== 'string' || feedbackClass === '') {
         return;
     }
 
@@ -1162,15 +1243,15 @@ function triggerCopyFeedback(valueElement) {
         window.clearTimeout(existingTimer);
     }
 
-    const alreadyAnimating = valueElement.classList.contains(CREDENTIAL_COPY_CLASS);
+    const alreadyAnimating = valueElement.classList.contains(feedbackClass);
     if (!alreadyAnimating) {
-        valueElement.classList.remove(CREDENTIAL_COPY_CLASS);
+        valueElement.classList.remove(feedbackClass);
         void valueElement.offsetWidth;
-        valueElement.classList.add(CREDENTIAL_COPY_CLASS);
+        valueElement.classList.add(feedbackClass);
     }
 
     const timer = window.setTimeout(() => {
-        valueElement.classList.remove(CREDENTIAL_COPY_CLASS);
+        valueElement.classList.remove(feedbackClass);
     }, 700);
     copyFeedbackTimers.set(valueElement, timer);
 }

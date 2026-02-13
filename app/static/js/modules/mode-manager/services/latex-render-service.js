@@ -36,23 +36,13 @@ function decodeLatexPlaceholderPayload(encoded) {
     if (typeof encoded !== 'string') {
         throw new Error('decodeLatexPlaceholderPayload requires encoded string');
     }
-    let decodedText = '';
-    try {
-        decodedText = window.atob(encoded);
-    } catch (error) {
-        return null;
-    }
-    let payload = null;
-    try {
-        payload = JSON.parse(decodedText);
-    } catch (error) {
-        return null;
-    }
+    const decodedText = window.atob(encoded);
+    const payload = JSON.parse(decodedText);
     if (!payload || typeof payload !== 'object') {
-        return null;
+        throw new Error('Latex placeholder payload must be an object');
     }
     if (typeof payload.text !== 'string') {
-        return null;
+        throw new Error('Latex placeholder payload missing text');
     }
     let classes = '';
     if (typeof payload.classes === 'string') {
@@ -92,18 +82,14 @@ export function replaceLatexPlaceholders(rootElement) {
                 fragment.appendChild(document.createTextNode(text.slice(cursor, start)));
             }
             const payload = decodeLatexPlaceholderPayload(match[1]);
-            if (!payload) {
-                fragment.appendChild(document.createTextNode(match[0]));
-            } else {
-                const span = document.createElement('span');
-                let className = 'meta-latex';
-                if (payload.classes !== '') {
-                    className = `${className} ${payload.classes}`;
-                }
-                span.className = className;
-                span.textContent = payload.text;
-                fragment.appendChild(span);
+            const span = document.createElement('span');
+            let className = 'meta-latex';
+            if (payload.classes !== '') {
+                className = `${className} ${payload.classes}`;
             }
+            span.className = className;
+            span.textContent = payload.text;
+            fragment.appendChild(span);
             cursor = start + match[0].length;
             match = LATEX_PLACEHOLDER_RE.exec(text);
         }
