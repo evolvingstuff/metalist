@@ -18,6 +18,7 @@ import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
 import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { renderLatexHtml } from '../services/latex-render-service.js';
+import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
 
@@ -1300,10 +1301,22 @@ function handlePasteEvent(event) {
 			}
 		}
 	} else {
-        // External content - allow default paste behavior
-        Logger.logDebug('External content detected - using browser default paste', {
-            hasHtml: !!html
-        }, Logger.LogCategory.EVENT);
+        const activeElement = document.activeElement;
+        const hasEditableTarget = Boolean(activeElement && activeElement.isContentEditable);
+        const shouldSanitizeExternalHtml = ModeContext.isEditing && hasEditableTarget && typeof html === 'string' && html.length > 0;
+
+        if (shouldSanitizeExternalHtml) {
+            event.preventDefault();
+            const inserted = sanitizeAndInsertExternalPaste(event);
+            Logger.logDebug('External HTML paste sanitized and inserted', {
+                inserted,
+                htmlLength: html.length
+            }, Logger.LogCategory.EVENT);
+        } else {
+            Logger.logDebug('External content detected - using browser default paste', {
+                hasHtml: !!html
+            }, Logger.LogCategory.EVENT);
+        }
         
         // Mark content as dirty since we're pasting external content
         if (ModeContext.isEditing && !ModeContext.isDirty) {
