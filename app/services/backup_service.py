@@ -161,6 +161,45 @@ def list_backups() -> list[BackupFileInfo]:
     return list_backups_in_directory(backup_directory)
 
 
+def delete_oldest_backups_in_directory(
+    backup_directory: Path,
+    count: int,
+) -> list[BackupFileInfo]:
+    if not isinstance(backup_directory, Path):
+        raise TypeError(f"backup_directory must be a Path, got {type(backup_directory)}")
+    if not isinstance(count, int):
+        raise TypeError(f"count must be an int, got {type(count)}")
+    if count <= 0:
+        raise ValueError("count must be greater than zero")
+    if not backup_directory.exists():
+        return []
+    if not backup_directory.is_dir():
+        raise ValueError(f"backup_directory is not a directory: {backup_directory}")
+
+    with _BACKUP_LOCK:
+        backups_newest_first = list_backups_in_directory(backup_directory)
+        backups_oldest_first = list(reversed(backups_newest_first))
+        backups_to_delete = backups_oldest_first[:count]
+        deleted_backups: list[BackupFileInfo] = []
+
+        for backup in backups_to_delete:
+            backup_path = backup_directory / backup.filename
+            if not backup_path.exists():
+                raise FileNotFoundError(f"Backup file not found: {backup_path}")
+            if not backup_path.is_file():
+                raise ValueError(f"Backup path is not a file: {backup_path}")
+            backup_path.unlink()
+            deleted_backups.append(backup)
+
+        return deleted_backups
+
+
+def delete_oldest_backups(count: int) -> list[BackupFileInfo]:
+    database_path = resolve_live_database_path()
+    backup_directory = resolve_backup_directory_for_database(database_path)
+    return delete_oldest_backups_in_directory(backup_directory, count)
+
+
 def resolve_backup_path_by_filename(filename: str) -> Path:
     validated_filename = _validate_backup_filename(filename)
     database_path = resolve_live_database_path()

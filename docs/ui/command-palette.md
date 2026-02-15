@@ -21,8 +21,8 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Endpoint definitions (behavior/labels) live in code.
 
 ## Utility Actions
-- `Create backup now`: creates a timestamped SQLite backup in the app backup directory.
-- `Restore from backup…`: opens a restore picker and replaces current DB state.
+- `Create backup now`: creates a timestamped SQLite backup in the app backup directory. If total backups are 25 or more, the app opens a retention modal asking how many backups to keep (defaults to 3, with an explicit "Keep all backups" option), then shows a completion modal with `OK`.
+- `Restore from backup…`: opens a restore picker, applies the selected backup, then shows a success confirmation with `OK` before reload.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a utility modal for password generation.
 

@@ -238,7 +238,8 @@ Auth:
 - `POST /api2/auth/session` - Claim passwordless session (only when no password is set)
 - `POST /api2/auth/backup/create` - Create timestamped SQLite backup snapshot
 - `GET /api2/auth/backup/list` - List available backup snapshots
-- `POST /api2/auth/backup/restore` - Restore database from a selected backup
+- `POST /api2/auth/backup/delete-oldest` - Delete oldest backup snapshots by count
+- `POST /api2/auth/backup/restore` - Restore database from a selected backup and trigger server process re-exec (client must re-authenticate)
 - `GET /api2/auth/status` - Poll auth/encryption status
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)
