@@ -64,6 +64,14 @@ const DANGEROUS_STYLE_PATTERN = /(?:url\s*\(|expression\s*\(|@import|-moz-bindin
 const ENCODED_ENTITY_PATTERN = /(?:&#|\\[0-9a-fA-F])/;
 const DISALLOWED_STYLE_CHARS_PATTERN = /[<>`]/;
 const HIDDEN_STYLE_PATTERN = /(?:^|;)\s*(display\s*:\s*none|visibility\s*:\s*hidden)\s*(?:;|$)/i;
+const AVATAR_HINT_PATTERN = /(avatar|profile|pfp|user.?icon|user.?image|community.?icon|snoo|commenter)/i;
+const TIME_HINT_PATTERN = /\b(?:edited\s+)?\d+\s*(?:s|m|min|h|d|w|mo|y)\s*ago\b/i;
+const META_HINT_PATTERN = /\b(?:op|edited|top\s+\d+%?\s+commenter)\b/i;
+const SCORE_HINT_PATTERN = /^\d+(?:\.\d+)?k?$/i;
+const AVATAR_CLAMP_PX = 48;
+const TREE_WALKER_SHOW_ELEMENT_AND_TEXT = 0x1 | 0x4;
+const AVATAR_FORWARD_SCAN_NODE_LIMIT = 140;
+const AVATAR_BACKWARD_SCAN_NODE_LIMIT = 40;
 
 const TEXT_STYLE_PROPERTIES = new Set([
     'white-space',
@@ -398,6 +406,407 @@ export function sanitizeStyleAttributeValue(rawStyle, tagName) {
     return `${safeDeclarations.join('; ')};`;
 }
 
+function parseLengthFromInlineStyle(styleValue, propertyName) {
+    if (typeof styleValue !== 'string') {
+        throw new Error('parseLengthFromInlineStyle expects styleValue string');
+    }
+    if (typeof propertyName !== 'string') {
+        throw new Error('parseLengthFromInlineStyle expects propertyName string');
+    }
+
+    const escaped = propertyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`${escaped}\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px`, 'i');
+    const match = styleValue.match(pattern);
+    if (!match || typeof match[1] !== 'string') {
+        return null;
+    }
+
+    const parsed = Number.parseFloat(match[1]);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return null;
+    }
+    return parsed;
+}
+
+function parseLengthAttributeValue(attributeValue) {
+    if (typeof attributeValue !== 'string') {
+        return null;
+    }
+
+    const trimmed = attributeValue.trim();
+    if (!/^\d+(?:\.\d+)?$/.test(trimmed)) {
+        return null;
+    }
+
+    const parsed = Number.parseFloat(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return null;
+    }
+    return parsed;
+}
+
+function getImageDeclaredDimensions(sourceImageElement) {
+    if (!sourceImageElement) {
+        throw new Error('getImageDeclaredDimensions expects sourceImageElement');
+    }
+    if (!(sourceImageElement instanceof Element)) {
+        throw new Error('getImageDeclaredDimensions expects DOM Element');
+    }
+
+    const widthAttr = parseLengthAttributeValue(sourceImageElement.getAttribute('width'));
+    const heightAttr = parseLengthAttributeValue(sourceImageElement.getAttribute('height'));
+    const styleValue = sourceImageElement.getAttribute('style');
+
+    let width = widthAttr;
+    if (width === null && typeof styleValue === 'string') {
+        width = parseLengthFromInlineStyle(styleValue, 'width');
+    }
+
+    let height = heightAttr;
+    if (height === null && typeof styleValue === 'string') {
+        height = parseLengthFromInlineStyle(styleValue, 'height');
+    }
+
+    return { width, height };
+}
+
+function normalizeText(value) {
+    if (typeof value !== 'string') {
+        throw new Error('normalizeText expects string');
+    }
+    return value.replace(/\s+/g, ' ').trim();
+}
+
+function collectAvatarContextSignalsFromText(rawText, signals) {
+    if (typeof rawText !== 'string') {
+        return;
+    }
+    const content = normalizeText(rawText);
+    if (content.length === 0) {
+        return;
+    }
+
+    const lowered = content.toLowerCase();
+    if (TIME_HINT_PATTERN.test(lowered)) {
+        signals.foundTime = true;
+    }
+    if (META_HINT_PATTERN.test(lowered)) {
+        signals.foundOpMeta = true;
+    }
+}
+
+function getSiblingContextTokens(imageElement) {
+    if (!imageElement) {
+        throw new Error('getSiblingContextTokens expects imageElement');
+    }
+    if (!(imageElement instanceof Element)) {
+        throw new Error('getSiblingContextTokens expects DOM Element');
+    }
+
+    const parent = imageElement.parentNode;
+    if (!parent || !('childNodes' in parent)) {
+        return [];
+    }
+
+    const siblings = Array.from(parent.childNodes);
+    let imageIndex = -1;
+    let i = 0;
+    while (i < siblings.length) {
+        if (siblings[i] === imageElement) {
+            imageIndex = i;
+            break;
+        }
+        i += 1;
+    }
+    if (imageIndex < 0) {
+        return [];
+    }
+
+    let start = imageIndex - 3;
+    if (start < 0) {
+        start = 0;
+    }
+
+    let end = imageIndex + 4;
+    if (end > siblings.length) {
+        end = siblings.length;
+    }
+
+    const tokens = [];
+    let cursor = start;
+    while (cursor < end) {
+        if (cursor !== imageIndex) {
+            const node = siblings[cursor];
+            if (node.nodeType === 3) {
+                const textNode = node;
+                const content = textNode.textContent;
+                if (typeof content === 'string') {
+                    const normalized = normalizeText(content);
+                    if (normalized.length > 0) {
+                        tokens.push(normalized);
+                    }
+                }
+            } else if (node.nodeType === 1) {
+                const element = node;
+                if (!(element instanceof Element)) {
+                    throw new Error('Expected Element for nodeType 1 in getSiblingContextTokens');
+                }
+                const content = element.textContent;
+                if (typeof content === 'string') {
+                    const normalized = normalizeText(content);
+                    if (normalized.length > 0) {
+                        tokens.push(normalized);
+                    }
+                }
+            }
+        }
+        cursor += 1;
+    }
+
+    return tokens;
+}
+
+function hasNearbyAuthorTimeContext(imageElement) {
+    if (!imageElement) {
+        throw new Error('hasNearbyAuthorTimeContext expects imageElement');
+    }
+    if (!(imageElement instanceof Element)) {
+        throw new Error('hasNearbyAuthorTimeContext expects DOM Element');
+    }
+
+    const documentRoot = imageElement.ownerDocument;
+    if (!documentRoot || !documentRoot.body) {
+        throw new Error('hasNearbyAuthorTimeContext requires ownerDocument.body');
+    }
+    if (typeof documentRoot.createTreeWalker !== 'function') {
+        throw new Error('hasNearbyAuthorTimeContext requires document.createTreeWalker');
+    }
+
+    const walker = documentRoot.createTreeWalker(
+        documentRoot.body,
+        TREE_WALKER_SHOW_ELEMENT_AND_TEXT
+    );
+
+    const orderedNodes = [];
+    while (walker.nextNode()) {
+        orderedNodes.push(walker.currentNode);
+    }
+
+    let imageIndex = -1;
+    let i = 0;
+    while (i < orderedNodes.length) {
+        if (orderedNodes[i] === imageElement) {
+            imageIndex = i;
+            break;
+        }
+        i += 1;
+    }
+    if (imageIndex < 0) {
+        return false;
+    }
+
+    let startIndex = imageIndex - AVATAR_BACKWARD_SCAN_NODE_LIMIT;
+    if (startIndex < 0) {
+        startIndex = 0;
+    }
+    let endIndex = imageIndex + AVATAR_FORWARD_SCAN_NODE_LIMIT;
+    if (endIndex > orderedNodes.length) {
+        endIndex = orderedNodes.length;
+    }
+
+    const signals = {
+        foundLink: false,
+        foundShortHandleLink: false,
+        foundTime: false,
+        foundOpMeta: false,
+    };
+
+    let cursor = startIndex;
+    while (cursor < endIndex) {
+        const node = orderedNodes[cursor];
+
+        if (node.nodeType === ELEMENT_NODE) {
+            const element = node;
+            if (!(element instanceof Element)) {
+                cursor += 1;
+                continue;
+            }
+
+            const tagName = element.tagName.toLowerCase();
+            if (cursor > imageIndex && tagName === 'img') {
+                break;
+            }
+
+            if (tagName === 'a') {
+                const linkTextContent = element.textContent;
+                if (typeof linkTextContent === 'string') {
+                    const linkText = normalizeText(linkTextContent);
+                    if (linkText.length > 0) {
+                        signals.foundLink = true;
+                        if (linkText.length <= 48) {
+                            signals.foundShortHandleLink = true;
+                        }
+                    }
+                }
+            }
+
+            const elementTextContent = element.textContent;
+            if (typeof elementTextContent === 'string') {
+                collectAvatarContextSignalsFromText(elementTextContent, signals);
+            }
+        } else if (node.nodeType === 3) {
+            const textNodeContent = node.textContent;
+            if (typeof textNodeContent === 'string') {
+                collectAvatarContextSignalsFromText(textNodeContent, signals);
+            }
+        }
+
+        if ((signals.foundLink || signals.foundShortHandleLink) && signals.foundTime) {
+            return true;
+        }
+        cursor += 1;
+    }
+
+    if (signals.foundShortHandleLink && signals.foundTime) {
+        return true;
+    }
+    if (signals.foundLink && signals.foundOpMeta && signals.foundTime) {
+        return true;
+    }
+    return false;
+}
+
+function buildImageSourceFrequencyMap(rootNode) {
+    if (!rootNode) {
+        throw new Error('buildImageSourceFrequencyMap expects rootNode');
+    }
+    if (!(rootNode instanceof Element)) {
+        throw new Error('buildImageSourceFrequencyMap expects DOM Element rootNode');
+    }
+
+    const map = new Map();
+    const images = Array.from(rootNode.querySelectorAll('img[src]'));
+
+    let i = 0;
+    while (i < images.length) {
+        const src = images[i].getAttribute('src');
+        if (typeof src === 'string' && src.trim().length > 0) {
+            const key = src.trim();
+            const existing = map.get(key);
+            if (typeof existing === 'number') {
+                map.set(key, existing + 1);
+            } else {
+                map.set(key, 1);
+            }
+        }
+        i += 1;
+    }
+
+    return map;
+}
+
+function isLikelyAvatarImage(sourceImageElement, imageSourceFrequencyMap) {
+    if (!sourceImageElement) {
+        throw new Error('isLikelyAvatarImage expects sourceImageElement');
+    }
+    if (!(sourceImageElement instanceof Element)) {
+        throw new Error('isLikelyAvatarImage expects DOM Element');
+    }
+    if (!(imageSourceFrequencyMap instanceof Map)) {
+        throw new Error('isLikelyAvatarImage expects imageSourceFrequencyMap Map');
+    }
+
+    let score = 0;
+
+    const classValue = sourceImageElement.getAttribute('class');
+    const altValue = sourceImageElement.getAttribute('alt');
+    const srcValue = sourceImageElement.getAttribute('src');
+    const idValue = sourceImageElement.getAttribute('id');
+    const ariaLabel = sourceImageElement.getAttribute('aria-label');
+
+    const hints = [classValue, altValue, srcValue, idValue, ariaLabel];
+    let i = 0;
+    while (i < hints.length) {
+        const hint = hints[i];
+        if (typeof hint === 'string' && AVATAR_HINT_PATTERN.test(hint)) {
+            score += 3;
+            break;
+        }
+        i += 1;
+    }
+
+    if (typeof srcValue === 'string') {
+        const key = srcValue.trim();
+        const frequency = imageSourceFrequencyMap.get(key);
+        if (typeof frequency === 'number' && frequency >= 2) {
+            score += 2;
+        }
+    }
+
+    const dimensions = getImageDeclaredDimensions(sourceImageElement);
+    if (dimensions.width !== null && dimensions.height !== null) {
+        let ratio = dimensions.width / dimensions.height;
+        if (ratio < 1) {
+            ratio = dimensions.height / dimensions.width;
+        }
+        if (ratio <= 1.25 && dimensions.width <= 256 && dimensions.height <= 256) {
+            score += 1;
+        }
+    }
+
+    const tokens = getSiblingContextTokens(sourceImageElement);
+    let hasTimeHint = false;
+    let hasMetaHint = false;
+    let hasScoreHint = false;
+    let hasHandleToken = false;
+
+    let j = 0;
+    while (j < tokens.length) {
+        const token = tokens[j];
+        if (TIME_HINT_PATTERN.test(token)) {
+            hasTimeHint = true;
+        }
+        if (META_HINT_PATTERN.test(token)) {
+            hasMetaHint = true;
+        }
+        if (SCORE_HINT_PATTERN.test(token)) {
+            hasScoreHint = true;
+        }
+        if (/^[a-z0-9_-]{3,}$/i.test(token)) {
+            hasHandleToken = true;
+        }
+        j += 1;
+    }
+
+    if (hasTimeHint && hasHandleToken) {
+        score += 2;
+    }
+    if (hasMetaHint) {
+        score += 1;
+    }
+    if (hasScoreHint) {
+        score += 1;
+    }
+
+    if (hasNearbyAuthorTimeContext(sourceImageElement)) {
+        score += 4;
+    }
+
+    return score >= 4;
+}
+
+function clampAvatarImageSize(imageElement) {
+    if (!imageElement) {
+        throw new Error('clampAvatarImageSize expects imageElement');
+    }
+    if (!(imageElement instanceof Element)) {
+        throw new Error('clampAvatarImageSize expects DOM Element');
+    }
+
+    const clampedStyle = `width: ${AVATAR_CLAMP_PX}px; height: ${AVATAR_CLAMP_PX}px; max-width: ${AVATAR_CLAMP_PX}px; max-height: ${AVATAR_CLAMP_PX}px; vertical-align: middle;`;
+    imageElement.setAttribute('style', clampedStyle);
+}
+
 function removeElementPreserveChildren(element) {
     if (!element) {
         throw new Error('removeElementPreserveChildren expects element');
@@ -417,15 +826,23 @@ function removeElementPreserveChildren(element) {
     element.remove();
 }
 
-function sanitizeElementAttributes(element) {
+function sanitizeElementAttributes(element, imageSourceFrequencyMap) {
     if (!element) {
         throw new Error('sanitizeElementAttributes expects element');
     }
     if (!(element instanceof Element)) {
         throw new Error('sanitizeElementAttributes expects DOM Element');
     }
+    if (!(imageSourceFrequencyMap instanceof Map)) {
+        throw new Error('sanitizeElementAttributes expects imageSourceFrequencyMap Map');
+    }
 
     const tagName = element.tagName.toLowerCase();
+    const isImageTag = tagName === 'img';
+    let shouldClampAvatarImage = false;
+    if (isImageTag) {
+        shouldClampAvatarImage = isLikelyAvatarImage(element, imageSourceFrequencyMap);
+    }
     const attributes = Array.from(element.attributes);
 
     let i = 0;
@@ -499,18 +916,26 @@ function sanitizeElementAttributes(element) {
         }
     }
 
-    if (tagName === 'img') {
+    if (isImageTag) {
         const src = element.getAttribute('src');
         const hasSrc = typeof src === 'string' && src.trim().length > 0;
         if (!hasSrc) {
             element.remove();
+            return;
+        }
+
+        if (shouldClampAvatarImage) {
+            clampAvatarImageSize(element);
         }
     }
 }
 
-function sanitizeTree(rootNode) {
+function sanitizeTree(rootNode, imageSourceFrequencyMap) {
     if (!rootNode) {
         throw new Error('sanitizeTree expects rootNode');
+    }
+    if (!(imageSourceFrequencyMap instanceof Map)) {
+        throw new Error('sanitizeTree expects imageSourceFrequencyMap Map');
     }
 
     const queue = Array.from(rootNode.childNodes);
@@ -548,7 +973,7 @@ function sanitizeTree(rootNode) {
             continue;
         }
 
-        sanitizeElementAttributes(element);
+        sanitizeElementAttributes(element, imageSourceFrequencyMap);
 
         const children = Array.from(element.childNodes);
         let i = 0;
@@ -576,7 +1001,8 @@ export function sanitizeExternalClipboardHtml(rawHtml) {
         throw new Error('Failed to parse clipboard HTML');
     }
 
-    sanitizeTree(parsed.body);
+    const imageSourceFrequencyMap = buildImageSourceFrequencyMap(parsed.body);
+    sanitizeTree(parsed.body, imageSourceFrequencyMap);
     return parsed.body.innerHTML;
 }
 
