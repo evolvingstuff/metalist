@@ -54,6 +54,45 @@ Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
 
+### MCP (Phase 1 Read-Only)
+MCP is available automatically when you run:
+```bash
+python main.py
+```
+
+`main.py` also auto-starts the agent web app sidecar and prints:
+- `Agent web app: http://127.0.0.1:8765`
+
+Manual web mode (optional):
+```bash
+python mcp_client.py web --port 8765
+```
+Then open `http://127.0.0.1:8765`.
+
+Run direct MCP CLI calls:
+```bash
+python mcp_client.py cli tools/list
+python mcp_client.py cli tools/call health_check '{}'
+```
+
+Compatibility shortcut (still works):
+```bash
+python mcp_client.py tools/list
+```
+
+Disable auto sidecar if needed:
+```bash
+MCP_AGENT_WEB_ENABLED=0 python main.py
+```
+
+Optional: direct stdio transport (advanced/manual):
+```bash
+python -m app.mcp
+```
+
+Tool catalog and schemas:
+- `docs/mcp_tools.md`
+
 ### Legacy Import
 `convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL` and imports notes from a legacy JSON export.
 

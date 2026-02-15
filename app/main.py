@@ -25,6 +25,7 @@ from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
 from app.api.routes.ontology import router as api2_ontology_router
+from app.api.routes.mcp import router as api2_mcp_router
 from app.api.routes.test import router as api2_test_router
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.config import CRASH_SERVER_ON_FAIL
@@ -206,6 +207,7 @@ app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"])
 app.include_router(api2_auth_router, prefix=API_PREFIX)
 app.include_router(api2_memory_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
+app.include_router(api2_mcp_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(api2_test_router, prefix=API_PREFIX, tags=["api2-test"])
 

@@ -1,4 +1,4 @@
-# PLAN.md — Phase 1 Read-Only MCP (stdio-first)
+# PLAN.md — Phase 1 Read-Only MCP (with agentic web client)
 
 ## 0. Goal
 - Add a production-safe **Phase 1 MCP server** that is:
@@ -11,6 +11,10 @@
 
 ### In scope
 - MCP stdio server entrypoint.
+- MCP HTTP JSON-RPC endpoint mounted in the FastAPI app.
+- Runnable local MCP client script for manual testing.
+- Agentic web app mode in `mcp_client.py` (separate port) that can make multi-step tool calls.
+- Ollama integration for reasoning/agent loops in web mode.
 - Read-only tools for note retrieval and search.
 - Clear locked/unavailable behavior when note data is not hydrated.
 - Documentation for setup, tool catalog, and security posture.
@@ -20,13 +24,12 @@
 - Proposal flow.
 - Append or any write operations.
 - Patch application.
-- MCP HTTP transport.
 
 ## 2. Design decisions for this phase
 
 ### Transport
-- **stdio only** in Phase 1.
-- No MCP HTTP endpoint yet.
+- **stdio + app-integrated HTTP** in Phase 1.
+- HTTP transport lives at `POST /api2/mcp` and starts with `python main.py`.
 
 ### Capability surface
 - Expose read-only tools only.
@@ -57,6 +60,10 @@
   - returns known tags (optionally prefix-filtered) for discovery/autocomplete.
 - `search_notes(query, required_tags, forbidden_tags)`
   - returns matching note IDs + compact metadata with explicit tag filters.
+  - supports `limit` and `offset`.
+  - returns count metadata:
+    - `total_matches` (all matches before paging)
+    - `returned_count` (rows in this response)
 
 Notes:
 - Tool arguments are strict and explicit.
@@ -90,6 +97,12 @@ Notes:
 - Add a runnable entrypoint (module invocation) for local MCP clients.
 - Keep startup minimal and deterministic for local developer usage.
 
+### Step C.1 — HTTP endpoint + local client
+- Mount JSON-RPC MCP route in FastAPI under `/api2/mcp`.
+- Add `mcp_client.py` for tool calls without raw stdin JSON typing.
+- Add `mcp_client.py web` mode to serve a browser UI and show an openable localhost link.
+- Add agent loop that can call MCP tools multiple times per user request.
+
 ### Step D — Documentation
 - Create `docs/mcp_tools.md` (tool contracts + examples + failure modes).
 - Update `README.md` with a short MCP section and run instructions.
@@ -104,6 +117,7 @@ Notes:
   - `list_children` ordering/root behavior
   - `list_tags` discovery/prefix behavior
   - `search_notes` query + tag-filter behavior
+  - `search_notes` count metadata and paging behavior (`total_matches`, `returned_count`, `limit`, `offset`)
   - readiness guard when store is not loaded
   - strict read-only policy (no write tools exposed)
 
@@ -120,11 +134,12 @@ Notes:
 - `get_note` returns full descendant subtree in one call (no client recursion required).
 - `get_note` returns direct vs implied vs effective tag information for each returned note.
 - Tags are discoverable and usable as explicit search filters.
+- `search_notes` includes accurate total-vs-returned result counts for pagination.
 - Locked/unhydrated state returns explicit tool errors (not silent empty data).
 - Docs exist for tool catalog and local usage.
 - New tests pass.
 
 ## 7. Follow-up (Phase 2+)
 - Add proposal/write tools behind explicit approval/policy gates.
-- Add MCP HTTP transport adapter reusing the same tool handler core.
+- Expand/secure HTTP transport for non-local clients (authz scopes, rate limits, optional TLS termination).
 - Expand audit and quota controls for write-capable workflows.
