@@ -18,6 +18,7 @@
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping.
 - `app/services/tab_state.py`: Tracks `(client, tab)` search + scroll metadata used by the UI between reloads.
+- `app/static/js/modules/mode-manager/services/html-paste-sanitizer-service.js`: Client-side sanitizer for external HTML paste in edit mode (URL/style allowlist + blocked tags + image guardrails).
 - `app/security/encryption.py`: Crypto facade (AES-GCM, PBKDF2, key mgmt helpers).
 - `app/db`: `session.py` (begin_writer/connect_reader/read guard), `schema.py`, `notes_sql.py`, `settings_sql.py`.
 - `app/static` & `app/templates`: Frontend assets and Mako templates.
@@ -39,6 +40,7 @@
   - Tag bar grammar (wrappers + /* comments */): `docs/ui/tag-bar.md`.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
+- External paste: `keyboard-events.handlePasteEvent()` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()` before insertion into contenteditable.
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
@@ -54,6 +56,7 @@ python main.py
 
 ## Quick Ref
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, PBKDF2 iterations).
+- Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
