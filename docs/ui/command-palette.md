@@ -20,6 +20,12 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Tag mappings live in `app/static/config/command_palette_tags.json`.
 - Endpoint definitions (behavior/labels) live in code.
 
+## Utility Actions
+- `Create backup now`: creates a timestamped SQLite backup in the app backup directory.
+- `Restore from backup…`: opens a restore picker and replaces current DB state.
+- `Logout`: revokes the current session and returns to login.
+- `Generate random password…`: opens a utility modal for password generation.
+
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).
 The implementation uses `POST /api2/notes/set-collapsed-in-context`.

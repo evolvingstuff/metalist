@@ -2,8 +2,11 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { actionRefreshAndMaybeSelect, showPerfOverlayFromCache } from '../mode-manager/actions/ui-actions.js';
 import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actions/selection-actions.js';
 import { NotesAPI } from '../api-client.js';
+import { CONFIG } from '../config.js';
 import { PasswordModal } from '../modals/password-modal.js';
+import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
+import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -210,6 +213,8 @@ class CommandPaletteController {
         this._usage = new UsageStore();
 
         this._ontologyModal = null;
+        this._backupRestoreModal = null;
+        this._randomPasswordModal = null;
 
         this._elements = null;
 
@@ -237,6 +242,10 @@ class CommandPaletteController {
                 applyPreference: this.applyPreference.bind(this),
                 openPasswordManager: this.openPasswordManager.bind(this),
                 openOntologyEditor: this.openOntologyEditor.bind(this),
+                createBackup: this.createBackup.bind(this),
+                openBackupRestore: this.openBackupRestore.bind(this),
+                logout: this.logout.bind(this),
+                openRandomPasswordGenerator: this.openRandomPasswordGenerator.bind(this),
                 collapseAll: this.collapseAll.bind(this),
                 expandAll: this.expandAll.bind(this),
                 resetViewFilters: this.resetViewFilters.bind(this),
@@ -961,6 +970,193 @@ class CommandPaletteController {
         if (result === null) {
             return;
         }
+    }
+
+    _buildAuthHeaders(includeContentType) {
+        if (typeof includeContentType !== 'boolean') {
+            throw new Error('_buildAuthHeaders requires boolean includeContentType');
+        }
+
+        const tabId = sessionStorage.getItem('metalist_tab_id');
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('metalist_tab_id missing from sessionStorage');
+        }
+
+        const token = localStorage.getItem('auth_token');
+        if (typeof token !== 'string' || token.length === 0) {
+            throw new Error('auth_token missing from localStorage');
+        }
+
+        const headers = {
+            Authorization: `Bearer ${token}`,
+            'X-Metalist-Tab-Id': tabId,
+        };
+        if (includeContentType) {
+            headers['Content-Type'] = 'application/json';
+        }
+        return headers;
+    }
+
+    async _authRequest(url, method, bodyObject) {
+        if (typeof url !== 'string' || url.length === 0) {
+            throw new Error('_authRequest requires url string');
+        }
+        if (typeof method !== 'string' || method.length === 0) {
+            throw new Error('_authRequest requires method string');
+        }
+        if (bodyObject !== null && typeof bodyObject !== 'object') {
+            throw new Error('_authRequest bodyObject must be object or null');
+        }
+
+        const hasBody = bodyObject !== null;
+        const response = await fetch(url, {
+            method,
+            headers: this._buildAuthHeaders(hasBody),
+            body: hasBody ? JSON.stringify(bodyObject) : undefined,
+        });
+
+        let payload = null;
+        const contentType = response.headers.get('content-type');
+        if (typeof contentType === 'string' && contentType.includes('application/json')) {
+            payload = await response.json();
+        }
+
+        if (!response.ok) {
+            if (payload && typeof payload === 'object' && typeof payload.detail === 'string') {
+                throw new Error(`Request failed (${response.status}): ${payload.detail}`);
+            }
+            throw new Error(`Request failed (${response.status})`);
+        }
+
+        if (payload === null) {
+            throw new Error('Response payload missing');
+        }
+        return payload;
+    }
+
+    _clearSessionState() {
+        localStorage.removeItem('auth_token');
+        sessionStorage.removeItem('metalist_client_id');
+        localStorage.removeItem('auth_owner');
+    }
+
+    async createBackup() {
+        const result = await CommandGate.run('commandPalette.createBackup', async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const payload = await this._authRequest(CONFIG.API.AUTH.BACKUP.CREATE, 'POST', null);
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Backup response missing body');
+            }
+            if (!payload.backup || typeof payload.backup !== 'object') {
+                throw new Error('Backup response missing backup object');
+            }
+            if (typeof payload.backup.filename !== 'string' || payload.backup.filename.length === 0) {
+                throw new Error('Backup response missing filename');
+            }
+
+            window.alert(`Backup created: ${payload.backup.filename}`);
+        });
+        if (result === null) {
+            return;
+        }
+    }
+
+    async logout() {
+        const result = await CommandGate.run('commandPalette.logout', async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const token = localStorage.getItem('auth_token');
+            const tabId = sessionStorage.getItem('metalist_tab_id');
+            if (typeof token === 'string' && token.length > 0 && typeof tabId === 'string' && tabId.length > 0) {
+                await fetch(CONFIG.API.AUTH.LOGOUT, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'X-Metalist-Tab-Id': tabId,
+                    },
+                }).finally(() => {
+                    this._clearSessionState();
+                    window.location.reload();
+                });
+                return;
+            }
+
+            this._clearSessionState();
+            window.location.reload();
+        });
+        if (result === null) {
+            return;
+        }
+    }
+
+    async openBackupRestore() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+
+        const restoreQuery = this._elements.input.value;
+        const restoreIndex = this._previousSelection.selectedIndex;
+        this.close();
+
+        const modalClosedHandler = (event) => {
+            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
+            if (!detail || detail.modalName !== 'backupRestoreModal') {
+                return;
+            }
+            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
+            void this.open().then(() => {
+                this._elements.input.value = restoreQuery;
+                this._previousSelection.selectedIndex = restoreIndex;
+                this._render();
+            });
+        };
+        document.addEventListener('metalist:modal-closed', modalClosedHandler);
+
+        if (this._backupRestoreModal === null) {
+            this._backupRestoreModal = new BackupRestoreModal();
+        }
+        this._backupRestoreModal.open();
+    }
+
+    async openRandomPasswordGenerator() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+
+        const restoreQuery = this._elements.input.value;
+        const restoreIndex = this._previousSelection.selectedIndex;
+        this.close();
+
+        const modalClosedHandler = (event) => {
+            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
+            if (!detail || detail.modalName !== 'randomPasswordModal') {
+                return;
+            }
+            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
+            void this.open().then(() => {
+                this._elements.input.value = restoreQuery;
+                this._previousSelection.selectedIndex = restoreIndex;
+                this._render();
+            });
+        };
+        document.addEventListener('metalist:modal-closed', modalClosedHandler);
+
+        if (this._randomPasswordModal === null) {
+            this._randomPasswordModal = new RandomPasswordModal();
+        }
+        this._randomPasswordModal.open();
     }
 
     async openOntologyEditor() {

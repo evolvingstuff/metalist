@@ -53,6 +53,22 @@
       "tags": ["password", "protect", "protection", "enable", "disable", "security"]
     },
     {
+      "id": "action.create_backup",
+      "tags": ["backup", "save", "database", "sqlite", "snapshot", "safety"]
+    },
+    {
+      "id": "form.restore_backup",
+      "tags": ["backup", "restore", "recover", "database", "sqlite", "snapshot"]
+    },
+    {
+      "id": "action.logout",
+      "tags": ["logout", "log", "out", "signout", "session", "auth"]
+    },
+    {
+      "id": "form.random_password_generator",
+      "tags": ["password", "random", "generator", "security", "credential", "utility"]
+    },
+    {
       "id": "action.edit_tag_relationships",
       "tags": ["tag", "ontology", "relationships", "synonym", "imply", "graph"]
     }

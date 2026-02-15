@@ -22,6 +22,10 @@ export function buildCommandPaletteEndpoints(deps) {
     const actions = deps.actions;
     const applyPreference = requireAction(actions, 'applyPreference');
     const openPasswordManager = requireAction(actions, 'openPasswordManager');
+    const createBackup = requireAction(actions, 'createBackup');
+    const openBackupRestore = requireAction(actions, 'openBackupRestore');
+    const logout = requireAction(actions, 'logout');
+    const openRandomPasswordGenerator = requireAction(actions, 'openRandomPasswordGenerator');
     const collapseAll = requireAction(actions, 'collapseAll');
     const expandAll = requireAction(actions, 'expandAll');
     const resetViewFilters = requireAction(actions, 'resetViewFilters');
@@ -140,6 +144,30 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Enable/disable password protection…',
             execute: async () => openPasswordManager(),
+        },
+        {
+            id: 'action.create_backup',
+            kind: 'action',
+            label: 'Create backup now',
+            execute: async () => createBackup(),
+        },
+        {
+            id: 'form.restore_backup',
+            kind: 'form',
+            label: 'Restore from backup…',
+            execute: async () => openBackupRestore(),
+        },
+        {
+            id: 'action.logout',
+            kind: 'action',
+            label: 'Logout',
+            execute: async () => logout(),
+        },
+        {
+            id: 'form.random_password_generator',
+            kind: 'form',
+            label: 'Generate random password…',
+            execute: async () => openRandomPasswordGenerator(),
         },
         {
             id: 'action.edit_tag_relationships',
