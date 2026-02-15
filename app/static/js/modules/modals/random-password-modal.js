@@ -18,6 +18,7 @@ export class RandomPasswordModal extends BaseModal {
             charsetInput: DEFAULT_PASSWORD_CHARSET,
             result: '',
             error: '',
+            copyStatus: '',
         };
     }
 
@@ -71,6 +72,7 @@ export class RandomPasswordModal extends BaseModal {
         const charsetInput = typeof state.charsetInput === 'string' ? state.charsetInput : DEFAULT_PASSWORD_CHARSET;
         const result = typeof state.result === 'string' ? state.result : '';
         const error = typeof state.error === 'string' ? state.error : '';
+        const copyStatus = typeof state.copyStatus === 'string' ? state.copyStatus : '';
 
         modalElement.innerHTML = `
             <div class="modal-content random-password-modal-content">
@@ -78,17 +80,18 @@ export class RandomPasswordModal extends BaseModal {
 
                 <div class="form-group">
                     <label for="password-length-input">Password Length:</label>
-                    <input type="number" id="password-length-input" min="1" step="1" value="${lengthValue}">
+                    <input type="number" id="password-length-input" min="1" step="1">
                 </div>
 
                 <div class="form-group">
                     <label for="password-charset-input">Valid Character Set:</label>
-                    <textarea id="password-charset-input" rows="5">${charsetInput}</textarea>
+                    <textarea id="password-charset-input" rows="5"></textarea>
                 </div>
 
                 <div class="form-group">
                     <label for="password-result-output">Result:</label>
-                    <textarea id="password-result-output" rows="3" readonly>${result}</textarea>
+                    <input type="text" id="password-result-output" readonly>
+                    <small id="password-result-copy-hint" class="form-help">${copyStatus}</small>
                 </div>
 
                 <div class="form-actions">
@@ -99,6 +102,24 @@ export class RandomPasswordModal extends BaseModal {
                 <p id="password-generator-error" class="error-message">${error}</p>
             </div>
         `;
+
+        const lengthInput = document.getElementById('password-length-input');
+        if (!(lengthInput instanceof HTMLInputElement)) {
+            throw new Error('password-length-input missing');
+        }
+        lengthInput.value = String(lengthValue);
+
+        const charsetTextArea = document.getElementById('password-charset-input');
+        if (!(charsetTextArea instanceof HTMLTextAreaElement)) {
+            throw new Error('password-charset-input missing');
+        }
+        charsetTextArea.value = charsetInput;
+
+        const resultOutput = document.getElementById('password-result-output');
+        if (!(resultOutput instanceof HTMLInputElement)) {
+            throw new Error('password-result-output missing');
+        }
+        resultOutput.value = result;
 
         this.setupFormEventListeners();
     }
@@ -113,6 +134,43 @@ export class RandomPasswordModal extends BaseModal {
         if (closeButton instanceof HTMLButtonElement) {
             closeButton.onclick = () => this.close();
         }
+
+        const resultOutput = document.getElementById('password-result-output');
+        if (resultOutput instanceof HTMLInputElement) {
+            resultOutput.onclick = async () => {
+                await this.copyResultToClipboard();
+            };
+        }
+    }
+
+    async copyResultToClipboard() {
+        const resultOutput = document.getElementById('password-result-output');
+        if (!(resultOutput instanceof HTMLInputElement)) {
+            throw new Error('password-result-output missing');
+        }
+        const value = resultOutput.value;
+        if (value.length === 0) {
+            return;
+        }
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(value);
+        } else {
+            resultOutput.focus();
+            resultOutput.select();
+            const copied = document.execCommand('copy');
+            if (!copied) {
+                throw new Error('Clipboard copy failed');
+            }
+        }
+
+        resultOutput.focus();
+        resultOutput.select();
+        const hint = document.getElementById('password-result-copy-hint');
+        if (hint instanceof HTMLElement) {
+            hint.textContent = 'Copied';
+        }
+        this.updateModalState({ copyStatus: 'Copied' });
     }
 
     regeneratePassword() {
@@ -127,11 +185,16 @@ export class RandomPasswordModal extends BaseModal {
         if (!(charsetInput instanceof HTMLTextAreaElement)) {
             throw new Error('password-charset-input missing');
         }
-        if (!(resultOutput instanceof HTMLTextAreaElement)) {
+        if (!(resultOutput instanceof HTMLInputElement)) {
             throw new Error('password-result-output missing');
         }
         if (!(errorOutput instanceof HTMLElement)) {
             throw new Error('password-generator-error missing');
+        }
+
+        const copyHintOutput = document.getElementById('password-result-copy-hint');
+        if (!(copyHintOutput instanceof HTMLElement)) {
+            throw new Error('password-result-copy-hint missing');
         }
 
         const lengthValue = Number.parseInt(lengthInput.value, 10);
@@ -144,6 +207,7 @@ export class RandomPasswordModal extends BaseModal {
                 charsetInput: charsetValue,
                 result: '',
                 error: 'Password length must be a positive integer.',
+                copyStatus: '',
             });
             return;
         }
@@ -155,6 +219,7 @@ export class RandomPasswordModal extends BaseModal {
                 charsetInput: charsetValue,
                 result: '',
                 error: 'Password length must be 1024 or less.',
+                copyStatus: '',
             });
             return;
         }
@@ -168,6 +233,7 @@ export class RandomPasswordModal extends BaseModal {
                 charsetInput: charsetValue,
                 result: '',
                 error: 'Character set must not be empty.',
+                copyStatus: '',
             });
             return;
         }
@@ -175,12 +241,14 @@ export class RandomPasswordModal extends BaseModal {
         const normalizedCharset = normalizePasswordCharset(charsetValue);
         const generated = generateRandomPassword(lengthValue, normalizedCharset, null);
         resultOutput.value = generated;
+        copyHintOutput.textContent = 'Click result to copy';
         errorOutput.textContent = '';
         this.updateModalState({
             length: lengthValue,
             charsetInput: charsetValue,
             result: generated,
             error: '',
+            copyStatus: 'Click result to copy',
         });
     }
 }

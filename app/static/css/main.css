@@ -1035,12 +1035,19 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .random-password-modal-content textarea,
-.random-password-modal-content input[type="number"] {
+.random-password-modal-content input[type="number"],
+.random-password-modal-content input[type="text"] {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 .random-password-modal-content #password-result-output {
-    min-height: 90px;
+    white-space: nowrap;
+    overflow-x: auto;
+    cursor: copy;
+}
+
+#password-result-copy-hint:empty {
+    display: none;
 }
 
 .note.memory-mode {
