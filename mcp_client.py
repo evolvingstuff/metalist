@@ -923,7 +923,7 @@ def _normalize_query_hypothesis(*, payload: object) -> dict:
         raise ValueError("Planner reasoning must be a non-empty string")
     reasoning = reasoning_value.strip()
 
-    raw_hypothesized_tags = _coerce_string_list(value=payload.get("hypothesized_tags"), max_items=16)
+    raw_hypothesized_tags = _coerce_string_list(value=payload.get("hypothesized_tags"), max_items=32)
     if len(raw_hypothesized_tags) == 0:
         raise ValueError("Planner hypothesized_tags must include at least one entry")
 
@@ -940,7 +940,7 @@ def _normalize_query_hypothesis(*, payload: object) -> dict:
             continue
         seen_tags.add(cleaned)
         normalized_tags.append(cleaned)
-        if len(normalized_tags) >= 12:
+        if len(normalized_tags) >= 24:
             break
     if len(normalized_tags) == 0:
         raise ValueError("Planner hypothesized_tags must include at least one usable entry")
@@ -961,8 +961,14 @@ def _build_query_hypothesis_messages(
         "Your task is ONLY to hypothesize likely tags that might exist for the user question before any tool calls. "
         "Do not assume you know the real tag vocabulary. "
         "Constraints: keep outputs concise and broadly useful (not overfit to one fixed question pattern). "
-        "Include a few exploratory guesses beyond the most obvious terms (at least 2 extra guesses). "
-        "Target 6-10 hypothesized tags when possible. "
+        "Work in two passes: "
+        "Pass 1: include direct query anchors and close lexical variants (singular/plural, simple stems, near-synonyms). "
+        "Pass 2: add 2-6 broader container/context tags that would commonly co-occur in notes with those anchors. "
+        "At least 70% of tags must be Pass 1 anchor tags. "
+        "Do not infer hidden personal interests or niche subdomains unless explicitly signaled by the query text. "
+        "Prefer concrete retrieval nouns (entities, events, documents, media, activities) over abstract fields. "
+        "Target 16-24 hypothesized tags; default to about 20 when possible. "
+        "Do not return fewer than 12 unless the query is too short to support more grounded variants. "
         "Return ONLY JSON with this exact shape: "
         '{"reasoning":"<1-3 sentences>","hypothesized_tags":["..."]}. '
         "hypothesized_tags should be lowercase tag-like terms (kebab-case where useful), 2+ chars each."

@@ -196,6 +196,19 @@ def test_planner_only_returns_after_model_plan(monkeypatch) -> None:
     assert result["steps"][0]["action"] == "model_plan"
 
 
+def test_normalize_query_hypothesis_allows_up_to_24_tags() -> None:
+    payload = {
+        "reasoning": "Many possible retrieval anchors and variants.",
+        "hypothesized_tags": [f"tag-{index}" for index in range(1, 40)],
+    }
+
+    normalized = mcp_client._normalize_query_hypothesis(payload=payload)
+
+    assert len(normalized["hypothesized_tags"]) == 24
+    assert normalized["hypothesized_tags"][0] == "tag-1"
+    assert normalized["hypothesized_tags"][-1] == "tag-24"
+
+
 def test_invalid_decision_gets_one_repair_attempt(monkeypatch) -> None:
     monkeypatch.setattr(
         mcp_client,
