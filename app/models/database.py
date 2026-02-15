@@ -232,14 +232,15 @@ class DBNote:
 @dataclass
 class AppSettings:
     id: int = 1
-    password_hash: Optional[str] = None
-    password_salt: Optional[bytes] = None
-    password_iterations: Optional[int] = None
     auth_verifier: Optional[str] = None
     auth_salt: Optional[bytes] = None
     auth_iterations: Optional[int] = None
     kek_salt: Optional[bytes] = None
     kek_iterations: Optional[int] = None
+    vault_version: Optional[int] = None
+    kdf_algorithm: Optional[str] = None
+    kdf_memory_cost_kib: Optional[int] = None
+    kdf_parallelism: Optional[int] = None
     encryption_enabled: bool = False
     encryption_algorithm: Optional[str] = None
     encrypted_dek: Optional[bytes] = None

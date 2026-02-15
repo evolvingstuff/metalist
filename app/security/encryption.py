@@ -9,7 +9,7 @@ This module is the canonical import path for encryption concerns.
 
 from __future__ import annotations
 
-# Core service (AES-256-GCM, PBKDF2, DEK handling)
+# Core service (AES-256-GCM, Argon2id, DEK handling)
 from app.services.encryption import EncryptionService
 
 # High-level helpers and session-aware utilities re-exported for convenience

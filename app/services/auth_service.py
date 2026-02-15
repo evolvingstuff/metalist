@@ -5,12 +5,19 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Optional, Tuple
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
 from app.models.database import SafeSession
-from app.config import PW_PBKDF2_ITERATIONS
+from app.config import (
+    KDF_ALGORITHM,
+    KDF_MAX_MEMORY_COST_KIB,
+    KDF_MAX_PARALLELISM,
+    KDF_MAX_TIME_COST,
+    KDF_MEMORY_COST_KIB,
+    KDF_MIN_MEMORY_COST_KIB,
+    KDF_MIN_PARALLELISM,
+    KDF_MIN_TIME_COST,
+    KDF_PARALLELISM,
+    VAULT_VERSION,
+)
 from app.db.session import begin_writer
 from app.db.notes_sql import fetch_all_for_cache, update_note_fields
 from app.db.ontology_rules_sql import fetch_all_rules as fetch_all_ontology_rules
@@ -60,20 +67,22 @@ class AuthService:
             raise RuntimeError("App settings initialization failed")
         return settings
 
-    def hash_password(self, password: str, salt: bytes, iterations: int) -> str:
-        """Return PBKDF2 hash used for password storage."""
-        if not isinstance(iterations, int):
-            raise TypeError(f"iterations must be an int: {type(iterations)}")
-        if iterations <= 0:
-            raise ValueError(f"iterations must be positive: {iterations}")
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=iterations,
-            backend=default_backend(),
+    def hash_password(
+        self,
+        password: str,
+        salt: bytes,
+        time_cost: int,
+        memory_cost_kib: int,
+        parallelism: int,
+    ) -> str:
+        """Return Argon2id digest used for password verifier storage."""
+        key = self.encryption.derive_master_key(
+            password,
+            salt,
+            time_cost,
+            memory_cost_kib,
+            parallelism,
         )
-        key = kdf.derive(password.encode("utf-8"))
         return key.hex()
 
     def verify_password(self, password: str) -> bool:
@@ -82,28 +91,25 @@ class AuthService:
         if not settings or not settings.encryption_enabled:
             return False
 
-        # New scheme: auth_verifier is separate from KEK derivation.
-        if getattr(settings, "auth_verifier", None) is not None:
-            if settings.auth_salt is None:
-                raise RuntimeError("auth_verifier set but auth_salt is NULL")
-            stored_iterations = settings.auth_iterations
-            if stored_iterations is None:
-                stored_iterations = PW_PBKDF2_ITERATIONS
-            candidate = self.hash_password(password, settings.auth_salt, stored_iterations)
-            return secrets.compare_digest(candidate, settings.auth_verifier)
-
-        # Legacy scheme: password_hash is PBKDF2 output using the same salt/iters
-        # as the KEK, which allows offline unwrap with DB access. This path exists
-        # only to support automatic migration on next successful login.
-        if not settings.password_hash:
-            return False
-        if settings.password_salt is None:
-            raise RuntimeError("password_hash set but password_salt is NULL")
-        stored_iterations = settings.password_iterations
-        if stored_iterations is None:
-            stored_iterations = 250_000
-        candidate = self.hash_password(password, settings.password_salt, stored_iterations)
-        return secrets.compare_digest(candidate, settings.password_hash)
+        self._assert_supported_vault_profile(settings)
+        if settings.auth_verifier is None:
+            raise RuntimeError("Encryption enabled but auth_verifier is missing")
+        if settings.auth_salt is None:
+            raise RuntimeError("auth_verifier set but auth_salt is NULL")
+        if settings.auth_iterations is None:
+            raise RuntimeError("auth_verifier set but auth_iterations is NULL")
+        if settings.kdf_memory_cost_kib is None:
+            raise RuntimeError("auth_verifier set but kdf_memory_cost_kib is NULL")
+        if settings.kdf_parallelism is None:
+            raise RuntimeError("auth_verifier set but kdf_parallelism is NULL")
+        candidate = self.hash_password(
+            password,
+            settings.auth_salt,
+            settings.auth_iterations,
+            settings.kdf_memory_cost_kib,
+            settings.kdf_parallelism,
+        )
+        return secrets.compare_digest(candidate, settings.auth_verifier)
 
     def check_password_strength(self, password: str) -> bool:
         """Return True when password meets minimal strength requirements."""
@@ -114,105 +120,108 @@ class AuthService:
         settings = self.get_settings()
         return settings is not None and bool(settings.encryption_enabled)
 
-    def _is_legacy_password_settings(self, settings: SimpleNamespace) -> bool:
-        return (
-            getattr(settings, "auth_verifier", None) is None
-            and getattr(settings, "kek_salt", None) is None
-            and getattr(settings, "password_hash", None) is not None
-        )
+    def _assert_supported_vault_profile(self, settings: SimpleNamespace) -> None:
+        if settings.vault_version is None:
+            raise RuntimeError("Encryption enabled but vault_version is NULL")
+        if settings.vault_version != VAULT_VERSION:
+            raise RuntimeError(f"Unsupported vault version: {settings.vault_version}")
+        if settings.kdf_algorithm is None:
+            raise RuntimeError("Encryption enabled but kdf_algorithm is NULL")
+        if settings.kdf_algorithm != KDF_ALGORITHM:
+            raise RuntimeError(f"Unsupported kdf_algorithm: {settings.kdf_algorithm}")
+        if settings.auth_iterations is None:
+            raise RuntimeError("Encryption enabled but auth_iterations is NULL")
+        if not (KDF_MIN_TIME_COST <= settings.auth_iterations <= KDF_MAX_TIME_COST):
+            raise RuntimeError(f"auth_iterations out of range: {settings.auth_iterations}")
+        if settings.kek_iterations is None:
+            raise RuntimeError("Encryption enabled but kek_iterations is NULL")
+        if not (KDF_MIN_TIME_COST <= settings.kek_iterations <= KDF_MAX_TIME_COST):
+            raise RuntimeError(f"kek_iterations out of range: {settings.kek_iterations}")
+        if settings.kdf_memory_cost_kib is None:
+            raise RuntimeError("Encryption enabled but kdf_memory_cost_kib is NULL")
+        if not (KDF_MIN_MEMORY_COST_KIB <= settings.kdf_memory_cost_kib <= KDF_MAX_MEMORY_COST_KIB):
+            raise RuntimeError(
+                f"kdf_memory_cost_kib out of range: {settings.kdf_memory_cost_kib}"
+            )
+        if settings.kdf_parallelism is None:
+            raise RuntimeError("Encryption enabled but kdf_parallelism is NULL")
+        if not (KDF_MIN_PARALLELISM <= settings.kdf_parallelism <= KDF_MAX_PARALLELISM):
+            raise RuntimeError(f"kdf_parallelism out of range: {settings.kdf_parallelism}")
 
     def _derive_kek_from_settings(self, password: str, settings: SimpleNamespace) -> bytes:
-        if getattr(settings, "kek_salt", None) is not None:
-            kek_iterations = settings.kek_iterations
-            if kek_iterations is None:
-                kek_iterations = PW_PBKDF2_ITERATIONS
-            return self.encryption.derive_master_key(password, settings.kek_salt, kek_iterations)
-
-        if settings.password_salt is None:
-            raise RuntimeError("No KEK salt available (neither kek_salt nor password_salt)")
-        legacy_iterations = settings.password_iterations
-        if legacy_iterations is None:
-            legacy_iterations = 250_000
-        return self.encryption.derive_master_key(password, settings.password_salt, legacy_iterations)
+        self._assert_supported_vault_profile(settings)
+        if settings.kek_salt is None:
+            raise RuntimeError("Encryption enabled but kek_salt is NULL")
+        if settings.kek_iterations is None:
+            raise RuntimeError("Encryption enabled but kek_iterations is NULL")
+        if settings.kdf_memory_cost_kib is None:
+            raise RuntimeError("Encryption enabled but kdf_memory_cost_kib is NULL")
+        if settings.kdf_parallelism is None:
+            raise RuntimeError("Encryption enabled but kdf_parallelism is NULL")
+        return self.encryption.derive_master_key(
+            password,
+            settings.kek_salt,
+            settings.kek_iterations,
+            settings.kdf_memory_cost_kib,
+            settings.kdf_parallelism,
+        )
 
     def unwrap_dek_for_password(self, password: str) -> bytes:
-        """Return the decrypted DEK for a verified password.
-
-        If the database is on the legacy scheme, this will migrate settings to the
-        split verifier + KEK salts scheme, clearing the legacy password_hash fields.
-        """
+        """Return the decrypted DEK for a verified password."""
         settings = self.get_settings()
         if not settings:
             raise RuntimeError("Failed to retrieve settings")
         if not settings.encryption_enabled:
             raise RuntimeError("Encryption is not enabled")
 
+        self._assert_supported_vault_profile(settings)
         if settings.encrypted_dek is None or settings.dek_nonce is None or settings.dek_tag is None:
             raise RuntimeError("Encryption enabled but DEK metadata is missing")
 
         kek = self._derive_kek_from_settings(password, settings)
-        dek = self.encryption.decrypt_dek(
+        return self.encryption.decrypt_dek(
             settings.encrypted_dek,
             settings.dek_nonce,
             settings.dek_tag,
             kek,
         )
 
-        if self._is_legacy_password_settings(settings):
-            algorithm = settings.encryption_algorithm
-            if algorithm is None:
-                algorithm = "AES-256-GCM"
-            self._migrate_legacy_password_settings(password, dek, algorithm)
-
-        return dek
-
-    def _migrate_legacy_password_settings(
-        self,
-        password: str,
-        dek: bytes,
-        encryption_algorithm: str,
-    ) -> None:
-        """Migrate from legacy (password_hash == KEK) to split verifier + KEK salts."""
-        auth_salt = self.encryption.generate_salt()
-        kek_salt = self.encryption.generate_salt()
-        auth_iterations = PW_PBKDF2_ITERATIONS
-        kek_iterations = PW_PBKDF2_ITERATIONS
-
-        auth_verifier = self.hash_password(password, auth_salt, auth_iterations)
-        kek = self.encryption.derive_master_key(password, kek_salt, kek_iterations)
-        encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, kek)
-
-        with begin_writer() as connection:
-            update_password_settings(
-                connection,
-                auth_verifier=auth_verifier,
-                auth_salt=auth_salt,
-                auth_iterations=auth_iterations,
-                kek_salt=kek_salt,
-                kek_iterations=kek_iterations,
-                encrypted_dek=encrypted_dek,
-                dek_nonce=dek_nonce,
-                dek_tag=dek_tag,
-                encryption_algorithm=encryption_algorithm,
-            )
-
-    def set_password(self, password: str) -> Tuple[bool, str]:
+    def set_password(self, password: str, time_cost: int) -> Tuple[bool, str]:
         """Enable password protection by encrypting all existing content."""
         if self.has_password():
             return False, "Password already exists. Use change_password instead."
         if not self.check_password_strength(password):
             return False, "Password is too weak (must be > 3 characters)"
+        if not (KDF_MIN_TIME_COST <= time_cost <= KDF_MAX_TIME_COST):
+            return (
+                False,
+                f"KDF time cost must be between {KDF_MIN_TIME_COST} and {KDF_MAX_TIME_COST}",
+            )
 
         self.initialize_settings()
         auth_salt = self.encryption.generate_salt()
         kek_salt = self.encryption.generate_salt()
-        auth_iterations = PW_PBKDF2_ITERATIONS
-        kek_iterations = PW_PBKDF2_ITERATIONS
+        auth_iterations = time_cost
+        kek_iterations = time_cost
+        kdf_memory_cost_kib = KDF_MEMORY_COST_KIB
+        kdf_parallelism = KDF_PARALLELISM
 
-        auth_verifier = self.hash_password(password, auth_salt, auth_iterations)
+        auth_verifier = self.hash_password(
+            password,
+            auth_salt,
+            auth_iterations,
+            kdf_memory_cost_kib,
+            kdf_parallelism,
+        )
 
         dek = self.encryption.generate_dek()
-        kek = self.encryption.derive_master_key(password, kek_salt, kek_iterations)
+        kek = self.encryption.derive_master_key(
+            password,
+            kek_salt,
+            kek_iterations,
+            kdf_memory_cost_kib,
+            kdf_parallelism,
+        )
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, kek)
 
         self.encryption.master_key = None
@@ -321,6 +330,10 @@ class AuthService:
                     auth_iterations=auth_iterations,
                     kek_salt=kek_salt,
                     kek_iterations=kek_iterations,
+                    vault_version=VAULT_VERSION,
+                    kdf_algorithm=KDF_ALGORITHM,
+                    kdf_memory_cost_kib=kdf_memory_cost_kib,
+                    kdf_parallelism=kdf_parallelism,
                     encrypted_dek=encrypted_dek,
                     dek_nonce=dek_nonce,
                     dek_tag=dek_tag,
@@ -344,7 +357,7 @@ class AuthService:
         self,
         current_password: str,
         new_password: str,
-        iterations: Optional[int],
+        time_cost: int,
     ) -> Tuple[bool, str]:
         """Change the password while keeping the existing DEK."""
         if not self.has_password():
@@ -357,27 +370,11 @@ class AuthService:
         settings = self.get_settings()
         if not settings:
             raise RuntimeError("App settings missing during password change")
+        self._assert_supported_vault_profile(settings)
+        if settings.encrypted_dek is None or settings.dek_nonce is None or settings.dek_tag is None:
+            raise RuntimeError("App settings missing DEK metadata during password change")
 
-        if settings.kek_salt is not None:
-            old_kek_iterations = settings.kek_iterations
-            if old_kek_iterations is None:
-                old_kek_iterations = PW_PBKDF2_ITERATIONS
-            old_kek = self.encryption.derive_master_key(
-                current_password,
-                settings.kek_salt,
-                old_kek_iterations,
-            )
-        else:
-            if settings.password_salt is None:
-                raise RuntimeError("Legacy password_salt missing during password change")
-            old_kek_iterations = settings.password_iterations
-            if old_kek_iterations is None:
-                old_kek_iterations = 250_000
-            old_kek = self.encryption.derive_master_key(
-                current_password,
-                settings.password_salt,
-                old_kek_iterations,
-            )
+        old_kek = self._derive_kek_from_settings(current_password, settings)
 
         dek = self.encryption.decrypt_dek(
             settings.encrypted_dek,
@@ -386,23 +383,34 @@ class AuthService:
             old_kek,
         )
 
-        if iterations is None:
-            iterations = PW_PBKDF2_ITERATIONS
-        if not (100_000 <= iterations <= 10_000_000):
-            return False, "Iterations must be between 100,000 and 10,000,000"
+        if not (KDF_MIN_TIME_COST <= time_cost <= KDF_MAX_TIME_COST):
+            return (
+                False,
+                f"KDF time cost must be between {KDF_MIN_TIME_COST} and {KDF_MAX_TIME_COST}",
+            )
 
         auth_salt = self.encryption.generate_salt()
         kek_salt = self.encryption.generate_salt()
-        auth_iterations = iterations
-        kek_iterations = iterations
+        auth_iterations = time_cost
+        kek_iterations = time_cost
+        kdf_memory_cost_kib = KDF_MEMORY_COST_KIB
+        kdf_parallelism = KDF_PARALLELISM
 
-        auth_verifier = self.hash_password(new_password, auth_salt, auth_iterations)
-        new_kek = self.encryption.derive_master_key(new_password, kek_salt, kek_iterations)
+        auth_verifier = self.hash_password(
+            new_password,
+            auth_salt,
+            auth_iterations,
+            kdf_memory_cost_kib,
+            kdf_parallelism,
+        )
+        new_kek = self.encryption.derive_master_key(
+            new_password,
+            kek_salt,
+            kek_iterations,
+            kdf_memory_cost_kib,
+            kdf_parallelism,
+        )
         encrypted_dek, dek_nonce, dek_tag = self.encryption.encrypt_dek(dek, new_kek)
-
-        encryption_algorithm = settings.encryption_algorithm
-        if encryption_algorithm is None:
-            encryption_algorithm = "AES-256-GCM"
 
         with begin_writer() as connection:
             update_password_settings(
@@ -412,10 +420,14 @@ class AuthService:
                 auth_iterations=auth_iterations,
                 kek_salt=kek_salt,
                 kek_iterations=kek_iterations,
+                vault_version=VAULT_VERSION,
+                kdf_algorithm=KDF_ALGORITHM,
+                kdf_memory_cost_kib=kdf_memory_cost_kib,
+                kdf_parallelism=kdf_parallelism,
                 encrypted_dek=encrypted_dek,
                 dek_nonce=dek_nonce,
                 dek_tag=dek_tag,
-                encryption_algorithm=encryption_algorithm,
+                encryption_algorithm="AES-256-GCM",
             )
 
         self.encryption.master_key = None
@@ -432,27 +444,11 @@ class AuthService:
         settings = self.get_settings()
         if not settings:
             raise RuntimeError("App settings missing during password removal")
+        self._assert_supported_vault_profile(settings)
+        if settings.encrypted_dek is None or settings.dek_nonce is None or settings.dek_tag is None:
+            raise RuntimeError("App settings missing DEK metadata during password removal")
 
-        if settings.kek_salt is not None:
-            kek_iterations = settings.kek_iterations
-            if kek_iterations is None:
-                kek_iterations = PW_PBKDF2_ITERATIONS
-            kek = self.encryption.derive_master_key(
-                current_password,
-                settings.kek_salt,
-                kek_iterations,
-            )
-        else:
-            if settings.password_salt is None:
-                raise RuntimeError("Legacy password_salt missing during password removal")
-            kek_iterations = settings.password_iterations
-            if kek_iterations is None:
-                kek_iterations = 250_000
-            kek = self.encryption.derive_master_key(
-                current_password,
-                settings.password_salt,
-                kek_iterations,
-            )
+        kek = self._derive_kek_from_settings(current_password, settings)
         dek = self.encryption.decrypt_dek(
             settings.encrypted_dek,
             settings.dek_nonce,

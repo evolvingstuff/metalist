@@ -31,7 +31,7 @@ graph TB
         Cache[Content Cache<br/>decrypted content]
         Undo[Undo State]
         Sync[Sync UUID + Locks]
-        Crypto[Encryption Service<br/>AES-GCM + PBKDF2]
+        Crypto[Encryption Service<br/>AES-GCM + Argon2id]
     end
 
     subgraph "DB Layer"
