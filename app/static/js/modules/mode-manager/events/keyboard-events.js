@@ -79,6 +79,8 @@ export function initKeyboardEvents() {
         
     document.addEventListener('keydown', handleKeyDown, { capture: true });
     document.addEventListener('paste', handlePasteEvent, { capture: false });
+    document.addEventListener('dragover', handleDragOverEvent, { capture: false });
+    document.addEventListener('drop', handleDropEvent, { capture: false });
         
     Logger.logInit('Keyboard events handler');
     
@@ -1302,9 +1304,9 @@ function getMaxClipboardImageBytes() {
     return getPastePositiveIntegerConfig('MAX_CLIPBOARD_IMAGE_BYTES');
 }
 
-function getClipboardImageFiles(clipboardData) {
-    if (!clipboardData) {
-        throw new Error('getClipboardImageFiles expects clipboardData');
+function getImageFilesFromTransfer(transferData) {
+    if (!transferData) {
+        throw new Error('getImageFilesFromTransfer expects transferData');
     }
 
     const foundFiles = [];
@@ -1325,10 +1327,10 @@ function getClipboardImageFiles(clipboardData) {
         foundFiles.push(candidate);
     };
 
-    if (clipboardData.items && clipboardData.items.length > 0) {
+    if (transferData.items && transferData.items.length > 0) {
         let i = 0;
-        while (i < clipboardData.items.length) {
-            const item = clipboardData.items[i];
+        while (i < transferData.items.length) {
+            const item = transferData.items[i];
             if (item && item.kind === 'file' && typeof item.type === 'string' && item.type.toLowerCase().startsWith('image/')) {
                 const file = item.getAsFile();
                 addFileCandidate(file);
@@ -1337,10 +1339,10 @@ function getClipboardImageFiles(clipboardData) {
         }
     }
 
-    if (clipboardData.files && clipboardData.files.length > 0) {
+    if (transferData.files && transferData.files.length > 0) {
         let i = 0;
-        while (i < clipboardData.files.length) {
-            const file = clipboardData.files[i];
+        while (i < transferData.files.length) {
+            const file = transferData.files[i];
             addFileCandidate(file);
             i += 1;
         }
@@ -1352,6 +1354,29 @@ function getClipboardImageFiles(clipboardData) {
 
     foundFiles.sort((left, right) => right.size - left.size);
     return [foundFiles[0]];
+}
+
+function transferHasFiles(transferData) {
+    if (!transferData) {
+        return false;
+    }
+
+    if (transferData.items && transferData.items.length > 0) {
+        let i = 0;
+        while (i < transferData.items.length) {
+            const item = transferData.items[i];
+            if (item && item.kind === 'file') {
+                return true;
+            }
+            i += 1;
+        }
+    }
+
+    if (transferData.files && transferData.files.length > 0) {
+        return true;
+    }
+
+    return false;
 }
 
 function readBlobAsDataUrl(blob) {
@@ -1663,6 +1688,97 @@ function clipboardHasFileUriReference(clipboardData) {
     return false;
 }
 
+function resolveEditingDropTarget(event) {
+    if (!event) {
+        throw new Error('resolveEditingDropTarget expects event');
+    }
+    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+        return null;
+    }
+
+    const rawTarget = event.target;
+    if (!(rawTarget instanceof Element)) {
+        return null;
+    }
+
+    const noteContent = rawTarget.closest('.note-content');
+    if (!(noteContent instanceof HTMLElement)) {
+        return null;
+    }
+    if (noteContent.getAttribute('contenteditable') !== 'true') {
+        return null;
+    }
+
+    const noteElement = noteContent.closest('.note');
+    if (!(noteElement instanceof HTMLElement)) {
+        return null;
+    }
+    const noteId = noteElement.dataset.noteId;
+    if (!noteId || noteId !== ModeContext.currentNoteId) {
+        return null;
+    }
+
+    return noteContent;
+}
+
+function placeCaretAtEnd(element) {
+    if (!(element instanceof HTMLElement)) {
+        throw new Error('placeCaretAtEnd expects HTMLElement');
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable while placing caret');
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function placeCaretAtDropPoint(noteContent, event) {
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error('placeCaretAtDropPoint expects HTMLElement noteContent');
+    }
+    if (!event) {
+        throw new Error('placeCaretAtDropPoint expects event');
+    }
+    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+        return false;
+    }
+
+    let range = null;
+    if (typeof document.caretRangeFromPoint === 'function') {
+        range = document.caretRangeFromPoint(event.clientX, event.clientY);
+    } else if (typeof document.caretPositionFromPoint === 'function') {
+        const position = document.caretPositionFromPoint(event.clientX, event.clientY);
+        if (position && position.offsetNode) {
+            const candidateRange = document.createRange();
+            candidateRange.setStart(position.offsetNode, position.offset);
+            candidateRange.collapse(true);
+            range = candidateRange;
+        }
+    }
+
+    if (!(range instanceof Range)) {
+        return false;
+    }
+    if (!noteContent.contains(range.startContainer)) {
+        return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable while placing drop caret');
+    }
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+}
+
 async function pasteClipboardImagesAsEmbeddedContent(files) {
     if (!Array.isArray(files) || files.length === 0) {
         return false;
@@ -1711,6 +1827,80 @@ async function pasteClipboardImagesAsEmbeddedContent(files) {
     return sanitizeAndInsertExternalPaste(syntheticPasteEvent);
 }
 
+function handleDragOverEvent(event) {
+    if (!event || !event.dataTransfer) {
+        return;
+    }
+
+    const target = resolveEditingDropTarget(event);
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    if (!transferHasFiles(event.dataTransfer)) {
+        return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDropEvent(event) {
+    if (!event || !event.dataTransfer) {
+        return;
+    }
+
+    const target = resolveEditingDropTarget(event);
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+    if (!transferHasFiles(event.dataTransfer)) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const imageFiles = getImageFilesFromTransfer(event.dataTransfer);
+    if (imageFiles.length === 0) {
+        ErrorHandler.showErrorBanner(
+            'Dropped file is not a supported image.',
+            'error',
+            5000,
+            true,
+        );
+        return;
+    }
+
+    target.focus();
+    const positioned = placeCaretAtDropPoint(target, event);
+    if (!positioned) {
+        placeCaretAtEnd(target);
+    }
+
+    void pasteClipboardImagesAsEmbeddedContent(imageFiles)
+        .then((inserted) => {
+            Logger.logDebug('Dropped image file handled', {
+                imageCount: imageFiles.length,
+                inserted,
+                selectedImageBytes: imageFiles[0] ? imageFiles[0].size : null,
+            }, Logger.LogCategory.EVENT);
+
+            if (inserted && !ModeContext.isDirty) {
+                ModeContext.setDirty(true);
+                Logger.logDebug('Content marked as dirty due to dropped embedded image', {
+                    noteId: ModeContext.currentNoteId,
+                }, Logger.LogCategory.STATE);
+            }
+        })
+        .catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            Logger.logDebug('Dropped image file handling failed', {
+                error: message,
+            }, Logger.LogCategory.EVENT);
+            showImageEmbedFailureError();
+        });
+}
+
 
 function handlePasteEvent(event) {
     if (!event || !event.clipboardData) {
@@ -1721,7 +1911,7 @@ function handlePasteEvent(event) {
     const activeElement = document.activeElement;
     const hasEditableTarget = Boolean(activeElement && activeElement.isContentEditable);
     const shouldHandleInlinePaste = ModeContext.isEditing && hasEditableTarget;
-    const imageFiles = shouldHandleInlinePaste ? getClipboardImageFiles(event.clipboardData) : [];
+    const imageFiles = shouldHandleInlinePaste ? getImageFilesFromTransfer(event.clipboardData) : [];
 
     if (shouldHandleInlinePaste) {
         if (imageFiles.length > 0) {

@@ -1,18 +1,20 @@
 # External HTML Paste Sanitization
 
 ## Scope
-- Applies only to **system clipboard** paste while editing note content.
+- Applies to **system clipboard paste** and **drag/drop file images** while editing note content.
 - Internal MetaList note clipboard paste (`class="note-content"` payload) still uses server note copy/paste actions.
 
 ## Entry Points
-- Paste handler: `app/static/js/modules/mode-manager/events/keyboard-events.js`
+- Clipboard/drop handler: `app/static/js/modules/mode-manager/events/keyboard-events.js`
+  - `handleDragOverEvent(...)`
+  - `handleDropEvent(...)`
   - `handlePasteEvent(...)`
 - Sanitizer service: `app/static/js/modules/mode-manager/services/html-paste-sanitizer-service.js`
   - `sanitizeAndInsertExternalPaste(event)`
   - `sanitizeExternalClipboardHtml(rawHtml)`
 
 ## Pipeline
-1. If clipboard contains image/file items (`image/*`) while editing, pick the largest image candidate and process it client-side.
+1. If clipboard or dropped payload contains image/file items (`image/*`) while editing, pick the largest image candidate and process it client-side.
 2. Downscale/re-encode to keep embedded payload in the configured KB range.
 3. Build inline `<img src="data:image/...">` HTML (embedded content, not file links).
 4. Otherwise read `text/html` from clipboard.

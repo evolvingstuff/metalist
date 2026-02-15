@@ -43,7 +43,7 @@
   - Tag bar grammar (wrappers + /* comments */): `docs/ui/tag-bar.md`.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
-- External paste: `keyboard-events.handlePasteEvent()` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image files are embedded as compressed `data:image/...` payloads (not file links).
+- External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard and dropped image files are embedded as compressed `data:image/...` payloads (not file links).
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
