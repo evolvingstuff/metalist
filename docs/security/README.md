@@ -185,6 +185,9 @@ writes).
   - `SECURITY_HARDENING_ENABLED`
   - `SECURITY_REQUIRE_MACOS_NO_HIBERNATION`
   - `SECURITY_REQUIRE_ENCRYPTED_SWAP`
+- Default behavior:
+  - core dump disabling enabled by default
+  - macOS hibernation/swap enforcement disabled by default (enable explicitly for strict mode).
 
 ### Multi-Client Support
 - Token issuance clears any previous tokens (single active session enforced)

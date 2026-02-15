@@ -43,7 +43,7 @@
   - Tag bar grammar (wrappers + /* comments */): `docs/ui/tag-bar.md`.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
-- External paste: `keyboard-events.handlePasteEvent()` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()` before insertion into contenteditable.
+- External paste: `keyboard-events.handlePasteEvent()` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image files are embedded as compressed `data:image/...` payloads (not file links).
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
@@ -64,7 +64,7 @@ python main.py
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
-- Runtime hardening: `app/services/runtime_hardening.py` (core-dump disable + macOS swap/hibernation checks; startup can fail if unsafe).
+- Runtime hardening: `app/services/runtime_hardening.py` (core-dump disable by default; optional strict macOS swap/hibernation checks can fail startup when enabled).
 - DB guard: `app/db/session.py` (begin_writer/connect_reader + post-startup SELECT guard).
 - Undo: `app/services/undo_state.py`.
 - Ontology rules (v1): `app/services/tag_ontology.py` + `app/services/ontology_rules_store.py` (SQLite-backed, cached in memory).

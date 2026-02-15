@@ -1265,11 +1265,491 @@ function handleHelpModalShortcut(event) {
     Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
 }
 
+function getMaxPasteDataImageBytes() {
+    return getPastePositiveIntegerConfig('MAX_DATA_IMAGE_BYTES');
+}
+
+function getPastePositiveIntegerConfig(key) {
+    if (typeof key !== 'string' || key.length === 0) {
+        throw new Error('getPastePositiveIntegerConfig expects non-empty key');
+    }
+    if (!CONFIG || !CONFIG.PASTE) {
+        throw new Error('CONFIG.PASTE is required for image paste handling');
+    }
+    const value = CONFIG.PASTE[key];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        throw new Error(`CONFIG.PASTE.${key} must be a positive integer`);
+    }
+    return value;
+}
+
+function getEmbedTargetImageBytes() {
+    const targetBytes = getPastePositiveIntegerConfig('EMBED_TARGET_IMAGE_BYTES');
+    const maxBytes = getMaxPasteDataImageBytes();
+    if (targetBytes > maxBytes) {
+        throw new Error(
+            `CONFIG.PASTE.EMBED_TARGET_IMAGE_BYTES (${targetBytes}) cannot exceed CONFIG.PASTE.MAX_DATA_IMAGE_BYTES (${maxBytes})`,
+        );
+    }
+    return targetBytes;
+}
+
+function getEmbedMaxDimensionPx() {
+    return getPastePositiveIntegerConfig('EMBED_MAX_DIMENSION_PX');
+}
+
+function getMaxClipboardImageBytes() {
+    return getPastePositiveIntegerConfig('MAX_CLIPBOARD_IMAGE_BYTES');
+}
+
+function getClipboardImageFiles(clipboardData) {
+    if (!clipboardData) {
+        throw new Error('getClipboardImageFiles expects clipboardData');
+    }
+
+    const foundFiles = [];
+    const seenKeys = new Set();
+
+    const addFileCandidate = (candidate) => {
+        if (!(candidate instanceof File)) {
+            return;
+        }
+        if (typeof candidate.type !== 'string' || !candidate.type.toLowerCase().startsWith('image/')) {
+            return;
+        }
+        const dedupeKey = `${candidate.name}|${candidate.size}|${candidate.type}|${candidate.lastModified}`;
+        if (seenKeys.has(dedupeKey)) {
+            return;
+        }
+        seenKeys.add(dedupeKey);
+        foundFiles.push(candidate);
+    };
+
+    if (clipboardData.items && clipboardData.items.length > 0) {
+        let i = 0;
+        while (i < clipboardData.items.length) {
+            const item = clipboardData.items[i];
+            if (item && item.kind === 'file' && typeof item.type === 'string' && item.type.toLowerCase().startsWith('image/')) {
+                const file = item.getAsFile();
+                addFileCandidate(file);
+            }
+            i += 1;
+        }
+    }
+
+    if (clipboardData.files && clipboardData.files.length > 0) {
+        let i = 0;
+        while (i < clipboardData.files.length) {
+            const file = clipboardData.files[i];
+            addFileCandidate(file);
+            i += 1;
+        }
+    }
+
+    if (foundFiles.length === 0) {
+        return foundFiles;
+    }
+
+    foundFiles.sort((left, right) => right.size - left.size);
+    return [foundFiles[0]];
+}
+
+function readBlobAsDataUrl(blob) {
+    if (!(blob instanceof Blob)) {
+        throw new Error('readBlobAsDataUrl expects Blob');
+    }
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => {
+            reject(new Error('Failed reading image blob as data URL'));
+        };
+        reader.onload = () => {
+            if (typeof reader.result !== 'string') {
+                reject(new Error('Unexpected FileReader result type'));
+                return;
+            }
+            resolve(reader.result);
+        };
+        reader.readAsDataURL(blob);
+    });
+}
+
+function loadImageElementFromBlob(blob) {
+    if (!(blob instanceof Blob)) {
+        throw new Error('loadImageElementFromBlob expects Blob');
+    }
+    return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(blob);
+        const image = new Image();
+
+        image.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            if (!Number.isFinite(image.naturalWidth) || !Number.isFinite(image.naturalHeight)) {
+                reject(new Error('Loaded image has invalid dimensions'));
+                return;
+            }
+            if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+                reject(new Error('Loaded image has zero dimensions'));
+                return;
+            }
+            resolve(image);
+        };
+
+        image.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Failed decoding clipboard image'));
+        };
+
+        image.src = objectUrl;
+    });
+}
+
+function computeScaledDimensions(sourceWidth, sourceHeight, maxDimensionPx) {
+    if (!Number.isFinite(sourceWidth) || sourceWidth <= 0) {
+        throw new Error(`computeScaledDimensions invalid sourceWidth: ${sourceWidth}`);
+    }
+    if (!Number.isFinite(sourceHeight) || sourceHeight <= 0) {
+        throw new Error(`computeScaledDimensions invalid sourceHeight: ${sourceHeight}`);
+    }
+    if (!Number.isFinite(maxDimensionPx) || maxDimensionPx <= 0) {
+        throw new Error(`computeScaledDimensions invalid maxDimensionPx: ${maxDimensionPx}`);
+    }
+
+    const largest = Math.max(sourceWidth, sourceHeight);
+    if (largest <= maxDimensionPx) {
+        return {
+            width: Math.floor(sourceWidth),
+            height: Math.floor(sourceHeight),
+        };
+    }
+
+    const scale = maxDimensionPx / largest;
+    return {
+        width: Math.max(1, Math.floor(sourceWidth * scale)),
+        height: Math.max(1, Math.floor(sourceHeight * scale)),
+    };
+}
+
+function renderImageToBlob(sourceImage, width, height, mimeType, quality) {
+    if (!(sourceImage instanceof HTMLImageElement)) {
+        throw new Error('renderImageToBlob expects HTMLImageElement');
+    }
+    if (!Number.isFinite(width) || width <= 0) {
+        throw new Error(`renderImageToBlob invalid width: ${width}`);
+    }
+    if (!Number.isFinite(height) || height <= 0) {
+        throw new Error(`renderImageToBlob invalid height: ${height}`);
+    }
+    if (typeof mimeType !== 'string' || mimeType.length === 0) {
+        throw new Error('renderImageToBlob expects mimeType');
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+        throw new Error('Canvas 2D context unavailable for image compression');
+    }
+
+    context.clearRect(0, 0, width, height);
+    context.drawImage(sourceImage, 0, 0, width, height);
+
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(
+            (blob) => {
+                if (!(blob instanceof Blob)) {
+                    reject(new Error(`Canvas export failed for ${mimeType}`));
+                    return;
+                }
+                resolve(blob);
+            },
+            mimeType,
+            quality,
+        );
+    });
+}
+
+function estimateDataUrlPayloadBytes(dataUrl) {
+    if (typeof dataUrl !== 'string') {
+        throw new Error('estimateDataUrlPayloadBytes expects dataUrl string');
+    }
+    const commaIndex = dataUrl.indexOf(',');
+    if (commaIndex < 0) {
+        throw new Error('Data URL missing comma separator');
+    }
+    const payload = dataUrl.slice(commaIndex + 1).replace(/\s+/g, '');
+    if (payload.length === 0) {
+        return 0;
+    }
+    let paddingBytes = 0;
+    if (payload.endsWith('==')) {
+        paddingBytes = 2;
+    } else if (payload.endsWith('=')) {
+        paddingBytes = 1;
+    }
+    return Math.floor((payload.length * 3) / 4) - paddingBytes;
+}
+
+async function compressImageFileForEmbedding(file) {
+    if (!(file instanceof File)) {
+        throw new Error('compressImageFileForEmbedding expects File');
+    }
+    if (typeof file.size !== 'number' || file.size <= 0) {
+        throw new Error(`Clipboard image has invalid size: ${file.size}`);
+    }
+
+    const maxClipboardBytes = getMaxClipboardImageBytes();
+    if (file.size > maxClipboardBytes) {
+        const maxMiB = (maxClipboardBytes / (1024 * 1024)).toFixed(1);
+        ErrorHandler.showErrorBanner(
+            `Image too large to process (${file.name || 'clipboard image'}). Max allowed is ${maxMiB} MiB.`,
+            'error',
+            6000,
+            true,
+        );
+        return null;
+    }
+
+    const sourceImage = await loadImageElementFromBlob(file);
+    const maxDimensionPx = getEmbedMaxDimensionPx();
+    const targetBytes = getEmbedTargetImageBytes();
+    const hardMaxBytes = getMaxPasteDataImageBytes();
+    const initialSize = computeScaledDimensions(sourceImage.naturalWidth, sourceImage.naturalHeight, maxDimensionPx);
+
+    const encodePlans = [
+        { mimeType: 'image/webp', qualities: [0.82, 0.72, 0.62, 0.52, 0.42] },
+        { mimeType: 'image/jpeg', qualities: [0.82, 0.72, 0.62, 0.52] },
+    ];
+
+    let bestBlob = null;
+    let planIndex = 0;
+    while (planIndex < encodePlans.length) {
+        const plan = encodePlans[planIndex];
+        let width = initialSize.width;
+        let height = initialSize.height;
+
+        while (true) {
+            let qualityIndex = 0;
+            while (qualityIndex < plan.qualities.length) {
+                const quality = plan.qualities[qualityIndex];
+                const candidate = await renderImageToBlob(sourceImage, width, height, plan.mimeType, quality);
+
+                if (bestBlob === null || candidate.size < bestBlob.size) {
+                    bestBlob = candidate;
+                }
+                if (candidate.size <= targetBytes) {
+                    return candidate;
+                }
+
+                qualityIndex += 1;
+            }
+
+            if (Math.max(width, height) <= 512) {
+                break;
+            }
+            width = Math.max(1, Math.floor(width * 0.85));
+            height = Math.max(1, Math.floor(height * 0.85));
+        }
+
+        planIndex += 1;
+    }
+
+    if (bestBlob !== null && bestBlob.size <= hardMaxBytes) {
+        return bestBlob;
+    }
+
+    return null;
+}
+
+async function imageFileToEmbeddedDataUrl(file) {
+    const compressedBlob = await compressImageFileForEmbedding(file);
+    if (!(compressedBlob instanceof Blob)) {
+        return null;
+    }
+    const dataUrl = await readBlobAsDataUrl(compressedBlob);
+    const payloadBytes = estimateDataUrlPayloadBytes(dataUrl);
+    const maxBytes = getMaxPasteDataImageBytes();
+    if (payloadBytes > maxBytes) {
+        throw new Error(
+            `Compressed clipboard image exceeds MAX_DATA_IMAGE_BYTES: ${payloadBytes} > ${maxBytes}`,
+        );
+    }
+    return dataUrl;
+}
+
+function formatKiB(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) {
+        throw new Error(`formatKiB invalid bytes: ${bytes}`);
+    }
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+}
+
+function formatMiB(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) {
+        throw new Error(`formatMiB invalid bytes: ${bytes}`);
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function showImageTooLargeForEmbedError(fileName) {
+    const targetBytes = getEmbedTargetImageBytes();
+    const maxBytes = getMaxPasteDataImageBytes();
+    const label = typeof fileName === 'string' && fileName.length > 0
+        ? fileName
+        : 'clipboard image';
+    ErrorHandler.showErrorBanner(
+        `Could not shrink ${label} enough. Target ${formatKiB(targetBytes)}, hard max ${formatMiB(maxBytes)}.`,
+        'error',
+        6500,
+        true,
+    );
+}
+
+function showImageEmbedFailureError() {
+    ErrorHandler.showErrorBanner(
+        'Failed to embed pasted image. Copy image pixels (not Finder icon preview) and paste again.',
+        'error',
+        6000,
+        true,
+    );
+}
+
+function buildEmbeddedImageHtmlFromDataUrls(dataUrls) {
+    if (!Array.isArray(dataUrls)) {
+        throw new Error('buildEmbeddedImageHtmlFromDataUrls expects array');
+    }
+    if (dataUrls.length === 0) {
+        return '';
+    }
+
+    let html = '';
+    let i = 0;
+    while (i < dataUrls.length) {
+        const dataUrl = dataUrls[i];
+        if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+            throw new Error(`Invalid data URL at index ${i}`);
+        }
+
+        const imageIndex = i + 1;
+        html += `<img src="${dataUrl}" alt="pasted-image-${imageIndex}" style="max-width: 100%; width: auto; height: auto;" />`;
+        if (imageIndex < dataUrls.length) {
+            html += '<br />';
+        }
+        i += 1;
+    }
+    return html;
+}
+
+function clipboardHasFileUriReference(clipboardData) {
+    if (!clipboardData || typeof clipboardData.getData !== 'function') {
+        return false;
+    }
+
+    const uriList = clipboardData.getData('text/uri-list');
+    if (typeof uriList !== 'string' || uriList.length === 0) {
+        return false;
+    }
+
+    const lines = uriList.split(/\r?\n/);
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i].trim();
+        if (line.length > 0 && !line.startsWith('#') && line.toLowerCase().startsWith('file://')) {
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+async function pasteClipboardImagesAsEmbeddedContent(files) {
+    if (!Array.isArray(files) || files.length === 0) {
+        return false;
+    }
+
+    const dataUrls = [];
+
+    let i = 0;
+    while (i < files.length) {
+        const file = files[i];
+        if (!(file instanceof File)) {
+            throw new Error(`Clipboard image at index ${i} is not a File`);
+        }
+        const dataUrl = await imageFileToEmbeddedDataUrl(file);
+        if (dataUrl === null) {
+            showImageTooLargeForEmbedError(file.name);
+            return false;
+        }
+        const embeddedPayloadBytes = estimateDataUrlPayloadBytes(dataUrl);
+        Logger.logDebug('Clipboard image compressed for embed', {
+            fileName: file.name || null,
+            originalBytes: file.size,
+            embeddedPayloadBytes,
+            embedTargetBytes: getEmbedTargetImageBytes(),
+            embedMaxBytes: getMaxPasteDataImageBytes(),
+        }, Logger.LogCategory.EVENT);
+        dataUrls.push(dataUrl);
+        i += 1;
+    }
+
+    const html = buildEmbeddedImageHtmlFromDataUrls(dataUrls);
+    if (html.length === 0) {
+        return false;
+    }
+
+    const syntheticPasteEvent = {
+        clipboardData: {
+            getData(format) {
+                if (format === 'text/html') {
+                    return html;
+                }
+                return '';
+            },
+        },
+    };
+    return sanitizeAndInsertExternalPaste(syntheticPasteEvent);
+}
+
 
 function handlePasteEvent(event) {
     if (!event || !event.clipboardData) {
         Logger.logDebug('Paste event without clipboard data - allowing default behavior', {}, Logger.LogCategory.EVENT);
         return;
+    }
+
+    const activeElement = document.activeElement;
+    const hasEditableTarget = Boolean(activeElement && activeElement.isContentEditable);
+    const shouldHandleInlinePaste = ModeContext.isEditing && hasEditableTarget;
+    const imageFiles = shouldHandleInlinePaste ? getClipboardImageFiles(event.clipboardData) : [];
+
+    if (shouldHandleInlinePaste) {
+        if (imageFiles.length > 0) {
+            event.preventDefault();
+            void pasteClipboardImagesAsEmbeddedContent(imageFiles)
+                .then((inserted) => {
+                    Logger.logDebug('Clipboard image paste handled', {
+                        imageCount: imageFiles.length,
+                        inserted,
+                        selectedImageBytes: imageFiles[0] ? imageFiles[0].size : null,
+                    }, Logger.LogCategory.EVENT);
+
+                    if (inserted && !ModeContext.isDirty) {
+                        ModeContext.setDirty(true);
+                        Logger.logDebug('Content marked as dirty due to embedded image paste', {
+                            noteId: ModeContext.currentNoteId,
+                        }, Logger.LogCategory.STATE);
+                    }
+                })
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    Logger.logDebug('Clipboard image paste failed', {
+                        error: message,
+                    }, Logger.LogCategory.EVENT);
+                    showImageEmbedFailureError();
+                });
+            return;
+        }
     }
 
     // Get HTML from clipboard if available
@@ -1278,8 +1758,27 @@ function handlePasteEvent(event) {
     Logger.logDebug('Paste event detected', {
         hasHtml: !!html,
         htmlLength: html ? html.length : 0,
+        imageFileCount: imageFiles.length,
+        hasFileUriReference: clipboardHasFileUriReference(event.clipboardData),
         isEditing: ModeContext.isEditing
     }, Logger.LogCategory.EVENT);
+
+    if (
+        shouldHandleInlinePaste
+        && imageFiles.length === 0
+        && typeof html === 'string'
+        && html.includes('<img')
+        && clipboardHasFileUriReference(event.clipboardData)
+    ) {
+        event.preventDefault();
+        ErrorHandler.showErrorBanner(
+            'Clipboard contains a file reference/icon preview, not image bytes. Open the image and copy the pixels, then paste again.',
+            'error',
+            7000,
+            true,
+        );
+        return;
+    }
 
     // Check if this is our note HTML (contains note-content class)
     if (html && html.includes('class="note-content"')) {
@@ -1301,8 +1800,6 @@ function handlePasteEvent(event) {
 			}
 		}
 	} else {
-        const activeElement = document.activeElement;
-        const hasEditableTarget = Boolean(activeElement && activeElement.isContentEditable);
         const shouldSanitizeExternalHtml = ModeContext.isEditing && hasEditableTarget && typeof html === 'string' && html.length > 0;
 
         if (shouldSanitizeExternalHtml) {

@@ -103,7 +103,10 @@ export const CONFIG = {
     },
 
     PASTE: {
-        MAX_DATA_IMAGE_BYTES: 1_048_576,
+        MAX_DATA_IMAGE_BYTES: 10_485_760,
+        EMBED_TARGET_IMAGE_BYTES: 350_000,
+        EMBED_MAX_DIMENSION_PX: 1_600,
+        MAX_CLIPBOARD_IMAGE_BYTES: 31_457_280,
     },
 
     TABS: {

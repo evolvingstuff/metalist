@@ -807,6 +807,26 @@ function clampAvatarImageSize(imageElement) {
     imageElement.setAttribute('style', clampedStyle);
 }
 
+function clampGeneralImageSize(imageElement) {
+    if (!imageElement) {
+        throw new Error('clampGeneralImageSize expects imageElement');
+    }
+    if (!(imageElement instanceof Element)) {
+        throw new Error('clampGeneralImageSize expects DOM Element');
+    }
+
+    imageElement.removeAttribute('width');
+    imageElement.removeAttribute('height');
+
+    const existingStyle = imageElement.getAttribute('style');
+    const clampStyle = 'max-width: 100%; width: auto; height: auto;';
+    if (typeof existingStyle === 'string' && existingStyle.trim().length > 0) {
+        imageElement.setAttribute('style', `${existingStyle} ${clampStyle}`);
+    } else {
+        imageElement.setAttribute('style', clampStyle);
+    }
+}
+
 function removeElementPreserveChildren(element) {
     if (!element) {
         throw new Error('removeElementPreserveChildren expects element');
@@ -926,7 +946,9 @@ function sanitizeElementAttributes(element, imageSourceFrequencyMap) {
 
         if (shouldClampAvatarImage) {
             clampAvatarImageSize(element);
+            return;
         }
+        clampGeneralImageSize(element);
     }
 }
 
