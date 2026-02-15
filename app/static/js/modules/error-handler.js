@@ -5,6 +5,30 @@
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 import { Auth } from './auth.js';
 
+const RESTORE_TRANSITION_UNTIL_KEY = 'metalist_restore_transition_until_ms';
+
+
+function _isRestoreTransitionActive() {
+    const rawValue = sessionStorage.getItem(RESTORE_TRANSITION_UNTIL_KEY);
+    if (rawValue === null) {
+        return false;
+    }
+    if (!/^[0-9]+$/.test(rawValue)) {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        return false;
+    }
+    const untilMs = Number.parseInt(rawValue, 10);
+    if (!Number.isInteger(untilMs)) {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        return false;
+    }
+    if (Date.now() >= untilMs) {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        return false;
+    }
+    return true;
+}
+
 export const ErrorHandler = {
     
     /**
@@ -71,6 +95,10 @@ export const ErrorHandler = {
     handleNetworkError(message) {
         if (typeof message !== 'string' || message.length === 0) {
             throw new Error('ErrorHandler.handleNetworkError requires message string');
+        }
+        if (_isRestoreTransitionActive()) {
+            console.log('[ErrorHandler] Suppressed network error during restore transition:', message);
+            return;
         }
         console.log('[ErrorHandler] Network error:', message);
         

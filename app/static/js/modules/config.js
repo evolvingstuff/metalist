@@ -46,6 +46,7 @@ export const CONFIG = {
             BACKUP: {
                 CREATE: `${API_AUTH_BASE}/backup/create`,
                 LIST: `${API_AUTH_BASE}/backup/list`,
+                DELETE_OLDEST: `${API_AUTH_BASE}/backup/delete-oldest`,
                 RESTORE: `${API_AUTH_BASE}/backup/restore`,
             },
             SETTINGS: {
@@ -112,5 +113,10 @@ export const CONFIG = {
     TABS: {
         MAX_TABS: 10,
         CREATE_AND_SWITCH: true,
+    },
+
+    BACKUP: {
+        RETENTION_PROMPT_THRESHOLD: 25,
+        RETENTION_SUGGESTED_KEEP_COUNT: 3,
     },
 };

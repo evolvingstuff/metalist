@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Annotated, Optional
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
+import os
+import sys
+import threading
+import time
 
 from app.api.deps import get_db
 from app.config import KDF_TIME_COST
@@ -14,6 +18,7 @@ from app.services.auth_service import AuthService
 from app.services.backup_service import (
     BackupFileInfo,
     create_timestamped_backup,
+    delete_oldest_backups,
     list_backups,
     restore_backup,
 )
@@ -93,6 +98,15 @@ class BackupCreateResponse(BaseModel):
     message: str
 
 
+class BackupDeleteOldestRequest(BaseModel):
+    count: int = Field(..., gt=0)
+
+
+class BackupDeleteOldestResponse(BaseModel):
+    deleted_backups: list[BackupFileResponse]
+    message: str
+
+
 class BackupRestoreRequest(BaseModel):
     filename: str
 
@@ -107,6 +121,37 @@ class BackupRestoreResponse(BaseModel):
 _hydration_executor = ThreadPoolExecutor(max_workers=1)
 _hydration_lock = Lock()
 _hydration_future: Future | None = None
+_server_restart_lock = Lock()
+_server_restart_scheduled = False
+
+
+def _reexec_server_process() -> None:
+    argv = [sys.executable, *sys.argv]
+    os.execv(sys.executable, argv)
+
+
+def _schedule_server_restart_after_restore(delay_seconds: float) -> None:
+    if not isinstance(delay_seconds, float):
+        raise TypeError(f"delay_seconds must be a float, got {type(delay_seconds)}")
+    if delay_seconds < 0.0:
+        raise ValueError(f"delay_seconds must be >= 0.0, got {delay_seconds}")
+
+    global _server_restart_scheduled
+    with _server_restart_lock:
+        if _server_restart_scheduled:
+            return
+        _server_restart_scheduled = True
+
+    def _restart_worker() -> None:
+        time.sleep(delay_seconds)
+        _reexec_server_process()
+
+    restart_thread = threading.Thread(
+        target=_restart_worker,
+        name="auth-backup-restore-restart",
+        daemon=True,
+    )
+    restart_thread.start()
 
 
 def _run_hydration() -> None:
@@ -310,6 +355,20 @@ def list_available_backups(token: Annotated[str, Depends(_require_auth)]):
     )
 
 
+@router.post("/backup/delete-oldest", response_model=BackupDeleteOldestResponse)
+def delete_oldest_backup_files(
+    payload: BackupDeleteOldestRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    deleted_backup_files = delete_oldest_backups(payload.count)
+    return BackupDeleteOldestResponse(
+        deleted_backups=[
+            _serialize_backup_file(backup_file) for backup_file in deleted_backup_files
+        ],
+        message=f"Deleted {len(deleted_backup_files)} backup(s)",
+    )
+
+
 @router.post("/backup/restore", response_model=BackupRestoreResponse)
 def restore_from_backup(
     payload: BackupRestoreRequest,
@@ -321,6 +380,8 @@ def restore_from_backup(
         password_required = _reset_runtime_state_after_restore()
     finally:
         maintenance_service.exit_maintenance()
+
+    _schedule_server_restart_after_restore(delay_seconds=0.5)
 
     return BackupRestoreResponse(
         backup=_serialize_backup_file(backup_file),

@@ -1025,7 +1025,27 @@ body.ontology-modal-open #ontology-modal {
     min-height: 44px;
 }
 
+.backup-retention-modal-content {
+    width: min(760px, 92vw);
+}
+
+.backup-result-modal-content {
+    width: min(760px, 92vw);
+}
+
+.backup-filename {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    vertical-align: baseline;
+    line-height: inherit;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 #backup-modal-error:empty,
+#backup-modal-confirm-message:empty,
+#backup-retention-error:empty,
 #password-generator-error:empty {
     display: none;
 }
@@ -1830,6 +1850,14 @@ body.loading {
 }
 
 body.loading * {
+    cursor: wait !important;
+}
+
+body.restore-reconnect-loading {
+    cursor: wait !important;
+}
+
+body.restore-reconnect-loading * {
     cursor: wait !important;
 }
 

@@ -7,6 +7,29 @@ import { CommandGate } from './command-gate-service.js';
 let pollingInterval = null;
 let lastTokenRefreshAt = 0;
 const TOKEN_REFRESH_INTERVAL_MS = 60_000; // minimum time between auth refresh calls
+const RESTORE_TRANSITION_UNTIL_KEY = 'metalist_restore_transition_until_ms';
+
+
+function _isRestoreTransitionActive() {
+    const rawValue = sessionStorage.getItem(RESTORE_TRANSITION_UNTIL_KEY);
+    if (rawValue === null) {
+        return false;
+    }
+    if (!/^[0-9]+$/.test(rawValue)) {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        return false;
+    }
+    const untilMs = Number.parseInt(rawValue, 10);
+    if (!Number.isInteger(untilMs)) {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        return false;
+    }
+    if (Date.now() >= untilMs) {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
+        return false;
+    }
+    return true;
+}
 
 export function startPolling() {
     // Unified polling: check connectivity and updates
@@ -58,6 +81,9 @@ async function refreshTokenOnActivity() {
 }
 
 async function checkConnectivityAndUpdates() {
+    if (_isRestoreTransitionActive()) {
+        return;
+    }
     if (CommandGate.isBusy()) {
         return;
     }

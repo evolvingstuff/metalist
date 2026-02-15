@@ -66,7 +66,7 @@
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 
 ### Command Palette Utility Entries
-- Create backup now
+- Create backup now (if 25 or more backups exist, opens a retention modal asking how many backups to keep, defaulting to 3; finishes with a completion `OK` modal)
 - Restore from backup…
 - Logout
 - Generate random password…
