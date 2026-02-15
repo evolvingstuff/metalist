@@ -25,7 +25,7 @@ graph TB
     end
     
     subgraph "Security Components"
-        PassHash[Password Hashing<br/>PBKDF2-SHA256<br/>1M iterations]
+        PassHash[Password Hashing<br/>Argon2id<br/>time_cost=3]
         DataEnc[Data Encryption<br/>AES-256-GCM]
         TokenAuth[Token Auth<br/>SHA-256 hashed<br/>30min expiry]
         DEKMgmt[DEK Management<br/>Encrypted with<br/>Master Key]

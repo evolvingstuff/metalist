@@ -31,7 +31,12 @@ if importlib.util.find_spec("tkinter") is not None:
 else:
     _TK_IMPORT_ERROR = RuntimeError("tkinter is not available")
 
-from app.config import DATABASE_URL
+from app.config import (
+    DATABASE_URL,
+    KDF_MAX_TIME_COST,
+    KDF_MIN_TIME_COST,
+    KDF_TIME_COST,
+)
 from app.db.notes_sql import insert_note, update_links
 from app.db.ontology_rules_sql import insert_rule
 from app.db.settings_sql import insert_default_settings
@@ -68,6 +73,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         dest="input_path",
         help="Path to the legacy JSON export. If omitted, a file picker opens.",
     )
+    parser.add_argument(
+        "--kdf-iterations",
+        dest="kdf_iterations",
+        type=int,
+        default=KDF_TIME_COST,
+        help=(
+            "Argon2id time-cost for password-derived keys when password protection is enabled "
+            f"(range: {KDF_MIN_TIME_COST}-{KDF_MAX_TIME_COST})."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -98,15 +113,19 @@ def _pick_input_path() -> Path:
             f"tkinter is unavailable for the file picker ({_TK_IMPORT_ERROR}). "
             "Run again with --input /path/to/export.json."
         )
+    print("No --input provided. Opening file picker for legacy JSON export...", flush=True)
+    print("If the picker is not visible, check behind other windows.", flush=True)
     root = tk.Tk()
     try:
         root.withdraw()
         root.attributes("-topmost", True)
+        root.update()
         selected = filedialog.askopenfilename(
             title="Select legacy MetaList export (JSON)",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
         )
     finally:
+        root.attributes("-topmost", False)
         root.destroy()
     if not selected:
         raise RuntimeError("No file selected. Provide --input to specify the file path.")
@@ -684,11 +703,15 @@ def _apply_order(db: SafeSession, order_map: dict[str | None, list[str]], meta: 
             )
 
 
-def _enable_password(password: str) -> None:
+def _enable_password(password: str, kdf_iterations: int) -> None:
+    if not (KDF_MIN_TIME_COST <= kdf_iterations <= KDF_MAX_TIME_COST):
+        raise ValueError(
+            f"kdf_iterations must be between {KDF_MIN_TIME_COST} and {KDF_MAX_TIME_COST}"
+        )
     session = SafeSession()
     try:
         auth = AuthService(session)
-        success, message = auth.set_password(password)
+        success, message = auth.set_password(password, kdf_iterations)
         if not success:
             raise RuntimeError(message)
         session.commit()
@@ -727,7 +750,7 @@ def main(argv: list[str]) -> int:
         session.close()
 
     if password is not None:
-        _enable_password(password)
+        _enable_password(password, args.kdf_iterations)
 
     print(f"Imported {len(items)} root items, {total_notes} notes, {total_rules} rules.")
     return 0

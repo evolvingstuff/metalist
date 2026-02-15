@@ -7,6 +7,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 
 from app.api.deps import get_db
+from app.config import KDF_TIME_COST
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
 from app.services.auth_service import AuthService
@@ -17,6 +18,7 @@ from app.services.backup_service import (
     restore_backup,
 )
 from app.services.content_cache import clear_cache, populate_cache_from_db
+from app.services.login_rate_limit import login_rate_limiter
 from app.services.maintenance_mode import maintenance_service
 from app.services.tokens import token_service
 from app.services.note_store import store as note_store
@@ -200,6 +202,20 @@ def _client_info(request: Request) -> str:
     return f"{user_agent[:100]} - {client_host}"
 
 
+def _login_rate_limit_key(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for is not None:
+        forwarded_for = forwarded_for.strip()
+    if forwarded_for:
+        first_hop = forwarded_for.split(",")[0].strip()
+        if first_hop:
+            return f"ip:{first_hop}"
+    if request.client and request.client.host:
+        return f"ip:{request.client.host}"
+    user_agent = request.headers.get("user-agent", "Unknown")
+    return f"ua:{user_agent[:128]}"
+
+
 def _require_tab_id(
     x_metalist_tab_id: Annotated[str, Header(alias="X-Metalist-Tab-Id")],
 ) -> str:
@@ -235,10 +251,19 @@ def login(
     tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
+    rate_limit_key = _login_rate_limit_key(request)
+    allowed, retry_after_seconds = login_rate_limiter.check_allowed(rate_limit_key)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in {retry_after_seconds} seconds.",
+        )
+
     auth = AuthService(db)
     if not auth.has_password():
         raise HTTPException(status_code=400, detail="No password is set. Please set a password first.")
     if not auth.verify_password(payload.password):
+        login_rate_limiter.record_failure(rate_limit_key)
         raise HTTPException(status_code=401, detail="Invalid password")
 
     dek = auth.unwrap_dek_for_password(payload.password)
@@ -251,6 +276,7 @@ def login(
         needs_hydration = True
 
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)
+    login_rate_limiter.record_success(rate_limit_key)
     clear_all_locks()
     return LoginResponse(
         token=token,
@@ -331,6 +357,10 @@ def auth_status(
         "has_password": auth.has_password(),
         "encryption_enabled": settings.encryption_enabled if settings else False,
         "encryption_algorithm": settings.encryption_algorithm if settings else None,
+        "vault_version": settings.vault_version if settings else None,
+        "kdf_algorithm": settings.kdf_algorithm if settings else None,
+        "kdf_memory_cost_kib": settings.kdf_memory_cost_kib if settings else None,
+        "kdf_parallelism": settings.kdf_parallelism if settings else None,
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
     }
 
@@ -367,7 +397,7 @@ def create_password(
     auth = AuthService(db)
     if auth.has_password():
         raise HTTPException(status_code=400, detail="Password already exists. Use change endpoint instead.")
-    success, message = auth.set_password(payload.password)
+    success, message = auth.set_password(payload.password, KDF_TIME_COST)
     if not success:
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
@@ -382,10 +412,14 @@ def change_password(
     token: Annotated[str, Depends(_require_auth)],
 ):
     auth = AuthService(db)
+    if payload.iterations is not None:
+        time_cost = payload.iterations
+    else:
+        time_cost = KDF_TIME_COST
     success, message = auth.change_password(
         payload.current_password,
         payload.new_password,
-        payload.iterations,
+        time_cost,
     )
     if not success:
         raise HTTPException(status_code=400, detail=message)

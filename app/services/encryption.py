@@ -3,11 +3,14 @@
 import base64
 import os
 from typing import Optional, Tuple
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from argon2.low_level import ARGON2_VERSION, Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
-from app.config import PW_PBKDF2_ITERATIONS
+from app.config import (
+    KDF_MEMORY_COST_KIB,
+    KDF_PARALLELISM,
+    KDF_TIME_COST,
+)
 
 
 class EncryptionService:
@@ -17,30 +20,49 @@ class EncryptionService:
         self.master_key: Optional[bytes] = None  # Derived from password, used to encrypt DEK
         self.dek: Optional[bytes] = None  # Data Encryption Key, used for note encryption
         
-    def derive_master_key(self, password: str, salt: bytes, iterations: int) -> bytes:
-        """Derive master key from password using PBKDF2 with configurable iteration count.
+    def derive_master_key(
+        self,
+        password: str,
+        salt: bytes,
+        time_cost: int,
+        memory_cost_kib: int,
+        parallelism: int,
+    ) -> bytes:
+        """Derive master key from password using Argon2id.
         
         Args:
             password: User's password
             salt: Random salt for key derivation
-            iterations: Number of PBKDF2 iterations (defaults to config value)
+            time_cost: Argon2id time-cost parameter
+            memory_cost_kib: Argon2id memory-cost parameter
+            parallelism: Argon2id parallelism parameter
             
         Returns:
             32-byte master key
         """
-        if not isinstance(iterations, int):
-            raise TypeError(f"iterations must be an int: {type(iterations)}")
-        if iterations <= 0:
-            raise ValueError(f"iterations must be positive: {iterations}")
+        if not isinstance(time_cost, int):
+            raise TypeError(f"time_cost must be an int: {type(time_cost)}")
+        if time_cost <= 0:
+            raise ValueError(f"time_cost must be positive: {time_cost}")
+        if not isinstance(memory_cost_kib, int):
+            raise TypeError(f"memory_cost_kib must be an int: {type(memory_cost_kib)}")
+        if memory_cost_kib <= 0:
+            raise ValueError(f"memory_cost_kib must be positive: {memory_cost_kib}")
+        if not isinstance(parallelism, int):
+            raise TypeError(f"parallelism must be an int: {type(parallelism)}")
+        if parallelism <= 0:
+            raise ValueError(f"parallelism must be positive: {parallelism}")
 
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,  # 256 bits for AES-256
+        return hash_secret_raw(
+            secret=password.encode("utf-8"),
             salt=salt,
-            iterations=iterations,
-            backend=default_backend()
+            time_cost=time_cost,
+            memory_cost=memory_cost_kib,
+            parallelism=parallelism,
+            hash_len=32,
+            type=Type.ID,
+            version=ARGON2_VERSION,
         )
-        return kdf.derive(password.encode('utf-8'))
     
     def generate_dek(self) -> bytes:
         """Generate a new random Data Encryption Key.
@@ -120,7 +142,13 @@ class EncryptionService:
             dek_tag: Tag for DEK decryption (optional)
         """
         # Derive master key
-        self.master_key = self.derive_master_key(password, salt, PW_PBKDF2_ITERATIONS)
+        self.master_key = self.derive_master_key(
+            password,
+            salt,
+            KDF_TIME_COST,
+            KDF_MEMORY_COST_KIB,
+            KDF_PARALLELISM,
+        )
         
         # If DEK is provided, decrypt it; otherwise generate new one
         if encrypted_dek and dek_nonce and dek_tag:

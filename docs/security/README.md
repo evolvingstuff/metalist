@@ -4,12 +4,22 @@
 
 This document describes the security architecture for MetaList3's password protection and note encryption system. The system uses a two-key architecture to provide strong security while maintaining good performance.
 
+## Current Security Posture (Implemented)
+
+- At-rest data encryption uses AES-256-GCM for note content, note tags, and ontology rules.
+- Password-derived key material uses Argon2id with persisted per-vault KDF profile metadata (`vault_version=3`, `kdf_algorithm=ARGON2ID`, memory + parallelism fields).
+- `/api2/auth/login` is rate-limited (keyed by client IP, with `x-forwarded-for` first-hop support).
+- Runtime hardening runs at startup:
+  - core dumps disabled on POSIX
+  - optional macOS checks for encrypted swap and no RAM-to-disk hibernation behavior.
+- Password policy is intentionally permissive in current dev mode (see "Password Requirements").
+
 ## Two-Key Encryption System
 
 ### Key Components
 
 1. **KEK (Key Encryption Key)**
-   - Derived from user's password using PBKDF2-SHA256 with configurable iterations (currently 1,000,000)
+   - Derived from user's password using Argon2id with configurable time-cost (currently 3)
    - Uses a dedicated `kek_salt` (distinct from the auth verifier salt)
    - Never stored on disk - only derived transiently during login/password change operations
    - Used solely to encrypt/decrypt the DEK
@@ -17,7 +27,7 @@ This document describes the security architecture for MetaList3's password prote
 
 2. **Auth Verifier**
    - Used only to verify a password attempt during login
-   - Computed as `PBKDF2(password, auth_salt, auth_iterations)` and stored in the DB
+   - Computed as `Argon2id(password, auth_salt, auth_iterations)` and stored in the DB
    - Uses a dedicated `auth_salt` (distinct from `kek_salt`)
    - Provides a password guessing target (expected) but is not usable for unwrapping the DEK
 
@@ -28,15 +38,20 @@ This document describes the security architecture for MetaList3's password prote
    - Used for all note encryption/decryption operations
    - Remains constant even when user changes their password
 
+4. **Vault Metadata**
+   - `vault_version` defines the wrapped-key format (current: `3`)
+   - `kdf_algorithm` defines password KDF profile (current: `ARGON2ID`)
+   - When encryption is enabled, these fields are required and enforced
+
 ### Encryption Flow
 
 ```
 Initial Password Setup:
 1. User sets password
-2. Password → PBKDF2 (current config iterations) → KEK
+2. Password → Argon2id (current config time-cost) → KEK
 3. Generate random 256-bit DEK
 4. Encrypt DEK with KEK → Encrypted DEK
-5. Store Encrypted DEK + iteration count in database
+5. Store Encrypted DEK + Argon2id cost metadata in database
 6. Use DEK to encrypt all notes with AES-256-GCM
 
 Login Flow:
@@ -52,27 +67,29 @@ Login Flow:
    - A progress UI is shown while the cache + note store are populated.
 
 Password Change Flow:
-1. Verify old password using stored iteration count
+1. Verify old password using stored Argon2id time-cost
 2. Decrypt DEK using old KEK
-3. Derive new KEK from new password (current config iterations)
+3. Derive new KEK from new password (current config time-cost)
 4. Re-encrypt DEK with new KEK
-5. Store newly encrypted DEK + new iteration count in database
+5. Store newly encrypted DEK + new Argon2id cost metadata in database
 6. Notes remain unchanged (still encrypted with same DEK)
 ```
 
 ### Performance Benefits
 
-- **Login**: One expensive PBKDF2 operation (stored iteration count)
+- **Login**: One expensive Argon2id operation (stored time-cost)
 - **Note Operations**: Fast AES-256-GCM encryption/decryption using cached DEK
-- **Bulk Operations**: No PBKDF2 iterations per note, just fast AES operations
+- **Bulk Operations**: No KDF work per note, just fast AES operations
 - **Password Changes**: Only need to re-encrypt the DEK, not all notes
-- **Iteration Upgrades**: Automatic upgrade to stronger iterations on password changes
+- **Cost Upgrades**: Automatic upgrade to stronger Argon2id costs on password changes
 
 ## Cryptographic Details
 
-### PBKDF2 Configuration
-- **Algorithm**: PBKDF2-HMAC-SHA256
-- **Iterations**: Configurable (currently 1,000,000), stored per password hash
+### Argon2id Configuration
+- **Algorithm**: Argon2id
+- **Time Cost**: Configurable (currently 3), stored per password hash
+- **Memory Cost**: 65,536 KiB
+- **Parallelism**: 4
 - **Salt**: 32 bytes, randomly generated per password
 - **Output**: 256-bit key
 
@@ -86,19 +103,20 @@ Password Change Flow:
 
 ```sql
 app_settings table:
-- auth_verifier: PBKDF2-based password verifier (not a KEK)
+- auth_verifier: Argon2id-based password verifier (not a KEK)
 - auth_salt: Salt for auth verifier
-- auth_iterations: PBKDF2 iteration count for auth verifier
+- auth_iterations: Argon2id time-cost for auth verifier
 - kek_salt: Salt for KEK derivation
-- kek_iterations: PBKDF2 iteration count for KEK derivation
+- kek_iterations: Argon2id time-cost for KEK derivation
+- vault_version: Wrapped-key vault format version (required when encrypted)
+- kdf_algorithm: Password KDF profile name (required when encrypted)
+- kdf_memory_cost_kib: Argon2id memory-cost parameter persisted per vault
+- kdf_parallelism: Argon2id parallelism parameter persisted per vault
 - encrypted_dek: DEK encrypted with KEK
 - dek_nonce: Nonce used for DEK encryption
 - dek_tag: Authentication tag for DEK encryption
 - encryption_enabled: Boolean flag
 - encryption_algorithm: "AES-256-GCM"
-
-Legacy fields (migrated/cleared on successful login):
-- password_hash, password_salt, password_iterations
 
 notes table:
 - content: Encrypted note content (Base64)
@@ -126,8 +144,8 @@ writes).
 ## Security Properties
 
 ### Strengths
-- **Strong Key Derivation**: Configurable PBKDF2 iterations (currently 1M) protects against brute force
-- **Future-Proof**: Iteration count stored with hash allows seamless security upgrades
+- **Strong Key Derivation**: Memory-hard Argon2id protects against brute force
+- **Future-Proof**: Stored KDF cost allows seamless security upgrades
 - **Authenticated Encryption**: AES-GCM prevents tampering and ensures integrity
 - **Memory-Only KEK**: KEK never touches disk
 - **Unique Nonces**: Each encryption uses a fresh random nonce
@@ -136,12 +154,12 @@ writes).
 ### Threat Model
 
 **Protected Against:**
-- Database theft (encrypted notes, strong PBKDF2)
-- Brute force attacks (configurable high iteration count)
+- Database theft (encrypted notes, strong Argon2id)
+- Brute force attacks (configurable KDF costs)
 - Tampering (GCM authentication)
 - Rainbow tables (random salts)
 - Replay attacks (unique nonces)
-- Security obsolescence (upgradeable iterations)
+- Security obsolescence (upgradeable KDF costs)
 
 **Not Protected Against:**
 - Memory dumps while server is running (keys in RAM)
@@ -157,30 +175,56 @@ writes).
 - DEK cleared on logout or token expiry
 - Server restart requires re-authentication
 
+### Runtime Memory Safeguards
+- Core dumps are disabled at process startup (`RLIMIT_CORE=0`) on POSIX systems.
+- On macOS, startup hardening checks can enforce:
+  - no hibernation-to-disk behavior (`hibernatemode=0`, `standby=0`, `autopoweroff=0`)
+  - swap reported as encrypted by the OS (`sysctl vm.swapusage` includes `(encrypted)`).
+- These checks fail startup when enabled and not satisfied.
+- Environment toggles:
+  - `SECURITY_HARDENING_ENABLED`
+  - `SECURITY_REQUIRE_MACOS_NO_HIBERNATION`
+  - `SECURITY_REQUIRE_ENCRYPTED_SWAP`
+- Default behavior:
+  - core dump disabling enabled by default
+  - macOS hibernation/swap enforcement disabled by default (enable explicitly for strict mode).
+
 ### Multi-Client Support
 - Token issuance clears any previous tokens (single active session enforced)
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
 
+### Login Rate Limiting
+- Enforced on `POST /api2/auth/login` before password verification.
+- Default configuration:
+  - `LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5`
+  - `LOGIN_RATE_LIMIT_WINDOW_SECONDS=300`
+  - `LOGIN_RATE_LIMIT_BLOCK_SECONDS=300`
+- Keying strategy:
+  - first `x-forwarded-for` hop when present
+  - fallback to direct client IP
+  - fallback to user-agent prefix when IP is unavailable.
+
 ### Password Requirements
-- Minimum length should be enforced (recommend 12+ characters)
-- Consider implementing password strength meter
-- Could add checks against common password lists
+- Current enforced rule: password length must be `> 3` characters.
+- This is intentionally permissive for development convenience.
+- For production hardening, enforce stricter server-side requirements:
+  - minimum length (e.g., 12+)
+  - complexity rules
+  - common/breached-password rejection.
 
-## Migration Strategy
+## Data Import Strategy
 
-When implementing this architecture from a different system:
+For fresh imports using `convert-from-legacy.py`:
 
-1. **During Password Set/Change**:
-   - Generate new DEK
-   - Encrypt DEK with KEK
-   - Store encrypted DEK
-   - Re-encrypt all notes with DEK
-
-2. **Backward Compatibility**:
-   - Check for presence of encrypted_dek field
-   - If missing, system is using old architecture
-   - Trigger migration on next password operation
+1. This is a destructive fresh-import path (existing DB is deleted first).
+2. Import plaintext legacy data into a new SQLite database.
+3. Optionally set a password at import time.
+4. Password enablement writes the same vault metadata (`vault_version`, `kdf_algorithm`)
+   and KDF parameters used by the runtime auth service.
+5. Input selection:
+   - pass `--input /path/to/export.json` for non-interactive runs
+   - omit `--input` to use the Tk file picker.
 
 ## API Endpoints
 
@@ -226,6 +270,7 @@ Memory:
 
 ### Should Log:
 - Authentication attempts (success/failure)
+- Login rate-limit blocks (key + retry delay, no secrets)
 - Password change events
 - Session creation/destruction
 - Encryption system enable/disable
@@ -238,13 +283,12 @@ Memory:
 
 ## Future Enhancements
 
-- **Advanced UI Controls**: Add UI option to customize PBKDF2 iterations during password changes
+- **Advanced UI Controls**: Add UI option to customize Argon2id time-cost during password changes
   - Toggle for "Advanced Settings" in password change modal
-  - Input field for custom iteration count with validation (100k - 10M range)
+  - Input field for custom time-cost with validation (1 - 10 range)
   - Real-time estimate of login delay impact
   - Default to current config value but allow override
 - **Key Rotation**: Periodically generate new DEK and re-encrypt notes
 - **Hardware Security Module (HSM)**: Store DEK in HSM for additional protection
 - **Client-Side Encryption**: End-to-end encryption with client-side keys
 - **Multi-Factor Authentication**: Additional authentication layer
-- **Argon2**: Consider upgrading from PBKDF2 to Argon2id for better resistance against GPU attacks

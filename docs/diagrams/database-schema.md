@@ -6,11 +6,15 @@ SQLite database structure with two tables: AppSettings (singleton) and DBNote (h
 erDiagram
     AppSettings {
         int id PK "Always 1"
-        string auth_verifier "PBKDF2 verifier or NULL"
+        string auth_verifier "Argon2id verifier or NULL"
         bytes auth_salt "Auth salt"
-        int auth_iterations "PBKDF2 iters"
+        int auth_iterations "Argon2id time-cost"
         bytes kek_salt "KEK salt"
-        int kek_iterations "PBKDF2 iters"
+        int kek_iterations "Argon2id time-cost"
+        int vault_version "Wrapped-key vault version"
+        string kdf_algorithm "KDF profile (ARGON2ID)"
+        int kdf_memory_cost_kib "Argon2id memory-cost (KiB)"
+        int kdf_parallelism "Argon2id parallelism"
         boolean encryption_enabled "True if password set"
         string encryption_algorithm "AES-256-GCM"
         bytes encrypted_dek "Encrypted DEK"

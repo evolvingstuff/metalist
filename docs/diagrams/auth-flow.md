@@ -16,13 +16,14 @@ sequenceDiagram
     U->>Browser: Enter password
     Browser->>Browser: Add loading cursor
     Browser->>API: POST /api2/auth/login {password}
+    API->>API: Check login rate limiter (IP key)
     
     API->>AuthSvc: validate_password(password)
     AuthSvc->>DB: Get AppSettings
-    DB-->>AuthSvc: auth_verifier, auth_salt, auth_iterations, kek_salt, kek_iterations, encrypted_dek
+    DB-->>AuthSvc: vault_version, kdf_algorithm, auth_verifier, auth_salt, auth_iterations, kek_salt, kek_iterations, encrypted_dek
     
     AuthSvc->>Enc: derive_auth_verifier(password, auth_salt, auth_iterations)
-    Enc->>Enc: PBKDF2-SHA256
+    Enc->>Enc: Argon2id
     Enc-->>AuthSvc: candidate_verifier
     
     AuthSvc->>AuthSvc: constant-time compare(candidate_verifier, auth_verifier)

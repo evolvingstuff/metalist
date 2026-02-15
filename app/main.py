@@ -19,6 +19,7 @@ from app.services import auth_cache_state
 from app.services.integrity import assert_linked_list_integrity
 from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
+from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
@@ -95,6 +96,10 @@ def _log_startup_step(step: str, elapsed: float) -> None:
 
 
 overall_start = time.perf_counter()
+
+hardening_start = time.perf_counter()
+apply_runtime_hardening()
+_log_startup_step("runtime hardening checks", time.perf_counter() - hardening_start)
 
 schema_start = time.perf_counter()
 with begin_writer() as connection:

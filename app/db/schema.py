@@ -41,14 +41,15 @@ CREATE INDEX IF NOT EXISTS idx_{NOTES_TABLE}_next ON {NOTES_TABLE}(next_id);
 _CREATE_APP_SETTINGS_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
     id INTEGER PRIMARY KEY,
-    password_hash TEXT,
-    password_salt BLOB,
-    password_iterations INTEGER,
     auth_verifier TEXT,
     auth_salt BLOB,
     auth_iterations INTEGER,
     kek_salt BLOB,
     kek_iterations INTEGER,
+    vault_version INTEGER,
+    kdf_algorithm TEXT,
+    kdf_memory_cost_kib INTEGER,
+    kdf_parallelism INTEGER,
     encryption_enabled INTEGER NOT NULL DEFAULT 0,
     encryption_algorithm TEXT,
     encrypted_dek BLOB,
@@ -107,6 +108,10 @@ def initialize_schema(connection: Connection) -> None:
             "auth_iterations": "INTEGER",
             "kek_salt": "BLOB",
             "kek_iterations": "INTEGER",
+            "vault_version": "INTEGER",
+            "kdf_algorithm": "TEXT",
+            "kdf_memory_cost_kib": "INTEGER",
+            "kdf_parallelism": "INTEGER",
         },
     )
     connection.execute(_CREATE_NOTES_PARENT_INDEX)
