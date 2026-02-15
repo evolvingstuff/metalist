@@ -235,6 +235,21 @@ def test_count_notes_returns_total_notes(monkeypatch: pytest.MonkeyPatch) -> Non
     assert payload["total_notes"] == 3
 
 
+def test_list_children_returns_full_note_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fakes(monkeypatch, loaded=True)
+    service = ReadService()
+
+    payload = service.list_children(parent_id=None)
+
+    assert payload["total_children"] == 2
+    assert payload["returned_count"] == 2
+    assert payload["has_more"] is False
+    first_child = payload["children"][0]
+    assert first_child["note"]["id"] == "root"
+    assert first_child["tags"]["raw_tag_string"] == "project @blue"
+    assert first_child["child_count"] == 1
+
+
 def test_list_tags_applies_prefix_limit_and_counts(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fakes(monkeypatch, loaded=True)
     service = ReadService()

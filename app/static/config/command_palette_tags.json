@@ -71,6 +71,10 @@
     {
       "id": "action.edit_tag_relationships",
       "tags": ["tag", "ontology", "relationships", "synonym", "imply", "graph"]
+    },
+    {
+      "id": "action.run_mcp_client",
+      "tags": ["mcp", "client", "agent", "ollama", "web", "run", "open", "tab"]
     }
   ]
 }

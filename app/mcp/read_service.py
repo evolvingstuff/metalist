@@ -14,6 +14,8 @@ from .errors import InvalidArgumentsError
 from .errors import NoteNotFoundError
 from .errors import VaultNotReadyError
 
+_LIST_CHILDREN_WINDOW = 25
+
 
 def _serialize_datetime(value: datetime | None) -> str | None:
     if value is None:
@@ -30,6 +32,50 @@ def _normalize_terms(terms: FrozenSet[str]) -> List[str]:
 
 
 class ReadService:
+    def _ancestor_note_ids(self, *, note_id: str) -> List[str]:
+        ancestors_reversed: List[str] = []
+        visited: Set[str] = {note_id}
+        current_id = note_id
+        while True:
+            record = note_store.get_note(current_id)
+            parent_id = record.parent_id
+            if parent_id is None:
+                break
+            if parent_id in visited:
+                raise RuntimeError(f"Integrity failure: cycle detected while building ancestors for {note_id}")
+            if not note_store.has_note(parent_id):
+                raise RuntimeError(f"Integrity failure: missing parent note {parent_id} for {current_id}")
+            visited.add(parent_id)
+            ancestors_reversed.append(parent_id)
+            current_id = parent_id
+        return list(reversed(ancestors_reversed))
+
+    def _build_context_text(self, *, segments: List[str]) -> str:
+        non_empty_segments = [segment.strip() for segment in segments if isinstance(segment, str) and segment.strip() != ""]
+        return "\n\n---\n\n".join(non_empty_segments)
+
+    def _build_ancestor_context_entries(self, *, note_id: str) -> List[Dict[str, object]]:
+        entries: List[Dict[str, object]] = []
+        for ancestor_id in self._ancestor_note_ids(note_id=note_id):
+            ancestor_record = note_store.get_note(ancestor_id)
+            entries.append(
+                {
+                    "note": {
+                        "id": ancestor_record.id,
+                        "parent_id": ancestor_record.parent_id,
+                        "prev_id": ancestor_record.prev_id,
+                        "next_id": ancestor_record.next_id,
+                        "is_collapsed": bool(ancestor_record.is_collapsed),
+                        "content": ancestor_record.content,
+                        "content_text": strip_html(ancestor_record.content).strip(),
+                        "created_at": _serialize_datetime(ancestor_record.created_at),
+                        "updated_at": _serialize_datetime(ancestor_record.updated_at),
+                    },
+                    "tags": self._build_tags_payload(note_id=ancestor_id, record=ancestor_record),
+                }
+            )
+        return entries
+
     def _require_ready(self) -> None:
         if not note_store.loaded:
             raise VaultNotReadyError("Vault locked or not hydrated")
@@ -89,6 +135,7 @@ class ReadService:
                     "next_id": record.next_id,
                     "is_collapsed": bool(record.is_collapsed),
                     "content": record.content,
+                    "content_text": strip_html(record.content).strip(),
                     "created_at": _serialize_datetime(record.created_at),
                     "updated_at": _serialize_datetime(record.updated_at),
                 },
@@ -116,7 +163,34 @@ class ReadService:
         self._require_ready()
         normalized_note_id = self._require_note_id(note_id)
         self._require_note_exists(normalized_note_id)
-        return self._build_note_node(note_id=normalized_note_id, visited=set())
+        payload = self._build_note_node(note_id=normalized_note_id, visited=set())
+        ancestors = self._build_ancestor_context_entries(note_id=normalized_note_id)
+        current_note = payload["note"]
+        if not isinstance(current_note, dict):
+            raise RuntimeError("note payload missing note object")
+        if "content_text" not in current_note:
+            raise RuntimeError("note payload missing content_text")
+        current_content_text = current_note["content_text"]
+        if not isinstance(current_content_text, str):
+            raise RuntimeError("content_text must be a string")
+
+        ancestor_texts: List[str] = []
+        for ancestor_entry in ancestors:
+            if "note" not in ancestor_entry:
+                raise RuntimeError("ancestor entry missing note payload")
+            ancestor_note = ancestor_entry["note"]
+            if not isinstance(ancestor_note, dict):
+                raise RuntimeError("ancestor note payload must be an object")
+            if "content_text" not in ancestor_note:
+                raise RuntimeError("ancestor note payload missing content_text")
+            ancestor_content_text = ancestor_note["content_text"]
+            if not isinstance(ancestor_content_text, str):
+                raise RuntimeError("ancestor content_text must be a string")
+            ancestor_texts.append(ancestor_content_text)
+
+        payload["ancestors"] = ancestors
+        payload["context_text"] = self._build_context_text(segments=[*ancestor_texts, current_content_text])
+        return payload
 
     def list_children(self, *, parent_id: object) -> Dict[str, object]:
         self._require_ready()
@@ -131,10 +205,33 @@ class ReadService:
             normalized_parent_id = parent_id
 
         child_ids = note_store.get_children(normalized_parent_id)
+        child_ids_window = child_ids[:_LIST_CHILDREN_WINDOW]
+        children_payload: List[Dict[str, object]] = []
+        for child_id in child_ids_window:
+            record = note_store.get_note(child_id)
+            children_payload.append(
+                {
+                    "note": {
+                        "id": record.id,
+                        "parent_id": record.parent_id,
+                        "prev_id": record.prev_id,
+                        "next_id": record.next_id,
+                        "is_collapsed": bool(record.is_collapsed),
+                        "content": record.content,
+                        "created_at": _serialize_datetime(record.created_at),
+                        "updated_at": _serialize_datetime(record.updated_at),
+                    },
+                    "tags": self._build_tags_payload(note_id=child_id, record=record),
+                    "child_count": len(note_store.get_children(child_id)),
+                }
+            )
+
         return {
             "parent_id": normalized_parent_id,
-            "children": child_ids,
-            "returned_count": len(child_ids),
+            "total_children": len(child_ids),
+            "returned_count": len(children_payload),
+            "has_more": len(child_ids) > len(children_payload),
+            "children": children_payload,
         }
 
     def list_tags(self, *, prefix: object, limit: object) -> Dict[str, object]:
@@ -209,19 +306,42 @@ class ReadService:
 
     def _search_result_entry(self, *, note_id: str) -> Dict[str, object]:
         record = note_store.get_note(note_id)
-        preview_text = strip_html(record.content).strip()
+        content_text = strip_html(record.content).strip()
+        preview_text = content_text
         if len(preview_text) > 140:
             truncated = preview_text[:140]
         else:
             truncated = preview_text
 
+        ancestor_texts: List[str] = []
+        ancestor_note_ids = self._ancestor_note_ids(note_id=note_id)
+        for ancestor_note_id in ancestor_note_ids:
+            ancestor_record = note_store.get_note(ancestor_note_id)
+            ancestor_texts.append(strip_html(ancestor_record.content).strip())
+
+        tags_payload = self._build_tags_payload(note_id=note_id, record=record)
+        if "raw_tag_string" not in tags_payload:
+            raise RuntimeError("tags payload missing raw_tag_string")
+        if "tag_terms" not in tags_payload:
+            raise RuntimeError("tags payload missing tag_terms")
+        if "implied_tag_terms" not in tags_payload:
+            raise RuntimeError("tags payload missing implied_tag_terms")
+        if "effective_tag_terms" not in tags_payload:
+            raise RuntimeError("tags payload missing effective_tag_terms")
+
         return {
             "note_id": record.id,
             "parent_id": record.parent_id,
             "updated_at": _serialize_datetime(record.updated_at),
-            "raw_tag_string": record.tags,
-            "tag_terms": _normalize_terms(record.tag_terms),
+            "raw_tag_string": tags_payload["raw_tag_string"],
+            "tag_terms": tags_payload["tag_terms"],
+            "implied_tag_terms": tags_payload["implied_tag_terms"],
+            "effective_tag_terms": tags_payload["effective_tag_terms"],
             "preview_text": truncated,
+            "content_text": content_text,
+            "ancestor_note_ids": ancestor_note_ids,
+            "ancestor_texts": ancestor_texts,
+            "context_text": self._build_context_text(segments=[*ancestor_texts, content_text]),
         }
 
     def search_notes(

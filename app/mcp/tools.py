@@ -47,7 +47,10 @@ _TOOLS: List[Dict[str, object]] = [
     },
     {
         "name": "list_children",
-        "description": "Return ordered children for parent_id; use null to list root notes.",
+        "description": (
+            "Return ordered full child notes for parent_id in a small window; "
+            "use null to list root notes."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {

@@ -86,11 +86,20 @@ Input:
 Notes:
 - Use `parent_id = null` for root notes.
 - Use a note ID string for direct children.
+- Returns a bounded window of full child note objects (currently first 25, not an unbounded ID dump).
 
 Output fields:
 - `parent_id`
-- `children` (ordered note IDs)
+- `total_children`
 - `returned_count`
+- `has_more`
+- `children[]`
+  - `note`
+    - `id`, `parent_id`, `prev_id`, `next_id`
+    - `is_collapsed`, `content`, `created_at`, `updated_at`
+  - `tags`
+    - `raw_tag_string`, `tag_terms`, `implied_tag_terms`, `effective_tag_terms`
+  - `child_count`
 
 ### `list_tags`
 Input:
@@ -137,6 +146,8 @@ Each `results[]` item includes:
 - `updated_at`
 - `raw_tag_string`
 - `tag_terms`
+- `implied_tag_terms`
+- `effective_tag_terms`
 - `preview_text`
 
 ## Security / Policy
