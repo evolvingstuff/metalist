@@ -197,6 +197,20 @@ class NoteStore:
     def loaded(self) -> bool:
         return self._loaded
 
+    def reset(self) -> None:
+        with self._lock:
+            self._note_map.clear()
+            self._links.clear()
+            self._heads.clear()
+            self._tails.clear()
+            self._effective_non_meta_tag_terms.clear()
+            self._loaded = False
+            search_index.rebuild(
+                [],
+                progress_update=lambda _processed: None,
+                progress_interval=1,
+            )
+
     def load_from_db(
         self,
         db: SafeSession | None,

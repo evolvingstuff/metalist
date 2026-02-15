@@ -65,6 +65,12 @@
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 
+### Command Palette Utility Entries
+- Create backup now
+- Restore from backup…
+- Logout
+- Generate random password…
+
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 
 ## Tag Bar Syntax

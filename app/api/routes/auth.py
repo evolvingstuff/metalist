@@ -7,16 +7,30 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 
 from app.api.deps import get_db
+from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
 from app.services.auth_service import AuthService
+from app.services.backup_service import (
+    BackupFileInfo,
+    create_timestamped_backup,
+    list_backups,
+    restore_backup,
+)
+from app.services.content_cache import clear_cache, populate_cache_from_db
+from app.services.maintenance_mode import maintenance_service
 from app.services.tokens import token_service
-from app.services.content_cache import populate_cache_from_db
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
+from app.services.tab_state import tab_state_store
+from app.services.view_cache import view_cache
 from app.services import auth_cache_state
 from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
 from app.services.hydration_state import hydration_state
-from app.security.encryption import clear_encryption_key, set_session_dek
+from app.security.encryption import (
+    clear_encryption_key,
+    set_encryption_required,
+    set_session_dek,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -60,6 +74,32 @@ class PasswordChangeRequest(BaseModel):
 
 class PasswordRemoveRequest(BaseModel):
     current_password: str
+
+
+class BackupFileResponse(BaseModel):
+    filename: str
+    created_at: str
+    size_bytes: int
+
+
+class BackupListResponse(BaseModel):
+    backups: list[BackupFileResponse]
+
+
+class BackupCreateResponse(BaseModel):
+    backup: BackupFileResponse
+    message: str
+
+
+class BackupRestoreRequest(BaseModel):
+    filename: str
+
+
+class BackupRestoreResponse(BaseModel):
+    backup: BackupFileResponse
+    message: str
+    reauthentication_required: bool
+    password_required: bool
 
 
 _hydration_executor = ThreadPoolExecutor(max_workers=1)
@@ -110,6 +150,45 @@ def _build_hydration_status() -> HydrationStatusResponse:
         snapshot["message"] = "Hydration complete"
         snapshot["overall_percent"] = 100
     return HydrationStatusResponse(**snapshot)
+
+
+def _serialize_backup_file(backup_file: BackupFileInfo) -> BackupFileResponse:
+    return BackupFileResponse(
+        filename=backup_file.filename,
+        created_at=backup_file.created_at,
+        size_bytes=backup_file.size_bytes,
+    )
+
+
+def _reset_runtime_state_after_restore() -> bool:
+    view_cache.clear()
+    tab_state_store.reset()
+    clear_all_locks()
+    token_service.revoke_all_tokens()
+    clear_encryption_key()
+    clear_cache()
+    note_store.reset()
+    auth_cache_state.reset_cache_state()
+
+    session = SafeSession()
+    try:
+        with SafeSession.allow_reads("auth:backup_restore:settings"):
+            settings = fetch_settings(session.connection())
+        if settings is None:
+            raise RuntimeError("App settings missing after backup restore")
+
+        password_required = bool(settings["encryption_enabled"])
+        set_encryption_required(password_required)
+
+        if password_required:
+            return True
+
+        prefetched_rows = populate_cache_from_db(session)
+        note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+        auth_cache_state.mark_cache_ready()
+        return False
+    finally:
+        session.close()
 
 
 def _client_info(request: Request) -> str:
@@ -186,6 +265,43 @@ def logout(token: Annotated[str, Depends(_require_auth)]):
     clear_all_locks()
     clear_encryption_key()
     return {"message": "Logout successful"}
+
+
+@router.post("/backup/create", response_model=BackupCreateResponse)
+def create_backup(token: Annotated[str, Depends(_require_auth)]):
+    backup_file = create_timestamped_backup()
+    return BackupCreateResponse(
+        backup=_serialize_backup_file(backup_file),
+        message="Backup created successfully",
+    )
+
+
+@router.get("/backup/list", response_model=BackupListResponse)
+def list_available_backups(token: Annotated[str, Depends(_require_auth)]):
+    backup_files = list_backups()
+    return BackupListResponse(
+        backups=[_serialize_backup_file(backup_file) for backup_file in backup_files]
+    )
+
+
+@router.post("/backup/restore", response_model=BackupRestoreResponse)
+def restore_from_backup(
+    payload: BackupRestoreRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    maintenance_service.enter_maintenance("Restoring backup")
+    try:
+        backup_file = restore_backup(payload.filename)
+        password_required = _reset_runtime_state_after_restore()
+    finally:
+        maintenance_service.exit_maintenance()
+
+    return BackupRestoreResponse(
+        backup=_serialize_backup_file(backup_file),
+        message="Backup restored successfully",
+        reauthentication_required=True,
+        password_required=password_required,
+    )
 
 
 @router.post("/session", response_model=SessionResponse)

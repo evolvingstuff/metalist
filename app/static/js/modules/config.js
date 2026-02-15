@@ -43,6 +43,11 @@ export const CONFIG = {
             SESSIONS: `${API_AUTH_BASE}/sessions`,
             HYDRATE: `${API_AUTH_BASE}/hydrate`,
             HYDRATION_STATUS: `${API_AUTH_BASE}/hydration-status`,
+            BACKUP: {
+                CREATE: `${API_AUTH_BASE}/backup/create`,
+                LIST: `${API_AUTH_BASE}/backup/list`,
+                RESTORE: `${API_AUTH_BASE}/backup/restore`,
+            },
             SETTINGS: {
                 PASSWORD: {
                     CREATE: `${API_AUTH_BASE}/settings/password/create`,

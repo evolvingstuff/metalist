@@ -1017,6 +1017,39 @@ body.ontology-modal-open #ontology-modal {
     color: #55585f;
 }
 
+.backup-restore-modal-content {
+    width: min(760px, 92vw);
+}
+
+.backup-restore-modal-content select {
+    min-height: 44px;
+}
+
+#backup-modal-error:empty,
+#password-generator-error:empty {
+    display: none;
+}
+
+.random-password-modal-content {
+    width: min(760px, 92vw);
+}
+
+.random-password-modal-content textarea,
+.random-password-modal-content input[type="number"],
+.random-password-modal-content input[type="text"] {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.random-password-modal-content #password-result-output {
+    white-space: nowrap;
+    overflow-x: auto;
+    cursor: copy;
+}
+
+#password-result-copy-hint:empty {
+    display: none;
+}
+
 .note.memory-mode {
     position: relative;
 }
