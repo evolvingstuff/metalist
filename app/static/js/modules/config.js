@@ -97,6 +97,10 @@ export const CONFIG = {
         DEFAULT_CURSOR_POSITION: 'END'    // Where to place cursor when entering edit mode ('START' or 'END')
     },
 
+    PASTE: {
+        MAX_DATA_IMAGE_BYTES: 1_048_576,
+    },
+
     TABS: {
         MAX_TABS: 10,
         CREATE_AND_SWITCH: true,

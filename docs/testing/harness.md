@@ -4,6 +4,11 @@ The legacy unit/integration suites were removed during the API2
 migration. Manual regression passes plus the Cypress UI suite now
 cover the project.
 
+There is targeted JS unit coverage for external HTML paste sanitization:
+
+- `tests/unit/html_paste_sanitizer_service.test.mjs`
+- Run with: `node --test tests/unit/html_paste_sanitizer_service.test.mjs`
+
 For deterministic Cypress runs, the server exposes a TEST_MODE-only reset
 endpoint: `POST /api2/test/reset`.
 

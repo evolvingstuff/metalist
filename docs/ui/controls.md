@@ -17,6 +17,9 @@
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note is empty with no tags, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
 
+- If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
+- See `docs/ui/paste-sanitization.md` for the full policy.
+
 ### General Shortcuts
 | Shortcut | Action |
 |----------|--------|

@@ -12,6 +12,7 @@
 
 ## UI
 - Keyboard + mouse controls: `docs/ui/controls.md`
+- External HTML paste sanitization: `docs/ui/paste-sanitization.md`
 - Note content meta-tag formatting: `docs/ui/content-formatting.md`
 - Search query syntax (verifier): `docs/ui/search-syntax.md`
 - Search semantics (server behavior): `docs/ui/search-semantics.md`
