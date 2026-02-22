@@ -1,314 +1,182 @@
-# PLAN.md — MCP Client Rewrite (Regex/Phrase-First, Fully Transparent, List-Based)
+# PLAN.md — MCP Client v2 (Context Window + Conversation, No Hidden Retrieval Logic)
 
-## 0. Goal
-Replace the current MCP client flow with a new architecture optimized for:
-- content retrieval first (quoted phrases + regex), not tag-guessing first
-- safe regex execution (RE2 option)
-- complete operator visibility into every LLM prompt/query/tool call
-- list-based note processing with preserved ordering (bulk operations), no N-per-note hydration loops
+## 0. Objective
+Rewrite the MCP client around a simple, transparent loop:
+1. Build a context window from current MetaList search results.
+2. Prompt the model with system prompt + context window + conversation history.
+3. Return plain-text assistant output.
+4. Rebuild context window on every turn so UI search changes apply immediately.
 
-This is a rewrite, not an incremental patch to the existing planner/tag pipeline.
+This is a rewrite from scratch, kept as a separate app for now.
 
-## 1. Hard Requirements (Non-Negotiable)
-1. Full transparency in UI (with hide/show controls):
-   - every model prompt message
-   - every tool call argument payload
-   - every tool response payload
-   - every intermediate generated query/pattern
-   - raw model output
-2. No hidden defaults that change behavior silently:
-   - all behavior-driving parameters must be explicitly surfaced in UI/config and echoed in run metadata
-   - any omitted value must fail fast or use an explicitly named profile
-3. List-based note operations with preserved ordering:
-   - do not fetch note details one-by-one for large result sets
-   - use bulk hydration APIs/tools for note content/context retrieval
-   - preserve deterministic ranking/order through retrieval, merge, hydration, and synthesis
-4. Regex-first retrieval must support a safe engine option:
-   - RE2-backed execution path for user/model-proposed regex patterns
-5. Deterministic retrieval before synthesis:
-   - model summarizes evidence after retrieval, not before
-6. Search-context universe boundary:
-   - if user has an active search context, it is the strict universe for the entire run
-   - all MCP retrieval/hydration must be constrained to that context
-   - if no active search context exists, universe is all notes
-7. No query-specific logic or domain-specific answer extractors:
-   - never add code paths specialized to a single question pattern (for example, birthday-only extractors)
-   - never add deterministic “workaround” logic that bypasses general retrieval+synthesis behavior
-   - fixes must generalize across arbitrary user questions and note domains
-   - if a trivial question fails, treat it as a core pipeline defect (planner quality, retrieval quality, ranking, or synthesis), not as an exception case
-8. No fallback retrieval generation:
-   - do not auto-generate heuristic fallback expressions from raw user text when planner output fails validation
-   - if model planning is insufficient, surface explicit planning failure with full trace instead of silent fallback behavior
-   - if partial model output exists, use only that model output (with transparent status), never hidden deterministic substitutes
-9. No hard minimum expression quota:
-   - do not require a fixed minimum number of planner expressions
-   - planner may return any count up to configured maximum; execution proceeds with model-proposed set only
+## 1. Locked Decisions
+1. Separate app for now (not merged into main MetaList app yet).
+2. Source data is redaction-processed search results from MetaList.
+3. Model context includes ancestor and descendant text exactly as redaction/export logic allows.
+4. No note IDs in model prompt for v1 (citations/refs deferred).
+5. Preserve MetaList result order; model does not reorder retrieval.
+6. No per-note cap in v1; use a total token/character context budget only.
+7. Show how many notes were included vs omitted from context window.
+8. Paging/deeper retrieval loops are deferred to a later version.
+9. Output is plain text.
+10. If confidence is low, assistant should ask clarifying questions and/or suggest narrowing search scope.
+11. No hidden defaults, no silent fallbacks, no implicit “helpful” behavior.
+12. Conversation UI must use a familiar chat/texting layout:
+    - user messages right-aligned
+    - assistant messages left-aligned
+    - bubble-style rendering similar to common phone messaging UX
 
-## 2. Scope
+## 2. v1 Scope
 
-### In scope
-- New client pipeline and UI telemetry model.
-- New MCP tool contracts for bulk retrieval and regex search.
-- Query planner redesign around lexical evidence (phrases/regex) with optional explicit tag atoms.
-- Prompt/trace instrumentation with zero truncation in stored run data.
-- Performance-safe result set handling for hundreds/thousands of hits.
-- Migration path from old client logic to new client logic.
+### In Scope
+- Context-window builder from active search context.
+- Multi-turn conversation support.
+- Full prompt visibility in UI.
+- Clear progress feedback while running.
+- Simple fail-fast behavior with explicit errors.
 
-### Out of scope
-- Note mutation/write actions.
-- Ontology/tag management redesign.
-- Multi-user auth or cloud deployment concerns.
-- Query-specific hardcoded inference modules.
+### Out of Scope (Deferred)
+- Citations/clickable references.
+- Paging across additional windows.
+- Model-generated retrieval tools inside the loop.
+- Tag-specific retrieval logic.
+- Auto-optimizations like per-note caps or heuristic compression layers.
 
-## 3. Current Pain Points to Eliminate
-- Tag-first guessing causes irrelevant expansions and brittle matching.
-- Hidden/truncated prompts and payloads reduce debuggability.
-- Planner behavior includes implicit assumptions/defaults that are hard to audit.
-- Per-note follow-up calls do not scale for large result sets.
-- Trivial factual questions fail despite retrieved evidence being present.
-- “Patch-by-exception” fixes that hide core retrieval/synthesis weaknesses.
+## 3. Core Runtime Model
 
-## 4. Target Retrieval Architecture
+## 3.1 Inputs per Turn
+- `system_prompt` (MetaList schema + hierarchy behavior).
+- `context_window` (rebuilt fresh this turn).
+- `conversation_history` (user/assistant messages so far).
 
-### 4.1 Pipeline stages
-Stage 0 — Config snapshot (deterministic)
-- capture and display every active setting used for this run
-- persist in run log and UI “Run Config” panel
-- capture `active_search_context_query` and derived `universe_mode`:
-  - `scoped` when query is non-empty
-  - `global` when query is empty
+## 3.2 Context Window Build
+- Universe = current UI search context.
+  - If search box has query: use that filtered result list.
+  - If empty: use global note list.
+- Take notes in existing order.
+- Serialize text payload only (no IDs in v1).
+- Include hierarchical context based on redaction export behavior (ancestors + descendants).
+- Stop when token/char budget reached.
+- Record:
+  - total notes in universe
+  - notes included in context window
+  - notes omitted due to budget
+  - estimated token/char usage
+  - build time ms
 
-Stage 0.5 — Universe resolution (deterministic)
-- resolve the run universe from `active_search_context_query`
-- materialize ordered `universe_note_ids`
-- all later stages must execute within `universe_note_ids` only
-- no stage may expand beyond universe
+## 3.3 Model Call
+- Single assistant call per user turn in v1.
+- Prompt format is explicit three-part composition:
+  - system instructions
+  - context window content
+  - conversation history
+- Return plain text only.
 
-Stage 1 — Query decomposition (LLM optional but fully visible)
-- convert user request into explicit retrieval atoms only:
-  - `phrase` atoms (quoted text terms)
-  - `regex` atoms (`/pattern/flags`)
-  - optional `tag` atoms (`tag:<term>` form only; `<term>` must be tag-like)
-- no generic keyword-term atom type is allowed in rewrite mode
-- output must be structured JSON; raw output retained
-- tag-like term policy:
-  - allowed pattern: `^[a-z0-9]+([._-][a-z0-9]+)*$`
-  - no implicit conversion of plain words into tag atoms
+## 3.4 Low-Confidence Handling
+- If model indicates uncertainty:
+  - ask a clarifying question, or
+  - suggest narrowing the search context.
+- Do not invent hidden fallback retrieval logic.
 
-Stage 2 — Deterministic retrieval plan expansion
-- generate executable search operations from Stage 1 output
-- operations are explicit and bounded (limit, offset, max patterns)
+## 4. UI/Trace Requirements
 
-Stage 3 — Retrieval execution (list-oriented)
-- run bulk searches via MCP tools
-- collect ordered note-id lists + match metadata
-- merge/intersect/rank deterministically while preserving stable list order semantics (not per-note loops)
-- enforce intersection with `universe_note_ids` on every retrieval pass
+## 4.1 Always Visible
+- Current run status with frequent updates (target: visible progress heartbeat about every second while running).
+- Total runtime for current turn.
+- Context window stats:
+  - universe count
+  - included count
+  - omitted count
+  - budget usage
 
-Stage 4 — Bulk hydration
-- hydrate note payloads in batches from resolved ordered note-id lists
-- include only requested fields (content/context/tags/ancestors)
+## 4.2 Expand/Collapse Sections
+- Full system prompt text (line-wrapped).
+- Full context window payload sent to model (line-wrapped).
+- Conversation payload sent to model.
+- Raw model response.
 
-Stage 5 — Evidence synthesis
-- LLM synthesizes from hydrated evidence
-- synthesis prompt and evidence IDs shown in UI
+No truncation markers like `...[truncated ...]...` in stored payloads.
 
-### 4.2 Search strategy order
-1. phrase exact matches
-2. regex matches (RE2 mode if enabled)
-3. optional tag-atom filtering/narrowing only when tag atoms are explicitly present
+## 4.3 Formatting
+- Pretty-print JSON in UI where JSON is shown.
+- Long strings should wrap to avoid horizontal scrolling.
+- Human-readable sections should be newline/indent formatted.
 
-## 5. MCP Tool Contract Changes
+## 4.4 Chat Layout
+- Render the primary conversation as message bubbles in chronological order.
+- User bubbles are right-aligned.
+- Assistant bubbles are left-aligned.
+- Keep trace/debug panels available below or beside the chat, but visually separate from the chat thread.
+- Keep chat readable on desktop and mobile-width screens.
 
-### 5.1 Add `search_notes_regex`
-Purpose:
-- execute regex against note plaintext/context at scale
+## 5. Fail-Fast + Transparency Rules
+1. Missing required config/input -> explicit error, stop run.
+2. Prompt composition failure -> explicit error, stop run.
+3. Model malformed output (when structure is required) -> explicit error, stop run.
+4. No silent retries that alter behavior invisibly.
+5. No hidden fallback prompts or heuristic expression generators.
+6. Every behavior-affecting parameter must be surfaced in run metadata.
 
-Arguments:
-- `pattern` (string)
-- `flags` (string; allowed subset only)
-- `limit` (int)
-- `offset` (int)
-- `target` (enum: `content_text`, `context_text`, `both`)
+## 6. Implementation Plan
 
-Returns:
-- `total_matches`, `returned_count`
-- `results`: `note_id`, match spans/snippets, matched field
+## Phase A — Isolate v2 Path
+- Keep existing logic available only as legacy path.
+- Add new v2 runner module with minimal dependencies on old planner pipeline.
+- Add explicit feature flag/mode selector between legacy and v2.
 
-Rules:
-- validate pattern and flags strictly
-- fail fast on invalid/unsupported pattern
-- no silent fallback engine
-- require explicit scope input:
-  - either `scope_query` or `scope_note_ids` (preferred: `scope_note_ids` for deterministic bounded universe)
-- results must never include notes outside the provided scope
+## Phase B — Context Window Builder
+- Implement deterministic builder from search results with redaction-ready text export.
+- Enforce total budget cutoff only.
+- Emit inclusion/omission stats and timing.
+- Ensure rebuild runs every turn (no stale context reuse).
 
-### 5.2 Add `get_notes_batch`
-Purpose:
-- fetch note details for many IDs in one call
+## Phase C — Prompt Assembly + Multi-Turn Memory
+- Implement three-part prompt composition.
+- Add conversation transcript state for back-and-forth.
+- Add optional “reset conversation” action in UI.
+- Ensure prompt text is directly inspectable in UI.
 
-Arguments:
-- `note_ids` (array, deduped)
-- `include_content_text` (bool)
-- `include_context_text` (bool)
-- `include_tags` (bool)
-- `include_ancestors` (bool)
+## Phase D — v2 UI
+- Replace old stage-heavy display with simple per-turn trace:
+  - build context
+  - model call
+  - final answer
+- Add progress heartbeat updates while in-flight.
+- Add total compute time display.
+- Add line-wrap and pretty-print improvements.
 
-Returns:
-- `total_requested`, `returned_count`, `not_found_ids`
-- `notes`: structured payload per note
+## Phase E — Error Handling + Diagnostics
+- Standardize error payloads for UI.
+- Surface exact failing phase and reason.
+- Include timing breakdown:
+  - context build ms
+  - model call ms
+  - total ms
 
-Rules:
-- hard cap per batch call (configurable and surfaced)
-- deterministic ordering by input ID order
-- if `scope_note_ids` is provided, reject/ignore IDs outside scope deterministically (must be surfaced in response)
+## Phase F — Legacy Cleanup (After Validation)
+- Remove dead planner/retrieval-repair code from v2 path.
+- Keep legacy path behind explicit flag until deprecation decision.
 
-### 5.3 Keep existing `search_notes`
-- keep for backward compatibility and optional explicit tag-atom pass
-- stop forcing tag-centric planning behavior in client
-- when used in rewrite mode, it must be universe-scoped (never global unless user context is empty)
+## 7. Manual Validation Checklist (Human-Run)
+1. With empty search context, ask broad question and verify included/omitted counts appear.
+2. Narrow search context in UI, rerun immediately, verify context window rebuild reflects new scope.
+3. Confirm prompt display shows all three prompt parts exactly.
+4. Confirm no truncation markers are inserted.
+5. Confirm low-confidence behavior asks clarifying question or suggests narrowing.
+6. Confirm no hidden fallback stage appears in trace.
+7. Confirm total runtime and per-phase timings render every turn.
+8. Confirm chat bubbles render with user on right and assistant on left.
 
-## 6. RE2 Feasibility + Safety Plan
-- Add optional dependency: `google-re2` (or repo-approved equivalent).
-- Startup capability check:
-  - if regex mode selected and RE2 unavailable, fail run with explicit error.
-- Supported regex features documented; unsupported constructs rejected upfront.
-- Add guardrails:
-  - max pattern length
-  - max alternation count
-  - max execution candidate list size per pass
+## 8. Exit Criteria for v1
+- Context window rebuild per turn is stable and fast.
+- Prompt visibility is complete and readable.
+- Model receives only intended text payload (no hidden IDs/citations).
+- Multi-turn conversation works across consecutive questions.
+- Uncertainty handling is explicit and useful.
+- No silent behavior changes, no fallback logic, no dead-air UI.
 
-## 7. UI/UX Plan (Transparency First)
-
-### 7.1 Trace panels (collapsible)
-For each stage card, always include:
-- `Prompt Messages` (full, untruncated)
-- `Tool Request` (full JSON)
-- `Tool Response` (full JSON)
-- `Derived Query Objects` (full JSON)
-
-### 7.2 Visibility controls
-- global toggles:
-  - show/hide prompts
-  - show/hide tool payloads
-  - show/hide raw JSON
-- export run trace as JSON file
-
-### 7.3 No truncation policy
-- UI may collapse sections visually
-- underlying stored payload must remain complete
-- do not mutate payload with `...[truncated]...`
-
-## 8. Performance Plan (List-Based)
-- Retrieval stages operate on ordered note-id lists and scored maps.
-- Hydration is chunked batch calls (e.g. 200 IDs/batch) not per-note calls.
-- Add per-stage metrics:
-  - candidate list length
-  - hydrated list length
-  - stage latency
-  - payload size
-
-## 9. Detailed Implementation Steps
-
-Step A — Freeze and isolate old path
-- keep old client path behind `legacy` mode switch
-- add `rewrite` mode scaffold and route all new work there
-
-Step B — Data contracts
-- define strict Pydantic models for:
-  - stage outputs
-  - trace events
-  - retrieval requests/responses
-- remove implicit defaults from run payload model
-- include explicit universe fields in run payload:
-  - `active_search_context_query`
-  - `universe_mode`
-  - `universe_note_count`
-
-Step C — MCP tool additions
-- implement `search_notes_regex`
-- implement `get_notes_batch`
-- add schema docs and validation tests
-
-Step D — Rewrite core pipeline engine
-- implement deterministic stage runner
-- each stage outputs typed artifact + trace entry
-- enforce max-depth/step bounds explicitly
-- enforce universe boundary at a single shared gate used by every retrieval tool adapter
-
-Step E — Rewrite web UI integration
-- consume stage stream events
-- render collapsible full-payload trace panels
-- add run-config snapshot + export JSON
-
-Step F — LLM prompt redesign
-- prompt focuses only on retrieval intent extraction and synthesis
-- no hidden seed heuristics
-- all prompt messages surfaced in UI
-- planner output schema in rewrite mode allows only `phrase`, `regex`, and optional explicit `tag:<term>` atoms
-
-Step G — Ranking and synthesis
-- rank hydrated notes by lexical evidence
-- feed bounded top-K evidence into synthesis prompt
-- preserve provenance IDs in final answer metadata
-- do not add question-specific extraction shortcuts; improve generic evidence selection and reasoning fidelity instead
-
-Step H — Regression cleanup
-- remove old tag-planner-specific code path after parity checks
-- keep compatibility flag for one transition cycle
-
-## 10. Testing Plan
-
-### Unit tests
-- regex validation, engine availability errors, invalid flag handling
-- batch hydration behavior (stable ordering, deterministic dedupe, not-found handling)
-- no-truncation trace persistence
-- deterministic stage outputs
-
-### Integration tests
-- end-to-end query:
-  - “what is my dad’s birthday?”
-  - verify phrase/regex passes produce expected candidates
-  - verify bulk hydration call count stays bounded (not N-per-note)
-- large result set test (>=300 notes)
-  - confirm no per-note hydration loop
-- scoped-universe test:
-  - set active search context (example: `work-journal -private -@password`)
-  - verify every returned note ID is within scoped universe
-  - verify out-of-scope matches are excluded even if phrase/regex would match globally
-
-### UI tests
-- trace panel show/hide toggles
-- prompt/tool payload visibility
-- exported JSON contains full payloads
-
-## 11. Acceptance Criteria
-1. A full run can be audited end-to-end from UI without hidden prompt/query behavior.
-2. No payload truncation markers are introduced in stored trace artifacts.
-3. For large result sets, hydration uses ordered batched MCP calls, not one call per note.
-4. Regex retrieval supports RE2 mode with explicit fail-fast errors when unavailable.
-5. Final answers include evidence provenance (note IDs and stage source).
-6. Existing basic non-regex use still works in rewrite mode.
-   - non-regex mode uses phrase atoms (and optional explicit tag atoms), not free keyword atoms.
-7. When active search context is non-empty, all retrieval and hydration are strictly limited to that universe.
-
-## 12. Risks and Mitigations
-- Risk: RE2 packaging issues on some environments.
-  - Mitigation: capability gate + clear startup diagnostics + phrase-only mode when regex mode is off.
-- Risk: full payload visibility increases memory usage.
-  - Mitigation: in-memory cap + optional persisted run logs + explicit payload size telemetry.
-- Risk: rewrite destabilizes existing flow.
-  - Mitigation: keep legacy mode switch until rewrite parity is validated.
-
-## 13. Open Decisions Needed Before Implementation
-1. Default rewrite mode toggle name (`rewrite`, `regex-first`, etc.).
-2. Maximum batch size for `get_notes_batch`.
-3. Whether regex pass should run before phrase pass or after phrase pass by default.
-4. Whether context target for regex defaults to `content_text` or `both`.
-5. Canonical source for active search context in client run payload (UI field vs fetched from server tab state).
-
-## 14. Definition of Done
-- All acceptance criteria met.
-- New tests merged and passing.
-- Legacy mode retained behind explicit switch for one transition cycle.
-- Documentation updated for new tools, pipeline stages, and transparency controls.
+## 9. Deferred v2+ Items
+- Paging over additional context windows.
+- Citation/reference system with clickable note refs.
+- Optional note IDs in prompt (only when citations are introduced).
+- Additional retrieval tools and agentic multi-query loops (if reintroduced later by explicit decision).
