@@ -40,6 +40,7 @@ _DEFAULT_OLLAMA_AUTOSTART = True
 _DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS = 20
 _DEFAULT_OLLAMA_AUTOPULL = True
 _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = 30
+_DEFAULT_OLLAMA_TEMPERATURE = 0.0
 _MAX_INVALID_DECISION_REPAIRS = 2
 _OLLAMA_CHAT_TIMEOUT_SECONDS = 180
 _DEFAULT_PLANNER_SEED_TAG_LIMIT = 50
@@ -1414,6 +1415,7 @@ def _ollama_chat_json(*, ollama_chat_url: str, model: str, messages: List[dict])
         "model": model,
         "stream": False,
         "format": "json",
+        "options": {"temperature": _DEFAULT_OLLAMA_TEMPERATURE},
         "messages": messages,
     }
     response = _post_json(
@@ -1454,6 +1456,7 @@ def _ollama_chat_json_with_raw(
         "model": model,
         "stream": False,
         "format": "json",
+        "options": {"temperature": _DEFAULT_OLLAMA_TEMPERATURE},
         "messages": messages,
     }
     response = _post_json(
@@ -1493,6 +1496,7 @@ def _ollama_chat_text(
     payload = {
         "model": model,
         "stream": False,
+        "options": {"temperature": _DEFAULT_OLLAMA_TEMPERATURE},
         "messages": messages,
     }
     response = _post_json(
@@ -2831,7 +2835,7 @@ def _normalize_expression_plan(
         if not isinstance(raw_type, str):
             continue
         normalized_type = raw_type.casefold().strip()
-        if normalized_type not in {"phrase", "regex", "near", "tag"}:
+        if normalized_type not in {"phrase", "regex", "near"}:
             continue
 
         normalized_expression: dict
@@ -2854,6 +2858,7 @@ def _normalize_expression_plan(
             pattern = raw_expression.get("pattern")
             if not isinstance(pattern, str) or pattern.strip() == "":
                 continue
+            pattern = pattern.replace("\x08", r"\b")
             if enforce_ascii_only and not pattern.isascii():
                 continue
             flags_value = raw_expression.get("flags", "")
@@ -2905,20 +2910,6 @@ def _normalize_expression_plan(
                 [left_normalized.casefold(), right_normalized.casefold()]
             )
             dedupe_key = ("near", ordered_pair[0], ordered_pair[1], window_chars)
-        else:
-            tag_value = raw_expression.get("value")
-            if enforce_ascii_only and isinstance(tag_value, str) and not tag_value.isascii():
-                continue
-            try:
-                normalized_tag = _normalize_tag_atom(value=tag_value)
-            except ValueError:
-                continue
-            normalized_expression = {
-                "type": "tag",
-                "value": normalized_tag,
-            }
-            dedupe_key = ("tag", normalized_tag)
-
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
@@ -3048,12 +3039,36 @@ def _compile_near_regex_pattern(*, left: str, right: str, window_chars: int) -> 
     if window_chars < 1:
         raise ValueError("window_chars must be > 0")
 
-    def _phrase_to_regex_tokens(phrase: str) -> str:
+    def _single_phrase_to_regex_tokens(phrase: str) -> str:
         escaped = re.escape(phrase)
         return re.sub(r"\\\s+", r"\\s+", escaped)
 
-    left_pattern = _phrase_to_regex_tokens(left)
-    right_pattern = _phrase_to_regex_tokens(right)
+    def _anchor_to_pattern(anchor: str) -> str:
+        raw_parts = anchor.split("|")
+        normalized_parts: List[str] = []
+        for raw_part in raw_parts:
+            part = re.sub(r"\s+", " ", raw_part).strip()
+            if part == "":
+                continue
+            if (
+                len(part) >= 2
+                and ((part.startswith('"') and part.endswith('"')) or (part.startswith("'") and part.endswith("'")))
+            ):
+                part = part[1:-1].strip()
+            if part == "":
+                continue
+            token_pattern = _single_phrase_to_regex_tokens(part)
+            if token_pattern == "":
+                continue
+            normalized_parts.append(token_pattern)
+        if len(normalized_parts) == 0:
+            raise ValueError("near anchor must include at least one non-empty phrase")
+        if len(normalized_parts) == 1:
+            return normalized_parts[0]
+        return "(?:" + "|".join(normalized_parts) + ")"
+
+    left_pattern = _anchor_to_pattern(left)
+    right_pattern = _anchor_to_pattern(right)
     window = str(window_chars)
     return (
         "(?:"
@@ -3293,43 +3308,63 @@ def _build_rewrite_expression_plan_messages(
         source_message=user_message,
         max_terms=8,
     )
+    question_lower = user_message.casefold()
+    likely_structured_value = (
+        ("number" in question_lower)
+        or ("date" in question_lower)
+        or ("birth" in question_lower)
+        or ("ssn" in question_lower)
+        or ("identifier" in question_lower)
+        or (" id" in (" " + question_lower))
+        or ("phone" in question_lower)
+        or ("account" in question_lower)
+        or ("code" in question_lower)
+    )
+    likely_event_time_query = (
+        ("when" in question_lower)
+        and (
+            ("last" in question_lower)
+            or ("most recent" in question_lower)
+            or ("recently" in question_lower)
+        )
+    )
+    structured_hint_text = "yes" if likely_structured_value else "no"
+    event_time_hint_text = "yes" if likely_event_time_query else "no"
     system_prompt = "\n".join(
         [
             "You are a MetaList retrieval planner for one loop iteration.",
-            "Choose the next retrieval expressions to execute.",
+            "Pick the next text-search expressions to execute.",
             "",
-            "Execution model:",
-            "- The loop may run multiple iterations.",
-            "- Your returned expressions are executed in the same order you provide.",
-            "- Keep only the best next queries for this iteration.",
-            "- You may return an empty expressions list when no new query is useful.",
+            "Context:",
+            "- User question: " + user_message,
+            "- Notes are hierarchical; context_text includes ancestor + current note text.",
+            "- Prior query history and prior evidence are provided below.",
+            "- likely_structured_value: " + structured_hint_text,
+            "- likely_event_time_query: " + event_time_hint_text,
             "",
-            "Data model:",
-            "- Notes are hierarchical (parent/child trees).",
-            "- Retrieval can search content_text and context_text (ancestor + current note text).",
-            "- Prior results and query history are provided in the user payload.",
+            "What to do:",
+            "- Return best-first queries for this iteration (most likely hit first).",
+            "- Do not repeat anything already in executed_query_history.",
+            "- Use the same language/script as the user question.",
             "",
-            "Allowed expression types only: phrase, regex, near, tag.",
-            "Use tag only when the user intent is explicitly tag-like.",
-            "Do not repeat any query already present in executed_query_history.",
-            "Use the same language/script as the user query unless the user query itself is multilingual.",
-            "Anchor coverage guidance:",
-            "- Use query_anchor_terms from the user payload as primary semantic anchors.",
-            "- Keep core anchors from the user question (person/entity terms + target concept terms).",
-            "- For multi-anchor questions, put a combined expression first (for example a near expression), then broaden with single-anchor expressions.",
-            "- Prefer combined-anchor expressions early when they improve precision.",
-            "- Avoid single-anchor-only plans when multi-anchor intent is clear.",
-            "- near is useful when anchors may be split across nearby text or parent/child context.",
-            "- Use obvious lexical variants only; do not invent abbreviations/acronyms not present in query or evidence.",
-            "Regex guidance:",
-            "- Regex is best for concrete value shapes (dates, IDs, formatted numbers).",
-            "- Avoid regex that encode guessed shorthand without structural value shape.",
-            "- Mixed plans are valid: phrase anchors + standalone value-shape regex + optional proximity expression.",
-            "For structured-value requests (identifiers, account numbers, dates, codes), regex is often high-yield.",
-            "When useful, try a standalone value-shape regex early in the list.",
+            "Allowed expression types only: phrase, regex, near.",
+            "How to choose expressions:",
+            "- Start from the key words in the question.",
+            "- Phrase queries should look like realistic note text chunks, not copied question wording.",
+            "- Avoid conversational framing words in phrases (for example: when, did, I, my, last) unless they are likely literal note text.",
+            "- For multi-term intent, include one near expression early.",
+            "- near supports simple alternatives with | (example: dad|father).",
+            "- If likely_structured_value is yes, include a value-shape regex in the first 2 expressions.",
+            "- For structured searches, combine nearby text intent with value-shape regexes (do both).",
+            "- Keep regex practical for real notes (separator variants, spacing variants).",
+            "- Example structured regex shape: \\b\\d{3}[- ]?\\d{2}[- ]?\\d{4}\\b for 3-2-4 numeric identifiers.",
+            "- For event-time questions (for example: when did I last ...), do NOT use a broad standalone date-only regex as a first-pass query.",
+            "- For event-time questions, tie date regex to person/activity terms, or prioritize person/activity expressions before date regex.",
+            "- Avoid full-sentence phrase queries unless the user gave an exact quote.",
+            "- Avoid unrelated expansions.",
             "",
             "Return ONLY JSON with exact shape:",
-            '{"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200},{"type":"tag","value":"tag-name"}]}',
+            '{"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200}]}',
             "Maximum expressions per iteration: " + str(max_expressions) + ".",
         ]
     )
@@ -3373,21 +3408,23 @@ def _build_rewrite_expression_plan_repair_messages(
             "Keep valid high-signal expressions from the prior plan and improve coverage.",
             "",
             "Rules:",
-            "- Use expression types only: phrase, regex, near, tag.",
-            "- Keep expressions ordered best-first (high signal first, broader later).",
-            "- Prefer simple realistic anchors over complex brittle patterns.",
-            "- Regex is optional; add when it improves structured-format recall.",
-            "- near is optional; add when multi-anchor proximity is useful.",
+            "- Use expression types only: phrase, regex, near.",
+            "- Keep expressions ordered best-first (high signal first).",
+            "- Prefer simple realistic queries over brittle patterns.",
+            "- Use near when multi-term proximity is useful.",
+            "- near supports simple alternatives with | in left/right.",
             "- Use the same language/script as the query.",
-            "- Use query_anchor_terms from the user payload as primary semantic anchors.",
-            "- Preserve core anchors from the query before broadening.",
-            "- For multi-anchor questions, put a combined expression first and single-anchor expansions later.",
-            "- Avoid invented abbreviations/acronyms not present in query or evidence.",
-            "- Mixed plans are valid: phrase anchor + standalone value regex + optional proximity expression.",
-            "- For structured-value requests, consider adding a standalone value-shape regex early.",
+            "- Preserve the key words from the user query before broadening.",
+            "- Phrase queries should look like realistic note text chunks, not copied question wording.",
+            "- Avoid conversational framing words in phrases (for example: when, did, I, my, last) unless they are likely literal note text.",
+            "- For multi-term questions, put one combined expression first.",
+            "- If question target is structured (date/phone/identifier/code), include a practical value-shape regex early.",
+            "- Example structured regex shape: \\b\\d{3}[- ]?\\d{2}[- ]?\\d{4}\\b for 3-2-4 numeric identifiers.",
+            "- For event-time questions, avoid broad standalone date-only regex in early repairs.",
+            "- Avoid phrase-only repairs when structured value retrieval is likely.",
             "",
             "Output contract:",
-            '- Return ONLY JSON with this exact shape: {"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200},{"type":"tag","value":"tag-name"}]}.',
+            '- Return ONLY JSON with this exact shape: {"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200}]}.',
             "- Produce up to "
             + str(target_expressions)
             + " expressions for this pass (maximum "
@@ -3896,7 +3933,7 @@ def _build_rewrite_relevance_filter_messages(
 
     prompt_lines: List[str] = [
         "You are the MetaList evidence relevance filter.",
-        "Your task is ONLY to pick which candidate note snippets are relevant to the user question.",
+        "Your task is ONLY to pick which candidate note contexts are relevant to the user question.",
         "Do NOT answer the user question yet.",
         "",
         "User question:",
@@ -3912,13 +3949,13 @@ def _build_rewrite_relevance_filter_messages(
         "Executed queries this iteration:",
         *(query_summary_lines if len(query_summary_lines) > 0 else ["- none"]),
         "",
-        "Candidate note snippets (one per note):",
+        "Candidate note contexts (one per note):",
         *(candidate_lines if len(candidate_lines) > 0 else ["- none"]),
         "",
         "Output format:",
         "- Return plain text only (not JSON).",
-        "- Return only relevant snippets, one snippet per line.",
-        "- Copy each selected snippet exactly from the candidate list when possible.",
+        "- Return only relevant contexts, one context per line.",
+        "- Copy each selected context exactly from the candidate list when possible.",
         "- If nothing is relevant, return exactly: NONE",
     ]
     return [
@@ -4612,6 +4649,7 @@ def _run_rewrite_request(
                     "preview_text": entry.get("preview_text", ""),
                     "content_text": entry.get("content_text", ""),
                     "context_text": entry_context_no_descendants,
+                    "ancestor_texts": entry.get("ancestor_texts", []),
                     "tag_terms": entry.get("tag_terms", []),
                     "effective_tag_terms": entry.get("effective_tag_terms", []),
                     "matches": [],
@@ -4654,6 +4692,8 @@ def _run_rewrite_request(
                 existing_evidence["tag_terms"] = entry["tag_terms"]
             if isinstance(entry.get("effective_tag_terms"), list):
                 existing_evidence["effective_tag_terms"] = entry["effective_tag_terms"]
+            if isinstance(entry.get("ancestor_texts"), list):
+                existing_evidence["ancestor_texts"] = entry["ancestor_texts"]
             existing_matches = existing_evidence.get("matches")
             if not isinstance(existing_matches, list):
                 existing_matches = []
@@ -6093,20 +6133,25 @@ def _web_html(
       }}
       if (action === "loop_iteration" && step.model_payload && typeof step.model_payload === "object") {{
         const payload = step.model_payload;
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        const phase = stats && typeof stats.phase === "string" ? stats.phase : "";
+        if (phase === "planning_prompt" && Array.isArray(payload.planner_prompt_messages)) {{
+          return payload.planner_prompt_messages.filter((entry) => entry && typeof entry === "object");
+        }}
+        if (phase === "relevance_prompt" && Array.isArray(payload.relevance_prompt_messages)) {{
+          return payload.relevance_prompt_messages.filter((entry) => entry && typeof entry === "object");
+        }}
+        if (phase === "decision_prompt" && Array.isArray(payload.decision_prompt_messages)) {{
+          return payload.decision_prompt_messages.filter((entry) => entry && typeof entry === "object");
+        }}
         const combined = [];
         if (Array.isArray(payload.planner_prompt_messages)) {{
           combined.push(...payload.planner_prompt_messages.filter((entry) => entry && typeof entry === "object"));
         }}
         if (Array.isArray(payload.relevance_prompt_messages)) {{
-          if (combined.length > 0) {{
-            combined.push({{ role: "meta", content: "--- relevance prompt ---" }});
-          }}
           combined.push(...payload.relevance_prompt_messages.filter((entry) => entry && typeof entry === "object"));
         }}
         if (Array.isArray(payload.decision_prompt_messages)) {{
-          if (combined.length > 0) {{
-            combined.push({{ role: "meta", content: "--- decision prompt ---" }});
-          }}
           combined.push(...payload.decision_prompt_messages.filter((entry) => entry && typeof entry === "object"));
         }}
         if (combined.length > 0) {{
