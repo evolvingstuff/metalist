@@ -1,145 +1,298 @@
-# PLAN.md — Phase 1 Read-Only MCP (with agentic web client)
+# PLAN.md — MCP Client Rewrite (Regex/Phrase-First, Fully Transparent, List-Based)
 
 ## 0. Goal
-- Add a production-safe **Phase 1 MCP server** that is:
-  - read-only
-  - local stdio transport first
-  - aligned to existing MetaList auth/encryption/runtime constraints
-- Keep implementation structured so MCP-over-HTTP can be added later without rewriting tool logic.
+Replace the current MCP client flow with a new architecture optimized for:
+- content retrieval first (quoted phrases + regex), not tag-guessing first
+- safe regex execution (RE2 option)
+- complete operator visibility into every LLM prompt/query/tool call
+- list-based note processing with preserved ordering (bulk operations), no N-per-note hydration loops
 
-## 1. Scope (Phase 1 only)
+This is a rewrite, not an incremental patch to the existing planner/tag pipeline.
+
+## 1. Hard Requirements (Non-Negotiable)
+1. Full transparency in UI (with hide/show controls):
+   - every model prompt message
+   - every tool call argument payload
+   - every tool response payload
+   - every intermediate generated query/pattern
+   - raw model output
+2. No hidden defaults that change behavior silently:
+   - all behavior-driving parameters must be explicitly surfaced in UI/config and echoed in run metadata
+   - any omitted value must fail fast or use an explicitly named profile
+3. List-based note operations with preserved ordering:
+   - do not fetch note details one-by-one for large result sets
+   - use bulk hydration APIs/tools for note content/context retrieval
+   - preserve deterministic ranking/order through retrieval, merge, hydration, and synthesis
+4. Regex-first retrieval must support a safe engine option:
+   - RE2-backed execution path for user/model-proposed regex patterns
+5. Deterministic retrieval before synthesis:
+   - model summarizes evidence after retrieval, not before
+6. Search-context universe boundary:
+   - if user has an active search context, it is the strict universe for the entire run
+   - all MCP retrieval/hydration must be constrained to that context
+   - if no active search context exists, universe is all notes
+
+## 2. Scope
 
 ### In scope
-- MCP stdio server entrypoint.
-- MCP HTTP JSON-RPC endpoint mounted in the FastAPI app.
-- Runnable local MCP client script for manual testing.
-- Agentic web app mode in `mcp_client.py` (separate port) that can make multi-step tool calls.
-- Ollama integration for reasoning/agent loops in web mode.
-- Read-only tools for note retrieval and search.
-- Clear locked/unavailable behavior when note data is not hydrated.
-- Documentation for setup, tool catalog, and security posture.
-- Automated tests for tool handlers and permission boundaries.
+- New client pipeline and UI telemetry model.
+- New MCP tool contracts for bulk retrieval and regex search.
+- Query planner redesign around lexical evidence (phrases/regex) with optional explicit tag atoms.
+- Prompt/trace instrumentation with zero truncation in stored run data.
+- Performance-safe result set handling for hundreds/thousands of hits.
+- Migration path from old client logic to new client logic.
 
-### Out of scope (explicitly later)
-- Proposal flow.
-- Append or any write operations.
-- Patch application.
+### Out of scope
+- Note mutation/write actions.
+- Ontology/tag management redesign.
+- Multi-user auth or cloud deployment concerns.
 
-## 2. Design decisions for this phase
+## 3. Current Pain Points to Eliminate
+- Tag-first guessing causes irrelevant expansions and brittle matching.
+- Hidden/truncated prompts and payloads reduce debuggability.
+- Planner behavior includes implicit assumptions/defaults that are hard to audit.
+- Per-note follow-up calls do not scale for large result sets.
 
-### Transport
-- **stdio + app-integrated HTTP** in Phase 1.
-- HTTP transport lives at `POST /api2/mcp` and starts with `python main.py`.
+## 4. Target Retrieval Architecture
 
-### Capability surface
-- Expose read-only tools only.
-- No mutation endpoints or hidden write side-effects.
+### 4.1 Pipeline stages
+Stage 0 — Config snapshot (deterministic)
+- capture and display every active setting used for this run
+- persist in run log and UI “Run Config” panel
+- capture `active_search_context_query` and derived `universe_mode`:
+  - `scoped` when query is non-empty
+  - `global` when query is empty
 
-### Architecture boundary (to avoid rewrite later)
-- Split MCP code into:
-  - transport adapter (`stdio`)
-  - transport-agnostic tool handlers (core)
-  - shared guards/policy checks
-- Future HTTP transport reuses the same core handlers.
+Stage 0.5 — Universe resolution (deterministic)
+- resolve the run universe from `active_search_context_query`
+- materialize ordered `universe_note_ids`
+- all later stages must execute within `universe_note_ids` only
+- no stage may expand beyond universe
 
-## 3. Proposed tool set (v1 read-only)
-- `health_check()`
-  - returns server/version/ready state.
-- `get_note(note_id)`
-  - returns canonical note payload plus full descendant subtree in one response:
-    - `note` object (id, parent/prev/next, content, timestamps)
-    - `tags` object with explicit tag provenance:
-      - `raw_tag_string` (stored tag bar string)
-      - `tag_terms` (normalized terms parsed directly from this note's tag bar)
-      - `implied_tag_terms` (ontology implication closure terms implied from effective base terms)
-      - `effective_tag_terms` (final normalized set used for retrieval/search context)
-    - `children` recursive array (same shape) so clients do not recurse with repeated calls.
-- `list_children(parent_id)`
-  - returns ordered child IDs for tree traversal (`parent_id=null` for roots).
-- `list_tags(prefix, limit)`
-  - returns known tags (optionally prefix-filtered) for discovery/autocomplete.
-- `search_notes(query, required_tags, forbidden_tags)`
-  - returns matching note IDs + compact metadata with explicit tag filters.
-  - supports `limit` and `offset`.
-  - returns count metadata:
-    - `total_matches` (all matches before paging)
-    - `returned_count` (rows in this response)
+Stage 1 — Query decomposition (LLM optional but fully visible)
+- convert user request into explicit retrieval atoms only:
+  - `phrase` atoms (quoted text terms)
+  - `regex` atoms (`/pattern/flags`)
+  - optional `tag` atoms (`tag:<term>` form only; `<term>` must be tag-like)
+- no generic keyword-term atom type is allowed in rewrite mode
+- output must be structured JSON; raw output retained
+- tag-like term policy:
+  - allowed pattern: `^[a-z0-9]+([._-][a-z0-9]+)*$`
+  - no implicit conversion of plain words into tag atoms
 
-Notes:
-- Tool arguments are strict and explicit.
-- Unknown note IDs fail loudly.
-- No implicit fallbacks.
+Stage 2 — Deterministic retrieval plan expansion
+- generate executable search operations from Stage 1 output
+- operations are explicit and bounded (limit, offset, max patterns)
 
-## 4. Implementation steps
+Stage 3 — Retrieval execution (list-oriented)
+- run bulk searches via MCP tools
+- collect ordered note-id lists + match metadata
+- merge/intersect/rank deterministically while preserving stable list order semantics (not per-note loops)
+- enforce intersection with `universe_note_ids` on every retrieval pass
 
-### Step A — MCP package scaffold
-- Add `app/mcp/` package with:
-  - `server.py` (stdio adapter bootstrap)
-  - `tools.py` (tool registration + schemas)
-  - `read_service.py` (transport-agnostic read handlers)
-  - `policy.py` (read-only guard surface)
-  - `errors.py` (explicit MCP-facing error mapping)
+Stage 4 — Bulk hydration
+- hydrate note payloads in batches from resolved ordered note-id lists
+- include only requested fields (content/context/tags/ancestors)
 
-### Step B — Read handlers over existing services
-- Reuse current in-memory sources:
-  - `app/services/note_store.py`
-  - `app/services/search_index.py`
-- Add readiness guard:
-  - if note store is not hydrated/loaded, fail with explicit "vault locked or not hydrated" error.
-- Ensure tag data is exposed in MCP responses:
-  - `get_note` includes raw vs implied vs effective tag fields
-  - tag-oriented tools return deterministic normalized tag values.
-- Implement subtree retrieval in `get_note`:
-  - include all descendants in-order in a single response
-  - keep depth-first traversal deterministic.
+Stage 5 — Evidence synthesis
+- LLM synthesizes from hydrated evidence
+- synthesis prompt and evidence IDs shown in UI
 
-### Step C — Stdio entrypoint + run command
-- Add a runnable entrypoint (module invocation) for local MCP clients.
-- Keep startup minimal and deterministic for local developer usage.
+### 4.2 Search strategy order
+1. phrase exact matches
+2. regex matches (RE2 mode if enabled)
+3. optional tag-atom filtering/narrowing only when tag atoms are explicitly present
 
-### Step C.1 — HTTP endpoint + local client
-- Mount JSON-RPC MCP route in FastAPI under `/api2/mcp`.
-- Add `mcp_client.py` for tool calls without raw stdin JSON typing.
-- Add `mcp_client.py web` mode to serve a browser UI and show an openable localhost link.
-- Add agent loop that can call MCP tools multiple times per user request.
+## 5. MCP Tool Contract Changes
 
-### Step D — Documentation
-- Create `docs/mcp_tools.md` (tool contracts + examples + failure modes).
-- Update `README.md` with a short MCP section and run instructions.
-- Update `docs/README.md` index with MCP docs links.
+### 5.1 Add `search_notes_regex`
+Purpose:
+- execute regex against note plaintext/context at scale
 
-### Step E — Tests
-- Add unit tests for:
-  - `get_note` success/fail
-  - `get_note` returns complete subtree for parent notes
-  - `get_note` includes structured tag provenance (`tag_terms`, `implied_tag_terms`, `effective_tag_terms`)
-  - `get_note` tag sets remain deterministic and deduplicated
-  - `list_children` ordering/root behavior
-  - `list_tags` discovery/prefix behavior
-  - `search_notes` query + tag-filter behavior
-  - `search_notes` count metadata and paging behavior (`total_matches`, `returned_count`, `limit`, `offset`)
-  - readiness guard when store is not loaded
-  - strict read-only policy (no write tools exposed)
+Arguments:
+- `pattern` (string)
+- `flags` (string; allowed subset only)
+- `limit` (int)
+- `offset` (int)
+- `target` (enum: `content_text`, `context_text`, `both`)
 
-## 5. Security and policy requirements (Phase 1)
-- Read-only by construction:
-  - no tool that mutates notes/tags/links/settings.
-- Treat note text as untrusted content.
-- No secret logging in MCP error paths.
-- Error behavior remains fail-fast for internal invariants.
+Returns:
+- `total_matches`, `returned_count`
+- `results`: `note_id`, match spans/snippets, matched field
 
-## 6. Acceptance criteria
-- MCP stdio server starts locally and advertises only read-only tools.
-- Tools can read/search current notes when store is loaded.
-- `get_note` returns full descendant subtree in one call (no client recursion required).
-- `get_note` returns direct vs implied vs effective tag information for each returned note.
-- Tags are discoverable and usable as explicit search filters.
-- `search_notes` includes accurate total-vs-returned result counts for pagination.
-- Locked/unhydrated state returns explicit tool errors (not silent empty data).
-- Docs exist for tool catalog and local usage.
-- New tests pass.
+Rules:
+- validate pattern and flags strictly
+- fail fast on invalid/unsupported pattern
+- no silent fallback engine
+- require explicit scope input:
+  - either `scope_query` or `scope_note_ids` (preferred: `scope_note_ids` for deterministic bounded universe)
+- results must never include notes outside the provided scope
 
-## 7. Follow-up (Phase 2+)
-- Add proposal/write tools behind explicit approval/policy gates.
-- Expand/secure HTTP transport for non-local clients (authz scopes, rate limits, optional TLS termination).
-- Expand audit and quota controls for write-capable workflows.
+### 5.2 Add `get_notes_batch`
+Purpose:
+- fetch note details for many IDs in one call
+
+Arguments:
+- `note_ids` (array, deduped)
+- `include_content_text` (bool)
+- `include_context_text` (bool)
+- `include_tags` (bool)
+- `include_ancestors` (bool)
+
+Returns:
+- `total_requested`, `returned_count`, `not_found_ids`
+- `notes`: structured payload per note
+
+Rules:
+- hard cap per batch call (configurable and surfaced)
+- deterministic ordering by input ID order
+- if `scope_note_ids` is provided, reject/ignore IDs outside scope deterministically (must be surfaced in response)
+
+### 5.3 Keep existing `search_notes`
+- keep for backward compatibility and optional explicit tag-atom pass
+- stop forcing tag-centric planning behavior in client
+- when used in rewrite mode, it must be universe-scoped (never global unless user context is empty)
+
+## 6. RE2 Feasibility + Safety Plan
+- Add optional dependency: `google-re2` (or repo-approved equivalent).
+- Startup capability check:
+  - if regex mode selected and RE2 unavailable, fail run with explicit error.
+- Supported regex features documented; unsupported constructs rejected upfront.
+- Add guardrails:
+  - max pattern length
+  - max alternation count
+  - max execution candidate list size per pass
+
+## 7. UI/UX Plan (Transparency First)
+
+### 7.1 Trace panels (collapsible)
+For each stage card, always include:
+- `Prompt Messages` (full, untruncated)
+- `Tool Request` (full JSON)
+- `Tool Response` (full JSON)
+- `Derived Query Objects` (full JSON)
+
+### 7.2 Visibility controls
+- global toggles:
+  - show/hide prompts
+  - show/hide tool payloads
+  - show/hide raw JSON
+- export run trace as JSON file
+
+### 7.3 No truncation policy
+- UI may collapse sections visually
+- underlying stored payload must remain complete
+- do not mutate payload with `...[truncated]...`
+
+## 8. Performance Plan (List-Based)
+- Retrieval stages operate on ordered note-id lists and scored maps.
+- Hydration is chunked batch calls (e.g. 200 IDs/batch) not per-note calls.
+- Add per-stage metrics:
+  - candidate list length
+  - hydrated list length
+  - stage latency
+  - payload size
+
+## 9. Detailed Implementation Steps
+
+Step A — Freeze and isolate old path
+- keep old client path behind `legacy` mode switch
+- add `rewrite` mode scaffold and route all new work there
+
+Step B — Data contracts
+- define strict Pydantic models for:
+  - stage outputs
+  - trace events
+  - retrieval requests/responses
+- remove implicit defaults from run payload model
+- include explicit universe fields in run payload:
+  - `active_search_context_query`
+  - `universe_mode`
+  - `universe_note_count`
+
+Step C — MCP tool additions
+- implement `search_notes_regex`
+- implement `get_notes_batch`
+- add schema docs and validation tests
+
+Step D — Rewrite core pipeline engine
+- implement deterministic stage runner
+- each stage outputs typed artifact + trace entry
+- enforce max-depth/step bounds explicitly
+- enforce universe boundary at a single shared gate used by every retrieval tool adapter
+
+Step E — Rewrite web UI integration
+- consume stage stream events
+- render collapsible full-payload trace panels
+- add run-config snapshot + export JSON
+
+Step F — LLM prompt redesign
+- prompt focuses only on retrieval intent extraction and synthesis
+- no hidden seed heuristics
+- all prompt messages surfaced in UI
+- planner output schema in rewrite mode allows only `phrase`, `regex`, and optional explicit `tag:<term>` atoms
+
+Step G — Ranking and synthesis
+- rank hydrated notes by lexical evidence
+- feed bounded top-K evidence into synthesis prompt
+- preserve provenance IDs in final answer metadata
+
+Step H — Regression cleanup
+- remove old tag-planner-specific code path after parity checks
+- keep compatibility flag for one transition cycle
+
+## 10. Testing Plan
+
+### Unit tests
+- regex validation, engine availability errors, invalid flag handling
+- batch hydration behavior (stable ordering, deterministic dedupe, not-found handling)
+- no-truncation trace persistence
+- deterministic stage outputs
+
+### Integration tests
+- end-to-end query:
+  - “what is my dad’s birthday?”
+  - verify phrase/regex passes produce expected candidates
+  - verify bulk hydration call count stays bounded (not N-per-note)
+- large result set test (>=300 notes)
+  - confirm no per-note hydration loop
+- scoped-universe test:
+  - set active search context (example: `work-journal -private -@password`)
+  - verify every returned note ID is within scoped universe
+  - verify out-of-scope matches are excluded even if phrase/regex would match globally
+
+### UI tests
+- trace panel show/hide toggles
+- prompt/tool payload visibility
+- exported JSON contains full payloads
+
+## 11. Acceptance Criteria
+1. A full run can be audited end-to-end from UI without hidden prompt/query behavior.
+2. No payload truncation markers are introduced in stored trace artifacts.
+3. For large result sets, hydration uses ordered batched MCP calls, not one call per note.
+4. Regex retrieval supports RE2 mode with explicit fail-fast errors when unavailable.
+5. Final answers include evidence provenance (note IDs and stage source).
+6. Existing basic non-regex use still works in rewrite mode.
+   - non-regex mode uses phrase atoms (and optional explicit tag atoms), not free keyword atoms.
+7. When active search context is non-empty, all retrieval and hydration are strictly limited to that universe.
+
+## 12. Risks and Mitigations
+- Risk: RE2 packaging issues on some environments.
+  - Mitigation: capability gate + clear startup diagnostics + phrase-only mode when regex mode is off.
+- Risk: full payload visibility increases memory usage.
+  - Mitigation: in-memory cap + optional persisted run logs + explicit payload size telemetry.
+- Risk: rewrite destabilizes existing flow.
+  - Mitigation: keep legacy mode switch until rewrite parity is validated.
+
+## 13. Open Decisions Needed Before Implementation
+1. Default rewrite mode toggle name (`rewrite`, `regex-first`, etc.).
+2. Maximum batch size for `get_notes_batch`.
+3. Whether regex pass should run before phrase pass or after phrase pass by default.
+4. Whether context target for regex defaults to `content_text` or `both`.
+5. Canonical source for active search context in client run payload (UI field vs fetched from server tab state).
+
+## 14. Definition of Done
+- All acceptance criteria met.
+- New tests merged and passing.
+- Legacy mode retained behind explicit switch for one transition cycle.
+- Documentation updated for new tools, pipeline stages, and transparency controls.
