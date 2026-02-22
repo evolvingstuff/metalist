@@ -30,6 +30,7 @@ This is a rewrite from scratch, kept as a separate app for now.
 15. Preserve hierarchy in context payload with indentation.
 16. Redacted branches are omitted silently (no `[redacted]` markers).
 17. Include searchable plain text only; do not send raw HTML or image/binary payload data.
+18. For each assistant response, provide an inspectable side-panel prompt view showing the exact model input payload for that specific response.
 
 ## 2. v1 Scope
 
@@ -115,6 +116,10 @@ Note content num one blah blah blah
 - Full context window payload sent to model (line-wrapped).
 - Conversation payload sent to model.
 - Raw model response.
+- Per-response prompt inspector:
+  - one inspector per assistant turn
+  - pinned beside the chat thread when screen width allows
+  - shows the exact composed model input for that response, unchanged
 
 No truncation markers like `...[truncated ...]...` in stored payloads.
 
