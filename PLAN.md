@@ -25,6 +25,11 @@ This is a rewrite from scratch, kept as a separate app for now.
     - user messages right-aligned
     - assistant messages left-aligned
     - bubble-style rendering similar to common phone messaging UX
+13. Include tags in model context, but only direct `raw_tags` for each note/node.
+14. Do not include inherited or inferred tags in model context.
+15. Preserve hierarchy in context payload with indentation.
+16. Redacted branches are omitted silently (no `[redacted]` markers).
+17. Include searchable plain text only; do not send raw HTML or image/binary payload data.
 
 ## 2. v1 Scope
 
@@ -56,6 +61,13 @@ This is a rewrite from scratch, kept as a separate app for now.
 - Take notes in existing order.
 - Serialize text payload only (no IDs in v1).
 - Include hierarchical context based on redaction export behavior (ancestors + descendants).
+- Render context text as an indented tree so hierarchy is explicit.
+- For each included node/note, include direct `raw_tags` on a separate line when present.
+- Exclude inherited/implied tags.
+- Use plain searchable text extraction only:
+  - strip/omit raw HTML markup
+  - exclude image data payloads/binary blobs
+- Omit redacted nodes/branches entirely without explicit redaction markers.
 - Stop when token/char budget reached.
 - Record:
   - total notes in universe
@@ -71,6 +83,15 @@ This is a rewrite from scratch, kept as a separate app for now.
   - context window content
   - conversation history
 - Return plain text only.
+
+Example context formatting target:
+```
+Note content num one blah blah blah
+# foo bar baz
+
+    Note content num two yada yada
+    # asdf yada
+```
 
 ## 3.4 Low-Confidence Handling
 - If model indicates uncertainty:
