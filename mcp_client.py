@@ -41,6 +41,7 @@ _DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS = 20
 _DEFAULT_OLLAMA_AUTOPULL = True
 _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = 30
 _DEFAULT_OLLAMA_TEMPERATURE = 0.0
+_PLANNER_MAX_PHRASE_TOKENS = 2
 _MAX_INVALID_DECISION_REPAIRS = 2
 _OLLAMA_CHAT_TIMEOUT_SECONDS = 180
 _DEFAULT_PLANNER_SEED_TAG_LIMIT = 50
@@ -2847,6 +2848,8 @@ def _normalize_expression_plan(
             normalized_value = re.sub(r"\s+", " ", value).strip()
             if normalized_value == "":
                 continue
+            if _phrase_token_count(value=normalized_value) > _PLANNER_MAX_PHRASE_TOKENS:
+                continue
             if enforce_ascii_only and not normalized_value.isascii():
                 continue
             normalized_expression = {
@@ -3351,6 +3354,7 @@ def _build_rewrite_expression_plan_messages(
             "How to choose expressions:",
             "- Start from the key words in the question.",
             "- Phrase queries should look like realistic note text chunks, not copied question wording.",
+            "- Phrase queries must be short: 1-2 words only.",
             "- Avoid conversational framing words in phrases (for example: when, did, I, my, last) unless they are likely literal note text.",
             "- For multi-term intent, include one near expression early.",
             "- near supports simple alternatives with | (example: dad|father).",
@@ -3416,6 +3420,7 @@ def _build_rewrite_expression_plan_repair_messages(
             "- Use the same language/script as the query.",
             "- Preserve the key words from the user query before broadening.",
             "- Phrase queries should look like realistic note text chunks, not copied question wording.",
+            "- Phrase queries must be short: 1-2 words only.",
             "- Avoid conversational framing words in phrases (for example: when, did, I, my, last) unless they are likely literal note text.",
             "- For multi-term questions, put one combined expression first.",
             "- If question target is structured (date/phone/identifier/code), include a practical value-shape regex early.",
