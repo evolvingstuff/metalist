@@ -31,6 +31,18 @@ This is a rewrite, not an incremental patch to the existing planner/tag pipeline
    - if user has an active search context, it is the strict universe for the entire run
    - all MCP retrieval/hydration must be constrained to that context
    - if no active search context exists, universe is all notes
+7. No query-specific logic or domain-specific answer extractors:
+   - never add code paths specialized to a single question pattern (for example, birthday-only extractors)
+   - never add deterministic “workaround” logic that bypasses general retrieval+synthesis behavior
+   - fixes must generalize across arbitrary user questions and note domains
+   - if a trivial question fails, treat it as a core pipeline defect (planner quality, retrieval quality, ranking, or synthesis), not as an exception case
+8. No fallback retrieval generation:
+   - do not auto-generate heuristic fallback expressions from raw user text when planner output fails validation
+   - if model planning is insufficient, surface explicit planning failure with full trace instead of silent fallback behavior
+   - if partial model output exists, use only that model output (with transparent status), never hidden deterministic substitutes
+9. No hard minimum expression quota:
+   - do not require a fixed minimum number of planner expressions
+   - planner may return any count up to configured maximum; execution proceeds with model-proposed set only
 
 ## 2. Scope
 
@@ -46,12 +58,15 @@ This is a rewrite, not an incremental patch to the existing planner/tag pipeline
 - Note mutation/write actions.
 - Ontology/tag management redesign.
 - Multi-user auth or cloud deployment concerns.
+- Query-specific hardcoded inference modules.
 
 ## 3. Current Pain Points to Eliminate
 - Tag-first guessing causes irrelevant expansions and brittle matching.
 - Hidden/truncated prompts and payloads reduce debuggability.
 - Planner behavior includes implicit assumptions/defaults that are hard to audit.
 - Per-note follow-up calls do not scale for large result sets.
+- Trivial factual questions fail despite retrieved evidence being present.
+- “Patch-by-exception” fixes that hide core retrieval/synthesis weaknesses.
 
 ## 4. Target Retrieval Architecture
 
@@ -236,6 +251,7 @@ Step G — Ranking and synthesis
 - rank hydrated notes by lexical evidence
 - feed bounded top-K evidence into synthesis prompt
 - preserve provenance IDs in final answer metadata
+- do not add question-specific extraction shortcuts; improve generic evidence selection and reasoning fidelity instead
 
 Step H — Regression cleanup
 - remove old tag-planner-specific code path after parity checks

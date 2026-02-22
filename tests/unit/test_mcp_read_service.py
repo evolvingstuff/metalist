@@ -402,6 +402,99 @@ def test_search_notes_regex_ids_empty_scope_defaults_to_global_order(
     assert payload["note_ids"] == ["root", "child"]
 
 
+def test_search_notes_regex_ids_matches_unicode_digit_dash_variants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 2, 15, 12, 0, 0, tzinfo=timezone.utc)
+    records = {
+        "n1": _FakeNoteRecord(
+            id="n1",
+            parent_id=None,
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<p>ID １２３‑４５‑６７８９</p>",
+            tags="id",
+            tag_terms=frozenset({"id"}),
+            non_meta_tag_terms=frozenset({"id"}),
+            created_at=now,
+            updated_at=now,
+        ),
+    }
+    fake_store = _FakeNoteStore(
+        loaded=True,
+        records=records,
+        children_by_parent={None: ["n1"], "n1": []},
+        inherited_non_meta_by_note={"n1": frozenset()},
+    )
+    fake_index = _FakeSearchIndex(frequencies={"id": 1}, query_results={})
+    monkeypatch.setattr(read_service_module, "note_store", fake_store)
+    monkeypatch.setattr(read_service_module, "search_index", fake_index)
+    monkeypatch.setattr(read_service_module, "get_ontology", lambda: _FakeOntology())
+
+    service = ReadService()
+    payload = service.search_notes_regex_ids(
+        pattern="[0-9]{3}-[0-9]{2}-[0-9]{4}",
+        flags="ims",
+        regex_engine="python-re",
+        target="both",
+        scope_note_ids=["n1"],
+        limit=10,
+        offset=0,
+    )
+
+    assert payload["total_matches"] == 1
+    assert payload["note_ids"] == ["n1"]
+
+
+def test_search_notes_regex_reports_normalized_text_match_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 2, 15, 12, 0, 0, tzinfo=timezone.utc)
+    records = {
+        "n1": _FakeNoteRecord(
+            id="n1",
+            parent_id=None,
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<p>ID １２３‑４５‑６７８９</p>",
+            tags="id",
+            tag_terms=frozenset({"id"}),
+            non_meta_tag_terms=frozenset({"id"}),
+            created_at=now,
+            updated_at=now,
+        ),
+    }
+    fake_store = _FakeNoteStore(
+        loaded=True,
+        records=records,
+        children_by_parent={None: ["n1"], "n1": []},
+        inherited_non_meta_by_note={"n1": frozenset()},
+    )
+    fake_index = _FakeSearchIndex(frequencies={"id": 1}, query_results={})
+    monkeypatch.setattr(read_service_module, "note_store", fake_store)
+    monkeypatch.setattr(read_service_module, "search_index", fake_index)
+    monkeypatch.setattr(read_service_module, "get_ontology", lambda: _FakeOntology())
+
+    service = ReadService()
+    payload = service.search_notes_regex(
+        pattern="[0-9]{3}-[0-9]{2}-[0-9]{4}",
+        flags="ims",
+        regex_engine="python-re",
+        target="both",
+        scope_note_ids=["n1"],
+        limit=10,
+        offset=0,
+    )
+
+    assert payload["total_matches"] == 1
+    results = payload["results"]
+    assert len(results) == 1
+    matches = results[0]["matches"]
+    assert any(match["normalized_text_match"] is True for match in matches)
+
+
 def test_get_notes_batch_returns_order_and_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fakes(monkeypatch, loaded=True)
     service = ReadService()
@@ -412,6 +505,7 @@ def test_get_notes_batch_returns_order_and_not_found(monkeypatch: pytest.MonkeyP
         include_context_text=True,
         include_tags=True,
         include_ancestors=True,
+        include_descendants=True,
     )
 
     assert payload["total_requested"] == 3
@@ -420,5 +514,6 @@ def test_get_notes_batch_returns_order_and_not_found(monkeypatch: pytest.MonkeyP
     notes = payload["notes"]
     assert [entry["note_id"] for entry in notes] == ["child", "root"]
     assert notes[0]["ancestor_note_ids"] == ["root"]
+    assert notes[1]["descendant_note_ids"] == ["child"]
     assert "context_text" in notes[0]
     assert "tags" in notes[0]

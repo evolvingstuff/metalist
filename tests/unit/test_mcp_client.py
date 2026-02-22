@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import mcp_client
+import pytest
 
 
 def test_agent_error_action_returns_structured_failure(monkeypatch) -> None:
@@ -233,6 +235,176 @@ def test_normalize_query_hypothesis_allows_up_to_24_tags() -> None:
     assert len(normalized["hypothesized_tags"]) == 24
     assert normalized["hypothesized_tags"][0] == "tag-1"
     assert normalized["hypothesized_tags"][-1] == "tag-24"
+
+
+def test_normalize_expression_plan_filters_cross_language_when_query_is_ascii() -> None:
+    payload = {
+        "reasoning": "Try variants",
+        "expressions": [
+            {"type": "phrase", "value": "social security number"},
+            {"type": "phrase", "value": "社会保障号码"},
+            {"type": "regex", "pattern": "[0-9]{3}-[0-9]{2}-[0-9]{4}", "flags": "ims"},
+            {"type": "regex", "pattern": "社会保障", "flags": "ims"},
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="What is my social security number?",
+    )
+
+    assert normalized["expressions"] == [
+        {"type": "phrase", "value": "social security number"},
+        {"type": "regex", "pattern": "[0-9]{3}-[0-9]{2}-[0-9]{4}", "flags": "ims"},
+    ]
+
+
+def test_normalize_expression_plan_rejects_only_conjunctive_label_value_regex() -> None:
+    payload = {
+        "reasoning": "Single combined regex",
+        "expressions": [
+            {
+                "type": "regex",
+                "pattern": "(?:label|alias).*[0-9]{3}-[0-9]{2}-[0-9]{4}",
+                "flags": "ims",
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="over-constrains label/value co-location"):
+        mcp_client._normalize_expression_plan(
+            payload=payload,
+            max_expressions=20,
+            min_expressions=1,
+            source_message="What is my id number?",
+        )
+
+
+def test_normalize_expression_plan_accepts_mixed_regex_when_standalone_value_regex_present() -> None:
+    payload = {
+        "reasoning": "Conjunctive and standalone value regex",
+        "expressions": [
+            {
+                "type": "regex",
+                "pattern": "(?:label|alias).*[0-9]{3}-[0-9]{2}-[0-9]{4}",
+                "flags": "ims",
+            },
+            {
+                "type": "regex",
+                "pattern": "[0-9]{3}-[0-9]{2}-[0-9]{4}",
+                "flags": "ims",
+            },
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="What is my id number?",
+    )
+
+    assert len(normalized["expressions"]) == 2
+
+
+def test_normalize_expression_plan_accepts_near_atom() -> None:
+    payload = {
+        "reasoning": "Use nearby anchors",
+        "expressions": [
+            {"type": "near", "left": "mom", "right": "birthday", "window_chars": 200},
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="When is my mom's birthday?",
+    )
+
+    assert normalized["expressions"] == [
+        {"type": "near", "left": "mom", "right": "birthday", "window_chars": 200},
+    ]
+
+
+def test_normalize_expression_plan_filters_question_like_phrases() -> None:
+    payload = {
+        "reasoning": "Question-style phrase should be dropped.",
+        "expressions": [
+            {"type": "phrase", "value": "When is my mom's birthday?"},
+            {"type": "phrase", "value": "mom's birthday"},
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="When is my mom's birthday?",
+    )
+
+    assert normalized["expressions"] == [
+        {"type": "phrase", "value": "mom's birthday"},
+    ]
+
+
+def test_normalize_expression_plan_allows_phrase_only_for_structured_value_queries() -> None:
+    payload = {
+        "reasoning": "Only phrase anchors",
+        "expressions": [
+            {"type": "phrase", "value": "social security number"},
+            {"type": "phrase", "value": "ssn"},
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="What is my social security number?",
+    )
+    assert normalized["expressions"] == payload["expressions"]
+
+
+def test_normalize_expression_plan_allows_non_numeric_regex_for_structured_value_queries() -> None:
+    payload = {
+        "reasoning": "Only label regexes",
+        "expressions": [
+            {"type": "phrase", "value": "social security number"},
+            {"type": "regex", "pattern": "(?:social security number|ssn)", "flags": "ims"},
+            {"type": "regex", "pattern": "identifier|account number", "flags": "ims"},
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="What is my social security number?",
+    )
+    assert normalized["expressions"] == payload["expressions"]
+
+
+def test_normalize_expression_plan_rejects_regexy_near_anchors() -> None:
+    payload = {
+        "reasoning": "Near with regex syntax should be dropped.",
+        "expressions": [
+            {"type": "near", "left": "[Ss]sn", "right": ":", "window_chars": 200},
+            {"type": "near", "left": "mom", "right": "birthday", "window_chars": 200},
+        ],
+    }
+
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="When is my mom's birthday?",
+    )
+    assert normalized["expressions"] == [
+        {"type": "near", "left": "mom", "right": "birthday", "window_chars": 200},
+    ]
 
 
 def test_match_hypothesized_tags_to_catalog_returns_exact_and_fuzzy() -> None:
@@ -868,14 +1040,27 @@ def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(m
         [
             (
                 {
-                    "reasoning": "Use a phrase lookup first.",
-                    "expressions": [{"type": "phrase", "value": "dad birthday"}],
+                    "reasoning": "Use phrase and lexical variants.",
+                    "expressions": [
+                        {"type": "phrase", "value": "dad birthday"},
+                        {"type": "phrase", "value": "dad's birthday"},
+                        {"type": "phrase", "value": "father birthday"},
+                        {"type": "phrase", "value": "dad bday"},
+                        {"type": "phrase", "value": "birthday dad"},
+                    ],
                 },
-                '{"reasoning":"Use a phrase lookup first.","expressions":[{"type":"phrase","value":"dad birthday"}]}',
+                '{"reasoning":"Use phrase and lexical variants.","expressions":[{"type":"phrase","value":"dad birthday"},{"type":"phrase","value":"dad\\u0027s birthday"},{"type":"phrase","value":"father birthday"},{"type":"phrase","value":"dad bday"},{"type":"phrase","value":"birthday dad"}]}',
             ),
             (
-                {"answer": "No answer found."},
-                '{"answer":"No answer found."}',
+                {
+                    "reasoning": "First query already returned enough direct hits.",
+                    "decision": "answer",
+                    "answer": "No answer found.",
+                    "confidence": "low",
+                    "continue_reason": "",
+                    "clarifying_question": "",
+                },
+                '{"reasoning":"First query already returned enough direct hits.","decision":"answer","answer":"No answer found.","confidence":"low","continue_reason":"","clarifying_question":""}',
             ),
         ]
     )
@@ -898,38 +1083,40 @@ def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(m
                     }
                 }
             }
-        if tool_name == "search_note_ids":
-            assert arguments["query"] == '"dad birthday"'
+        if tool_name == "search_notes":
+            query = arguments["query"]
+            if not isinstance(query, str):
+                raise AssertionError("search_notes query must be a string")
             return {
                 "result": {
                     "structuredContent": {
                         "ok": True,
                         "data": {
-                            "query": arguments["query"],
+                            "query": query,
                             "required_tags": [],
                             "forbidden_tags": [],
-                            "resolved_query": arguments["query"],
+                            "resolved_query": query,
                             "limit": arguments["limit"],
                             "offset": 0,
                             "total_matches": 2,
                             "returned_count": 2,
-                            "note_ids": ["n1", "n2"],
-                        },
-                    }
-                }
-            }
-        if tool_name == "get_notes_batch":
-            return {
-                "result": {
-                    "structuredContent": {
-                        "ok": True,
-                        "data": {
-                            "total_requested": 2,
-                            "returned_count": 2,
-                            "not_found_ids": [],
-                            "notes": [
-                                {"note_id": "n1", "content_text": "a", "context_text": "a"},
-                                {"note_id": "n2", "content_text": "b", "context_text": "b"},
+                            "results": [
+                                {
+                                    "note_id": "n1",
+                                    "preview_text": "dad birthday one",
+                                    "content_text": "dad birthday one",
+                                    "context_text": "dad birthday one",
+                                    "tag_terms": ["dad"],
+                                    "effective_tag_terms": ["dad", "birthday"],
+                                },
+                                {
+                                    "note_id": "n2",
+                                    "preview_text": "dad birthday two",
+                                    "content_text": "dad birthday two",
+                                    "context_text": "dad birthday two",
+                                    "tag_terms": ["dad", "birthday"],
+                                    "effective_tag_terms": ["dad", "birthday"],
+                                },
                             ],
                         },
                     }
@@ -961,6 +1148,8 @@ def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(m
     assert run_config_data["universe_mode"] == "global"
     assert run_config_data["universe_boundary_tool"] == "count_notes"
     assert run_config_data["universe_note_count"] == 500
+    assert isinstance(result["total_execution_ms"], float)
+    assert result["total_execution_ms"] >= 0.0
 
     expression_step = next(
         step for step in result["steps"] if step.get("action") == "expression_execute"
@@ -980,14 +1169,27 @@ def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -
         [
             (
                 {
-                    "reasoning": "Use phrase lookup.",
-                    "expressions": [{"type": "phrase", "value": "dad birthday"}],
+                    "reasoning": "Use phrase variants.",
+                    "expressions": [
+                        {"type": "phrase", "value": "dad birthday"},
+                        {"type": "phrase", "value": "dad's birthday"},
+                        {"type": "phrase", "value": "mom dad birthday"},
+                        {"type": "phrase", "value": "birthday dad"},
+                        {"type": "phrase", "value": "dad bday"},
+                    ],
                 },
-                '{"reasoning":"Use phrase lookup.","expressions":[{"type":"phrase","value":"dad birthday"}]}',
+                '{"reasoning":"Use phrase variants.","expressions":[{"type":"phrase","value":"dad birthday"},{"type":"phrase","value":"dad\\u0027s birthday"},{"type":"phrase","value":"mom dad birthday"},{"type":"phrase","value":"birthday dad"},{"type":"phrase","value":"dad bday"}]}',
             ),
             (
-                {"answer": "Scoped answer."},
-                '{"answer":"Scoped answer."}',
+                {
+                    "reasoning": "Scoped result is enough to answer.",
+                    "decision": "answer",
+                    "answer": "Scoped answer.",
+                    "confidence": "medium",
+                    "continue_reason": "",
+                    "clarifying_question": "",
+                },
+                '{"reasoning":"Scoped result is enough to answer.","decision":"answer","answer":"Scoped answer.","confidence":"medium","continue_reason":"","clarifying_question":""}',
             ),
         ]
     )
@@ -1017,7 +1219,7 @@ def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -
                     }
                 }
             }
-        if tool_name == "search_note_ids" and arguments["query"] == '"dad birthday"':
+        if tool_name == "search_notes" and arguments["query"] == '"dad birthday"':
             return {
                 "result": {
                     "structuredContent": {
@@ -1031,23 +1233,51 @@ def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -
                             "offset": 0,
                             "total_matches": 2,
                             "returned_count": 2,
-                            "note_ids": ["u2", "x1"],
+                            "results": [
+                                {
+                                    "note_id": "u2",
+                                    "preview_text": "u2 dad birthday",
+                                    "content_text": "u2 dad birthday",
+                                    "context_text": "u2 dad birthday",
+                                    "tag_terms": ["dad", "birthday"],
+                                    "effective_tag_terms": ["dad", "birthday"],
+                                },
+                                {
+                                    "note_id": "x1",
+                                    "preview_text": "x1 dad birthday",
+                                    "content_text": "x1 dad birthday",
+                                    "context_text": "x1 dad birthday",
+                                    "tag_terms": ["dad"],
+                                    "effective_tag_terms": ["dad", "birthday"],
+                                },
+                            ],
                         },
                     }
                 }
             }
-        if tool_name == "get_notes_batch":
-            assert arguments["note_ids"] == ["u2"]
+        if tool_name == "search_notes":
             return {
                 "result": {
                     "structuredContent": {
                         "ok": True,
                         "data": {
-                            "total_requested": 1,
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": 0,
+                            "total_matches": 1,
                             "returned_count": 1,
-                            "not_found_ids": [],
-                            "notes": [
-                                {"note_id": "u2", "content_text": "a", "context_text": "a"},
+                            "results": [
+                                {
+                                    "note_id": "u2",
+                                    "preview_text": "u2 only",
+                                    "content_text": "u2 only",
+                                    "context_text": "u2 only",
+                                    "tag_terms": [],
+                                    "effective_tag_terms": [],
+                                }
                             ],
                         },
                     }
@@ -1075,8 +1305,797 @@ def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -
     assert run_config_data["universe_mode"] == "scoped"
     assert run_config_data["universe_boundary_tool"] == "search_note_ids"
     assert run_config_data["universe_boundary_arguments"]["query"] == "work-journal -private"
+    assert isinstance(result["total_execution_ms"], float)
+    assert result["total_execution_ms"] >= 0.0
 
     expression_step = next(
         step for step in result["steps"] if step.get("action") == "expression_execute"
     )
     assert expression_step["stats"]["scoped_match_count"] == 1
+
+
+def test_run_rewrite_expression_plan_repairs_underproduced_model_output(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Initial draft with enough expressions for a first pass.",
+                    "expressions": [
+                        {"type": "phrase", "value": "mom birthday"},
+                        {"type": "phrase", "value": "mom's birthday"},
+                        {"type": "phrase", "value": "mother birthday"},
+                    ],
+                },
+                '{"reasoning":"Initial draft with enough expressions for a first pass.","expressions":[{"type":"phrase","value":"mom birthday"},{"type":"phrase","value":"mom\\u0027s birthday"},{"type":"phrase","value":"mother birthday"}]}',
+            ),
+            (
+                {
+                    "reasoning": "Direct evidence is already sufficient.",
+                    "decision": "answer",
+                    "answer": "Her birthday is January 16.",
+                    "confidence": "high",
+                    "continue_reason": "",
+                    "clarifying_question": "",
+                },
+                '{"reasoning":"Direct evidence is already sufficient.","decision":"answer","answer":"Her birthday is January 16.","confidence":"high","continue_reason":"","clarifying_question":""}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {"total_notes": 500},
+                    }
+                }
+            }
+        if tool_name == "search_notes":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": 0,
+                            "total_matches": 1,
+                            "returned_count": 1,
+                            "results": [
+                                {
+                                    "note_id": "n1",
+                                    "preview_text": "2023.01.16 - Mom's birthday lunch at Saffron",
+                                    "content_text": "2023.01.16 - Mom's birthday lunch at Saffron",
+                                    "context_text": "2023.01.16 - Mom's birthday lunch at Saffron",
+                                    "tag_terms": ["mom", "birthday"],
+                                    "effective_tag_terms": ["mom", "birthday"],
+                                }
+                            ],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="When is my mom's birthday?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    run_config = result["steps"][0]["tool_response"]["data"]
+    assert run_config["expression_target_count"] == 8
+    assert "expression_min_required" not in run_config
+    assert run_config["expression_probe_points"] == [4, 8]
+
+    first_plan = result["steps"][1]
+    assert first_plan["action"] == "expression_plan"
+    assert first_plan["model_payload"]["accepted"] is True
+    assert all(step.get("action") != "expression_plan_repair" for step in result["steps"])
+
+
+def test_run_rewrite_uses_partial_model_plan_instead_of_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Initial short draft.",
+                    "expressions": [{"type": "phrase", "value": "social security number"}],
+                },
+                '{"reasoning":"Initial short draft.","expressions":[{"type":"phrase","value":"social security number"}]}',
+            ),
+            (
+                {
+                    "reasoning": "First pass evidence is enough.",
+                    "decision": "answer",
+                    "answer": "Use retrieved evidence.",
+                    "confidence": "medium",
+                    "continue_reason": "",
+                    "clarifying_question": "",
+                },
+                '{"reasoning":"First pass evidence is enough.","decision":"answer","answer":"Use retrieved evidence.","confidence":"medium","continue_reason":"","clarifying_question":""}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
+        if tool_name == "search_notes":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 1,
+                            "returned_count": 1,
+                            "results": [
+                                {
+                                    "note_id": "n1",
+                                    "preview_text": "social security number: 123-45-6789",
+                                    "content_text": "social security number: 123-45-6789",
+                                    "context_text": "social security number: 123-45-6789",
+                                    "tag_terms": ["ssn"],
+                                    "effective_tag_terms": ["ssn", "security"],
+                                }
+                            ],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="What is my social security number?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    assert all(step.get("action") != "expression_plan_repair" for step in result["steps"])
+    assert all(step.get("action") != "expression_plan_partial_accept" for step in result["steps"])
+    assert all(step.get("action") != "expression_plan_fallback" for step in result["steps"])
+
+
+def test_run_rewrite_fails_fast_when_planner_returns_no_usable_expressions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "No usable expressions",
+                    "expressions": [],
+                },
+                '{"reasoning":"No usable expressions","expressions":[]}',
+            ),
+            (
+                {
+                    "reasoning": "Still no usable expressions",
+                    "expressions": [],
+                },
+                '{"reasoning":"Still no usable expressions","expressions":[]}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
+        raise AssertionError(f"Unexpected tool call after planning failure: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="What is my social security number?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is False
+    assert "Expression planning failed" in result["answer"]
+    assert any(step.get("action") == "expression_plan_error" for step in result["steps"])
+
+
+def test_run_rewrite_prioritizes_regex_before_phrase_for_structured_queries(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Use label phrase and value regex.",
+                    "expressions": [
+                        {"type": "phrase", "value": "social security number"},
+                        {"type": "regex", "pattern": "[0-9]{3}-[0-9]{2}-[0-9]{4}", "flags": "ims"},
+                    ],
+                },
+                '{"reasoning":"Use label phrase and value regex.","expressions":[{"type":"phrase","value":"social security number"},{"type":"regex","pattern":"[0-9]{3}-[0-9]{2}-[0-9]{4}","flags":"ims"}]}',
+            ),
+            (
+                {
+                    "reasoning": "Need one more pass before final answer.",
+                    "decision": "continue",
+                    "answer": "",
+                    "clarifying_question": "",
+                    "confidence": "medium",
+                    "continue_reason": "Run remaining planned expression.",
+                },
+                '{"reasoning":"Need one more pass before final answer.","decision":"continue","answer":"","clarifying_question":"","confidence":"medium","continue_reason":"Run remaining planned expression."}',
+            ),
+            (
+                {
+                    "reasoning": "Now enough evidence.",
+                    "decision": "answer",
+                    "answer": "Found one likely match.",
+                    "clarifying_question": "",
+                    "confidence": "medium",
+                    "continue_reason": "",
+                },
+                '{"reasoning":"Now enough evidence.","decision":"answer","answer":"Found one likely match.","clarifying_question":"","confidence":"medium","continue_reason":""}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    expression_tool_order = []
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
+        if tool_name == "search_notes_regex":
+            expression_tool_order.append(tool_name)
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "pattern": arguments["pattern"],
+                            "flags": arguments["flags"],
+                            "regex_engine": arguments["regex_engine"],
+                            "target": arguments["target"],
+                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 1,
+                            "returned_count": 1,
+                            "note_ids": ["n1"],
+                        },
+                    }
+                }
+            }
+        if tool_name == "search_notes_regex":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "pattern": arguments["pattern"],
+                            "flags": arguments["flags"],
+                            "regex_engine": arguments["regex_engine"],
+                            "target": arguments["target"],
+                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 1,
+                            "returned_count": 1,
+                            "results": [
+                                {
+                                    "note_id": "n1",
+                                    "preview_text": "SSN: 123-45-6789",
+                                    "content_text": "SSN: 123-45-6789",
+                                    "context_text": "ME --- SSN: 123-45-6789",
+                                    "tag_terms": ["ssn"],
+                                    "effective_tag_terms": ["ssn"],
+                                    "matches": [
+                                        {
+                                            "field": "content_text",
+                                            "start": 0,
+                                            "end": 11,
+                                            "snippet": "123-45-6789",
+                                            "normalized_text_match": False,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                }
+            }
+        if tool_name == "search_notes":
+            expression_tool_order.append(tool_name)
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 1,
+                            "returned_count": 1,
+                            "results": [
+                                {
+                                    "note_id": "n1",
+                                    "preview_text": "social security number",
+                                    "content_text": "social security number",
+                                    "context_text": "social security number",
+                                    "tag_terms": ["security"],
+                                    "effective_tag_terms": ["security"],
+                                }
+                            ],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="What is my social security number?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    assert len(expression_tool_order) >= 2
+    assert expression_tool_order[0] == "search_notes_regex"
+
+
+def test_run_rewrite_fails_fast_on_synthesis_access_refusal_with_evidence(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Value regex only.",
+                    "expressions": [
+                        {"type": "regex", "pattern": "[0-9]{3}-[0-9]{2}-[0-9]{4}", "flags": "ims"},
+                    ],
+                },
+                '{"reasoning":"Value regex only.","expressions":[{"type":"regex","pattern":"[0-9]{3}-[0-9]{2}-[0-9]{4}","flags":"ims"}]}',
+            ),
+            (
+                {
+                    "reasoning": "Need final synthesis for best answer wording.",
+                    "decision": "continue",
+                    "answer": "",
+                    "clarifying_question": "",
+                    "confidence": "medium",
+                    "continue_reason": "Run synthesis pass.",
+                },
+                '{"reasoning":"Need final synthesis for best answer wording.","decision":"continue","answer":"","clarifying_question":"","confidence":"medium","continue_reason":"Run synthesis pass."}',
+            ),
+            (
+                {"answer": "I do not have access to your personal information."},
+                '{"answer":"I do not have access to your personal information."}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
+        if tool_name == "search_notes_regex":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "pattern": arguments["pattern"],
+                            "flags": arguments["flags"],
+                            "regex_engine": arguments["regex_engine"],
+                            "target": arguments["target"],
+                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 1,
+                            "returned_count": 1,
+                            "results": [
+                                {
+                                    "note_id": "n1",
+                                    "preview_text": "SSN: 123-45-6789",
+                                    "content_text": "SSN: 123-45-6789",
+                                    "context_text": "ME --- SSN: 123-45-6789",
+                                    "tag_terms": ["ssn"],
+                                    "effective_tag_terms": ["ssn"],
+                                    "matches": [
+                                        {
+                                            "field": "context_text",
+                                            "start": 0,
+                                            "end": 11,
+                                            "snippet": "SSN: 123-45-6789",
+                                            "normalized_text_match": False,
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="What is my social security number?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is False
+    assert "Synthesis failed" in result["answer"]
+    assert any(step.get("action") == "synthesis_error" for step in result["steps"])
+
+
+def test_run_rewrite_returns_no_evidence_without_synthesis(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Simple plan",
+                    "expressions": [{"type": "phrase", "value": "mom birthday"}],
+                },
+                '{"reasoning":"Simple plan","expressions":[{"type":"phrase","value":"mom birthday"}]}',
+            ),
+            (
+                {
+                    "reasoning": "No hits yet, continue if more expressions exist.",
+                    "decision": "continue",
+                    "answer": "",
+                    "clarifying_question": "",
+                    "confidence": "low",
+                    "continue_reason": "No evidence yet.",
+                },
+                '{"reasoning":"No hits yet, continue if more expressions exist.","decision":"continue","answer":"","clarifying_question":"","confidence":"low","continue_reason":"No evidence yet."}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
+        if tool_name == "search_notes":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 0,
+                            "returned_count": 0,
+                            "results": [],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="When is my mom's birthday?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    assert "No matching evidence found" in result["answer"]
+    assert any(step.get("action") == "no_evidence" for step in result["steps"])
+
+
+def test_run_rewrite_skips_duplicate_compiled_queries_and_tracks_history(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    near_pattern = mcp_client._compile_near_regex_pattern(
+        left="123",
+        right="456",
+        window_chars=200,
+    )
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Use one proximity expression and an equivalent regex.",
+                    "expressions": [
+                        {
+                            "type": "near",
+                            "left": "123",
+                            "right": "456",
+                            "window_chars": 200,
+                        },
+                        {
+                            "type": "regex",
+                            "pattern": near_pattern,
+                            "flags": "is",
+                        },
+                    ],
+                },
+                '{"reasoning":"Use one proximity expression and an equivalent regex.","expressions":[{"type":"near","left":"123","right":"456","window_chars":200},{"type":"regex","pattern":"'
+                + near_pattern.replace("\\", "\\\\").replace('"', '\\"')
+                + '","flags":"is"}]}',
+            ),
+            (
+                {
+                    "reasoning": "No evidence yet; continue.",
+                    "decision": "continue",
+                    "answer": "",
+                    "clarifying_question": "",
+                    "confidence": "low",
+                    "continue_reason": "Run remaining expressions.",
+                },
+                '{"reasoning":"No evidence yet; continue.","decision":"continue","answer":"","clarifying_question":"","confidence":"low","continue_reason":"Run remaining expressions."}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    regex_calls = []
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "count_notes":
+            return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
+        if tool_name == "search_notes_regex":
+            regex_calls.append(dict(arguments))
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "pattern": arguments["pattern"],
+                            "flags": arguments["flags"],
+                            "regex_engine": arguments["regex_engine"],
+                            "target": arguments["target"],
+                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "limit": arguments["limit"],
+                            "offset": arguments["offset"],
+                            "total_matches": 0,
+                            "returned_count": 0,
+                            "results": [],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="Where are 123 and 456 near each other?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=20,
+        hydrate_top_k=10,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    assert "No matching evidence found" in result["answer"]
+    assert len(regex_calls) == 1
+    assert any(
+        step.get("action") == "expression_execute_skip_duplicate_query"
+        for step in result["steps"]
+    )
+
+    reasoning_steps = [
+        step for step in result["steps"] if step.get("action") == "iteration_reasoning"
+    ]
+    assert len(reasoning_steps) == 1
+    messages = reasoning_steps[0]["model_payload"]["messages"]
+    assert isinstance(messages, list)
+    assert len(messages) >= 2
+    user_payload = json.loads(messages[1]["content"])
+    assert "already_executed_queries" in user_payload
+    assert isinstance(user_payload["already_executed_queries"], list)
+    assert len(user_payload["already_executed_queries"]) == 1
+
+
+def test_extract_synthesis_answer_supports_nested_payloads() -> None:
+    payload = {
+        "result": {
+            "metadata": {"foo": "bar"},
+            "response": {
+                "answer": "January 16",
+            },
+        }
+    }
+    assert mcp_client._extract_synthesis_answer(payload=payload) == "January 16"
+
+
+def test_build_rewrite_synthesis_messages_blocks_access_disclaimer_pattern() -> None:
+    messages = mcp_client._build_rewrite_synthesis_messages(
+        user_message="What is my social security number?",
+        search_context_query="",
+        expression_plan={
+            "reasoning": "test",
+            "expressions": [{"type": "phrase", "value": "ssn"}],
+        },
+        expression_stats=[],
+        hydrated_notes=[
+            {
+                "note_id": "n1",
+                "hit_count": 1,
+                "matched_expressions": ['phrase:"ssn"'],
+                "content_excerpt": "ssn: 123-45-6789",
+                "context_excerpt": "ssn: 123-45-6789",
+                "term_snippets": ["ssn: 123-45-6789"],
+            }
+        ],
+    )
+
+    assert len(messages) == 3
+    system_message = messages[0]
+    assert system_message["role"] == "system"
+    content = system_message["content"]
+    assert "do not refuse based on lack of access" in content
+    assert "Never answer with capability disclaimers" in content
+
+
+def test_rank_candidate_note_ids_prefers_specific_expression_matches() -> None:
+    ordered, metadata = mcp_client._rank_candidate_note_ids(
+        note_hit_counts={
+            "broad-note": 1,
+            "specific-note": 1,
+        },
+        note_hit_expressions={
+            "broad-note": ['phrase:"sin"'],
+            "specific-note": ['phrase:"social security number"'],
+        },
+        expression_stats=[
+            {
+                "expression_label": 'phrase:"sin"',
+                "expression": {"type": "phrase", "value": "sin"},
+                "scoped_match_count": 4000,
+            },
+            {
+                "expression_label": 'phrase:"social security number"',
+                "expression": {"type": "phrase", "value": "social security number"},
+                "scoped_match_count": 4,
+            },
+        ],
+        universe_note_count=100000,
+        universe_note_ids=None,
+    )
+    assert ordered[0] == "specific-note"
+    assert isinstance(metadata, dict)
+    assert "expression_weights" in metadata

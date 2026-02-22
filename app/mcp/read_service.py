@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 import re
+import unicodedata
 from typing import Dict, FrozenSet, List, Set
 
 from app.config import VERSION
@@ -23,6 +24,20 @@ _ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
 _ALLOWED_REGEX_FLAGS = frozenset({"i", "m", "s"})
 _REGEX_MAX_PATTERN_LENGTH = 1000
 _GET_NOTES_BATCH_MAX = 500
+_REGEX_NORMALIZE_TRANSLATION = str.maketrans(
+    {
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2015": "-",
+        "\u2212": "-",
+        "\u00A0": " ",
+        "\u2007": " ",
+        "\u202F": " ",
+    }
+)
 
 try:
     import re2 as _re2_module
@@ -63,9 +78,43 @@ class ReadService:
             current_id = parent_id
         return list(reversed(ancestors_reversed))
 
+    def _descendant_note_ids_depth_first(self, *, note_id: str) -> List[str]:
+        if not isinstance(note_id, str) or note_id == "":
+            raise TypeError("note_id must be a non-empty string")
+        ordered: List[str] = []
+
+        def visit(parent_id: str) -> None:
+            child_ids = note_store.get_children(parent_id)
+            for child_id in child_ids:
+                ordered.append(child_id)
+                visit(child_id)
+
+        visit(note_id)
+        return ordered
+
     def _build_context_text(self, *, segments: List[str]) -> str:
         non_empty_segments = [segment.strip() for segment in segments if isinstance(segment, str) and segment.strip() != ""]
         return "\n\n---\n\n".join(non_empty_segments)
+
+    def _normalize_regex_search_text(self, *, text: str) -> str:
+        if not isinstance(text, str):
+            raise TypeError("text must be a string")
+        normalized = unicodedata.normalize("NFKC", text)
+        normalized = normalized.translate(_REGEX_NORMALIZE_TRANSLATION)
+        normalized = normalized.replace("\u2060", "")
+        return normalized
+
+    def _search_with_normalization_fallback(self, *, compiled, text: str):
+        match = compiled.search(text)
+        if match is not None:
+            return match, text, False
+        normalized_text = self._normalize_regex_search_text(text=text)
+        if normalized_text == text:
+            return None, text, False
+        normalized_match = compiled.search(normalized_text)
+        if normalized_match is None:
+            return None, text, False
+        return normalized_match, normalized_text, True
 
     def _build_ancestor_context_entries(self, *, note_id: str) -> List[Dict[str, object]]:
         entries: List[Dict[str, object]] = []
@@ -439,7 +488,36 @@ class ReadService:
         parts.extend(f"-{tag}" for tag in forbidden_tags)
         return " ".join(parts).strip()
 
-    def _search_result_entry(self, *, note_id: str) -> Dict[str, object]:
+    def _build_note_context_bundle(
+        self,
+        *,
+        note_id: str,
+        content_text: str,
+    ) -> Dict[str, object]:
+        ancestor_note_ids = self._ancestor_note_ids(note_id=note_id)
+        ancestor_texts: List[str] = []
+        for ancestor_note_id in ancestor_note_ids:
+            ancestor_record = note_store.get_note(ancestor_note_id)
+            ancestor_texts.append(strip_html(ancestor_record.content).strip())
+
+        descendant_note_ids = self._descendant_note_ids_depth_first(note_id=note_id)
+        descendant_texts: List[str] = []
+        for descendant_note_id in descendant_note_ids:
+            descendant_record = note_store.get_note(descendant_note_id)
+            descendant_texts.append(strip_html(descendant_record.content).strip())
+
+        context_text = self._build_context_text(
+            segments=[*ancestor_texts, content_text, *descendant_texts]
+        )
+        return {
+            "ancestor_note_ids": ancestor_note_ids,
+            "ancestor_texts": ancestor_texts,
+            "descendant_note_ids": descendant_note_ids,
+            "descendant_texts": descendant_texts,
+            "context_text": context_text,
+        }
+
+    def _search_result_entry(self, *, note_id: str, note_order_index: int) -> Dict[str, object]:
         record = note_store.get_note(note_id)
         content_text = strip_html(record.content).strip()
         preview_text = content_text
@@ -448,11 +526,25 @@ class ReadService:
         else:
             truncated = preview_text
 
-        ancestor_texts: List[str] = []
-        ancestor_note_ids = self._ancestor_note_ids(note_id=note_id)
-        for ancestor_note_id in ancestor_note_ids:
-            ancestor_record = note_store.get_note(ancestor_note_id)
-            ancestor_texts.append(strip_html(ancestor_record.content).strip())
+        context_bundle = self._build_note_context_bundle(
+            note_id=note_id,
+            content_text=content_text,
+        )
+        ancestor_note_ids = context_bundle["ancestor_note_ids"]
+        if not isinstance(ancestor_note_ids, list):
+            raise RuntimeError("ancestor_note_ids must be a list")
+        ancestor_texts = context_bundle["ancestor_texts"]
+        if not isinstance(ancestor_texts, list):
+            raise RuntimeError("ancestor_texts must be a list")
+        descendant_note_ids = context_bundle["descendant_note_ids"]
+        if not isinstance(descendant_note_ids, list):
+            raise RuntimeError("descendant_note_ids must be a list")
+        descendant_texts = context_bundle["descendant_texts"]
+        if not isinstance(descendant_texts, list):
+            raise RuntimeError("descendant_texts must be a list")
+        context_text = context_bundle["context_text"]
+        if not isinstance(context_text, str):
+            raise RuntimeError("context_text must be a string")
 
         tags_payload = self._build_tags_payload(note_id=note_id, record=record)
         if "raw_tag_string" not in tags_payload:
@@ -468,6 +560,7 @@ class ReadService:
             "note_id": record.id,
             "parent_id": record.parent_id,
             "updated_at": _serialize_datetime(record.updated_at),
+            "note_order_index": note_order_index,
             "raw_tag_string": tags_payload["raw_tag_string"],
             "tag_terms": tags_payload["tag_terms"],
             "implied_tag_terms": tags_payload["implied_tag_terms"],
@@ -476,7 +569,9 @@ class ReadService:
             "content_text": content_text,
             "ancestor_note_ids": ancestor_note_ids,
             "ancestor_texts": ancestor_texts,
-            "context_text": self._build_context_text(segments=[*ancestor_texts, content_text]),
+            "descendant_note_ids": descendant_note_ids,
+            "descendant_texts": descendant_texts,
+            "context_text": context_text,
         }
 
     def search_notes(
@@ -513,6 +608,7 @@ class ReadService:
         )
 
         ordered_ids = self._depth_first_note_order()
+        order_index_by_id = {note_id: index for index, note_id in enumerate(ordered_ids)}
         if combined_query == "":
             matched_ids = set(ordered_ids)
         else:
@@ -522,7 +618,13 @@ class ReadService:
         total_matches = len(ordered_matches)
 
         sliced_matches = ordered_matches[offset : offset + limit]
-        results = [self._search_result_entry(note_id=note_id) for note_id in sliced_matches]
+        results = [
+            self._search_result_entry(
+                note_id=note_id,
+                note_order_index=order_index_by_id.get(note_id, 10**9),
+            )
+            for note_id in sliced_matches
+        ]
 
         return {
             "query": query,
@@ -634,21 +736,27 @@ class ReadService:
             raise TypeError("pattern should be string after compile validation")
 
         matched_results: List[Dict[str, object]] = []
-        for note_id in effective_scope_note_ids:
+        for scope_index, note_id in enumerate(effective_scope_note_ids):
             record = note_store.get_note(note_id)
             content_text = strip_html(record.content).strip()
 
             context_text = ""
             if normalized_target in {"context_text", "both"}:
-                ancestor_texts: List[str] = []
-                for ancestor_note_id in self._ancestor_note_ids(note_id=note_id):
-                    ancestor_record = note_store.get_note(ancestor_note_id)
-                    ancestor_texts.append(strip_html(ancestor_record.content).strip())
-                context_text = self._build_context_text(segments=[*ancestor_texts, content_text])
+                context_bundle = self._build_note_context_bundle(
+                    note_id=note_id,
+                    content_text=content_text,
+                )
+                context_value = context_bundle.get("context_text")
+                if not isinstance(context_value, str):
+                    raise RuntimeError("context_text must be a string")
+                context_text = context_value
 
             field_matches: List[Dict[str, object]] = []
             if normalized_target in {"content_text", "both"}:
-                match = compiled.search(content_text)
+                match, matched_text, normalized_used = self._search_with_normalization_fallback(
+                    compiled=compiled,
+                    text=content_text,
+                )
                 if match is not None:
                     field_matches.append(
                         {
@@ -656,15 +764,19 @@ class ReadService:
                             "start": int(match.start()),
                             "end": int(match.end()),
                             "snippet": self._match_snippet(
-                                text=content_text,
+                                text=matched_text,
                                 start=int(match.start()),
                                 end=int(match.end()),
                             ),
+                            "normalized_text_match": normalized_used,
                         }
                     )
 
             if normalized_target in {"context_text", "both"}:
-                match = compiled.search(context_text)
+                match, matched_text, normalized_used = self._search_with_normalization_fallback(
+                    compiled=compiled,
+                    text=context_text,
+                )
                 if match is not None:
                     field_matches.append(
                         {
@@ -672,21 +784,24 @@ class ReadService:
                             "start": int(match.start()),
                             "end": int(match.end()),
                             "snippet": self._match_snippet(
-                                text=context_text,
+                                text=matched_text,
                                 start=int(match.start()),
                                 end=int(match.end()),
                             ),
+                            "normalized_text_match": normalized_used,
                         }
                     )
 
             if len(field_matches) == 0:
                 continue
 
+            search_entry = self._search_result_entry(
+                note_id=note_id,
+                note_order_index=scope_index,
+            )
             matched_results.append(
                 {
-                    "note_id": record.id,
-                    "parent_id": record.parent_id,
-                    "updated_at": _serialize_datetime(record.updated_at),
+                    **search_entry,
                     "matches": field_matches,
                 }
             )
@@ -755,18 +870,29 @@ class ReadService:
 
             context_text = ""
             if normalized_target in {"context_text", "both"}:
-                ancestor_texts: List[str] = []
-                for ancestor_note_id in self._ancestor_note_ids(note_id=note_id):
-                    ancestor_record = note_store.get_note(ancestor_note_id)
-                    ancestor_texts.append(strip_html(ancestor_record.content).strip())
-                context_text = self._build_context_text(segments=[*ancestor_texts, content_text])
+                context_bundle = self._build_note_context_bundle(
+                    note_id=note_id,
+                    content_text=content_text,
+                )
+                context_value = context_bundle.get("context_text")
+                if not isinstance(context_value, str):
+                    raise RuntimeError("context_text must be a string")
+                context_text = context_value
 
             matched = False
             if normalized_target in {"content_text", "both"}:
-                if compiled.search(content_text) is not None:
+                match, _, _ = self._search_with_normalization_fallback(
+                    compiled=compiled,
+                    text=content_text,
+                )
+                if match is not None:
                     matched = True
             if not matched and normalized_target in {"context_text", "both"}:
-                if compiled.search(context_text) is not None:
+                match, _, _ = self._search_with_normalization_fallback(
+                    compiled=compiled,
+                    text=context_text,
+                )
+                if match is not None:
                     matched = True
             if not matched:
                 continue
@@ -796,6 +922,7 @@ class ReadService:
         include_context_text: object,
         include_tags: object,
         include_ancestors: object,
+        include_descendants: object,
     ) -> Dict[str, object]:
         self._require_ready()
 
@@ -822,6 +949,10 @@ class ReadService:
             value=include_ancestors,
             field_name="include_ancestors",
         )
+        should_include_descendants = self._require_bool(
+            value=include_descendants,
+            field_name="include_descendants",
+        )
 
         notes_payload: List[Dict[str, object]] = []
         not_found_ids: List[str] = []
@@ -840,6 +971,14 @@ class ReadService:
                     ancestor_record = note_store.get_note(ancestor_note_id)
                     ancestor_texts.append(strip_html(ancestor_record.content).strip())
 
+            descendant_note_ids: List[str] = []
+            descendant_texts: List[str] = []
+            if should_include_context_text or should_include_descendants:
+                descendant_note_ids = self._descendant_note_ids_depth_first(note_id=note_id)
+                for descendant_note_id in descendant_note_ids:
+                    descendant_record = note_store.get_note(descendant_note_id)
+                    descendant_texts.append(strip_html(descendant_record.content).strip())
+
             entry: Dict[str, object] = {
                 "note_id": record.id,
                 "parent_id": record.parent_id,
@@ -849,13 +988,16 @@ class ReadService:
                 entry["content_text"] = content_text
             if should_include_context_text:
                 entry["context_text"] = self._build_context_text(
-                    segments=[*ancestor_texts, content_text]
+                    segments=[*ancestor_texts, content_text, *descendant_texts]
                 )
             if should_include_tags:
                 entry["tags"] = self._build_tags_payload(note_id=note_id, record=record)
             if should_include_ancestors:
                 entry["ancestor_note_ids"] = ancestor_note_ids
                 entry["ancestor_texts"] = ancestor_texts
+            if should_include_descendants:
+                entry["descendant_note_ids"] = descendant_note_ids
+                entry["descendant_texts"] = descendant_texts
             notes_payload.append(entry)
 
         return {

@@ -4,6 +4,7 @@ import argparse
 import difflib
 import html
 import json
+import math
 import queue
 import re
 import socket
@@ -51,8 +52,20 @@ _DEFAULT_HYDRATE_TOP_K = 80
 _DEFAULT_REGEX_ENGINE = "python-re"
 _ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
 _MAX_EXPRESSION_SEARCH_RESULTS = 100000
+_MAX_REWRITE_STEP_RESULT_LIMIT = 400
 _STEP_NOTE_ID_SAMPLE_LIMIT = 50
 _TAG_ATOM_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
+_EXPRESSION_PLAN_TARGET_CAP = 8
+_EXPRESSION_PROBE_FIRST = 4
+_EXPRESSION_PROBE_SECOND = 8
+_SYNTHESIS_MAX_NOTES = 40
+_ITERATION_EVIDENCE_MAX_NOTES = 24
+_SYNTHESIS_MAX_CONTENT_EXCERPT_CHARS = 900
+_SYNTHESIS_MAX_CONTEXT_EXCERPT_CHARS = 1400
+_SYNTHESIS_SMALL_CANDIDATE_THRESHOLD = 12
+_SYNTHESIS_SMALL_CANDIDATE_CONTENT_MAX_CHARS = 5000
+_SYNTHESIS_SMALL_CANDIDATE_CONTEXT_MAX_CHARS = 12000
+_REGEX_MATCH_PREVIEW_LIMIT = 24
 
 DEFAULT_MCP_URL = _DEFAULT_MCP_URL
 DEFAULT_OLLAMA_CHAT_URL = _DEFAULT_OLLAMA_CHAT_URL
@@ -329,7 +342,7 @@ def _compact_text_for_context(*, text: str, max_chars: int) -> str:
     if len(collapsed) <= max_chars:
         return collapsed
 
-    marker = f"... [truncated {len(collapsed) - max_chars} chars] ..."
+    marker = " ... "
     if len(marker) >= max_chars:
         return collapsed[:max_chars]
 
@@ -1752,6 +1765,61 @@ def _search_notes_semantic_signature(*, arguments: dict) -> str:
     return json.dumps(signature_payload, sort_keys=True, ensure_ascii=False)
 
 
+def _search_notes_regex_semantic_signature(*, arguments: dict) -> str:
+    pattern = arguments.get("pattern")
+    flags = arguments.get("flags")
+    regex_engine = arguments.get("regex_engine")
+    target = arguments.get("target")
+    limit = arguments.get("limit")
+    offset = arguments.get("offset")
+    if not isinstance(pattern, str):
+        pattern = ""
+    if not isinstance(flags, str):
+        flags = ""
+    if not isinstance(regex_engine, str):
+        regex_engine = ""
+    if not isinstance(target, str):
+        target = ""
+    if not isinstance(limit, int):
+        limit = None
+    if not isinstance(offset, int):
+        offset = None
+
+    scope_note_ids = arguments.get("scope_note_ids")
+    scope_note_ids_count = 0
+    if isinstance(scope_note_ids, list):
+        scope_note_ids_count = len(scope_note_ids)
+    scope_query = arguments.get("scope_query")
+    if not isinstance(scope_query, str):
+        scope_query = ""
+
+    signature_payload = {
+        "pattern": pattern,
+        "flags": flags,
+        "regex_engine": regex_engine.casefold(),
+        "target": target.casefold(),
+        "scope_note_ids_count": scope_note_ids_count,
+        "scope_query": re.sub(r"\s+", " ", scope_query).strip().casefold(),
+        "limit": limit,
+        "offset": offset,
+    }
+    return json.dumps(signature_payload, sort_keys=True, ensure_ascii=False)
+
+
+def _rewrite_tool_call_semantic_signature(*, tool_name: str, arguments: dict) -> str:
+    if not isinstance(tool_name, str):
+        raise TypeError("tool_name must be a string")
+    if not isinstance(arguments, dict):
+        raise TypeError("arguments must be an object")
+    if tool_name == "search_notes":
+        return "search_notes:" + _search_notes_semantic_signature(arguments=arguments)
+    if tool_name == "search_notes_regex":
+        return "search_notes_regex:" + _search_notes_regex_semantic_signature(
+            arguments=arguments
+        )
+    return tool_name + ":" + json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+
+
 def _sanitize_tool_arguments(
     *,
     tool_name: str,
@@ -2447,31 +2515,90 @@ def _summarize_rewrite_tool_response(*, tool_response: dict, note_id_sample_limi
         if key in data:
             summary_data[key] = data[key]
 
-    note_ids = _extract_note_ids_from_tool_data(data=data)
-    if len(note_ids) > 0:
-        summary_data["note_ids_total"] = len(note_ids)
-        summary_data["note_ids_sample"] = note_ids[:note_id_sample_limit]
-
     notes = data.get("notes")
     if isinstance(notes, list):
         note_entries: List[dict] = []
         for note in notes:
             if not isinstance(note, dict):
                 continue
-            note_id = note.get("note_id")
-            if not isinstance(note_id, str) or note_id == "":
+            entry: Dict[str, object] = {}
+            content_text = note.get("content_text")
+            if isinstance(content_text, str) and content_text.strip() != "":
+                entry["content_excerpt"] = _clip_text_for_synthesis(
+                    text=content_text,
+                    max_chars=220,
+                )
+            context_text = note.get("context_text")
+            if isinstance(context_text, str) and context_text.strip() != "":
+                entry["context_excerpt"] = _clip_text_for_synthesis(
+                    text=context_text,
+                    max_chars=320,
+                )
+            if len(entry) == 0:
                 continue
-            entry = {"note_id": note_id}
-            if "parent_id" in note:
-                entry["parent_id"] = note["parent_id"]
             note_entries.append(entry)
         summary_data["notes_total"] = len(note_entries)
         summary_data["notes_sample"] = note_entries[:note_id_sample_limit]
+
+    results = data.get("results")
+    if isinstance(results, list):
+        regex_match_samples: List[dict] = []
+        max_samples = max(4, min(note_id_sample_limit * 2, 24))
+        for entry in results:
+            if not isinstance(entry, dict):
+                continue
+            matches = entry.get("matches")
+            if not isinstance(matches, list):
+                continue
+            for match in matches:
+                if not isinstance(match, dict):
+                    continue
+                snippet = match.get("snippet")
+                if not isinstance(snippet, str) or snippet.strip() == "":
+                    continue
+                field = match.get("field")
+                if not isinstance(field, str):
+                    field = "unknown"
+                collapsed_snippet = re.sub(r"\s+", " ", snippet).strip()
+                regex_match_samples.append(
+                    {
+                        "field": field,
+                        "snippet": _clip_text_for_synthesis(
+                            text=collapsed_snippet,
+                            max_chars=220,
+                        ),
+                    }
+                )
+                if len(regex_match_samples) >= max_samples:
+                    break
+            if len(regex_match_samples) >= max_samples:
+                break
+        if len(regex_match_samples) > 0:
+            summary_data["regex_match_samples"] = regex_match_samples
 
     return {
         "ok": True,
         "data": summary_data,
     }
+
+
+def _strip_note_ids_for_display(*, value: object) -> object:
+    if isinstance(value, dict):
+        output: Dict[str, object] = {}
+        for key, child in value.items():
+            if key in {
+                "note_id",
+                "parent_id",
+                "ancestor_note_ids",
+                "note_ids",
+                "note_ids_sample",
+            }:
+                continue
+            output[key] = _strip_note_ids_for_display(value=child)
+        return output
+    if isinstance(value, list):
+        return [_strip_note_ids_for_display(value=item) for item in value]
+    return value
 
 
 def _normalize_tag_atom(*, value: object) -> str:
@@ -2493,14 +2620,23 @@ def _normalize_expression_plan(
     *,
     payload: object,
     max_expressions: int,
+    min_expressions: int = 0,
+    source_message: str | None = None,
 ) -> dict:
+    if min_expressions < 0:
+        raise ValueError("min_expressions must be >= 0")
+    if min_expressions > max_expressions:
+        raise ValueError("min_expressions must be <= max_expressions")
     if not isinstance(payload, dict):
         raise ValueError("Expression planner output must be a JSON object")
 
     reasoning_value = payload.get("reasoning")
-    if not isinstance(reasoning_value, str) or reasoning_value.strip() == "":
-        raise ValueError("Expression planner reasoning must be a non-empty string")
-    reasoning = reasoning_value.strip()
+    if not isinstance(reasoning_value, str):
+        reasoning = "Model omitted reasoning."
+    else:
+        reasoning = reasoning_value.strip()
+        if reasoning == "":
+            reasoning = "Model omitted reasoning."
 
     raw_expressions = payload.get("expressions")
     if not isinstance(raw_expressions, list):
@@ -2508,6 +2644,9 @@ def _normalize_expression_plan(
 
     expressions: List[dict] = []
     seen = set()
+    enforce_ascii_only = False
+    if isinstance(source_message, str):
+        enforce_ascii_only = source_message.isascii()
     for raw_expression in raw_expressions:
         if not isinstance(raw_expression, dict):
             continue
@@ -2515,7 +2654,7 @@ def _normalize_expression_plan(
         if not isinstance(raw_type, str):
             continue
         normalized_type = raw_type.casefold().strip()
-        if normalized_type not in {"phrase", "regex", "tag"}:
+        if normalized_type not in {"phrase", "regex", "near", "tag"}:
             continue
 
         normalized_expression: dict
@@ -2527,6 +2666,8 @@ def _normalize_expression_plan(
             normalized_value = re.sub(r"\s+", " ", value).strip()
             if normalized_value == "":
                 continue
+            if enforce_ascii_only and not normalized_value.isascii():
+                continue
             normalized_expression = {
                 "type": "phrase",
                 "value": normalized_value,
@@ -2535,6 +2676,8 @@ def _normalize_expression_plan(
         elif normalized_type == "regex":
             pattern = raw_expression.get("pattern")
             if not isinstance(pattern, str) or pattern.strip() == "":
+                continue
+            if enforce_ascii_only and not pattern.isascii():
                 continue
             flags_value = raw_expression.get("flags", "")
             if not isinstance(flags_value, str):
@@ -2555,8 +2698,40 @@ def _normalize_expression_plan(
                 "flags": normalized_flags,
             }
             dedupe_key = ("regex", pattern, normalized_flags)
+        elif normalized_type == "near":
+            left_value = raw_expression.get("left")
+            right_value = raw_expression.get("right")
+            window_chars = raw_expression.get("window_chars")
+            if not isinstance(left_value, str) or not isinstance(right_value, str):
+                continue
+            left_normalized = re.sub(r"\s+", " ", left_value).strip()
+            right_normalized = re.sub(r"\s+", " ", right_value).strip()
+            if left_normalized == "" or right_normalized == "":
+                continue
+            if left_normalized.casefold() == right_normalized.casefold():
+                continue
+            if not isinstance(window_chars, int):
+                continue
+            if window_chars < 20 or window_chars > 2000:
+                continue
+            if enforce_ascii_only and (
+                (not left_normalized.isascii()) or (not right_normalized.isascii())
+            ):
+                continue
+            normalized_expression = {
+                "type": "near",
+                "left": left_normalized,
+                "right": right_normalized,
+                "window_chars": window_chars,
+            }
+            ordered_pair = sorted(
+                [left_normalized.casefold(), right_normalized.casefold()]
+            )
+            dedupe_key = ("near", ordered_pair[0], ordered_pair[1], window_chars)
         else:
             tag_value = raw_expression.get("value")
+            if enforce_ascii_only and isinstance(tag_value, str) and not tag_value.isascii():
+                continue
             try:
                 normalized_tag = _normalize_tag_atom(value=tag_value)
             except ValueError:
@@ -2574,31 +2749,323 @@ def _normalize_expression_plan(
         if len(expressions) >= max_expressions:
             break
 
-    if len(expressions) == 0:
-        raise ValueError("Expression planner returned no usable expressions")
+    if len(expressions) < min_expressions:
+        raise ValueError(
+            "Expression planner returned "
+            + str(len(expressions))
+            + " usable expressions; need at least "
+            + str(min_expressions)
+        )
+    _validate_expression_plan_query_alignment(
+        expressions=expressions,
+        source_message=source_message,
+    )
     return {
         "reasoning": reasoning,
         "expressions": expressions,
     }
 
 
-def _fallback_expression_plan(*, user_message: str, max_expressions: int) -> dict:
-    normalized_message = re.sub(r"\s+", " ", user_message).strip()
-    if normalized_message == "":
-        raise ValueError("user_message must not be empty")
-    expressions = [{"type": "phrase", "value": normalized_message}]
-    query_terms = _query_terms_for_tags(user_message=user_message)
-    for term in query_terms[:3]:
-        expression = {"type": "phrase", "value": term}
-        if expression in expressions:
+def _regex_has_numeric_shape(*, pattern: str) -> bool:
+    if not isinstance(pattern, str):
+        raise TypeError("pattern must be a string")
+    if re.search(r"\\d", pattern) is not None:
+        return True
+    if re.search(r"\[0-9\]", pattern) is not None:
+        return True
+    if re.search(r"\{[0-9]+(?:,[0-9]*)?\}", pattern) is not None:
+        return True
+    return False
+
+
+def _regex_has_alpha_literals(*, pattern: str) -> bool:
+    if not isinstance(pattern, str):
+        raise TypeError("pattern must be a string")
+    without_escaped = re.sub(r"\\[A-Za-z]", "", pattern)
+    without_classes = re.sub(r"\[[^\]]*\]", "", without_escaped)
+    return re.search(r"[A-Za-z]", without_classes) is not None
+
+
+def _regex_has_bridge_wildcard(*, pattern: str) -> bool:
+    if not isinstance(pattern, str):
+        raise TypeError("pattern must be a string")
+    if ".*" in pattern:
+        return True
+    if re.search(r"\.\{[0-9]+(?:,[0-9]*)?\}", pattern) is not None:
+        return True
+    return False
+
+
+def _phrase_token_count(*, value: str) -> int:
+    if not isinstance(value, str):
+        raise TypeError("value must be a string")
+    return len(re.findall(r"[A-Za-z0-9]+", value))
+
+
+def _expression_execution_tier(*, expression: dict) -> int:
+    if not isinstance(expression, dict):
+        raise TypeError("expression must be an object")
+    expression_type = expression.get("type")
+    if not isinstance(expression_type, str):
+        return 2
+    if expression_type == "near":
+        return 1
+    if expression_type == "phrase":
+        value = expression.get("value")
+        if not isinstance(value, str):
+            return 2
+        token_count = _phrase_token_count(value=value)
+        if token_count >= 2:
+            return 0
+        return 2
+    if expression_type == "regex":
+        pattern = expression.get("pattern")
+        if not isinstance(pattern, str):
+            return 2
+        has_numeric_shape = _regex_has_numeric_shape(pattern=pattern)
+        has_alpha_literals = _regex_has_alpha_literals(pattern=pattern)
+        has_bridge_wildcard = _regex_has_bridge_wildcard(pattern=pattern)
+        if has_numeric_shape and not has_alpha_literals:
+            return 0
+        if has_bridge_wildcard and has_alpha_literals:
+            return 2
+        return 1
+    if expression_type == "tag":
+        return 1
+    return 2
+
+def _compile_near_regex_pattern(*, left: str, right: str, window_chars: int) -> str:
+    if not isinstance(left, str):
+        raise TypeError("left must be a string")
+    if not isinstance(right, str):
+        raise TypeError("right must be a string")
+    if not isinstance(window_chars, int):
+        raise TypeError("window_chars must be an integer")
+    if window_chars < 1:
+        raise ValueError("window_chars must be > 0")
+
+    def _phrase_to_regex_tokens(phrase: str) -> str:
+        escaped = re.escape(phrase)
+        return re.sub(r"\\\s+", r"\\s+", escaped)
+
+    left_pattern = _phrase_to_regex_tokens(left)
+    right_pattern = _phrase_to_regex_tokens(right)
+    window = str(window_chars)
+    return (
+        "(?:"
+        + left_pattern
+        + ".{0,"
+        + window
+        + "}"
+        + right_pattern
+        + "|"
+        + right_pattern
+        + ".{0,"
+        + window
+        + "}"
+        + left_pattern
+        + ")"
+    )
+
+
+def _compile_rewrite_expression_call(
+    *,
+    expression: dict,
+    per_expression_limit: int,
+    normalized_regex_engine: str,
+    universe_note_ids: List[str] | None,
+) -> dict:
+    if not isinstance(expression, dict):
+        raise TypeError("expression must be an object")
+    expression_type = expression.get("type")
+    if not isinstance(expression_type, str):
+        raise TypeError("expression.type must be a string")
+
+    if expression_type == "phrase":
+        phrase_value = expression.get("value")
+        if not isinstance(phrase_value, str):
+            raise TypeError("phrase expression value must be a string")
+        escaped = phrase_value.replace("\\", "\\\\").replace('"', '\\"')
+        query = f"\"{escaped}\""
+        tool_name = "search_notes"
+        tool_args = {
+            "query": query,
+            "required_tags": [],
+            "forbidden_tags": [],
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        display_args = {
+            "query": query,
+            "required_tags": [],
+            "forbidden_tags": [],
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        label = f'phrase:"{phrase_value}"'
+        return {
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "display_args": display_args,
+            "label": label,
+        }
+
+    if expression_type == "tag":
+        tag_value = expression.get("value")
+        if not isinstance(tag_value, str):
+            raise TypeError("tag expression value must be a string")
+        tool_name = "search_notes"
+        tool_args = {
+            "query": tag_value,
+            "required_tags": [],
+            "forbidden_tags": [],
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        display_args = {
+            "query": tag_value,
+            "required_tags": [],
+            "forbidden_tags": [],
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        label = f"tag:{tag_value}"
+        return {
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "display_args": display_args,
+            "label": label,
+        }
+
+    if expression_type == "regex":
+        pattern = expression.get("pattern")
+        flags = expression.get("flags")
+        if not isinstance(pattern, str):
+            raise TypeError("regex expression pattern must be a string")
+        if not isinstance(flags, str):
+            raise TypeError("regex expression flags must be a string")
+        tool_name = "search_notes_regex"
+        tool_args = {
+            "pattern": pattern,
+            "flags": flags,
+            "regex_engine": normalized_regex_engine,
+            "target": "both",
+            "scope_note_ids": universe_note_ids if universe_note_ids is not None else [],
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        display_args = {
+            "pattern": pattern,
+            "flags": flags,
+            "regex_engine": normalized_regex_engine,
+            "target": "both",
+            "scope_note_ids_count": len(universe_note_ids) if universe_note_ids is not None else 0,
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        label = f"regex:/{pattern}/{flags}"
+        return {
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "display_args": display_args,
+            "label": label,
+        }
+
+    if expression_type == "near":
+        left = expression.get("left")
+        right = expression.get("right")
+        window_chars = expression.get("window_chars")
+        if not isinstance(left, str):
+            raise TypeError("near expression left must be a string")
+        if not isinstance(right, str):
+            raise TypeError("near expression right must be a string")
+        if not isinstance(window_chars, int):
+            raise TypeError("near expression window_chars must be an integer")
+        pattern = _compile_near_regex_pattern(
+            left=left,
+            right=right,
+            window_chars=window_chars,
+        )
+        flags = "is"
+        tool_name = "search_notes_regex"
+        tool_args = {
+            "pattern": pattern,
+            "flags": flags,
+            "regex_engine": normalized_regex_engine,
+            "target": "both",
+            "scope_note_ids": universe_note_ids if universe_note_ids is not None else [],
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        display_args = {
+            "left": left,
+            "right": right,
+            "window_chars": window_chars,
+            "compiled_pattern": pattern,
+            "flags": flags,
+            "regex_engine": normalized_regex_engine,
+            "target": "both",
+            "scope_note_ids_count": len(universe_note_ids) if universe_note_ids is not None else 0,
+            "limit": per_expression_limit,
+            "offset": 0,
+        }
+        label = 'near:"' + left + '"~"' + right + '"@' + str(window_chars)
+        return {
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "display_args": display_args,
+            "label": label,
+        }
+
+    raise TypeError(f"Unsupported expression type: {expression_type}")
+
+
+def _validate_expression_plan_query_alignment(
+    *,
+    expressions: List[dict],
+    source_message: str | None,
+) -> None:
+    if not isinstance(expressions, list):
+        raise TypeError("expressions must be a list")
+    if source_message is not None and not isinstance(source_message, str):
+        raise TypeError("source_message must be a string or None")
+
+
+def _normalize_expression_plan_best_effort(
+    *,
+    payload: object,
+    max_expressions: int,
+    source_message: str | None = None,
+) -> dict:
+    try:
+        return _normalize_expression_plan(
+            payload=payload,
+            max_expressions=max_expressions,
+            source_message=source_message,
+        )
+    except ValueError:
+        return {
+            "reasoning": "",
+            "expressions": [],
+        }
+
+
+def _compute_expression_plan_target_count(*, max_expressions: int) -> int:
+    if max_expressions <= 0:
+        raise ValueError("max_expressions must be > 0")
+    return min(max_expressions, _EXPRESSION_PLAN_TARGET_CAP)
+
+
+def _compute_expression_probe_points(*, planned_expression_count: int) -> List[int]:
+    if planned_expression_count <= 0:
+        raise ValueError("planned_expression_count must be > 0")
+    probe_points: List[int] = []
+    for point in (_EXPRESSION_PROBE_FIRST, _EXPRESSION_PROBE_SECOND, planned_expression_count):
+        normalized_point = min(max(point, 1), planned_expression_count)
+        if normalized_point in probe_points:
             continue
-        expressions.append(expression)
-        if len(expressions) >= max_expressions:
-            break
-    return {
-        "reasoning": "Fallback expressions generated heuristically from the user query text.",
-        "expressions": expressions[:max_expressions],
-    }
+        probe_points.append(normalized_point)
+    return probe_points
 
 
 def _build_rewrite_expression_plan_messages(
@@ -2606,31 +3073,102 @@ def _build_rewrite_expression_plan_messages(
     user_message: str,
     search_context_query: str,
     max_expressions: int,
+    elapsed_ms: float = 0.0,
+    iteration_index: int = 1,
+    executed_query_history: List[dict] | None = None,
+    prior_evidence_notes: List[dict] | None = None,
 ) -> List[dict]:
-    system_prompt = (
-        "You are a retrieval expression planner for MetaList. "
-        "Domain model: notes are hierarchical (parent/child tree), and downstream retrieval can use content_text, "
-        "context_text (ancestor + note), and optional tag atoms. "
-        "Task: propose retrieval expressions for the user question. "
-        "Allowed expression atom types only: phrase, regex, tag. "
-        "No keyword atom type is allowed. "
-        "Use tag atoms only when clearly justified by user wording, and format tag values as tag-like terms. "
-        "Return ONLY JSON with exact shape: "
-        '{"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"tag","value":"tag-name"}]}. '
-        f"Provide up to {max_expressions} expressions."
+    if executed_query_history is None:
+        executed_query_history = []
+    if prior_evidence_notes is None:
+        prior_evidence_notes = []
+    system_prompt = "\n".join(
+        [
+            "You are a MetaList retrieval planner for one loop iteration.",
+            "Choose the next retrieval expressions to execute.",
+            "",
+            "Execution model:",
+            "- The loop may run multiple iterations.",
+            "- Your returned expressions are executed in the same order you provide.",
+            "- Keep only the best next queries for this iteration.",
+            "- You may return an empty expressions list when no new query is useful.",
+            "",
+            "Data model:",
+            "- Notes are hierarchical (parent/child trees).",
+            "- Retrieval can search content_text and context_text (ancestor + current note text).",
+            "- Prior results and query history are provided in the user payload.",
+            "",
+            "Allowed expression types only: phrase, regex, near, tag.",
+            "Use tag only when the user intent is explicitly tag-like.",
+            "Do not repeat any query already present in executed_query_history.",
+            "Use the same language/script as the user query unless the user query itself is multilingual.",
+            "",
+            "Return ONLY JSON with exact shape:",
+            '{"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200},{"type":"tag","value":"tag-name"}]}',
+            "Maximum expressions per iteration: " + str(max_expressions) + ".",
+        ]
     )
-    scoped_hint = "none"
-    if search_context_query.strip() != "":
-        scoped_hint = search_context_query
-    user_prompt = (
-        "User question:\n"
-        + user_message
-        + "\n\nActive search context (strict retrieval universe):\n"
-        + scoped_hint
+    user_payload = {
+        "question": user_message,
+        "iteration_index": iteration_index,
+        "elapsed_ms_so_far": elapsed_ms,
+        "active_search_context_query": search_context_query,
+        "executed_query_history": executed_query_history,
+        "prior_evidence_notes": prior_evidence_notes,
+    }
+    user_prompt = "Iteration context:\n" + json.dumps(
+        user_payload,
+        ensure_ascii=False,
+        indent=2,
     )
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
+    ]
+
+
+def _build_rewrite_expression_plan_repair_messages(
+    *,
+    user_message: str,
+    search_context_query: str,
+    original_plan: dict,
+    validation_error: str,
+    max_expressions: int,
+    target_expressions: int,
+) -> List[dict]:
+    system_prompt = "\n".join(
+        [
+            "You are repairing a MetaList retrieval plan that failed validation or was too weak.",
+            "Keep valid high-signal expressions from the prior plan and improve coverage.",
+            "",
+            "Rules:",
+            "- Use expression types only: phrase, regex, near, tag.",
+            "- Keep expressions ordered best-first (high signal first, broader later).",
+            "- Prefer simple realistic anchors over complex brittle patterns.",
+            "- Regex is optional; add when it improves structured-format recall.",
+            "- near is optional; add when multi-anchor proximity is useful.",
+            "- Use the same language/script as the query.",
+            "",
+            "Output contract:",
+            '- Return ONLY JSON with this exact shape: {"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200},{"type":"tag","value":"tag-name"}]}.',
+            "- Produce up to "
+            + str(target_expressions)
+            + " expressions for this pass (maximum "
+            + str(max_expressions)
+            + ").",
+        ]
+    )
+    scoped_hint = search_context_query if search_context_query.strip() != "" else ""
+    user_prompt_payload = {
+        "user_question": user_message,
+        "active_search_context_query": scoped_hint,
+        "prior_plan": original_plan,
+        "validation_error": validation_error,
+        "repair_instructions": "Keep valid anchors and add missing variants until constraints are met.",
+    }
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(user_prompt_payload, ensure_ascii=False)},
     ]
 
 
@@ -2640,11 +3178,18 @@ def _build_rewrite_synthesis_messages(
     search_context_query: str,
     expression_plan: dict,
     expression_stats: List[dict],
-    hydrated_notes: List[dict],
+    evidence_notes: List[dict] | None = None,
+    hydrated_notes: List[dict] | None = None,
 ) -> List[dict]:
+    if evidence_notes is None:
+        evidence_notes = hydrated_notes if hydrated_notes is not None else []
     system_prompt = (
         "You are answering from retrieved MetaList evidence only. "
         "MetaList schema reminder: notes are hierarchical and context may include ancestor text. "
+        "All evidence provided here comes from the user's own notes in this run, so do not refuse based on lack of access. "
+        "Never answer with capability disclaimers like 'I do not have access' when evidence is provided. "
+        "Some retrieved notes may be lexical false positives; ignore evidence that does not directly address the question. "
+        "Prioritize notes with stronger expression overlap and direct value-bearing evidence. "
         "If evidence is insufficient, say so explicitly. "
         "Do not invent facts. "
         "Return JSON: {\"answer\":\"...\"}."
@@ -2654,7 +3199,371 @@ def _build_rewrite_synthesis_messages(
         "active_search_context_query": search_context_query,
         "expression_plan": expression_plan,
         "expression_stats": expression_stats,
-        "hydrated_notes": hydrated_notes,
+        "evidence_notes": evidence_notes,
+    }
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        {
+            "role": "user",
+            "content": (
+                "Authoritative question (repeat): "
+                + user_message
+                + "\nReturn only JSON with an `answer` string."
+            ),
+        },
+    ]
+
+
+def _expression_signature(*, expression: dict) -> str:
+    if not isinstance(expression, dict):
+        raise TypeError("expression must be an object")
+    expression_type = expression.get("type")
+    if not isinstance(expression_type, str):
+        return "unknown"
+    normalized_type = expression_type.casefold()
+    if normalized_type == "phrase":
+        value = expression.get("value")
+        if not isinstance(value, str):
+            return "phrase:"
+        return "phrase:" + value.casefold().strip()
+    if normalized_type == "tag":
+        value = expression.get("value")
+        if not isinstance(value, str):
+            return "tag:"
+        return "tag:" + value.casefold().strip()
+    if normalized_type == "regex":
+        pattern = expression.get("pattern")
+        flags = expression.get("flags")
+        if not isinstance(pattern, str):
+            pattern = ""
+        if not isinstance(flags, str):
+            flags = ""
+        return "regex:/" + pattern + "/" + flags
+    if normalized_type == "near":
+        left = expression.get("left")
+        right = expression.get("right")
+        window_chars = expression.get("window_chars")
+        if not isinstance(left, str):
+            left = ""
+        if not isinstance(right, str):
+            right = ""
+        if not isinstance(window_chars, int):
+            window_chars = 0
+        return (
+            "near:"
+            + left.casefold().strip()
+            + "~"
+            + right.casefold().strip()
+            + "@"
+            + str(window_chars)
+        )
+    return normalized_type
+
+
+def _scoped_result_entries_from_tool_response(
+    *,
+    tool_response: dict,
+    universe_mode: str,
+    universe_note_ids: List[str] | None,
+    universe_note_id_set: set[str] | None,
+) -> List[dict]:
+    if not isinstance(tool_response, dict):
+        raise TypeError("tool_response must be an object")
+    if universe_mode not in {"global", "scoped"}:
+        raise ValueError("universe_mode must be one of: global, scoped")
+    if tool_response.get("ok") is not True:
+        return []
+    data = tool_response.get("data")
+    if not isinstance(data, dict):
+        return []
+    results = data.get("results")
+    if not isinstance(results, list):
+        return []
+
+    ordered_results: List[dict] = []
+    by_note_id: Dict[str, dict] = {}
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        note_id = row.get("note_id")
+        if not isinstance(note_id, str) or note_id == "":
+            continue
+        if note_id in by_note_id:
+            continue
+        by_note_id[note_id] = row
+        ordered_results.append(row)
+
+    if universe_mode == "global":
+        return ordered_results
+
+    if universe_note_ids is None or universe_note_id_set is None:
+        raise RuntimeError("scoped universe requires note id set")
+
+    scoped_results: List[dict] = []
+    for note_id in universe_note_ids:
+        if note_id not in universe_note_id_set:
+            continue
+        entry = by_note_id.get(note_id)
+        if entry is None:
+            continue
+        scoped_results.append(entry)
+    return scoped_results
+
+
+def _sanitize_expression_stats_for_model(*, expression_stats: List[dict]) -> List[dict]:
+    if not isinstance(expression_stats, list):
+        raise TypeError("expression_stats must be a list")
+    sanitized: List[dict] = []
+    for row in expression_stats:
+        if not isinstance(row, dict):
+            continue
+        clean_row: Dict[str, object] = {}
+        for key in (
+            "expression_index",
+            "original_expression_index",
+            "execution_tier",
+            "expression_label",
+            "execution_ms",
+            "raw_match_count",
+            "scoped_match_count",
+            "universe_mode",
+        ):
+            if key in row:
+                clean_row[key] = row[key]
+        expression_payload = row.get("expression")
+        if isinstance(expression_payload, dict):
+            clean_row["expression"] = expression_payload
+        regex_samples = row.get("regex_match_samples")
+        if isinstance(regex_samples, list):
+            clean_samples: List[dict] = []
+            for sample in regex_samples[:8]:
+                if not isinstance(sample, dict):
+                    continue
+                field = sample.get("field")
+                snippet = sample.get("snippet")
+                if not isinstance(field, str):
+                    field = "unknown"
+                if not isinstance(snippet, str) or snippet.strip() == "":
+                    continue
+                clean_samples.append(
+                    {
+                        "field": field,
+                        "snippet": snippet,
+                    }
+                )
+            if len(clean_samples) > 0:
+                clean_row["regex_match_samples"] = clean_samples
+        if len(clean_row) > 0:
+            sanitized.append(clean_row)
+    return sanitized
+
+
+def _prepare_model_evidence_notes(
+    *,
+    note_entries: List[dict],
+    user_message: str,
+    max_notes: int,
+) -> List[dict]:
+    if not isinstance(note_entries, list):
+        raise TypeError("note_entries must be a list")
+    if max_notes <= 0:
+        raise ValueError("max_notes must be > 0")
+
+    query_terms = _query_terms_for_tags(user_message=user_message)[:10]
+    prepared: List[dict] = []
+    for note in note_entries[:max_notes]:
+        if not isinstance(note, dict):
+            continue
+        content_text = note.get("content_text")
+        if not isinstance(content_text, str):
+            content_text = ""
+        context_text = note.get("context_text")
+        if not isinstance(context_text, str):
+            context_text = ""
+        preview_text = note.get("preview_text")
+        if not isinstance(preview_text, str):
+            preview_text = ""
+        source_text = context_text if context_text != "" else content_text
+        term_snippets: List[str] = []
+        if source_text != "" and len(query_terms) > 0:
+            term_snippets = _extract_term_snippets(
+                plain_text=source_text,
+                terms=query_terms,
+                max_snippets=4,
+            )
+
+        regex_snippets: List[str] = []
+        matches = note.get("matches")
+        if isinstance(matches, list):
+            for match in matches[:8]:
+                if not isinstance(match, dict):
+                    continue
+                snippet = match.get("snippet")
+                if not isinstance(snippet, str) or snippet.strip() == "":
+                    continue
+                collapsed = re.sub(r"\s+", " ", snippet).strip()
+                regex_snippets.append(
+                    _clip_text_for_synthesis(text=collapsed, max_chars=240)
+                )
+
+        tag_terms = note.get("tag_terms")
+        effective_tag_terms = note.get("effective_tag_terms")
+        matched_expressions = note.get("matched_expressions")
+        if not isinstance(matched_expressions, list):
+            matched_expressions = []
+        cleaned_matched_expressions = [
+            expression
+            for expression in matched_expressions
+            if isinstance(expression, str) and expression != ""
+        ][:16]
+
+        prepared_note: Dict[str, object] = {
+            "hit_count": note.get("hit_count"),
+            "matched_expressions": cleaned_matched_expressions,
+            "preview_text": _clip_text_for_synthesis(
+                text=preview_text,
+                max_chars=260,
+            ) if preview_text != "" else "",
+            "content_excerpt": _clip_text_for_synthesis(
+                text=content_text,
+                max_chars=_SYNTHESIS_MAX_CONTENT_EXCERPT_CHARS,
+            ),
+            "context_excerpt": _clip_text_for_synthesis(
+                text=context_text,
+                max_chars=_SYNTHESIS_MAX_CONTEXT_EXCERPT_CHARS,
+            ) if context_text != "" else "",
+            "term_snippets": term_snippets,
+            "regex_snippets": regex_snippets,
+            "ancestor_context_included": context_text != "" and context_text != content_text,
+        }
+        if isinstance(tag_terms, list):
+            prepared_note["tag_terms"] = [
+                term for term in tag_terms[:20] if isinstance(term, str) and term != ""
+            ]
+        if isinstance(effective_tag_terms, list):
+            prepared_note["effective_tag_terms"] = [
+                term
+                for term in effective_tag_terms[:24]
+                if isinstance(term, str) and term != ""
+            ]
+        prepared.append(prepared_note)
+    return prepared
+
+
+def _order_candidate_note_ids_by_note_order(
+    *,
+    ranked_note_ids: List[str],
+    note_evidence_by_id: Dict[str, dict],
+) -> List[str]:
+    if not isinstance(ranked_note_ids, list):
+        raise TypeError("ranked_note_ids must be a list")
+    if not isinstance(note_evidence_by_id, dict):
+        raise TypeError("note_evidence_by_id must be an object")
+
+    sortable_rows: List[tuple[int, int, str]] = []
+    for fallback_index, note_id in enumerate(ranked_note_ids):
+        if not isinstance(note_id, str) or note_id == "":
+            continue
+        entry = note_evidence_by_id.get(note_id)
+        if not isinstance(entry, dict):
+            continue
+        note_order_index = entry.get("note_order_index")
+        if not isinstance(note_order_index, int) or note_order_index < 0:
+            note_order_index = 10**9
+        sortable_rows.append((note_order_index, fallback_index, note_id))
+
+    sortable_rows.sort(key=lambda row: (row[0], row[1], row[2]))
+    return [row[2] for row in sortable_rows]
+
+
+def _candidate_sample_without_ids(
+    *,
+    ordered_note_ids: List[str],
+    note_evidence_by_id: Dict[str, dict],
+    note_hit_counts: Dict[str, int],
+    note_hit_expressions: Dict[str, List[str]],
+    max_items: int,
+) -> List[dict]:
+    if max_items <= 0:
+        raise ValueError("max_items must be > 0")
+    sample: List[dict] = []
+    for note_id in ordered_note_ids:
+        if len(sample) >= max_items:
+            break
+        entry = note_evidence_by_id.get(note_id)
+        if not isinstance(entry, dict):
+            continue
+        preview_text = entry.get("preview_text")
+        context_text = entry.get("context_text")
+        if not isinstance(preview_text, str):
+            preview_text = ""
+        if not isinstance(context_text, str):
+            context_text = ""
+        sample.append(
+            {
+                "hit_count": note_hit_counts.get(note_id, 0),
+                "matched_expression_count": len(note_hit_expressions.get(note_id, [])),
+                "preview_excerpt": _clip_text_for_synthesis(
+                    text=preview_text if preview_text != "" else context_text,
+                    max_chars=180,
+                ),
+            }
+        )
+    return sample
+
+
+def _build_rewrite_iteration_messages(
+    *,
+    user_message: str,
+    search_context_query: str,
+    elapsed_ms: float,
+    expression_history: List[dict],
+    executed_query_history: List[dict],
+    latest_expression: str,
+    latest_expression_stats: dict,
+    carried_evidence_notes: List[dict],
+    latest_result_notes: List[dict],
+) -> List[dict]:
+    system_prompt = "\n".join(
+        [
+            "You are the MetaList loop controller for iterative retrieval.",
+            "After each executed expression, choose exactly one next action.",
+            "",
+            "Allowed decisions:",
+            '- "answer": evidence is sufficient. You may give a tentative answer like "either X or Y".',
+            '- "continue": keep searching with remaining planned expressions.',
+            '- "uncertain": evidence is insufficient now (for example: "I do not know from current evidence").',
+            '- "clarify": ask exactly one concise user question that would disambiguate.',
+            "",
+            "Rules:",
+            "- Use only the provided evidence and executed-query history.",
+            "- Do NOT repeat queries already in already_executed_queries.",
+            "- Prefer simple high-confidence conclusions when directly supported by evidence.",
+            "- If evidence conflicts, either answer with explicit uncertainty (X or Y) or ask clarify.",
+            "- Never use capability/access disclaimers; this evidence is from the user's notes.",
+            "",
+            "Return ONLY JSON with exact shape:",
+            (
+                '{"reasoning":"<1-3 sentences>",'
+                '"decision":"answer|continue|uncertain|clarify",'
+                '"answer":"<required for answer, optional for uncertain>",'
+                '"clarifying_question":"<required for clarify>",'
+                '"confidence":"high|medium|low",'
+                '"continue_reason":"<required for continue; otherwise empty>"}'
+            ),
+        ]
+    )
+    payload: Dict[str, object] = {
+        "question": user_message,
+        "active_search_context_query": search_context_query,
+        "elapsed_ms_so_far": elapsed_ms,
+        "latest_expression": latest_expression,
+        "latest_expression_stats": latest_expression_stats,
+        "query_history": expression_history,
+        "already_executed_queries": executed_query_history,
+        "carried_evidence_notes": carried_evidence_notes,
+        "latest_result_notes": latest_result_notes,
     }
     return [
         {"role": "system", "content": system_prompt},
@@ -2662,15 +3571,410 @@ def _build_rewrite_synthesis_messages(
     ]
 
 
+def _build_rewrite_loop_decision_messages(
+    *,
+    user_message: str,
+    search_context_query: str,
+    elapsed_ms: float,
+    iteration_index: int,
+    executed_query_history: List[dict],
+    iteration_query_results: List[dict],
+    carried_evidence_notes: List[dict],
+) -> List[dict]:
+    system_prompt = "\n".join(
+        [
+            "You are the MetaList loop decision engine.",
+            "Given this iteration's query results and prior history, decide what to do next.",
+            "",
+            "Allowed decisions:",
+            '- "answer": provide best-supported answer now.',
+            '- "continue": run another iteration with new queries.',
+            '- "clarify": ask exactly one short clarifying question.',
+            '- "uncertain": evidence is insufficient; return best uncertainty statement.',
+            "",
+            "Rules:",
+            "- Base decisions only on provided evidence.",
+            "- Do not use capability/access disclaimers.",
+            "- If you choose continue, explain what is still missing.",
+            "",
+            "Return ONLY JSON with exact shape:",
+            (
+                '{"reasoning":"<1-3 sentences>",'
+                '"decision":"answer|continue|uncertain|clarify",'
+                '"answer":"<required for answer, optional for uncertain>",'
+                '"clarifying_question":"<required for clarify>",'
+                '"confidence":"high|medium|low",'
+                '"continue_reason":"<required for continue; otherwise empty>"}'
+            ),
+        ]
+    )
+    payload: Dict[str, object] = {
+        "question": user_message,
+        "active_search_context_query": search_context_query,
+        "iteration_index": iteration_index,
+        "elapsed_ms_so_far": elapsed_ms,
+        "executed_query_history": executed_query_history,
+        "iteration_query_results": iteration_query_results,
+        "carried_evidence_notes": carried_evidence_notes,
+    }
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
+
+
+def _normalize_rewrite_iteration_decision(*, payload: object) -> dict:
+    if not isinstance(payload, dict):
+        payload = {}
+
+    decision = payload.get("decision")
+    if not isinstance(decision, str) or decision.strip() == "":
+        fallback_action = payload.get("action")
+        if isinstance(fallback_action, str):
+            mapped = fallback_action.casefold().strip()
+            if mapped in {"final", "answer"}:
+                decision = "answer"
+            elif mapped in {"continue", "tool"}:
+                decision = "continue"
+            elif mapped in {"clarify"}:
+                decision = "clarify"
+            elif mapped in {"uncertain", "unknown", "dont_know"}:
+                decision = "uncertain"
+    if not isinstance(decision, str) or decision.strip() == "":
+        fallback_answer = payload.get("answer")
+        fallback_question = payload.get("clarifying_question")
+        fallback_continue_reason = payload.get("continue_reason")
+        if isinstance(fallback_answer, str) and fallback_answer.strip() != "":
+            decision = "answer"
+        elif isinstance(fallback_question, str) and fallback_question.strip() != "":
+            decision = "clarify"
+        elif isinstance(fallback_continue_reason, str) and fallback_continue_reason.strip() != "":
+            decision = "continue"
+        else:
+            decision = "uncertain"
+    normalized_decision = str(decision).casefold().strip()
+
+    reasoning = payload.get("reasoning")
+    if not isinstance(reasoning, str):
+        reasoning = ""
+    normalized_reasoning = reasoning.strip()
+
+    confidence = payload.get("confidence")
+    if not isinstance(confidence, str):
+        confidence = "medium"
+    normalized_confidence = confidence.casefold().strip()
+    if normalized_confidence not in {"high", "medium", "low"}:
+        normalized_confidence = "medium"
+
+    answer = payload.get("answer")
+    if not isinstance(answer, str):
+        answer = ""
+    normalized_answer = answer.strip()
+
+    clarifying_question = payload.get("clarifying_question")
+    if not isinstance(clarifying_question, str):
+        clarifying_question = ""
+    normalized_clarifying_question = clarifying_question.strip()
+
+    continue_reason = payload.get("continue_reason")
+    if not isinstance(continue_reason, str):
+        continue_reason = ""
+    normalized_continue_reason = continue_reason.strip()
+
+    if normalized_decision not in {"answer", "continue", "uncertain", "clarify"}:
+        if normalized_answer != "":
+            normalized_decision = "answer"
+        elif normalized_clarifying_question != "":
+            normalized_decision = "clarify"
+        elif normalized_continue_reason != "":
+            normalized_decision = "continue"
+        else:
+            normalized_decision = "uncertain"
+
+    if normalized_reasoning == "":
+        if normalized_continue_reason != "":
+            normalized_reasoning = normalized_continue_reason
+        elif normalized_answer != "":
+            normalized_reasoning = normalized_answer
+        elif normalized_clarifying_question != "":
+            normalized_reasoning = normalized_clarifying_question
+        else:
+            normalized_reasoning = "Model omitted reasoning."
+
+    if normalized_decision == "answer" and normalized_answer == "":
+        if normalized_clarifying_question != "":
+            normalized_decision = "clarify"
+        elif normalized_continue_reason != "":
+            normalized_decision = "continue"
+        else:
+            normalized_decision = "uncertain"
+    if normalized_decision == "clarify" and normalized_clarifying_question == "":
+        if normalized_answer != "":
+            normalized_decision = "answer"
+        elif normalized_continue_reason != "":
+            normalized_decision = "continue"
+        else:
+            normalized_decision = "uncertain"
+    if normalized_decision == "continue" and normalized_continue_reason == "":
+        normalized_continue_reason = normalized_reasoning
+    if normalized_decision == "uncertain" and normalized_answer == "":
+        normalized_answer = "I do not know based on the current evidence."
+
+    return {
+        "reasoning": normalized_reasoning,
+        "decision": normalized_decision,
+        "answer": normalized_answer,
+        "clarifying_question": normalized_clarifying_question,
+        "confidence": normalized_confidence,
+        "continue_reason": normalized_continue_reason,
+    }
+
+
+def _find_first_answer_like_string(*, payload: object, max_depth: int) -> str:
+    if max_depth <= 0:
+        raise ValueError("max_depth must be > 0")
+    answer_keys = (
+        "answer",
+        "final_answer",
+        "summary",
+        "response",
+        "text",
+        "result_text",
+    )
+    queue_items: List[tuple[object, int]] = [(payload, 0)]
+    while len(queue_items) > 0:
+        value, depth = queue_items.pop(0)
+        if depth > max_depth:
+            continue
+        if isinstance(value, dict):
+            for key in answer_keys:
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip() != "":
+                    return candidate.strip()
+            for child in value.values():
+                queue_items.append((child, depth + 1))
+            continue
+        if isinstance(value, list):
+            for child in value[:100]:
+                queue_items.append((child, depth + 1))
+            continue
+    return ""
+
+
 def _extract_synthesis_answer(*, payload: object) -> str:
-    if isinstance(payload, dict):
-        for key in ("answer", "final_answer", "summary", "response"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip() != "":
-                return value.strip()
+    extracted = _find_first_answer_like_string(payload=payload, max_depth=6)
+    if extracted != "":
+        return extracted
     if isinstance(payload, str) and payload.strip() != "":
         return payload.strip()
     return "No synthesized answer returned."
+
+
+def _is_access_refusal_answer(*, answer: str) -> bool:
+    if not isinstance(answer, str):
+        raise TypeError("answer must be a string")
+    normalized = answer.casefold()
+    refusal_markers = (
+        "i do not have access",
+        "i don't have access",
+        "cannot access",
+        "can't access",
+        "do not have your personal information",
+        "don't have your personal information",
+    )
+    for marker in refusal_markers:
+        if marker in normalized:
+            return True
+    return False
+
+
+def _expression_rank_weight(
+    *,
+    expression: dict,
+    scoped_match_count: int,
+    universe_note_count: int,
+) -> float:
+    if scoped_match_count < 0:
+        raise ValueError("scoped_match_count must be >= 0")
+    expression_type = expression.get("type")
+    if not isinstance(expression_type, str):
+        expression_type = ""
+
+    base_weight = 1.0
+    if expression_type == "regex":
+        base_weight = 3.0
+    elif expression_type == "phrase":
+        value = expression.get("value")
+        if isinstance(value, str):
+            token_count = len(re.findall(r"[A-Za-z0-9]+", value))
+            normalized_length = len(value.strip())
+            base_weight = 1.4 + min(token_count, 8) * 0.35
+            if normalized_length <= 3:
+                base_weight *= 0.12
+            elif token_count <= 1 and normalized_length <= 5:
+                base_weight *= 0.35
+        else:
+            base_weight = 1.4
+    elif expression_type == "tag":
+        base_weight = 1.7
+
+    if universe_note_count <= 0:
+        inverse_freq = 1.0
+    else:
+        inverse_freq = math.log((universe_note_count + 1) / (scoped_match_count + 1)) + 1.0
+        inverse_freq = max(inverse_freq, 0.05)
+    return round(base_weight * inverse_freq, 6)
+
+
+def _rank_candidate_note_ids(
+    *,
+    note_hit_counts: Dict[str, int],
+    note_hit_expressions: Dict[str, List[str]],
+    expression_stats: List[dict],
+    universe_note_count: int,
+    universe_note_ids: List[str] | None,
+) -> tuple[List[str], dict]:
+    expression_weight_by_label: Dict[str, float] = {}
+    for row in expression_stats:
+        if not isinstance(row, dict):
+            continue
+        label = row.get("expression_label")
+        if not isinstance(label, str) or label == "":
+            continue
+        expression = row.get("expression")
+        if not isinstance(expression, dict):
+            continue
+        scoped_match_count = row.get("scoped_match_count")
+        if not isinstance(scoped_match_count, int):
+            continue
+        expression_weight_by_label[label] = _expression_rank_weight(
+            expression=expression,
+            scoped_match_count=scoped_match_count,
+            universe_note_count=universe_note_count,
+        )
+
+    universe_rank: Dict[str, int] = {}
+    if isinstance(universe_note_ids, list):
+        for index, note_id in enumerate(universe_note_ids):
+            if isinstance(note_id, str) and note_id not in universe_rank:
+                universe_rank[note_id] = index
+
+    first_seen_rank: Dict[str, int] = {}
+    ranked_rows: List[dict] = []
+    for index, note_id in enumerate(note_hit_counts.keys()):
+        first_seen_rank[note_id] = index
+        hit_count = note_hit_counts.get(note_id, 0)
+        labels = note_hit_expressions.get(note_id, [])
+        if not isinstance(labels, list):
+            labels = []
+        score = 0.0
+        seen_labels = set()
+        for label in labels:
+            if not isinstance(label, str) or label == "":
+                continue
+            if label in seen_labels:
+                continue
+            seen_labels.add(label)
+            score += expression_weight_by_label.get(label, 0.0)
+        score += float(hit_count) * 0.05
+        ranked_rows.append(
+            {
+                "note_id": note_id,
+                "score": round(score, 6),
+                "hit_count": hit_count,
+                "matched_expression_count": len(seen_labels),
+                "matched_expressions": list(seen_labels),
+                "first_seen_rank": index,
+                "universe_rank": universe_rank.get(note_id, 10**9),
+            }
+        )
+
+    ranked_rows.sort(
+        key=lambda row: (
+            -row["score"],
+            -row["matched_expression_count"],
+            -row["hit_count"],
+            row["universe_rank"],
+            row["first_seen_rank"],
+            row["note_id"],
+        )
+    )
+    ordered_note_ids = [row["note_id"] for row in ranked_rows]
+    return ordered_note_ids, {
+        "expression_weights": expression_weight_by_label,
+        "ranked_candidates_sample": ranked_rows[:_STEP_NOTE_ID_SAMPLE_LIMIT],
+    }
+
+
+def _clip_text_for_synthesis(*, text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        raise ValueError("max_chars must be > 0")
+    collapsed = re.sub(r"\s+", " ", text).strip()
+    if len(collapsed) <= max_chars:
+        return collapsed
+    if max_chars <= 16:
+        return collapsed[:max_chars]
+    marker = " ... "
+    available = max_chars - len(marker)
+    head_chars = max(available * 3 // 4, 1)
+    tail_chars = max(available - head_chars, 1)
+    return collapsed[:head_chars] + marker + collapsed[-tail_chars:]
+
+
+def _prepare_synthesis_notes(
+    *,
+    hydrated_notes: List[dict],
+    user_message: str,
+    max_notes: int,
+) -> List[dict]:
+    if max_notes <= 0:
+        raise ValueError("max_notes must be > 0")
+    query_terms = _query_terms_for_tags(user_message=user_message)[:10]
+    small_candidate_set = len(hydrated_notes) <= _SYNTHESIS_SMALL_CANDIDATE_THRESHOLD
+    content_max_chars = _SYNTHESIS_MAX_CONTENT_EXCERPT_CHARS
+    context_max_chars = _SYNTHESIS_MAX_CONTEXT_EXCERPT_CHARS
+    if small_candidate_set:
+        content_max_chars = _SYNTHESIS_SMALL_CANDIDATE_CONTENT_MAX_CHARS
+        context_max_chars = _SYNTHESIS_SMALL_CANDIDATE_CONTEXT_MAX_CHARS
+    prepared: List[dict] = []
+    for note in hydrated_notes[:max_notes]:
+        if not isinstance(note, dict):
+            continue
+        note_id = note.get("note_id")
+        if not isinstance(note_id, str) or note_id == "":
+            continue
+        content_text = note.get("content_text")
+        if not isinstance(content_text, str):
+            content_text = ""
+        context_text = note.get("context_text")
+        if not isinstance(context_text, str):
+            context_text = ""
+        source_text = context_text if context_text != "" else content_text
+        snippets: List[str] = []
+        if source_text != "" and len(query_terms) > 0:
+            snippets = _extract_term_snippets(
+                plain_text=source_text,
+                terms=query_terms,
+                max_snippets=4,
+            )
+        prepared.append(
+            {
+                "note_id": note_id,
+                "hit_count": note.get("hit_count"),
+                "matched_expressions": note.get("matched_expressions"),
+                "term_snippets": snippets,
+                "content_excerpt": _clip_text_for_synthesis(
+                    text=content_text,
+                    max_chars=content_max_chars,
+                ),
+                "context_excerpt": _clip_text_for_synthesis(
+                    text=context_text,
+                    max_chars=context_max_chars,
+                ) if context_text != "" else "",
+                "ancestor_context_included": context_text != "" and context_text != content_text,
+            }
+        )
+    return prepared
 
 
 def _run_rewrite_request(
@@ -2685,6 +3989,7 @@ def _run_rewrite_request(
     hydrate_top_k: int,
     regex_engine: str,
     progress_callback: Callable[[dict], None] | None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> dict:
     if max_steps <= 0:
         raise ValueError("max_steps must be > 0")
@@ -2695,6 +4000,16 @@ def _run_rewrite_request(
     normalized_regex_engine = regex_engine.casefold()
     if normalized_regex_engine not in _ALLOWED_REGEX_ENGINES:
         raise ValueError(f"regex_engine must be one of: {sorted(_ALLOWED_REGEX_ENGINES)}")
+
+    run_started_at = time.perf_counter()
+
+    def _total_execution_ms() -> float:
+        return round((time.perf_counter() - run_started_at) * 1000, 3)
+
+    def _emit_status(*, detail: str) -> None:
+        if status_callback is None:
+            return
+        status_callback(detail)
 
     resolved_model = ensure_ollama_model_available(
         ollama_chat_url=ollama_chat_url,
@@ -2717,7 +4032,9 @@ def _run_rewrite_request(
     universe_resolution_ms = 0.0
     universe_boundary_tool = ""
     universe_boundary_arguments: dict = {}
+    per_expression_limit = _MAX_EXPRESSION_SEARCH_RESULTS
 
+    _emit_status(detail="Resolving retrieval universe...")
     if universe_mode == "scoped":
         universe_args = {
             "query": search_context_query,
@@ -2744,6 +4061,7 @@ def _run_rewrite_request(
                 "model": resolved_model,
                 "steps": steps,
                 "mode": "rewrite",
+                "total_execution_ms": _total_execution_ms(),
             }
         universe_note_ids = _ordered_note_ids_from_search_tool(tool_response=universe_tool_response)
         universe_note_id_set = set(universe_note_ids)
@@ -2769,6 +4087,7 @@ def _run_rewrite_request(
                 "model": resolved_model,
                 "steps": steps,
                 "mode": "rewrite",
+                "total_execution_ms": _total_execution_ms(),
             }
         count_data = count_tool_response.get("data")
         if not isinstance(count_data, dict):
@@ -2780,336 +4099,599 @@ def _run_rewrite_request(
         universe_boundary_tool = "count_notes"
         universe_boundary_arguments = {}
 
-    append_step(
-        step_record={
-            "step": len(steps) + 1,
-            "action": "run_config",
-            "reason": "deterministic run configuration and universe boundary snapshot",
-            "tool_response": {
-                "ok": True,
-                "data": {
-                    "max_steps": max_steps,
-                    "max_expressions": max_expressions,
-                    "hydrate_top_k": hydrate_top_k,
-                    "regex_engine": normalized_regex_engine,
-                    "active_search_context_query": search_context_query,
-                    "universe_mode": universe_mode,
-                    "universe_note_count": universe_note_count,
-                    "universe_resolution_ms": universe_resolution_ms,
-                    "universe_boundary_tool": universe_boundary_tool,
-                    "universe_boundary_arguments": universe_boundary_arguments,
-                },
-            },
-        }
-    )
-
-    plan_messages = _build_rewrite_expression_plan_messages(
-        user_message=user_message,
-        search_context_query=search_context_query,
-        max_expressions=max_expressions,
-    )
-    planner_raw_output = ""
-    planner_error = ""
-    plan_start = time.perf_counter()
-    planned_payload, planner_raw_output = _ollama_chat_json_with_raw(
-        ollama_chat_url=ollama_chat_url,
-        model=resolved_model,
-        messages=plan_messages,
-    )
-    plan_elapsed_ms = round((time.perf_counter() - plan_start) * 1000, 3)
-    try:
-        expression_plan = _normalize_expression_plan(
-            payload=planned_payload,
-            max_expressions=max_expressions,
-        )
-    except ValueError as error:
-        planner_error = str(error)
-        expression_plan = _fallback_expression_plan(
-            user_message=user_message,
-            max_expressions=max_expressions,
-        )
-    append_step(
-        step_record={
-            "step": len(steps) + 1,
-            "action": "expression_plan",
-            "reason": "model proposed phrase/regex/tag retrieval expressions",
-            "stats": {
-                "execution_ms": plan_elapsed_ms,
-                "expression_count": len(expression_plan["expressions"]),
-            },
-            "model_payload": {
-                "reasoning": expression_plan["reasoning"],
-                "expressions": expression_plan["expressions"],
-                "prompt_messages": plan_messages,
-                "raw_model_output": planner_raw_output,
-                "planner_error": planner_error,
-            },
-        }
-    )
+    run_config = {
+        "max_steps": max_steps,
+        "max_expressions": max_expressions,
+        "hydrate_top_k": hydrate_top_k,
+        "regex_engine": normalized_regex_engine,
+        "active_search_context_query": search_context_query,
+        "universe_mode": universe_mode,
+        "universe_note_count": universe_note_count,
+        "universe_resolution_ms": universe_resolution_ms,
+        "universe_boundary_tool": universe_boundary_tool,
+        "universe_boundary_arguments": universe_boundary_arguments,
+        "per_expression_limit": per_expression_limit,
+        "expression_target_count": _compute_expression_plan_target_count(max_expressions=max_expressions),
+        "expression_probe_points": _compute_expression_probe_points(
+            planned_expression_count=_compute_expression_plan_target_count(max_expressions=max_expressions)
+        ),
+    }
 
     note_hit_counts: Dict[str, int] = {}
     note_hit_expressions: Dict[str, List[str]] = {}
+    note_evidence_by_id: Dict[str, dict] = {}
     expression_stats: List[dict] = []
+    executed_query_history: List[dict] = []
+    executed_query_signatures = set()
 
-    for expression_index, expression in enumerate(expression_plan["expressions"], start=1):
-        if expression_index > max_expressions:
-            break
-        if not isinstance(expression, dict):
-            raise TypeError("expression entry must be an object")
-        if "type" not in expression:
-            raise TypeError("expression missing type")
-        expression_type = expression["type"]
-        if not isinstance(expression_type, str):
-            raise TypeError("expression.type must be a string")
+    def merge_scoped_entries(*, entries: List[dict], expression_label: str) -> List[str]:
+        latest_note_ids: List[str] = []
+        for entry in entries:
+            note_id = entry.get("note_id")
+            if not isinstance(note_id, str) or note_id == "":
+                continue
+            latest_note_ids.append(note_id)
 
-        tool_name: str
-        tool_args: dict
-        display_args: dict
-        label: str
-        if expression_type == "phrase":
-            phrase_value = expression["value"]
-            if not isinstance(phrase_value, str):
-                raise TypeError("phrase expression value must be a string")
-            escaped = phrase_value.replace("\\", "\\\\").replace('"', '\\"')
-            query = f"\"{escaped}\""
-            tool_name = "search_note_ids"
-            tool_args = {
-                "query": query,
-                "required_tags": [],
-                "forbidden_tags": [],
-                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
-                "offset": 0,
-            }
-            display_args = tool_args
-            label = f'phrase:"{phrase_value}"'
-        elif expression_type == "tag":
-            tag_value = expression["value"]
-            if not isinstance(tag_value, str):
-                raise TypeError("tag expression value must be a string")
-            tool_name = "search_note_ids"
-            tool_args = {
-                "query": tag_value,
-                "required_tags": [],
-                "forbidden_tags": [],
-                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
-                "offset": 0,
-            }
-            display_args = tool_args
-            label = f"tag:{tag_value}"
-        elif expression_type == "regex":
-            pattern = expression["pattern"]
-            flags = expression["flags"]
-            if not isinstance(pattern, str):
-                raise TypeError("regex expression pattern must be a string")
-            if not isinstance(flags, str):
-                raise TypeError("regex expression flags must be a string")
-            tool_name = "search_notes_regex_ids"
-            tool_args = {
-                "pattern": pattern,
-                "flags": flags,
-                "regex_engine": normalized_regex_engine,
-                "target": "both",
-                "scope_note_ids": universe_note_ids if universe_note_ids is not None else [],
-                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
-                "offset": 0,
-            }
-            display_args = {
-                "pattern": pattern,
-                "flags": flags,
-                "regex_engine": normalized_regex_engine,
-                "target": "both",
-                "scope_note_ids_count": len(universe_note_ids) if universe_note_ids is not None else 0,
-                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
-                "offset": 0,
-            }
-            label = f"regex:/{pattern}/{flags}"
-        else:
-            raise TypeError(f"Unsupported expression type: {expression_type}")
+            note_hit_counts[note_id] = note_hit_counts.get(note_id, 0) + 1
+            matched_expression_list = note_hit_expressions.get(note_id)
+            if matched_expression_list is None:
+                matched_expression_list = []
+                note_hit_expressions[note_id] = matched_expression_list
+            if expression_label not in matched_expression_list:
+                matched_expression_list.append(expression_label)
 
-        expression_start = time.perf_counter()
-        tool_call = _tools_call(
-            url=mcp_url,
-            request_id=request_id,
-            tool_name=tool_name,
-            arguments=tool_args,
-        )
-        request_id += 1
-        execution_ms = round((time.perf_counter() - expression_start) * 1000, 3)
-        tool_response = _extract_tool_response(call_response=tool_call)
+            existing_evidence = note_evidence_by_id.get(note_id)
+            if existing_evidence is None:
+                note_order_index = entry.get("note_order_index")
+                if not isinstance(note_order_index, int) or note_order_index < 0:
+                    note_order_index = 10**9
+                existing_evidence = {
+                    "preview_text": entry.get("preview_text", ""),
+                    "content_text": entry.get("content_text", ""),
+                    "context_text": entry.get("context_text", ""),
+                    "tag_terms": entry.get("tag_terms", []),
+                    "effective_tag_terms": entry.get("effective_tag_terms", []),
+                    "matches": [],
+                    "matched_expressions": [],
+                    "hit_count": 0,
+                    "note_order_index": note_order_index,
+                }
+                note_evidence_by_id[note_id] = existing_evidence
+            else:
+                existing_order_index = existing_evidence.get("note_order_index")
+                candidate_order_index = entry.get("note_order_index")
+                if not isinstance(existing_order_index, int):
+                    existing_order_index = 10**9
+                if not isinstance(candidate_order_index, int):
+                    candidate_order_index = 10**9
+                existing_evidence["note_order_index"] = min(
+                    existing_order_index,
+                    candidate_order_index,
+                )
 
-        matched_note_ids = _extract_ordered_note_ids_from_tool_results(tool_response=tool_response)
-        scoped_ordered_matches: List[str]
+            if (
+                isinstance(existing_evidence.get("context_text"), str)
+                and isinstance(entry.get("context_text"), str)
+                and len(entry["context_text"]) > len(existing_evidence["context_text"])
+            ):
+                existing_evidence["context_text"] = entry["context_text"]
+            if (
+                isinstance(existing_evidence.get("content_text"), str)
+                and isinstance(entry.get("content_text"), str)
+                and len(entry["content_text"]) > len(existing_evidence["content_text"])
+            ):
+                existing_evidence["content_text"] = entry["content_text"]
+            if (
+                isinstance(existing_evidence.get("preview_text"), str)
+                and isinstance(entry.get("preview_text"), str)
+                and len(entry["preview_text"]) > len(existing_evidence["preview_text"])
+            ):
+                existing_evidence["preview_text"] = entry["preview_text"]
+            if isinstance(entry.get("tag_terms"), list):
+                existing_evidence["tag_terms"] = entry["tag_terms"]
+            if isinstance(entry.get("effective_tag_terms"), list):
+                existing_evidence["effective_tag_terms"] = entry["effective_tag_terms"]
+            existing_matches = existing_evidence.get("matches")
+            if not isinstance(existing_matches, list):
+                existing_matches = []
+                existing_evidence["matches"] = existing_matches
+            entry_matches = entry.get("matches")
+            if isinstance(entry_matches, list):
+                for match in entry_matches:
+                    if not isinstance(match, dict):
+                        continue
+                    snippet = match.get("snippet")
+                    field = match.get("field")
+                    if not isinstance(snippet, str) or snippet.strip() == "":
+                        continue
+                    if not isinstance(field, str):
+                        field = "unknown"
+                    collapsed_snippet = re.sub(r"\s+", " ", snippet).strip()
+                    sample = {
+                        "field": field,
+                        "snippet": _clip_text_for_synthesis(
+                            text=collapsed_snippet,
+                            max_chars=220,
+                        ),
+                    }
+                    if sample not in existing_matches:
+                        existing_matches.append(sample)
+            existing_matched_expressions = existing_evidence.get("matched_expressions")
+            if not isinstance(existing_matched_expressions, list):
+                existing_matched_expressions = []
+                existing_evidence["matched_expressions"] = existing_matched_expressions
+            if expression_label not in existing_matched_expressions:
+                existing_matched_expressions.append(expression_label)
+            existing_evidence["hit_count"] = note_hit_counts.get(note_id, 0)
+        return latest_note_ids
+
+    for iteration_index in range(1, max_steps + 1):
+        _emit_status(detail=f"Iteration {iteration_index}: planning queries...")
+        ranking_universe_ids: List[str] | None
         if universe_mode == "scoped":
-            if universe_note_ids is None or universe_note_id_set is None:
-                raise RuntimeError("scoped universe requires resolved note ids")
-            matched_set = set(matched_note_ids)
-            scoped_ordered_matches = [note_id for note_id in universe_note_ids if note_id in matched_set]
+            ranking_universe_ids = universe_note_ids if universe_note_ids is not None else []
         else:
-            scoped_ordered_matches = matched_note_ids
+            ranking_universe_ids = None
+        ordered_candidate_note_ids, _ = _rank_candidate_note_ids(
+            note_hit_counts=note_hit_counts,
+            note_hit_expressions=note_hit_expressions,
+            expression_stats=expression_stats,
+            universe_note_count=universe_note_count,
+            universe_note_ids=ranking_universe_ids,
+        )
+        ordered_candidate_note_ids = _order_candidate_note_ids_by_note_order(
+            ranked_note_ids=ordered_candidate_note_ids,
+            note_evidence_by_id=note_evidence_by_id,
+        )
+        carried_entries: List[dict] = []
+        for note_id in ordered_candidate_note_ids:
+            evidence_entry = note_evidence_by_id.get(note_id)
+            if evidence_entry is None:
+                continue
+            carried_entries.append(evidence_entry)
+        carried_evidence_notes = _prepare_model_evidence_notes(
+            note_entries=carried_entries,
+            user_message=user_message,
+            max_notes=min(_ITERATION_EVIDENCE_MAX_NOTES, hydrate_top_k),
+        )
 
-        for note_id in scoped_ordered_matches:
-            current_count = note_hit_counts.get(note_id, 0)
-            note_hit_counts[note_id] = current_count + 1
-            expression_list = note_hit_expressions.get(note_id)
-            if expression_list is None:
-                expression_list = []
-                note_hit_expressions[note_id] = expression_list
-            if label not in expression_list:
-                expression_list.append(label)
-
-        stat_row = {
-            "expression_index": expression_index,
-            "expression": expression,
-            "expression_label": label,
-            "tool_name": tool_name,
-            "execution_ms": execution_ms,
-            "raw_match_count": len(matched_note_ids),
-            "scoped_match_count": len(scoped_ordered_matches),
-            "universe_mode": universe_mode,
-        }
-        expression_stats.append(stat_row)
+        plan_messages = _build_rewrite_expression_plan_messages(
+            user_message=user_message,
+            search_context_query=search_context_query,
+            max_expressions=max_expressions,
+            elapsed_ms=_total_execution_ms(),
+            iteration_index=iteration_index,
+            executed_query_history=executed_query_history[-32:],
+            prior_evidence_notes=carried_evidence_notes,
+        )
         append_step(
             step_record={
                 "step": len(steps) + 1,
-                "action": "expression_execute",
-                "tool_name": tool_name,
-                "arguments": display_args,
-                "reason": "execute one retrieval expression and record timing",
-                "stats": stat_row,
-                "tool_response": _summarize_rewrite_tool_response(
-                    tool_response=tool_response,
-                    note_id_sample_limit=_STEP_NOTE_ID_SAMPLE_LIMIT,
-                ),
+                "action": "loop_iteration",
+                "reason": "planner prompt prepared; waiting for planner model output",
+                "stats": {
+                    "iteration_index": iteration_index,
+                    "phase": "planning_prompt",
+                    "planning_ms": 0.0,
+                    "decision_ms": 0.0,
+                    "elapsed_ms_so_far": _total_execution_ms(),
+                    "planned_expression_count": 0,
+                    "executed_query_count": 0,
+                    "skipped_duplicate_query_count": 0,
+                    "iteration_result_count": 0,
+                    "decision": "pending",
+                },
+                "model_payload": {
+                    "planner_prompt_messages": plan_messages,
+                },
+                "tool_response": {
+                    "ok": True,
+                    "data": {
+                        "iteration_index": iteration_index,
+                        "queries_executed": [],
+                        "duplicate_queries_skipped": [],
+                        "latest_result_notes": [],
+                        "carried_evidence_notes": carried_evidence_notes,
+                    },
+                },
             }
         )
+        _emit_status(detail=f"Iteration {iteration_index}: waiting for planner model...")
+        plan_start = time.perf_counter()
+        planned_payload, planner_raw_output = _ollama_chat_json_with_raw(
+            ollama_chat_url=ollama_chat_url,
+            model=resolved_model,
+            messages=plan_messages,
+        )
+        planning_ms = round((time.perf_counter() - plan_start) * 1000, 3)
+        plan_preview = _normalize_expression_plan_best_effort(
+            payload=planned_payload,
+            max_expressions=max_expressions,
+            source_message=user_message,
+        )
+        planner_validation_error = ""
+        try:
+            expression_plan = _normalize_expression_plan(
+                payload=planned_payload,
+                max_expressions=max_expressions,
+                source_message=user_message,
+            )
+        except ValueError as error:
+            planner_validation_error = str(error)
+            expression_plan = {
+                "reasoning": "Planner output was partially invalid; continuing with usable subset for this iteration.",
+                "expressions": plan_preview.get("expressions", []),
+            }
 
-    ordered_candidate_note_ids: List[str]
-    if universe_mode == "scoped":
-        if universe_note_ids is None:
-            raise RuntimeError("scoped universe requires resolved note ids")
-        ordered_candidate_note_ids = [
-            note_id for note_id in universe_note_ids if note_id in note_hit_counts
+        expression_items: List[dict] = []
+        for expression_index, expression in enumerate(expression_plan["expressions"], start=1):
+            if expression_index > max_expressions:
+                break
+            if not isinstance(expression, dict):
+                raise TypeError("expression entry must be an object")
+            expression_items.append(
+                {
+                    "original_index": expression_index,
+                    "expression": expression,
+                    "tier": _expression_execution_tier(expression=expression),
+                }
+            )
+        _emit_status(
+            detail=(
+                f"Iteration {iteration_index}: planner returned "
+                + str(len(expression_items))
+                + " candidate queries."
+            )
+        )
+
+        iteration_query_runs: List[dict] = []
+        skipped_duplicate_queries: List[dict] = []
+        iteration_latest_note_ids: List[str] = []
+        iteration_seen_note_ids = set()
+
+        for item in expression_items:
+            expression = item["expression"]
+            compiled = _compile_rewrite_expression_call(
+                expression=expression,
+                per_expression_limit=per_expression_limit,
+                normalized_regex_engine=normalized_regex_engine,
+                universe_note_ids=universe_note_ids,
+            )
+            tool_name = compiled["tool_name"]
+            tool_args = compiled["tool_args"]
+            display_args = compiled["display_args"]
+            label = compiled["label"]
+            query_signature = _rewrite_tool_call_semantic_signature(
+                tool_name=tool_name,
+                arguments=tool_args,
+            )
+            if query_signature in executed_query_signatures:
+                skipped_duplicate_queries.append(
+                    {
+                        "expression": expression,
+                        "expression_label": label,
+                        "tool_name": tool_name,
+                        "arguments": display_args,
+                        "query_signature": query_signature,
+                    }
+                )
+                continue
+            executed_query_signatures.add(query_signature)
+
+            _emit_status(
+                detail=(
+                    f"Iteration {iteration_index}: executing "
+                    + label
+                    + "..."
+                )
+            )
+            expression_start = time.perf_counter()
+            tool_call = _tools_call(
+                url=mcp_url,
+                request_id=request_id,
+                tool_name=tool_name,
+                arguments=tool_args,
+            )
+            request_id += 1
+            execution_ms = round((time.perf_counter() - expression_start) * 1000, 3)
+            tool_response = _extract_tool_response(call_response=tool_call)
+            if tool_response.get("ok") is not True:
+                append_step(
+                    step_record={
+                        "step": len(steps) + 1,
+                        "action": "loop_iteration",
+                        "reason": "plan queries, execute full retrieval results, and decide next action",
+                        "stats": {
+                            "iteration_index": iteration_index,
+                            "planning_ms": planning_ms,
+                            "decision_ms": 0.0,
+                            "elapsed_ms_so_far": _total_execution_ms(),
+                            "planned_expression_count": len(expression_plan["expressions"]),
+                            "executed_query_count": len(iteration_query_runs),
+                            "skipped_duplicate_query_count": len(skipped_duplicate_queries),
+                            "iteration_result_count": len(iteration_latest_note_ids),
+                            "decision": "error",
+                        },
+                        "model_payload": {
+                            "planner_prompt_messages": plan_messages,
+                            "planner_raw_model_output": planner_raw_output,
+                            "planner_reasoning": expression_plan.get("reasoning", ""),
+                            "planned_expressions": expression_plan.get("expressions", []),
+                        },
+                        "tool_response": {
+                            "ok": False,
+                            "error": str(tool_response.get("error", f"{tool_name} failed")),
+                            "data": {
+                                "iteration_index": iteration_index,
+                                "failed_query": {
+                                    "expression": expression,
+                                    "expression_label": label,
+                                    "tool_name": tool_name,
+                                    "arguments": display_args,
+                                    "execution_ms": execution_ms,
+                                },
+                                "queries_executed": iteration_query_runs,
+                                "duplicate_queries_skipped": skipped_duplicate_queries,
+                                "latest_result_notes": [],
+                                "carried_evidence_notes": carried_evidence_notes,
+                            },
+                        },
+                    }
+                )
+                return {
+                    "ok": False,
+                    "answer": str(tool_response.get("error", f"{tool_name} failed")),
+                    "model": resolved_model,
+                    "steps": steps,
+                    "mode": "rewrite",
+                    "run_config": run_config,
+                    "expression_stats": expression_stats,
+                    "total_execution_ms": _total_execution_ms(),
+                }
+
+            scoped_entries = _scoped_result_entries_from_tool_response(
+                tool_response=tool_response,
+                universe_mode=universe_mode,
+                universe_note_ids=universe_note_ids,
+                universe_note_id_set=universe_note_id_set,
+            )
+            latest_note_ids = merge_scoped_entries(
+                entries=scoped_entries,
+                expression_label=label,
+            )
+            for note_id in latest_note_ids:
+                if note_id in iteration_seen_note_ids:
+                    continue
+                iteration_seen_note_ids.add(note_id)
+                iteration_latest_note_ids.append(note_id)
+
+            raw_match_count = len(
+                _extract_ordered_note_ids_from_tool_results(tool_response=tool_response)
+            )
+            stat_row = {
+                "expression_index": len(expression_stats) + 1,
+                "execution_tier": item["tier"],
+                "expression": expression,
+                "expression_label": label,
+                "tool_name": tool_name,
+                "execution_ms": execution_ms,
+                "raw_match_count": raw_match_count,
+                "scoped_match_count": len(latest_note_ids),
+                "universe_mode": universe_mode,
+                "query_signature": query_signature,
+            }
+            expression_stats.append(stat_row)
+            executed_query_history.append(
+                {
+                    "expression_index": stat_row["expression_index"],
+                    "expression_label": label,
+                    "tool_name": tool_name,
+                    "arguments": display_args,
+                    "query_signature": query_signature,
+                    "execution_ms": execution_ms,
+                    "scoped_match_count": len(latest_note_ids),
+                }
+            )
+
+            iteration_query_runs.append(
+                {
+                    "expression": expression,
+                    "expression_label": label,
+                    "tool_name": tool_name,
+                    "arguments": display_args,
+                    "execution_ms": execution_ms,
+                    "scoped_match_count": len(latest_note_ids),
+                    "tool_response": _strip_note_ids_for_display(value=tool_response),
+                }
+            )
+
+        _emit_status(
+            detail=(
+                f"Iteration {iteration_index}: executed "
+                + str(len(iteration_query_runs))
+                + " queries; deciding next action..."
+            )
+        )
+
+        latest_entries: List[dict] = []
+        for note_id in iteration_latest_note_ids:
+            evidence_entry = note_evidence_by_id.get(note_id)
+            if evidence_entry is None:
+                continue
+            latest_entries.append(evidence_entry)
+        latest_result_notes = _prepare_model_evidence_notes(
+            note_entries=latest_entries,
+            user_message=user_message,
+            max_notes=min(12, hydrate_top_k),
+        )
+
+        decision_query_results_for_prompt = [
+            {
+                "expression_label": row["expression_label"],
+                "tool_name": row["tool_name"],
+                "arguments": row["arguments"],
+                "execution_ms": row["execution_ms"],
+                "scoped_match_count": row["scoped_match_count"],
+                "tool_response": row["tool_response"],
+            }
+            for row in iteration_query_runs
         ]
-    else:
-        ordered_candidate_note_ids = list(note_hit_counts.keys())
-    append_step(
-        step_record={
+
+        decision_messages = _build_rewrite_loop_decision_messages(
+            user_message=user_message,
+            search_context_query=search_context_query,
+            elapsed_ms=_total_execution_ms(),
+            iteration_index=iteration_index,
+            executed_query_history=executed_query_history[-32:],
+            iteration_query_results=decision_query_results_for_prompt,
+            carried_evidence_notes=carried_evidence_notes,
+        )
+        append_step(
+            step_record={
+                "step": len(steps) + 1,
+                "action": "loop_iteration",
+                "reason": "planner output accepted; queries executed; waiting for decision model",
+                "stats": {
+                    "iteration_index": iteration_index,
+                    "phase": "decision_prompt",
+                    "planning_ms": planning_ms,
+                    "decision_ms": 0.0,
+                    "elapsed_ms_so_far": _total_execution_ms(),
+                    "planned_expression_count": len(expression_plan["expressions"]),
+                    "executed_query_count": len(iteration_query_runs),
+                    "skipped_duplicate_query_count": len(skipped_duplicate_queries),
+                    "iteration_result_count": len(iteration_latest_note_ids),
+                    "decision": "pending",
+                },
+                "model_payload": {
+                    "planner_prompt_messages": plan_messages,
+                    "planner_raw_model_output": planner_raw_output,
+                    "planner_reasoning": expression_plan.get("reasoning", ""),
+                    "planned_expressions": expression_plan.get("expressions", []),
+                    "planner_validation_error": planner_validation_error,
+                    "decision_prompt_messages": decision_messages,
+                },
+                "tool_response": {
+                    "ok": True,
+                    "data": {
+                        "iteration_index": iteration_index,
+                        "queries_executed": iteration_query_runs,
+                        "duplicate_queries_skipped": skipped_duplicate_queries,
+                        "latest_result_notes": latest_result_notes,
+                        "carried_evidence_notes": carried_evidence_notes,
+                    },
+                },
+            }
+        )
+        decision_start = time.perf_counter()
+        _emit_status(detail=f"Iteration {iteration_index}: waiting for decision model...")
+        decision_payload, decision_raw = _ollama_chat_json_with_raw(
+            ollama_chat_url=ollama_chat_url,
+            model=resolved_model,
+            messages=decision_messages,
+        )
+        decision_ms = round((time.perf_counter() - decision_start) * 1000, 3)
+        loop_decision: dict
+        iteration_step_record = {
             "step": len(steps) + 1,
-            "action": "expression_stats",
-            "reason": "aggregated expression timing and hit statistics",
+            "action": "iteration_decision_final",
+            "reason": "decision model selected next action",
+            "stats": {
+                "iteration_index": iteration_index,
+                "planning_ms": planning_ms,
+                "decision_ms": decision_ms,
+                "elapsed_ms_so_far": _total_execution_ms(),
+                "decision": "pending",
+            },
+            "model_payload": {
+                "decision_raw_model_output": decision_raw,
+            },
             "tool_response": {
                 "ok": True,
                 "data": {
-                    "expression_stats": expression_stats,
-                    "candidate_count": len(ordered_candidate_note_ids),
-                    "ordered_candidate_note_ids_total": len(ordered_candidate_note_ids),
-                    "ordered_candidate_note_ids_sample": ordered_candidate_note_ids[
-                        :_STEP_NOTE_ID_SAMPLE_LIMIT
-                    ],
+                    "iteration_index": iteration_index,
                 },
             },
         }
-    )
+        try:
+            loop_decision = _normalize_rewrite_iteration_decision(payload=decision_payload)
+        except ValueError as error:
+            iteration_step_record["stats"]["decision"] = "error"
+            iteration_step_record["tool_response"] = {
+                "ok": False,
+                "error": f"Iteration reasoning failed: {error}",
+                "data": iteration_step_record["tool_response"]["data"],
+            }
+            append_step(step_record=iteration_step_record)
+            return {
+                "ok": False,
+                "answer": f"Iteration reasoning failed: {error}",
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+                "run_config": run_config,
+                "expression_stats": expression_stats,
+                "total_execution_ms": _total_execution_ms(),
+            }
 
-    hydrate_ids = ordered_candidate_note_ids[:hydrate_top_k]
-    hydrate_args = {
-        "note_ids": hydrate_ids,
-        "include_content_text": True,
-        "include_context_text": True,
-        "include_tags": True,
-        "include_ancestors": True,
-    }
-    hydrate_start = time.perf_counter()
-    hydrate_call = _tools_call(
-        url=mcp_url,
-        request_id=request_id,
-        tool_name="get_notes_batch",
-        arguments=hydrate_args,
-    )
-    hydrate_elapsed_ms = round((time.perf_counter() - hydrate_start) * 1000, 3)
-    request_id += 1
-    hydration_response = _extract_tool_response(call_response=hydrate_call)
-    append_step(
-        step_record={
-            "step": len(steps) + 1,
-            "action": "bulk_hydration",
-            "tool_name": "get_notes_batch",
-            "arguments": hydrate_args,
-            "reason": "hydrate candidate notes in one batched call",
-            "stats": {
-                "execution_ms": hydrate_elapsed_ms,
-                "hydrated_note_count": len(hydrate_ids),
-            },
-            "tool_response": _summarize_rewrite_tool_response(
-                tool_response=hydration_response,
-                note_id_sample_limit=_STEP_NOTE_ID_SAMPLE_LIMIT,
-            ),
-        }
-    )
+        iteration_step_record["stats"]["decision"] = loop_decision["decision"]
+        iteration_step_record["tool_response"]["data"]["decision"] = loop_decision
+        append_step(step_record=iteration_step_record)
 
-    hydrated_notes: List[dict] = []
-    if hydration_response.get("ok") is True:
-        hydration_data = hydration_response.get("data")
-        if isinstance(hydration_data, dict):
-            notes = hydration_data.get("notes")
-            if isinstance(notes, list):
-                for note in notes:
-                    if not isinstance(note, dict):
-                        continue
-                    note_id = note.get("note_id")
-                    if not isinstance(note_id, str) or note_id == "":
-                        continue
-                    hydrated_notes.append(
-                        {
-                            "note_id": note_id,
-                            "hit_count": note_hit_counts.get(note_id, 0),
-                            "matched_expressions": note_hit_expressions.get(note_id, []),
-                            "content_text": note.get("content_text"),
-                            "context_text": note.get("context_text"),
-                        }
-                    )
-
-    synthesis_messages = _build_rewrite_synthesis_messages(
-        user_message=user_message,
-        search_context_query=search_context_query,
-        expression_plan=expression_plan,
-        expression_stats=expression_stats,
-        hydrated_notes=hydrated_notes,
-    )
-    synthesis_start = time.perf_counter()
-    synthesis_payload, synthesis_raw = _ollama_chat_json_with_raw(
-        ollama_chat_url=ollama_chat_url,
-        model=resolved_model,
-        messages=synthesis_messages,
-    )
-    synthesis_elapsed_ms = round((time.perf_counter() - synthesis_start) * 1000, 3)
-    answer = _extract_synthesis_answer(payload=synthesis_payload)
-    append_step(
-        step_record={
-            "step": len(steps) + 1,
-            "action": "synthesis",
-            "reason": "synthesize final answer from hydrated evidence",
-            "stats": {
-                "execution_ms": synthesis_elapsed_ms,
-            },
-            "model_payload": {
-                "messages": synthesis_messages,
-                "raw_model_output": synthesis_raw,
-            },
-            "tool_response": {
+        if loop_decision["decision"] == "answer":
+            return {
                 "ok": True,
-                "data": synthesis_payload,
-            },
-        }
-    )
+                "answer": loop_decision["answer"],
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+                "run_config": run_config,
+                "expression_stats": expression_stats,
+                "total_execution_ms": _total_execution_ms(),
+            }
+        if loop_decision["decision"] == "clarify":
+            return {
+                "ok": True,
+                "answer": loop_decision["clarifying_question"],
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+                "run_config": run_config,
+                "expression_stats": expression_stats,
+                "total_execution_ms": _total_execution_ms(),
+            }
+        if loop_decision["decision"] == "uncertain":
+            return {
+                "ok": True,
+                "answer": loop_decision["answer"],
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+                "run_config": run_config,
+                "expression_stats": expression_stats,
+                "total_execution_ms": _total_execution_ms(),
+            }
+        if len(iteration_query_runs) == 0 and len(skipped_duplicate_queries) > 0:
+            return {
+                "ok": False,
+                "answer": "Iteration made no progress: all planned queries were duplicates.",
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+                "run_config": run_config,
+                "expression_stats": expression_stats,
+                "total_execution_ms": _total_execution_ms(),
+            }
 
     return {
         "ok": True,
-        "answer": answer,
+        "answer": "Reached max loop iterations without a final answer.",
         "model": resolved_model,
         "steps": steps,
         "mode": "rewrite",
+        "run_config": run_config,
         "expression_stats": expression_stats,
+        "total_execution_ms": _total_execution_ms(),
     }
 
 
@@ -3811,15 +5393,35 @@ def _web_html(
     }}
     .stage-json {{
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       background: #0f1c36;
       color: #d8e6ff;
       border-radius: 8px;
       padding: 10px;
       margin: 0;
-      max-height: 240px;
+      max-height: 320px;
       overflow: auto;
       font-size: 12px;
       line-height: 1.35;
+      tab-size: 2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }}
+    .stage-prompt {{
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      background: #0f1c36;
+      color: #d8e6ff;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 0;
+      max-height: 420px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.4;
+      tab-size: 2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }}
     .muted {{
       font-size: 12px;
@@ -3881,6 +5483,7 @@ def _web_html(
       <p id="run_status" class="muted">Idle.</p>
       <h3>Final Answer</h3>
       <div id="final_answer" class="answer">No result yet.</div>
+      <p id="final_timing" class="muted" style="display:none;"></p>
       <h3>Stages</h3>
       <div id="stage_list" class="stage-list">
         <p class="muted">No stages yet.</p>
@@ -3889,6 +5492,7 @@ def _web_html(
   </div>
   <script>
     const finalAnswer = document.getElementById("final_answer");
+    const finalTiming = document.getElementById("final_timing");
     const runBtn = document.getElementById("run_btn");
     const modelsBtn = document.getElementById("models_btn");
     const runStatus = document.getElementById("run_status");
@@ -3909,6 +5513,26 @@ def _web_html(
 
     function setFinalAnswer(text) {{
       finalAnswer.textContent = text;
+    }}
+
+    function formatDurationMs(totalMs) {{
+      if (typeof totalMs !== "number" || !Number.isFinite(totalMs) || totalMs < 0) {{
+        return "";
+      }}
+      if (totalMs < 1000) {{
+        return `${{totalMs.toFixed(1)}} ms`;
+      }}
+      return `${{(totalMs / 1000).toFixed(2)}} s (${{totalMs.toFixed(1)}} ms)`;
+    }}
+
+    function setFinalTiming(text) {{
+      if (typeof text !== "string" || text.trim() === "") {{
+        finalTiming.textContent = "";
+        finalTiming.style.display = "none";
+        return;
+      }}
+      finalTiming.textContent = text;
+      finalTiming.style.display = "block";
     }}
 
     function setRunStatus(text) {{
@@ -3955,6 +5579,22 @@ def _web_html(
         const planData = extractModelPlanData(step);
         return planData.promptMessages;
       }}
+      if (action === "loop_iteration" && step.model_payload && typeof step.model_payload === "object") {{
+        const payload = step.model_payload;
+        const combined = [];
+        if (Array.isArray(payload.planner_prompt_messages)) {{
+          combined.push(...payload.planner_prompt_messages.filter((entry) => entry && typeof entry === "object"));
+        }}
+        if (Array.isArray(payload.decision_prompt_messages)) {{
+          if (combined.length > 0) {{
+            combined.push({{ role: "meta", content: "--- decision prompt ---" }});
+          }}
+          combined.push(...payload.decision_prompt_messages.filter((entry) => entry && typeof entry === "object"));
+        }}
+        if (combined.length > 0) {{
+          return combined;
+        }}
+      }}
       if (step.model_payload && typeof step.model_payload === "object") {{
         const payload = step.model_payload;
         if (Array.isArray(payload.prompt_messages)) {{
@@ -3976,13 +5616,92 @@ def _web_html(
         const role = typeof message.role === "string" ? message.role.toUpperCase() : "UNKNOWN";
         let content = "";
         if (typeof message.content === "string") {{
-          content = message.content;
+          const parsedContent = tryParseJsonText(message.content);
+          if (parsedContent !== null) {{
+            content = JSON.stringify(prettifyRawModelOutput(parsedContent), null, 2);
+          }} else {{
+            const parsedSuffix = tryParseJsonSuffix(message.content);
+            if (parsedSuffix !== null) {{
+              const prettySuffix = JSON.stringify(
+                prettifyRawModelOutput(parsedSuffix.parsed),
+                null,
+                2,
+              );
+              content = parsedSuffix.prefix + "\\n" + prettySuffix;
+            }} else {{
+              content = message.content;
+            }}
+          }}
         }} else {{
-          content = JSON.stringify(message.content, null, 2);
+          content = JSON.stringify(prettifyRawModelOutput(message.content), null, 2);
         }}
         sections.push(`${{role}}:\\n${{content}}`);
       }}
       return sections.join("\\n\\n");
+    }}
+
+    function tryParseJsonText(text) {{
+      if (typeof text !== "string") {{
+        return null;
+      }}
+      const trimmed = text.trim();
+      if (trimmed === "") {{
+        return null;
+      }}
+      const startsLikeJson = trimmed.startsWith("{{") || trimmed.startsWith("[");
+      if (!startsLikeJson) {{
+        return null;
+      }}
+      try {{
+        return JSON.parse(trimmed);
+      }} catch (_error) {{
+        return null;
+      }}
+    }}
+
+    function tryParseJsonSuffix(text) {{
+      if (typeof text !== "string") {{
+        return null;
+      }}
+      const firstBrace = text.indexOf("{{");
+      if (firstBrace <= 0) {{
+        return null;
+      }}
+      const prefix = text.slice(0, firstBrace).trimEnd();
+      const suffix = text.slice(firstBrace).trim();
+      const parsed = tryParseJsonText(suffix);
+      if (parsed === null) {{
+        return null;
+      }}
+      return {{ prefix, parsed }};
+    }}
+
+    function prettifyRawModelOutput(value) {{
+      if (Array.isArray(value)) {{
+        return value.map((entry) => prettifyRawModelOutput(entry));
+      }}
+      if (!value || typeof value !== "object") {{
+        return value;
+      }}
+      const output = {{}};
+      for (const [key, child] of Object.entries(value)) {{
+        if (key === "raw_model_output" && typeof child === "string") {{
+          const parsed = tryParseJsonText(child);
+          if (parsed !== null) {{
+            output.raw_model_output = prettifyRawModelOutput(parsed);
+            continue;
+          }}
+        }}
+        if (typeof child === "string") {{
+          const parsed = tryParseJsonText(child);
+          if (parsed !== null) {{
+            output[key] = prettifyRawModelOutput(parsed);
+            continue;
+          }}
+        }}
+        output[key] = prettifyRawModelOutput(child);
+      }}
+      return output;
     }}
 
     function buildStageSummary(step) {{
@@ -4025,7 +5744,11 @@ def _web_html(
         const keys = [
           "max_steps",
           "max_expressions",
+          "expression_target_count",
+          "expression_probe_points",
+          "execution_iteration_cap",
           "hydrate_top_k",
+          "per_expression_limit",
           "regex_engine",
           "active_search_context_query",
           "universe_mode",
@@ -4060,7 +5783,7 @@ def _web_html(
         return wrap;
       }}
 
-      if (action === "expression_plan") {{
+      if (action === "expression_plan" || action === "expression_plan_repair" || action === "expression_plan_partial_accept") {{
         const payload = step.model_payload && typeof step.model_payload === "object" ? step.model_payload : null;
         if (!payload) {{
           wrap.textContent = "Expression plan generated.";
@@ -4089,14 +5812,14 @@ def _web_html(
               const value = typeof expr.value === "string" ? expr.value : "";
               if (value !== "") {{
                 const compiledQuery = '"' + value + '"';
-                plannedCalls.push("search_note_ids(query=" + JSON.stringify(compiledQuery) + ")");
+                plannedCalls.push("search_notes(query=" + JSON.stringify(compiledQuery) + ")");
               }}
               continue;
             }}
             if (exprType === "tag") {{
               const value = typeof expr.value === "string" ? expr.value : "";
               if (value !== "") {{
-                plannedCalls.push(`search_note_ids(query=${{JSON.stringify(value)}})`);
+                plannedCalls.push(`search_notes(query=${{JSON.stringify(value)}})`);
               }}
               continue;
             }}
@@ -4104,7 +5827,16 @@ def _web_html(
               const pattern = typeof expr.pattern === "string" ? expr.pattern : "";
               const flags = typeof expr.flags === "string" ? expr.flags : "";
               if (pattern !== "") {{
-                plannedCalls.push(`search_notes_regex_ids(/${{pattern}}/${{flags}})`);
+                plannedCalls.push(`search_notes_regex(/${{pattern}}/${{flags}})`);
+              }}
+              continue;
+            }}
+            if (exprType === "near") {{
+              const left = typeof expr.left === "string" ? expr.left : "";
+              const right = typeof expr.right === "string" ? expr.right : "";
+              const windowChars = Number.isInteger(expr.window_chars) ? expr.window_chars : null;
+              if (left !== "" && right !== "" && windowChars !== null) {{
+                plannedCalls.push(`search_notes_regex(near:${{JSON.stringify(left)}}~${{JSON.stringify(right)}}@${{windowChars}})`);
               }}
             }}
           }}
@@ -4113,6 +5845,114 @@ def _web_html(
             callsLine.className = "stage-summary-line";
             callsLine.textContent = "Compiled tool calls: " + plannedCalls.join(" | ");
             wrap.appendChild(callsLine);
+          }}
+        }}
+        if ("accepted" in payload) {{
+          const acceptedLine = document.createElement("div");
+          acceptedLine.className = "stage-summary-line";
+          acceptedLine.textContent = "Accepted: " + JSON.stringify(payload.accepted);
+          wrap.appendChild(acceptedLine);
+        }}
+        if (typeof payload.validation_error === "string" && payload.validation_error !== "") {{
+          const errorLine = document.createElement("div");
+          errorLine.className = "stage-summary-line";
+          errorLine.textContent = "Validation error: " + payload.validation_error;
+          wrap.appendChild(errorLine);
+        }}
+        return wrap;
+      }}
+
+      if (action === "loop_iteration") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        const appendLine = (text, indentLevel = 0) => {{
+          const line = document.createElement("div");
+          line.className = "stage-summary-line";
+          line.textContent = text;
+          if (indentLevel > 0) {{
+            line.style.marginLeft = `${{indentLevel * 14}}px`;
+          }}
+          wrap.appendChild(line);
+        }};
+        if (stats) {{
+          appendLine("Stats:");
+          if (Number.isInteger(stats.iteration_index)) {{
+            appendLine(`iteration: ${{stats.iteration_index}}`, 1);
+          }}
+          if (typeof stats.phase === "string" && stats.phase !== "") {{
+            appendLine(`phase: ${{stats.phase}}`, 1);
+          }}
+          appendLine(`planning_ms: ${{stats.planning_ms}}`, 1);
+          appendLine(`decision_ms: ${{stats.decision_ms}}`, 1);
+          appendLine(`queries_executed: ${{stats.executed_query_count}}`, 1);
+          appendLine(`results: ${{stats.iteration_result_count}}`, 1);
+          appendLine(`decision: ${{stats.decision}}`, 1);
+        }}
+        const queries = data && Array.isArray(data.queries_executed) ? data.queries_executed : [];
+        if (queries.length > 0) {{
+          appendLine("Executed queries:");
+        }} else {{
+          appendLine("Executed queries: none");
+        }}
+        let queryDisplayIndex = 0;
+        for (const query of queries) {{
+          if (!query || typeof query !== "object") {{
+            continue;
+          }}
+          queryDisplayIndex += 1;
+          const label = typeof query.expression_label === "string" ? query.expression_label : "expression";
+          const ms = typeof query.execution_ms === "number" ? query.execution_ms : "?";
+          const matches = Number.isInteger(query.scoped_match_count) ? query.scoped_match_count : "?";
+          appendLine(`[${{queryDisplayIndex}}] ${{label}}`, 1);
+          appendLine(`execution_ms: ${{ms}}`, 2);
+          appendLine(`matches: ${{matches}}`, 2);
+          const args = query.arguments && typeof query.arguments === "object" ? query.arguments : null;
+          if (args && typeof args.query === "string" && args.query !== "") {{
+            appendLine(`query: ${{args.query}}`, 2);
+          }}
+          if (args && typeof args.pattern === "string" && args.pattern !== "") {{
+            appendLine(`pattern: /${{args.pattern}}/${{typeof args.flags === "string" ? args.flags : ""}}`, 2);
+          }}
+
+          const toolResponse = query.tool_response && typeof query.tool_response === "object" ? query.tool_response : null;
+          const toolData = toolResponse && toolResponse.data && typeof toolResponse.data === "object" ? toolResponse.data : null;
+          const results = toolData && Array.isArray(toolData.results) ? toolData.results : [];
+          const snippets = [];
+          for (const result of results.slice(0, 2)) {{
+            if (!result || typeof result !== "object") {{
+              continue;
+            }}
+            let snippet = "";
+            if (typeof result.context_text === "string" && result.context_text.trim() !== "") {{
+              snippet = result.context_text;
+            }} else if (typeof result.content_text === "string" && result.content_text.trim() !== "") {{
+              snippet = result.content_text;
+            }} else if (typeof result.preview_text === "string" && result.preview_text.trim() !== "") {{
+              snippet = result.preview_text;
+            }}
+            snippet = snippet.replace(/\\s+/g, " ").trim();
+            if (snippet !== "") {{
+              snippets.push(snippet.length > 140 ? snippet.slice(0, 140) + "..." : snippet);
+            }}
+          }}
+          if (snippets.length > 0) {{
+            appendLine("samples:", 2);
+            for (let i = 0; i < snippets.length; i += 1) {{
+              appendLine(`[${{i + 1}}] ${{snippets[i]}}`, 3);
+            }}
+          }}
+        }}
+        const decision = data && data.decision && typeof data.decision === "object" ? data.decision : null;
+        if (decision) {{
+          const decisionType = typeof decision.decision === "string" ? decision.decision : "unknown";
+          const confidence = typeof decision.confidence === "string" ? decision.confidence : "unknown";
+          appendLine("Decision:");
+          appendLine(`type: ${{decisionType}}`, 1);
+          appendLine(`confidence: ${{confidence}}`, 1);
+          if (typeof decision.reasoning === "string" && decision.reasoning !== "") {{
+            appendLine("reasoning: " + decision.reasoning, 1);
           }}
         }}
         return wrap;
@@ -4136,6 +5976,81 @@ def _web_html(
           argsLine.textContent = "Executed arguments: " + JSON.stringify(step.arguments);
           wrap.appendChild(argsLine);
         }}
+        const regexSamples = Array.isArray(stats.regex_match_samples) ? stats.regex_match_samples : [];
+        if (regexSamples.length > 0) {{
+          const sampleHeader = document.createElement("div");
+          sampleHeader.className = "stage-summary-line";
+          sampleHeader.textContent = `Regex match snippets (${{regexSamples.length}}):`;
+          wrap.appendChild(sampleHeader);
+          for (const sample of regexSamples) {{
+            if (!sample || typeof sample !== "object") {{
+              continue;
+            }}
+            const field = typeof sample.field === "string" ? sample.field : "unknown";
+            const snippet = typeof sample.snippet === "string" ? sample.snippet : "";
+            if (snippet === "") {{
+              continue;
+            }}
+            const sampleLine = document.createElement("div");
+            sampleLine.className = "stage-summary-line";
+            sampleLine.textContent = `- [${{field}}] ${{snippet}}`;
+            wrap.appendChild(sampleLine);
+          }}
+        }}
+        return wrap;
+      }}
+
+      if (action === "expression_execute_skip") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Skipped broader expression tiers.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent =
+          `Stopped after tier ${{stats.stop_after_tier}}, skipped=${{stats.skipped_expression_count}}, candidates=${{stats.candidate_count}}`;
+        wrap.appendChild(line);
+        return wrap;
+      }}
+
+      if (action === "expression_execute_skip_duplicate") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Skipped duplicate expression.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent = "Duplicate signature skipped: " + JSON.stringify(stats.expression_signature);
+        wrap.appendChild(line);
+        return wrap;
+      }}
+
+      if (action === "expression_execute_skip_duplicate_query") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Skipped duplicate compiled query.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent = "Duplicate query skipped: " + JSON.stringify(stats.arguments || {{}});
+        wrap.appendChild(line);
+        return wrap;
+      }}
+
+      if (action === "expression_probe") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Expression probe checkpoint.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent =
+          `Probe @${{stats.probe_point}}: candidates=${{stats.candidate_count}}, executed_regex=${{stats.executed_regex_count}}/${{stats.planned_regex_count}}`;
+        wrap.appendChild(line);
         return wrap;
       }}
 
@@ -4160,6 +6075,28 @@ def _web_html(
           line.className = "stage-summary-line";
           line.textContent = `- ${{row.expression_label}} => ${{row.execution_ms}}ms, scoped matches=${{row.scoped_match_count}}`;
           wrap.appendChild(line);
+          const rowSamples = Array.isArray(row.regex_match_samples) ? row.regex_match_samples : [];
+          if (rowSamples.length > 0) {{
+            const preview = rowSamples
+              .slice(0, 3)
+              .map((sample) => {{
+                if (!sample || typeof sample !== "object") {{
+                  return "";
+                }}
+                const snippet = typeof sample.snippet === "string" ? sample.snippet : "";
+                if (snippet === "") {{
+                  return "";
+                }}
+                return snippet;
+              }})
+              .filter((text) => text !== "");
+            if (preview.length > 0) {{
+              const sampleLine = document.createElement("div");
+              sampleLine.className = "stage-summary-line";
+              sampleLine.textContent = "  samples: " + preview.join(" | ");
+              wrap.appendChild(sampleLine);
+            }}
+          }}
         }}
         return wrap;
       }}
@@ -4173,6 +6110,142 @@ def _web_html(
         const line = document.createElement("div");
         line.className = "stage-summary-line";
         line.textContent = `Hydration: ${{stats.execution_ms}}ms, hydrated=${{stats.hydrated_note_count}}`;
+        wrap.appendChild(line);
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        const noteSamples = data && Array.isArray(data.notes_sample) ? data.notes_sample : [];
+        if (noteSamples.length > 0) {{
+          const sampleHeader = document.createElement("div");
+          sampleHeader.className = "stage-summary-line";
+          sampleHeader.textContent = "Hydrated note samples:";
+          wrap.appendChild(sampleHeader);
+          for (const sample of noteSamples.slice(0, 8)) {{
+            if (!sample || typeof sample !== "object") {{
+              continue;
+            }}
+            const contextExcerpt = typeof sample.context_excerpt === "string" ? sample.context_excerpt : "";
+            const contentExcerpt = typeof sample.content_excerpt === "string" ? sample.content_excerpt : "";
+            const snippet = contextExcerpt !== "" ? contextExcerpt : contentExcerpt;
+            if (snippet === "") {{
+              continue;
+            }}
+            const sampleLine = document.createElement("div");
+            sampleLine.className = "stage-summary-line";
+            sampleLine.textContent = `- ${{snippet}}`;
+            wrap.appendChild(sampleLine);
+          }}
+        }}
+        return wrap;
+      }}
+
+      if (action === "iteration_reasoning") {{
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        if (!data) {{
+          wrap.textContent = "Iteration reasoning complete.";
+          return wrap;
+        }}
+        const decisionLine = document.createElement("div");
+        decisionLine.className = "stage-summary-line";
+        decisionLine.textContent =
+          "Decision: " + (typeof data.decision === "string" ? data.decision : "unknown") +
+          ", confidence=" + (typeof data.confidence === "string" ? data.confidence : "medium");
+        wrap.appendChild(decisionLine);
+        if (typeof data.reasoning === "string" && data.reasoning !== "") {{
+          const reasoningLine = document.createElement("div");
+          reasoningLine.className = "stage-summary-line";
+          reasoningLine.textContent = "Reasoning: " + data.reasoning;
+          wrap.appendChild(reasoningLine);
+        }}
+        if (typeof data.continue_reason === "string" && data.continue_reason !== "") {{
+          const continueLine = document.createElement("div");
+          continueLine.className = "stage-summary-line";
+          continueLine.textContent = "Continue reason: " + data.continue_reason;
+          wrap.appendChild(continueLine);
+        }}
+        if (typeof data.answer === "string" && data.answer !== "") {{
+          const answerLine = document.createElement("div");
+          answerLine.className = "stage-summary-line";
+          answerLine.textContent = "Candidate answer: " + data.answer;
+          wrap.appendChild(answerLine);
+        }}
+        if (typeof data.clarifying_question === "string" && data.clarifying_question !== "") {{
+          const questionLine = document.createElement("div");
+          questionLine.className = "stage-summary-line";
+          questionLine.textContent = "Clarifying question: " + data.clarifying_question;
+          wrap.appendChild(questionLine);
+        }}
+        return wrap;
+      }}
+
+      if (action === "iteration_decision_final") {{
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        if (!data) {{
+          wrap.textContent = "Iteration reached final decision.";
+          return wrap;
+        }}
+        const decisionPayload =
+          data.decision && typeof data.decision === "object" ? data.decision : null;
+        const decisionValue =
+          decisionPayload && typeof decisionPayload.decision === "string"
+            ? decisionPayload.decision
+            : (typeof data.decision === "string" ? data.decision : "unknown");
+        const confidenceValue =
+          decisionPayload && typeof decisionPayload.confidence === "string"
+            ? decisionPayload.confidence
+            : (typeof data.confidence === "string" ? data.confidence : "unknown");
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent = `Final loop decision: ${{decisionValue}} (confidence=${{confidenceValue}})`;
+        wrap.appendChild(line);
+        const answerValue =
+          decisionPayload && typeof decisionPayload.answer === "string"
+            ? decisionPayload.answer
+            : (typeof data.answer === "string" ? data.answer : "");
+        if (answerValue !== "") {{
+          const answerLine = document.createElement("div");
+          answerLine.className = "stage-summary-line";
+          answerLine.textContent = "Final answer: " + answerValue;
+          wrap.appendChild(answerLine);
+        }}
+        const reasoningValue =
+          decisionPayload && typeof decisionPayload.reasoning === "string"
+            ? decisionPayload.reasoning
+            : "";
+        if (reasoningValue !== "") {{
+          const reasoningLine = document.createElement("div");
+          reasoningLine.className = "stage-summary-line";
+          reasoningLine.textContent = "Reasoning: " + reasoningValue;
+          wrap.appendChild(reasoningLine);
+        }}
+        return wrap;
+      }}
+
+      if (action === "synthesis_error") {{
+        const toolResponse = step.tool_response && typeof step.tool_response === "object" ? step.tool_response : null;
+        const errorText = toolResponse && typeof toolResponse.error === "string" ? toolResponse.error : "Synthesis error.";
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent = errorText;
+        wrap.appendChild(line);
+        return wrap;
+      }}
+
+      if (action === "no_evidence") {{
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        if (!data) {{
+          wrap.textContent = "No matching evidence.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent = typeof data.answer === "string" ? data.answer : "No matching evidence.";
         wrap.appendChild(line);
         return wrap;
       }}
@@ -4373,7 +6446,7 @@ def _web_html(
         promptSummary.textContent = "Prompt Messages";
         promptDetails.appendChild(promptSummary);
         const promptPre = document.createElement("pre");
-        promptPre.className = "stage-json";
+        promptPre.className = "stage-prompt";
         let promptRendered = false;
         const renderPrompt = () => {{
           if (promptRendered) {{
@@ -4403,7 +6476,7 @@ def _web_html(
         if (rawRendered) {{
           return;
         }}
-        detail.textContent = JSON.stringify(step, null, 2);
+        detail.textContent = JSON.stringify(prettifyRawModelOutput(step), null, 2);
         rawRendered = true;
       }};
       rawDetails.addEventListener("toggle", () => {{
@@ -4467,8 +6540,36 @@ def _web_html(
       if (action === "expression_plan") {{
         return `${{stepNo}}: expression planning`;
       }}
+      if (action === "expression_plan_repair") {{
+        return `${{stepNo}}: expression planning repair`;
+      }}
+      if (action === "expression_plan_partial_accept") {{
+        return `${{stepNo}}: expression planning partial accept`;
+      }}
+      if (action === "expression_plan_error") {{
+        return `${{stepNo}}: expression planning error`;
+      }}
+      if (action === "loop_iteration") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (stats && Number.isInteger(stats.iteration_index)) {{
+          return `${{stepNo}}: loop iteration #${{stats.iteration_index}}`;
+        }}
+        return `${{stepNo}}: loop iteration`;
+      }}
       if (action === "expression_execute") {{
         return `${{stepNo}}: expression execute`;
+      }}
+      if (action === "expression_execute_skip") {{
+        return `${{stepNo}}: expression execute skip`;
+      }}
+      if (action === "expression_execute_skip_duplicate") {{
+        return `${{stepNo}}: expression execute skip duplicate`;
+      }}
+      if (action === "expression_execute_skip_duplicate_query") {{
+        return `${{stepNo}}: expression execute skip duplicate query`;
+      }}
+      if (action === "expression_probe") {{
+        return `${{stepNo}}: expression probe`;
       }}
       if (action === "expression_stats") {{
         return `${{stepNo}}: expression stats`;
@@ -4476,8 +6577,23 @@ def _web_html(
       if (action === "bulk_hydration") {{
         return `${{stepNo}}: bulk hydration`;
       }}
+      if (action === "no_evidence") {{
+        return `${{stepNo}}: no evidence`;
+      }}
       if (action === "synthesis") {{
         return `${{stepNo}}: synthesis`;
+      }}
+      if (action === "iteration_reasoning") {{
+        return `${{stepNo}}: iteration reasoning`;
+      }}
+      if (action === "iteration_decision_final") {{
+        return `${{stepNo}}: iteration final`;
+      }}
+      if (action === "iteration_reasoning_error") {{
+        return `${{stepNo}}: iteration reasoning error`;
+      }}
+      if (action === "synthesis_error") {{
+        return `${{stepNo}}: synthesis error`;
       }}
       if (reason !== "") {{
         return `${{stepNo}}: ${{action}} - ${{reason}}`;
@@ -4512,6 +6628,7 @@ def _web_html(
       runBtn.disabled = true;
       runBtn.textContent = "Running...";
       setFinalAnswer("Running...");
+      setFinalTiming("");
       setRunStatus("Running...");
       resetStages();
       print({{ status: "running" }});
@@ -4599,12 +6716,21 @@ def _web_html(
             if (event.type === "final") {{
               sawFinal = true;
               let answerText = "[No textual answer returned]";
+              let timingText = "";
               if (event.result && typeof event.result === "object") {{
                 if (typeof event.result.answer === "string" && event.result.answer !== "") {{
                   answerText = event.result.answer;
                 }}
+                const totalExecutionMs = event.result.total_execution_ms;
+                if (typeof totalExecutionMs === "number" && Number.isFinite(totalExecutionMs)) {{
+                  const formattedDuration = formatDurationMs(totalExecutionMs);
+                  if (formattedDuration !== "") {{
+                    timingText = "Total compute time: " + formattedDuration;
+                  }}
+                }}
               }}
               setFinalAnswer(answerText);
+              setFinalTiming(timingText);
               setRunStatus(`Completed (${{runningState.steps.length}} steps).`);
               print({{ status: "ok", result: event.result }});
               continue;
@@ -4621,14 +6747,23 @@ def _web_html(
               }} else {{
                 setFinalAnswer("Error: unknown stream error");
               }}
+              setFinalTiming("");
               setRunStatus("Failed.");
               continue;
             }}
             if (event.type === "status") {{
               runningState.status = event.status;
               if (event.status === "running") {{
-                setFinalAnswer("Running...");
-                setRunStatus("Running...");
+                const detail = typeof event.detail === "string" ? event.detail : "";
+                if (detail !== "") {{
+                  setRunStatus(detail);
+                }} else {{
+                  setRunStatus("Running...");
+                }}
+                if (!sawFinal && !sawError) {{
+                  setFinalAnswer("Running...");
+                  setFinalTiming("");
+                }}
               }}
               print(runningState);
             }}
@@ -4636,6 +6771,7 @@ def _web_html(
         }}
         if (!sawFinal && !sawError) {{
           setFinalAnswer("No final answer returned. Check Stages for details.");
+          setFinalTiming("");
           setRunStatus("Finished without final answer.");
         }}
       }} catch (err) {{
@@ -4649,6 +6785,7 @@ def _web_html(
           detail: message
         }});
         setFinalAnswer("Error: " + message);
+        setFinalTiming("");
         setRunStatus("Failed.");
       }} finally {{
         runBtn.disabled = false;
@@ -4793,12 +6930,29 @@ def create_web_app(
             )
 
         event_queue: queue.Queue[dict] = queue.Queue()
+        worker_finished = threading.Event()
+        heartbeat_lock = threading.Lock()
+        heartbeat_state: Dict[str, object] = {
+            "detail": "Starting...",
+            "run_started_at": time.perf_counter(),
+        }
 
         def progress_callback(step_record: dict) -> None:
             event_queue.put(
                 {
                     "type": "step",
                     "step": step_record,
+                }
+            )
+
+        def status_callback(detail: str) -> None:
+            with heartbeat_lock:
+                heartbeat_state["detail"] = detail
+            event_queue.put(
+                {
+                    "type": "status",
+                    "status": "running",
+                    "detail": detail,
                 }
             )
 
@@ -4815,6 +6969,7 @@ def create_web_app(
                     hydrate_top_k=payload.hydrate_top_k,
                     regex_engine=normalized_regex_engine,
                     progress_callback=progress_callback,
+                    status_callback=status_callback,
                 )
                 event_queue.put(
                     {
@@ -4831,15 +6986,40 @@ def create_web_app(
                     }
                 )
             finally:
+                worker_finished.set()
                 event_queue.put({"type": "end"})
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
         def event_stream():
-            yield json.dumps({"type": "status", "status": "running"}, ensure_ascii=False) + "\n"
+            yield json.dumps({"type": "status", "status": "running", "detail": "Running..."}, ensure_ascii=False) + "\n"
             while True:
-                event = event_queue.get()
+                try:
+                    event = event_queue.get(timeout=1.0)
+                except queue.Empty:
+                    if worker_finished.is_set():
+                        continue
+                    with heartbeat_lock:
+                        latest_detail = heartbeat_state.get("detail")
+                        run_started_at = heartbeat_state.get("run_started_at")
+                    if not isinstance(latest_detail, str) or latest_detail.strip() == "":
+                        latest_detail = "Running..."
+                    elapsed_ms = 0.0
+                    if isinstance(run_started_at, float):
+                        elapsed_ms = max((time.perf_counter() - run_started_at) * 1000.0, 0.0)
+                    elapsed_sec = int(elapsed_ms // 1000.0)
+                    heartbeat_detail = latest_detail + " (elapsed " + str(elapsed_sec) + "s)"
+                    yield json.dumps(
+                        {
+                            "type": "status",
+                            "status": "running",
+                            "detail": heartbeat_detail,
+                            "heartbeat": True,
+                        },
+                        ensure_ascii=False,
+                    ) + "\n"
+                    continue
                 if not isinstance(event, dict):
                     continue
                 if "type" not in event:

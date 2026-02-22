@@ -59,6 +59,7 @@ _TOOLS: List[Dict[str, object]] = [
                 "include_context_text": {"type": "boolean"},
                 "include_tags": {"type": "boolean"},
                 "include_ancestors": {"type": "boolean"},
+                "include_descendants": {"type": "boolean"},
             },
             "required": [
                 "note_ids",
@@ -66,6 +67,7 @@ _TOOLS: List[Dict[str, object]] = [
                 "include_context_text",
                 "include_tags",
                 "include_ancestors",
+                "include_descendants",
             ],
             "additionalProperties": False,
         },
@@ -269,11 +271,12 @@ def call_tool(
             "include_context_text",
             "include_tags",
             "include_ancestors",
+            "include_descendants",
         }
         if set(args.keys()) != required_keys:
             return _tool_error(
                 "get_notes_batch requires note_ids, include_content_text, include_context_text, "
-                "include_tags, and include_ancestors"
+                "include_tags, include_ancestors, and include_descendants"
             )
         if not note_store.loaded:
             return _tool_error("Vault locked or not hydrated")
@@ -284,6 +287,7 @@ def call_tool(
                 include_context_text=args["include_context_text"],
                 include_tags=args["include_tags"],
                 include_ancestors=args["include_ancestors"],
+                include_descendants=args["include_descendants"],
             )
         )
 
