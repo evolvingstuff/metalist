@@ -51,6 +51,46 @@ _DEFAULT_MAX_EXPRESSIONS = 20
 _DEFAULT_HYDRATE_TOP_K = 80
 _DEFAULT_REGEX_ENGINE = "python-re"
 _ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
+_PLANNER_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "me",
+        "my",
+        "of",
+        "on",
+        "or",
+        "should",
+        "the",
+        "to",
+        "was",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+        "would",
+    }
+)
 _MAX_EXPRESSION_SEARCH_RESULTS = 100000
 _MAX_REWRITE_STEP_RESULT_LIMIT = 400
 _STEP_NOTE_ID_SAMPLE_LIMIT = 50
@@ -59,7 +99,6 @@ _EXPRESSION_PLAN_TARGET_CAP = 8
 _EXPRESSION_PROBE_FIRST = 4
 _EXPRESSION_PROBE_SECOND = 8
 _SYNTHESIS_MAX_NOTES = 40
-_ITERATION_EVIDENCE_MAX_NOTES = 24
 _SYNTHESIS_MAX_CONTENT_EXCERPT_CHARS = 900
 _SYNTHESIS_MAX_CONTEXT_EXCERPT_CHARS = 1400
 _SYNTHESIS_SMALL_CANDIDATE_THRESHOLD = 12
@@ -354,6 +393,53 @@ def _compact_text_for_context(*, text: str, max_chars: int) -> str:
         return collapsed
 
     return collapsed[:head_chars] + marker + collapsed[-tail_chars:]
+
+
+def _ancestor_plus_content_context_text(*, entry: dict) -> str:
+    if not isinstance(entry, dict):
+        raise TypeError("entry must be an object")
+
+    content_text = entry.get("content_text")
+    if not isinstance(content_text, str):
+        content_text = ""
+    content_text = re.sub(r"\s+", " ", content_text).strip()
+
+    ancestor_texts_raw = entry.get("ancestor_texts")
+    ancestor_texts: List[str] = []
+    if isinstance(ancestor_texts_raw, list):
+        for ancestor in ancestor_texts_raw:
+            if not isinstance(ancestor, str):
+                continue
+            normalized = re.sub(r"\s+", " ", ancestor).strip()
+            if normalized == "":
+                continue
+            ancestor_texts.append(normalized)
+
+    if len(ancestor_texts) > 0:
+        segments = [*ancestor_texts, content_text]
+        return " --- ".join(segment for segment in segments if segment != "")
+
+    if content_text != "":
+        return content_text
+
+    context_text = entry.get("context_text")
+    if isinstance(context_text, str):
+        normalized_context = re.sub(r"\s+", " ", context_text).strip()
+        if normalized_context != "":
+            return normalized_context
+    return content_text
+
+
+def _note_snippet_text(*, note: dict) -> str:
+    if not isinstance(note, dict):
+        raise TypeError("note must be an object")
+    for key in ("snippet_excerpt", "context_excerpt", "content_excerpt"):
+        value = note.get(key)
+        if isinstance(value, str):
+            normalized = re.sub(r"\s+", " ", value).strip()
+            if normalized != "":
+                return normalized
+    return ""
 
 
 def _strip_html_to_text(*, text: str) -> str:
@@ -1391,6 +1477,42 @@ def _ollama_chat_json_with_raw(
     if not isinstance(parsed, dict):
         raise TypeError("Ollama JSON response must decode to an object")
     return parsed, content
+
+
+def _ollama_chat_text(
+    *,
+    ollama_chat_url: str,
+    model: str,
+    messages: List[dict],
+) -> str:
+    ensure_ollama_running(
+        ollama_chat_url=ollama_chat_url,
+        autostart=_DEFAULT_OLLAMA_AUTOSTART,
+        wait_timeout_seconds=_DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS,
+    )
+    payload = {
+        "model": model,
+        "stream": False,
+        "messages": messages,
+    }
+    response = _post_json(
+        url=ollama_chat_url,
+        payload=payload,
+        timeout_seconds=_OLLAMA_CHAT_TIMEOUT_SECONDS,
+    )
+    if response is None:
+        raise RuntimeError("Ollama chat returned empty response")
+    if "message" not in response:
+        raise RuntimeError("Ollama chat response missing message")
+    message = response["message"]
+    if not isinstance(message, dict):
+        raise TypeError("Ollama message payload must be an object")
+    if "content" not in message:
+        raise RuntimeError("Ollama message missing content")
+    content = message["content"]
+    if not isinstance(content, str):
+        raise TypeError("Ollama message content must be a string")
+    return content
 
 
 def _derive_tags_url(*, ollama_chat_url: str) -> str:
@@ -2582,23 +2704,78 @@ def _summarize_rewrite_tool_response(*, tool_response: dict, note_id_sample_limi
     }
 
 
-def _strip_note_ids_for_display(*, value: object) -> object:
-    if isinstance(value, dict):
-        output: Dict[str, object] = {}
-        for key, child in value.items():
-            if key in {
-                "note_id",
-                "parent_id",
-                "ancestor_note_ids",
-                "note_ids",
-                "note_ids_sample",
-            }:
+def _compact_iteration_result_entry_for_model(*, entry: dict) -> dict:
+    if not isinstance(entry, dict):
+        raise TypeError("entry must be an object")
+
+    snippet_source = _ancestor_plus_content_context_text(entry=entry)
+    if snippet_source == "":
+        return {}
+    return {
+        "snippet_excerpt": _clip_text_for_synthesis(
+            text=snippet_source,
+            max_chars=1200,
+        )
+    }
+
+
+def _compact_tool_response_for_iteration(*, tool_response: dict, max_results: int) -> dict:
+    if not isinstance(tool_response, dict):
+        raise TypeError("tool_response must be an object")
+    if max_results <= 0:
+        raise ValueError("max_results must be > 0")
+
+    if tool_response.get("ok") is not True:
+        error_value = tool_response.get("error")
+        error_text = "tool call failed"
+        if isinstance(error_value, str) and error_value.strip() != "":
+            error_text = error_value
+        return {
+            "ok": False,
+            "error": error_text,
+        }
+
+    data = tool_response.get("data")
+    if not isinstance(data, dict):
+        return {
+            "ok": True,
+            "data": {},
+        }
+
+    compact_data: Dict[str, object] = {}
+    passthrough_keys = [
+        "query",
+        "resolved_query",
+        "pattern",
+        "flags",
+        "regex_engine",
+        "target",
+        "limit",
+        "offset",
+        "total_matches",
+        "returned_count",
+    ]
+    for key in passthrough_keys:
+        if key in data:
+            compact_data[key] = data[key]
+
+    results = data.get("results")
+    if isinstance(results, list):
+        compact_results: List[dict] = []
+        for entry in results[:max_results]:
+            if not isinstance(entry, dict):
                 continue
-            output[key] = _strip_note_ids_for_display(value=child)
-        return output
-    if isinstance(value, list):
-        return [_strip_note_ids_for_display(value=item) for item in value]
-    return value
+            compact_entry = _compact_iteration_result_entry_for_model(entry=entry)
+            if len(compact_entry) == 0:
+                continue
+            compact_results.append(compact_entry)
+        compact_data["results_total"] = len(results)
+        compact_data["results"] = compact_results
+
+    return {
+        "ok": True,
+        "data": compact_data,
+    }
 
 
 def _normalize_tag_atom(*, value: object) -> str:
@@ -2800,6 +2977,33 @@ def _phrase_token_count(*, value: str) -> int:
     if not isinstance(value, str):
         raise TypeError("value must be a string")
     return len(re.findall(r"[A-Za-z0-9]+", value))
+
+
+def _extract_planner_anchor_terms(*, source_message: str, max_terms: int = 8) -> List[str]:
+    if not isinstance(source_message, str):
+        raise TypeError("source_message must be a string")
+    if max_terms <= 0:
+        raise ValueError("max_terms must be > 0")
+    raw_tokens = re.findall(r"[A-Za-z0-9']+", source_message)
+    anchors: List[str] = []
+    seen = set()
+    for raw in raw_tokens:
+        token = raw.casefold().strip()
+        if token.endswith("'s"):
+            token = token[:-2]
+        if token == "":
+            continue
+        if token in _PLANNER_STOPWORDS:
+            continue
+        if len(token) < 3:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        anchors.append(token)
+        if len(anchors) >= max_terms:
+            break
+    return anchors
 
 
 def _expression_execution_tier(*, expression: dict) -> int:
@@ -3077,11 +3281,18 @@ def _build_rewrite_expression_plan_messages(
     iteration_index: int = 1,
     executed_query_history: List[dict] | None = None,
     prior_evidence_notes: List[dict] | None = None,
+    planner_feedback: List[str] | None = None,
 ) -> List[dict]:
     if executed_query_history is None:
         executed_query_history = []
     if prior_evidence_notes is None:
         prior_evidence_notes = []
+    if planner_feedback is None:
+        planner_feedback = []
+    query_anchor_terms = _extract_planner_anchor_terms(
+        source_message=user_message,
+        max_terms=8,
+    )
     system_prompt = "\n".join(
         [
             "You are a MetaList retrieval planner for one loop iteration.",
@@ -3102,6 +3313,20 @@ def _build_rewrite_expression_plan_messages(
             "Use tag only when the user intent is explicitly tag-like.",
             "Do not repeat any query already present in executed_query_history.",
             "Use the same language/script as the user query unless the user query itself is multilingual.",
+            "Anchor coverage guidance:",
+            "- Use query_anchor_terms from the user payload as primary semantic anchors.",
+            "- Keep core anchors from the user question (person/entity terms + target concept terms).",
+            "- For multi-anchor questions, put a combined expression first (for example a near expression), then broaden with single-anchor expressions.",
+            "- Prefer combined-anchor expressions early when they improve precision.",
+            "- Avoid single-anchor-only plans when multi-anchor intent is clear.",
+            "- near is useful when anchors may be split across nearby text or parent/child context.",
+            "- Use obvious lexical variants only; do not invent abbreviations/acronyms not present in query or evidence.",
+            "Regex guidance:",
+            "- Regex is best for concrete value shapes (dates, IDs, formatted numbers).",
+            "- Avoid regex that encode guessed shorthand without structural value shape.",
+            "- Mixed plans are valid: phrase anchors + standalone value-shape regex + optional proximity expression.",
+            "For structured-value requests (identifiers, account numbers, dates, codes), regex is often high-yield.",
+            "When useful, try a standalone value-shape regex early in the list.",
             "",
             "Return ONLY JSON with exact shape:",
             '{"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200},{"type":"tag","value":"tag-name"}]}',
@@ -3113,8 +3338,10 @@ def _build_rewrite_expression_plan_messages(
         "iteration_index": iteration_index,
         "elapsed_ms_so_far": elapsed_ms,
         "active_search_context_query": search_context_query,
+        "query_anchor_terms": query_anchor_terms,
         "executed_query_history": executed_query_history,
         "prior_evidence_notes": prior_evidence_notes,
+        "planner_feedback": planner_feedback,
     }
     user_prompt = "Iteration context:\n" + json.dumps(
         user_payload,
@@ -3136,6 +3363,10 @@ def _build_rewrite_expression_plan_repair_messages(
     max_expressions: int,
     target_expressions: int,
 ) -> List[dict]:
+    query_anchor_terms = _extract_planner_anchor_terms(
+        source_message=user_message,
+        max_terms=8,
+    )
     system_prompt = "\n".join(
         [
             "You are repairing a MetaList retrieval plan that failed validation or was too weak.",
@@ -3148,6 +3379,12 @@ def _build_rewrite_expression_plan_repair_messages(
             "- Regex is optional; add when it improves structured-format recall.",
             "- near is optional; add when multi-anchor proximity is useful.",
             "- Use the same language/script as the query.",
+            "- Use query_anchor_terms from the user payload as primary semantic anchors.",
+            "- Preserve core anchors from the query before broadening.",
+            "- For multi-anchor questions, put a combined expression first and single-anchor expansions later.",
+            "- Avoid invented abbreviations/acronyms not present in query or evidence.",
+            "- Mixed plans are valid: phrase anchor + standalone value regex + optional proximity expression.",
+            "- For structured-value requests, consider adding a standalone value-shape regex early.",
             "",
             "Output contract:",
             '- Return ONLY JSON with this exact shape: {"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"near","left":"...","right":"...","window_chars":200},{"type":"tag","value":"tag-name"}]}.',
@@ -3162,6 +3399,7 @@ def _build_rewrite_expression_plan_repair_messages(
     user_prompt_payload = {
         "user_question": user_message,
         "active_search_context_query": scoped_hint,
+        "query_anchor_terms": query_anchor_terms,
         "prior_plan": original_plan,
         "validation_error": validation_error,
         "repair_instructions": "Keep valid anchors and add missing variants until constraints are met.",
@@ -3370,7 +3608,6 @@ def _prepare_model_evidence_notes(
     if max_notes <= 0:
         raise ValueError("max_notes must be > 0")
 
-    query_terms = _query_terms_for_tags(user_message=user_message)[:10]
     prepared: List[dict] = []
     for note in note_entries[:max_notes]:
         if not isinstance(note, dict):
@@ -3378,75 +3615,20 @@ def _prepare_model_evidence_notes(
         content_text = note.get("content_text")
         if not isinstance(content_text, str):
             content_text = ""
-        context_text = note.get("context_text")
-        if not isinstance(context_text, str):
-            context_text = ""
-        preview_text = note.get("preview_text")
-        if not isinstance(preview_text, str):
-            preview_text = ""
-        source_text = context_text if context_text != "" else content_text
-        term_snippets: List[str] = []
-        if source_text != "" and len(query_terms) > 0:
-            term_snippets = _extract_term_snippets(
-                plain_text=source_text,
-                terms=query_terms,
-                max_snippets=4,
-            )
-
-        regex_snippets: List[str] = []
-        matches = note.get("matches")
-        if isinstance(matches, list):
-            for match in matches[:8]:
-                if not isinstance(match, dict):
-                    continue
-                snippet = match.get("snippet")
-                if not isinstance(snippet, str) or snippet.strip() == "":
-                    continue
-                collapsed = re.sub(r"\s+", " ", snippet).strip()
-                regex_snippets.append(
-                    _clip_text_for_synthesis(text=collapsed, max_chars=240)
-                )
-
-        tag_terms = note.get("tag_terms")
-        effective_tag_terms = note.get("effective_tag_terms")
-        matched_expressions = note.get("matched_expressions")
-        if not isinstance(matched_expressions, list):
-            matched_expressions = []
-        cleaned_matched_expressions = [
-            expression
-            for expression in matched_expressions
-            if isinstance(expression, str) and expression != ""
-        ][:16]
+        context_text = _ancestor_plus_content_context_text(entry=note)
 
         prepared_note: Dict[str, object] = {
-            "hit_count": note.get("hit_count"),
-            "matched_expressions": cleaned_matched_expressions,
-            "preview_text": _clip_text_for_synthesis(
-                text=preview_text,
-                max_chars=260,
-            ) if preview_text != "" else "",
-            "content_excerpt": _clip_text_for_synthesis(
-                text=content_text,
-                max_chars=_SYNTHESIS_MAX_CONTENT_EXCERPT_CHARS,
-            ),
-            "context_excerpt": _clip_text_for_synthesis(
+            "snippet_excerpt": _clip_text_for_synthesis(
                 text=context_text,
                 max_chars=_SYNTHESIS_MAX_CONTEXT_EXCERPT_CHARS,
             ) if context_text != "" else "",
-            "term_snippets": term_snippets,
-            "regex_snippets": regex_snippets,
             "ancestor_context_included": context_text != "" and context_text != content_text,
         }
-        if isinstance(tag_terms, list):
-            prepared_note["tag_terms"] = [
-                term for term in tag_terms[:20] if isinstance(term, str) and term != ""
-            ]
-        if isinstance(effective_tag_terms, list):
-            prepared_note["effective_tag_terms"] = [
-                term
-                for term in effective_tag_terms[:24]
-                if isinstance(term, str) and term != ""
-            ]
+        if prepared_note["snippet_excerpt"] == "":
+            prepared_note["snippet_excerpt"] = _clip_text_for_synthesis(
+                text=content_text,
+                max_chars=_SYNTHESIS_MAX_CONTENT_EXCERPT_CHARS,
+            )
         prepared.append(prepared_note)
     return prepared
 
@@ -3475,6 +3657,47 @@ def _order_candidate_note_ids_by_note_order(
 
     sortable_rows.sort(key=lambda row: (row[0], row[1], row[2]))
     return [row[2] for row in sortable_rows]
+
+
+def _interleave_note_id_lists_round_robin(*, note_id_lists: List[List[str]]) -> List[str]:
+    if not isinstance(note_id_lists, list):
+        raise TypeError("note_id_lists must be a list")
+    if len(note_id_lists) == 0:
+        return []
+
+    normalized_lists: List[List[str]] = []
+    for note_ids in note_id_lists:
+        if not isinstance(note_ids, list):
+            raise TypeError("each note_id list must be a list")
+        normalized: List[str] = []
+        for note_id in note_ids:
+            if not isinstance(note_id, str) or note_id == "":
+                continue
+            normalized.append(note_id)
+        normalized_lists.append(normalized)
+
+    cursors = [0 for _ in normalized_lists]
+    seen = set()
+    ordered: List[str] = []
+
+    while True:
+        progressed = False
+        for list_index, note_ids in enumerate(normalized_lists):
+            cursor = cursors[list_index]
+            while cursor < len(note_ids):
+                candidate_note_id = note_ids[cursor]
+                cursor += 1
+                if candidate_note_id in seen:
+                    continue
+                seen.add(candidate_note_id)
+                ordered.append(candidate_note_id)
+                progressed = True
+                break
+            cursors[list_index] = cursor
+        if not progressed:
+            break
+
+    return ordered
 
 
 def _candidate_sample_without_ids(
@@ -3580,6 +3803,7 @@ def _build_rewrite_loop_decision_messages(
     executed_query_history: List[dict],
     iteration_query_results: List[dict],
     carried_evidence_notes: List[dict],
+    evidence_overview: dict,
 ) -> List[dict]:
     system_prompt = "\n".join(
         [
@@ -3596,6 +3820,8 @@ def _build_rewrite_loop_decision_messages(
             "- Base decisions only on provided evidence.",
             "- Do not use capability/access disclaimers.",
             "- If you choose continue, explain what is still missing.",
+            "- If evidence_overview indicates non-zero evidence, prefer a tentative answer with low/medium confidence over empty uncertainty.",
+            '- A tentative answer can be explicit uncertainty like "I think it is X, possibly Y".',
             "",
             "Return ONLY JSON with exact shape:",
             (
@@ -3616,11 +3842,241 @@ def _build_rewrite_loop_decision_messages(
         "executed_query_history": executed_query_history,
         "iteration_query_results": iteration_query_results,
         "carried_evidence_notes": carried_evidence_notes,
+        "evidence_overview": evidence_overview,
     }
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
+
+
+def _build_rewrite_relevance_filter_messages(
+    *,
+    user_message: str,
+    search_context_query: str,
+    elapsed_ms: float,
+    iteration_index: int,
+    executed_query_history: List[dict],
+    iteration_query_results: List[dict],
+    candidate_notes: List[dict],
+    evidence_overview: dict,
+) -> List[dict]:
+    candidate_lines: List[str] = []
+    for note in candidate_notes:
+        if not isinstance(note, dict):
+            continue
+        snippet = _note_snippet_text(note=note)
+        if snippet == "":
+            continue
+        candidate_lines.append("- " + snippet)
+
+    query_summary_lines: List[str] = []
+    for row in iteration_query_results:
+        if not isinstance(row, dict):
+            continue
+        label = row.get("expression_label")
+        if not isinstance(label, str) or label.strip() == "":
+            label = "query"
+        scoped_match_count = row.get("scoped_match_count")
+        if not isinstance(scoped_match_count, int):
+            scoped_match_count = 0
+        execution_ms = row.get("execution_ms")
+        if not isinstance(execution_ms, (int, float)):
+            execution_ms = 0.0
+        query_summary_lines.append(
+            f"- {label} (matches={scoped_match_count}, ms={round(float(execution_ms), 3)})"
+        )
+
+    context_query_display = search_context_query if search_context_query.strip() != "" else "none"
+    evidence_band = "none"
+    if isinstance(evidence_overview, dict):
+        band = evidence_overview.get("band")
+        if isinstance(band, str) and band.strip() != "":
+            evidence_band = band
+
+    prompt_lines: List[str] = [
+        "You are the MetaList evidence relevance filter.",
+        "Your task is ONLY to pick which candidate note snippets are relevant to the user question.",
+        "Do NOT answer the user question yet.",
+        "",
+        "User question:",
+        user_message,
+        "",
+        "Iteration context:",
+        f"- iteration_index: {iteration_index}",
+        f"- elapsed_ms_so_far: {elapsed_ms}",
+        f"- active_search_context_query: {context_query_display}",
+        f"- evidence_band: {evidence_band}",
+        f"- prior_executed_query_count: {len(executed_query_history)}",
+        "",
+        "Executed queries this iteration:",
+        *(query_summary_lines if len(query_summary_lines) > 0 else ["- none"]),
+        "",
+        "Candidate note snippets (one per note):",
+        *(candidate_lines if len(candidate_lines) > 0 else ["- none"]),
+        "",
+        "Output format:",
+        "- Return plain text only (not JSON).",
+        "- Return only relevant snippets, one snippet per line.",
+        "- Copy each selected snippet exactly from the candidate list when possible.",
+        "- If nothing is relevant, return exactly: NONE",
+    ]
+    return [
+        {"role": "system", "content": "\n".join(prompt_lines)},
+    ]
+
+
+def _clean_relevance_line(*, line: str) -> str:
+    if not isinstance(line, str):
+        raise TypeError("line must be a string")
+    cleaned = line.strip()
+    if cleaned == "":
+        return ""
+    cleaned = re.sub(r"^\s*[-*•]+\s*", "", cleaned)
+    cleaned = re.sub(r"^\s*\d{1,2}[)\]:.\-]\s+", "", cleaned)
+    cleaned = cleaned.strip().strip('"').strip("'").strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _best_candidate_index_for_relevance_line(
+    *,
+    cleaned_line: str,
+    candidate_norms: List[str],
+) -> int | None:
+    if cleaned_line == "":
+        return None
+    line_norm = cleaned_line.casefold()
+
+    for idx, candidate_norm in enumerate(candidate_norms):
+        if candidate_norm == line_norm:
+            return idx
+    if len(line_norm) >= 16:
+        for idx, candidate_norm in enumerate(candidate_norms):
+            if line_norm in candidate_norm or candidate_norm in line_norm:
+                return idx
+
+    best_idx: int | None = None
+    best_ratio = 0.0
+    for idx, candidate_norm in enumerate(candidate_norms):
+        ratio = difflib.SequenceMatcher(a=line_norm, b=candidate_norm).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_idx = idx
+    if best_idx is not None and best_ratio >= 0.90:
+        return best_idx
+    return None
+
+
+def _normalize_rewrite_relevance_filter(*, raw_model_output: str, notes: List[dict]) -> dict:
+    if not isinstance(raw_model_output, str):
+        raise TypeError("raw_model_output must be a string")
+    if not isinstance(notes, list):
+        raise TypeError("notes must be a list")
+
+    candidate_snippets: List[str] = []
+    candidate_norms: List[str] = []
+    for note in notes:
+        if not isinstance(note, dict):
+            candidate_snippets.append("")
+            candidate_norms.append("")
+            continue
+        snippet = _note_snippet_text(note=note)
+        candidate_snippets.append(snippet)
+        candidate_norms.append(snippet.casefold())
+
+    text = raw_model_output.strip()
+    if text == "":
+        return {
+            "reasoning": "Model returned empty relevance output.",
+            "selected_relevant_snippets": [],
+            "relevant_note_indexes": [],
+        }
+
+    maybe_json = None
+    if text.startswith("{") or text.startswith("["):
+        try:
+            maybe_json = json.loads(text)
+        except json.JSONDecodeError:
+            maybe_json = None
+
+    selected_lines: List[str] = []
+    if isinstance(maybe_json, dict):
+        raw_snippets = maybe_json.get("relevant_snippets")
+        if isinstance(raw_snippets, list):
+            for value in raw_snippets:
+                if not isinstance(value, str):
+                    continue
+                cleaned = _clean_relevance_line(line=value)
+                if cleaned != "":
+                    selected_lines.append(cleaned)
+        else:
+            raw_indexes = maybe_json.get("relevant_note_indexes")
+            if isinstance(raw_indexes, list):
+                for index in raw_indexes:
+                    if not isinstance(index, int):
+                        continue
+                    if index < 1 or index > len(candidate_snippets):
+                        continue
+                    snippet = candidate_snippets[index - 1]
+                    if snippet != "":
+                        selected_lines.append(snippet)
+    else:
+        for line in text.splitlines():
+            cleaned = _clean_relevance_line(line=line)
+            if cleaned == "":
+                continue
+            if cleaned.casefold() in {"none", "no relevant notes", "no relevant snippets"}:
+                continue
+            selected_lines.append(cleaned)
+
+    selected_indexes: List[int] = []
+    selected_snippets: List[str] = []
+    seen_indexes = set()
+    for line in selected_lines:
+        matched_index = _best_candidate_index_for_relevance_line(
+            cleaned_line=line,
+            candidate_norms=candidate_norms,
+        )
+        if matched_index is None:
+            continue
+        index_1_based = matched_index + 1
+        if index_1_based in seen_indexes:
+            continue
+        seen_indexes.add(index_1_based)
+        selected_indexes.append(index_1_based)
+        snippet = candidate_snippets[matched_index]
+        if snippet != "":
+            selected_snippets.append(snippet)
+
+    reasoning = (
+        "Selected "
+        + str(len(selected_indexes))
+        + " relevant snippets from model output."
+    )
+    return {
+        "reasoning": reasoning,
+        "selected_relevant_snippets": selected_snippets,
+        "relevant_note_indexes": selected_indexes,
+    }
+
+
+def _select_notes_by_indexes(*, notes: List[dict], indexes: List[int]) -> List[dict]:
+    if not isinstance(notes, list):
+        raise TypeError("notes must be a list")
+    if not isinstance(indexes, list):
+        raise TypeError("indexes must be a list")
+    selected: List[dict] = []
+    for index in indexes:
+        if not isinstance(index, int):
+            continue
+        if index < 1 or index > len(notes):
+            continue
+        note = notes[index - 1]
+        if not isinstance(note, dict):
+            continue
+        selected.append(note)
+    return selected
 
 
 def _normalize_rewrite_iteration_decision(*, payload: object) -> dict:
@@ -4115,6 +4571,11 @@ def _run_rewrite_request(
         "expression_probe_points": _compute_expression_probe_points(
             planned_expression_count=_compute_expression_plan_target_count(max_expressions=max_expressions)
         ),
+        "evidence_selection_strategy": "query_round_robin_interleaved",
+        "carried_evidence_max_notes": hydrate_top_k,
+        "latest_result_evidence_max_notes": hydrate_top_k,
+        "decision_stage_enabled": False,
+        "relevance_filter_stage_enabled": True,
     }
 
     note_hit_counts: Dict[str, int] = {}
@@ -4123,6 +4584,7 @@ def _run_rewrite_request(
     expression_stats: List[dict] = []
     executed_query_history: List[dict] = []
     executed_query_signatures = set()
+    planner_feedback_messages: List[str] = []
 
     def merge_scoped_entries(*, entries: List[dict], expression_label: str) -> List[str]:
         latest_note_ids: List[str] = []
@@ -4141,6 +4603,7 @@ def _run_rewrite_request(
                 matched_expression_list.append(expression_label)
 
             existing_evidence = note_evidence_by_id.get(note_id)
+            entry_context_no_descendants = _ancestor_plus_content_context_text(entry=entry)
             if existing_evidence is None:
                 note_order_index = entry.get("note_order_index")
                 if not isinstance(note_order_index, int) or note_order_index < 0:
@@ -4148,7 +4611,7 @@ def _run_rewrite_request(
                 existing_evidence = {
                     "preview_text": entry.get("preview_text", ""),
                     "content_text": entry.get("content_text", ""),
-                    "context_text": entry.get("context_text", ""),
+                    "context_text": entry_context_no_descendants,
                     "tag_terms": entry.get("tag_terms", []),
                     "effective_tag_terms": entry.get("effective_tag_terms", []),
                     "matches": [],
@@ -4171,10 +4634,10 @@ def _run_rewrite_request(
 
             if (
                 isinstance(existing_evidence.get("context_text"), str)
-                and isinstance(entry.get("context_text"), str)
-                and len(entry["context_text"]) > len(existing_evidence["context_text"])
+                and isinstance(entry_context_no_descendants, str)
+                and len(entry_context_no_descendants) > len(existing_evidence["context_text"])
             ):
-                existing_evidence["context_text"] = entry["context_text"]
+                existing_evidence["context_text"] = entry_context_no_descendants
             if (
                 isinstance(existing_evidence.get("content_text"), str)
                 and isinstance(entry.get("content_text"), str)
@@ -4252,7 +4715,7 @@ def _run_rewrite_request(
         carried_evidence_notes = _prepare_model_evidence_notes(
             note_entries=carried_entries,
             user_message=user_message,
-            max_notes=min(_ITERATION_EVIDENCE_MAX_NOTES, hydrate_top_k),
+            max_notes=hydrate_top_k,
         )
 
         plan_messages = _build_rewrite_expression_plan_messages(
@@ -4263,6 +4726,7 @@ def _run_rewrite_request(
             iteration_index=iteration_index,
             executed_query_history=executed_query_history[-32:],
             prior_evidence_notes=carried_evidence_notes,
+            planner_feedback=planner_feedback_messages[-16:],
         )
         append_step(
             step_record={
@@ -4278,6 +4742,8 @@ def _run_rewrite_request(
                     "planned_expression_count": 0,
                     "executed_query_count": 0,
                     "skipped_duplicate_query_count": 0,
+                    "skipped_invalid_expression_count": 0,
+                    "skipped_unexecutable_query_count": 0,
                     "iteration_result_count": 0,
                     "decision": "pending",
                 },
@@ -4290,6 +4756,8 @@ def _run_rewrite_request(
                         "iteration_index": iteration_index,
                         "queries_executed": [],
                         "duplicate_queries_skipped": [],
+                        "invalid_expressions_skipped": [],
+                        "unexecutable_queries_skipped": [],
                         "latest_result_notes": [],
                         "carried_evidence_notes": carried_evidence_notes,
                     },
@@ -4318,17 +4786,33 @@ def _run_rewrite_request(
             )
         except ValueError as error:
             planner_validation_error = str(error)
+            planner_feedback_messages.append(
+                "Planner normalization warning: " + planner_validation_error
+            )
             expression_plan = {
                 "reasoning": "Planner output was partially invalid; continuing with usable subset for this iteration.",
                 "expressions": plan_preview.get("expressions", []),
             }
 
         expression_items: List[dict] = []
+        skipped_invalid_expressions: List[dict] = []
         for expression_index, expression in enumerate(expression_plan["expressions"], start=1):
             if expression_index > max_expressions:
                 break
             if not isinstance(expression, dict):
-                raise TypeError("expression entry must be an object")
+                skipped_invalid_expressions.append(
+                    {
+                        "original_index": expression_index,
+                        "error": "expression entry must be an object",
+                        "expression": expression,
+                    }
+                )
+                planner_feedback_messages.append(
+                    "Skipped invalid expression at index "
+                    + str(expression_index)
+                    + ": expected object."
+                )
+                continue
             expression_items.append(
                 {
                     "original_index": expression_index,
@@ -4345,18 +4829,32 @@ def _run_rewrite_request(
         )
 
         iteration_query_runs: List[dict] = []
+        iteration_query_note_id_lists: List[List[str]] = []
         skipped_duplicate_queries: List[dict] = []
+        skipped_unexecutable_queries: List[dict] = []
         iteration_latest_note_ids: List[str] = []
         iteration_seen_note_ids = set()
 
         for item in expression_items:
             expression = item["expression"]
-            compiled = _compile_rewrite_expression_call(
-                expression=expression,
-                per_expression_limit=per_expression_limit,
-                normalized_regex_engine=normalized_regex_engine,
-                universe_note_ids=universe_note_ids,
-            )
+            try:
+                compiled = _compile_rewrite_expression_call(
+                    expression=expression,
+                    per_expression_limit=per_expression_limit,
+                    normalized_regex_engine=normalized_regex_engine,
+                    universe_note_ids=universe_note_ids,
+                )
+            except (TypeError, ValueError) as error:
+                skipped_unexecutable_queries.append(
+                    {
+                        "expression": expression,
+                        "error": str(error),
+                    }
+                )
+                planner_feedback_messages.append(
+                    "Skipped unexecutable expression: " + str(error)
+                )
+                continue
             tool_name = compiled["tool_name"]
             tool_args = compiled["tool_args"]
             display_args = compiled["display_args"]
@@ -4409,6 +4907,8 @@ def _run_rewrite_request(
                             "planned_expression_count": len(expression_plan["expressions"]),
                             "executed_query_count": len(iteration_query_runs),
                             "skipped_duplicate_query_count": len(skipped_duplicate_queries),
+                            "skipped_invalid_expression_count": len(skipped_invalid_expressions),
+                            "skipped_unexecutable_query_count": len(skipped_unexecutable_queries),
                             "iteration_result_count": len(iteration_latest_note_ids),
                             "decision": "error",
                         },
@@ -4432,6 +4932,8 @@ def _run_rewrite_request(
                                 },
                                 "queries_executed": iteration_query_runs,
                                 "duplicate_queries_skipped": skipped_duplicate_queries,
+                                "invalid_expressions_skipped": skipped_invalid_expressions,
+                                "unexecutable_queries_skipped": skipped_unexecutable_queries,
                                 "latest_result_notes": [],
                                 "carried_evidence_notes": carried_evidence_notes,
                             },
@@ -4459,6 +4961,7 @@ def _run_rewrite_request(
                 entries=scoped_entries,
                 expression_label=label,
             )
+            iteration_query_note_id_lists.append(latest_note_ids)
             for note_id in latest_note_ids:
                 if note_id in iteration_seen_note_ids:
                     continue
@@ -4501,7 +5004,10 @@ def _run_rewrite_request(
                     "arguments": display_args,
                     "execution_ms": execution_ms,
                     "scoped_match_count": len(latest_note_ids),
-                    "tool_response": _strip_note_ids_for_display(value=tool_response),
+                    "tool_response": _compact_tool_response_for_iteration(
+                        tool_response=tool_response,
+                        max_results=hydrate_top_k,
+                    ),
                 }
             )
 
@@ -4509,12 +5015,15 @@ def _run_rewrite_request(
             detail=(
                 f"Iteration {iteration_index}: executed "
                 + str(len(iteration_query_runs))
-                + " queries; deciding next action..."
+                + " queries; running relevance filter..."
             )
         )
 
+        interleaved_iteration_note_ids = _interleave_note_id_lists_round_robin(
+            note_id_lists=iteration_query_note_id_lists
+        )
         latest_entries: List[dict] = []
-        for note_id in iteration_latest_note_ids:
+        for note_id in interleaved_iteration_note_ids:
             evidence_entry = note_evidence_by_id.get(note_id)
             if evidence_entry is None:
                 continue
@@ -4522,44 +5031,70 @@ def _run_rewrite_request(
         latest_result_notes = _prepare_model_evidence_notes(
             note_entries=latest_entries,
             user_message=user_message,
-            max_notes=min(12, hydrate_top_k),
+            max_notes=hydrate_top_k,
         )
+        matched_query_count = sum(
+            1
+            for row in iteration_query_runs
+            if isinstance(row.get("scoped_match_count"), int) and row["scoped_match_count"] > 0
+        )
+        total_scoped_matches = sum(
+            int(row["scoped_match_count"])
+            for row in iteration_query_runs
+            if isinstance(row.get("scoped_match_count"), int)
+        )
+        candidate_note_count = len(latest_result_notes)
+        evidence_band = "none"
+        if candidate_note_count > 0:
+            if candidate_note_count <= 4:
+                evidence_band = "narrow"
+            elif candidate_note_count <= 25:
+                evidence_band = "medium"
+            else:
+                evidence_band = "broad"
+        evidence_overview = {
+            "band": evidence_band,
+            "candidate_note_count": candidate_note_count,
+            "executed_query_count": len(iteration_query_runs),
+            "queries_with_matches": matched_query_count,
+            "total_scoped_matches": total_scoped_matches,
+        }
 
-        decision_query_results_for_prompt = [
+        query_results_for_prompt = [
             {
                 "expression_label": row["expression_label"],
-                "tool_name": row["tool_name"],
-                "arguments": row["arguments"],
                 "execution_ms": row["execution_ms"],
                 "scoped_match_count": row["scoped_match_count"],
-                "tool_response": row["tool_response"],
             }
             for row in iteration_query_runs
         ]
 
-        decision_messages = _build_rewrite_loop_decision_messages(
+        relevance_messages = _build_rewrite_relevance_filter_messages(
             user_message=user_message,
             search_context_query=search_context_query,
             elapsed_ms=_total_execution_ms(),
             iteration_index=iteration_index,
             executed_query_history=executed_query_history[-32:],
-            iteration_query_results=decision_query_results_for_prompt,
-            carried_evidence_notes=carried_evidence_notes,
+            iteration_query_results=query_results_for_prompt,
+            candidate_notes=latest_result_notes,
+            evidence_overview=evidence_overview,
         )
         append_step(
             step_record={
                 "step": len(steps) + 1,
                 "action": "loop_iteration",
-                "reason": "planner output accepted; queries executed; waiting for decision model",
+                "reason": "planner output accepted; queries executed; waiting for relevance filter model",
                 "stats": {
                     "iteration_index": iteration_index,
-                    "phase": "decision_prompt",
+                    "phase": "relevance_prompt",
                     "planning_ms": planning_ms,
                     "decision_ms": 0.0,
                     "elapsed_ms_so_far": _total_execution_ms(),
                     "planned_expression_count": len(expression_plan["expressions"]),
                     "executed_query_count": len(iteration_query_runs),
                     "skipped_duplicate_query_count": len(skipped_duplicate_queries),
+                    "skipped_invalid_expression_count": len(skipped_invalid_expressions),
+                    "skipped_unexecutable_query_count": len(skipped_unexecutable_queries),
                     "iteration_result_count": len(iteration_latest_note_ids),
                     "decision": "pending",
                 },
@@ -4569,7 +5104,7 @@ def _run_rewrite_request(
                     "planner_reasoning": expression_plan.get("reasoning", ""),
                     "planned_expressions": expression_plan.get("expressions", []),
                     "planner_validation_error": planner_validation_error,
-                    "decision_prompt_messages": decision_messages,
+                    "relevance_prompt_messages": relevance_messages,
                 },
                 "tool_response": {
                     "ok": True,
@@ -4577,111 +5112,88 @@ def _run_rewrite_request(
                         "iteration_index": iteration_index,
                         "queries_executed": iteration_query_runs,
                         "duplicate_queries_skipped": skipped_duplicate_queries,
+                        "invalid_expressions_skipped": skipped_invalid_expressions,
+                        "unexecutable_queries_skipped": skipped_unexecutable_queries,
                         "latest_result_notes": latest_result_notes,
                         "carried_evidence_notes": carried_evidence_notes,
+                        "evidence_overview": evidence_overview,
+                        "latest_result_selection_order": "query_round_robin_interleaved",
+                        "latest_result_note_count_before_limit": len(interleaved_iteration_note_ids),
+                        "latest_result_limit": hydrate_top_k,
                     },
                 },
             }
         )
-        decision_start = time.perf_counter()
-        _emit_status(detail=f"Iteration {iteration_index}: waiting for decision model...")
-        decision_payload, decision_raw = _ollama_chat_json_with_raw(
+        relevance_start = time.perf_counter()
+        _emit_status(detail=f"Iteration {iteration_index}: waiting for relevance filter model...")
+        relevance_raw = _ollama_chat_text(
             ollama_chat_url=ollama_chat_url,
             model=resolved_model,
-            messages=decision_messages,
+            messages=relevance_messages,
         )
-        decision_ms = round((time.perf_counter() - decision_start) * 1000, 3)
-        loop_decision: dict
-        iteration_step_record = {
-            "step": len(steps) + 1,
-            "action": "iteration_decision_final",
-            "reason": "decision model selected next action",
-            "stats": {
-                "iteration_index": iteration_index,
-                "planning_ms": planning_ms,
-                "decision_ms": decision_ms,
-                "elapsed_ms_so_far": _total_execution_ms(),
-                "decision": "pending",
-            },
-            "model_payload": {
-                "decision_raw_model_output": decision_raw,
-            },
-            "tool_response": {
-                "ok": True,
-                "data": {
+        relevance_ms = round((time.perf_counter() - relevance_start) * 1000, 3)
+        relevance_result = _normalize_rewrite_relevance_filter(
+            raw_model_output=relevance_raw,
+            notes=latest_result_notes,
+        )
+        relevant_notes = _select_notes_by_indexes(
+            notes=latest_result_notes,
+            indexes=relevance_result["relevant_note_indexes"],
+        )
+
+        append_step(
+            step_record={
+                "step": len(steps) + 1,
+                "action": "evidence_relevance_filter",
+                "reason": "model selected relevant evidence snippets before any final answer",
+                "stats": {
                     "iteration_index": iteration_index,
+                    "planning_ms": planning_ms,
+                    "relevance_ms": relevance_ms,
+                    "elapsed_ms_so_far": _total_execution_ms(),
+                    "candidate_note_count": len(latest_result_notes),
+                    "relevant_note_count": len(relevant_notes),
+                    "selected_snippet_count": len(relevance_result["selected_relevant_snippets"]),
                 },
-            },
+                "model_payload": {
+                    "prompt_messages": relevance_messages,
+                    "raw_model_output": relevance_raw,
+                },
+                "tool_response": {
+                    "ok": True,
+                    "data": {
+                        "iteration_index": iteration_index,
+                        "reasoning": relevance_result["reasoning"],
+                        "selected_relevant_snippets": relevance_result["selected_relevant_snippets"],
+                        "relevant_note_indexes": relevance_result["relevant_note_indexes"],
+                        "candidate_notes": latest_result_notes,
+                        "relevant_notes": relevant_notes,
+                        "queries_executed": iteration_query_runs,
+                        "evidence_overview": evidence_overview,
+                        "latest_result_selection_order": "query_round_robin_interleaved",
+                        "latest_result_note_count_before_limit": len(interleaved_iteration_note_ids),
+                        "latest_result_limit": hydrate_top_k,
+                    },
+                },
+            }
+        )
+
+        return {
+            "ok": True,
+            "answer": (
+                "Relevance filtering complete. Relevant notes: "
+                + str(len(relevant_notes))
+                + " / "
+                + str(len(latest_result_notes))
+                + "."
+            ),
+            "model": resolved_model,
+            "steps": steps,
+            "mode": "rewrite",
+            "run_config": run_config,
+            "expression_stats": expression_stats,
+            "total_execution_ms": _total_execution_ms(),
         }
-        try:
-            loop_decision = _normalize_rewrite_iteration_decision(payload=decision_payload)
-        except ValueError as error:
-            iteration_step_record["stats"]["decision"] = "error"
-            iteration_step_record["tool_response"] = {
-                "ok": False,
-                "error": f"Iteration reasoning failed: {error}",
-                "data": iteration_step_record["tool_response"]["data"],
-            }
-            append_step(step_record=iteration_step_record)
-            return {
-                "ok": False,
-                "answer": f"Iteration reasoning failed: {error}",
-                "model": resolved_model,
-                "steps": steps,
-                "mode": "rewrite",
-                "run_config": run_config,
-                "expression_stats": expression_stats,
-                "total_execution_ms": _total_execution_ms(),
-            }
-
-        iteration_step_record["stats"]["decision"] = loop_decision["decision"]
-        iteration_step_record["tool_response"]["data"]["decision"] = loop_decision
-        append_step(step_record=iteration_step_record)
-
-        if loop_decision["decision"] == "answer":
-            return {
-                "ok": True,
-                "answer": loop_decision["answer"],
-                "model": resolved_model,
-                "steps": steps,
-                "mode": "rewrite",
-                "run_config": run_config,
-                "expression_stats": expression_stats,
-                "total_execution_ms": _total_execution_ms(),
-            }
-        if loop_decision["decision"] == "clarify":
-            return {
-                "ok": True,
-                "answer": loop_decision["clarifying_question"],
-                "model": resolved_model,
-                "steps": steps,
-                "mode": "rewrite",
-                "run_config": run_config,
-                "expression_stats": expression_stats,
-                "total_execution_ms": _total_execution_ms(),
-            }
-        if loop_decision["decision"] == "uncertain":
-            return {
-                "ok": True,
-                "answer": loop_decision["answer"],
-                "model": resolved_model,
-                "steps": steps,
-                "mode": "rewrite",
-                "run_config": run_config,
-                "expression_stats": expression_stats,
-                "total_execution_ms": _total_execution_ms(),
-            }
-        if len(iteration_query_runs) == 0 and len(skipped_duplicate_queries) > 0:
-            return {
-                "ok": False,
-                "answer": "Iteration made no progress: all planned queries were duplicates.",
-                "model": resolved_model,
-                "steps": steps,
-                "mode": "rewrite",
-                "run_config": run_config,
-                "expression_stats": expression_stats,
-                "total_execution_ms": _total_execution_ms(),
-            }
 
     return {
         "ok": True,
@@ -5585,6 +6097,12 @@ def _web_html(
         if (Array.isArray(payload.planner_prompt_messages)) {{
           combined.push(...payload.planner_prompt_messages.filter((entry) => entry && typeof entry === "object"));
         }}
+        if (Array.isArray(payload.relevance_prompt_messages)) {{
+          if (combined.length > 0) {{
+            combined.push({{ role: "meta", content: "--- relevance prompt ---" }});
+          }}
+          combined.push(...payload.relevance_prompt_messages.filter((entry) => entry && typeof entry === "object"));
+        }}
         if (Array.isArray(payload.decision_prompt_messages)) {{
           if (combined.length > 0) {{
             combined.push({{ role: "meta", content: "--- decision prompt ---" }});
@@ -5680,6 +6198,20 @@ def _web_html(
       if (Array.isArray(value)) {{
         return value.map((entry) => prettifyRawModelOutput(entry));
       }}
+      if (typeof value === "string") {{
+        const parsed = tryParseJsonText(value);
+        if (parsed !== null) {{
+          return prettifyRawModelOutput(parsed);
+        }}
+        const parsedSuffix = tryParseJsonSuffix(value);
+        if (parsedSuffix !== null) {{
+          return {{
+            text_prefix: parsedSuffix.prefix,
+            json_suffix: prettifyRawModelOutput(parsedSuffix.parsed),
+          }};
+        }}
+        return value;
+      }}
       if (!value || typeof value !== "object") {{
         return value;
       }}
@@ -5696,6 +6228,14 @@ def _web_html(
           const parsed = tryParseJsonText(child);
           if (parsed !== null) {{
             output[key] = prettifyRawModelOutput(parsed);
+            continue;
+          }}
+          const parsedSuffix = tryParseJsonSuffix(child);
+          if (parsedSuffix !== null) {{
+            output[key] = {{
+              text_prefix: parsedSuffix.prefix,
+              json_suffix: prettifyRawModelOutput(parsedSuffix.parsed),
+            }};
             continue;
           }}
         }}
@@ -5756,6 +6296,11 @@ def _web_html(
           "universe_resolution_ms",
           "universe_boundary_tool",
           "universe_boundary_arguments",
+          "evidence_selection_strategy",
+          "carried_evidence_max_notes",
+          "latest_result_evidence_max_notes",
+          "relevance_filter_stage_enabled",
+          "decision_stage_enabled",
         ];
         for (const key of keys) {{
           if (!(key in data)) {{
@@ -5867,6 +6412,9 @@ def _web_html(
         const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
           ? step.tool_response.data
           : null;
+        const payload = step.model_payload && typeof step.model_payload === "object"
+          ? step.model_payload
+          : null;
         const appendLine = (text, indentLevel = 0) => {{
           const line = document.createElement("div");
           line.className = "stage-summary-line";
@@ -5887,10 +6435,111 @@ def _web_html(
           appendLine(`planning_ms: ${{stats.planning_ms}}`, 1);
           appendLine(`decision_ms: ${{stats.decision_ms}}`, 1);
           appendLine(`queries_executed: ${{stats.executed_query_count}}`, 1);
+          if (Number.isInteger(stats.skipped_duplicate_query_count)) {{
+            appendLine(`skipped_duplicates: ${{stats.skipped_duplicate_query_count}}`, 1);
+          }}
+          if (Number.isInteger(stats.skipped_invalid_expression_count)) {{
+            appendLine(`skipped_invalid_expressions: ${{stats.skipped_invalid_expression_count}}`, 1);
+          }}
+          if (Number.isInteger(stats.skipped_unexecutable_query_count)) {{
+            appendLine(`skipped_unexecutable: ${{stats.skipped_unexecutable_query_count}}`, 1);
+          }}
           appendLine(`results: ${{stats.iteration_result_count}}`, 1);
           appendLine(`decision: ${{stats.decision}}`, 1);
         }}
+        const plannedExpressions = payload && Array.isArray(payload.planned_expressions)
+          ? payload.planned_expressions
+          : [];
+        if (plannedExpressions.length > 0) {{
+          appendLine("Planner guesses:");
+          for (let i = 0; i < plannedExpressions.length; i += 1) {{
+            const expr = plannedExpressions[i];
+            if (!expr || typeof expr !== "object") {{
+              continue;
+            }}
+            const exprType = typeof expr.type === "string" ? expr.type : "expression";
+            if (exprType === "phrase") {{
+              appendLine(`[${{i + 1}}] phrase: "${{typeof expr.value === "string" ? expr.value : ""}}"`, 1);
+              continue;
+            }}
+            if (exprType === "regex") {{
+              const pattern = typeof expr.pattern === "string" ? expr.pattern : "";
+              const flags = typeof expr.flags === "string" ? expr.flags : "";
+              appendLine(`[${{i + 1}}] regex: /${{pattern}}/${{flags}}`, 1);
+              continue;
+            }}
+            if (exprType === "near") {{
+              const left = typeof expr.left === "string" ? expr.left : "";
+              const right = typeof expr.right === "string" ? expr.right : "";
+              const windowChars = Number.isInteger(expr.window_chars) ? expr.window_chars : "?";
+              appendLine(`[${{i + 1}}] near: "${{left}}" ~ "${{right}}" @${{windowChars}}`, 1);
+              continue;
+            }}
+            if (exprType === "tag") {{
+              appendLine(`[${{i + 1}}] tag: ${{typeof expr.value === "string" ? expr.value : ""}}`, 1);
+              continue;
+            }}
+            appendLine(`[${{i + 1}}] ${{JSON.stringify(expr)}}`, 1);
+          }}
+        }}
         const queries = data && Array.isArray(data.queries_executed) ? data.queries_executed : [];
+        const evidenceOverview = data && data.evidence_overview && typeof data.evidence_overview === "object"
+          ? data.evidence_overview
+          : null;
+        if (evidenceOverview) {{
+          appendLine("Evidence overview:");
+          if (typeof evidenceOverview.band === "string") {{
+            appendLine(`band: ${{evidenceOverview.band}}`, 1);
+          }}
+          if (Number.isInteger(evidenceOverview.candidate_note_count)) {{
+            appendLine(`candidate_notes: ${{evidenceOverview.candidate_note_count}}`, 1);
+          }}
+          if (Number.isInteger(evidenceOverview.queries_with_matches) && Number.isInteger(evidenceOverview.executed_query_count)) {{
+            appendLine(
+              `queries_with_matches: ${{evidenceOverview.queries_with_matches}}/${{evidenceOverview.executed_query_count}}`,
+              1,
+            );
+          }}
+          if (Number.isInteger(evidenceOverview.total_scoped_matches)) {{
+            appendLine(`total_scoped_matches: ${{evidenceOverview.total_scoped_matches}}`, 1);
+          }}
+        }}
+        if (typeof data.latest_result_selection_order === "string" && data.latest_result_selection_order !== "") {{
+          appendLine("Latest result selection:");
+          appendLine(`order: ${{data.latest_result_selection_order}}`, 1);
+          if (Number.isInteger(data.latest_result_note_count_before_limit)) {{
+            appendLine(`notes_before_limit: ${{data.latest_result_note_count_before_limit}}`, 1);
+          }}
+          if (Number.isInteger(data.latest_result_limit)) {{
+            appendLine(`limit: ${{data.latest_result_limit}}`, 1);
+          }}
+        }}
+        const latestResultNotes = data && Array.isArray(data.latest_result_notes)
+          ? data.latest_result_notes
+          : [];
+        if (latestResultNotes.length > 0) {{
+          appendLine("Interleaved evidence notes:");
+          const displayCount = Math.min(latestResultNotes.length, 8);
+          for (let i = 0; i < displayCount; i += 1) {{
+            const note = latestResultNotes[i];
+            if (!note || typeof note !== "object") {{
+              continue;
+            }}
+            appendLine(`[${{i + 1}}]`, 1);
+            let snippet = "";
+            if (typeof note.snippet_excerpt === "string" && note.snippet_excerpt.trim() !== "") {{
+              snippet = note.snippet_excerpt;
+            }} else if (typeof note.context_excerpt === "string" && note.context_excerpt.trim() !== "") {{
+              snippet = note.context_excerpt;
+            }} else if (typeof note.content_excerpt === "string" && note.content_excerpt.trim() !== "") {{
+              snippet = note.content_excerpt;
+            }}
+            snippet = snippet.replace(/\\s+/g, " ").trim();
+            if (snippet !== "") {{
+              appendLine(snippet.length > 220 ? snippet.slice(0, 220) + "..." : snippet, 2);
+            }}
+          }}
+        }}
         if (queries.length > 0) {{
           appendLine("Executed queries:");
         }} else {{
@@ -5925,12 +6574,16 @@ def _web_html(
               continue;
             }}
             let snippet = "";
-            if (typeof result.context_text === "string" && result.context_text.trim() !== "") {{
+            if (typeof result.snippet_excerpt === "string" && result.snippet_excerpt.trim() !== "") {{
+              snippet = result.snippet_excerpt;
+            }} else if (typeof result.context_excerpt === "string" && result.context_excerpt.trim() !== "") {{
+              snippet = result.context_excerpt;
+            }} else if (typeof result.content_excerpt === "string" && result.content_excerpt.trim() !== "") {{
+              snippet = result.content_excerpt;
+            }} else if (typeof result.context_text === "string" && result.context_text.trim() !== "") {{
               snippet = result.context_text;
             }} else if (typeof result.content_text === "string" && result.content_text.trim() !== "") {{
               snippet = result.content_text;
-            }} else if (typeof result.preview_text === "string" && result.preview_text.trim() !== "") {{
-              snippet = result.preview_text;
             }}
             snippet = snippet.replace(/\\s+/g, " ").trim();
             if (snippet !== "") {{
@@ -5955,6 +6608,94 @@ def _web_html(
             appendLine("reasoning: " + decision.reasoning, 1);
           }}
         }}
+        return wrap;
+      }}
+
+      if (action === "evidence_relevance_filter") {{
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        const appendLine = (text, indentLevel = 0) => {{
+          const line = document.createElement("div");
+          line.className = "stage-summary-line";
+          line.textContent = text;
+          if (indentLevel > 0) {{
+            line.style.marginLeft = `${{indentLevel * 14}}px`;
+          }}
+          wrap.appendChild(line);
+        }};
+        if (!data) {{
+          wrap.textContent = "Relevance filter complete.";
+          return wrap;
+        }}
+        if (stats) {{
+          appendLine("Stats:");
+          if (Number.isInteger(stats.iteration_index)) {{
+            appendLine(`iteration: ${{stats.iteration_index}}`, 1);
+          }}
+          if (typeof stats.relevance_ms === "number") {{
+            appendLine(`relevance_ms: ${{stats.relevance_ms}}`, 1);
+          }}
+          if (Number.isInteger(stats.candidate_note_count)) {{
+            appendLine(`candidate_notes: ${{stats.candidate_note_count}}`, 1);
+          }}
+          if (Number.isInteger(stats.relevant_note_count)) {{
+            appendLine(`relevant_notes: ${{stats.relevant_note_count}}`, 1);
+          }}
+          if (Number.isInteger(stats.selected_snippet_count)) {{
+            appendLine(`selected_snippets: ${{stats.selected_snippet_count}}`, 1);
+          }}
+        }}
+        if (typeof data.reasoning === "string" && data.reasoning !== "") {{
+          appendLine("Reasoning: " + data.reasoning);
+        }}
+        const selectedSnippets = Array.isArray(data.selected_relevant_snippets) ? data.selected_relevant_snippets : [];
+        if (selectedSnippets.length > 0) {{
+          appendLine("Model-selected snippets:");
+          const snippetDisplayCount = Math.min(selectedSnippets.length, 12);
+          for (let i = 0; i < snippetDisplayCount; i += 1) {{
+            const snippetRaw = selectedSnippets[i];
+            if (typeof snippetRaw !== "string") {{
+              continue;
+            }}
+            const snippet = snippetRaw.replace(/\\s+/g, " ").trim();
+            if (snippet === "") {{
+              continue;
+            }}
+            appendLine(`[${{i + 1}}] ${{snippet.length > 280 ? snippet.slice(0, 280) + "..." : snippet}}`, 1);
+          }}
+        }}
+        const relevantNotes = Array.isArray(data.relevant_notes) ? data.relevant_notes : [];
+
+        const renderNoteList = (title, notes) => {{
+          if (!Array.isArray(notes) || notes.length === 0) {{
+            appendLine(`${{title}}: none`);
+            return;
+          }}
+          appendLine(title + ":");
+          const displayCount = Math.min(notes.length, 10);
+          for (let i = 0; i < displayCount; i += 1) {{
+            const note = notes[i];
+            if (!note || typeof note !== "object") {{
+              continue;
+            }}
+            appendLine(`[${{i + 1}}]`, 1);
+            let snippet = "";
+            if (typeof note.snippet_excerpt === "string" && note.snippet_excerpt.trim() !== "") {{
+              snippet = note.snippet_excerpt;
+            }} else if (typeof note.context_excerpt === "string" && note.context_excerpt.trim() !== "") {{
+              snippet = note.context_excerpt;
+            }} else if (typeof note.content_excerpt === "string" && note.content_excerpt.trim() !== "") {{
+              snippet = note.content_excerpt;
+            }}
+            snippet = snippet.replace(/\\s+/g, " ").trim();
+            if (snippet !== "") {{
+              appendLine(snippet.length > 260 ? snippet.slice(0, 260) + "..." : snippet, 2);
+            }}
+          }}
+        }};
+        renderNoteList("Relevant notes", relevantNotes);
         return wrap;
       }}
 
@@ -6221,6 +6962,85 @@ def _web_html(
           reasoningLine.className = "stage-summary-line";
           reasoningLine.textContent = "Reasoning: " + reasoningValue;
           wrap.appendChild(reasoningLine);
+        }}
+        const plannedExpressions = Array.isArray(data.planned_expressions)
+          ? data.planned_expressions
+          : [];
+        if (plannedExpressions.length > 0) {{
+          const appendLine = (text, indentLevel = 0) => {{
+            const lineItem = document.createElement("div");
+            lineItem.className = "stage-summary-line";
+            lineItem.textContent = text;
+            if (indentLevel > 0) {{
+              lineItem.style.marginLeft = `${{indentLevel * 14}}px`;
+            }}
+            wrap.appendChild(lineItem);
+          }};
+          appendLine("Planner guesses:");
+          for (let i = 0; i < plannedExpressions.length; i += 1) {{
+            const expr = plannedExpressions[i];
+            if (!expr || typeof expr !== "object") {{
+              continue;
+            }}
+            const exprType = typeof expr.type === "string" ? expr.type : "expression";
+            if (exprType === "phrase") {{
+              appendLine(`[${{i + 1}}] phrase: "${{typeof expr.value === "string" ? expr.value : ""}}"`, 1);
+              continue;
+            }}
+            if (exprType === "regex") {{
+              const pattern = typeof expr.pattern === "string" ? expr.pattern : "";
+              const flags = typeof expr.flags === "string" ? expr.flags : "";
+              appendLine(`[${{i + 1}}] regex: /${{pattern}}/${{flags}}`, 1);
+              continue;
+            }}
+            if (exprType === "near") {{
+              const left = typeof expr.left === "string" ? expr.left : "";
+              const right = typeof expr.right === "string" ? expr.right : "";
+              const windowChars = Number.isInteger(expr.window_chars) ? expr.window_chars : "?";
+              appendLine(`[${{i + 1}}] near: "${{left}}" ~ "${{right}}" @${{windowChars}}`, 1);
+              continue;
+            }}
+            if (exprType === "tag") {{
+              appendLine(`[${{i + 1}}] tag: ${{typeof expr.value === "string" ? expr.value : ""}}`, 1);
+              continue;
+            }}
+            appendLine(`[${{i + 1}}] ${{JSON.stringify(expr)}}`, 1);
+          }}
+        }}
+        const latestResultNotes = Array.isArray(data.latest_result_notes)
+          ? data.latest_result_notes
+          : [];
+        if (latestResultNotes.length > 0) {{
+          const appendLine = (text, indentLevel = 0) => {{
+            const lineItem = document.createElement("div");
+            lineItem.className = "stage-summary-line";
+            lineItem.textContent = text;
+            if (indentLevel > 0) {{
+              lineItem.style.marginLeft = `${{indentLevel * 14}}px`;
+            }}
+            wrap.appendChild(lineItem);
+          }};
+          appendLine("Interleaved evidence notes:");
+          const displayCount = Math.min(latestResultNotes.length, 8);
+          for (let i = 0; i < displayCount; i += 1) {{
+            const note = latestResultNotes[i];
+            if (!note || typeof note !== "object") {{
+              continue;
+            }}
+            appendLine(`[${{i + 1}}]`, 1);
+            let snippet = "";
+            if (typeof note.snippet_excerpt === "string" && note.snippet_excerpt.trim() !== "") {{
+              snippet = note.snippet_excerpt;
+            }} else if (typeof note.context_excerpt === "string" && note.context_excerpt.trim() !== "") {{
+              snippet = note.context_excerpt;
+            }} else if (typeof note.content_excerpt === "string" && note.content_excerpt.trim() !== "") {{
+              snippet = note.content_excerpt;
+            }}
+            snippet = snippet.replace(/\\s+/g, " ").trim();
+            if (snippet !== "") {{
+              appendLine(snippet.length > 220 ? snippet.slice(0, 220) + "..." : snippet, 2);
+            }}
+          }}
         }}
         return wrap;
       }}
@@ -6585,6 +7405,9 @@ def _web_html(
       }}
       if (action === "iteration_reasoning") {{
         return `${{stepNo}}: iteration reasoning`;
+      }}
+      if (action === "evidence_relevance_filter") {{
+        return `${{stepNo}}: relevance filter`;
       }}
       if (action === "iteration_decision_final") {{
         return `${{stepNo}}: iteration final`;
