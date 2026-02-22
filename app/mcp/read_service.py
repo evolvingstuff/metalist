@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Dict, FrozenSet, List, Set
 
@@ -15,6 +16,7 @@ from .errors import NoteNotFoundError
 from .errors import VaultNotReadyError
 
 _LIST_CHILDREN_WINDOW = 25
+_ALLOWED_TAG_COUNT_MODES = frozenset({"effective", "raw"})
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -234,15 +236,36 @@ class ReadService:
             "children": children_payload,
         }
 
-    def list_tags(self, *, prefix: object, limit: object) -> Dict[str, object]:
+    def _raw_tag_frequencies(self) -> Dict[str, int]:
+        counts = defaultdict(int)
+        for note_id in note_store.list_note_ids():
+            record = note_store.get_note(note_id)
+            for term in record.non_meta_tag_terms:
+                if term == "" or term.startswith("@"):
+                    continue
+                counts[term] += 1
+        return dict(counts)
+
+    def list_tags(self, *, prefix: object, limit: object, mode: object) -> Dict[str, object]:
         self._require_ready()
 
         if not isinstance(prefix, str):
             raise InvalidArgumentsError("prefix must be a string")
         if not isinstance(limit, int) or limit <= 0:
             raise InvalidArgumentsError("limit must be a positive integer")
+        if not isinstance(mode, str):
+            raise InvalidArgumentsError("mode must be a string")
+        normalized_mode = mode.casefold()
+        if normalized_mode not in _ALLOWED_TAG_COUNT_MODES:
+            raise InvalidArgumentsError("mode must be one of: effective, raw")
 
-        frequencies = search_index.list_tag_frequencies()
+        frequencies: Dict[str, int]
+        if normalized_mode == "effective":
+            frequencies = search_index.list_tag_frequencies()
+        elif normalized_mode == "raw":
+            frequencies = self._raw_tag_frequencies()
+        else:
+            raise RuntimeError(f"Unhandled tag count mode: {normalized_mode}")
         prefix_casefold = prefix.casefold()
 
         filtered = [
@@ -258,6 +281,7 @@ class ReadService:
         return {
             "prefix": prefix,
             "limit": limit,
+            "mode": normalized_mode,
             "total_matches": total_matches,
             "returned_count": len(tags),
             "tags": tags,

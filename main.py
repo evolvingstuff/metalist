@@ -8,6 +8,8 @@ from mcp_client import DEFAULT_MAX_STEPS
 from mcp_client import DEFAULT_MCP_URL
 from mcp_client import DEFAULT_OLLAMA_CHAT_URL
 from mcp_client import DEFAULT_OLLAMA_MODEL
+from mcp_client import DEFAULT_PLANNER_SEED_TAG_LIMIT
+from mcp_client import DEFAULT_PLANNER_TAG_COUNT_MODE
 from mcp_client import DEFAULT_WEB_HOST
 from mcp_client import DEFAULT_WEB_PORT
 
@@ -49,6 +51,16 @@ def _env_int(name: str, default: int) -> int:
     return int(value)
 
 
+def _env_choice(name: str, default: str, allowed: set[str]) -> str:
+    if name not in os.environ:
+        return default
+    value = os.environ[name].strip().casefold()
+    assert value != "", f"Empty env choice: {name}"
+    if value not in allowed:
+        raise ValueError(f"Invalid choice env {name}={value!r}; allowed={sorted(allowed)}")
+    return value
+
+
 def _start_agent_web_sidecar() -> None:
     enabled = _env_flag("MCP_AGENT_WEB_ENABLED", True)
     if not enabled:
@@ -73,10 +85,21 @@ def _start_agent_web_sidecar() -> None:
     else:
         ollama_chat_url = DEFAULT_OLLAMA_CHAT_URL
     max_steps = _env_int("MCP_AGENT_MAX_STEPS", DEFAULT_MAX_STEPS)
+    planner_seed_tag_limit = _env_int(
+        "MCP_AGENT_PLANNER_SEED_TAG_LIMIT",
+        DEFAULT_PLANNER_SEED_TAG_LIMIT,
+    )
+    planner_tag_count_mode = _env_choice(
+        "MCP_AGENT_PLANNER_TAG_COUNT_MODE",
+        DEFAULT_PLANNER_TAG_COUNT_MODE,
+        {"effective", "raw"},
+    )
 
     agent_app = create_web_app(
         default_model=model,
         default_max_steps=max_steps,
+        default_planner_seed_tag_limit=planner_seed_tag_limit,
+        default_planner_tag_count_mode=planner_tag_count_mode,
         default_mcp_url=mcp_url,
         default_ollama_chat_url=ollama_chat_url,
     )

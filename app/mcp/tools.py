@@ -62,14 +62,19 @@ _TOOLS: List[Dict[str, object]] = [
     },
     {
         "name": "list_tags",
-        "description": "List known tags by prefix with frequency counts.",
+        "description": (
+            "List known tags by prefix with frequency counts. "
+            "mode='effective' counts inherited+implied semantic tags; "
+            "mode='raw' counts only explicit non-meta tags stored on each note."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "prefix": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1},
+                "mode": {"type": "string", "enum": ["effective", "raw"]},
             },
-            "required": ["prefix", "limit"],
+            "required": ["prefix", "limit", "mode"],
             "additionalProperties": False,
         },
     },
@@ -168,18 +173,24 @@ def call_tool(
         return _tool_ok(read_service.list_children(parent_id=parent_id))
 
     if tool_name == "list_tags":
-        required_keys = {"prefix", "limit"}
+        required_keys = {"prefix", "limit", "mode"}
         if set(args.keys()) != required_keys:
-            return _tool_error("list_tags requires prefix and limit")
+            return _tool_error("list_tags requires prefix, limit, and mode")
         prefix = args["prefix"]
         limit = args["limit"]
+        mode = args["mode"]
         if not isinstance(prefix, str):
             return _tool_error("prefix must be a string")
         if not isinstance(limit, int) or limit <= 0:
             return _tool_error("limit must be a positive integer")
+        if not isinstance(mode, str):
+            return _tool_error("mode must be a string")
+        mode_casefold = mode.casefold()
+        if mode_casefold not in {"effective", "raw"}:
+            return _tool_error("mode must be one of: effective, raw")
         if not note_store.loaded:
             return _tool_error("Vault locked or not hydrated")
-        return _tool_ok(read_service.list_tags(prefix=prefix, limit=limit))
+        return _tool_ok(read_service.list_tags(prefix=prefix, limit=limit, mode=mode_casefold))
 
     if tool_name == "search_notes":
         required_keys = {"query", "required_tags", "forbidden_tags", "limit", "offset"}

@@ -178,6 +178,28 @@ def test_planner_only_returns_after_model_plan(monkeypatch) -> None:
             "{}",
         ),
     )
+    monkeypatch.setattr(
+        mcp_client,
+        "_tools_call",
+        lambda *, url, request_id, tool_name, arguments: {
+            "result": {
+                "structuredContent": {
+                    "ok": True,
+                    "data": {
+                        "prefix": arguments["prefix"],
+                        "limit": arguments["limit"],
+                        "total_matches": 3,
+                        "returned_count": 3,
+                        "tags": [
+                            {"tag": "dad", "count": 28},
+                            {"tag": "birthday", "count": 329},
+                            {"tag": "family", "count": 22},
+                        ],
+                    },
+                }
+            }
+        },
+    )
 
     result = mcp_client._run_agentic_request(
         user_message="When is my dad's birthday?",
@@ -192,8 +214,12 @@ def test_planner_only_returns_after_model_plan(monkeypatch) -> None:
     assert result["ok"] is True
     assert result["mode"] == "planner_only"
     assert result["answer"] == "dad, birthday"
-    assert len(result["steps"]) == 1
-    assert result["steps"][0]["action"] == "model_plan"
+    assert len(result["steps"]) == 3
+    assert result["steps"][0]["action"] == "tag_seed_context"
+    assert result["steps"][1]["action"] == "model_plan"
+    assert result["steps"][2]["action"] == "tag_catalog_match"
+    tag_match_data = result["steps"][2]["tool_response"]["data"]
+    assert tag_match_data["resolved_tags"] == ["dad", "birthday"]
 
 
 def test_normalize_query_hypothesis_allows_up_to_24_tags() -> None:
@@ -207,6 +233,198 @@ def test_normalize_query_hypothesis_allows_up_to_24_tags() -> None:
     assert len(normalized["hypothesized_tags"]) == 24
     assert normalized["hypothesized_tags"][0] == "tag-1"
     assert normalized["hypothesized_tags"][-1] == "tag-24"
+
+
+def test_match_hypothesized_tags_to_catalog_returns_exact_and_fuzzy() -> None:
+    match_data = mcp_client._match_hypothesized_tags_to_catalog(
+        hypothesized_tags=["dad", "nightmares", "sleep"],
+        tag_entries=[
+            {"tag": "dad", "count": 8},
+            {"tag": "nightmare", "count": 3},
+            {"tag": "sleep", "count": 5},
+            {"tag": "dream", "count": 4},
+        ],
+    )
+
+    exact_catalog_tags = [entry["catalog_tag"] for entry in match_data["exact_matches"]]
+    assert "dad" in exact_catalog_tags
+    assert "sleep" in exact_catalog_tags
+    fuzzy_pairs = [
+        (entry["hypothesis"], entry["catalog_tag"])
+        for entry in match_data["fuzzy_matches"]
+    ]
+    assert ("nightmares", "nightmare") in fuzzy_pairs
+    assert "nightmares" not in match_data["unmatched_hypothesized_tags"]
+
+
+def test_match_hypothesized_tags_to_catalog_rejects_noisy_partial_overlap() -> None:
+    match_data = mcp_client._match_hypothesized_tags_to_catalog(
+        hypothesized_tags=["field-research", "surveys", "social-sciences"],
+        tag_entries=[
+            {"tag": "Field-of-Glory", "count": 12},
+            {"tag": "scurvy", "count": 2},
+            {"tag": "field-research", "count": 4},
+            {"tag": "social-media", "count": 100},
+        ],
+    )
+
+    fuzzy_pairs = {
+        (entry["hypothesis"], entry["catalog_tag"])
+        for entry in match_data["fuzzy_matches"]
+    }
+    assert ("field-research", "Field-of-Glory") not in fuzzy_pairs
+    assert ("surveys", "scurvy") not in fuzzy_pairs
+    assert ("social-sciences", "social-media") not in fuzzy_pairs
+    exact_catalog_tags = [entry["catalog_tag"] for entry in match_data["exact_matches"]]
+    assert "field-research" in exact_catalog_tags
+    assert "surveys" in match_data["unmatched_hypothesized_tags"]
+    assert "social-sciences" in match_data["unmatched_hypothesized_tags"]
+
+
+def test_match_hypothesized_tags_to_catalog_matches_papers_to_paper() -> None:
+    match_data = mcp_client._match_hypothesized_tags_to_catalog(
+        hypothesized_tags=["papers"],
+        tag_entries=[
+            {"tag": "paper", "count": 3},
+            {"tag": "papers-with-code", "count": 120},
+            {"tag": "two-minute-papers", "count": 90},
+            {"tag": "Google-Research", "count": 400},
+            {"tag": "Microsoft-Research", "count": 350},
+        ],
+    )
+
+    fuzzy_pairs = {
+        (entry["hypothesis"], entry["catalog_tag"])
+        for entry in match_data["fuzzy_matches"]
+    }
+    assert ("papers", "paper") in fuzzy_pairs
+
+
+def test_match_hypothesized_tags_to_catalog_keeps_fuzzy_when_exact_exists() -> None:
+    match_data = mcp_client._match_hypothesized_tags_to_catalog(
+        hypothesized_tags=["papers"],
+        tag_entries=[
+            {"tag": "papers", "count": 50},
+            {"tag": "paper", "count": 10},
+            {"tag": "two-minute-papers", "count": 90},
+        ],
+    )
+
+    exact_catalog_tags = [entry["catalog_tag"] for entry in match_data["exact_matches"]]
+    assert "papers" in exact_catalog_tags
+    fuzzy_pairs = {
+        (entry["hypothesis"], entry["catalog_tag"])
+        for entry in match_data["fuzzy_matches"]
+    }
+    assert ("papers", "paper") in fuzzy_pairs
+    assert ("papers", "two-minute-papers") not in fuzzy_pairs
+
+
+def test_match_hypothesized_tags_to_catalog_blocks_directional_expansion() -> None:
+    match_data = mcp_client._match_hypothesized_tags_to_catalog(
+        hypothesized_tags=["topic", "field"],
+        tag_entries=[
+            {"tag": "topic-modeling", "count": 200},
+            {"tag": "topics", "count": 25},
+            {"tag": "Field-of-Glory", "count": 50},
+        ],
+    )
+
+    fuzzy_pairs = {
+        (entry["hypothesis"], entry["catalog_tag"])
+        for entry in match_data["fuzzy_matches"]
+    }
+    assert ("topic", "topic-modeling") not in fuzzy_pairs
+    assert ("field", "Field-of-Glory") not in fuzzy_pairs
+    assert ("topic", "topics") in fuzzy_pairs
+
+
+def test_planner_only_exact_matches_include_seed_membership_split(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "_tools_list",
+        lambda *, url, request_id: (_ for _ in ()).throw(RuntimeError("tools/list should not run in planner_only")),
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: (
+            {
+                "reasoning": "Likely family + sleep tags.",
+                "hypothesized_tags": ["dad", "sleep"],
+            },
+            "{}",
+        ),
+    )
+
+    call_count = {"list_tags": 0}
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name != "list_tags":
+            raise RuntimeError(f"Unexpected tool call: {tool_name}")
+        call_count["list_tags"] += 1
+        if call_count["list_tags"] == 1:
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "prefix": arguments["prefix"],
+                            "limit": arguments["limit"],
+                            "total_matches": 2,
+                            "returned_count": 2,
+                            "tags": [
+                                {"tag": "dad", "count": 28},
+                                {"tag": "birthday", "count": 329},
+                            ],
+                        },
+                    }
+                }
+            }
+        return {
+            "result": {
+                "structuredContent": {
+                    "ok": True,
+                    "data": {
+                        "prefix": arguments["prefix"],
+                        "limit": arguments["limit"],
+                        "total_matches": 3,
+                        "returned_count": 3,
+                        "tags": [
+                            {"tag": "dad", "count": 28},
+                            {"tag": "birthday", "count": 329},
+                            {"tag": "sleep", "count": 12},
+                        ],
+                    },
+                }
+            }
+        }
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_agentic_request(
+        user_message="When did I sleep and talk to dad?",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=3,
+        planner_only=True,
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    tag_match_data = result["steps"][2]["tool_response"]["data"]
+    assert tag_match_data["exact_matches_from_seed"] == ["dad"]
+    assert tag_match_data["exact_matches_not_from_seed"] == ["sleep"]
+    exact_entries = tag_match_data["exact_matches"]
+    from_seed_by_tag = {entry["catalog_tag"]: entry["from_seed"] for entry in exact_entries}
+    assert from_seed_by_tag["dad"] is True
+    assert from_seed_by_tag["sleep"] is False
 
 
 def test_invalid_decision_gets_one_repair_attempt(monkeypatch) -> None:

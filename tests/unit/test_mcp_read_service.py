@@ -49,6 +49,9 @@ class _FakeNoteStore:
     def has_note(self, note_id: str) -> bool:
         return note_id in self._records
 
+    def list_note_ids(self) -> List[str]:
+        return list(self._records.keys())
+
     def get_note(self, note_id: str) -> _FakeNoteRecord:
         if note_id not in self._records:
             raise KeyError(f"Missing fake note: {note_id}")
@@ -254,18 +257,30 @@ def test_list_tags_applies_prefix_limit_and_counts(monkeypatch: pytest.MonkeyPat
     _install_fakes(monkeypatch, loaded=True)
     service = ReadService()
 
-    filtered = service.list_tags(prefix="to", limit=5)
+    filtered = service.list_tags(prefix="to", limit=5, mode="effective")
     assert filtered["total_matches"] == 1
     assert filtered["returned_count"] == 1
     assert filtered["tags"] == [{"tag": "todo", "count": 8}]
+    assert filtered["mode"] == "effective"
 
-    top_two = service.list_tags(prefix="", limit=2)
+    top_two = service.list_tags(prefix="", limit=2, mode="effective")
     assert top_two["total_matches"] == 4
     assert top_two["returned_count"] == 2
     assert top_two["tags"] == [
         {"tag": "todo", "count": 8},
         {"tag": "project", "count": 5},
     ]
+    assert top_two["mode"] == "effective"
+
+    raw_top = service.list_tags(prefix="", limit=5, mode="raw")
+    assert raw_top["total_matches"] == 3
+    assert raw_top["returned_count"] == 3
+    assert raw_top["tags"] == [
+        {"tag": "done", "count": 1},
+        {"tag": "project", "count": 1},
+        {"tag": "task", "count": 1},
+    ]
+    assert raw_top["mode"] == "raw"
 
 
 def test_search_notes_returns_total_and_returned_counts(monkeypatch: pytest.MonkeyPatch) -> None:

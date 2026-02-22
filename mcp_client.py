@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import html
 import json
 import queue
@@ -40,6 +41,10 @@ _DEFAULT_OLLAMA_AUTOPULL = True
 _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = 30
 _MAX_INVALID_DECISION_REPAIRS = 2
 _OLLAMA_CHAT_TIMEOUT_SECONDS = 180
+_DEFAULT_PLANNER_SEED_TAG_LIMIT = 50
+_DEFAULT_PLANNER_TAG_COUNT_MODE = "raw"
+_ALLOWED_PLANNER_TAG_COUNT_MODES = frozenset({"effective", "raw"})
+_PLANNER_TAG_CATALOG_LIMIT = 100000
 
 DEFAULT_MCP_URL = _DEFAULT_MCP_URL
 DEFAULT_OLLAMA_CHAT_URL = _DEFAULT_OLLAMA_CHAT_URL
@@ -51,6 +56,8 @@ DEFAULT_OLLAMA_AUTOSTART = _DEFAULT_OLLAMA_AUTOSTART
 DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS = _DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS
 DEFAULT_OLLAMA_AUTOPULL = _DEFAULT_OLLAMA_AUTOPULL
 DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS
+DEFAULT_PLANNER_SEED_TAG_LIMIT = _DEFAULT_PLANNER_SEED_TAG_LIMIT
+DEFAULT_PLANNER_TAG_COUNT_MODE = _DEFAULT_PLANNER_TAG_COUNT_MODE
 
 _OLLAMA_SIDECAR_PROCESS: subprocess.Popen | None = None
 
@@ -912,6 +919,228 @@ def _coerce_string_list(*, value: object, max_items: int) -> List[str]:
     return normalized
 
 
+def _normalize_tag_term(*, value: str) -> str:
+    lowered = value.casefold()
+    collapsed = re.sub(r"\s+", "-", lowered).strip("-")
+    cleaned = re.sub(r"[^a-z0-9@._-]+", "", collapsed)
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
+    return cleaned
+
+
+def _tokenize_tag_term(*, value: str) -> List[str]:
+    normalized = _normalize_tag_term(value=value)
+    if normalized == "":
+        return []
+    tokens = [token for token in re.split(r"[-_.]+", normalized) if token != ""]
+    return tokens
+
+
+def _singularize_tag_term(*, value: str) -> str:
+    if value.endswith("ies") and len(value) > 4:
+        return value[:-3] + "y"
+    if value.endswith(("ches", "shes", "xes", "zes", "sses", "oes")) and len(value) > 4:
+        return value[:-2]
+    if value.endswith("s") and len(value) > 3 and not value.endswith("ss"):
+        return value[:-1]
+    return value
+
+
+def _match_hypothesized_tags_to_catalog(*, hypothesized_tags: List[str], tag_entries: List[dict]) -> dict:
+    if not isinstance(hypothesized_tags, list):
+        raise TypeError("hypothesized_tags must be an array")
+    if not isinstance(tag_entries, list):
+        raise TypeError("tag_entries must be an array")
+
+    catalog: List[dict] = []
+    by_key: Dict[str, dict] = {}
+    for entry in tag_entries:
+        if not isinstance(entry, dict):
+            continue
+        tag = entry.get("tag")
+        count = entry.get("count")
+        if not isinstance(tag, str) or tag == "":
+            continue
+        if not isinstance(count, int) or count <= 0:
+            continue
+        key = _normalize_tag_term(value=tag)
+        if key == "":
+            continue
+        record = {
+            "tag": tag,
+            "count": count,
+            "key": key,
+            "tokens": set(_tokenize_tag_term(value=key)),
+        }
+        catalog.append(record)
+        previous = by_key.get(key)
+        if previous is None or previous["count"] < count:
+            by_key[key] = record
+
+    exact_matches: List[dict] = []
+    fuzzy_matches: List[dict] = []
+    unmatched: List[str] = []
+
+    for guess in hypothesized_tags:
+        if not isinstance(guess, str):
+            continue
+        guess_key = _normalize_tag_term(value=guess)
+        if guess_key == "":
+            continue
+
+        exact = by_key.get(guess_key)
+        has_exact = exact is not None
+        if exact is not None:
+            exact_matches.append(
+                {
+                    "hypothesis": guess_key,
+                    "catalog_tag": exact["tag"],
+                    "count": exact["count"],
+                }
+            )
+
+        guess_token_list = _tokenize_tag_term(value=guess_key)
+        guess_tokens = set(guess_token_list)
+        guess_token_count = len(guess_tokens)
+        guess_singular = _singularize_tag_term(value=guess_key)
+        candidates: List[dict] = []
+        for candidate in catalog:
+            candidate_key = candidate["key"]
+            if candidate_key == guess_key:
+                continue
+            candidate_tokens = candidate["tokens"]
+            candidate_token_count = len(candidate_tokens)
+            # Directional fuzzy rule: allow normalization/shrinking, not expansion.
+            # Example blocked: topic -> topic-modeling.
+            is_prefix_extension = candidate_key.startswith(f"{guess_key}-")
+            is_token_expansion = (
+                guess_token_count > 0
+                and candidate_token_count > guess_token_count
+                and guess_tokens.issubset(candidate_tokens)
+            )
+            if is_prefix_extension or is_token_expansion:
+                continue
+            score = 0.0
+            match_type = ""
+
+            min_length = min(len(guess_key), len(candidate_key))
+            if (
+                min_length >= 3
+                and guess_key.startswith(candidate_key)
+                and guess_key.startswith(f"{candidate_key}-")
+            ):
+                score = 0.92
+                match_type = "prefix"
+
+            candidate_singular = _singularize_tag_term(value=candidate_key)
+            if guess_singular == candidate_singular and len(candidate_singular) >= 4:
+                if 0.97 > score:
+                    score = 0.97
+                    match_type = "morphological"
+
+            if len(guess_tokens) > 0:
+                overlap = guess_tokens.intersection(candidate_tokens)
+                if len(overlap) > 0:
+                    overlap_count = len(overlap)
+                    # Guardrail: for multi-token tags, one shared token is too
+                    # weak and causes noisy jumps (e.g., social-sciences ->
+                    # social-media). Require stronger overlap.
+                    if (
+                        len(guess_tokens) >= 2
+                        and len(candidate["tokens"]) >= 2
+                        and overlap_count < 2
+                    ):
+                        overlap = set()
+                if len(overlap) > 0:
+                    guess_coverage = len(overlap) / len(guess_tokens)
+                    if len(candidate_tokens) == 0:
+                        raise TypeError("candidate tokens must not be empty")
+                    candidate_coverage = len(overlap) / len(candidate_tokens)
+                    longest_overlap = max(len(token) for token in overlap)
+                    # Require meaningful bidirectional overlap to avoid noisy
+                    # one-token collisions like "field" -> "field-of-glory".
+                    if (
+                        guess_coverage >= 0.5
+                        and candidate_coverage >= 0.5
+                        and longest_overlap >= 4
+                    ):
+                        token_score = 0.80 + min(0.12, 0.06 * len(overlap))
+                        if token_score > score:
+                            score = token_score
+                            match_type = "token-overlap"
+
+            similarity = difflib.SequenceMatcher(a=guess_key, b=candidate_key).ratio()
+            if (
+                similarity >= 0.86
+                and abs(len(guess_key) - len(candidate_key)) <= 3
+                and guess_key[0] == candidate_key[0]
+                and similarity > score
+            ):
+                score = similarity
+                match_type = "string-similarity"
+
+            if score < 0.80:
+                continue
+
+            # If we already have an exact hit, keep fuzzy companions very strict
+            # to avoid broad noisy fan-out while still catching close variants
+            # like singular/plural.
+            if has_exact:
+                is_morphological = match_type == "morphological"
+                is_close_similarity = match_type == "string-similarity" and score >= 0.92
+                if not (is_morphological or is_close_similarity):
+                    continue
+
+            candidates.append(
+                {
+                    "hypothesis": guess_key,
+                    "catalog_tag": candidate["tag"],
+                    "count": candidate["count"],
+                    "score": round(score, 3),
+                    "match_type": match_type,
+                }
+            )
+
+        candidates.sort(
+            key=lambda item: (
+                -item["score"],
+                -item["count"],
+                item["catalog_tag"].casefold(),
+            )
+        )
+        top_candidates = candidates[:4]
+        if len(top_candidates) == 0:
+            if not has_exact:
+                unmatched.append(guess_key)
+            continue
+        fuzzy_matches.extend(top_candidates)
+
+    resolved_tags: List[str] = []
+    seen_resolved = set()
+    for match in exact_matches:
+        catalog_tag = match["catalog_tag"]
+        key = catalog_tag.casefold()
+        if key in seen_resolved:
+            continue
+        seen_resolved.add(key)
+        resolved_tags.append(catalog_tag)
+    for match in fuzzy_matches:
+        catalog_tag = match["catalog_tag"]
+        key = catalog_tag.casefold()
+        if key in seen_resolved:
+            continue
+        seen_resolved.add(key)
+        resolved_tags.append(catalog_tag)
+
+    return {
+        "catalog_tag_count": len(catalog),
+        "hypothesized_tag_count": len(hypothesized_tags),
+        "exact_matches": exact_matches,
+        "fuzzy_matches": fuzzy_matches,
+        "resolved_tags": resolved_tags,
+        "unmatched_hypothesized_tags": unmatched,
+    }
+
+
 def _normalize_query_hypothesis(*, payload: object) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("Planner output must be a JSON object")
@@ -951,9 +1180,41 @@ def _normalize_query_hypothesis(*, payload: object) -> dict:
     }
 
 
+def _build_planner_seed_tags_prompt_message(*, seed_tag_entries: List[dict], mode: str) -> str:
+    if not isinstance(seed_tag_entries, list):
+        raise TypeError("seed_tag_entries must be an array")
+    hints: List[dict] = []
+    for entry in seed_tag_entries:
+        if not isinstance(entry, dict):
+            continue
+        tag = entry.get("tag")
+        count = entry.get("count")
+        if not isinstance(tag, str) or tag == "":
+            continue
+        if not isinstance(count, int) or count <= 0:
+            continue
+        hints.append({"tag": tag, "count": count})
+    if len(hints) == 0:
+        return ""
+
+    return (
+        "Deterministic context from tools (not model-generated): top existing tags in this vault by frequency. "
+        "These are popularity-biased and may be unrelated to this specific query. "
+        "Do NOT treat them as a candidate answer list. "
+        "Use them only as weak vocabulary hints after generating query-driven hypotheses. "
+        "If a seed tag is not semantically aligned to the user query, ignore it. "
+        "Seed-tag count mode: "
+        + mode
+        + ". Top tags JSON: "
+        + json.dumps(hints, ensure_ascii=False)
+    )
+
+
 def _build_query_hypothesis_messages(
     *,
     user_message: str,
+    seed_tag_entries: List[dict],
+    seed_tag_count_mode: str,
 ) -> List[dict]:
     planning_system_prompt = (
         "You are a retrieval planner for MetaList3 (ML3), a hierarchical PKMS where notes have tags, "
@@ -961,22 +1222,37 @@ def _build_query_hypothesis_messages(
         "Your task is ONLY to hypothesize likely tags that might exist for the user question before any tool calls. "
         "Do not assume you know the real tag vocabulary. "
         "Constraints: keep outputs concise and broadly useful (not overfit to one fixed question pattern). "
-        "Work in two passes: "
-        "Pass 1: include direct query anchors and close lexical variants (singular/plural, simple stems, near-synonyms). "
+        "Work in three passes: "
+        "Pass 1: generate query-only anchors and close lexical variants (singular/plural, simple stems, near-synonyms), "
+        "without using seed context. "
         "Pass 2: add 2-6 broader container/context tags that would commonly co-occur in notes with those anchors. "
+        "Pass 3: if seed context exists, optionally swap only a few terms to aligned in-vault vocabulary. "
         "At least 70% of tags must be Pass 1 anchor tags. "
+        "At least 8 hypothesized tags must come from query-derived anchors/variants, even if seed context is present. "
+        "Never choose a tag only because it appears in the seed list. "
+        "If seed tags are mostly unrelated, ignore them and keep query-driven guesses. "
         "Do not infer hidden personal interests or niche subdomains unless explicitly signaled by the query text. "
         "Prefer concrete retrieval nouns (entities, events, documents, media, activities) over abstract fields. "
+        "When the query asks about patterns/habits/topics, prioritize retrieval-signal tags that help locate evidence "
+        "(artifact type, source/channel, format, workflow context, and time framing) before broad subject taxonomies. "
+        "Do not output long generic discipline lists unless those disciplines are explicitly present in the query text. "
         "Target 16-24 hypothesized tags; default to about 20 when possible. "
         "Do not return fewer than 12 unless the query is too short to support more grounded variants. "
         "Return ONLY JSON with this exact shape: "
         '{"reasoning":"<1-3 sentences>","hypothesized_tags":["..."]}. '
         "hypothesized_tags should be lowercase tag-like terms (kebab-case where useful), 2+ chars each."
     )
-    return [
+    messages: List[dict] = [
         {"role": "system", "content": planning_system_prompt},
-        {"role": "user", "content": user_message},
     ]
+    seed_tags_message = _build_planner_seed_tags_prompt_message(
+        seed_tag_entries=seed_tag_entries,
+        mode=seed_tag_count_mode,
+    )
+    if seed_tags_message != "":
+        messages.append({"role": "system", "content": seed_tags_message})
+    messages.append({"role": "user", "content": user_message})
+    return messages
 
 
 def _extract_tag_entries_from_list_tags(*, parsed_list_tags: dict) -> List[dict]:
@@ -1804,6 +2080,7 @@ def _bootstrap_intersection_steps(
         list_tags_args = {
             "prefix": term,
             "limit": 12,
+            "mode": "effective",
         }
         list_tags_response = _tools_call(
             url=mcp_url,
@@ -2075,10 +2352,18 @@ def _run_agentic_request(
     model: str,
     max_steps: int,
     planner_only: bool,
+    planner_seed_tag_limit: int = _DEFAULT_PLANNER_SEED_TAG_LIMIT,
+    planner_tag_count_mode: str = _DEFAULT_PLANNER_TAG_COUNT_MODE,
     progress_callback: Callable[[dict], None] | None,
 ) -> dict:
     if max_steps <= 0:
         raise ValueError("max_steps must be > 0")
+    if planner_seed_tag_limit <= 0:
+        raise ValueError("planner_seed_tag_limit must be > 0")
+    if planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+        raise ValueError(
+            f"planner_tag_count_mode must be one of: {sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES)}"
+        )
 
     resolved_model = ensure_ollama_model_available(
         ollama_chat_url=ollama_chat_url,
@@ -2095,7 +2380,51 @@ def _run_agentic_request(
 
     request_id = 100
     planning_context: dict | None = None
-    query_hypothesis_messages = _build_query_hypothesis_messages(user_message=user_message)
+    seed_tag_entries: List[dict] = []
+    if planner_only:
+        seed_tags_args = {
+            "prefix": "",
+            "limit": planner_seed_tag_limit,
+            "mode": planner_tag_count_mode,
+        }
+        seed_tags_response = _tools_call(
+            url=mcp_url,
+            request_id=request_id,
+            tool_name="list_tags",
+            arguments=seed_tags_args,
+        )
+        request_id += 1
+        parsed_seed_tags = _extract_tool_response(call_response=seed_tags_response)
+        seed_tag_entries = _extract_tag_entries_from_list_tags(parsed_list_tags=parsed_seed_tags)
+        append_step(
+            step_record={
+                "step": len(steps) + 1,
+                "action": "tag_seed_context",
+                "tool_name": "list_tags",
+                "arguments": seed_tags_args,
+                "reason": "deterministic seed context: top existing tags for planner prior",
+                "tool_response": {
+                    "ok": True,
+                    "data": _compact_json_payload(
+                        value={
+                            "seed_tag_count": len(seed_tag_entries),
+                            "seed_tag_mode": planner_tag_count_mode,
+                            "seed_tags": seed_tag_entries,
+                        },
+                        max_depth=6,
+                        max_list_items=max(50, planner_seed_tag_limit),
+                        max_dict_items=30,
+                        max_string_chars=220,
+                    ),
+                },
+            }
+        )
+
+    query_hypothesis_messages = _build_query_hypothesis_messages(
+        user_message=user_message,
+        seed_tag_entries=seed_tag_entries,
+        seed_tag_count_mode=planner_tag_count_mode,
+    )
     query_hypothesis_payload, query_hypothesis_raw = _ollama_chat_json_with_raw(
         ollama_chat_url=ollama_chat_url,
         model=resolved_model,
@@ -2121,6 +2450,7 @@ def _run_agentic_request(
     model_plan_payload = {
         "reasoning": query_hypothesis["reasoning"],
         "hypothesized_tags": query_hypothesis["hypothesized_tags"],
+        "prompt_messages": query_hypothesis_messages,
     }
     if planner_error_text != "":
         model_plan_payload["planner_error"] = planner_error_text
@@ -2130,7 +2460,7 @@ def _run_agentic_request(
             "step": len(steps) + 1,
             "action": "model_plan",
             "reason": "model hypothesized likely tags before tool calls",
-            "model_payload": _compact_for_output(value=model_plan_payload),
+            "model_payload": model_plan_payload,
         }
     )
 
@@ -2138,6 +2468,88 @@ def _run_agentic_request(
         hypothesized_tags = query_hypothesis["hypothesized_tags"]
         if not isinstance(hypothesized_tags, list):
             raise TypeError("query_hypothesis.hypothesized_tags must be an array")
+
+        list_tags_args = {
+            "prefix": "",
+            "limit": _PLANNER_TAG_CATALOG_LIMIT,
+            "mode": planner_tag_count_mode,
+        }
+        list_tags_response = _tools_call(
+            url=mcp_url,
+            request_id=request_id,
+            tool_name="list_tags",
+            arguments=list_tags_args,
+        )
+        request_id += 1
+        parsed_list_tags = _extract_tool_response(call_response=list_tags_response)
+        tag_entries = _extract_tag_entries_from_list_tags(parsed_list_tags=parsed_list_tags)
+        tag_match_data = _match_hypothesized_tags_to_catalog(
+            hypothesized_tags=hypothesized_tags,
+            tag_entries=tag_entries,
+        )
+        seed_tag_keys = set()
+        for seed_entry in seed_tag_entries:
+            if not isinstance(seed_entry, dict):
+                continue
+            seed_tag = seed_entry.get("tag")
+            if not isinstance(seed_tag, str) or seed_tag == "":
+                continue
+            seed_key = _normalize_tag_term(value=seed_tag)
+            if seed_key == "":
+                continue
+            seed_tag_keys.add(seed_key)
+
+        exact_matches_from_seed: List[str] = []
+        exact_matches_not_from_seed: List[str] = []
+        exact_matches = tag_match_data.get("exact_matches")
+        if isinstance(exact_matches, list):
+            for match_entry in exact_matches:
+                if not isinstance(match_entry, dict):
+                    continue
+                catalog_tag = match_entry.get("catalog_tag")
+                if not isinstance(catalog_tag, str) or catalog_tag == "":
+                    continue
+                catalog_key = _normalize_tag_term(value=catalog_tag)
+                from_seed = catalog_key in seed_tag_keys
+                match_entry["from_seed"] = from_seed
+                if from_seed:
+                    exact_matches_from_seed.append(catalog_tag)
+                else:
+                    exact_matches_not_from_seed.append(catalog_tag)
+
+        tag_match_data["exact_matches_from_seed"] = exact_matches_from_seed
+        tag_match_data["exact_matches_not_from_seed"] = exact_matches_not_from_seed
+        tag_match_data["seed_tag_count"] = len(seed_tag_entries)
+        tag_match_data["catalog_fetch"] = {
+            "mode": planner_tag_count_mode,
+            "limit": list_tags_args["limit"],
+            "total_matches": parsed_list_tags.get("data", {}).get("total_matches")
+            if isinstance(parsed_list_tags.get("data"), dict)
+            else None,
+            "returned_count": parsed_list_tags.get("data", {}).get("returned_count")
+            if isinstance(parsed_list_tags.get("data"), dict)
+            else None,
+        }
+        append_step(
+            step_record={
+                "step": len(steps) + 1,
+                "action": "tag_catalog_match",
+                "tool_name": "list_tags",
+                "arguments": list_tags_args,
+                "reason": "programmatic exact/fuzzy match of planner tags against full catalog",
+                "tool_response": {
+                    "ok": True,
+                    "data": _compact_json_payload(
+                        value=tag_match_data,
+                        max_depth=8,
+                        max_list_items=200,
+                        max_dict_items=50,
+                        max_string_chars=300,
+                    ),
+                },
+            }
+        )
+
         tags_display = ", ".join(hypothesized_tags)
         answer = tags_display
         return {
@@ -2473,6 +2885,8 @@ class AgentChatRequest(BaseModel):
     message: str
     model: str
     max_steps: int
+    planner_seed_tag_limit: int
+    planner_tag_count_mode: str
     mcp_url: str
     ollama_chat_url: str
 
@@ -2481,6 +2895,8 @@ def _web_html(
     *,
     default_model: str,
     default_max_steps: int,
+    default_planner_seed_tag_limit: int,
+    default_planner_tag_count_mode: str,
     default_mcp_url: str,
     default_ollama_chat_url: str,
 ) -> str:
@@ -2488,6 +2904,11 @@ def _web_html(
     mcp_url_value = json.dumps(default_mcp_url)
     ollama_chat_url_value = json.dumps(default_ollama_chat_url)
     max_steps_value = str(default_max_steps)
+    planner_seed_tag_limit_value = str(default_planner_seed_tag_limit)
+    planner_tag_count_mode_raw_selected = "selected" if default_planner_tag_count_mode == "raw" else ""
+    planner_tag_count_mode_effective_selected = (
+        "selected" if default_planner_tag_count_mode == "effective" else ""
+    )
     return f"""<!doctype html>
 <html>
 <head>
@@ -2537,7 +2958,7 @@ def _web_html(
       color: var(--muted);
       margin-bottom: 4px;
     }}
-    input, textarea, button {{
+    input, textarea, button, select {{
       width: 100%;
       box-sizing: border-box;
       border-radius: 10px;
@@ -2651,6 +3072,17 @@ def _web_html(
           <input id="max_steps" type="number" min="1" value="{max_steps_value}" />
         </div>
         <div>
+          <label for="planner_seed_tag_limit">Planner seed tags (N)</label>
+          <input id="planner_seed_tag_limit" type="number" min="1" value="{planner_seed_tag_limit_value}" />
+        </div>
+        <div>
+          <label for="planner_tag_count_mode">Planner tag count mode</label>
+          <select id="planner_tag_count_mode">
+            <option value="raw" {planner_tag_count_mode_raw_selected}>raw (explicit only)</option>
+            <option value="effective" {planner_tag_count_mode_effective_selected}>effective (inherited+implied)</option>
+          </select>
+        </div>
+        <div>
           <label for="mcp_url">MCP URL</label>
           <input id="mcp_url" value={mcp_url_value} />
         </div>
@@ -2672,12 +3104,9 @@ def _web_html(
       <div id="stage_list" class="stage-list">
         <p class="muted">No stages yet.</p>
       </div>
-      <h3>Output JSON</h3>
-      <pre id="output">{{}}</pre>
     </div>
   </div>
   <script>
-    const output = document.getElementById("output");
     const finalAnswer = document.getElementById("final_answer");
     const runBtn = document.getElementById("run_btn");
     const modelsBtn = document.getElementById("models_btn");
@@ -2686,11 +3115,13 @@ def _web_html(
     const promptEl = document.getElementById("prompt");
     const modelEl = document.getElementById("model");
     const maxStepsEl = document.getElementById("max_steps");
+    const plannerSeedTagLimitEl = document.getElementById("planner_seed_tag_limit");
+    const plannerTagCountModeEl = document.getElementById("planner_tag_count_mode");
     const mcpUrlEl = document.getElementById("mcp_url");
     const ollamaChatUrlEl = document.getElementById("ollama_chat_url");
 
     function print(obj) {{
-      output.textContent = JSON.stringify(obj, null, 2);
+      void obj;
     }}
 
     function setFinalAnswer(text) {{
@@ -2711,11 +3142,11 @@ def _web_html(
 
     function extractModelPlanData(step) {{
       if (!step || typeof step !== "object") {{
-        return {{ reasoning: "", hypothesizedTags: [] }};
+        return {{ reasoning: "", hypothesizedTags: [], promptMessages: [] }};
       }}
       const payload = step.model_payload;
       if (!payload || typeof payload !== "object") {{
-        return {{ reasoning: "", hypothesizedTags: [] }};
+        return {{ reasoning: "", hypothesizedTags: [], promptMessages: [] }};
       }}
       let reasoning = "";
       if (typeof payload.reasoning === "string") {{
@@ -2725,7 +3156,47 @@ def _web_html(
       if (Array.isArray(payload.hypothesized_tags)) {{
         hypothesizedTags = payload.hypothesized_tags.filter((tag) => typeof tag === "string");
       }}
-      return {{ reasoning, hypothesizedTags }};
+      let promptMessages = [];
+      if (Array.isArray(payload.prompt_messages)) {{
+        promptMessages = payload.prompt_messages.filter((entry) => entry && typeof entry === "object");
+      }}
+      return {{ reasoning, hypothesizedTags, promptMessages }};
+    }}
+
+    function extractPromptMessages(step) {{
+      if (!step || typeof step !== "object") {{
+        return [];
+      }}
+      const action = typeof step.action === "string" ? step.action : "";
+      if (action === "model_plan") {{
+        const planData = extractModelPlanData(step);
+        return planData.promptMessages;
+      }}
+      if (step.model_payload && typeof step.model_payload === "object") {{
+        const payload = step.model_payload;
+        if (Array.isArray(payload.messages)) {{
+          return payload.messages.filter((entry) => entry && typeof entry === "object");
+        }}
+      }}
+      return [];
+    }}
+
+    function formatPromptMessages(messages) {{
+      if (!Array.isArray(messages) || messages.length === 0) {{
+        return "";
+      }}
+      const sections = [];
+      for (const message of messages) {{
+        const role = typeof message.role === "string" ? message.role.toUpperCase() : "UNKNOWN";
+        let content = "";
+        if (typeof message.content === "string") {{
+          content = message.content;
+        }} else {{
+          content = JSON.stringify(message.content, null, 2);
+        }}
+        sections.push(`${{role}}:\\n${{content}}`);
+      }}
+      return sections.join("\\n\\n");
     }}
 
     function buildStageSummary(step) {{
@@ -2754,6 +3225,152 @@ def _web_html(
         if (wrap.childElementCount === 0) {{
           wrap.textContent = "Model produced a planning stage.";
         }}
+        return wrap;
+      }}
+
+      if (action === "tag_seed_context") {{
+        let data = null;
+        if (step.tool_response && typeof step.tool_response === "object") {{
+          if (step.tool_response.data && typeof step.tool_response.data === "object") {{
+            data = step.tool_response.data;
+          }}
+        }}
+        if (!data) {{
+          wrap.textContent = "Seed tag context loaded.";
+          return wrap;
+        }}
+        const seedTags = Array.isArray(data.seed_tags) ? data.seed_tags : [];
+        const seedMode = typeof data.seed_tag_mode === "string" ? data.seed_tag_mode : "unknown";
+        const preview = seedTags
+          .slice(0, 20)
+          .map((entry) => {{
+            if (!entry || typeof entry !== "object") {{
+              return "";
+            }}
+            const tag = typeof entry.tag === "string" ? entry.tag : "";
+            const count = typeof entry.count === "number" ? entry.count : null;
+            if (tag === "") {{
+              return "";
+            }}
+            if (count === null) {{
+              return tag;
+            }}
+            return `${{tag}}(${{count}})`;
+          }})
+          .filter((text) => text !== "");
+        const countLine = document.createElement("div");
+        countLine.className = "stage-summary-line";
+        const totalSeedCount = typeof data.seed_tag_count === "number" ? data.seed_tag_count : seedTags.length;
+        countLine.textContent = `Seed tags loaded: ${{totalSeedCount}} (mode=${{seedMode}})`;
+        wrap.appendChild(countLine);
+        const tagsLine = document.createElement("div");
+        tagsLine.className = "stage-summary-line";
+        tagsLine.textContent = "Top tags: " + (preview.length > 0 ? preview.join(", ") : "none");
+        wrap.appendChild(tagsLine);
+        const noPromptLine = document.createElement("div");
+        noPromptLine.className = "stage-summary-line";
+        noPromptLine.textContent = "Model prompt: none (deterministic stage).";
+        wrap.appendChild(noPromptLine);
+        return wrap;
+      }}
+
+      if (action === "tag_catalog_match") {{
+        let data = null;
+        if (step.tool_response && typeof step.tool_response === "object") {{
+          if (step.tool_response.data && typeof step.tool_response.data === "object") {{
+            data = step.tool_response.data;
+          }}
+        }}
+        if (!data) {{
+          wrap.textContent = "Tag catalog matching completed.";
+          return wrap;
+        }}
+
+        const catalogFetch = data.catalog_fetch && typeof data.catalog_fetch === "object" ? data.catalog_fetch : null;
+        const exactMatches = Array.isArray(data.exact_matches) ? data.exact_matches : [];
+        const fuzzyMatches = Array.isArray(data.fuzzy_matches) ? data.fuzzy_matches : [];
+        const resolvedTags = Array.isArray(data.resolved_tags) ? data.resolved_tags.filter((tag) => typeof tag === "string") : [];
+        const unmatched = Array.isArray(data.unmatched_hypothesized_tags)
+          ? data.unmatched_hypothesized_tags.filter((tag) => typeof tag === "string")
+          : [];
+
+        if (catalogFetch) {{
+          const catalogLine = document.createElement("div");
+          catalogLine.className = "stage-summary-line";
+          const totalMatches = typeof catalogFetch.total_matches === "number" ? catalogFetch.total_matches : "?";
+          const returnedCount = typeof catalogFetch.returned_count === "number" ? catalogFetch.returned_count : "?";
+          const fetchMode = typeof catalogFetch.mode === "string" ? catalogFetch.mode : "unknown";
+          catalogLine.textContent = `Catalog tags fetched: ${{returnedCount}} / ${{totalMatches}} (mode=${{fetchMode}})`;
+          wrap.appendChild(catalogLine);
+        }}
+
+        const exactLine = document.createElement("div");
+        exactLine.className = "stage-summary-line";
+        const exactTags = exactMatches
+          .map((entry) => (entry && typeof entry.catalog_tag === "string" ? entry.catalog_tag : ""))
+          .filter((tag) => tag !== "");
+        exactLine.textContent = `Exact matches (${{exactTags.length}}): ` + (exactTags.length > 0 ? exactTags.join(", ") : "none");
+        wrap.appendChild(exactLine);
+
+        const exactFromSeed = Array.isArray(data.exact_matches_from_seed)
+          ? data.exact_matches_from_seed.filter((tag) => typeof tag === "string")
+          : exactMatches
+              .filter((entry) => entry && entry.from_seed === true && typeof entry.catalog_tag === "string")
+              .map((entry) => entry.catalog_tag);
+        const exactNotFromSeed = Array.isArray(data.exact_matches_not_from_seed)
+          ? data.exact_matches_not_from_seed.filter((tag) => typeof tag === "string")
+          : exactMatches
+              .filter((entry) => entry && entry.from_seed === false && typeof entry.catalog_tag === "string")
+              .map((entry) => entry.catalog_tag);
+
+        const exactFromSeedLine = document.createElement("div");
+        exactFromSeedLine.className = "stage-summary-line";
+        exactFromSeedLine.textContent =
+          `Exact matches from initial N (${{exactFromSeed.length}}): ` +
+          (exactFromSeed.length > 0 ? exactFromSeed.join(", ") : "none");
+        wrap.appendChild(exactFromSeedLine);
+
+        const exactNotFromSeedLine = document.createElement("div");
+        exactNotFromSeedLine.className = "stage-summary-line";
+        exactNotFromSeedLine.textContent =
+          `Exact matches outside initial N (${{exactNotFromSeed.length}}): ` +
+          (exactNotFromSeed.length > 0 ? exactNotFromSeed.join(", ") : "none");
+        wrap.appendChild(exactNotFromSeedLine);
+
+        const fuzzyLine = document.createElement("div");
+        fuzzyLine.className = "stage-summary-line";
+        const fuzzyPreview = fuzzyMatches
+          .map((entry) => {{
+            if (!entry || typeof entry !== "object") {{
+              return "";
+            }}
+            const hypothesis = typeof entry.hypothesis === "string" ? entry.hypothesis : "?";
+            const catalogTag = typeof entry.catalog_tag === "string" ? entry.catalog_tag : "?";
+            return `${{hypothesis}} -> ${{catalogTag}}`;
+          }})
+          .filter((text) => text !== "");
+        fuzzyLine.textContent = `Fuzzy matches (${{fuzzyMatches.length}}): ` + (fuzzyPreview.length > 0 ? fuzzyPreview.join(", ") : "none");
+        wrap.appendChild(fuzzyLine);
+
+        if (resolvedTags.length > 0) {{
+          const resolvedLine = document.createElement("div");
+          resolvedLine.className = "stage-summary-line";
+          resolvedLine.textContent = `Resolved tags (${{resolvedTags.length}}): ` + resolvedTags.join(", ");
+          wrap.appendChild(resolvedLine);
+        }}
+
+        if (unmatched.length > 0) {{
+          const unmatchedLine = document.createElement("div");
+          unmatchedLine.className = "stage-summary-line";
+          unmatchedLine.textContent = `Unmatched hypotheses (${{unmatched.length}}): ` + unmatched.join(", ");
+          wrap.appendChild(unmatchedLine);
+        }}
+
+        const noPromptLine = document.createElement("div");
+        noPromptLine.className = "stage-summary-line";
+        noPromptLine.textContent = "Model prompt: none (deterministic stage).";
+        wrap.appendChild(noPromptLine);
+
         return wrap;
       }}
 
@@ -2799,6 +3416,20 @@ def _web_html(
 
       card.appendChild(buildStageSummary(step));
 
+      const promptMessages = extractPromptMessages(step);
+      if (promptMessages.length > 0) {{
+        const promptDetails = document.createElement("details");
+        promptDetails.className = "stage-raw";
+        const promptSummary = document.createElement("summary");
+        promptSummary.textContent = "Prompt Messages";
+        promptDetails.appendChild(promptSummary);
+        const promptPre = document.createElement("pre");
+        promptPre.className = "stage-json";
+        promptPre.textContent = formatPromptMessages(promptMessages);
+        promptDetails.appendChild(promptPre);
+        card.appendChild(promptDetails);
+      }}
+
       const rawDetails = document.createElement("details");
       rawDetails.className = "stage-raw";
       const rawSummary = document.createElement("summary");
@@ -2842,6 +3473,18 @@ def _web_html(
           return `${{stepNo}}: planning - ${{planningReasoning}}`;
         }}
       }}
+      if (action === "tag_catalog_match") {{
+        if (reason !== "") {{
+          return `${{stepNo}}: tag matching - ${{reason}}`;
+        }}
+        return `${{stepNo}}: tag matching`;
+      }}
+      if (action === "tag_seed_context") {{
+        if (reason !== "") {{
+          return `${{stepNo}}: seed tags - ${{reason}}`;
+        }}
+        return `${{stepNo}}: seed tags`;
+      }}
       if (reason !== "") {{
         return `${{stepNo}}: ${{action}} - ${{reason}}`;
       }}
@@ -2883,6 +3526,8 @@ def _web_html(
           message: promptEl.value,
           model: modelEl.value,
           max_steps: Number(maxStepsEl.value),
+          planner_seed_tag_limit: Number(plannerSeedTagLimitEl.value),
+          planner_tag_count_mode: plannerTagCountModeEl.value,
           mcp_url: mcpUrlEl.value,
           ollama_chat_url: ollamaChatUrlEl.value,
         }};
@@ -2994,7 +3639,7 @@ def _web_html(
           }}
         }}
         if (!sawFinal && !sawError) {{
-          setFinalAnswer("No final answer returned. See Output JSON for details.");
+          setFinalAnswer("No final answer returned. Check Stages for details.");
           setRunStatus("Finished without final answer.");
         }}
       }} catch (err) {{
@@ -3059,6 +3704,8 @@ def create_web_app(
     *,
     default_model: str,
     default_max_steps: int,
+    default_planner_seed_tag_limit: int,
+    default_planner_tag_count_mode: str,
     default_mcp_url: str,
     default_ollama_chat_url: str,
 ) -> FastAPI:
@@ -3078,6 +3725,8 @@ def create_web_app(
         return _web_html(
             default_model=default_model,
             default_max_steps=default_max_steps,
+            default_planner_seed_tag_limit=default_planner_seed_tag_limit,
+            default_planner_tag_count_mode=default_planner_tag_count_mode,
             default_mcp_url=default_mcp_url,
             default_ollama_chat_url=default_ollama_chat_url,
         )
@@ -3096,6 +3745,16 @@ def create_web_app(
             raise HTTPException(status_code=400, detail="message must not be empty")
         if payload.max_steps <= 0:
             raise HTTPException(status_code=400, detail="max_steps must be > 0")
+        if payload.planner_seed_tag_limit <= 0:
+            raise HTTPException(status_code=400, detail="planner_seed_tag_limit must be > 0")
+        if payload.planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "planner_tag_count_mode must be one of: "
+                    + ", ".join(sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES))
+                ),
+            )
         result = _run_agentic_request(
             user_message=payload.message,
             mcp_url=payload.mcp_url,
@@ -3103,6 +3762,8 @@ def create_web_app(
             model=payload.model,
             max_steps=payload.max_steps,
             planner_only=True,
+            planner_seed_tag_limit=payload.planner_seed_tag_limit,
+            planner_tag_count_mode=payload.planner_tag_count_mode,
             progress_callback=None,
         )
         return result
@@ -3113,6 +3774,16 @@ def create_web_app(
             raise HTTPException(status_code=400, detail="message must not be empty")
         if payload.max_steps <= 0:
             raise HTTPException(status_code=400, detail="max_steps must be > 0")
+        if payload.planner_seed_tag_limit <= 0:
+            raise HTTPException(status_code=400, detail="planner_seed_tag_limit must be > 0")
+        if payload.planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "planner_tag_count_mode must be one of: "
+                    + ", ".join(sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES))
+                ),
+            )
 
         event_queue: queue.Queue[dict] = queue.Queue()
 
@@ -3133,6 +3804,8 @@ def create_web_app(
                     model=payload.model,
                     max_steps=payload.max_steps,
                     planner_only=True,
+                    planner_seed_tag_limit=payload.planner_seed_tag_limit,
+                    planner_tag_count_mode=payload.planner_tag_count_mode,
                     progress_callback=progress_callback,
                 )
                 event_queue.put(
@@ -3183,10 +3856,14 @@ def _run_web(
     ollama_chat_url: str,
     model: str,
     max_steps: int,
+    planner_seed_tag_limit: int,
+    planner_tag_count_mode: str,
 ) -> None:
     app = create_web_app(
         default_model=model,
         default_max_steps=max_steps,
+        default_planner_seed_tag_limit=planner_seed_tag_limit,
+        default_planner_tag_count_mode=planner_tag_count_mode,
         default_mcp_url=mcp_url,
         default_ollama_chat_url=ollama_chat_url,
     )
@@ -3217,6 +3894,8 @@ def main() -> None:
     web_parser.add_argument("--ollama-chat-url")
     web_parser.add_argument("--model")
     web_parser.add_argument("--max-steps", type=int)
+    web_parser.add_argument("--planner-seed-tag-limit", type=int)
+    web_parser.add_argument("--planner-tag-count-mode")
 
     args = parser.parse_args(argv)
 
@@ -3287,6 +3966,21 @@ def main() -> None:
     else:
         max_steps = args.max_steps
 
+    if args.planner_seed_tag_limit is None:
+        planner_seed_tag_limit = _DEFAULT_PLANNER_SEED_TAG_LIMIT
+    else:
+        planner_seed_tag_limit = args.planner_seed_tag_limit
+
+    if args.planner_tag_count_mode is None:
+        planner_tag_count_mode = _DEFAULT_PLANNER_TAG_COUNT_MODE
+    else:
+        planner_tag_count_mode = args.planner_tag_count_mode.casefold()
+    if planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+        raise ValueError(
+            "planner-tag-count-mode must be one of: "
+            + ", ".join(sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES))
+        )
+
     _run_web(
         host=host,
         port=port,
@@ -3294,6 +3988,8 @@ def main() -> None:
         ollama_chat_url=ollama_chat_url,
         model=model,
         max_steps=max_steps,
+        planner_seed_tag_limit=planner_seed_tag_limit,
+        planner_tag_count_mode=planner_tag_count_mode,
     )
 
 
