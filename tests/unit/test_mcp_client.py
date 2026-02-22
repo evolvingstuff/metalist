@@ -855,3 +855,228 @@ def test_compact_json_payload_keeps_scalar_leaf_values_at_depth_zero() -> None:
     )
 
     assert compact["root"]["branch"]["leaf_values"] == ["dad", "birthday", "email"]
+
+
+def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Use a phrase lookup first.",
+                    "expressions": [{"type": "phrase", "value": "dad birthday"}],
+                },
+                '{"reasoning":"Use a phrase lookup first.","expressions":[{"type":"phrase","value":"dad birthday"}]}',
+            ),
+            (
+                {"answer": "No answer found."},
+                '{"answer":"No answer found."}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    tool_calls = []
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        tool_calls.append((tool_name, arguments))
+        if tool_name == "count_notes":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {"total_notes": 500},
+                    }
+                }
+            }
+        if tool_name == "search_note_ids":
+            assert arguments["query"] == '"dad birthday"'
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": 0,
+                            "total_matches": 2,
+                            "returned_count": 2,
+                            "note_ids": ["n1", "n2"],
+                        },
+                    }
+                }
+            }
+        if tool_name == "get_notes_batch":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "total_requested": 2,
+                            "returned_count": 2,
+                            "not_found_ids": [],
+                            "notes": [
+                                {"note_id": "n1", "content_text": "a", "context_text": "a"},
+                                {"note_id": "n2", "content_text": "b", "context_text": "b"},
+                            ],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool: {tool_name}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="When is my dad's birthday?",
+        search_context_query="",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=5,
+        hydrate_top_k=20,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    assert result["steps"][0]["action"] == "run_config"
+    assert result["steps"][1]["action"] == "expression_plan"
+    assert all(step["action"] != "universe_resolve" for step in result["steps"])
+
+    run_config_data = result["steps"][0]["tool_response"]["data"]
+    assert run_config_data["universe_mode"] == "global"
+    assert run_config_data["universe_boundary_tool"] == "count_notes"
+    assert run_config_data["universe_note_count"] == 500
+
+    expression_step = next(
+        step for step in result["steps"] if step.get("action") == "expression_execute"
+    )
+    assert expression_step["arguments"]["query"] == '"dad birthday"'
+    assert tool_calls[0][0] == "count_notes"
+
+
+def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "ensure_ollama_model_available",
+        lambda *, ollama_chat_url, model, autopull: "qwen2.5:7b-instruct",
+    )
+
+    model_calls = iter(
+        [
+            (
+                {
+                    "reasoning": "Use phrase lookup.",
+                    "expressions": [{"type": "phrase", "value": "dad birthday"}],
+                },
+                '{"reasoning":"Use phrase lookup.","expressions":[{"type":"phrase","value":"dad birthday"}]}',
+            ),
+            (
+                {"answer": "Scoped answer."},
+                '{"answer":"Scoped answer."}',
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_json_with_raw",
+        lambda *, ollama_chat_url, model, messages: next(model_calls),
+    )
+
+    def fake_tools_call(*, url, request_id, tool_name, arguments):
+        if tool_name == "search_note_ids" and arguments["query"] == "work-journal -private":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": 0,
+                            "total_matches": 2,
+                            "returned_count": 2,
+                            "note_ids": ["u1", "u2"],
+                        },
+                    }
+                }
+            }
+        if tool_name == "search_note_ids" and arguments["query"] == '"dad birthday"':
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "query": arguments["query"],
+                            "required_tags": [],
+                            "forbidden_tags": [],
+                            "resolved_query": arguments["query"],
+                            "limit": arguments["limit"],
+                            "offset": 0,
+                            "total_matches": 2,
+                            "returned_count": 2,
+                            "note_ids": ["u2", "x1"],
+                        },
+                    }
+                }
+            }
+        if tool_name == "get_notes_batch":
+            assert arguments["note_ids"] == ["u2"]
+            return {
+                "result": {
+                    "structuredContent": {
+                        "ok": True,
+                        "data": {
+                            "total_requested": 1,
+                            "returned_count": 1,
+                            "not_found_ids": [],
+                            "notes": [
+                                {"note_id": "u2", "content_text": "a", "context_text": "a"},
+                            ],
+                        },
+                    }
+                }
+            }
+        raise AssertionError(f"Unexpected tool call: {tool_name} {arguments}")
+
+    monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
+
+    result = mcp_client._run_rewrite_request(
+        user_message="When is my dad's birthday?",
+        search_context_query="work-journal -private",
+        mcp_url="http://127.0.0.1:8000/api2/mcp",
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+        model="qwen2.5:7b-instruct",
+        max_steps=6,
+        max_expressions=5,
+        hydrate_top_k=20,
+        regex_engine="python-re",
+        progress_callback=None,
+    )
+
+    assert result["ok"] is True
+    run_config_data = result["steps"][0]["tool_response"]["data"]
+    assert run_config_data["universe_mode"] == "scoped"
+    assert run_config_data["universe_boundary_tool"] == "search_note_ids"
+    assert run_config_data["universe_boundary_arguments"]["query"] == "work-journal -private"
+
+    expression_step = next(
+        step for step in result["steps"] if step.get("action") == "expression_execute"
+    )
+    assert expression_step["stats"]["scoped_match_count"] == 1

@@ -46,6 +46,31 @@ _TOOLS: List[Dict[str, object]] = [
         },
     },
     {
+        "name": "get_notes_batch",
+        "description": (
+            "Return multiple notes in one call with configurable payload fields. "
+            "Preserves input order and reports not_found_ids."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "note_ids": {"type": "array", "items": {"type": "string"}},
+                "include_content_text": {"type": "boolean"},
+                "include_context_text": {"type": "boolean"},
+                "include_tags": {"type": "boolean"},
+                "include_ancestors": {"type": "boolean"},
+            },
+            "required": [
+                "note_ids",
+                "include_content_text",
+                "include_context_text",
+                "include_tags",
+                "include_ancestors",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "list_children",
         "description": (
             "Return ordered full child notes for parent_id in a small window; "
@@ -94,6 +119,83 @@ _TOOLS: List[Dict[str, object]] = [
                 "offset": {"type": "integer", "minimum": 0},
             },
             "required": ["query", "required_tags", "forbidden_tags", "limit", "offset"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "search_note_ids",
+        "description": (
+            "Search notes with free query + explicit required/forbidden tag filters. "
+            "Returns ordered note_ids only (no note payload)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "required_tags": {"type": "array", "items": {"type": "string"}},
+                "forbidden_tags": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer", "minimum": 1},
+                "offset": {"type": "integer", "minimum": 0},
+            },
+            "required": ["query", "required_tags", "forbidden_tags", "limit", "offset"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "search_notes_regex",
+        "description": (
+            "Regex search across note content/context within an explicit ordered scope list. "
+            "Returns match spans/snippets and count metadata."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "flags": {"type": "string"},
+                "regex_engine": {"type": "string", "enum": ["python-re", "re2"]},
+                "target": {"type": "string", "enum": ["content_text", "context_text", "both"]},
+                "scope_note_ids": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer", "minimum": 1},
+                "offset": {"type": "integer", "minimum": 0},
+            },
+            "required": [
+                "pattern",
+                "flags",
+                "regex_engine",
+                "target",
+                "scope_note_ids",
+                "limit",
+                "offset",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "search_notes_regex_ids",
+        "description": (
+            "Regex search across note content/context within an explicit ordered scope list. "
+            "Returns ordered note_ids only (no match snippets)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "flags": {"type": "string"},
+                "regex_engine": {"type": "string", "enum": ["python-re", "re2"]},
+                "target": {"type": "string", "enum": ["content_text", "context_text", "both"]},
+                "scope_note_ids": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer", "minimum": 1},
+                "offset": {"type": "integer", "minimum": 0},
+            },
+            "required": [
+                "pattern",
+                "flags",
+                "regex_engine",
+                "target",
+                "scope_note_ids",
+                "limit",
+                "offset",
+            ],
             "additionalProperties": False,
         },
     },
@@ -159,6 +261,31 @@ def call_tool(
         if not note_store.has_note(note_id):
             return _tool_error(f"Note not found: {note_id}")
         return _tool_ok(read_service.get_note(note_id=note_id))
+
+    if tool_name == "get_notes_batch":
+        required_keys = {
+            "note_ids",
+            "include_content_text",
+            "include_context_text",
+            "include_tags",
+            "include_ancestors",
+        }
+        if set(args.keys()) != required_keys:
+            return _tool_error(
+                "get_notes_batch requires note_ids, include_content_text, include_context_text, "
+                "include_tags, and include_ancestors"
+            )
+        if not note_store.loaded:
+            return _tool_error("Vault locked or not hydrated")
+        return _tool_ok(
+            read_service.get_notes_batch(
+                note_ids=args["note_ids"],
+                include_content_text=args["include_content_text"],
+                include_context_text=args["include_context_text"],
+                include_tags=args["include_tags"],
+                include_ancestors=args["include_ancestors"],
+            )
+        )
 
     if tool_name == "list_children":
         if "parent_id" not in args or len(args) != 1:
@@ -228,6 +355,103 @@ def call_tool(
                 forbidden_tags=forbidden_tags,
                 limit=limit,
                 offset=offset,
+            )
+        )
+
+    if tool_name == "search_note_ids":
+        required_keys = {"query", "required_tags", "forbidden_tags", "limit", "offset"}
+        if set(args.keys()) != required_keys:
+            return _tool_error(
+                "search_note_ids requires query, required_tags, forbidden_tags, limit, and offset"
+            )
+        query = args["query"]
+        required_tags = args["required_tags"]
+        forbidden_tags = args["forbidden_tags"]
+        limit = args["limit"]
+        offset = args["offset"]
+        if not isinstance(query, str):
+            return _tool_error("query must be a string")
+        if not isinstance(required_tags, list):
+            return _tool_error("required_tags must be a list of strings")
+        if not isinstance(forbidden_tags, list):
+            return _tool_error("forbidden_tags must be a list of strings")
+        if not isinstance(limit, int) or limit <= 0:
+            return _tool_error("limit must be a positive integer")
+        if not isinstance(offset, int) or offset < 0:
+            return _tool_error("offset must be a non-negative integer")
+        for value in required_tags:
+            if not isinstance(value, str) or value == "":
+                return _tool_error("required_tags entries must be non-empty strings")
+        for value in forbidden_tags:
+            if not isinstance(value, str) or value == "":
+                return _tool_error("forbidden_tags entries must be non-empty strings")
+        if not note_store.loaded:
+            return _tool_error("Vault locked or not hydrated")
+        return _tool_ok(
+            read_service.search_note_ids(
+                query=query,
+                required_tags=required_tags,
+                forbidden_tags=forbidden_tags,
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+    if tool_name == "search_notes_regex":
+        required_keys = {
+            "pattern",
+            "flags",
+            "regex_engine",
+            "target",
+            "scope_note_ids",
+            "limit",
+            "offset",
+        }
+        if set(args.keys()) != required_keys:
+            return _tool_error(
+                "search_notes_regex requires pattern, flags, regex_engine, target, "
+                "scope_note_ids, limit, and offset"
+            )
+        if not note_store.loaded:
+            return _tool_error("Vault locked or not hydrated")
+        return _tool_ok(
+            read_service.search_notes_regex(
+                pattern=args["pattern"],
+                flags=args["flags"],
+                regex_engine=args["regex_engine"],
+                target=args["target"],
+                scope_note_ids=args["scope_note_ids"],
+                limit=args["limit"],
+                offset=args["offset"],
+            )
+        )
+
+    if tool_name == "search_notes_regex_ids":
+        required_keys = {
+            "pattern",
+            "flags",
+            "regex_engine",
+            "target",
+            "scope_note_ids",
+            "limit",
+            "offset",
+        }
+        if set(args.keys()) != required_keys:
+            return _tool_error(
+                "search_notes_regex_ids requires pattern, flags, regex_engine, target, "
+                "scope_note_ids, limit, and offset"
+            )
+        if not note_store.loaded:
+            return _tool_error("Vault locked or not hydrated")
+        return _tool_ok(
+            read_service.search_notes_regex_ids(
+                pattern=args["pattern"],
+                flags=args["flags"],
+                regex_engine=args["regex_engine"],
+                target=args["target"],
+                scope_note_ids=args["scope_note_ids"],
+                limit=args["limit"],
+                offset=args["offset"],
             )
         )
 

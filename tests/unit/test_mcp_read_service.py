@@ -317,3 +317,108 @@ def test_search_notes_supports_all_notes_when_query_is_empty(monkeypatch: pytest
     assert payload["total_matches"] == 3
     assert payload["returned_count"] == 2
     assert [entry["note_id"] for entry in payload["results"]] == ["child", "sibling"]
+
+
+def test_search_note_ids_returns_ordered_note_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_index = _install_fakes(monkeypatch, loaded=True)
+    service = ReadService()
+
+    payload = service.search_note_ids(
+        query="alpha",
+        required_tags=["project"],
+        forbidden_tags=["done"],
+        limit=10,
+        offset=0,
+    )
+
+    assert fake_index.last_query == "alpha project -done"
+    assert payload["total_matches"] == 2
+    assert payload["returned_count"] == 2
+    assert payload["note_ids"] == ["root", "child"]
+
+
+def test_search_notes_regex_respects_scope_and_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fakes(monkeypatch, loaded=True)
+    service = ReadService()
+
+    payload = service.search_notes_regex(
+        pattern="root",
+        flags="i",
+        regex_engine="python-re",
+        target="both",
+        scope_note_ids=["root", "child", "sibling"],
+        limit=10,
+        offset=0,
+    )
+
+    assert payload["pattern"] == "root"
+    assert payload["flags"] == "i"
+    assert payload["regex_engine"] == "python-re"
+    assert payload["total_matches"] == 2
+    assert payload["returned_count"] == 2
+    assert [entry["note_id"] for entry in payload["results"]] == ["root", "child"]
+
+
+def test_search_notes_regex_ids_respects_scope_and_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fakes(monkeypatch, loaded=True)
+    service = ReadService()
+
+    payload = service.search_notes_regex_ids(
+        pattern="root",
+        flags="i",
+        regex_engine="python-re",
+        target="both",
+        scope_note_ids=["root", "child", "sibling"],
+        limit=10,
+        offset=0,
+    )
+
+    assert payload["pattern"] == "root"
+    assert payload["flags"] == "i"
+    assert payload["regex_engine"] == "python-re"
+    assert payload["total_matches"] == 2
+    assert payload["returned_count"] == 2
+    assert payload["note_ids"] == ["root", "child"]
+
+
+def test_search_notes_regex_ids_empty_scope_defaults_to_global_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fakes(monkeypatch, loaded=True)
+    service = ReadService()
+
+    payload = service.search_notes_regex_ids(
+        pattern="root",
+        flags="i",
+        regex_engine="python-re",
+        target="both",
+        scope_note_ids=[],
+        limit=10,
+        offset=0,
+    )
+
+    assert payload["scope_count"] == 3
+    assert payload["total_matches"] == 2
+    assert payload["note_ids"] == ["root", "child"]
+
+
+def test_get_notes_batch_returns_order_and_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fakes(monkeypatch, loaded=True)
+    service = ReadService()
+
+    payload = service.get_notes_batch(
+        note_ids=["child", "missing", "root", "child"],
+        include_content_text=True,
+        include_context_text=True,
+        include_tags=True,
+        include_ancestors=True,
+    )
+
+    assert payload["total_requested"] == 3
+    assert payload["returned_count"] == 2
+    assert payload["not_found_ids"] == ["missing"]
+    notes = payload["notes"]
+    assert [entry["note_id"] for entry in notes] == ["child", "root"]
+    assert notes[0]["ancestor_note_ids"] == ["root"]
+    assert "context_text" in notes[0]
+    assert "tags" in notes[0]

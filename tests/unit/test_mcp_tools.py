@@ -61,3 +61,75 @@ def test_count_notes_requires_no_arguments(monkeypatch) -> None:
     )
     assert response["ok"] is True
     assert response["data"]["total_notes"] == 42
+
+
+def test_search_notes_regex_requires_all_arguments() -> None:
+    service = ReadService()
+
+    response = call_tool(
+        tool_name="search_notes_regex",
+        arguments={
+            "pattern": "dad",
+            "flags": "i",
+            "regex_engine": "python-re",
+            "target": "both",
+            "scope_note_ids": [],
+            "limit": 10,
+        },
+        read_service=service,
+    )
+    assert response["ok"] is False
+    assert "search_notes_regex requires" in response["error"]
+
+
+def test_search_note_ids_requires_all_arguments() -> None:
+    service = ReadService()
+
+    response = call_tool(
+        tool_name="search_note_ids",
+        arguments={
+            "query": "",
+            "required_tags": [],
+            "forbidden_tags": [],
+            "limit": 10,
+        },
+        read_service=service,
+    )
+    assert response["ok"] is False
+    assert "search_note_ids requires" in response["error"]
+
+
+def test_search_notes_regex_ids_requires_all_arguments() -> None:
+    service = ReadService()
+
+    response = call_tool(
+        tool_name="search_notes_regex_ids",
+        arguments={
+            "pattern": "dad",
+            "flags": "i",
+            "regex_engine": "python-re",
+            "target": "both",
+            "scope_note_ids": [],
+            "limit": 10,
+        },
+        read_service=service,
+    )
+    assert response["ok"] is False
+    assert "search_notes_regex_ids requires" in response["error"]
+
+
+def test_get_notes_batch_requires_all_arguments() -> None:
+    service = ReadService()
+
+    response = call_tool(
+        tool_name="get_notes_batch",
+        arguments={
+            "note_ids": [],
+            "include_content_text": True,
+            "include_context_text": True,
+            "include_tags": True,
+        },
+        read_service=service,
+    )
+    assert response["ok"] is False
+    assert "get_notes_batch requires" in response["error"]

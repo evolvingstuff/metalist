@@ -38,6 +38,10 @@ def test_handle_message_tools_list() -> None:
     assert "health_check" in names
     assert "count_notes" in names
     assert "search_notes" in names
+    assert "search_note_ids" in names
+    assert "search_notes_regex" in names
+    assert "search_notes_regex_ids" in names
+    assert "get_notes_batch" in names
 
 
 def test_handle_message_notification_returns_none() -> None:

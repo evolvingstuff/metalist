@@ -45,6 +45,14 @@ _DEFAULT_PLANNER_SEED_TAG_LIMIT = 50
 _DEFAULT_PLANNER_TAG_COUNT_MODE = "raw"
 _ALLOWED_PLANNER_TAG_COUNT_MODES = frozenset({"effective", "raw"})
 _PLANNER_TAG_CATALOG_LIMIT = 100000
+_DEFAULT_SEARCH_CONTEXT_QUERY = ""
+_DEFAULT_MAX_EXPRESSIONS = 20
+_DEFAULT_HYDRATE_TOP_K = 80
+_DEFAULT_REGEX_ENGINE = "python-re"
+_ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
+_MAX_EXPRESSION_SEARCH_RESULTS = 100000
+_STEP_NOTE_ID_SAMPLE_LIMIT = 50
+_TAG_ATOM_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
 
 DEFAULT_MCP_URL = _DEFAULT_MCP_URL
 DEFAULT_OLLAMA_CHAT_URL = _DEFAULT_OLLAMA_CHAT_URL
@@ -58,6 +66,10 @@ DEFAULT_OLLAMA_AUTOPULL = _DEFAULT_OLLAMA_AUTOPULL
 DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS
 DEFAULT_PLANNER_SEED_TAG_LIMIT = _DEFAULT_PLANNER_SEED_TAG_LIMIT
 DEFAULT_PLANNER_TAG_COUNT_MODE = _DEFAULT_PLANNER_TAG_COUNT_MODE
+DEFAULT_SEARCH_CONTEXT_QUERY = _DEFAULT_SEARCH_CONTEXT_QUERY
+DEFAULT_MAX_EXPRESSIONS = _DEFAULT_MAX_EXPRESSIONS
+DEFAULT_HYDRATE_TOP_K = _DEFAULT_HYDRATE_TOP_K
+DEFAULT_REGEX_ENGINE = _DEFAULT_REGEX_ENGINE
 
 _OLLAMA_SIDECAR_PROCESS: subprocess.Popen | None = None
 
@@ -2344,6 +2356,763 @@ def _bootstrap_search_step(
     }
 
 
+def _ordered_note_ids_from_search_tool(*, tool_response: dict) -> List[str]:
+    if not isinstance(tool_response, dict):
+        raise TypeError("tool_response must be an object")
+    if tool_response.get("ok") is not True:
+        return []
+    data = tool_response.get("data")
+    if not isinstance(data, dict):
+        return []
+    return _extract_note_ids_from_tool_data(data=data)
+
+
+def _extract_ordered_note_ids_from_tool_results(*, tool_response: dict) -> List[str]:
+    if not isinstance(tool_response, dict):
+        raise TypeError("tool_response must be an object")
+    if tool_response.get("ok") is not True:
+        return []
+    data = tool_response.get("data")
+    if not isinstance(data, dict):
+        return []
+    return _extract_note_ids_from_tool_data(data=data)
+
+
+def _extract_note_ids_from_tool_data(*, data: dict) -> List[str]:
+    if not isinstance(data, dict):
+        raise TypeError("data must be an object")
+
+    ordered: List[str] = []
+    seen = set()
+
+    note_ids = data.get("note_ids")
+    if isinstance(note_ids, list):
+        for note_id in note_ids:
+            if not isinstance(note_id, str) or note_id == "":
+                continue
+            if note_id in seen:
+                continue
+            seen.add(note_id)
+            ordered.append(note_id)
+        return ordered
+
+    results = data.get("results")
+    if not isinstance(results, list):
+        return ordered
+
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        note_id = entry.get("note_id")
+        if not isinstance(note_id, str) or note_id == "":
+            continue
+        if note_id in seen:
+            continue
+        seen.add(note_id)
+        ordered.append(note_id)
+    return ordered
+
+
+def _summarize_rewrite_tool_response(*, tool_response: dict, note_id_sample_limit: int) -> dict:
+    if not isinstance(tool_response, dict):
+        raise TypeError("tool_response must be an object")
+    if not isinstance(note_id_sample_limit, int) or note_id_sample_limit <= 0:
+        raise ValueError("note_id_sample_limit must be a positive integer")
+    if tool_response.get("ok") is not True:
+        return tool_response
+
+    data = tool_response.get("data")
+    if not isinstance(data, dict):
+        return tool_response
+
+    summary_data: Dict[str, object] = {}
+    passthrough_keys = [
+        "query",
+        "required_tags",
+        "forbidden_tags",
+        "resolved_query",
+        "pattern",
+        "flags",
+        "regex_engine",
+        "target",
+        "scope_count",
+        "limit",
+        "offset",
+        "total_matches",
+        "returned_count",
+        "total_requested",
+        "not_found_ids",
+    ]
+    for key in passthrough_keys:
+        if key in data:
+            summary_data[key] = data[key]
+
+    note_ids = _extract_note_ids_from_tool_data(data=data)
+    if len(note_ids) > 0:
+        summary_data["note_ids_total"] = len(note_ids)
+        summary_data["note_ids_sample"] = note_ids[:note_id_sample_limit]
+
+    notes = data.get("notes")
+    if isinstance(notes, list):
+        note_entries: List[dict] = []
+        for note in notes:
+            if not isinstance(note, dict):
+                continue
+            note_id = note.get("note_id")
+            if not isinstance(note_id, str) or note_id == "":
+                continue
+            entry = {"note_id": note_id}
+            if "parent_id" in note:
+                entry["parent_id"] = note["parent_id"]
+            note_entries.append(entry)
+        summary_data["notes_total"] = len(note_entries)
+        summary_data["notes_sample"] = note_entries[:note_id_sample_limit]
+
+    return {
+        "ok": True,
+        "data": summary_data,
+    }
+
+
+def _normalize_tag_atom(*, value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("tag atom value must be a string")
+    normalized = value.strip().casefold()
+    if normalized.startswith("tag:"):
+        normalized = normalized[4:]
+    if normalized == "":
+        raise ValueError("tag atom value must be non-empty")
+    if _TAG_ATOM_PATTERN.fullmatch(normalized) is None:
+        raise ValueError(
+            "tag atom value must match ^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+        )
+    return normalized
+
+
+def _normalize_expression_plan(
+    *,
+    payload: object,
+    max_expressions: int,
+) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("Expression planner output must be a JSON object")
+
+    reasoning_value = payload.get("reasoning")
+    if not isinstance(reasoning_value, str) or reasoning_value.strip() == "":
+        raise ValueError("Expression planner reasoning must be a non-empty string")
+    reasoning = reasoning_value.strip()
+
+    raw_expressions = payload.get("expressions")
+    if not isinstance(raw_expressions, list):
+        raise ValueError("Expression planner must include expressions array")
+
+    expressions: List[dict] = []
+    seen = set()
+    for raw_expression in raw_expressions:
+        if not isinstance(raw_expression, dict):
+            continue
+        raw_type = raw_expression.get("type")
+        if not isinstance(raw_type, str):
+            continue
+        normalized_type = raw_type.casefold().strip()
+        if normalized_type not in {"phrase", "regex", "tag"}:
+            continue
+
+        normalized_expression: dict
+        dedupe_key: tuple
+        if normalized_type == "phrase":
+            value = raw_expression.get("value")
+            if not isinstance(value, str):
+                continue
+            normalized_value = re.sub(r"\s+", " ", value).strip()
+            if normalized_value == "":
+                continue
+            normalized_expression = {
+                "type": "phrase",
+                "value": normalized_value,
+            }
+            dedupe_key = ("phrase", normalized_value.casefold())
+        elif normalized_type == "regex":
+            pattern = raw_expression.get("pattern")
+            if not isinstance(pattern, str) or pattern.strip() == "":
+                continue
+            flags_value = raw_expression.get("flags", "")
+            if not isinstance(flags_value, str):
+                continue
+            normalized_flags = ""
+            seen_flags = set()
+            for flag_char in flags_value:
+                if flag_char not in {"i", "m", "s"}:
+                    continue
+                if flag_char in seen_flags:
+                    continue
+                seen_flags.add(flag_char)
+                normalized_flags += flag_char
+            normalized_flags = "".join(flag for flag in "ims" if flag in normalized_flags)
+            normalized_expression = {
+                "type": "regex",
+                "pattern": pattern,
+                "flags": normalized_flags,
+            }
+            dedupe_key = ("regex", pattern, normalized_flags)
+        else:
+            tag_value = raw_expression.get("value")
+            try:
+                normalized_tag = _normalize_tag_atom(value=tag_value)
+            except ValueError:
+                continue
+            normalized_expression = {
+                "type": "tag",
+                "value": normalized_tag,
+            }
+            dedupe_key = ("tag", normalized_tag)
+
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        expressions.append(normalized_expression)
+        if len(expressions) >= max_expressions:
+            break
+
+    if len(expressions) == 0:
+        raise ValueError("Expression planner returned no usable expressions")
+    return {
+        "reasoning": reasoning,
+        "expressions": expressions,
+    }
+
+
+def _fallback_expression_plan(*, user_message: str, max_expressions: int) -> dict:
+    normalized_message = re.sub(r"\s+", " ", user_message).strip()
+    if normalized_message == "":
+        raise ValueError("user_message must not be empty")
+    expressions = [{"type": "phrase", "value": normalized_message}]
+    query_terms = _query_terms_for_tags(user_message=user_message)
+    for term in query_terms[:3]:
+        expression = {"type": "phrase", "value": term}
+        if expression in expressions:
+            continue
+        expressions.append(expression)
+        if len(expressions) >= max_expressions:
+            break
+    return {
+        "reasoning": "Fallback expressions generated heuristically from the user query text.",
+        "expressions": expressions[:max_expressions],
+    }
+
+
+def _build_rewrite_expression_plan_messages(
+    *,
+    user_message: str,
+    search_context_query: str,
+    max_expressions: int,
+) -> List[dict]:
+    system_prompt = (
+        "You are a retrieval expression planner for MetaList. "
+        "Domain model: notes are hierarchical (parent/child tree), and downstream retrieval can use content_text, "
+        "context_text (ancestor + note), and optional tag atoms. "
+        "Task: propose retrieval expressions for the user question. "
+        "Allowed expression atom types only: phrase, regex, tag. "
+        "No keyword atom type is allowed. "
+        "Use tag atoms only when clearly justified by user wording, and format tag values as tag-like terms. "
+        "Return ONLY JSON with exact shape: "
+        '{"reasoning":"<1-3 sentences>","expressions":[{"type":"phrase","value":"..."},{"type":"regex","pattern":"...","flags":"ims"},{"type":"tag","value":"tag-name"}]}. '
+        f"Provide up to {max_expressions} expressions."
+    )
+    scoped_hint = "none"
+    if search_context_query.strip() != "":
+        scoped_hint = search_context_query
+    user_prompt = (
+        "User question:\n"
+        + user_message
+        + "\n\nActive search context (strict retrieval universe):\n"
+        + scoped_hint
+    )
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def _build_rewrite_synthesis_messages(
+    *,
+    user_message: str,
+    search_context_query: str,
+    expression_plan: dict,
+    expression_stats: List[dict],
+    hydrated_notes: List[dict],
+) -> List[dict]:
+    system_prompt = (
+        "You are answering from retrieved MetaList evidence only. "
+        "MetaList schema reminder: notes are hierarchical and context may include ancestor text. "
+        "If evidence is insufficient, say so explicitly. "
+        "Do not invent facts. "
+        "Return JSON: {\"answer\":\"...\"}."
+    )
+    payload = {
+        "question": user_message,
+        "active_search_context_query": search_context_query,
+        "expression_plan": expression_plan,
+        "expression_stats": expression_stats,
+        "hydrated_notes": hydrated_notes,
+    }
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
+
+
+def _extract_synthesis_answer(*, payload: object) -> str:
+    if isinstance(payload, dict):
+        for key in ("answer", "final_answer", "summary", "response"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip() != "":
+                return value.strip()
+    if isinstance(payload, str) and payload.strip() != "":
+        return payload.strip()
+    return "No synthesized answer returned."
+
+
+def _run_rewrite_request(
+    *,
+    user_message: str,
+    search_context_query: str,
+    mcp_url: str,
+    ollama_chat_url: str,
+    model: str,
+    max_steps: int,
+    max_expressions: int,
+    hydrate_top_k: int,
+    regex_engine: str,
+    progress_callback: Callable[[dict], None] | None,
+) -> dict:
+    if max_steps <= 0:
+        raise ValueError("max_steps must be > 0")
+    if max_expressions <= 0:
+        raise ValueError("max_expressions must be > 0")
+    if hydrate_top_k <= 0:
+        raise ValueError("hydrate_top_k must be > 0")
+    normalized_regex_engine = regex_engine.casefold()
+    if normalized_regex_engine not in _ALLOWED_REGEX_ENGINES:
+        raise ValueError(f"regex_engine must be one of: {sorted(_ALLOWED_REGEX_ENGINES)}")
+
+    resolved_model = ensure_ollama_model_available(
+        ollama_chat_url=ollama_chat_url,
+        model=model,
+        autopull=_DEFAULT_OLLAMA_AUTOPULL,
+    )
+
+    steps: List[dict] = []
+
+    def append_step(*, step_record: dict) -> None:
+        steps.append(step_record)
+        if progress_callback is not None:
+            progress_callback(step_record)
+
+    request_id = 100
+    universe_mode = "scoped" if search_context_query.strip() != "" else "global"
+    universe_note_ids: List[str] | None = None
+    universe_note_id_set: set[str] | None = None
+    universe_note_count = 0
+    universe_resolution_ms = 0.0
+    universe_boundary_tool = ""
+    universe_boundary_arguments: dict = {}
+
+    if universe_mode == "scoped":
+        universe_args = {
+            "query": search_context_query,
+            "required_tags": [],
+            "forbidden_tags": [],
+            "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
+            "offset": 0,
+        }
+        universe_start = time.perf_counter()
+        universe_call = _tools_call(
+            url=mcp_url,
+            request_id=request_id,
+            tool_name="search_note_ids",
+            arguments=universe_args,
+        )
+        universe_resolution_ms = round((time.perf_counter() - universe_start) * 1000, 3)
+        request_id += 1
+        universe_tool_response = _extract_tool_response(call_response=universe_call)
+        if universe_tool_response.get("ok") is not True:
+            error = universe_tool_response.get("error", "Universe resolution failed")
+            return {
+                "ok": False,
+                "answer": str(error),
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+            }
+        universe_note_ids = _ordered_note_ids_from_search_tool(tool_response=universe_tool_response)
+        universe_note_id_set = set(universe_note_ids)
+        universe_note_count = len(universe_note_ids)
+        universe_boundary_tool = "search_note_ids"
+        universe_boundary_arguments = universe_args
+    else:
+        count_start = time.perf_counter()
+        count_call = _tools_call(
+            url=mcp_url,
+            request_id=request_id,
+            tool_name="count_notes",
+            arguments={},
+        )
+        universe_resolution_ms = round((time.perf_counter() - count_start) * 1000, 3)
+        request_id += 1
+        count_tool_response = _extract_tool_response(call_response=count_call)
+        if count_tool_response.get("ok") is not True:
+            error = count_tool_response.get("error", "Universe resolution failed")
+            return {
+                "ok": False,
+                "answer": str(error),
+                "model": resolved_model,
+                "steps": steps,
+                "mode": "rewrite",
+            }
+        count_data = count_tool_response.get("data")
+        if not isinstance(count_data, dict):
+            raise TypeError("count_notes data must be an object")
+        total_notes = count_data.get("total_notes")
+        if not isinstance(total_notes, int) or total_notes < 0:
+            raise TypeError("count_notes.total_notes must be a non-negative integer")
+        universe_note_count = total_notes
+        universe_boundary_tool = "count_notes"
+        universe_boundary_arguments = {}
+
+    append_step(
+        step_record={
+            "step": len(steps) + 1,
+            "action": "run_config",
+            "reason": "deterministic run configuration and universe boundary snapshot",
+            "tool_response": {
+                "ok": True,
+                "data": {
+                    "max_steps": max_steps,
+                    "max_expressions": max_expressions,
+                    "hydrate_top_k": hydrate_top_k,
+                    "regex_engine": normalized_regex_engine,
+                    "active_search_context_query": search_context_query,
+                    "universe_mode": universe_mode,
+                    "universe_note_count": universe_note_count,
+                    "universe_resolution_ms": universe_resolution_ms,
+                    "universe_boundary_tool": universe_boundary_tool,
+                    "universe_boundary_arguments": universe_boundary_arguments,
+                },
+            },
+        }
+    )
+
+    plan_messages = _build_rewrite_expression_plan_messages(
+        user_message=user_message,
+        search_context_query=search_context_query,
+        max_expressions=max_expressions,
+    )
+    planner_raw_output = ""
+    planner_error = ""
+    plan_start = time.perf_counter()
+    planned_payload, planner_raw_output = _ollama_chat_json_with_raw(
+        ollama_chat_url=ollama_chat_url,
+        model=resolved_model,
+        messages=plan_messages,
+    )
+    plan_elapsed_ms = round((time.perf_counter() - plan_start) * 1000, 3)
+    try:
+        expression_plan = _normalize_expression_plan(
+            payload=planned_payload,
+            max_expressions=max_expressions,
+        )
+    except ValueError as error:
+        planner_error = str(error)
+        expression_plan = _fallback_expression_plan(
+            user_message=user_message,
+            max_expressions=max_expressions,
+        )
+    append_step(
+        step_record={
+            "step": len(steps) + 1,
+            "action": "expression_plan",
+            "reason": "model proposed phrase/regex/tag retrieval expressions",
+            "stats": {
+                "execution_ms": plan_elapsed_ms,
+                "expression_count": len(expression_plan["expressions"]),
+            },
+            "model_payload": {
+                "reasoning": expression_plan["reasoning"],
+                "expressions": expression_plan["expressions"],
+                "prompt_messages": plan_messages,
+                "raw_model_output": planner_raw_output,
+                "planner_error": planner_error,
+            },
+        }
+    )
+
+    note_hit_counts: Dict[str, int] = {}
+    note_hit_expressions: Dict[str, List[str]] = {}
+    expression_stats: List[dict] = []
+
+    for expression_index, expression in enumerate(expression_plan["expressions"], start=1):
+        if expression_index > max_expressions:
+            break
+        if not isinstance(expression, dict):
+            raise TypeError("expression entry must be an object")
+        if "type" not in expression:
+            raise TypeError("expression missing type")
+        expression_type = expression["type"]
+        if not isinstance(expression_type, str):
+            raise TypeError("expression.type must be a string")
+
+        tool_name: str
+        tool_args: dict
+        display_args: dict
+        label: str
+        if expression_type == "phrase":
+            phrase_value = expression["value"]
+            if not isinstance(phrase_value, str):
+                raise TypeError("phrase expression value must be a string")
+            escaped = phrase_value.replace("\\", "\\\\").replace('"', '\\"')
+            query = f"\"{escaped}\""
+            tool_name = "search_note_ids"
+            tool_args = {
+                "query": query,
+                "required_tags": [],
+                "forbidden_tags": [],
+                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
+                "offset": 0,
+            }
+            display_args = tool_args
+            label = f'phrase:"{phrase_value}"'
+        elif expression_type == "tag":
+            tag_value = expression["value"]
+            if not isinstance(tag_value, str):
+                raise TypeError("tag expression value must be a string")
+            tool_name = "search_note_ids"
+            tool_args = {
+                "query": tag_value,
+                "required_tags": [],
+                "forbidden_tags": [],
+                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
+                "offset": 0,
+            }
+            display_args = tool_args
+            label = f"tag:{tag_value}"
+        elif expression_type == "regex":
+            pattern = expression["pattern"]
+            flags = expression["flags"]
+            if not isinstance(pattern, str):
+                raise TypeError("regex expression pattern must be a string")
+            if not isinstance(flags, str):
+                raise TypeError("regex expression flags must be a string")
+            tool_name = "search_notes_regex_ids"
+            tool_args = {
+                "pattern": pattern,
+                "flags": flags,
+                "regex_engine": normalized_regex_engine,
+                "target": "both",
+                "scope_note_ids": universe_note_ids if universe_note_ids is not None else [],
+                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
+                "offset": 0,
+            }
+            display_args = {
+                "pattern": pattern,
+                "flags": flags,
+                "regex_engine": normalized_regex_engine,
+                "target": "both",
+                "scope_note_ids_count": len(universe_note_ids) if universe_note_ids is not None else 0,
+                "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
+                "offset": 0,
+            }
+            label = f"regex:/{pattern}/{flags}"
+        else:
+            raise TypeError(f"Unsupported expression type: {expression_type}")
+
+        expression_start = time.perf_counter()
+        tool_call = _tools_call(
+            url=mcp_url,
+            request_id=request_id,
+            tool_name=tool_name,
+            arguments=tool_args,
+        )
+        request_id += 1
+        execution_ms = round((time.perf_counter() - expression_start) * 1000, 3)
+        tool_response = _extract_tool_response(call_response=tool_call)
+
+        matched_note_ids = _extract_ordered_note_ids_from_tool_results(tool_response=tool_response)
+        scoped_ordered_matches: List[str]
+        if universe_mode == "scoped":
+            if universe_note_ids is None or universe_note_id_set is None:
+                raise RuntimeError("scoped universe requires resolved note ids")
+            matched_set = set(matched_note_ids)
+            scoped_ordered_matches = [note_id for note_id in universe_note_ids if note_id in matched_set]
+        else:
+            scoped_ordered_matches = matched_note_ids
+
+        for note_id in scoped_ordered_matches:
+            current_count = note_hit_counts.get(note_id, 0)
+            note_hit_counts[note_id] = current_count + 1
+            expression_list = note_hit_expressions.get(note_id)
+            if expression_list is None:
+                expression_list = []
+                note_hit_expressions[note_id] = expression_list
+            if label not in expression_list:
+                expression_list.append(label)
+
+        stat_row = {
+            "expression_index": expression_index,
+            "expression": expression,
+            "expression_label": label,
+            "tool_name": tool_name,
+            "execution_ms": execution_ms,
+            "raw_match_count": len(matched_note_ids),
+            "scoped_match_count": len(scoped_ordered_matches),
+            "universe_mode": universe_mode,
+        }
+        expression_stats.append(stat_row)
+        append_step(
+            step_record={
+                "step": len(steps) + 1,
+                "action": "expression_execute",
+                "tool_name": tool_name,
+                "arguments": display_args,
+                "reason": "execute one retrieval expression and record timing",
+                "stats": stat_row,
+                "tool_response": _summarize_rewrite_tool_response(
+                    tool_response=tool_response,
+                    note_id_sample_limit=_STEP_NOTE_ID_SAMPLE_LIMIT,
+                ),
+            }
+        )
+
+    ordered_candidate_note_ids: List[str]
+    if universe_mode == "scoped":
+        if universe_note_ids is None:
+            raise RuntimeError("scoped universe requires resolved note ids")
+        ordered_candidate_note_ids = [
+            note_id for note_id in universe_note_ids if note_id in note_hit_counts
+        ]
+    else:
+        ordered_candidate_note_ids = list(note_hit_counts.keys())
+    append_step(
+        step_record={
+            "step": len(steps) + 1,
+            "action": "expression_stats",
+            "reason": "aggregated expression timing and hit statistics",
+            "tool_response": {
+                "ok": True,
+                "data": {
+                    "expression_stats": expression_stats,
+                    "candidate_count": len(ordered_candidate_note_ids),
+                    "ordered_candidate_note_ids_total": len(ordered_candidate_note_ids),
+                    "ordered_candidate_note_ids_sample": ordered_candidate_note_ids[
+                        :_STEP_NOTE_ID_SAMPLE_LIMIT
+                    ],
+                },
+            },
+        }
+    )
+
+    hydrate_ids = ordered_candidate_note_ids[:hydrate_top_k]
+    hydrate_args = {
+        "note_ids": hydrate_ids,
+        "include_content_text": True,
+        "include_context_text": True,
+        "include_tags": True,
+        "include_ancestors": True,
+    }
+    hydrate_start = time.perf_counter()
+    hydrate_call = _tools_call(
+        url=mcp_url,
+        request_id=request_id,
+        tool_name="get_notes_batch",
+        arguments=hydrate_args,
+    )
+    hydrate_elapsed_ms = round((time.perf_counter() - hydrate_start) * 1000, 3)
+    request_id += 1
+    hydration_response = _extract_tool_response(call_response=hydrate_call)
+    append_step(
+        step_record={
+            "step": len(steps) + 1,
+            "action": "bulk_hydration",
+            "tool_name": "get_notes_batch",
+            "arguments": hydrate_args,
+            "reason": "hydrate candidate notes in one batched call",
+            "stats": {
+                "execution_ms": hydrate_elapsed_ms,
+                "hydrated_note_count": len(hydrate_ids),
+            },
+            "tool_response": _summarize_rewrite_tool_response(
+                tool_response=hydration_response,
+                note_id_sample_limit=_STEP_NOTE_ID_SAMPLE_LIMIT,
+            ),
+        }
+    )
+
+    hydrated_notes: List[dict] = []
+    if hydration_response.get("ok") is True:
+        hydration_data = hydration_response.get("data")
+        if isinstance(hydration_data, dict):
+            notes = hydration_data.get("notes")
+            if isinstance(notes, list):
+                for note in notes:
+                    if not isinstance(note, dict):
+                        continue
+                    note_id = note.get("note_id")
+                    if not isinstance(note_id, str) or note_id == "":
+                        continue
+                    hydrated_notes.append(
+                        {
+                            "note_id": note_id,
+                            "hit_count": note_hit_counts.get(note_id, 0),
+                            "matched_expressions": note_hit_expressions.get(note_id, []),
+                            "content_text": note.get("content_text"),
+                            "context_text": note.get("context_text"),
+                        }
+                    )
+
+    synthesis_messages = _build_rewrite_synthesis_messages(
+        user_message=user_message,
+        search_context_query=search_context_query,
+        expression_plan=expression_plan,
+        expression_stats=expression_stats,
+        hydrated_notes=hydrated_notes,
+    )
+    synthesis_start = time.perf_counter()
+    synthesis_payload, synthesis_raw = _ollama_chat_json_with_raw(
+        ollama_chat_url=ollama_chat_url,
+        model=resolved_model,
+        messages=synthesis_messages,
+    )
+    synthesis_elapsed_ms = round((time.perf_counter() - synthesis_start) * 1000, 3)
+    answer = _extract_synthesis_answer(payload=synthesis_payload)
+    append_step(
+        step_record={
+            "step": len(steps) + 1,
+            "action": "synthesis",
+            "reason": "synthesize final answer from hydrated evidence",
+            "stats": {
+                "execution_ms": synthesis_elapsed_ms,
+            },
+            "model_payload": {
+                "messages": synthesis_messages,
+                "raw_model_output": synthesis_raw,
+            },
+            "tool_response": {
+                "ok": True,
+                "data": synthesis_payload,
+            },
+        }
+    )
+
+    return {
+        "ok": True,
+        "answer": answer,
+        "model": resolved_model,
+        "steps": steps,
+        "mode": "rewrite",
+        "expression_stats": expression_stats,
+    }
+
+
 def _run_agentic_request(
     *,
     user_message: str,
@@ -2885,8 +3654,10 @@ class AgentChatRequest(BaseModel):
     message: str
     model: str
     max_steps: int
-    planner_seed_tag_limit: int
-    planner_tag_count_mode: str
+    max_expressions: int
+    hydrate_top_k: int
+    regex_engine: str
+    search_context_query: str
     mcp_url: str
     ollama_chat_url: str
 
@@ -2895,8 +3666,10 @@ def _web_html(
     *,
     default_model: str,
     default_max_steps: int,
-    default_planner_seed_tag_limit: int,
-    default_planner_tag_count_mode: str,
+    default_max_expressions: int,
+    default_hydrate_top_k: int,
+    default_regex_engine: str,
+    default_search_context_query: str,
     default_mcp_url: str,
     default_ollama_chat_url: str,
 ) -> str:
@@ -2904,11 +3677,13 @@ def _web_html(
     mcp_url_value = json.dumps(default_mcp_url)
     ollama_chat_url_value = json.dumps(default_ollama_chat_url)
     max_steps_value = str(default_max_steps)
-    planner_seed_tag_limit_value = str(default_planner_seed_tag_limit)
-    planner_tag_count_mode_raw_selected = "selected" if default_planner_tag_count_mode == "raw" else ""
-    planner_tag_count_mode_effective_selected = (
-        "selected" if default_planner_tag_count_mode == "effective" else ""
+    max_expressions_value = str(default_max_expressions)
+    hydrate_top_k_value = str(default_hydrate_top_k)
+    regex_engine_python_re_selected = (
+        "selected" if default_regex_engine == "python-re" else ""
     )
+    regex_engine_re2_selected = "selected" if default_regex_engine == "re2" else ""
+    search_context_query_value = json.dumps(default_search_context_query)
     return f"""<!doctype html>
 <html>
 <head>
@@ -3072,14 +3847,18 @@ def _web_html(
           <input id="max_steps" type="number" min="1" value="{max_steps_value}" />
         </div>
         <div>
-          <label for="planner_seed_tag_limit">Planner seed tags (N)</label>
-          <input id="planner_seed_tag_limit" type="number" min="1" value="{planner_seed_tag_limit_value}" />
+          <label for="max_expressions">Max expressions</label>
+          <input id="max_expressions" type="number" min="1" value="{max_expressions_value}" />
         </div>
         <div>
-          <label for="planner_tag_count_mode">Planner tag count mode</label>
-          <select id="planner_tag_count_mode">
-            <option value="raw" {planner_tag_count_mode_raw_selected}>raw (explicit only)</option>
-            <option value="effective" {planner_tag_count_mode_effective_selected}>effective (inherited+implied)</option>
+          <label for="hydrate_top_k">Hydrate top K</label>
+          <input id="hydrate_top_k" type="number" min="1" value="{hydrate_top_k_value}" />
+        </div>
+        <div>
+          <label for="regex_engine">Regex engine</label>
+          <select id="regex_engine">
+            <option value="python-re" {regex_engine_python_re_selected}>python-re</option>
+            <option value="re2" {regex_engine_re2_selected}>re2</option>
           </select>
         </div>
         <div>
@@ -3091,6 +3870,8 @@ def _web_html(
           <input id="ollama_chat_url" value={ollama_chat_url_value} />
         </div>
       </div>
+      <label for="search_context_query">Search context query (universe boundary)</label>
+      <input id="search_context_query" value={search_context_query_value} placeholder='e.g. work-journal -private -@password' />
       <label for="prompt">Request</label>
       <textarea id="prompt" placeholder="Ask something, e.g. summarize top project notes tagged work..."></textarea>
       <div class="row">
@@ -3115,8 +3896,10 @@ def _web_html(
     const promptEl = document.getElementById("prompt");
     const modelEl = document.getElementById("model");
     const maxStepsEl = document.getElementById("max_steps");
-    const plannerSeedTagLimitEl = document.getElementById("planner_seed_tag_limit");
-    const plannerTagCountModeEl = document.getElementById("planner_tag_count_mode");
+    const maxExpressionsEl = document.getElementById("max_expressions");
+    const hydrateTopKEl = document.getElementById("hydrate_top_k");
+    const regexEngineEl = document.getElementById("regex_engine");
+    const searchContextQueryEl = document.getElementById("search_context_query");
     const mcpUrlEl = document.getElementById("mcp_url");
     const ollamaChatUrlEl = document.getElementById("ollama_chat_url");
 
@@ -3174,6 +3957,9 @@ def _web_html(
       }}
       if (step.model_payload && typeof step.model_payload === "object") {{
         const payload = step.model_payload;
+        if (Array.isArray(payload.prompt_messages)) {{
+          return payload.prompt_messages.filter((entry) => entry && typeof entry === "object");
+        }}
         if (Array.isArray(payload.messages)) {{
           return payload.messages.filter((entry) => entry && typeof entry === "object");
         }}
@@ -3225,6 +4011,169 @@ def _web_html(
         if (wrap.childElementCount === 0) {{
           wrap.textContent = "Model produced a planning stage.";
         }}
+        return wrap;
+      }}
+
+      if (action === "run_config") {{
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        if (!data) {{
+          wrap.textContent = "Run configuration captured.";
+          return wrap;
+        }}
+        const keys = [
+          "max_steps",
+          "max_expressions",
+          "hydrate_top_k",
+          "regex_engine",
+          "active_search_context_query",
+          "universe_mode",
+          "universe_note_count",
+          "universe_resolution_ms",
+          "universe_boundary_tool",
+          "universe_boundary_arguments",
+        ];
+        for (const key of keys) {{
+          if (!(key in data)) {{
+            continue;
+          }}
+          const line = document.createElement("div");
+          line.className = "stage-summary-line";
+          line.textContent = `${{key}}: ` + JSON.stringify(data[key]);
+          wrap.appendChild(line);
+        }}
+        return wrap;
+      }}
+
+      if (action === "universe_resolve") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Universe resolved.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent =
+          `Universe: ${{stats.execution_ms}}ms, notes=${{stats.universe_note_count}}`;
+        wrap.appendChild(line);
+        return wrap;
+      }}
+
+      if (action === "expression_plan") {{
+        const payload = step.model_payload && typeof step.model_payload === "object" ? step.model_payload : null;
+        if (!payload) {{
+          wrap.textContent = "Expression plan generated.";
+          return wrap;
+        }}
+        if (typeof payload.reasoning === "string" && payload.reasoning !== "") {{
+          const reason = document.createElement("div");
+          reason.className = "stage-summary-line";
+          reason.textContent = "Reasoning: " + payload.reasoning;
+          wrap.appendChild(reason);
+        }}
+        const expressions = Array.isArray(payload.expressions) ? payload.expressions : [];
+        if (expressions.length > 0) {{
+          const exprLine = document.createElement("div");
+          exprLine.className = "stage-summary-line";
+          exprLine.textContent = "Expressions: " + expressions.map((expr) => JSON.stringify(expr)).join(", ");
+          wrap.appendChild(exprLine);
+
+          const plannedCalls = [];
+          for (const expr of expressions) {{
+            if (!expr || typeof expr !== "object") {{
+              continue;
+            }}
+            const exprType = typeof expr.type === "string" ? expr.type : "";
+            if (exprType === "phrase") {{
+              const value = typeof expr.value === "string" ? expr.value : "";
+              if (value !== "") {{
+                const compiledQuery = '"' + value + '"';
+                plannedCalls.push("search_note_ids(query=" + JSON.stringify(compiledQuery) + ")");
+              }}
+              continue;
+            }}
+            if (exprType === "tag") {{
+              const value = typeof expr.value === "string" ? expr.value : "";
+              if (value !== "") {{
+                plannedCalls.push(`search_note_ids(query=${{JSON.stringify(value)}})`);
+              }}
+              continue;
+            }}
+            if (exprType === "regex") {{
+              const pattern = typeof expr.pattern === "string" ? expr.pattern : "";
+              const flags = typeof expr.flags === "string" ? expr.flags : "";
+              if (pattern !== "") {{
+                plannedCalls.push(`search_notes_regex_ids(/${{pattern}}/${{flags}})`);
+              }}
+            }}
+          }}
+          if (plannedCalls.length > 0) {{
+            const callsLine = document.createElement("div");
+            callsLine.className = "stage-summary-line";
+            callsLine.textContent = "Compiled tool calls: " + plannedCalls.join(" | ");
+            wrap.appendChild(callsLine);
+          }}
+        }}
+        return wrap;
+      }}
+
+      if (action === "expression_execute") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Expression executed.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent =
+          `Expression ${{stats.expression_index}} (${{stats.expression_label}}): ` +
+          `${{stats.execution_ms}}ms, matches=${{stats.scoped_match_count}}`;
+        wrap.appendChild(line);
+        if (step.arguments && typeof step.arguments === "object") {{
+          const argsLine = document.createElement("div");
+          argsLine.className = "stage-summary-line";
+          argsLine.textContent = "Executed arguments: " + JSON.stringify(step.arguments);
+          wrap.appendChild(argsLine);
+        }}
+        return wrap;
+      }}
+
+      if (action === "expression_stats") {{
+        const data = step.tool_response && step.tool_response.data && typeof step.tool_response.data === "object"
+          ? step.tool_response.data
+          : null;
+        if (!data) {{
+          wrap.textContent = "Expression stats aggregated.";
+          return wrap;
+        }}
+        const countLine = document.createElement("div");
+        countLine.className = "stage-summary-line";
+        countLine.textContent = `Candidate notes: ${{data.candidate_count ?? "?"}}`;
+        wrap.appendChild(countLine);
+        const rows = Array.isArray(data.expression_stats) ? data.expression_stats : [];
+        for (const row of rows) {{
+          if (!row || typeof row !== "object") {{
+            continue;
+          }}
+          const line = document.createElement("div");
+          line.className = "stage-summary-line";
+          line.textContent = `- ${{row.expression_label}} => ${{row.execution_ms}}ms, scoped matches=${{row.scoped_match_count}}`;
+          wrap.appendChild(line);
+        }}
+        return wrap;
+      }}
+
+      if (action === "bulk_hydration") {{
+        const stats = step.stats && typeof step.stats === "object" ? step.stats : null;
+        if (!stats) {{
+          wrap.textContent = "Bulk hydration completed.";
+          return wrap;
+        }}
+        const line = document.createElement("div");
+        line.className = "stage-summary-line";
+        line.textContent = `Hydration: ${{stats.execution_ms}}ms, hydrated=${{stats.hydrated_note_count}}`;
+        wrap.appendChild(line);
         return wrap;
       }}
 
@@ -3425,7 +4374,19 @@ def _web_html(
         promptDetails.appendChild(promptSummary);
         const promptPre = document.createElement("pre");
         promptPre.className = "stage-json";
-        promptPre.textContent = formatPromptMessages(promptMessages);
+        let promptRendered = false;
+        const renderPrompt = () => {{
+          if (promptRendered) {{
+            return;
+          }}
+          promptPre.textContent = formatPromptMessages(promptMessages);
+          promptRendered = true;
+        }};
+        promptDetails.addEventListener("toggle", () => {{
+          if (promptDetails.open) {{
+            renderPrompt();
+          }}
+        }});
         promptDetails.appendChild(promptPre);
         card.appendChild(promptDetails);
       }}
@@ -3437,7 +4398,19 @@ def _web_html(
       rawDetails.appendChild(rawSummary);
       const detail = document.createElement("pre");
       detail.className = "stage-json";
-      detail.textContent = JSON.stringify(step, null, 2);
+      let rawRendered = false;
+      const renderRaw = () => {{
+        if (rawRendered) {{
+          return;
+        }}
+        detail.textContent = JSON.stringify(step, null, 2);
+        rawRendered = true;
+      }};
+      rawDetails.addEventListener("toggle", () => {{
+        if (rawDetails.open) {{
+          renderRaw();
+        }}
+      }});
       rawDetails.appendChild(detail);
       card.appendChild(rawDetails);
 
@@ -3485,6 +4458,27 @@ def _web_html(
         }}
         return `${{stepNo}}: seed tags`;
       }}
+      if (action === "run_config") {{
+        return `${{stepNo}}: run config`;
+      }}
+      if (action === "universe_resolve") {{
+        return `${{stepNo}}: universe resolve`;
+      }}
+      if (action === "expression_plan") {{
+        return `${{stepNo}}: expression planning`;
+      }}
+      if (action === "expression_execute") {{
+        return `${{stepNo}}: expression execute`;
+      }}
+      if (action === "expression_stats") {{
+        return `${{stepNo}}: expression stats`;
+      }}
+      if (action === "bulk_hydration") {{
+        return `${{stepNo}}: bulk hydration`;
+      }}
+      if (action === "synthesis") {{
+        return `${{stepNo}}: synthesis`;
+      }}
       if (reason !== "") {{
         return `${{stepNo}}: ${{action}} - ${{reason}}`;
       }}
@@ -3526,8 +4520,10 @@ def _web_html(
           message: promptEl.value,
           model: modelEl.value,
           max_steps: Number(maxStepsEl.value),
-          planner_seed_tag_limit: Number(plannerSeedTagLimitEl.value),
-          planner_tag_count_mode: plannerTagCountModeEl.value,
+          max_expressions: Number(maxExpressionsEl.value),
+          hydrate_top_k: Number(hydrateTopKEl.value),
+          regex_engine: regexEngineEl.value,
+          search_context_query: searchContextQueryEl.value,
           mcp_url: mcpUrlEl.value,
           ollama_chat_url: ollamaChatUrlEl.value,
         }};
@@ -3704,8 +4700,10 @@ def create_web_app(
     *,
     default_model: str,
     default_max_steps: int,
-    default_planner_seed_tag_limit: int,
-    default_planner_tag_count_mode: str,
+    default_max_expressions: int,
+    default_hydrate_top_k: int,
+    default_regex_engine: str,
+    default_search_context_query: str,
     default_mcp_url: str,
     default_ollama_chat_url: str,
 ) -> FastAPI:
@@ -3725,8 +4723,10 @@ def create_web_app(
         return _web_html(
             default_model=default_model,
             default_max_steps=default_max_steps,
-            default_planner_seed_tag_limit=default_planner_seed_tag_limit,
-            default_planner_tag_count_mode=default_planner_tag_count_mode,
+            default_max_expressions=default_max_expressions,
+            default_hydrate_top_k=default_hydrate_top_k,
+            default_regex_engine=default_regex_engine,
+            default_search_context_query=default_search_context_query,
             default_mcp_url=default_mcp_url,
             default_ollama_chat_url=default_ollama_chat_url,
         )
@@ -3745,25 +4745,29 @@ def create_web_app(
             raise HTTPException(status_code=400, detail="message must not be empty")
         if payload.max_steps <= 0:
             raise HTTPException(status_code=400, detail="max_steps must be > 0")
-        if payload.planner_seed_tag_limit <= 0:
-            raise HTTPException(status_code=400, detail="planner_seed_tag_limit must be > 0")
-        if payload.planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+        if payload.max_expressions <= 0:
+            raise HTTPException(status_code=400, detail="max_expressions must be > 0")
+        if payload.hydrate_top_k <= 0:
+            raise HTTPException(status_code=400, detail="hydrate_top_k must be > 0")
+        normalized_regex_engine = payload.regex_engine.casefold()
+        if normalized_regex_engine not in _ALLOWED_REGEX_ENGINES:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "planner_tag_count_mode must be one of: "
-                    + ", ".join(sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES))
+                    "regex_engine must be one of: "
+                    + ", ".join(sorted(_ALLOWED_REGEX_ENGINES))
                 ),
             )
-        result = _run_agentic_request(
+        result = _run_rewrite_request(
             user_message=payload.message,
+            search_context_query=payload.search_context_query,
             mcp_url=payload.mcp_url,
             ollama_chat_url=payload.ollama_chat_url,
             model=payload.model,
             max_steps=payload.max_steps,
-            planner_only=True,
-            planner_seed_tag_limit=payload.planner_seed_tag_limit,
-            planner_tag_count_mode=payload.planner_tag_count_mode,
+            max_expressions=payload.max_expressions,
+            hydrate_top_k=payload.hydrate_top_k,
+            regex_engine=normalized_regex_engine,
             progress_callback=None,
         )
         return result
@@ -3774,14 +4778,17 @@ def create_web_app(
             raise HTTPException(status_code=400, detail="message must not be empty")
         if payload.max_steps <= 0:
             raise HTTPException(status_code=400, detail="max_steps must be > 0")
-        if payload.planner_seed_tag_limit <= 0:
-            raise HTTPException(status_code=400, detail="planner_seed_tag_limit must be > 0")
-        if payload.planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+        if payload.max_expressions <= 0:
+            raise HTTPException(status_code=400, detail="max_expressions must be > 0")
+        if payload.hydrate_top_k <= 0:
+            raise HTTPException(status_code=400, detail="hydrate_top_k must be > 0")
+        normalized_regex_engine = payload.regex_engine.casefold()
+        if normalized_regex_engine not in _ALLOWED_REGEX_ENGINES:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "planner_tag_count_mode must be one of: "
-                    + ", ".join(sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES))
+                    "regex_engine must be one of: "
+                    + ", ".join(sorted(_ALLOWED_REGEX_ENGINES))
                 ),
             )
 
@@ -3797,15 +4804,16 @@ def create_web_app(
 
         def worker() -> None:
             try:
-                result = _run_agentic_request(
+                result = _run_rewrite_request(
                     user_message=payload.message,
+                    search_context_query=payload.search_context_query,
                     mcp_url=payload.mcp_url,
                     ollama_chat_url=payload.ollama_chat_url,
                     model=payload.model,
                     max_steps=payload.max_steps,
-                    planner_only=True,
-                    planner_seed_tag_limit=payload.planner_seed_tag_limit,
-                    planner_tag_count_mode=payload.planner_tag_count_mode,
+                    max_expressions=payload.max_expressions,
+                    hydrate_top_k=payload.hydrate_top_k,
+                    regex_engine=normalized_regex_engine,
                     progress_callback=progress_callback,
                 )
                 event_queue.put(
@@ -3856,14 +4864,18 @@ def _run_web(
     ollama_chat_url: str,
     model: str,
     max_steps: int,
-    planner_seed_tag_limit: int,
-    planner_tag_count_mode: str,
+    max_expressions: int,
+    hydrate_top_k: int,
+    regex_engine: str,
+    search_context_query: str,
 ) -> None:
     app = create_web_app(
         default_model=model,
         default_max_steps=max_steps,
-        default_planner_seed_tag_limit=planner_seed_tag_limit,
-        default_planner_tag_count_mode=planner_tag_count_mode,
+        default_max_expressions=max_expressions,
+        default_hydrate_top_k=hydrate_top_k,
+        default_regex_engine=regex_engine,
+        default_search_context_query=search_context_query,
         default_mcp_url=mcp_url,
         default_ollama_chat_url=ollama_chat_url,
     )
@@ -3894,8 +4906,10 @@ def main() -> None:
     web_parser.add_argument("--ollama-chat-url")
     web_parser.add_argument("--model")
     web_parser.add_argument("--max-steps", type=int)
-    web_parser.add_argument("--planner-seed-tag-limit", type=int)
-    web_parser.add_argument("--planner-tag-count-mode")
+    web_parser.add_argument("--max-expressions", type=int)
+    web_parser.add_argument("--hydrate-top-k", type=int)
+    web_parser.add_argument("--regex-engine")
+    web_parser.add_argument("--search-context-query")
 
     args = parser.parse_args(argv)
 
@@ -3966,20 +4980,34 @@ def main() -> None:
     else:
         max_steps = args.max_steps
 
-    if args.planner_seed_tag_limit is None:
-        planner_seed_tag_limit = _DEFAULT_PLANNER_SEED_TAG_LIMIT
+    if args.max_expressions is None:
+        max_expressions = _DEFAULT_MAX_EXPRESSIONS
     else:
-        planner_seed_tag_limit = args.planner_seed_tag_limit
+        max_expressions = args.max_expressions
+    if max_expressions <= 0:
+        raise ValueError("max-expressions must be > 0")
 
-    if args.planner_tag_count_mode is None:
-        planner_tag_count_mode = _DEFAULT_PLANNER_TAG_COUNT_MODE
+    if args.hydrate_top_k is None:
+        hydrate_top_k = _DEFAULT_HYDRATE_TOP_K
     else:
-        planner_tag_count_mode = args.planner_tag_count_mode.casefold()
-    if planner_tag_count_mode not in _ALLOWED_PLANNER_TAG_COUNT_MODES:
+        hydrate_top_k = args.hydrate_top_k
+    if hydrate_top_k <= 0:
+        raise ValueError("hydrate-top-k must be > 0")
+
+    if args.regex_engine is None:
+        regex_engine = _DEFAULT_REGEX_ENGINE
+    else:
+        regex_engine = args.regex_engine.casefold()
+    if regex_engine not in _ALLOWED_REGEX_ENGINES:
         raise ValueError(
-            "planner-tag-count-mode must be one of: "
-            + ", ".join(sorted(_ALLOWED_PLANNER_TAG_COUNT_MODES))
+            "regex-engine must be one of: "
+            + ", ".join(sorted(_ALLOWED_REGEX_ENGINES))
         )
+
+    if args.search_context_query is None:
+        search_context_query = _DEFAULT_SEARCH_CONTEXT_QUERY
+    else:
+        search_context_query = args.search_context_query
 
     _run_web(
         host=host,
@@ -3988,8 +5016,10 @@ def main() -> None:
         ollama_chat_url=ollama_chat_url,
         model=model,
         max_steps=max_steps,
-        planner_seed_tag_limit=planner_seed_tag_limit,
-        planner_tag_count_mode=planner_tag_count_mode,
+        max_expressions=max_expressions,
+        hydrate_top_k=hydrate_top_k,
+        regex_engine=regex_engine,
+        search_context_query=search_context_query,
     )
 
 

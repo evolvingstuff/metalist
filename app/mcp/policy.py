@@ -7,9 +7,13 @@ READ_ONLY_TOOL_NAMES: Tuple[str, ...] = (
     "health_check",
     "count_notes",
     "get_note",
+    "get_notes_batch",
     "list_children",
     "list_tags",
     "search_notes",
+    "search_note_ids",
+    "search_notes_regex",
+    "search_notes_regex_ids",
 )
 
 _BLOCKED_TOOL_PREFIXES: Tuple[str, ...] = (

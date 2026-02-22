@@ -5,11 +5,13 @@ import threading
 
 from mcp_client import create_web_app
 from mcp_client import DEFAULT_MAX_STEPS
+from mcp_client import DEFAULT_MAX_EXPRESSIONS
+from mcp_client import DEFAULT_HYDRATE_TOP_K
 from mcp_client import DEFAULT_MCP_URL
 from mcp_client import DEFAULT_OLLAMA_CHAT_URL
 from mcp_client import DEFAULT_OLLAMA_MODEL
-from mcp_client import DEFAULT_PLANNER_SEED_TAG_LIMIT
-from mcp_client import DEFAULT_PLANNER_TAG_COUNT_MODE
+from mcp_client import DEFAULT_REGEX_ENGINE
+from mcp_client import DEFAULT_SEARCH_CONTEXT_QUERY
 from mcp_client import DEFAULT_WEB_HOST
 from mcp_client import DEFAULT_WEB_PORT
 
@@ -85,21 +87,31 @@ def _start_agent_web_sidecar() -> None:
     else:
         ollama_chat_url = DEFAULT_OLLAMA_CHAT_URL
     max_steps = _env_int("MCP_AGENT_MAX_STEPS", DEFAULT_MAX_STEPS)
-    planner_seed_tag_limit = _env_int(
-        "MCP_AGENT_PLANNER_SEED_TAG_LIMIT",
-        DEFAULT_PLANNER_SEED_TAG_LIMIT,
+    max_expressions = _env_int(
+        "MCP_AGENT_MAX_EXPRESSIONS",
+        DEFAULT_MAX_EXPRESSIONS,
     )
-    planner_tag_count_mode = _env_choice(
-        "MCP_AGENT_PLANNER_TAG_COUNT_MODE",
-        DEFAULT_PLANNER_TAG_COUNT_MODE,
-        {"effective", "raw"},
+    hydrate_top_k = _env_int(
+        "MCP_AGENT_HYDRATE_TOP_K",
+        DEFAULT_HYDRATE_TOP_K,
     )
+    regex_engine = _env_choice(
+        "MCP_AGENT_REGEX_ENGINE",
+        DEFAULT_REGEX_ENGINE,
+        {"python-re", "re2"},
+    )
+    if "MCP_AGENT_SEARCH_CONTEXT_QUERY" in os.environ:
+        search_context_query = os.environ["MCP_AGENT_SEARCH_CONTEXT_QUERY"]
+    else:
+        search_context_query = DEFAULT_SEARCH_CONTEXT_QUERY
 
     agent_app = create_web_app(
         default_model=model,
         default_max_steps=max_steps,
-        default_planner_seed_tag_limit=planner_seed_tag_limit,
-        default_planner_tag_count_mode=planner_tag_count_mode,
+        default_max_expressions=max_expressions,
+        default_hydrate_top_k=hydrate_top_k,
+        default_regex_engine=regex_engine,
+        default_search_context_query=search_context_query,
         default_mcp_url=mcp_url,
         default_ollama_chat_url=ollama_chat_url,
     )

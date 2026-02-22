@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+import re
 from typing import Dict, FrozenSet, List, Set
 
 from app.config import VERSION
@@ -17,6 +18,16 @@ from .errors import VaultNotReadyError
 
 _LIST_CHILDREN_WINDOW = 25
 _ALLOWED_TAG_COUNT_MODES = frozenset({"effective", "raw"})
+_ALLOWED_REGEX_TARGETS = frozenset({"content_text", "context_text", "both"})
+_ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
+_ALLOWED_REGEX_FLAGS = frozenset({"i", "m", "s"})
+_REGEX_MAX_PATTERN_LENGTH = 1000
+_GET_NOTES_BATCH_MAX = 500
+
+try:
+    import re2 as _re2_module
+except ModuleNotFoundError:
+    _re2_module = None
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -314,6 +325,106 @@ class ReadService:
             normalized.append(value)
         return normalized
 
+    def _normalize_note_id_list(self, *, note_ids: object, field_name: str) -> List[str]:
+        if not isinstance(note_ids, list):
+            raise InvalidArgumentsError(f"{field_name} must be a list of note ids")
+
+        normalized: List[str] = []
+        seen: Set[str] = set()
+        for note_id in note_ids:
+            if not isinstance(note_id, str) or note_id == "":
+                raise InvalidArgumentsError(f"{field_name} entries must be non-empty strings")
+            if note_id in seen:
+                continue
+            seen.add(note_id)
+            normalized.append(note_id)
+        return normalized
+
+    def _require_bool(self, *, value: object, field_name: str) -> bool:
+        if not isinstance(value, bool):
+            raise InvalidArgumentsError(f"{field_name} must be a boolean")
+        return value
+
+    def _normalize_regex_flags(self, *, flags: object) -> tuple[str, int]:
+        if not isinstance(flags, str):
+            raise InvalidArgumentsError("flags must be a string")
+
+        normalized = ""
+        seen = set()
+        for char in flags:
+            if char in seen:
+                continue
+            if char not in _ALLOWED_REGEX_FLAGS:
+                raise InvalidArgumentsError(f"Unsupported regex flag: {char}")
+            seen.add(char)
+            normalized += char
+
+        ordered_flags = "".join(char for char in "ims" if char in normalized)
+        python_flags = 0
+        if "i" in ordered_flags:
+            python_flags |= re.IGNORECASE
+        if "m" in ordered_flags:
+            python_flags |= re.MULTILINE
+        if "s" in ordered_flags:
+            python_flags |= re.DOTALL
+        return ordered_flags, python_flags
+
+    def _compile_regex(self, *, pattern: object, flags: object, engine: object):
+        if not isinstance(pattern, str) or pattern == "":
+            raise InvalidArgumentsError("pattern must be a non-empty string")
+        if len(pattern) > _REGEX_MAX_PATTERN_LENGTH:
+            raise InvalidArgumentsError(
+                f"pattern exceeds max length {_REGEX_MAX_PATTERN_LENGTH}"
+            )
+        if not isinstance(engine, str):
+            raise InvalidArgumentsError("regex_engine must be a string")
+        normalized_engine = engine.casefold()
+        if normalized_engine not in _ALLOWED_REGEX_ENGINES:
+            raise InvalidArgumentsError("regex_engine must be one of: python-re, re2")
+
+        normalized_flags, python_flags = self._normalize_regex_flags(flags=flags)
+
+        if normalized_engine == "python-re":
+            try:
+                compiled = re.compile(pattern, python_flags)
+            except re.error as error:
+                raise InvalidArgumentsError(f"invalid regex pattern: {error}") from error
+            return compiled, normalized_flags, normalized_engine
+
+        if _re2_module is None:
+            raise InvalidArgumentsError("regex_engine re2 requested but re2 module is not installed")
+
+        re2_flags = 0
+        if "i" in normalized_flags and hasattr(_re2_module, "IGNORECASE"):
+            re2_flags |= _re2_module.IGNORECASE
+        if "m" in normalized_flags and hasattr(_re2_module, "MULTILINE"):
+            re2_flags |= _re2_module.MULTILINE
+        if "s" in normalized_flags and hasattr(_re2_module, "DOTALL"):
+            re2_flags |= _re2_module.DOTALL
+
+        try:
+            compiled = _re2_module.compile(pattern, re2_flags)
+        except Exception as error:
+            raise InvalidArgumentsError(f"invalid re2 pattern: {error}") from error
+        return compiled, normalized_flags, normalized_engine
+
+    def _match_snippet(
+        self,
+        *,
+        text: str,
+        start: int,
+        end: int,
+        window: int = 80,
+    ) -> str:
+        left = max(0, start - window)
+        right = min(len(text), end + window)
+        snippet = text[left:right]
+        if left > 0:
+            snippet = "..." + snippet
+        if right < len(text):
+            snippet = snippet + "..."
+        return snippet
+
     def _build_search_query(
         self,
         *,
@@ -423,4 +534,333 @@ class ReadService:
             "total_matches": total_matches,
             "returned_count": len(results),
             "results": results,
+        }
+
+    def search_note_ids(
+        self,
+        *,
+        query: object,
+        required_tags: object,
+        forbidden_tags: object,
+        limit: object,
+        offset: object,
+    ) -> Dict[str, object]:
+        self._require_ready()
+
+        if not isinstance(query, str):
+            raise InvalidArgumentsError("query must be a string")
+        if not isinstance(limit, int) or limit <= 0:
+            raise InvalidArgumentsError("limit must be a positive integer")
+        if not isinstance(offset, int) or offset < 0:
+            raise InvalidArgumentsError("offset must be a non-negative integer")
+
+        normalized_required = self._normalize_tag_filters(
+            values=required_tags,
+            field_name="required_tags",
+        )
+        normalized_forbidden = self._normalize_tag_filters(
+            values=forbidden_tags,
+            field_name="forbidden_tags",
+        )
+
+        combined_query = self._build_search_query(
+            query=query,
+            required_tags=normalized_required,
+            forbidden_tags=normalized_forbidden,
+        )
+
+        ordered_ids = self._depth_first_note_order()
+        if combined_query == "":
+            ordered_matches = ordered_ids
+        else:
+            matched_ids = search_index.query_note_ids(combined_query)
+            ordered_matches = [note_id for note_id in ordered_ids if note_id in matched_ids]
+
+        total_matches = len(ordered_matches)
+        sliced_note_ids = ordered_matches[offset : offset + limit]
+
+        return {
+            "query": query,
+            "required_tags": normalized_required,
+            "forbidden_tags": normalized_forbidden,
+            "resolved_query": combined_query,
+            "limit": limit,
+            "offset": offset,
+            "total_matches": total_matches,
+            "returned_count": len(sliced_note_ids),
+            "note_ids": sliced_note_ids,
+        }
+
+    def search_notes_regex(
+        self,
+        *,
+        pattern: object,
+        flags: object,
+        regex_engine: object,
+        target: object,
+        scope_note_ids: object,
+        limit: object,
+        offset: object,
+    ) -> Dict[str, object]:
+        self._require_ready()
+
+        if not isinstance(target, str):
+            raise InvalidArgumentsError("target must be a string")
+        normalized_target = target.casefold()
+        if normalized_target not in _ALLOWED_REGEX_TARGETS:
+            raise InvalidArgumentsError("target must be one of: content_text, context_text, both")
+        if not isinstance(limit, int) or limit <= 0:
+            raise InvalidArgumentsError("limit must be a positive integer")
+        if not isinstance(offset, int) or offset < 0:
+            raise InvalidArgumentsError("offset must be a non-negative integer")
+
+        ordered_scope_note_ids = self._normalize_note_id_list(
+            note_ids=scope_note_ids,
+            field_name="scope_note_ids",
+        )
+        effective_scope_note_ids = ordered_scope_note_ids
+        if len(effective_scope_note_ids) == 0:
+            effective_scope_note_ids = self._depth_first_note_order()
+        for note_id in effective_scope_note_ids:
+            if not note_store.has_note(note_id):
+                raise InvalidArgumentsError(f"scope_note_ids includes unknown note id: {note_id}")
+
+        compiled, normalized_flags, normalized_engine = self._compile_regex(
+            pattern=pattern,
+            flags=flags,
+            engine=regex_engine,
+        )
+        if not isinstance(pattern, str):
+            raise TypeError("pattern should be string after compile validation")
+
+        matched_results: List[Dict[str, object]] = []
+        for note_id in effective_scope_note_ids:
+            record = note_store.get_note(note_id)
+            content_text = strip_html(record.content).strip()
+
+            context_text = ""
+            if normalized_target in {"context_text", "both"}:
+                ancestor_texts: List[str] = []
+                for ancestor_note_id in self._ancestor_note_ids(note_id=note_id):
+                    ancestor_record = note_store.get_note(ancestor_note_id)
+                    ancestor_texts.append(strip_html(ancestor_record.content).strip())
+                context_text = self._build_context_text(segments=[*ancestor_texts, content_text])
+
+            field_matches: List[Dict[str, object]] = []
+            if normalized_target in {"content_text", "both"}:
+                match = compiled.search(content_text)
+                if match is not None:
+                    field_matches.append(
+                        {
+                            "field": "content_text",
+                            "start": int(match.start()),
+                            "end": int(match.end()),
+                            "snippet": self._match_snippet(
+                                text=content_text,
+                                start=int(match.start()),
+                                end=int(match.end()),
+                            ),
+                        }
+                    )
+
+            if normalized_target in {"context_text", "both"}:
+                match = compiled.search(context_text)
+                if match is not None:
+                    field_matches.append(
+                        {
+                            "field": "context_text",
+                            "start": int(match.start()),
+                            "end": int(match.end()),
+                            "snippet": self._match_snippet(
+                                text=context_text,
+                                start=int(match.start()),
+                                end=int(match.end()),
+                            ),
+                        }
+                    )
+
+            if len(field_matches) == 0:
+                continue
+
+            matched_results.append(
+                {
+                    "note_id": record.id,
+                    "parent_id": record.parent_id,
+                    "updated_at": _serialize_datetime(record.updated_at),
+                    "matches": field_matches,
+                }
+            )
+
+        total_matches = len(matched_results)
+        sliced_matches = matched_results[offset : offset + limit]
+        return {
+            "pattern": pattern,
+            "flags": normalized_flags,
+            "regex_engine": normalized_engine,
+            "target": normalized_target,
+            "scope_count": len(effective_scope_note_ids),
+            "limit": limit,
+            "offset": offset,
+            "total_matches": total_matches,
+            "returned_count": len(sliced_matches),
+            "results": sliced_matches,
+        }
+
+    def search_notes_regex_ids(
+        self,
+        *,
+        pattern: object,
+        flags: object,
+        regex_engine: object,
+        target: object,
+        scope_note_ids: object,
+        limit: object,
+        offset: object,
+    ) -> Dict[str, object]:
+        self._require_ready()
+
+        if not isinstance(target, str):
+            raise InvalidArgumentsError("target must be a string")
+        normalized_target = target.casefold()
+        if normalized_target not in _ALLOWED_REGEX_TARGETS:
+            raise InvalidArgumentsError("target must be one of: content_text, context_text, both")
+        if not isinstance(limit, int) or limit <= 0:
+            raise InvalidArgumentsError("limit must be a positive integer")
+        if not isinstance(offset, int) or offset < 0:
+            raise InvalidArgumentsError("offset must be a non-negative integer")
+
+        ordered_scope_note_ids = self._normalize_note_id_list(
+            note_ids=scope_note_ids,
+            field_name="scope_note_ids",
+        )
+        effective_scope_note_ids = ordered_scope_note_ids
+        if len(effective_scope_note_ids) == 0:
+            effective_scope_note_ids = self._depth_first_note_order()
+        for note_id in effective_scope_note_ids:
+            if not note_store.has_note(note_id):
+                raise InvalidArgumentsError(f"scope_note_ids includes unknown note id: {note_id}")
+
+        compiled, normalized_flags, normalized_engine = self._compile_regex(
+            pattern=pattern,
+            flags=flags,
+            engine=regex_engine,
+        )
+        if not isinstance(pattern, str):
+            raise TypeError("pattern should be string after compile validation")
+
+        matched_note_ids: List[str] = []
+        for note_id in effective_scope_note_ids:
+            record = note_store.get_note(note_id)
+            content_text = strip_html(record.content).strip()
+
+            context_text = ""
+            if normalized_target in {"context_text", "both"}:
+                ancestor_texts: List[str] = []
+                for ancestor_note_id in self._ancestor_note_ids(note_id=note_id):
+                    ancestor_record = note_store.get_note(ancestor_note_id)
+                    ancestor_texts.append(strip_html(ancestor_record.content).strip())
+                context_text = self._build_context_text(segments=[*ancestor_texts, content_text])
+
+            matched = False
+            if normalized_target in {"content_text", "both"}:
+                if compiled.search(content_text) is not None:
+                    matched = True
+            if not matched and normalized_target in {"context_text", "both"}:
+                if compiled.search(context_text) is not None:
+                    matched = True
+            if not matched:
+                continue
+
+            matched_note_ids.append(record.id)
+
+        total_matches = len(matched_note_ids)
+        sliced_note_ids = matched_note_ids[offset : offset + limit]
+        return {
+            "pattern": pattern,
+            "flags": normalized_flags,
+            "regex_engine": normalized_engine,
+            "target": normalized_target,
+            "scope_count": len(effective_scope_note_ids),
+            "limit": limit,
+            "offset": offset,
+            "total_matches": total_matches,
+            "returned_count": len(sliced_note_ids),
+            "note_ids": sliced_note_ids,
+        }
+
+    def get_notes_batch(
+        self,
+        *,
+        note_ids: object,
+        include_content_text: object,
+        include_context_text: object,
+        include_tags: object,
+        include_ancestors: object,
+    ) -> Dict[str, object]:
+        self._require_ready()
+
+        normalized_note_ids = self._normalize_note_id_list(
+            note_ids=note_ids,
+            field_name="note_ids",
+        )
+        if len(normalized_note_ids) > _GET_NOTES_BATCH_MAX:
+            raise InvalidArgumentsError(f"note_ids exceeds max batch size {_GET_NOTES_BATCH_MAX}")
+
+        should_include_content_text = self._require_bool(
+            value=include_content_text,
+            field_name="include_content_text",
+        )
+        should_include_context_text = self._require_bool(
+            value=include_context_text,
+            field_name="include_context_text",
+        )
+        should_include_tags = self._require_bool(
+            value=include_tags,
+            field_name="include_tags",
+        )
+        should_include_ancestors = self._require_bool(
+            value=include_ancestors,
+            field_name="include_ancestors",
+        )
+
+        notes_payload: List[Dict[str, object]] = []
+        not_found_ids: List[str] = []
+        for note_id in normalized_note_ids:
+            if not note_store.has_note(note_id):
+                not_found_ids.append(note_id)
+                continue
+
+            record = note_store.get_note(note_id)
+            content_text = strip_html(record.content).strip()
+            ancestor_note_ids = self._ancestor_note_ids(note_id=note_id)
+
+            ancestor_texts: List[str] = []
+            if should_include_context_text or should_include_ancestors:
+                for ancestor_note_id in ancestor_note_ids:
+                    ancestor_record = note_store.get_note(ancestor_note_id)
+                    ancestor_texts.append(strip_html(ancestor_record.content).strip())
+
+            entry: Dict[str, object] = {
+                "note_id": record.id,
+                "parent_id": record.parent_id,
+                "updated_at": _serialize_datetime(record.updated_at),
+            }
+            if should_include_content_text:
+                entry["content_text"] = content_text
+            if should_include_context_text:
+                entry["context_text"] = self._build_context_text(
+                    segments=[*ancestor_texts, content_text]
+                )
+            if should_include_tags:
+                entry["tags"] = self._build_tags_payload(note_id=note_id, record=record)
+            if should_include_ancestors:
+                entry["ancestor_note_ids"] = ancestor_note_ids
+                entry["ancestor_texts"] = ancestor_texts
+            notes_payload.append(entry)
+
+        return {
+            "total_requested": len(normalized_note_ids),
+            "returned_count": len(notes_payload),
+            "not_found_ids": not_found_ids,
+            "notes": notes_payload,
         }
