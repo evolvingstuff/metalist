@@ -31,6 +31,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const resetViewFilters = requireAction(actions, 'resetViewFilters');
     const resetAllPreferences = requireAction(actions, 'resetAllPreferences');
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
+    const runMcpClient = requireAction(actions, 'runMcpClient');
 
     const defaults = {
         showBacklinks: false,
@@ -174,6 +175,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Edit tag relationships…',
             execute: async () => openOntologyEditor(),
+        },
+        {
+            id: 'action.run_mcp_client',
+            kind: 'action',
+            label: 'Run MCP Client v2 (new tab)',
+            execute: async () => runMcpClient(),
         },
     ];
 }

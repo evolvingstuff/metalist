@@ -146,9 +146,11 @@ class SearchIndex:
 
         self._note_text_casefold: List[str] = []
         self._note_tag_terms: List[FrozenSet[str]] = []
+        self._note_tag_terms_casefold: List[FrozenSet[str]] = []
         self._note_trigrams: List[Set[int]] = []
 
         self._tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
+        self._tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tri_notes: DefaultDict[int, Set[int]] = defaultdict(set)
 
         self._result_cache: Dict[str, tuple[int, FrozenSet[str]]] = {}
@@ -170,8 +172,10 @@ class SearchIndex:
             self._alive.clear()
             self._note_text_casefold.clear()
             self._note_tag_terms.clear()
+            self._note_tag_terms_casefold.clear()
             self._note_trigrams.clear()
             self._tag_notes.clear()
+            self._tag_notes_casefold.clear()
             self._tri_notes.clear()
             self._result_cache.clear()
 
@@ -252,10 +256,17 @@ class SearchIndex:
                     if bucket is None:
                         continue
                     bucket.discard(note_int_id)
+                    folded_bucket = self._tag_notes_casefold.get(term.casefold())
+                    if folded_bucket is not None:
+                        folded_bucket.discard(note_int_id)
                 for term in new_tag_terms:
                     self._tag_notes[term].add(note_int_id)
+                    self._tag_notes_casefold[term.casefold()].add(note_int_id)
 
                 self._note_tag_terms[note_int_id] = new_tag_terms
+                self._note_tag_terms_casefold[note_int_id] = frozenset(
+                    term.casefold() for term in new_tag_terms
+                )
                 touched += 1
 
             if touched:
@@ -529,10 +540,12 @@ class SearchIndex:
         text_casefold, trigrams = self._build_note_text_state(content_text, tags)
         self._note_text_casefold.append(text_casefold)
         self._note_tag_terms.append(tag_terms)
+        self._note_tag_terms_casefold.append(frozenset(term.casefold() for term in tag_terms))
         self._note_trigrams.append(trigrams)
 
         for term in tag_terms:
             self._tag_notes[term].add(note_int_id)
+            self._tag_notes_casefold[term.casefold()].add(note_int_id)
         for trigram in trigrams:
             self._tri_notes[trigram].add(note_int_id)
 
@@ -556,9 +569,16 @@ class SearchIndex:
                 if bucket is None:
                     continue
                 bucket.discard(note_int_id)
+                folded_bucket = self._tag_notes_casefold.get(term.casefold())
+                if folded_bucket is not None:
+                    folded_bucket.discard(note_int_id)
             for term in new_tag_terms:
                 self._tag_notes[term].add(note_int_id)
+                self._tag_notes_casefold[term.casefold()].add(note_int_id)
             self._note_tag_terms[note_int_id] = new_tag_terms
+            self._note_tag_terms_casefold[note_int_id] = frozenset(
+                term.casefold() for term in new_tag_terms
+            )
 
         if old_trigrams != new_trigrams:
             for trigram in old_trigrams:
@@ -582,6 +602,9 @@ class SearchIndex:
             if bucket is None:
                 continue
             bucket.discard(note_int_id)
+            folded_bucket = self._tag_notes_casefold.get(term.casefold())
+            if folded_bucket is not None:
+                folded_bucket.discard(note_int_id)
         for trigram in self._note_trigrams[note_int_id]:
             bucket = self._tri_notes.get(trigram)
             if bucket is None:
@@ -590,6 +613,7 @@ class SearchIndex:
 
         self._note_text_casefold[note_int_id] = ""
         self._note_tag_terms[note_int_id] = frozenset()
+        self._note_tag_terms_casefold[note_int_id] = frozenset()
         self._note_trigrams[note_int_id] = set()
 
     def _build_note_text_state(self, content_text: str, tags: str) -> Tuple[str, Set[int]]:
@@ -606,7 +630,7 @@ class SearchIndex:
         constraints: List[Set[int]] = []
 
         for tag in parsed.required_tags:
-            posting = self._tag_notes.get(tag)
+            posting = self._tag_notes_casefold.get(tag.casefold())
             if posting is None:
                 return set()
             constraints.append(posting)
@@ -640,7 +664,7 @@ class SearchIndex:
 
         if parsed.forbidden_tags:
             for tag in parsed.forbidden_tags:
-                posting = self._tag_notes.get(tag)
+                posting = self._tag_notes_casefold.get(tag.casefold())
                 if posting is None:
                     continue
                 candidate_ids.difference_update(posting)
@@ -671,8 +695,9 @@ class SearchIndex:
         for term in parsed.forbidden_text:
             if term.casefold() in text_casefold:
                 return False
+        note_tag_terms_casefold = self._note_tag_terms_casefold[note_int_id]
         for tag in parsed.forbidden_tags:
-            if tag in self._note_tag_terms[note_int_id]:
+            if tag.casefold() in note_tag_terms_casefold:
                 return False
         return True
 

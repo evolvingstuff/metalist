@@ -254,6 +254,7 @@ class CommandPaletteController {
                 expandAll: this.expandAll.bind(this),
                 resetViewFilters: this.resetViewFilters.bind(this),
                 resetAllPreferences: this.resetAllPreferences.bind(this),
+                runMcpClient: this.runMcpClient.bind(this),
             },
         });
 
@@ -904,6 +905,16 @@ class CommandPaletteController {
     async resetAllPreferences() {
         this._preferences.clearAll();
         this._applyPreferenceEffectsFromStorage();
+    }
+
+    async runMcpClient() {
+        const mcpClientUrl = `${window.location.origin}/mcp-client-v2`;
+
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        window.open(mcpClientUrl, '_blank', 'noopener,noreferrer');
     }
 
     async resetViewFilters() {

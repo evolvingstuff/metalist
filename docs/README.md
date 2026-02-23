@@ -9,6 +9,7 @@
 - In-memory store + read guard: `docs/design/in_memory_store.md`
 - Ontology (long-term reference): `docs/design/ontology.md`
 - Ontology rules (implemented v1 DSL): `docs/design/ontology-rules-v1.md`
+- MCP tool catalog (Phase 1 read-only): `docs/mcp_tools.md`
 
 ## UI
 - Keyboard + mouse controls: `docs/ui/controls.md`

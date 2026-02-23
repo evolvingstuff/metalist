@@ -22,6 +22,7 @@ test('buildCommandPaletteEndpoints includes backup/logout/password generator end
             expandAll: noop,
             resetViewFilters: noop,
             resetAllPreferences: noop,
+            runMcpClient: noop,
         },
     });
 
@@ -30,4 +31,5 @@ test('buildCommandPaletteEndpoints includes backup/logout/password generator end
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);
+    assert.equal(endpointIds.has('action.run_mcp_client'), true);
 });

@@ -18,6 +18,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         f"{API_PREFIX}/auth/login",
         f"{API_PREFIX}/auth/status",
         f"{API_PREFIX}/auth/session",
+        f"{API_PREFIX}/mcp",
+        "/mcp-client-v2",
+        "/mcp-client",
         "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
         "/locked",
