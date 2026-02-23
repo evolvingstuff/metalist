@@ -179,7 +179,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'action.run_mcp_client',
             kind: 'action',
-            label: 'Run MCP Client (new tab)',
+            label: 'Run MCP Client v2 (new tab)',
             execute: async () => runMcpClient(),
         },
     ];

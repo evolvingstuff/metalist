@@ -21,6 +21,19 @@ _TOOLS: List[Dict[str, object]] = [
         },
     },
     {
+        "name": "get_active_search_context",
+        "description": (
+            "Return the active tab id and active search query from MetaList tab state. "
+            "Use this to resolve the strict retrieval universe before reading notes."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "count_notes",
         "description": "Return a total count of all notes in the current hydrated vault.",
         "inputSchema": {
@@ -244,6 +257,11 @@ def call_tool(
         if len(args) != 0:
             return _tool_error("health_check takes no arguments")
         return _tool_ok(read_service.health_check())
+
+    if tool_name == "get_active_search_context":
+        if len(args) != 0:
+            return _tool_error("get_active_search_context takes no arguments")
+        return _tool_ok(read_service.get_active_search_context())
 
     if tool_name == "count_notes":
         if len(args) != 0:

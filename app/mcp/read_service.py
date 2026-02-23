@@ -11,6 +11,7 @@ from app.services.note_store import NoteRecord
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
+from app.services.tab_state import tab_state_store
 from app.utils.text_utils import strip_html
 
 from .errors import InvalidArgumentsError
@@ -90,6 +91,28 @@ class ReadService:
                 visit(child_id)
 
         visit(note_id)
+        return ordered
+
+    def _descendant_entries_depth_first(self, *, note_id: str) -> List[Dict[str, object]]:
+        if not isinstance(note_id, str) or note_id == "":
+            raise TypeError("note_id must be a non-empty string")
+        ordered: List[Dict[str, object]] = []
+
+        def visit(parent_id: str, relative_depth: int) -> None:
+            child_ids = note_store.get_children(parent_id)
+            for child_id in child_ids:
+                child_record = note_store.get_note(child_id)
+                ordered.append(
+                    {
+                        "note_id": child_id,
+                        "relative_depth": relative_depth,
+                        "content_text": strip_html(child_record.content).strip(),
+                        "raw_tag_string": child_record.tags,
+                    }
+                )
+                visit(child_id, relative_depth + 1)
+
+        visit(note_id, 1)
         return ordered
 
     def _build_context_text(self, *, segments: List[str]) -> str:
@@ -212,6 +235,44 @@ class ReadService:
             "server": "metalist-mcp-readonly",
             "version": VERSION,
             "ready": bool(note_store.loaded),
+        }
+
+    def get_active_search_context(self) -> Dict[str, object]:
+        state = tab_state_store.snapshot()
+        if "activeTabId" not in state:
+            raise RuntimeError("tab state missing activeTabId")
+        if "tabs" not in state:
+            raise RuntimeError("tab state missing tabs")
+        if "version" not in state:
+            raise RuntimeError("tab state missing version")
+
+        active_tab_id = state["activeTabId"]
+        if not isinstance(active_tab_id, str) or active_tab_id == "":
+            raise RuntimeError("tab state activeTabId must be a non-empty string")
+
+        tabs = state["tabs"]
+        if not isinstance(tabs, dict):
+            raise RuntimeError("tab state tabs must be an object")
+        if active_tab_id not in tabs:
+            raise RuntimeError("activeTabId not present in tab state tabs")
+
+        active_tab_state = tabs[active_tab_id]
+        if not isinstance(active_tab_state, dict):
+            raise RuntimeError("active tab payload must be an object")
+
+        search_query = active_tab_state.get("searchQuery")
+        if not isinstance(search_query, str):
+            raise RuntimeError("active tab searchQuery must be a string")
+
+        version = state["version"]
+        if not isinstance(version, int) or version < 0:
+            raise RuntimeError("tab state version must be a non-negative integer")
+
+        return {
+            "active_tab_id": active_tab_id,
+            "search_query": search_query,
+            "tab_state_version": version,
+            "tab_count": len(tabs),
         }
 
     def count_notes(self) -> Dict[str, object]:
@@ -496,15 +557,37 @@ class ReadService:
     ) -> Dict[str, object]:
         ancestor_note_ids = self._ancestor_note_ids(note_id=note_id)
         ancestor_texts: List[str] = []
+        ancestor_raw_tag_strings: List[str] = []
         for ancestor_note_id in ancestor_note_ids:
             ancestor_record = note_store.get_note(ancestor_note_id)
             ancestor_texts.append(strip_html(ancestor_record.content).strip())
+            ancestor_raw_tag_strings.append(ancestor_record.tags)
 
-        descendant_note_ids = self._descendant_note_ids_depth_first(note_id=note_id)
+        descendant_entries = self._descendant_entries_depth_first(note_id=note_id)
+        descendant_note_ids: List[str] = []
         descendant_texts: List[str] = []
-        for descendant_note_id in descendant_note_ids:
-            descendant_record = note_store.get_note(descendant_note_id)
-            descendant_texts.append(strip_html(descendant_record.content).strip())
+        descendant_raw_tag_strings: List[str] = []
+        descendant_relative_depths: List[int] = []
+        for descendant_entry in descendant_entries:
+            descendant_note_id = descendant_entry["note_id"]
+            if not isinstance(descendant_note_id, str) or descendant_note_id == "":
+                raise RuntimeError("descendant entry missing note_id")
+            descendant_note_ids.append(descendant_note_id)
+            descendant_text_value = descendant_entry["content_text"]
+            if not isinstance(descendant_text_value, str):
+                raise RuntimeError("descendant entry content_text must be a string")
+            descendant_texts.append(descendant_text_value)
+            descendant_tag_value = descendant_entry["raw_tag_string"]
+            if not isinstance(descendant_tag_value, str):
+                raise RuntimeError("descendant entry raw_tag_string must be a string")
+            descendant_raw_tag_strings.append(descendant_tag_value)
+            descendant_depth_value = descendant_entry["relative_depth"]
+            if (
+                not isinstance(descendant_depth_value, int)
+                or descendant_depth_value < 1
+            ):
+                raise RuntimeError("descendant entry relative_depth must be >= 1")
+            descendant_relative_depths.append(descendant_depth_value)
 
         context_text = self._build_context_text(
             segments=[*ancestor_texts, content_text, *descendant_texts]
@@ -512,8 +595,11 @@ class ReadService:
         return {
             "ancestor_note_ids": ancestor_note_ids,
             "ancestor_texts": ancestor_texts,
+            "ancestor_raw_tag_strings": ancestor_raw_tag_strings,
             "descendant_note_ids": descendant_note_ids,
             "descendant_texts": descendant_texts,
+            "descendant_raw_tag_strings": descendant_raw_tag_strings,
+            "descendant_relative_depths": descendant_relative_depths,
             "context_text": context_text,
         }
 
@@ -536,12 +622,21 @@ class ReadService:
         ancestor_texts = context_bundle["ancestor_texts"]
         if not isinstance(ancestor_texts, list):
             raise RuntimeError("ancestor_texts must be a list")
+        ancestor_raw_tag_strings = context_bundle["ancestor_raw_tag_strings"]
+        if not isinstance(ancestor_raw_tag_strings, list):
+            raise RuntimeError("ancestor_raw_tag_strings must be a list")
         descendant_note_ids = context_bundle["descendant_note_ids"]
         if not isinstance(descendant_note_ids, list):
             raise RuntimeError("descendant_note_ids must be a list")
         descendant_texts = context_bundle["descendant_texts"]
         if not isinstance(descendant_texts, list):
             raise RuntimeError("descendant_texts must be a list")
+        descendant_raw_tag_strings = context_bundle["descendant_raw_tag_strings"]
+        if not isinstance(descendant_raw_tag_strings, list):
+            raise RuntimeError("descendant_raw_tag_strings must be a list")
+        descendant_relative_depths = context_bundle["descendant_relative_depths"]
+        if not isinstance(descendant_relative_depths, list):
+            raise RuntimeError("descendant_relative_depths must be a list")
         context_text = context_bundle["context_text"]
         if not isinstance(context_text, str):
             raise RuntimeError("context_text must be a string")
@@ -569,8 +664,11 @@ class ReadService:
             "content_text": content_text,
             "ancestor_note_ids": ancestor_note_ids,
             "ancestor_texts": ancestor_texts,
+            "ancestor_raw_tag_strings": ancestor_raw_tag_strings,
             "descendant_note_ids": descendant_note_ids,
             "descendant_texts": descendant_texts,
+            "descendant_raw_tag_strings": descendant_raw_tag_strings,
+            "descendant_relative_depths": descendant_relative_depths,
             "context_text": context_text,
         }
 

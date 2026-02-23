@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from typing import Annotated
@@ -278,6 +278,39 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         asset_version=ASSET_VERSION,
         needs_auth=False,
     )
+
+
+def _resolve_agent_web_origin(*, request: Request) -> str:
+    configured_host_raw = os.environ.get("MCP_AGENT_WEB_HOST", "127.0.0.1")
+    configured_host = configured_host_raw.strip()
+    if configured_host == "":
+        raise RuntimeError("MCP_AGENT_WEB_HOST must not be empty")
+
+    configured_port_raw = os.environ.get("MCP_AGENT_WEB_PORT", "8765")
+    configured_port = configured_port_raw.strip()
+    if configured_port == "":
+        raise RuntimeError("MCP_AGENT_WEB_PORT must not be empty")
+    if not configured_port.isdigit():
+        raise RuntimeError(f"MCP_AGENT_WEB_PORT must be numeric, got: {configured_port!r}")
+
+    resolved_host = configured_host
+    if configured_host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
+        request_host = request.url.hostname
+        if request_host is not None and request_host.strip() != "":
+            resolved_host = request_host.strip()
+
+    return f"http://{resolved_host}:{configured_port}"
+
+
+@app.get("/mcp-client-v2", include_in_schema=False)
+async def open_mcp_client_v2(request: Request):
+    sidecar_origin = _resolve_agent_web_origin(request=request)
+    return RedirectResponse(url=f"{sidecar_origin}/v2", status_code=307)
+
+
+@app.get("/mcp-client", include_in_schema=False)
+async def open_mcp_client_legacy_redirect():
+    return RedirectResponse(url="/mcp-client-v2", status_code=307)
 
 
 @app.get("/maintenance", response_class=HTMLResponse)

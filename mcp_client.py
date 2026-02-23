@@ -52,6 +52,8 @@ _DEFAULT_SEARCH_CONTEXT_QUERY = ""
 _DEFAULT_MAX_EXPRESSIONS = 20
 _DEFAULT_HYDRATE_TOP_K = 80
 _DEFAULT_REGEX_ENGINE = "python-re"
+_DEFAULT_CONTEXT_WINDOW_MAX_CHARS = 120000
+_DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW = False
 _ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
 _PLANNER_STOPWORDS = frozenset(
     {
@@ -124,6 +126,8 @@ DEFAULT_SEARCH_CONTEXT_QUERY = _DEFAULT_SEARCH_CONTEXT_QUERY
 DEFAULT_MAX_EXPRESSIONS = _DEFAULT_MAX_EXPRESSIONS
 DEFAULT_HYDRATE_TOP_K = _DEFAULT_HYDRATE_TOP_K
 DEFAULT_REGEX_ENGINE = _DEFAULT_REGEX_ENGINE
+DEFAULT_CONTEXT_WINDOW_MAX_CHARS = _DEFAULT_CONTEXT_WINDOW_MAX_CHARS
+DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW = _DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW
 
 _OLLAMA_SIDECAR_PROCESS: subprocess.Popen | None = None
 
@@ -5801,6 +5805,634 @@ class AgentChatRequest(BaseModel):
     ollama_chat_url: str
 
 
+class AgentChatV2HistoryMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AgentChatV2Request(BaseModel):
+    message: str
+    conversation_history: List[AgentChatV2HistoryMessage]
+    model: str
+    context_window_max_chars: int
+    include_tags_in_context_window: bool
+    mcp_url: str
+    ollama_chat_url: str
+
+
+def _validate_v2_conversation_history(
+    *,
+    entries: List[AgentChatV2HistoryMessage],
+) -> List[dict]:
+    normalized: List[dict] = []
+    for index, entry in enumerate(entries, start=1):
+        role_value = entry.role.strip().casefold()
+        if role_value not in {"user", "assistant"}:
+            raise ValueError(
+                f"conversation_history[{index}] role must be user or assistant"
+            )
+        content_value = entry.content.strip()
+        if content_value == "":
+            raise ValueError(f"conversation_history[{index}] content must not be empty")
+        normalized.append(
+            {
+                "role": role_value,
+                "content": content_value,
+            }
+        )
+    return normalized
+
+
+def _build_v2_system_prompt(*, include_tags_in_context_window: bool) -> str:
+    tags_line = (
+        "Tag lines start with '# ' and represent direct raw tags only. "
+        if include_tags_in_context_window
+        else "Tag lines are omitted in this run to save context space. "
+    )
+    return (
+        "You are the MetaList assistant. "
+        "You must answer using only the provided context window and conversation history. "
+        "The context window is plain text from notes with hierarchy shown by indentation. "
+        + tags_line
+        + "For this prompt, items lower in the context window should be treated as more important than items above them. "
+        "Do not claim you lack access to notes when relevant evidence is present in context. "
+        "If evidence is ambiguous or insufficient, say what is missing and ask one clarifying question or suggest narrowing search scope. "
+        "Keep answers concise and practical."
+    )
+
+
+def _build_v2_note_block(
+    *,
+    note: dict,
+    order_index: int,
+    include_tags_in_context_window: bool,
+) -> dict | None:
+    if not isinstance(note, dict):
+        return None
+
+    note_id_value = note.get("note_id")
+    note_id = note_id_value if isinstance(note_id_value, str) and note_id_value != "" else None
+
+    ancestor_texts: List[str] = []
+    ancestor_texts_raw = note.get("ancestor_texts")
+    if isinstance(ancestor_texts_raw, list):
+        for ancestor_text in ancestor_texts_raw:
+            if not isinstance(ancestor_text, str):
+                ancestor_texts.append("")
+                continue
+            normalized_ancestor = re.sub(r"\s+", " ", ancestor_text).strip()
+            ancestor_texts.append(normalized_ancestor)
+
+    ancestor_raw_tags: List[str] = []
+    if include_tags_in_context_window:
+        ancestor_raw_tags_raw = note.get("ancestor_raw_tag_strings")
+        if isinstance(ancestor_raw_tags_raw, list):
+            for ancestor_tag in ancestor_raw_tags_raw:
+                if not isinstance(ancestor_tag, str):
+                    ancestor_raw_tags.append("")
+                    continue
+                normalized_tag = re.sub(r"\s+", " ", ancestor_tag).strip()
+                ancestor_raw_tags.append(normalized_tag)
+
+    content_raw = note.get("content_text")
+    if not isinstance(content_raw, str):
+        content_raw = ""
+    content_text = _strip_html_to_text(text=content_raw)
+    content_text = re.sub(r"\s+", " ", content_text).strip()
+
+    descendant_texts: List[str] = []
+    descendant_texts_raw = note.get("descendant_texts")
+    if isinstance(descendant_texts_raw, list):
+        for descendant_text in descendant_texts_raw:
+            if not isinstance(descendant_text, str):
+                descendant_texts.append("")
+                continue
+            normalized_descendant = re.sub(r"\s+", " ", descendant_text).strip()
+            descendant_texts.append(normalized_descendant)
+
+    descendant_raw_tags: List[str] = []
+    if include_tags_in_context_window:
+        descendant_raw_tags_raw = note.get("descendant_raw_tag_strings")
+        if isinstance(descendant_raw_tags_raw, list):
+            for descendant_tag in descendant_raw_tags_raw:
+                if not isinstance(descendant_tag, str):
+                    descendant_raw_tags.append("")
+                    continue
+                normalized_tag = re.sub(r"\s+", " ", descendant_tag).strip()
+                descendant_raw_tags.append(normalized_tag)
+
+    descendant_relative_depths: List[int] = []
+    descendant_relative_depths_raw = note.get("descendant_relative_depths")
+    if isinstance(descendant_relative_depths_raw, list):
+        for relative_depth in descendant_relative_depths_raw:
+            if not isinstance(relative_depth, int) or relative_depth < 1:
+                descendant_relative_depths.append(1)
+                continue
+            descendant_relative_depths.append(relative_depth)
+
+    raw_tag_string = ""
+    if include_tags_in_context_window:
+        raw_tag_value = note.get("raw_tag_string")
+        if isinstance(raw_tag_value, str):
+            raw_tag_string = re.sub(r"\s+", " ", raw_tag_value).strip()
+
+    covered_note_ids: List[str] = []
+    if note_id is not None:
+        covered_note_ids.append(note_id)
+    descendant_note_ids_raw = note.get("descendant_note_ids")
+    if isinstance(descendant_note_ids_raw, list):
+        seen_covered = set(covered_note_ids)
+        for descendant_note_id in descendant_note_ids_raw:
+            if not isinstance(descendant_note_id, str) or descendant_note_id == "":
+                continue
+            if descendant_note_id in seen_covered:
+                continue
+            seen_covered.add(descendant_note_id)
+            covered_note_ids.append(descendant_note_id)
+
+    ancestor_note_ids = note.get("ancestor_note_ids")
+    depth = 0
+    if isinstance(ancestor_note_ids, list):
+        for ancestor_note_id in ancestor_note_ids:
+            if isinstance(ancestor_note_id, str) and ancestor_note_id != "":
+                depth += 1
+
+    lines: List[str] = []
+    ancestor_item_count = max(len(ancestor_texts), len(ancestor_raw_tags))
+    for ancestor_index in range(ancestor_item_count):
+        ancestor_text = ancestor_texts[ancestor_index] if ancestor_index < len(ancestor_texts) else ""
+        ancestor_tag = ancestor_raw_tags[ancestor_index] if ancestor_index < len(ancestor_raw_tags) else ""
+        ancestor_indent = "    " * ancestor_index
+        if ancestor_text != "":
+            lines.append(ancestor_indent + ancestor_text)
+        if ancestor_tag != "":
+            lines.append(ancestor_indent + "# " + ancestor_tag)
+
+    indent = "    " * depth
+    if content_text != "":
+        lines.append(indent + content_text)
+    if raw_tag_string != "":
+        lines.append(indent + "# " + raw_tag_string)
+
+    descendant_item_count = max(
+        len(descendant_texts),
+        len(descendant_raw_tags),
+        len(descendant_relative_depths),
+    )
+    for descendant_index in range(descendant_item_count):
+        descendant_text = (
+            descendant_texts[descendant_index]
+            if descendant_index < len(descendant_texts)
+            else ""
+        )
+        descendant_tag = (
+            descendant_raw_tags[descendant_index]
+            if descendant_index < len(descendant_raw_tags)
+            else ""
+        )
+        relative_depth = (
+            descendant_relative_depths[descendant_index]
+            if descendant_index < len(descendant_relative_depths)
+            else 1
+        )
+        descendant_indent = "    " * (depth + relative_depth)
+        if descendant_text != "":
+            lines.append(descendant_indent + descendant_text)
+        if descendant_tag != "":
+            lines.append(descendant_indent + "# " + descendant_tag)
+
+    if len(lines) == 0:
+        return None
+
+    block_text = "\n".join(lines) + "\n\n"
+    return {
+        "block_text": block_text,
+        "note": {
+            "note_id": note_id,
+            "order_index": order_index,
+            "depth": depth,
+            "ancestor_count": len(ancestor_texts),
+            "descendant_count": len(descendant_texts),
+            "content_text": content_text,
+            "raw_tags": raw_tag_string,
+            "covered_note_ids": covered_note_ids,
+        },
+    }
+
+
+def _build_v2_context_window(
+    *,
+    mcp_url: str,
+    context_window_max_chars: int,
+    include_tags_in_context_window: bool,
+    request_id: int,
+) -> dict:
+    if context_window_max_chars <= 0:
+        raise ValueError("context_window_max_chars must be > 0")
+
+    context_resolution_started_at = time.perf_counter()
+    context_call = _tools_call(
+        url=mcp_url,
+        request_id=request_id,
+        tool_name="get_active_search_context",
+        arguments={},
+    )
+    context_resolution_ms = round(
+        (time.perf_counter() - context_resolution_started_at) * 1000,
+        3,
+    )
+    context_tool_response = _extract_tool_response(call_response=context_call)
+    if context_tool_response.get("ok") is not True:
+        error = context_tool_response.get("error", "get_active_search_context failed")
+        raise RuntimeError(str(error))
+
+    context_data = context_tool_response.get("data")
+    if not isinstance(context_data, dict):
+        raise TypeError("get_active_search_context data must be an object")
+
+    active_search_context_query = context_data.get("search_query")
+    if not isinstance(active_search_context_query, str):
+        raise TypeError("get_active_search_context search_query must be a string")
+    active_tab_id = context_data.get("active_tab_id")
+    if not isinstance(active_tab_id, str) or active_tab_id == "":
+        raise TypeError("get_active_search_context active_tab_id must be a non-empty string")
+    tab_state_version = context_data.get("tab_state_version")
+    if not isinstance(tab_state_version, int) or tab_state_version < 0:
+        raise TypeError("get_active_search_context tab_state_version must be a non-negative integer")
+    tab_count = context_data.get("tab_count")
+    if not isinstance(tab_count, int) or tab_count <= 0:
+        raise TypeError("get_active_search_context tab_count must be a positive integer")
+
+    search_arguments = {
+        "query": active_search_context_query,
+        "required_tags": [],
+        "forbidden_tags": [],
+        "limit": _MAX_EXPRESSION_SEARCH_RESULTS,
+        "offset": 0,
+    }
+
+    search_started_at = time.perf_counter()
+    search_call = _tools_call(
+        url=mcp_url,
+        request_id=request_id + 1,
+        tool_name="search_notes",
+        arguments=search_arguments,
+    )
+    search_execution_ms = round((time.perf_counter() - search_started_at) * 1000, 3)
+    search_tool_response = _extract_tool_response(call_response=search_call)
+    if search_tool_response.get("ok") is not True:
+        error = search_tool_response.get("error", "search_notes failed")
+        raise RuntimeError(str(error))
+
+    search_data = search_tool_response.get("data")
+    if not isinstance(search_data, dict):
+        raise TypeError("search_notes data must be an object")
+
+    results = search_data.get("results")
+    if not isinstance(results, list):
+        raise TypeError("search_notes results must be an array")
+    total_matches = search_data.get("total_matches")
+    if not isinstance(total_matches, int) or total_matches < 0:
+        raise TypeError("search_notes total_matches must be a non-negative integer")
+    returned_count = search_data.get("returned_count")
+    if not isinstance(returned_count, int) or returned_count < 0:
+        raise TypeError("search_notes returned_count must be a non-negative integer")
+
+    context_parts: List[str] = []
+    included_notes: List[dict] = []
+    used_chars = 0
+    included_note_count = 0
+    covered_note_ids: set[str] = set()
+    skipped_duplicate_note_count = 0
+
+    for order_index, entry in enumerate(results, start=1):
+        entry_note_id = entry.get("note_id")
+        if not isinstance(entry_note_id, str) or entry_note_id == "":
+            raise TypeError("search_notes result entry missing note_id")
+        if entry_note_id in covered_note_ids:
+            skipped_duplicate_note_count += 1
+            continue
+
+        rendered = _build_v2_note_block(
+            note=entry,
+            order_index=order_index,
+            include_tags_in_context_window=include_tags_in_context_window,
+        )
+        if rendered is None:
+            continue
+        block_text = rendered["block_text"]
+        if not isinstance(block_text, str):
+            raise TypeError("block_text must be a string")
+        rendered_note = rendered.get("note")
+        if not isinstance(rendered_note, dict):
+            raise TypeError("rendered note metadata must be an object")
+        block_covered_note_ids_raw = rendered_note.get("covered_note_ids")
+        if not isinstance(block_covered_note_ids_raw, list):
+            raise TypeError("covered_note_ids must be a list")
+        block_covered_note_ids: List[str] = []
+        for covered_note_id in block_covered_note_ids_raw:
+            if not isinstance(covered_note_id, str) or covered_note_id == "":
+                continue
+            block_covered_note_ids.append(covered_note_id)
+        if len(block_covered_note_ids) == 0:
+            block_covered_note_ids.append(entry_note_id)
+
+        remaining_chars = context_window_max_chars - used_chars
+        if remaining_chars <= 0:
+            break
+
+        if len(block_text) <= remaining_chars:
+            context_parts.append(block_text)
+            used_chars += len(block_text)
+            included_notes.append(rendered_note)
+            for covered_note_id in block_covered_note_ids:
+                covered_note_ids.add(covered_note_id)
+            included_note_count += 1
+            continue
+
+        if included_note_count == 0:
+            partial_block = block_text[:remaining_chars]
+            if partial_block.strip() != "":
+                context_parts.append(partial_block)
+                used_chars += len(partial_block)
+                partial_note = dict(rendered_note)
+                partial_note["truncated"] = True
+                included_notes.append(partial_note)
+                for covered_note_id in block_covered_note_ids:
+                    covered_note_ids.add(covered_note_id)
+                included_note_count += 1
+        break
+
+    context_window_text = "".join(context_parts).rstrip()
+    context_window_text_for_prompt = "".join(reversed(context_parts)).rstrip()
+    omitted_note_count = max(total_matches - included_note_count, 0)
+
+    return {
+        "search_arguments": search_arguments,
+        "search_execution_ms": search_execution_ms,
+        "search_context_resolution_ms": context_resolution_ms,
+        "active_tab_id": active_tab_id,
+        "tab_state_version": tab_state_version,
+        "tab_count": tab_count,
+        "search_data": {
+            "query": search_data.get("query"),
+            "resolved_query": search_data.get("resolved_query"),
+            "limit": search_data.get("limit"),
+            "offset": search_data.get("offset"),
+            "total_matches": total_matches,
+            "returned_count": returned_count,
+        },
+        "active_search_context_query": active_search_context_query,
+        "universe_note_count": total_matches,
+        "included_note_count": included_note_count,
+        "omitted_note_count": omitted_note_count,
+        "skipped_duplicate_note_count": skipped_duplicate_note_count,
+        "include_tags_in_context_window": include_tags_in_context_window,
+        "budget": {
+            "max_chars": context_window_max_chars,
+            "used_chars": used_chars,
+        },
+        "notes": included_notes,
+        "context_window_text": context_window_text,
+        "context_window_text_for_prompt": context_window_text_for_prompt,
+    }
+
+
+def _build_v2_prompt_messages(
+    *,
+    user_message: str,
+    conversation_history: List[dict],
+    context_window: dict,
+) -> List[dict]:
+    if not isinstance(user_message, str) or user_message.strip() == "":
+        raise ValueError("user_message must be a non-empty string")
+
+    context_lines: List[str] = []
+    context_lines.append("CONTEXT WINDOW")
+    context_lines.append(
+        "Active search context query: "
+        + json.dumps(context_window.get("active_search_context_query", ""), ensure_ascii=False)
+    )
+    context_lines.append(
+        "Universe notes: " + str(context_window.get("universe_note_count", 0))
+    )
+    context_lines.append(
+        "Included notes: " + str(context_window.get("included_note_count", 0))
+    )
+    context_lines.append(
+        "Omitted notes: " + str(context_window.get("omitted_note_count", 0))
+    )
+    budget = context_window.get("budget")
+    if isinstance(budget, dict):
+        context_lines.append(
+            "Context budget (chars): "
+            + str(budget.get("used_chars", 0))
+            + " / "
+            + str(budget.get("max_chars", 0))
+        )
+    context_lines.append(
+        "Ordering for model input: top items are lower-priority; items farther down are higher-priority."
+    )
+    context_lines.append(
+        "Include tags in context window: "
+        + str(bool(context_window.get("include_tags_in_context_window"))).lower()
+    )
+    context_lines.append("")
+    context_lines.append("NOTES")
+
+    context_window_text_for_prompt = context_window.get("context_window_text_for_prompt")
+    if (
+        isinstance(context_window_text_for_prompt, str)
+        and context_window_text_for_prompt.strip() != ""
+    ):
+        context_lines.append(context_window_text_for_prompt)
+    else:
+        context_lines.append("[No notes were included in this context window]")
+
+    messages: List[dict] = [
+        {
+            "role": "system",
+            "content": "\n".join(context_lines),
+        }
+    ]
+    messages.extend(conversation_history)
+    messages.append(
+        {
+            "role": "system",
+            "content": _build_v2_system_prompt(
+                include_tags_in_context_window=bool(
+                    context_window.get("include_tags_in_context_window")
+                )
+            ),
+        }
+    )
+    messages.append(
+        {
+            "role": "user",
+            "content": user_message.strip(),
+        }
+    )
+    return messages
+
+
+def _run_context_window_request(
+    *,
+    user_message: str,
+    conversation_history: List[dict],
+    context_window_max_chars: int,
+    include_tags_in_context_window: bool,
+    mcp_url: str,
+    ollama_chat_url: str,
+    model: str,
+    progress_callback: Callable[[dict], None] | None,
+    status_callback: Callable[[str], None] | None = None,
+) -> dict:
+    if user_message.strip() == "":
+        raise ValueError("message must not be empty")
+    if context_window_max_chars <= 0:
+        raise ValueError("context_window_max_chars must be > 0")
+
+    run_started_at = time.perf_counter()
+
+    def _total_execution_ms() -> float:
+        return round((time.perf_counter() - run_started_at) * 1000, 3)
+
+    def _emit_status(*, detail: str) -> None:
+        if status_callback is None:
+            return
+        status_callback(detail)
+
+    resolved_model = ensure_ollama_model_available(
+        ollama_chat_url=ollama_chat_url,
+        model=model,
+        autopull=_DEFAULT_OLLAMA_AUTOPULL,
+    )
+
+    steps: List[dict] = []
+
+    def append_step(*, step_record: dict) -> None:
+        steps.append(step_record)
+        if progress_callback is not None:
+            progress_callback(step_record)
+
+    request_id = 300
+
+    _emit_status(detail="Building context window...")
+    context_build_started_at = time.perf_counter()
+    context_window = _build_v2_context_window(
+        mcp_url=mcp_url,
+        context_window_max_chars=context_window_max_chars,
+        include_tags_in_context_window=include_tags_in_context_window,
+        request_id=request_id,
+    )
+    context_build_ms = round((time.perf_counter() - context_build_started_at) * 1000, 3)
+    request_id += 2
+    append_step(
+        step_record={
+            "step": 1,
+            "action": "context_window_build",
+            "reason": "resolved active search context from MCP server and built context window",
+            "tool_name": "search_notes",
+            "arguments": context_window["search_arguments"],
+            "stats": {
+                "execution_ms": context_build_ms,
+                "search_context_resolution_ms": context_window["search_context_resolution_ms"],
+                "search_execution_ms": context_window["search_execution_ms"],
+                "active_tab_id": context_window["active_tab_id"],
+                "tab_state_version": context_window["tab_state_version"],
+                "tab_count": context_window["tab_count"],
+                "active_search_context_query": context_window["active_search_context_query"],
+                "include_tags_in_context_window": context_window["include_tags_in_context_window"],
+                "universe_note_count": context_window["universe_note_count"],
+                "included_note_count": context_window["included_note_count"],
+                "omitted_note_count": context_window["omitted_note_count"],
+                "skipped_duplicate_note_count": context_window["skipped_duplicate_note_count"],
+                "budget_max_chars": context_window_max_chars,
+                "budget_used_chars": context_window["budget"]["used_chars"],
+            },
+            "tool_response": {
+                "ok": True,
+                "data": {
+                    "active_tab_id": context_window["active_tab_id"],
+                    "tab_state_version": context_window["tab_state_version"],
+                    "tab_count": context_window["tab_count"],
+                    "active_search_context_query": context_window["active_search_context_query"],
+                    "include_tags_in_context_window": context_window["include_tags_in_context_window"],
+                    "search_data": context_window["search_data"],
+                    "included_note_count": context_window["included_note_count"],
+                    "omitted_note_count": context_window["omitted_note_count"],
+                    "skipped_duplicate_note_count": context_window["skipped_duplicate_note_count"],
+                    "budget": context_window["budget"],
+                },
+            },
+        }
+    )
+
+    _emit_status(detail="Composing model prompt...")
+    prompt_messages = _build_v2_prompt_messages(
+        user_message=user_message,
+        conversation_history=conversation_history,
+        context_window=context_window,
+    )
+    append_step(
+        step_record={
+            "step": 2,
+            "action": "prompt_compose",
+            "reason": "composed system prompt + context window + conversation history",
+            "model_payload": {
+                "prompt_messages": prompt_messages,
+            },
+        }
+    )
+
+    _emit_status(detail="Waiting for model...")
+    model_started_at = time.perf_counter()
+    answer = _ollama_chat_text(
+        ollama_chat_url=ollama_chat_url,
+        model=resolved_model,
+        messages=prompt_messages,
+    )
+    model_execution_ms = round((time.perf_counter() - model_started_at) * 1000, 3)
+    append_step(
+        step_record={
+            "step": 3,
+            "action": "model_response",
+            "reason": "model produced assistant response from current prompt context",
+            "stats": {
+                "execution_ms": model_execution_ms,
+            },
+            "model_payload": {
+                "raw_model_output": answer,
+            },
+        }
+    )
+
+    normalized_answer = answer.strip()
+    if normalized_answer == "":
+        normalized_answer = "I do not know based on the current context window."
+
+    return {
+        "ok": True,
+        "answer": normalized_answer,
+        "model": resolved_model,
+        "steps": steps,
+        "prompt_messages": prompt_messages,
+        "context_window": {
+            "active_search_context_query": context_window["active_search_context_query"],
+            "universe_note_count": context_window["universe_note_count"],
+            "included_note_count": context_window["included_note_count"],
+            "omitted_note_count": context_window["omitted_note_count"],
+            "skipped_duplicate_note_count": context_window["skipped_duplicate_note_count"],
+            "include_tags_in_context_window": context_window["include_tags_in_context_window"],
+            "budget": context_window["budget"],
+            "notes": context_window["notes"],
+            "context_window_text": context_window["context_window_text"],
+        },
+        "total_execution_ms": _total_execution_ms(),
+        "mode": "v2_context_window",
+    }
+
+
 def _web_html(
     *,
     default_model: str,
@@ -7706,6 +8338,682 @@ def _web_html(
 </html>"""
 
 
+def _web_html_v2(
+    *,
+    default_model: str,
+    default_mcp_url: str,
+    default_ollama_chat_url: str,
+) -> str:
+    model_value = json.dumps(default_model)
+    mcp_url_value = json.dumps(default_mcp_url)
+    ollama_chat_url_value = json.dumps(default_ollama_chat_url)
+    context_window_max_chars_value = str(_DEFAULT_CONTEXT_WINDOW_MAX_CHARS)
+    include_tags_in_context_window_value = json.dumps(
+        _DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW
+    )
+    html_template = r"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MetaList MCP Client v2</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --panel: #ffffff;
+      --line: #d7dde6;
+      --ink: #182230;
+      --muted: #5f6f85;
+      --accent: #1f6feb;
+      --assistant-bubble: #e9f2ff;
+      --user-bubble: #1f6feb;
+      --user-ink: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at 15% 0%, #fff8e8 0%, var(--bg) 45%, #eceffd 100%);
+    }
+    .wrap {
+      max-width: 1380px;
+      margin: 18px auto;
+      padding: 0 14px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 6px 26px rgba(0,0,0,0.07);
+    }
+    .chat-card {
+      padding: 12px;
+    }
+    .inspector-card {
+      position: sticky;
+      top: 12px;
+      padding: 12px;
+      max-height: calc(100vh - 24px);
+      overflow: auto;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 22px;
+    }
+    h2 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+    }
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    input, textarea, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px;
+      font: inherit;
+    }
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: 0;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #4d5a6c;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+    .status-row {
+      margin-top: 10px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .chat-thread {
+      margin-top: 10px;
+      min-height: 320px;
+      max-height: 56vh;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: #f9fbff;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .bubble-wrap {
+      display: flex;
+      width: 100%;
+    }
+    .bubble-wrap.assistant {
+      justify-content: flex-start;
+    }
+    .bubble-wrap.user {
+      justify-content: flex-end;
+    }
+    .bubble {
+      max-width: 82%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border-radius: 18px;
+      padding: 10px 12px;
+      line-height: 1.35;
+      font-size: 14px;
+      border: 1px solid transparent;
+    }
+    .bubble.assistant {
+      background: var(--assistant-bubble);
+      color: #1f2f47;
+      border-color: #c6dcff;
+      border-top-left-radius: 8px;
+    }
+    .bubble.user {
+      background: var(--user-bubble);
+      color: var(--user-ink);
+      border-color: #1754b4;
+      border-top-right-radius: 8px;
+    }
+    .composer {
+      margin-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .turn-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .turn-btn {
+      border: 1px solid var(--line);
+      background: #f4f7fc;
+      color: #21314a;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      max-width: 100%;
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .turn-btn.active {
+      border-color: #8ab2ff;
+      background: #e9f2ff;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      background: #0f1c36;
+      color: #d8e6ff;
+      border-radius: 10px;
+      padding: 10px;
+      max-height: 52vh;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.35;
+      tab-size: 2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .events {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfcff;
+      max-height: 180px;
+      overflow: auto;
+      padding: 8px;
+      font-size: 12px;
+      color: #21314a;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    @media (max-width: 1000px) {
+      .layout { grid-template-columns: 1fr; }
+      .inspector-card { position: static; max-height: none; }
+      .config-grid { grid-template-columns: 1fr; }
+      .bubble { max-width: 94%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <section class="card chat-card">
+        <h1>MetaList MCP Client v2</h1>
+        <p class="muted">Context-window chat with full per-response prompt inspection.</p>
+        <div class="config-grid">
+          <div>
+            <label for="model">Ollama model</label>
+            <input id="model" />
+          </div>
+          <div>
+            <label for="context_window_max_chars">Context window max chars</label>
+            <input id="context_window_max_chars" type="number" min="1000" step="1000" />
+          </div>
+          <div>
+            <label for="mcp_url">MCP URL</label>
+            <input id="mcp_url" />
+          </div>
+          <div>
+            <label for="ollama_chat_url">Ollama chat URL</label>
+            <input id="ollama_chat_url" />
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <label for="include_tags_in_context_window" style="display:flex;align-items:center;gap:8px;color:var(--ink);font-size:13px;">
+            <input id="include_tags_in_context_window" type="checkbox" style="width:auto;" />
+            Include tags in context window
+          </label>
+        </div>
+        <div class="status-row">
+          <div id="run_status" class="muted">Idle.</div>
+          <div id="timing" class="muted"></div>
+        </div>
+        <div id="chat_thread" class="chat-thread"></div>
+        <div class="composer">
+          <label for="composer">Message</label>
+          <textarea id="composer" placeholder="Ask a question about your notes..."></textarea>
+          <div class="row">
+            <button id="send_btn">Send</button>
+            <button id="models_btn" class="secondary">Load Ollama Models</button>
+            <button id="reset_btn" class="secondary">Reset Chat</button>
+          </div>
+        </div>
+        <div id="events" class="events"></div>
+      </section>
+      <aside class="card inspector-card">
+        <h2>Prompt Inspector</h2>
+        <p class="muted">Exact model input per assistant response.</p>
+        <div id="turn_list" class="turn-list"></div>
+        <pre id="prompt_payload">No assistant response yet.</pre>
+      </aside>
+    </div>
+  </div>
+  <script>
+    const defaults = {
+      model: __MODEL_VALUE__,
+      mcpUrl: __MCP_URL_VALUE__,
+      ollamaChatUrl: __OLLAMA_CHAT_URL_VALUE__,
+      contextWindowMaxChars: __CONTEXT_WINDOW_MAX_CHARS_VALUE__,
+      includeTagsInContextWindow: __INCLUDE_TAGS_IN_CONTEXT_WINDOW_VALUE__
+    };
+
+    const modelEl = document.getElementById("model");
+    const mcpUrlEl = document.getElementById("mcp_url");
+    const ollamaChatUrlEl = document.getElementById("ollama_chat_url");
+    const contextWindowMaxCharsEl = document.getElementById("context_window_max_chars");
+    const includeTagsInContextWindowEl = document.getElementById("include_tags_in_context_window");
+    const chatThreadEl = document.getElementById("chat_thread");
+    const composerEl = document.getElementById("composer");
+    const sendBtn = document.getElementById("send_btn");
+    const resetBtn = document.getElementById("reset_btn");
+    const modelsBtn = document.getElementById("models_btn");
+    const runStatusEl = document.getElementById("run_status");
+    const timingEl = document.getElementById("timing");
+    const eventsEl = document.getElementById("events");
+    const turnListEl = document.getElementById("turn_list");
+    const promptPayloadEl = document.getElementById("prompt_payload");
+
+    modelEl.value = defaults.model;
+    mcpUrlEl.value = defaults.mcpUrl;
+    ollamaChatUrlEl.value = defaults.ollamaChatUrl;
+    contextWindowMaxCharsEl.value = String(defaults.contextWindowMaxChars);
+    includeTagsInContextWindowEl.checked = Boolean(defaults.includeTagsInContextWindow);
+
+    let conversation = [];
+    let promptInspectors = [];
+    let selectedInspectorIndex = -1;
+
+    function setRunStatus(text) {
+      runStatusEl.textContent = text;
+    }
+
+    function setTiming(text) {
+      timingEl.textContent = text;
+    }
+
+    function appendEventLine(text) {
+      const now = new Date();
+      const stamp = now.toLocaleTimeString();
+      const line = document.createElement("div");
+      line.textContent = `[${stamp}] ${text}`;
+      eventsEl.appendChild(line);
+      eventsEl.scrollTop = eventsEl.scrollHeight;
+    }
+
+    function renderConversation() {
+      chatThreadEl.innerHTML = "";
+      if (!Array.isArray(conversation) || conversation.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No messages yet.";
+        chatThreadEl.appendChild(empty);
+        return;
+      }
+      for (const message of conversation) {
+        if (!message || typeof message !== "object") {
+          continue;
+        }
+        const role = message.role === "user" ? "user" : "assistant";
+        const wrap = document.createElement("div");
+        wrap.className = "bubble-wrap " + role;
+        const bubble = document.createElement("div");
+        bubble.className = "bubble " + role;
+        bubble.textContent = typeof message.content === "string" ? message.content : "";
+        wrap.appendChild(bubble);
+        chatThreadEl.appendChild(wrap);
+      }
+      chatThreadEl.scrollTop = chatThreadEl.scrollHeight;
+    }
+
+    function formatPromptMessages(messages) {
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return "No prompt messages recorded.";
+      }
+      const parts = [];
+      for (const message of messages) {
+        if (!message || typeof message !== "object") {
+          continue;
+        }
+        const role = typeof message.role === "string" ? message.role.toUpperCase() : "UNKNOWN";
+        const content = typeof message.content === "string"
+          ? message.content
+          : JSON.stringify(message.content, null, 2);
+        parts.push(role + ":\n" + content);
+      }
+      if (parts.length === 0) {
+        return "No prompt messages recorded.";
+      }
+      return parts.join("\n\n");
+    }
+
+    function renderPromptInspector() {
+      turnListEl.innerHTML = "";
+      if (!Array.isArray(promptInspectors) || promptInspectors.length === 0) {
+        promptPayloadEl.textContent = "No assistant response yet.";
+        return;
+      }
+      for (let i = 0; i < promptInspectors.length; i += 1) {
+        const inspector = promptInspectors[i];
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "turn-btn" + (i === selectedInspectorIndex ? " active" : "");
+        button.textContent = "Response " + String(i + 1);
+        button.addEventListener("click", () => {
+          selectedInspectorIndex = i;
+          renderPromptInspector();
+        });
+        turnListEl.appendChild(button);
+      }
+      if (selectedInspectorIndex < 0 || selectedInspectorIndex >= promptInspectors.length) {
+        selectedInspectorIndex = promptInspectors.length - 1;
+      }
+      const selected = promptInspectors[selectedInspectorIndex];
+      const blocks = [];
+      blocks.push("PROMPT MESSAGES");
+      blocks.push(formatPromptMessages(selected.prompt_messages));
+      if (selected.context_window && typeof selected.context_window === "object") {
+        blocks.push("");
+        blocks.push("CONTEXT WINDOW STATS");
+        blocks.push(JSON.stringify({
+          active_search_context_query: selected.context_window.active_search_context_query,
+          universe_note_count: selected.context_window.universe_note_count,
+          included_note_count: selected.context_window.included_note_count,
+          omitted_note_count: selected.context_window.omitted_note_count,
+          skipped_duplicate_note_count: selected.context_window.skipped_duplicate_note_count,
+          include_tags_in_context_window: selected.context_window.include_tags_in_context_window,
+          budget: selected.context_window.budget
+        }, null, 2));
+      }
+      promptPayloadEl.textContent = blocks.join("\n");
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort("request-timeout"), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    async function readErrorResponse(res) {
+      const text = await res.text();
+      if (text === "") {
+        return `HTTP ${res.status}`;
+      }
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2);
+      } catch (_) {
+        return text;
+      }
+    }
+
+    async function sendMessage() {
+      const message = composerEl.value.trim();
+      if (message === "") {
+        return;
+      }
+
+      const priorConversation = conversation.slice();
+      conversation.push({ role: "user", content: message });
+      const assistantIndex = conversation.length;
+      conversation.push({ role: "assistant", content: "Running..." });
+      renderConversation();
+
+      composerEl.value = "";
+      sendBtn.disabled = true;
+      setRunStatus("Running...");
+      setTiming("");
+      appendEventLine("Request started.");
+
+      const payload = {
+        message: message,
+        conversation_history: priorConversation,
+        model: modelEl.value,
+        context_window_max_chars: Number(contextWindowMaxCharsEl.value),
+        include_tags_in_context_window: includeTagsInContextWindowEl.checked,
+        mcp_url: mcpUrlEl.value,
+        ollama_chat_url: ollamaChatUrlEl.value
+      };
+
+      try {
+        const res = await fetchWithTimeout("/api/chat_stream_v2", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }, 240000);
+
+        if (!res.ok) {
+          const detail = await readErrorResponse(res);
+          conversation[assistantIndex] = { role: "assistant", content: "Error: " + detail };
+          renderConversation();
+          appendEventLine("Request failed: " + detail);
+          setRunStatus("Failed.");
+          return;
+        }
+
+        if (!res.body) {
+          conversation[assistantIndex] = { role: "assistant", content: "Error: Streaming body missing." };
+          renderConversation();
+          appendEventLine("Streaming body missing.");
+          setRunStatus("Failed.");
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        const reader = res.body.getReader();
+        let buffer = "";
+        let sawFinal = false;
+
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            break;
+          }
+          buffer += decoder.decode(chunk.value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed === "") {
+              continue;
+            }
+            let event;
+            try {
+              event = JSON.parse(trimmed);
+            } catch (error) {
+              conversation[assistantIndex] = { role: "assistant", content: "Error parsing stream event: " + String(error) };
+              renderConversation();
+              appendEventLine("Stream parse error.");
+              setRunStatus("Failed.");
+              return;
+            }
+
+            if (event.type === "status") {
+              const detail = typeof event.detail === "string" ? event.detail : "Running...";
+              setRunStatus(detail);
+              continue;
+            }
+
+            if (event.type === "step") {
+              const step = event.step && typeof event.step === "object" ? event.step : null;
+              if (step && typeof step.action === "string") {
+                appendEventLine("Step: " + step.action);
+              } else {
+                appendEventLine("Step received.");
+              }
+              continue;
+            }
+
+            if (event.type === "error") {
+              const detail = typeof event.detail === "string" ? event.detail : "Unknown error";
+              conversation[assistantIndex] = { role: "assistant", content: "Error: " + detail };
+              renderConversation();
+              appendEventLine("Error: " + detail);
+              setRunStatus("Failed.");
+              continue;
+            }
+
+            if (event.type === "final") {
+              sawFinal = true;
+              const result = event.result && typeof event.result === "object" ? event.result : {};
+              const answer = typeof result.answer === "string" && result.answer.trim() !== ""
+                ? result.answer
+                : "I do not know based on the current context window.";
+              conversation[assistantIndex] = { role: "assistant", content: answer };
+              renderConversation();
+              if (Array.isArray(result.prompt_messages)) {
+                promptInspectors.push({
+                  prompt_messages: result.prompt_messages,
+                  context_window: result.context_window
+                });
+                selectedInspectorIndex = promptInspectors.length - 1;
+                renderPromptInspector();
+              }
+              const totalMs = typeof result.total_execution_ms === "number" ? result.total_execution_ms : null;
+              if (totalMs !== null && Number.isFinite(totalMs)) {
+                setTiming("Total compute time: " + totalMs.toFixed(1) + " ms");
+              } else {
+                setTiming("");
+              }
+              setRunStatus("Completed.");
+              appendEventLine("Request completed.");
+            }
+          }
+        }
+
+        if (!sawFinal) {
+          if (conversation[assistantIndex] && conversation[assistantIndex].content === "Running...") {
+            conversation[assistantIndex] = {
+              role: "assistant",
+              content: "No final answer returned. Check events and prompt inspector."
+            };
+            renderConversation();
+          }
+          setRunStatus("Finished without final answer.");
+          appendEventLine("Finished without final answer.");
+        }
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : String(error);
+        conversation[assistantIndex] = { role: "assistant", content: "Error: " + messageText };
+        renderConversation();
+        appendEventLine("Request exception: " + messageText);
+        setRunStatus("Failed.");
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", async () => {
+      await sendMessage();
+    });
+
+    composerEl.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        await sendMessage();
+      }
+    });
+
+    resetBtn.addEventListener("click", () => {
+      conversation = [];
+      promptInspectors = [];
+      selectedInspectorIndex = -1;
+      renderConversation();
+      renderPromptInspector();
+      eventsEl.innerHTML = "";
+      setRunStatus("Idle.");
+      setTiming("");
+      appendEventLine("Conversation reset.");
+    });
+
+    modelsBtn.addEventListener("click", async () => {
+      modelsBtn.disabled = true;
+      appendEventLine("Loading Ollama models...");
+      try {
+        const url = "/api/models?ollama_chat_url=" + encodeURIComponent(ollamaChatUrlEl.value);
+        const res = await fetchWithTimeout(url, {}, 20000);
+        if (!res.ok) {
+          const detail = await readErrorResponse(res);
+          appendEventLine("Model load failed: " + detail);
+          return;
+        }
+        const data = await res.json();
+        if (Array.isArray(data.models) && data.models.length > 0) {
+          modelEl.value = data.models[0];
+        }
+        appendEventLine("Models loaded.");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        appendEventLine("Model load error: " + detail);
+      } finally {
+        modelsBtn.disabled = false;
+      }
+    });
+
+    renderConversation();
+    renderPromptInspector();
+  </script>
+</body>
+</html>
+"""
+    return (
+        html_template
+        .replace("__MODEL_VALUE__", model_value)
+        .replace("__MCP_URL_VALUE__", mcp_url_value)
+        .replace("__OLLAMA_CHAT_URL_VALUE__", ollama_chat_url_value)
+        .replace(
+            "__INCLUDE_TAGS_IN_CONTEXT_WINDOW_VALUE__",
+            include_tags_in_context_window_value,
+        )
+        .replace(
+            "__CONTEXT_WINDOW_MAX_CHARS_VALUE__",
+            context_window_max_chars_value,
+        )
+    )
+
+
 def create_web_app(
     *,
     default_model: str,
@@ -7728,8 +9036,7 @@ def create_web_app(
             },
         )
 
-    @app.get("/", response_class=HTMLResponse)
-    def home() -> str:
+    def _render_home_legacy() -> str:
         return _web_html(
             default_model=default_model,
             default_max_steps=default_max_steps,
@@ -7740,6 +9047,21 @@ def create_web_app(
             default_mcp_url=default_mcp_url,
             default_ollama_chat_url=default_ollama_chat_url,
         )
+
+    def _render_home_v2() -> str:
+        return _web_html_v2(
+            default_model=default_model,
+            default_mcp_url=default_mcp_url,
+            default_ollama_chat_url=default_ollama_chat_url,
+        )
+
+    @app.get("/", response_class=HTMLResponse)
+    def home() -> str:
+        return _render_home_legacy()
+
+    @app.get("/v2", response_class=HTMLResponse)
+    def home_v2() -> str:
+        return _render_home_v2()
 
     @app.get("/api/models")
     def models(ollama_chat_url: str) -> dict:
@@ -7898,6 +9220,127 @@ def create_web_app(
                 if "type" not in event:
                     continue
                 event_type = event["type"]
+                if not isinstance(event_type, str):
+                    continue
+                if event_type == "end":
+                    break
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+
+        return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+
+    @app.post("/api/chat_stream_v2")
+    def chat_stream_v2(payload: AgentChatV2Request) -> StreamingResponse:
+        if payload.message.strip() == "":
+            raise HTTPException(status_code=400, detail="message must not be empty")
+        if payload.context_window_max_chars <= 0:
+            raise HTTPException(status_code=400, detail="context_window_max_chars must be > 0")
+        if payload.context_window_max_chars > 5_000_000:
+            raise HTTPException(
+                status_code=400,
+                detail="context_window_max_chars must be <= 5000000",
+            )
+        try:
+            normalized_history = _validate_v2_conversation_history(
+                entries=payload.conversation_history
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        event_queue: queue.Queue[dict] = queue.Queue()
+        worker_finished = threading.Event()
+        heartbeat_lock = threading.Lock()
+        heartbeat_state: Dict[str, object] = {
+            "detail": "Starting...",
+            "run_started_at": time.perf_counter(),
+        }
+
+        def progress_callback(step_record: dict) -> None:
+            event_queue.put(
+                {
+                    "type": "step",
+                    "step": step_record,
+                }
+            )
+
+        def status_callback(detail: str) -> None:
+            with heartbeat_lock:
+                heartbeat_state["detail"] = detail
+            event_queue.put(
+                {
+                    "type": "status",
+                    "status": "running",
+                    "detail": detail,
+                }
+            )
+
+        def worker() -> None:
+            try:
+                result = _run_context_window_request(
+                    user_message=payload.message,
+                    conversation_history=normalized_history,
+                    context_window_max_chars=payload.context_window_max_chars,
+                    include_tags_in_context_window=payload.include_tags_in_context_window,
+                    mcp_url=payload.mcp_url,
+                    ollama_chat_url=payload.ollama_chat_url,
+                    model=payload.model,
+                    progress_callback=progress_callback,
+                    status_callback=status_callback,
+                )
+                event_queue.put(
+                    {
+                        "type": "final",
+                        "result": result,
+                    }
+                )
+            except Exception as exc:
+                traceback.print_exc()
+                event_queue.put(
+                    {
+                        "type": "error",
+                        "detail": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+            finally:
+                worker_finished.set()
+                event_queue.put({"type": "end"})
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+        def event_stream():
+            yield json.dumps(
+                {"type": "status", "status": "running", "detail": "Running..."},
+                ensure_ascii=False,
+            ) + "\n"
+            while True:
+                try:
+                    event = event_queue.get(timeout=1.0)
+                except queue.Empty:
+                    if worker_finished.is_set():
+                        continue
+                    with heartbeat_lock:
+                        latest_detail = heartbeat_state.get("detail")
+                        run_started_at = heartbeat_state.get("run_started_at")
+                    if not isinstance(latest_detail, str) or latest_detail.strip() == "":
+                        latest_detail = "Running..."
+                    elapsed_ms = 0.0
+                    if isinstance(run_started_at, float):
+                        elapsed_ms = max((time.perf_counter() - run_started_at) * 1000.0, 0.0)
+                    elapsed_sec = int(elapsed_ms // 1000.0)
+                    heartbeat_detail = latest_detail + " (elapsed " + str(elapsed_sec) + "s)"
+                    yield json.dumps(
+                        {
+                            "type": "status",
+                            "status": "running",
+                            "detail": heartbeat_detail,
+                            "heartbeat": True,
+                        },
+                        ensure_ascii=False,
+                    ) + "\n"
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                event_type = event.get("type")
                 if not isinstance(event_type, str):
                     continue
                 if event_type == "end":

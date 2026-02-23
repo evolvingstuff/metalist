@@ -5,6 +5,7 @@ from typing import Iterable, Tuple
 
 READ_ONLY_TOOL_NAMES: Tuple[str, ...] = (
     "health_check",
+    "get_active_search_context",
     "count_notes",
     "get_note",
     "get_notes_batch",

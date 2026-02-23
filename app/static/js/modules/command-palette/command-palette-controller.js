@@ -908,8 +908,7 @@ class CommandPaletteController {
     }
 
     async runMcpClient() {
-        const host = window.location.hostname || '127.0.0.1';
-        const mcpClientUrl = `http://${host}:8765`;
+        const mcpClientUrl = `${window.location.origin}/mcp-client-v2`;
 
         if (this.isOpen()) {
             this.close();
