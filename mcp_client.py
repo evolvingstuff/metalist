@@ -5,6 +5,7 @@ import difflib
 import html
 import json
 import math
+import os
 import queue
 import re
 import socket
@@ -32,7 +33,7 @@ from app.services.search_query import parse_search_query
 
 _DEFAULT_MCP_URL = "http://127.0.0.1:8000/api2/mcp"
 _DEFAULT_OLLAMA_CHAT_URL = "http://127.0.0.1:11434/api/chat"
-_DEFAULT_OLLAMA_MODEL = "qwen2.5:7b-instruct"
+_DEFAULT_OLLAMA_MODEL = "qwen2.5:14b-instruct"
 _DEFAULT_WEB_HOST = "127.0.0.1"
 _DEFAULT_WEB_PORT = 8765
 _DEFAULT_MAX_STEPS = 6
@@ -41,9 +42,10 @@ _DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS = 20
 _DEFAULT_OLLAMA_AUTOPULL = True
 _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = 30
 _DEFAULT_OLLAMA_TEMPERATURE = 0.0
+_DEFAULT_OLLAMA_CONTEXT_LENGTH = 16384
 _PLANNER_MAX_PHRASE_TOKENS = 2
 _MAX_INVALID_DECISION_REPAIRS = 2
-_OLLAMA_CHAT_TIMEOUT_SECONDS = 180
+_OLLAMA_CHAT_TIMEOUT_SECONDS = 600
 _DEFAULT_PLANNER_SEED_TAG_LIMIT = 50
 _DEFAULT_PLANNER_TAG_COUNT_MODE = "raw"
 _ALLOWED_PLANNER_TAG_COUNT_MODES = frozenset({"effective", "raw"})
@@ -54,6 +56,7 @@ _DEFAULT_HYDRATE_TOP_K = 80
 _DEFAULT_REGEX_ENGINE = "python-re"
 _DEFAULT_CONTEXT_WINDOW_MAX_CHARS = 120000
 _DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW = False
+_DEFAULT_V2_NUM_CTX = 16384
 _ALLOWED_REGEX_ENGINES = frozenset({"python-re", "re2"})
 _PLANNER_STOPWORDS = frozenset(
     {
@@ -120,6 +123,7 @@ DEFAULT_OLLAMA_AUTOSTART = _DEFAULT_OLLAMA_AUTOSTART
 DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS = _DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS
 DEFAULT_OLLAMA_AUTOPULL = _DEFAULT_OLLAMA_AUTOPULL
 DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS
+DEFAULT_OLLAMA_CONTEXT_LENGTH = _DEFAULT_OLLAMA_CONTEXT_LENGTH
 DEFAULT_PLANNER_SEED_TAG_LIMIT = _DEFAULT_PLANNER_SEED_TAG_LIMIT
 DEFAULT_PLANNER_TAG_COUNT_MODE = _DEFAULT_PLANNER_TAG_COUNT_MODE
 DEFAULT_SEARCH_CONTEXT_QUERY = _DEFAULT_SEARCH_CONTEXT_QUERY
@@ -128,6 +132,7 @@ DEFAULT_HYDRATE_TOP_K = _DEFAULT_HYDRATE_TOP_K
 DEFAULT_REGEX_ENGINE = _DEFAULT_REGEX_ENGINE
 DEFAULT_CONTEXT_WINDOW_MAX_CHARS = _DEFAULT_CONTEXT_WINDOW_MAX_CHARS
 DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW = _DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW
+DEFAULT_V2_NUM_CTX = _DEFAULT_V2_NUM_CTX
 
 _OLLAMA_SIDECAR_PROCESS: subprocess.Popen | None = None
 
@@ -1492,16 +1497,41 @@ def _ollama_chat_text(
     ollama_chat_url: str,
     model: str,
     messages: List[dict],
+    num_ctx: int | None = None,
 ) -> str:
+    runtime = _ollama_chat_text_with_runtime(
+        ollama_chat_url=ollama_chat_url,
+        model=model,
+        messages=messages,
+        num_ctx=num_ctx,
+    )
+    content = runtime.get("content")
+    if not isinstance(content, str):
+        raise TypeError("runtime content must be a string")
+    return content
+
+
+def _ollama_chat_text_with_runtime(
+    *,
+    ollama_chat_url: str,
+    model: str,
+    messages: List[dict],
+    num_ctx: int | None = None,
+) -> dict:
+    if num_ctx is not None and num_ctx <= 0:
+        raise ValueError("num_ctx must be > 0")
     ensure_ollama_running(
         ollama_chat_url=ollama_chat_url,
         autostart=_DEFAULT_OLLAMA_AUTOSTART,
         wait_timeout_seconds=_DEFAULT_OLLAMA_STARTUP_TIMEOUT_SECONDS,
     )
+    options = {"temperature": _DEFAULT_OLLAMA_TEMPERATURE}
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
     payload = {
         "model": model,
         "stream": False,
-        "options": {"temperature": _DEFAULT_OLLAMA_TEMPERATURE},
+        "options": options,
         "messages": messages,
     }
     response = _post_json(
@@ -1521,7 +1551,13 @@ def _ollama_chat_text(
     content = message["content"]
     if not isinstance(content, str):
         raise TypeError("Ollama message content must be a string")
-    return content
+    served_model = response.get("model")
+    if not isinstance(served_model, str):
+        served_model = ""
+    return {
+        "content": content,
+        "served_model": served_model,
+    }
 
 
 def _derive_tags_url(*, ollama_chat_url: str) -> str:
@@ -1529,6 +1565,95 @@ def _derive_tags_url(*, ollama_chat_url: str) -> str:
     if not ollama_chat_url.endswith(suffix):
         raise ValueError("ollama_chat_url must end with /api/chat")
     return ollama_chat_url[: -len(suffix)] + "/api/tags"
+
+
+def _derive_show_url(*, ollama_chat_url: str) -> str:
+    suffix = "/api/chat"
+    if not ollama_chat_url.endswith(suffix):
+        raise ValueError("ollama_chat_url must end with /api/chat")
+    return ollama_chat_url[: -len(suffix)] + "/api/show"
+
+
+def _derive_ps_url(*, ollama_chat_url: str) -> str:
+    suffix = "/api/chat"
+    if not ollama_chat_url.endswith(suffix):
+        raise ValueError("ollama_chat_url must end with /api/chat")
+    return ollama_chat_url[: -len(suffix)] + "/api/ps"
+
+
+def _extract_model_context_length_from_show_response(*, show_response: dict) -> int | None:
+    model_info = show_response.get("model_info")
+    if not isinstance(model_info, dict):
+        return None
+
+    for key in model_info:
+        if not isinstance(key, str):
+            continue
+        if not key.endswith(".context_length"):
+            continue
+        value = model_info[key]
+        if isinstance(value, int) and value > 0:
+            return value
+
+    details = show_response.get("details")
+    if isinstance(details, dict):
+        context_length = details.get("context_length")
+        if isinstance(context_length, int) and context_length > 0:
+            return context_length
+
+    return None
+
+
+def _ollama_model_context_length(*, ollama_chat_url: str, model: str) -> int | None:
+    show_url = _derive_show_url(ollama_chat_url=ollama_chat_url)
+    response = _post_json(
+        url=show_url,
+        payload={"model": model},
+        timeout_seconds=30,
+    )
+    if response is None:
+        return None
+    return _extract_model_context_length_from_show_response(show_response=response)
+
+
+def _extract_running_model_num_ctx(*, ps_payload: dict, model: str) -> int | None:
+    models = ps_payload.get("models")
+    if not isinstance(models, list):
+        return None
+
+    target = model.strip().casefold()
+    for model_entry in models:
+        if not isinstance(model_entry, dict):
+            continue
+        entry_model = model_entry.get("model")
+        if not isinstance(entry_model, str):
+            continue
+        if entry_model.strip().casefold() != target:
+            continue
+
+        top_level_num_ctx = model_entry.get("num_ctx")
+        if isinstance(top_level_num_ctx, int) and top_level_num_ctx > 0:
+            return top_level_num_ctx
+
+        details = model_entry.get("details")
+        if isinstance(details, dict):
+            details_num_ctx = details.get("num_ctx")
+            if isinstance(details_num_ctx, int) and details_num_ctx > 0:
+                return details_num_ctx
+
+        options = model_entry.get("options")
+        if isinstance(options, dict):
+            options_num_ctx = options.get("num_ctx")
+            if isinstance(options_num_ctx, int) and options_num_ctx > 0:
+                return options_num_ctx
+
+    return None
+
+
+def _ollama_running_model_num_ctx(*, ollama_chat_url: str, model: str) -> int | None:
+    ps_url = _derive_ps_url(ollama_chat_url=ollama_chat_url)
+    payload = _get_json(url=ps_url)
+    return _extract_running_model_num_ctx(ps_payload=payload, model=model)
 
 
 def _ollama_host_port(*, ollama_chat_url: str) -> tuple[str, int]:
@@ -1558,6 +1683,56 @@ def _is_local_host(*, host: str) -> bool:
     return host in {"127.0.0.1", "localhost", "::1"}
 
 
+def reset_local_ollama_server(*, ollama_chat_url: str) -> None:
+    host, _ = _ollama_host_port(ollama_chat_url=ollama_chat_url)
+    if not _is_local_host(host=host):
+        return
+
+    completed = subprocess.run(
+        ["pkill", "-f", "ollama serve"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode not in {0, 1}:
+        stderr_output = completed.stderr.strip()
+        detail = f"`pkill -f 'ollama serve'` failed with code {completed.returncode}."
+        if stderr_output != "":
+            detail = f"{detail} stderr: {stderr_output}"
+        raise RuntimeError(detail)
+
+    global _OLLAMA_SIDECAR_PROCESS
+    _OLLAMA_SIDECAR_PROCESS = None
+    time.sleep(0.25)
+
+
+def _resolve_ollama_context_length() -> int:
+    if "MCP_AGENT_OLLAMA_CONTEXT_LENGTH" in os.environ:
+        configured_value = os.environ["MCP_AGENT_OLLAMA_CONTEXT_LENGTH"].strip()
+        if configured_value == "":
+            raise ValueError("MCP_AGENT_OLLAMA_CONTEXT_LENGTH must not be empty")
+        if not configured_value.isdigit():
+            raise ValueError("MCP_AGENT_OLLAMA_CONTEXT_LENGTH must be a positive integer")
+        resolved = int(configured_value)
+        if resolved <= 0:
+            raise ValueError("MCP_AGENT_OLLAMA_CONTEXT_LENGTH must be > 0")
+        return resolved
+
+    if "OLLAMA_CONTEXT_LENGTH" in os.environ:
+        configured_value = os.environ["OLLAMA_CONTEXT_LENGTH"].strip()
+        if configured_value == "":
+            raise ValueError("OLLAMA_CONTEXT_LENGTH must not be empty")
+        if not configured_value.isdigit():
+            raise ValueError("OLLAMA_CONTEXT_LENGTH must be a positive integer")
+        resolved = int(configured_value)
+        if resolved <= 0:
+            raise ValueError("OLLAMA_CONTEXT_LENGTH must be > 0")
+        return resolved
+
+    return _DEFAULT_OLLAMA_CONTEXT_LENGTH
+
+
 def ensure_ollama_running(
     *,
     ollama_chat_url: str,
@@ -1580,9 +1755,16 @@ def ensure_ollama_running(
 
     global _OLLAMA_SIDECAR_PROCESS
     if _OLLAMA_SIDECAR_PROCESS is None or _OLLAMA_SIDECAR_PROCESS.poll() is not None:
-        print("Starting Ollama automatically: ollama serve")
+        resolved_context_length = _resolve_ollama_context_length()
+        ollama_env = dict(os.environ)
+        ollama_env["OLLAMA_CONTEXT_LENGTH"] = str(resolved_context_length)
+        print(
+            "Starting Ollama automatically: "
+            f"OLLAMA_CONTEXT_LENGTH={resolved_context_length} ollama serve"
+        )
         _OLLAMA_SIDECAR_PROCESS = subprocess.Popen(
             ["ollama", "serve"],
+            env=ollama_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
@@ -5815,6 +5997,7 @@ class AgentChatV2Request(BaseModel):
     conversation_history: List[AgentChatV2HistoryMessage]
     model: str
     context_window_max_chars: int
+    num_ctx: int
     include_tags_in_context_window: bool
     mcp_url: str
     ollama_chat_url: str
@@ -6203,12 +6386,28 @@ def _build_v2_prompt_messages(
     user_message: str,
     conversation_history: List[dict],
     context_window: dict,
+    num_ctx: int,
 ) -> List[dict]:
     if not isinstance(user_message, str) or user_message.strip() == "":
         raise ValueError("user_message must be a non-empty string")
+    if num_ctx <= 0:
+        raise ValueError("num_ctx must be > 0")
 
     context_lines: List[str] = []
-    context_lines.append("CONTEXT WINDOW")
+    context_lines.append("NOTES")
+
+    context_window_text_for_prompt = context_window.get("context_window_text_for_prompt")
+    if (
+        isinstance(context_window_text_for_prompt, str)
+        and context_window_text_for_prompt.strip() != ""
+    ):
+        context_lines.append(context_window_text_for_prompt)
+    else:
+        context_lines.append("[No notes were included in this context window]")
+    context_lines.append("")
+    context_lines.append("END OF NOTES")
+    context_lines.append("")
+    context_lines.append("CONTEXT METADATA")
     context_lines.append(
         "Active search context query: "
         + json.dumps(context_window.get("active_search_context_query", ""), ensure_ascii=False)
@@ -6231,23 +6430,13 @@ def _build_v2_prompt_messages(
             + str(budget.get("max_chars", 0))
         )
     context_lines.append(
-        "Ordering for model input: top items are lower-priority; items farther down are higher-priority."
+        "Ordering for model input: top notes are generally lower-priority; notes farther down are generally more recent and/or higher-priority."
     )
     context_lines.append(
         "Include tags in context window: "
         + str(bool(context_window.get("include_tags_in_context_window"))).lower()
     )
-    context_lines.append("")
-    context_lines.append("NOTES")
-
-    context_window_text_for_prompt = context_window.get("context_window_text_for_prompt")
-    if (
-        isinstance(context_window_text_for_prompt, str)
-        and context_window_text_for_prompt.strip() != ""
-    ):
-        context_lines.append(context_window_text_for_prompt)
-    else:
-        context_lines.append("[No notes were included in this context window]")
+    context_lines.append("Requested Ollama num_ctx: " + str(num_ctx))
 
     messages: List[dict] = [
         {
@@ -6280,6 +6469,7 @@ def _run_context_window_request(
     user_message: str,
     conversation_history: List[dict],
     context_window_max_chars: int,
+    num_ctx: int,
     include_tags_in_context_window: bool,
     mcp_url: str,
     ollama_chat_url: str,
@@ -6291,6 +6481,8 @@ def _run_context_window_request(
         raise ValueError("message must not be empty")
     if context_window_max_chars <= 0:
         raise ValueError("context_window_max_chars must be > 0")
+    if num_ctx <= 0:
+        raise ValueError("num_ctx must be > 0")
 
     run_started_at = time.perf_counter()
 
@@ -6343,6 +6535,7 @@ def _run_context_window_request(
                 "tab_count": context_window["tab_count"],
                 "active_search_context_query": context_window["active_search_context_query"],
                 "include_tags_in_context_window": context_window["include_tags_in_context_window"],
+                "num_ctx": num_ctx,
                 "universe_note_count": context_window["universe_note_count"],
                 "included_note_count": context_window["included_note_count"],
                 "omitted_note_count": context_window["omitted_note_count"],
@@ -6358,6 +6551,7 @@ def _run_context_window_request(
                     "tab_count": context_window["tab_count"],
                     "active_search_context_query": context_window["active_search_context_query"],
                     "include_tags_in_context_window": context_window["include_tags_in_context_window"],
+                    "num_ctx": num_ctx,
                     "search_data": context_window["search_data"],
                     "included_note_count": context_window["included_note_count"],
                     "omitted_note_count": context_window["omitted_note_count"],
@@ -6373,6 +6567,7 @@ def _run_context_window_request(
         user_message=user_message,
         conversation_history=conversation_history,
         context_window=context_window,
+        num_ctx=num_ctx,
     )
     append_step(
         step_record={
@@ -6387,12 +6582,53 @@ def _run_context_window_request(
 
     _emit_status(detail="Waiting for model...")
     model_started_at = time.perf_counter()
-    answer = _ollama_chat_text(
+    model_runtime = _ollama_chat_text_with_runtime(
         ollama_chat_url=ollama_chat_url,
         model=resolved_model,
         messages=prompt_messages,
+        num_ctx=num_ctx,
     )
     model_execution_ms = round((time.perf_counter() - model_started_at) * 1000, 3)
+    answer = model_runtime.get("content")
+    if not isinstance(answer, str):
+        raise TypeError("model runtime content must be a string")
+    served_model = model_runtime.get("served_model")
+    if not isinstance(served_model, str) or served_model.strip() == "":
+        served_model = resolved_model
+
+    _emit_status(detail="Verifying runtime model/context...")
+    running_num_ctx: int | None = None
+    running_num_ctx_verify_error = ""
+    try:
+        running_num_ctx = _ollama_running_model_num_ctx(
+            ollama_chat_url=ollama_chat_url,
+            model=served_model,
+        )
+    except Exception as exc:
+        running_num_ctx_verify_error = f"{type(exc).__name__}: {exc}"
+
+    model_max_context_window: int | None = None
+    model_context_verify_error = ""
+    try:
+        model_max_context_window = _ollama_model_context_length(
+            ollama_chat_url=ollama_chat_url,
+            model=served_model,
+        )
+    except Exception as exc:
+        model_context_verify_error = f"{type(exc).__name__}: {exc}"
+
+    effective_context_window = num_ctx
+    if isinstance(running_num_ctx, int):
+        effective_context_window = running_num_ctx
+    elif isinstance(model_max_context_window, int):
+        effective_context_window = min(num_ctx, model_max_context_window)
+    verify_error_parts: List[str] = []
+    if running_num_ctx_verify_error != "":
+        verify_error_parts.append("ps: " + running_num_ctx_verify_error)
+    if model_context_verify_error != "":
+        verify_error_parts.append("show: " + model_context_verify_error)
+    combined_verify_error = "; ".join(verify_error_parts)
+
     append_step(
         step_record={
             "step": 3,
@@ -6400,9 +6636,25 @@ def _run_context_window_request(
             "reason": "model produced assistant response from current prompt context",
             "stats": {
                 "execution_ms": model_execution_ms,
+                "num_ctx": num_ctx,
+                "served_model": served_model,
+                "running_num_ctx": running_num_ctx,
+                "model_max_context_window": model_max_context_window,
+                "effective_context_window": effective_context_window,
             },
             "model_payload": {
                 "raw_model_output": answer,
+            },
+            "tool_response": {
+                "ok": combined_verify_error == "",
+                "data": {
+                    "served_model": served_model,
+                    "requested_num_ctx": num_ctx,
+                    "running_num_ctx": running_num_ctx,
+                    "model_max_context_window": model_max_context_window,
+                    "effective_context_window": effective_context_window,
+                },
+                "error": combined_verify_error,
             },
         }
     )
@@ -6415,6 +6667,7 @@ def _run_context_window_request(
         "ok": True,
         "answer": normalized_answer,
         "model": resolved_model,
+        "served_model": served_model,
         "steps": steps,
         "prompt_messages": prompt_messages,
         "context_window": {
@@ -6424,9 +6677,18 @@ def _run_context_window_request(
             "omitted_note_count": context_window["omitted_note_count"],
             "skipped_duplicate_note_count": context_window["skipped_duplicate_note_count"],
             "include_tags_in_context_window": context_window["include_tags_in_context_window"],
+            "num_ctx": num_ctx,
             "budget": context_window["budget"],
             "notes": context_window["notes"],
             "context_window_text": context_window["context_window_text"],
+        },
+        "runtime_verification": {
+            "served_model": served_model,
+            "requested_num_ctx": num_ctx,
+            "running_num_ctx": running_num_ctx,
+            "model_max_context_window": model_max_context_window,
+            "effective_context_window": effective_context_window,
+            "verify_error": combined_verify_error,
         },
         "total_execution_ms": _total_execution_ms(),
         "mode": "v2_context_window",
@@ -8348,6 +8610,7 @@ def _web_html_v2(
     mcp_url_value = json.dumps(default_mcp_url)
     ollama_chat_url_value = json.dumps(default_ollama_chat_url)
     context_window_max_chars_value = str(_DEFAULT_CONTEXT_WINDOW_MAX_CHARS)
+    num_ctx_value = str(_DEFAULT_V2_NUM_CTX)
     include_tags_in_context_window_value = json.dumps(
         _DEFAULT_V2_INCLUDE_TAGS_IN_CONTEXT_WINDOW
     )
@@ -8589,6 +8852,10 @@ def _web_html_v2(
             <input id="context_window_max_chars" type="number" min="1000" step="1000" />
           </div>
           <div>
+            <label for="num_ctx">Ollama num_ctx</label>
+            <input id="num_ctx" type="number" min="1" step="1024" />
+          </div>
+          <div>
             <label for="mcp_url">MCP URL</label>
             <input id="mcp_url" />
           </div>
@@ -8606,6 +8873,7 @@ def _web_html_v2(
         <div class="status-row">
           <div id="run_status" class="muted">Idle.</div>
           <div id="timing" class="muted"></div>
+          <div id="runtime_verify" class="muted"></div>
         </div>
         <div id="chat_thread" class="chat-thread"></div>
         <div class="composer">
@@ -8633,6 +8901,7 @@ def _web_html_v2(
       mcpUrl: __MCP_URL_VALUE__,
       ollamaChatUrl: __OLLAMA_CHAT_URL_VALUE__,
       contextWindowMaxChars: __CONTEXT_WINDOW_MAX_CHARS_VALUE__,
+      numCtx: __NUM_CTX_VALUE__,
       includeTagsInContextWindow: __INCLUDE_TAGS_IN_CONTEXT_WINDOW_VALUE__
     };
 
@@ -8640,6 +8909,7 @@ def _web_html_v2(
     const mcpUrlEl = document.getElementById("mcp_url");
     const ollamaChatUrlEl = document.getElementById("ollama_chat_url");
     const contextWindowMaxCharsEl = document.getElementById("context_window_max_chars");
+    const numCtxEl = document.getElementById("num_ctx");
     const includeTagsInContextWindowEl = document.getElementById("include_tags_in_context_window");
     const chatThreadEl = document.getElementById("chat_thread");
     const composerEl = document.getElementById("composer");
@@ -8648,6 +8918,7 @@ def _web_html_v2(
     const modelsBtn = document.getElementById("models_btn");
     const runStatusEl = document.getElementById("run_status");
     const timingEl = document.getElementById("timing");
+    const runtimeVerifyEl = document.getElementById("runtime_verify");
     const eventsEl = document.getElementById("events");
     const turnListEl = document.getElementById("turn_list");
     const promptPayloadEl = document.getElementById("prompt_payload");
@@ -8656,6 +8927,7 @@ def _web_html_v2(
     mcpUrlEl.value = defaults.mcpUrl;
     ollamaChatUrlEl.value = defaults.ollamaChatUrl;
     contextWindowMaxCharsEl.value = String(defaults.contextWindowMaxChars);
+    numCtxEl.value = String(defaults.numCtx);
     includeTagsInContextWindowEl.checked = Boolean(defaults.includeTagsInContextWindow);
 
     let conversation = [];
@@ -8668,6 +8940,10 @@ def _web_html_v2(
 
     function setTiming(text) {
       timingEl.textContent = text;
+    }
+
+    function setRuntimeVerify(text) {
+      runtimeVerifyEl.textContent = text;
     }
 
     function appendEventLine(text) {
@@ -8760,8 +9036,14 @@ def _web_html_v2(
           omitted_note_count: selected.context_window.omitted_note_count,
           skipped_duplicate_note_count: selected.context_window.skipped_duplicate_note_count,
           include_tags_in_context_window: selected.context_window.include_tags_in_context_window,
+          num_ctx: selected.context_window.num_ctx,
           budget: selected.context_window.budget
         }, null, 2));
+      }
+      if (selected.runtime_verification && typeof selected.runtime_verification === "object") {
+        blocks.push("");
+        blocks.push("RUNTIME VERIFICATION");
+        blocks.push(JSON.stringify(selected.runtime_verification, null, 2));
       }
       promptPayloadEl.textContent = blocks.join("\n");
     }
@@ -8804,6 +9086,7 @@ def _web_html_v2(
       sendBtn.disabled = true;
       setRunStatus("Running...");
       setTiming("");
+      setRuntimeVerify("");
       appendEventLine("Request started.");
 
       const payload = {
@@ -8811,6 +9094,7 @@ def _web_html_v2(
         conversation_history: priorConversation,
         model: modelEl.value,
         context_window_max_chars: Number(contextWindowMaxCharsEl.value),
+        num_ctx: Number(numCtxEl.value),
         include_tags_in_context_window: includeTagsInContextWindowEl.checked,
         mcp_url: mcpUrlEl.value,
         ollama_chat_url: ollamaChatUrlEl.value
@@ -8906,10 +9190,56 @@ def _web_html_v2(
               if (Array.isArray(result.prompt_messages)) {
                 promptInspectors.push({
                   prompt_messages: result.prompt_messages,
-                  context_window: result.context_window
+                  context_window: result.context_window,
+                  runtime_verification: result.runtime_verification
                 });
                 selectedInspectorIndex = promptInspectors.length - 1;
                 renderPromptInspector();
+              }
+              const runtime = result.runtime_verification && typeof result.runtime_verification === "object"
+                ? result.runtime_verification
+                : null;
+              if (runtime) {
+                const servedModel = typeof runtime.served_model === "string" ? runtime.served_model : "";
+                const effectiveCtx = typeof runtime.effective_context_window === "number"
+                  ? runtime.effective_context_window
+                  : null;
+                const requestedCtx = typeof runtime.requested_num_ctx === "number"
+                  ? runtime.requested_num_ctx
+                  : null;
+                const runningCtx = typeof runtime.running_num_ctx === "number"
+                  ? runtime.running_num_ctx
+                  : null;
+                const maxCtx = typeof runtime.model_max_context_window === "number"
+                  ? runtime.model_max_context_window
+                  : null;
+                const verifyError = typeof runtime.verify_error === "string" ? runtime.verify_error : "";
+                if (verifyError !== "") {
+                  setRuntimeVerify(
+                    "Runtime verify: served model="
+                    + servedModel
+                    + ", context="
+                    + String(effectiveCtx ?? requestedCtx ?? "unknown")
+                    + " (verify warning: "
+                    + verifyError
+                    + ")"
+                  );
+                } else {
+                  let runtimeText =
+                    "Runtime verify: served model="
+                    + servedModel
+                    + ", context="
+                    + String(effectiveCtx ?? requestedCtx ?? "unknown");
+                  if (runningCtx !== null) {
+                    runtimeText += " (runner " + String(runningCtx) + ")";
+                  }
+                  if (maxCtx !== null) {
+                    runtimeText += " (model max " + String(maxCtx) + ")";
+                  }
+                  setRuntimeVerify(runtimeText);
+                }
+              } else {
+                setRuntimeVerify("");
               }
               const totalMs = typeof result.total_execution_ms === "number" ? result.total_execution_ms : null;
               if (totalMs !== null && Number.isFinite(totalMs)) {
@@ -8940,6 +9270,7 @@ def _web_html_v2(
         renderConversation();
         appendEventLine("Request exception: " + messageText);
         setRunStatus("Failed.");
+        setRuntimeVerify("");
       } finally {
         sendBtn.disabled = false;
       }
@@ -8965,6 +9296,7 @@ def _web_html_v2(
       eventsEl.innerHTML = "";
       setRunStatus("Idle.");
       setTiming("");
+      setRuntimeVerify("");
       appendEventLine("Conversation reset.");
     });
 
@@ -9007,6 +9339,7 @@ def _web_html_v2(
             "__INCLUDE_TAGS_IN_CONTEXT_WINDOW_VALUE__",
             include_tags_in_context_window_value,
         )
+        .replace("__NUM_CTX_VALUE__", num_ctx_value)
         .replace(
             "__CONTEXT_WINDOW_MAX_CHARS_VALUE__",
             context_window_max_chars_value,
@@ -9239,6 +9572,8 @@ def create_web_app(
                 status_code=400,
                 detail="context_window_max_chars must be <= 5000000",
             )
+        if payload.num_ctx <= 0:
+            raise HTTPException(status_code=400, detail="num_ctx must be > 0")
         try:
             normalized_history = _validate_v2_conversation_history(
                 entries=payload.conversation_history
@@ -9279,6 +9614,7 @@ def create_web_app(
                     user_message=payload.message,
                     conversation_history=normalized_history,
                     context_window_max_chars=payload.context_window_max_chars,
+                    num_ctx=payload.num_ctx,
                     include_tags_in_context_window=payload.include_tags_in_context_window,
                     mcp_url=payload.mcp_url,
                     ollama_chat_url=payload.ollama_chat_url,

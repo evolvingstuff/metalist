@@ -14,6 +14,7 @@ from mcp_client import DEFAULT_REGEX_ENGINE
 from mcp_client import DEFAULT_SEARCH_CONTEXT_QUERY
 from mcp_client import DEFAULT_WEB_HOST
 from mcp_client import DEFAULT_WEB_PORT
+from mcp_client import reset_local_ollama_server
 
 class FilterCheckUpdates(logging.Filter):
     NOISY_PATTERNS = (
@@ -104,6 +105,9 @@ def _start_agent_web_sidecar() -> None:
         search_context_query = os.environ["MCP_AGENT_SEARCH_CONTEXT_QUERY"]
     else:
         search_context_query = DEFAULT_SEARCH_CONTEXT_QUERY
+    reset_ollama_on_start = _env_flag("MCP_AGENT_RESET_OLLAMA_ON_START", True)
+    if reset_ollama_on_start:
+        reset_local_ollama_server(ollama_chat_url=ollama_chat_url)
 
     agent_app = create_web_app(
         default_model=model,

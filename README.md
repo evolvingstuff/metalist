@@ -62,6 +62,8 @@ python main.py
 
 `main.py` also auto-starts the agent web app sidecar and prints:
 - `Agent web app: http://127.0.0.1:8765`
+- On startup, local Ollama (`127.0.0.1`) is reset by default so a fresh runner is used.
+- Sidecar Ollama auto-start uses `OLLAMA_CONTEXT_LENGTH=16384` by default.
 
 Manual web mode (optional):
 ```bash
@@ -83,6 +85,15 @@ python mcp_client.py tools/list
 Disable auto sidecar if needed:
 ```bash
 MCP_AGENT_WEB_ENABLED=0 python main.py
+```
+
+Control Ollama startup behavior:
+```bash
+# disable Ollama reset-on-start (default is enabled)
+MCP_AGENT_RESET_OLLAMA_ON_START=0 python main.py
+
+# override auto-start context length (default 16384)
+MCP_AGENT_OLLAMA_CONTEXT_LENGTH=32768 python main.py
 ```
 
 Optional: direct stdio transport (advanced/manual):
