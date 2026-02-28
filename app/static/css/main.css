@@ -1219,6 +1219,10 @@ body {
     line-height: 1.35;
 }
 
+.note.collapsed:not(.editing) .note-content:has(img) {
+    max-height: 4.8em;
+}
+
 .note.collapsed:not(.editing) .note-content :not(img) {
     font-size: inherit !important;
     line-height: inherit !important;
@@ -1265,14 +1269,16 @@ body {
 }
 
 .note.collapsed:not(.editing) .note-content img {
-    height: 1.5em;
-    max-width: 2.5em;
-    width: auto;
-    object-fit: cover;
+    height: 4.5em !important;
+    width: 7.5em !important;
+    max-height: 4.5em !important;
+    max-width: 7.5em !important;
+    object-fit: cover !important;
+    object-position: center center;
     border-radius: 4px;
     margin-right: 0.35rem;
     vertical-align: middle;
-    display: inline-block;
+    display: inline-block !important;
 }
 
 

@@ -197,9 +197,9 @@ function applyServerDiffOps(payload) {
         }
     }
 
-    updateCollapseAffordancesForNotes(affordanceDirtyElements);
     renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
+    updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
     return {
         notesContainer,
@@ -620,6 +620,14 @@ export function applyDifferentialView(payload, options) {
 
         // Lock state can change without hash changes (lock payload is out-of-band).
         if (!hashChanged) {
+            if (
+                noteData
+                && noteData.flags
+                && typeof noteData.flags === 'object'
+                && Object.prototype.hasOwnProperty.call(noteData.flags, 'hasChildren')
+            ) {
+                noteElement.dataset.hasChildren = Boolean(noteData.flags.hasChildren).toString();
+            }
             noteElement.dataset.lockOwner = nextLockOwner;
             noteElement.classList.toggle('locked', lockedByOther);
             noteElement.classList.toggle('interactive', !lockedByOther);
@@ -735,14 +743,13 @@ export function applyDifferentialView(payload, options) {
         }
     }
 
-    updateCollapseAffordancesForNotes(affordanceDirtyElements);
-
     if (payload.treeHash && ModeContext.rootHash !== payload.treeHash) {
         ModeContext.setRootHash(payload.treeHash);
     }
 
     renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
+    updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
     return {
         notesContainer,
@@ -886,6 +893,9 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     noteElement.dataset.contentHash = snapshotHash;
     noteElement.dataset.lockOwner = lockOwner;
     noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
+    if (Object.prototype.hasOwnProperty.call(flags, 'hasChildren')) {
+        noteElement.dataset.hasChildren = Boolean(flags.hasChildren).toString();
+    }
 
     noteElement.classList.add(CONFIG.CLASSES.NOTE);
     noteElement.classList.toggle('locked', lockedByOther);

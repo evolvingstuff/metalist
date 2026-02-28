@@ -6,6 +6,7 @@ const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
 const DELTA_TOLERANCE = 1;
 const META_CSV_SELECTOR = '.meta-csv';
+const PENDING_COLLAPSE_IMAGE_ELEMENTS = new WeakSet();
 
 function parsePixels(value) {
     if (!value) {
@@ -37,6 +38,43 @@ function contentHasAdditionalLines(contentElement) {
     const paddingBottom = parsePixels(style.paddingBottom);
     const effectiveContentHeight = contentElement.scrollHeight - paddingTop - paddingBottom;
     return effectiveContentHeight - lineHeight > DELTA_TOLERANCE;
+}
+
+function refreshAffordanceAfterPendingImagesLoad(noteElement, contentElement) {
+    if (!noteElement || !contentElement) {
+        throw new Error('refreshAffordanceAfterPendingImagesLoad requires note and content elements');
+    }
+    const imageElements = contentElement.querySelectorAll('img');
+    for (const imageElement of imageElements) {
+        if (!(imageElement instanceof HTMLImageElement)) {
+            continue;
+        }
+        if (imageElement.complete) {
+            continue;
+        }
+        if (PENDING_COLLAPSE_IMAGE_ELEMENTS.has(imageElement)) {
+            continue;
+        }
+
+        const handleImageSettled = () => {
+            imageElement.removeEventListener('load', handleImageSettled);
+            imageElement.removeEventListener('error', handleImageSettled);
+            PENDING_COLLAPSE_IMAGE_ELEMENTS.delete(imageElement);
+            if (!noteElement.isConnected) {
+                return;
+            }
+            queueMicrotask(() => {
+                if (!noteElement.isConnected) {
+                    return;
+                }
+                updateCollapseAffordanceForNote(noteElement);
+            });
+        };
+
+        PENDING_COLLAPSE_IMAGE_ELEMENTS.add(imageElement);
+        imageElement.addEventListener('load', handleImageSettled, { once: true });
+        imageElement.addEventListener('error', handleImageSettled, { once: true });
+    }
 }
 
 export function updateCollapseAffordances(root) {
@@ -110,6 +148,8 @@ export function updateCollapseAffordanceForNote(noteElement) {
         collapseToggle.setAttribute('aria-label', isCollapsed ? 'Expand note' : 'Collapse note');
         collapseToggle.removeAttribute('title');
     }
+
+    refreshAffordanceAfterPendingImagesLoad(noteElement, contentElement);
 }
 
 export async function ensureNoteExpanded(noteId) {

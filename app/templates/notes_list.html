@@ -31,6 +31,7 @@
          data-note-id="${note['id']}" 
          data-parent-id="${note.get('parent_id', '')}"
          data-is-collapsed="${'true' if note['flags'].get('isCollapsed') else 'false'}"
+         data-has-children="${'true' if note['flags'].get('hasChildren') else 'false'}"
          data-note-tags="${note['tags'] | h}">
         % if locked_by_other:
             <span class="lock-icon">🔒</span>

@@ -56,6 +56,15 @@ describe('Collapse affordance for parents with children', () => {
       // Regression: collapsed parents with children must still show an expand control.
       cy.get(`[data-note-id="${parentNoteId}"]`, { timeout: 10000 })
         .should('have.attr', 'data-can-collapse', 'true')
+    })
+
+    cy.reload()
+    cy.wait('@view')
+
+    cy.get('@parentNoteId').then((parentNoteId) => {
+      cy.get(`[data-note-id="${parentNoteId}"]`, { timeout: 10000 })
+        .should('have.class', 'collapsed')
+        .and('have.attr', 'data-can-collapse', 'true')
       cy.get(`[data-note-id="${parentNoteId}"] > .note-collapse-toggle`, { timeout: 10000 })
         .should('have.css', 'display', 'flex')
         .click()
@@ -72,4 +81,3 @@ describe('Collapse affordance for parents with children', () => {
     })
   })
 })
-
