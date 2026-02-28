@@ -1216,6 +1216,48 @@ body {
     display: -webkit-box;
     -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
+    line-height: 1.35;
+}
+
+.note.collapsed:not(.editing) .note-content :not(img) {
+    font-size: inherit !important;
+    line-height: inherit !important;
+}
+
+.note.collapsed:not(.editing) .note-content :is(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p,
+    div,
+    section,
+    article,
+    header,
+    footer,
+    main,
+    blockquote,
+    pre,
+    ul,
+    ol,
+    li,
+    table,
+    thead,
+    tbody,
+    tfoot,
+    tr,
+    th,
+    td
+) {
+    display: inline;
+    margin: 0 !important;
+    padding: 0;
+}
+
+.note.collapsed:not(.editing) .note-content br {
+    display: none;
 }
 
 .note.collapsed:not(.editing) .note-children {

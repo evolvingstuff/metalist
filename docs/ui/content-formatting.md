@@ -75,6 +75,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode (using markdown-it in the browser).
+- Collapsed notes still render a one-line preview; oversized heading styles are normalized in that preview so the first line remains visible and thumbnail behavior for images is preserved.
 
 ## LaTeX meta tags
 - `@LaTeX`: renders the note content as LaTeX in view mode (using KaTeX in the browser).
