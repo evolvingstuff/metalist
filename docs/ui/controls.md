@@ -25,7 +25,9 @@
 - `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
 - See `docs/ui/references.md` for full reference behavior.
 - `⌘ + J` no-ops when there is no next sibling beneath the current note.
+- `⌘ + J` merges tag bars without duplicates (case-insensitive dedupe; first-seen casing/order wins).
 - `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
+- `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
 
 ### General Shortcuts
 | Shortcut | Action |

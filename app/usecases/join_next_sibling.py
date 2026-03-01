@@ -27,24 +27,20 @@ def _merge_note_content_html(current_content: str, next_content: str) -> str:
     if right == "":
         return left
 
-    ends_with_line_boundary = (
-        re.search(r"<br\s*/?>\s*$", left, flags=re.IGNORECASE) is not None
-        or re.search(
+    ends_with_line_boundary = re.search(r"<br\s*/?>\s*$", left, flags=re.IGNORECASE) is not None
+    if not ends_with_line_boundary:
+        ends_with_line_boundary = re.search(
             r"</(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)>\s*$",
             left,
             flags=re.IGNORECASE,
-        )
-        is not None
-    )
-    starts_with_line_boundary = (
-        re.search(r"^\s*<br\s*/?>", right, flags=re.IGNORECASE) is not None
-        or re.search(
+        ) is not None
+    starts_with_line_boundary = re.search(r"^\s*<br\s*/?>", right, flags=re.IGNORECASE) is not None
+    if not starts_with_line_boundary:
+        starts_with_line_boundary = re.search(
             r"^\s*<(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)\b",
             right,
             flags=re.IGNORECASE,
-        )
-        is not None
-    )
+        ) is not None
     if ends_with_line_boundary or starts_with_line_boundary:
         return f"{left}{right}"
     return f"{left}<br>{right}"
