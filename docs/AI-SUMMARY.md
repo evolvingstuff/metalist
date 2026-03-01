@@ -17,6 +17,7 @@
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping.
+- `app/services/embedded_references.py`: Resolves `![[UUID]]` embedded-note references in view mode (including missing/cycle markers + subtree rendering).
 - `app/services/tab_state.py`: Tracks `(client, tab)` search + scroll metadata used by the UI between reloads.
 - `app/services/login_rate_limit.py`: In-memory login attempt throttling for `/api2/auth/login`.
 - `app/services/runtime_hardening.py`: Startup hardening (disable core dumps; macOS swap/hibernation enforcement).
@@ -39,10 +40,12 @@
 
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.
+- Embedded references: view payload `notes[*].content` can include rendered `![[UUID]]` blocks (view mode only); host note hashes include rendered embed output.
 - Tag persistence: tags are included in `snapshot.notes[*].tags` and are saved alongside note content on `PUT /api2/notes/{id}/save`.
   - Tag bar grammar (wrappers + /* comments */): `docs/ui/tag-bar.md`.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
+- Reference insertion shortcut: `Cmd/Ctrl+R` inserts `![[UUID]]` from the last note copied with `Cmd/Ctrl+C` (when no text selection).
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard and dropped image files are embedded as compressed `data:image/...` payloads (not file links).
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.

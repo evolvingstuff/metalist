@@ -3,6 +3,7 @@
 High-level flow: if the currently edited note is dirty, save first so the copied note includes the latest edits.
 
 Related behavior: Cmd+X (cut note when no selection) uses the same copy flow and then deletes the note (undoable via delete-subtree undo).
+Related behavior: Cmd+R uses the copied note UUID from this flow (`note_id` in copy response) to insert `![[UUID]]` while editing.
 
 ```mermaid
 sequenceDiagram
@@ -40,8 +41,8 @@ sequenceDiagram
         API->>Server: POST /api2/notes/{id}/copy
         Server->>Copy: execute()
         Copy->>Store: read subtree
-        Copy-->>Server: clipboard payload
+        Copy-->>Server: clipboard payload + copied note_id
         Server-->>API: 200 OK
-        API-->>Client: clipboard updated
+        API-->>Client: clipboard updated (+ copied UUID for Cmd+R)
     end
 ```

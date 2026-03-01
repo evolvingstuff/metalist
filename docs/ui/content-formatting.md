@@ -17,6 +17,7 @@
   - Missing UUIDs render a "missing reference" marker.
   - Circular reference chains render a "circular reference" marker and stop at that point.
 - In **edit mode**, the token remains literal text (`![[UUID]]`).
+- Full reference behavior and shortcut workflow: `docs/ui/references.md`.
 
 ## Content Wrappers
 - Wrappers in note content are semantic markup regions:

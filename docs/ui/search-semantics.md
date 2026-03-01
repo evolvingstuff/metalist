@@ -59,3 +59,10 @@ The UI renders a tree, so search returns context:
 Results are still **windowed by root notes**:
 - The server sends an initial window of matching roots.
 - Scrolling near the end triggers additional root windows.
+
+## Embedded References and Search
+
+Embedded note references (`![[UUID]]`) are rendered in view mode only and do not alter search matching rules:
+- Referenced note tags do not add required/forbidden tag hits for the host note.
+- Referenced note text does not add required/forbidden text hits for the host note.
+- Search matching remains based on the host note data + existing inheritance/ontology behavior.

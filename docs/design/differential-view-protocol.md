@@ -82,6 +82,7 @@
   - `content`: HTML that is **rendered for view mode** unless the note is actively being edited by the current client.
     - When `flags.isEditing` is true (and the lock owner is the current client), the server sends **raw editable HTML** so wrapper delimiters like `{{...}}` remain visible.
     - Otherwise the server may apply view-only transforms (e.g. meta-tag formatting that consumes matching wrapper delimiters).
+    - Embedded references (`![[UUID]]`) are resolved in this view-only content rendering path; hashes include the rendered embed output so host notes can update when embedded targets change.
   - `tags`: tag-bar string: whitespace-separated tokens outside `/* ... */` comments.
   - `hash`: covers `content` + `tags` + flags + structural pointers.
 - The client sanitizes invalid/incomplete tokens (e.g. unclosed wrappers/comments) before saving.

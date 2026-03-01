@@ -20,6 +20,8 @@
 
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
 - See `docs/ui/paste-sanitization.md` for the full policy.
+- `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
+- See `docs/ui/references.md` for full reference behavior.
 
 ### General Shortcuts
 | Shortcut | Action |
