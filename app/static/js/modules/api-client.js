@@ -260,6 +260,16 @@ export const NotesAPI = {
         });
     },
 
+    async joinNextSibling(noteId) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.joinNextSibling requires noteId string');
+        }
+        return this._apiCall(CONFIG.API.NOTES.JOIN_NEXT(noteId), {
+            method: 'POST',
+            claimSession: true,
+        });
+    },
+
     async moveNote(noteId, siblingId, position, newParentId) {
         const body = {
             sibling_id: siblingId,

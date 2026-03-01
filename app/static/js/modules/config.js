@@ -13,6 +13,7 @@ export const CONFIG = {
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
             RUN_SHELL: (noteId) => `${API_NOTES_BASE}/${noteId}/run-shell`,
+            JOIN_NEXT: (noteId) => `${API_NOTES_BASE}/${noteId}/join-next`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
             INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
             OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,

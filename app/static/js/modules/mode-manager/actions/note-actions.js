@@ -27,6 +27,58 @@ function getLastTextNode(fragment) {
     return lastNode;
 }
 
+function isWhitespaceOnlyTextNode(node) {
+    if (!(node instanceof Text)) {
+        return false;
+    }
+    const normalized = node.data.replace(/\u00A0/g, ' ');
+    return normalized.trim().length === 0;
+}
+
+function hasNonTextRenderableContent(element) {
+    if (!(element instanceof HTMLElement)) {
+        return false;
+    }
+    return Boolean(
+        element.querySelector('img,video,audio,iframe,svg,math,canvas,input,textarea,button,table,hr')
+    );
+}
+
+function isVisuallyEmptyElement(node) {
+    if (!(node instanceof HTMLElement)) {
+        return false;
+    }
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === 'br') {
+        return true;
+    }
+    if (hasNonTextRenderableContent(node)) {
+        return false;
+    }
+    const normalizedText = node.textContent ? node.textContent.replace(/\u00A0/g, ' ') : '';
+    return normalizedText.trim().length === 0;
+}
+
+function stripEdgeEmptyNodes(fragment) {
+    while (fragment.firstChild) {
+        const firstChild = fragment.firstChild;
+        if (isWhitespaceOnlyTextNode(firstChild) || isVisuallyEmptyElement(firstChild)) {
+            fragment.removeChild(firstChild);
+            continue;
+        }
+        break;
+    }
+
+    while (fragment.lastChild) {
+        const lastChild = fragment.lastChild;
+        if (isWhitespaceOnlyTextNode(lastChild) || isVisuallyEmptyElement(lastChild)) {
+            fragment.removeChild(lastChild);
+            continue;
+        }
+        break;
+    }
+}
+
 function trimLeadingWhitespaceFromFragment(fragment) {
     while (true) {
         const firstTextNode = getFirstTextNode(fragment);
@@ -79,6 +131,7 @@ function normalizeRangeToSplitSegment(range) {
     }
 
     const fragment = range.cloneContents();
+    stripEdgeEmptyNodes(fragment);
     trimLeadingWhitespaceFromFragment(fragment);
     trimTrailingWhitespaceFromFragment(fragment);
 
@@ -627,6 +680,52 @@ export async function splitCurrentNoteFromSelection() {
         ModeContext.setDirty(false);
     }
     ModeContext.setLastSavedContent(splitSegments[0]);
+
+    return true;
+}
+
+export async function joinCurrentNoteWithNextSibling() {
+    const currentNoteId = ModeContext.currentNoteId;
+    Logger.logAction('joinCurrentNoteWithNextSibling', {
+        currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty,
+    });
+
+    if (!ModeContext.isEditing) {
+        Logger.logNoop('Join shortcut ignored: not editing');
+        return false;
+    }
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        Logger.logNoop('Join shortcut ignored: no active note');
+        return false;
+    }
+
+    if (ModeContext.isDirty) {
+        await actionSaveNote(currentNoteId);
+    }
+
+    const response = await NotesAPI.joinNextSibling(currentNoteId);
+    if (response && response.status === 'noop') {
+        Logger.logNoop('Join shortcut ignored: no joinable next sibling', {
+            currentNoteId,
+        });
+        return false;
+    }
+
+    const startedAt = performance.now();
+    const refreshedContent = await actionRefreshAndMaybeSelect({
+        startedAt,
+        context: 'joinCurrentNoteWithNextSibling',
+    });
+    if (typeof refreshedContent === 'string' && ModeContext.currentContent !== refreshedContent) {
+        ModeContext.setCurrentContent(refreshedContent);
+        ModeContext.setLastSavedContent(refreshedContent);
+    }
+
+    if (ModeContext.isDirty) {
+        ModeContext.setDirty(false);
+    }
 
     return true;
 }

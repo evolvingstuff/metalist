@@ -102,6 +102,11 @@ describe('Split shortcut (Cmd+S)', () => {
     assertNoteTextAndTagAtIndex(0, 'foo', 'alpha')
     assertNoteTextAndTagAtIndex(1, 'bar', 'alpha')
     assertNoteTextAndTagAtIndex(2, 'baz', 'alpha')
+    cy.get('.note').eq(2).find('> .note-content').invoke('html').then((html) => {
+      const normalized = String(html).toLowerCase().replace(/\s+/g, ' ')
+      expect(normalized.startsWith('<div><br></div>')).to.equal(false)
+      expect(normalized.startsWith('<br')).to.equal(false)
+    })
   })
 
   it('does nothing when all text is selected', () => {

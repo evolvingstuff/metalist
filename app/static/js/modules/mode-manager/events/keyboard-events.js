@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild, splitCurrentNoteFromSelection } from '../actions/note-actions.js';
+import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild, splitCurrentNoteFromSelection, joinCurrentNoteWithNextSibling } from '../actions/note-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -237,8 +237,10 @@ function handleKeyDown(event) {
             needsServer = true;
 	        } else if (isMoveKey && metaOrCtrl) {
 	            needsServer = true;
-	        } else if (event.key === 'v' && metaOrCtrl) {
-	            needsServer = true;
+        } else if (event.key === 'v' && metaOrCtrl) {
+            needsServer = true;
+        } else if (event.key === 'j' && metaOrCtrl) {
+            needsServer = true;
         } else if (event.key === 's' && metaOrCtrl) {
             needsServer = true;
         } else if (event.key === 'c' && metaOrCtrl) {
@@ -351,6 +353,11 @@ function handleKeyDown(event) {
         case 's':
             if (event.metaKey || event.ctrlKey) {
                 void handleSplitNoteShortcut(event);
+            }
+            break;
+        case 'j':
+            if (event.metaKey || event.ctrlKey) {
+                void handleJoinNoteShortcut(event);
             }
             break;
         case 'x':
@@ -1199,6 +1206,28 @@ async function handleSplitNoteShortcut(event) {
 
     await CommandGate.run('keyboard.split_note', async () => {
         await splitCurrentNoteFromSelection();
+    });
+}
+
+async function handleJoinNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleJoinNoteShortcut called without an event object');
+    }
+
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    await CommandGate.run('keyboard.join_note', async () => {
+        await joinCurrentNoteWithNextSibling();
     });
 }
 
