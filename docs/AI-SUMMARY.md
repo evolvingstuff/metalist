@@ -46,6 +46,7 @@
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
 - Reference insertion shortcut: `Cmd/Ctrl+R` inserts `![[UUID]]` from the last note copied with `Cmd/Ctrl+C` (when no text selection).
+- Split shortcut: `Cmd/Ctrl+S` splits the currently edited note at selection/caret into sibling notes and preserves the original tag-bar string across all resulting notes; no-op when full-note selection or end-caret would yield fewer than two non-empty segments.
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard and dropped image files are embedded as compressed `data:image/...` payloads (not file links).
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
@@ -64,6 +65,7 @@ python main.py
 ## Quick Ref
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
+- Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
