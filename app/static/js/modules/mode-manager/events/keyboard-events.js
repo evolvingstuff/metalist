@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild } from '../actions/note-actions.js';
+import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild, splitCurrentNoteFromSelection } from '../actions/note-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
@@ -229,7 +229,7 @@ function handleKeyDown(event) {
     );
 
     // Check if we're disconnected from server for operations that need it
-    if (!ModeContext.isConnected) {
+	    if (!ModeContext.isConnected) {
         let needsServer = false;
         if (event.key === 'Enter' && (metaOrCtrl || !ModeContext.isEditing)) {
             needsServer = true;
@@ -239,6 +239,8 @@ function handleKeyDown(event) {
 	            needsServer = true;
 	        } else if (event.key === 'v' && metaOrCtrl) {
 	            needsServer = true;
+        } else if (event.key === 's' && metaOrCtrl) {
+            needsServer = true;
         } else if (event.key === 'c' && metaOrCtrl) {
             needsServer = true;
         } else if ((event.key === 'z' || event.key === 'y') && metaOrCtrl) {
@@ -344,6 +346,11 @@ function handleKeyDown(event) {
         case 'r':
             if (event.metaKey || event.ctrlKey) {
                 handleInsertEmbedReferenceShortcut(event);
+            }
+            break;
+        case 's':
+            if (event.metaKey || event.ctrlKey) {
+                void handleSplitNoteShortcut(event);
             }
             break;
         case 'x':
@@ -1171,6 +1178,28 @@ function handleInsertEmbedReferenceShortcut(event) {
     if (!ModeContext.isDirty) {
         ModeContext.setDirty(true);
     }
+}
+
+async function handleSplitNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleSplitNoteShortcut called without an event object');
+    }
+
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    await CommandGate.run('keyboard.split_note', async () => {
+        await splitCurrentNoteFromSelection();
+    });
 }
 
 async function handleCutNoteShortcut(event) {

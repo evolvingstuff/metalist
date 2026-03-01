@@ -4,12 +4,133 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
-import { clearTagBar } from '../services/tag-bar-service.js';
+import { clearTagBar, getTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { scrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
+
+function getFirstTextNode(fragment) {
+    const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null);
+    return walker.nextNode();
+}
+
+function getLastTextNode(fragment) {
+    const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null);
+    let lastNode = null;
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+        lastNode = currentNode;
+        currentNode = walker.nextNode();
+    }
+    return lastNode;
+}
+
+function trimLeadingWhitespaceFromFragment(fragment) {
+    while (true) {
+        const firstTextNode = getFirstTextNode(fragment);
+        if (!firstTextNode) {
+            return;
+        }
+        const trimmed = firstTextNode.data.replace(/^\s+/, '');
+        if (trimmed.length === 0) {
+            const parentNode = firstTextNode.parentNode;
+            if (!parentNode) {
+                throw new Error('Text node missing parent during leading-trim');
+            }
+            parentNode.removeChild(firstTextNode);
+            continue;
+        }
+        firstTextNode.data = trimmed;
+        return;
+    }
+}
+
+function trimTrailingWhitespaceFromFragment(fragment) {
+    while (true) {
+        const lastTextNode = getLastTextNode(fragment);
+        if (!lastTextNode) {
+            return;
+        }
+        const trimmed = lastTextNode.data.replace(/\s+$/, '');
+        if (trimmed.length === 0) {
+            const parentNode = lastTextNode.parentNode;
+            if (!parentNode) {
+                throw new Error('Text node missing parent during trailing-trim');
+            }
+            parentNode.removeChild(lastTextNode);
+            continue;
+        }
+        lastTextNode.data = trimmed;
+        return;
+    }
+}
+
+function fragmentToHtml(fragment) {
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+    return container.innerHTML;
+}
+
+function normalizeRangeToSplitSegment(range) {
+    if (!(range instanceof Range)) {
+        throw new Error('normalizeRangeToSplitSegment requires Range');
+    }
+
+    const fragment = range.cloneContents();
+    trimLeadingWhitespaceFromFragment(fragment);
+    trimTrailingWhitespaceFromFragment(fragment);
+
+    const text = typeof fragment.textContent === 'string' ? fragment.textContent : '';
+    const html = fragmentToHtml(fragment);
+    return {
+        html,
+        hasText: text.trim().length > 0,
+    };
+}
+
+function buildSplitSegmentsFromSelection(contentElement) {
+    if (!(contentElement instanceof HTMLElement)) {
+        throw new Error('buildSplitSegmentsFromSelection requires content element');
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable while splitting note');
+    }
+    if (selection.rangeCount === 0) {
+        return [];
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!contentElement.contains(range.startContainer) || !contentElement.contains(range.endContainer)) {
+        return [];
+    }
+
+    const beforeRange = document.createRange();
+    beforeRange.selectNodeContents(contentElement);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+
+    const afterRange = document.createRange();
+    afterRange.selectNodeContents(contentElement);
+    afterRange.setStart(range.endContainer, range.endOffset);
+
+    const candidateRanges = range.collapsed
+        ? [beforeRange, afterRange]
+        : [beforeRange, range.cloneRange(), afterRange];
+
+    const segments = [];
+    for (const candidateRange of candidateRanges) {
+        const normalized = normalizeRangeToSplitSegment(candidateRange);
+        if (!normalized.hasText) {
+            continue;
+        }
+        segments.push(normalized.html);
+    }
+
+    return segments;
+}
 
 export async function toggleTodoDone(noteId) {
     const startedAt = performance.now();
@@ -441,6 +562,73 @@ export async function actionCopyNote() {
 
     // No need to store clipboard state client-side anymore
     return response;
+}
+
+export async function splitCurrentNoteFromSelection() {
+    const currentNoteId = ModeContext.currentNoteId;
+    Logger.logAction('splitCurrentNoteFromSelection', {
+        currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty,
+    });
+
+    if (!ModeContext.isEditing) {
+        Logger.logNoop('Split shortcut ignored: not editing');
+        return false;
+    }
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        Logger.logNoop('Split shortcut ignored: no active note');
+        return false;
+    }
+
+    const noteElement = DOMUtils.getNoteById(currentNoteId);
+    const contentElement = DOMUtils.getNoteContent(noteElement);
+    if (!(contentElement instanceof HTMLElement)) {
+        throw new Error('Current note missing editable content element for split');
+    }
+
+    const splitSegments = buildSplitSegmentsFromSelection(contentElement);
+    if (splitSegments.length <= 1) {
+        Logger.logNoop('Split shortcut ignored: selection/caret produced no split', {
+            segmentCount: splitSegments.length,
+        });
+        return false;
+    }
+
+    const tags = getTagBarValue(noteElement);
+    await NotesAPI.saveNote(currentNoteId, splitSegments[0], tags);
+
+    let anchorNoteId = currentNoteId;
+    let index = 1;
+    while (index < splitSegments.length) {
+        const createResponse = await NotesAPI.createSibling(anchorNoteId, ModeContext.searchQuery);
+        const createdNoteId = createResponse && typeof createResponse.id === 'string'
+            ? createResponse.id
+            : '';
+        if (createdNoteId.length === 0) {
+            throw new Error('Split sibling creation response missing id');
+        }
+
+        await NotesAPI.saveNote(createdNoteId, splitSegments[index], tags);
+        anchorNoteId = createdNoteId;
+        index += 1;
+    }
+
+    const startedAt = performance.now();
+    const refreshedContent = await actionRefreshAndMaybeSelect({
+        startedAt,
+        context: 'splitCurrentNoteFromSelection',
+    });
+    if (typeof refreshedContent === 'string' && ModeContext.currentContent !== refreshedContent) {
+        ModeContext.setCurrentContent(refreshedContent);
+    }
+
+    if (ModeContext.isDirty) {
+        ModeContext.setDirty(false);
+    }
+    ModeContext.setLastSavedContent(splitSegments[0]);
+
+    return true;
 }
 
 export async function actionPasteNoteSibling() {

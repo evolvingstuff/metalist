@@ -14,6 +14,7 @@
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + R` | Insert `![[UUID]]` for the most recently copied note UUID |
+| `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note is empty with no tags, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
@@ -22,6 +23,7 @@
 - See `docs/ui/paste-sanitization.md` for the full policy.
 - `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
 - See `docs/ui/references.md` for full reference behavior.
+- `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
 
 ### General Shortcuts
 | Shortcut | Action |
