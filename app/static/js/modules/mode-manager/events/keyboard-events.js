@@ -1026,6 +1026,76 @@ function ensureSelectionInsideEditableContent(contentElement) {
     selection.addRange(range);
 }
 
+function _linePrefixText(fullText) {
+    if (typeof fullText !== 'string') {
+        throw new Error('_linePrefixText requires string');
+    }
+    const lastLf = fullText.lastIndexOf('\n');
+    const lastCr = fullText.lastIndexOf('\r');
+    const boundary = Math.max(lastLf, lastCr);
+    if (boundary === -1) {
+        return fullText;
+    }
+    return fullText.slice(boundary + 1);
+}
+
+function _lineSuffixText(fullText) {
+    if (typeof fullText !== 'string') {
+        throw new Error('_lineSuffixText requires string');
+    }
+    const lf = fullText.indexOf('\n');
+    const cr = fullText.indexOf('\r');
+    let boundary = -1;
+    if (lf === -1) {
+        boundary = cr;
+    } else if (cr === -1) {
+        boundary = lf;
+    } else {
+        boundary = Math.min(lf, cr);
+    }
+    if (boundary === -1) {
+        return fullText;
+    }
+    return fullText.slice(0, boundary);
+}
+
+function getSelectionLineContext(contentElement) {
+    if (!(contentElement instanceof HTMLElement)) {
+        throw new Error('getSelectionLineContext requires content element');
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable');
+    }
+    if (selection.rangeCount === 0) {
+        throw new Error('Selection range missing');
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!contentElement.contains(range.startContainer) || !contentElement.contains(range.endContainer)) {
+        throw new Error('Selection is outside editable content');
+    }
+
+    const beforeRange = document.createRange();
+    beforeRange.selectNodeContents(contentElement);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+    const beforeText = beforeRange.toString();
+
+    const afterRange = document.createRange();
+    afterRange.selectNodeContents(contentElement);
+    afterRange.setStart(range.endContainer, range.endOffset);
+    const afterText = afterRange.toString();
+
+    const beforeLineText = _linePrefixText(beforeText);
+    const afterLineText = _lineSuffixText(afterText);
+
+    return {
+        hasTextBeforeOnLine: beforeLineText.length > 0,
+        hasTextAfterOnLine: afterLineText.length > 0,
+    };
+}
+
 function insertPlainTextAtCurrentSelection(text) {
     if (typeof text !== 'string') {
         throw new Error('insertPlainTextAtCurrentSelection requires text string');
@@ -1087,7 +1157,16 @@ function handleInsertEmbedReferenceShortcut(event) {
     }
 
     ensureSelectionInsideEditableContent(contentElement);
-    insertPlainTextAtCurrentSelection(`![[${referenceNoteId}]]`);
+    const lineContext = getSelectionLineContext(contentElement);
+    const referenceToken = `![[${referenceNoteId}]]`;
+    let insertionText = referenceToken;
+    if (lineContext.hasTextBeforeOnLine) {
+        insertionText = `\n${insertionText}`;
+    }
+    if (lineContext.hasTextAfterOnLine) {
+        insertionText = `${insertionText}\n`;
+    }
+    insertPlainTextAtCurrentSelection(insertionText);
 
     if (!ModeContext.isDirty) {
         ModeContext.setDirty(true);
