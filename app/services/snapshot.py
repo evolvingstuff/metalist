@@ -8,7 +8,8 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 
 from loguru import logger
 
-from app.services.content_formatting import format_note_content_for_view, find_list_style
+from app.services.content_formatting import find_list_style
+from app.services.embedded_references import EmbedRenderContext, render_note_content_with_embeds
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
 from app.services.search_query import parse_search_query
@@ -100,6 +101,11 @@ def build_view_state(
     search_root_count_total = 0
 
     force_uncollapsed_ids: Set[str] = set()
+    embed_render_context = EmbedRenderContext(
+        has_note=note_store.has_note,
+        get_note=note_store.get_note,
+        get_children=note_store.get_children,
+    )
 
     if search is not None:
         if not isinstance(search, str):
@@ -298,9 +304,11 @@ def build_view_state(
             is_editing = bool(flags["isEditing"])
             rendered_content = rec.content
             if not is_editing:
-                rendered_content = format_note_content_for_view(
+                rendered_content = render_note_content_with_embeds(
+                    note_id=rec.id,
                     content_html=rec.content,
                     tags=rec.tags,
+                    context=embed_render_context,
                 )
 
             h = _compute_hash(rendered_content, rec.tags, flags, parent_id, prev_id, next_id)

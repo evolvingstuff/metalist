@@ -102,6 +102,7 @@ export class HelpModal extends BaseModal {
                 category: 'Copy/Paste',
                 items: [
                     { keys: `${modKey}+C`, description: 'Copy current note (in edit mode)' },
+                    { keys: `${modKey}+R`, description: 'Insert ![[UUID]] from copied note' },
                     { keys: `${modKey}+V`, description: 'Paste note as sibling' },
                     { keys: `${modKey}+Shift+V`, description: 'Paste note as child' }
                 ]

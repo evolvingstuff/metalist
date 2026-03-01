@@ -77,6 +77,7 @@ class CmdCopyNote(QueryCommand):
 
         return {
             "status": "success",
+            "note_id": self.note_id,
             "html": html,
             "plain_text": plain_text,
             "updateUUID": generate_new_uuid(),

@@ -53,6 +53,7 @@ class ModeContext {
         this._undoContextEpoch = this._loadUndoContextEpoch();
         
         // Clipboard mode tracking
+        this._clipboardNoteId = null;
         this._clipboardMode = 'system'; // 'system' for text, 'note' for note copying
         
         // Connection state tracking

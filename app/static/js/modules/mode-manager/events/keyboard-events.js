@@ -341,6 +341,11 @@ function handleKeyDown(event) {
                 handleCopyNoteShortcut(event);
             }
             break;
+        case 'r':
+            if (event.metaKey || event.ctrlKey) {
+                handleInsertEmbedReferenceShortcut(event);
+            }
+            break;
         case 'x':
             if (event.metaKey || event.ctrlKey) {
                 void handleCutNoteShortcut(event);
@@ -929,6 +934,13 @@ async function handleCopyNoteShortcut(event) {
         return;
     }
 
+    const copiedNoteId = copyResult?.note_id;
+    if (typeof copiedNoteId === 'string' && copiedNoteId.length > 0) {
+        if (ModeContext.clipboardNoteId !== copiedNoteId) {
+            ModeContext.setClipboardNoteId(copiedNoteId);
+        }
+    }
+
     Logger.logDebug('Note copied to server clipboard', {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
@@ -984,6 +996,101 @@ async function handleCopyNoteShortcut(event) {
         document.execCommand('copy');
         document.body.removeChild(textarea);
         Logger.logDebug('Rendered text copied to system clipboard via legacy fallback', {}, Logger.LogCategory.EVENT);
+    }
+}
+
+function ensureSelectionInsideEditableContent(contentElement) {
+    if (!contentElement) {
+        throw new Error('ensureSelectionInsideEditableContent requires content element');
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable');
+    }
+
+    const hasRangeInContent = (
+        selection.rangeCount > 0
+        && contentElement.contains(selection.anchorNode)
+        && contentElement.contains(selection.focusNode)
+    );
+    if (hasRangeInContent) {
+        return;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(contentElement);
+    range.collapse(false);
+    contentElement.focus();
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function insertPlainTextAtCurrentSelection(text) {
+    if (typeof text !== 'string') {
+        throw new Error('insertPlainTextAtCurrentSelection requires text string');
+    }
+
+    const inserted = document.execCommand('insertText', false, text);
+    if (inserted) {
+        return;
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable while inserting text');
+    }
+    if (selection.rangeCount === 0) {
+        throw new Error('Selection range missing while inserting text');
+    }
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function handleInsertEmbedReferenceShortcut(event) {
+    if (!event) {
+        throw new Error('handleInsertEmbedReferenceShortcut called without an event object');
+    }
+
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const referenceNoteId = ModeContext.clipboardNoteId;
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        Logger.logNoop('Reference shortcut ignored: no copied note UUID available', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId,
+        });
+        return;
+    }
+
+    const noteElement = DOMUtils.getNoteById(currentNoteId);
+    const contentElement = DOMUtils.getNoteContent(noteElement);
+    if (!(contentElement instanceof HTMLElement)) {
+        throw new Error('Current note missing editable content element');
+    }
+
+    ensureSelectionInsideEditableContent(contentElement);
+    insertPlainTextAtCurrentSelection(`![[${referenceNoteId}]]`);
+
+    if (!ModeContext.isDirty) {
+        ModeContext.setDirty(true);
     }
 }
 

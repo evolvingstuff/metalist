@@ -1345,6 +1345,53 @@ body {
     cursor: text;
 }
 
+/* Embedded note references (![[UUID]]) */
+.note-embed-block {
+    display: block;
+    margin: 8px 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.14);
+    background: #f1f3f5;
+}
+
+.note-embed-node {
+    display: block;
+}
+
+.note-embed-content {
+    display: block;
+}
+
+.note-embed-children {
+    margin-top: 6px;
+    margin-left: 10px;
+    padding-left: 10px;
+    border-left: 2px solid rgba(0, 0, 0, 0.12);
+}
+
+.note-embed-missing,
+.note-embed-cycle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4a4a4a;
+    font-size: 0.92em;
+}
+
+.note-embed-marker-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05em;
+    line-height: 1;
+    color: #6b7280;
+}
+
+.note-embed-marker-text {
+    overflow-wrap: anywhere;
+}
+
 .note-tag-bar {
     flex-basis: 100%;
     width: calc(100% - 30px);

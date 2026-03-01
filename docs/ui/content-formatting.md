@@ -6,6 +6,17 @@
 - **Editing vs viewing:**
   - When a note is being edited by the current client, the server sends **raw content** so all delimiters remain visible.
   - Otherwise the server sends **rendered view HTML**, which may consume delimiters and wrap regions in styling spans.
+  - Embedded note references use `![[UUID]]` and are rendered only in view mode.
+
+## Embedded Note References
+- Syntax: `![[UUID]]`
+- In **view mode**, the token renders as an embedded note block:
+  - It always renders as a block on its own visual line, even when written inline (for example `blah ![[UUID]] yada`).
+  - The referenced note's full child subtree is rendered inside the embed.
+  - Embedded rendering ignores the referenced note's collapsed/expanded state.
+  - Missing UUIDs render a "missing reference" marker.
+  - Circular reference chains render a "circular reference" marker and stop at that point.
+- In **edit mode**, the token remains literal text (`![[UUID]]`).
 
 ## Content Wrappers
 - Wrappers in note content are semantic markup regions:
