@@ -1255,13 +1255,13 @@ body {
     th,
     td
 ) {
-    display: inline;
+    display: block;
     margin: 0 !important;
     padding: 0;
 }
 
 .note.collapsed:not(.editing) .note-content br {
-    display: none;
+    display: inline;
 }
 
 .note.collapsed:not(.editing) .note-children {
