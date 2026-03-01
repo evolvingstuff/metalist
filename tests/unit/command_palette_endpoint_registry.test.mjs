@@ -5,7 +5,7 @@ import { buildCommandPaletteEndpoints } from '../../app/static/js/modules/comman
 
 function noop() {}
 
-test('buildCommandPaletteEndpoints includes backup/logout/password generator endpoints', () => {
+test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     const endpoints = buildCommandPaletteEndpoints({
         preferencesStore: {
             getRaw: () => null,
@@ -23,6 +23,7 @@ test('buildCommandPaletteEndpoints includes backup/logout/password generator end
             resetViewFilters: noop,
             resetAllPreferences: noop,
             runMcpClient: noop,
+            openKeyboardShortcutsHelp: noop,
         },
     });
 
@@ -31,5 +32,6 @@ test('buildCommandPaletteEndpoints includes backup/logout/password generator end
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);
+    assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
     assert.equal(endpointIds.has('action.run_mcp_client'), true);
 });

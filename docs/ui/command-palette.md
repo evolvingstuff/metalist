@@ -25,6 +25,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Restore from backup…`: opens a restore picker, applies the selected backup, then shows a success confirmation with `OK` before reload.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a utility modal for password generation.
+- `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
 
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).

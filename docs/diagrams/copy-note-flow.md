@@ -3,7 +3,7 @@
 High-level flow: if the currently edited note is dirty, save first so the copied note includes the latest edits.
 
 Related behavior: Cmd+X (cut note when no selection) uses the same copy flow and then deletes the note (undoable via delete-subtree undo).
-Related behavior: Cmd+R uses the copied note UUID from this flow (`note_id` in copy response) to insert `![[UUID]]` while editing.
+Related behavior: Cmd+R uses the copied note UUID from this flow (`note_id` in copy response) to copy as embedded reference (`![[UUID]]`) while editing.
 
 ```mermaid
 sequenceDiagram

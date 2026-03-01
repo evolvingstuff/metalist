@@ -59,68 +59,56 @@ export class HelpModal extends BaseModal {
 
         const shortcuts = [
             {
-                category: 'Navigation & Modes',
+                category: 'Global',
                 items: [
-                    { keys: 'Esc', description: 'Exit search or editing mode' },
-                    { keys: `${modKey}+/`, description: 'Activate search mode' },
-                    { keys: '?', description: 'Show this help dialog' }
+                    { keys: `${modKey}+/`, description: 'Open command palette' },
+                    { keys: '?', description: 'Show this help dialog (idle mode)' },
+                    { keys: 'Esc', description: 'Exit search/edit mode or close top modal' }
                 ]
             },
             {
-                category: 'Note Creation',
+                category: 'When Editing',
                 items: [
-                    { keys: 'Enter', description: 'Create new note (in idle mode)' },
+                    { keys: 'Tab', description: 'Toggle focus between note content and tag bar' },
                     { keys: `${modKey}+Enter`, description: 'Create sibling note' },
-                    { keys: `${modKey}+Shift+Enter`, description: 'Create child note' }
+                    { keys: `${modKey}+Shift+Enter`, description: 'Create child note' },
+                    { keys: `${modKey}+←`, description: 'Outdent note one level' },
+                    { keys: `${modKey}+→`, description: 'Indent note one level' },
+                    { keys: `${modKey}+C`, description: 'Copy selection (or whole note if no selection)' },
+                    { keys: `${modKey}+X`, description: 'Cut selection (or whole note if no selection)' },
+                    { keys: `${modKey}+V`, description: 'Paste note as sibling in note-clipboard mode' },
+                    { keys: `${modKey}+Shift+V`, description: 'Paste note as child in note-clipboard mode' },
+                    { keys: `${modKey}+R`, description: 'Copy as embedded reference from last copied note' },
+                    { keys: `${modKey}+S`, description: 'Split note at selection/caret' },
+                    { keys: `${modKey}+J`, description: 'Join note with next sibling' },
+                    { keys: `${modKey}+P`, description: 'Save/exit edit mode, then open password modal' },
+                    { keys: `${modKey}+Backspace`, description: 'Delete selected note' },
+                    { keys: `${modKey}+Delete`, description: 'Delete selected note' }
                 ]
             },
             {
-                category: 'Note Editing',
+                category: 'Navigation & Structure',
                 items: [
-                    { keys: 'Click note', description: 'Edit note' },
-                    { keys: `${modKey}+Backspace`, description: 'Delete current note' },
-                    { keys: `${modKey}+Delete`, description: 'Delete current note' },
-                    { keys: 'Backspace/Delete', description: 'Delete hovered note (when idle)' }
+                    { keys: 'Enter', description: 'Create new root note (idle, or when search input is focused)' },
+                    { keys: 'Space', description: 'Toggle collapse/expand hovered note' },
+                    { keys: 'Backspace/Delete', description: 'Delete hovered note (idle mode)' },
+                    { keys: `${modKey}+↑`, description: 'Move selected note up' },
+                    { keys: `${modKey}+↓`, description: 'Move selected note down' }
                 ]
             },
             {
-                category: 'Note Movement',
+                category: 'Undo / Redo',
                 items: [
-                    { keys: `${modKey}+↑`, description: 'Move current note up' },
-                    { keys: `${modKey}+↓`, description: 'Move current note down' },
-                    { keys: '↑', description: 'Move hovered note up (when idle)' },
-                    { keys: '↓', description: 'Move hovered note down (when idle)' }
+                    { keys: `${modKey}+Z`, description: 'Undo' },
+                    { keys: `${modKey}+Shift+Z`, description: 'Redo' },
+                    { keys: `${modKey}+Y`, description: 'Redo' }
                 ]
             },
             {
-                category: 'Collapse/Expand',
+                category: 'Modals & Tools',
                 items: [
-                    { keys: 'Space', description: 'Toggle collapse/expand hovered note' }
-                ]
-            },
-            {
-                category: 'Copy/Paste',
-                items: [
-                    { keys: `${modKey}+C`, description: 'Copy current note (in edit mode)' },
-                    { keys: `${modKey}+R`, description: 'Insert ![[UUID]] from copied note' },
-                    { keys: `${modKey}+V`, description: 'Paste note as sibling' },
-                    { keys: `${modKey}+Shift+V`, description: 'Paste note as child' }
-                ]
-            },
-            {
-                category: 'Undo/Redo',
-                items: [
-                    { keys: `${modKey}+Z`, description: 'Undo last action' },
-                    { keys: `${modKey}+Shift+Z`, description: 'Redo action' },
-                    { keys: `${modKey}+Y`, description: 'Redo action' }
-                ]
-            },
-            {
-                category: 'Special Modals',
-                items: [
-                    { keys: `${modKey}+P`, description: 'Open password management' },
                     { keys: `${modKey}+;`, description: 'Edit tag relationships' },
-                    { keys: 'M', description: 'Open memory/search contexts (when idle)' }
+                    { keys: 'M', description: 'Open memory/search contexts (idle mode)' }
                 ]
             }
         ];

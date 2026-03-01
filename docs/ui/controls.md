@@ -14,7 +14,7 @@
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + J` | Join current note with next sibling (merges content and tags) |
-| `⌘ + R` | Insert `![[UUID]]` for the most recently copied note UUID |
+| `⌘ + R` | Copy as embedded reference for the most recently copied note UUID |
 | `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note is empty with no tags, paste replaces it. |
@@ -35,6 +35,9 @@
 | `Enter` | Add new note at top (when not editing) |
 | `Space` | Toggle collapse/expand hovered note |
 | `⌘ + /` | Open command palette |
+| `?` | Open keyboard shortcuts help (idle mode) |
+| `M` | Open memory/search contexts (idle mode) |
+| `⌘ + ;` | Open tag relationships editor |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 | `⌘ + ↑` | Move note up (one visible sibling) |
@@ -79,6 +82,7 @@
 - Restore from backup…
 - Logout
 - Generate random password…
+- Keyboard shortcuts help…
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
 

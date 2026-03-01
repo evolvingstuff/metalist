@@ -20,7 +20,7 @@
 
 ## Keyboard Workflow
 - `Cmd/Ctrl + C` with no text selection copies a note (server clipboard + system clipboard payload).
-- `Cmd/Ctrl + R` while editing inserts `![[UUID]]` using the most recently copied note UUID.
+- `Cmd/Ctrl + R` while editing copies as embedded reference (`![[UUID]]`) using the most recently copied note UUID.
 - Insert behavior:
   - The token is inserted on its own line.
   - If caret is in the middle of a line, the line is split around the inserted reference.

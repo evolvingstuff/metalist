@@ -9,6 +9,7 @@ import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
+import { HelpModal } from '../modals/help-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -219,6 +220,7 @@ class CommandPaletteController {
         this._backupResultModal = null;
         this._backupRestoreModal = null;
         this._randomPasswordModal = null;
+        this._helpModal = null;
 
         this._elements = null;
 
@@ -255,6 +257,7 @@ class CommandPaletteController {
                 resetViewFilters: this.resetViewFilters.bind(this),
                 resetAllPreferences: this.resetAllPreferences.bind(this),
                 runMcpClient: this.runMcpClient.bind(this),
+                openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
             },
         });
 
@@ -1342,6 +1345,38 @@ class CommandPaletteController {
             this._ontologyModal = new OntologyModal();
         }
         this._ontologyModal.open();
+    }
+
+    async openKeyboardShortcutsHelp() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+
+        const restoreQuery = this._elements.input.value;
+        const restoreIndex = this._previousSelection.selectedIndex;
+        this.close();
+
+        const modalClosedHandler = (event) => {
+            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
+            if (!detail || detail.modalName !== 'help') {
+                return;
+            }
+            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
+            void this.open().then(() => {
+                this._elements.input.value = restoreQuery;
+                this._previousSelection.selectedIndex = restoreIndex;
+                this._render();
+            });
+        };
+        document.addEventListener('metalist:modal-closed', modalClosedHandler);
+
+        if (this._helpModal === null) {
+            this._helpModal = new HelpModal();
+        }
+        this._helpModal.open();
     }
 
     async openPasswordManager() {

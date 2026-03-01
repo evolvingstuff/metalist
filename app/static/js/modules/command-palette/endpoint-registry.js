@@ -32,6 +32,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const resetAllPreferences = requireAction(actions, 'resetAllPreferences');
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
     const runMcpClient = requireAction(actions, 'runMcpClient');
+    const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
 
     const defaults = {
         showBacklinks: false,
@@ -175,6 +176,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Edit tag relationships…',
             execute: async () => openOntologyEditor(),
+        },
+        {
+            id: 'action.open_keyboard_shortcuts_help',
+            kind: 'action',
+            label: 'Keyboard shortcuts help…',
+            execute: async () => openKeyboardShortcutsHelp(),
         },
         {
             id: 'action.run_mcp_client',
