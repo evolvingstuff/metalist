@@ -148,6 +148,33 @@ def test_plain_reference_renders_link_mode_preview(monkeypatch: pytest.MonkeyPat
     assert 'data-ref-target-mode="embed"' in rendered
 
 
+def test_link_mode_preview_strips_nested_reference_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    nested_ref_id = "69dc0ad7-6ad6-4be9-8ad8-7c30704e5c1a"
+    notes = {
+        "a": _Note("a", None, None, None, False, "<div>[[b]]</div>", ""),
+        "b": _Note(
+            "b",
+            None,
+            None,
+            None,
+            False,
+            f"<div>blah ![[{nested_ref_id}]]</div><div>linked second line</div>",
+            "",
+        ),
+        nested_ref_id: _Note(nested_ref_id, None, None, None, False, "<div>child</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a", "b", nested_ref_id]},
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-reference-link-mode" in rendered
+    assert "blah" in rendered
+    assert nested_ref_id not in rendered
+
+
 def test_multiple_references_expose_stable_occurrence_indices(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         "a": _Note("a", None, None, None, False, "<div>[[b]] ![[c]] [[b]]</div>", ""),

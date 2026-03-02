@@ -13,6 +13,8 @@ _HTML_TOKEN_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _FIRST_LINE_BOUNDARY_RE = re.compile(
     r"(?i)<br\s*/?>|</(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)>\s*|\n"
 )
+_REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -427,10 +429,18 @@ def _extract_first_line_preview(content_html: str) -> str:
         return ""
 
     for segment in _FIRST_LINE_BOUNDARY_RE.split(content_html):
-        preview = strip_html(segment)
+        preview = _strip_reference_tokens(strip_html(segment))
         if preview:
             return preview
-    return strip_html(content_html)
+    return _strip_reference_tokens(strip_html(content_html))
+
+
+def _strip_reference_tokens(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    without_refs = _REFERENCE_TOKEN_RE.sub(" ", text)
+    normalized = _WHITESPACE_RE.sub(" ", without_refs)
+    return normalized.strip()
 
 
 def _format_reference_token(*, note_id: str, mode: str) -> str:
