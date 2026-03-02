@@ -23,6 +23,7 @@
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
 - See `docs/ui/paste-sanitization.md` for the full policy.
 - `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
+- `⌘ + R` avoids adding a synthetic extra blank line when caret is already on an empty line.
 - See `docs/ui/references.md` for full reference behavior.
 - `⌘ + J` no-ops when there is no next sibling beneath the current note.
 - `⌘ + J` merges tag bars without duplicates (case-insensitive dedupe; first-seen casing/order wins).
@@ -71,6 +72,8 @@
 | Click `↑` button | Scroll to the top |
 | Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
+| Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
+| Click link-mode reference text | Set search input to the referenced UUID and run search |
 | Drag note body (while not editing) | Move note one step in the dragged cardinal direction (up/down/indent/outdent). Short drags act like clicks. |
 | Drag-select text in note | Releasing mouse outside note keeps edit mode + selection |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |

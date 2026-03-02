@@ -36,6 +36,10 @@ Text matching is:
 - Against **visible text**, extracted by stripping HTML (scripts/styles ignored).
 - Also against tag-bar `/* ... */` comment text (whitespace-normalized).
 
+### UUID Terms
+- UUIDs in positive terms are treated as direct note targets (including when pasted as `[[UUID]]`).
+- This is additive with normal tag/text matching.
+
 ## Matching Rules
 
 All required terms are AND-ed:
@@ -53,6 +57,11 @@ The UI renders a tree, so search returns context:
 - All ancestors of a matching note are included (so matches are reachable).
 - All descendants of a matching note are included (so the full subtree under a match is visible).
 - Within a visible root, excluded siblings/branches are rendered as redacted placeholders on the client (fixed-height grey lines) rather than disappearing.
+- For UUID-direct targeting specifically:
+  - The target note is included.
+  - Its ancestors are included.
+  - Its descendants are included and not redacted.
+  - Non-matching sibling branches remain redacted according to normal search behavior.
 
 ## Windowing / Infinite Scroll
 

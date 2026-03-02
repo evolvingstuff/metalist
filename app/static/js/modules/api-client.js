@@ -270,6 +270,31 @@ export const NotesAPI = {
         });
     },
 
+    async toggleReferenceMode(hostNoteId, referenceNoteId, occurrenceIndex, mode) {
+        if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+            throw new Error('NotesAPI.toggleReferenceMode requires hostNoteId string');
+        }
+        if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+            throw new Error('NotesAPI.toggleReferenceMode requires referenceNoteId string');
+        }
+        if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) {
+            throw new Error('NotesAPI.toggleReferenceMode requires non-negative integer occurrenceIndex');
+        }
+        if (mode !== 'embed' && mode !== 'link') {
+            throw new Error('NotesAPI.toggleReferenceMode requires mode embed|link');
+        }
+        const body = {
+            reference_note_id: referenceNoteId,
+            occurrence_index: occurrenceIndex,
+            mode,
+        };
+        return this._apiCall(CONFIG.API.NOTES.REFERENCE_MODE(hostNoteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async moveNote(noteId, siblingId, position, newParentId) {
         const body = {
             sibling_id: siblingId,

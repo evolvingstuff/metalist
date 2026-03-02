@@ -1346,13 +1346,57 @@ body {
 }
 
 /* Embedded note references (![[UUID]]) */
-.note-embed-block {
-    display: block;
+.note-reference-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     margin: 8px 0;
     padding: 8px 10px;
     border-radius: 8px;
     border: 1px solid rgba(0, 0, 0, 0.14);
     background: #f1f3f5;
+}
+
+.note-reference-link-mode {
+    background: #eceff3;
+}
+
+.note-reference-toggle {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: #5f6368;
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 4px;
+    line-height: 1;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.note-reference-toggle:hover,
+.note-reference-toggle:focus-visible {
+    background: rgba(0, 0, 0, 0.12);
+    color: #1f2937;
+    outline: none;
+}
+
+.note-reference-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.note-reference-link {
+    display: block;
+    color: #1f2937;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+.note-reference-link:hover {
+    text-decoration: underline;
 }
 
 .note-embed-node {
@@ -1370,13 +1414,23 @@ body {
     border-left: 2px solid rgba(0, 0, 0, 0.12);
 }
 
-.note-embed-missing,
-.note-embed-cycle {
+.note-reference-marker {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #4a4a4a;
     font-size: 0.92em;
+}
+
+.note-embed-cycle {
+    color: #4a4a4a;
+}
+
+.note-embed-missing {
+    color: #6d3f3f;
+    background: rgba(214, 89, 89, 0.08);
+    border: 1px solid rgba(214, 89, 89, 0.2);
+    border-radius: 6px;
+    padding: 2px 6px;
 }
 
 .note-embed-marker-icon {
@@ -1386,6 +1440,10 @@ body {
     width: 1.05em;
     line-height: 1;
     color: #6b7280;
+}
+
+.note-embed-missing .note-embed-marker-icon {
+    color: #b24a4a;
 }
 
 .note-embed-marker-text {

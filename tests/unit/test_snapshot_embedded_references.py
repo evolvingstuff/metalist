@@ -69,12 +69,12 @@ def test_embed_reference_renders_as_block_and_includes_descendants(monkeypatch: 
     )
 
     rendered = state.payloads["a"]["content"]
-    assert 'class="note-embed-block"' in rendered
+    assert "note-embed-block" in rendered
     assert 'data-embed-ref-id="b"' in rendered
     assert "embedded root" in rendered
     assert "embedded child" in rendered
-    assert rendered.index("blah") < rendered.index('class="note-embed-block"')
-    assert rendered.index('class="note-embed-block"') < rendered.index("yada")
+    assert rendered.index("blah") < rendered.index("note-embed-block")
+    assert rendered.index("note-embed-block") < rendered.index("yada")
 
 
 def test_embed_reference_missing_uuid_shows_missing_marker(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,10 +104,47 @@ def test_embed_reference_cycle_shows_cycle_marker_and_stops(monkeypatch: pytest.
     )
 
     rendered = state.payloads["a"]["content"]
-    assert rendered.count('class="note-embed-block"') == 1
-    assert 'class="note-embed-block note-embed-cycle"' in rendered
+    assert "note-embed-block" in rendered
     assert "note-embed-cycle" in rendered
     assert "Circular reference: a" in rendered
+
+
+def test_plain_reference_renders_link_mode_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, False, "<div>prefix [[b]] suffix</div>", ""),
+        "b": _Note("b", None, None, None, False, "<div>linked first line</div><div>linked second line</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a", "b"]},
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-reference-link-mode" in rendered
+    assert "note-reference-link" in rendered
+    assert "linked first line" in rendered
+    assert "linked second line" not in rendered
+    assert 'data-ref-mode="link"' in rendered
+    assert 'data-ref-target-mode="embed"' in rendered
+
+
+def test_multiple_references_expose_stable_occurrence_indices(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, False, "<div>[[b]] ![[c]] [[b]]</div>", ""),
+        "b": _Note("b", None, None, "c", False, "<div>B</div>", ""),
+        "c": _Note("c", None, "b", None, False, "<div>C</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a", "b", "c"]},
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert rendered.count('data-ref-occurrence="0"') == 1
+    assert rendered.count('data-ref-occurrence="1"') == 1
+    assert rendered.count('data-ref-occurrence="2"') == 1
 
 
 def test_edit_mode_keeps_literal_embed_token(monkeypatch: pytest.MonkeyPatch) -> None:

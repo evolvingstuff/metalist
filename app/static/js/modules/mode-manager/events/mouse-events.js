@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, collapseNote, expandNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -432,6 +432,14 @@ function handleClick(event) {
         return;
     }
 
+    if (handleReferenceToggleClick(event)) {
+        return;
+    }
+
+    if (handleReferenceLinkClick(event)) {
+        return;
+    }
+
     if (handleTodoToggleClick(event)) {
         return;
     }
@@ -746,6 +754,106 @@ function handleClick(event) {
             });
         }
     }
+}
+
+function parseReferenceOccurrenceIndex(rawValue) {
+    const parsed = Number.parseInt(rawValue, 10);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(`Invalid reference occurrence index: ${rawValue}`);
+    }
+    return parsed;
+}
+
+function getReferenceContainerFromEvent(event, selector) {
+    if (!event.target) {
+        throw new Error('Reference interaction missing target element');
+    }
+    const interactiveElement = event.target.closest(selector);
+    if (!interactiveElement) {
+        return null;
+    }
+    const container = interactiveElement.closest('.note-reference-block');
+    if (!container) {
+        throw new Error('Reference interaction missing .note-reference-block container');
+    }
+    return container;
+}
+
+function handleReferenceToggleClick(event) {
+    const container = getReferenceContainerFromEvent(event, '.note-reference-toggle');
+    if (!container) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.isEditing) {
+        return true;
+    }
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Reference toggle click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    const hostNoteId = container.dataset.refHostNoteId;
+    const referenceNoteId = container.dataset.refNoteId;
+    const mode = container.dataset.refTargetMode;
+    const occurrenceRaw = container.dataset.refOccurrence;
+    if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+        throw new Error('Reference toggle missing host note id');
+    }
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('Reference toggle missing reference note id');
+    }
+    if (mode !== 'embed' && mode !== 'link') {
+        throw new Error(`Reference toggle has invalid target mode: ${mode}`);
+    }
+    const occurrenceIndex = parseReferenceOccurrenceIndex(occurrenceRaw);
+
+    void CommandGate.run('mouse.toggle_reference_mode', async () => {
+        await toggleReferenceModeForNote(hostNoteId, referenceNoteId, occurrenceIndex, mode);
+    });
+    return true;
+}
+
+function handleReferenceLinkClick(event) {
+    const container = getReferenceContainerFromEvent(event, '.note-reference-link');
+    if (!container) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.isEditing) {
+        return true;
+    }
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Reference link click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    const referenceNoteId = container.dataset.refNoteId;
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('Reference link missing target note id');
+    }
+
+    const searchInput = document.getElementById('search-input');
+    if (!(searchInput instanceof HTMLInputElement)) {
+        throw new Error('Search input element not found for reference navigation');
+    }
+
+    void actionEnterSearchMode();
+    searchInput.value = referenceNoteId;
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    searchInput.focus();
+    searchInput.setSelectionRange(referenceNoteId.length, referenceNoteId.length);
+    return true;
 }
 
 function handleTodoToggleClick(event) {
