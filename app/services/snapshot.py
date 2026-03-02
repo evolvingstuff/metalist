@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+import re
 import time
 from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 
@@ -12,13 +13,32 @@ from app.services.content_formatting import find_list_style
 from app.services.embedded_references import EmbedRenderContext, render_note_content_with_embeds
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
-from app.services.search_query import parse_search_query
+from app.services.search_query import ParsedSearchQuery, parse_search_query
 from app.services.sync import get_all_locks
 from app.services.view_state import ViewState
 
 # Windowing constants (tuned later)
 ROOT_CHUNK_SIZE = 50
 ROOT_BUFFER_THRESHOLD = 25
+_UUID_IN_TEXT_RE = re.compile(
+    r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+
+
+def _extract_direct_uuid_note_ids(parsed_query: ParsedSearchQuery) -> Set[str]:
+    candidates: Set[str] = set()
+    for token in parsed_query.required_tags:
+        for match in _UUID_IN_TEXT_RE.finditer(token):
+            candidates.add(match.group(0).lower())
+    for phrase in parsed_query.required_text:
+        for match in _UUID_IN_TEXT_RE.finditer(phrase):
+            candidates.add(match.group(0).lower())
+
+    direct_ids: Set[str] = set()
+    for candidate in candidates:
+        if note_store.has_note(candidate):
+            direct_ids.add(candidate)
+    return direct_ids
 
 
 def _compute_hash(
@@ -129,12 +149,15 @@ def build_view_state(
             if len(parsed.required_text) > 0:
                 has_positive_terms = True
 
+            direct_uuid_note_ids = _extract_direct_uuid_note_ids(parsed)
+
             if has_positive_terms:
                 positively_matched_note_ids = set(search_index.query_note_ids(search))
             else:
                 ordered_root_ids = note_store.get_children(None)
                 positively_matched_note_ids = set(ordered_root_ids)
                 _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
+            positively_matched_note_ids.update(direct_uuid_note_ids)
             search_allowed_note_ids = set(positively_matched_note_ids)
 
             def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
@@ -190,6 +213,8 @@ def build_view_state(
             _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
             if excluded_note_ids:
                 search_allowed_note_ids.difference_update(excluded_note_ids)
+            if direct_uuid_note_ids:
+                search_allowed_note_ids.update(direct_uuid_note_ids)
 
             ordered_root_ids = note_store.get_children(None)
             search_root_ids_ordered_for_count = [

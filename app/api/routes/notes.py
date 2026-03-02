@@ -25,6 +25,7 @@ from app.usecases.run_shell import CmdRunShell
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
 from app.usecases.join_next_sibling import CmdJoinNextSibling
+from app.usecases.toggle_reference_mode import CmdToggleReferenceMode
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.usecases.record_edit_mode import CmdRecordEditMode
@@ -436,6 +437,24 @@ def join_next_endpoint(request: Request, note_id: str, body: dict):
     _require_note_present(note_id, context="notes.join-next")
     cmd = CmdJoinNextSibling(
         note_id=note_id,
+        token=token,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/reference-mode")
+def toggle_reference_mode_endpoint(request: Request, note_id: str, body: dict):
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.reference-mode")
+    cmd = CmdToggleReferenceMode(
+        note_id=note_id,
+        reference_note_id=body["reference_note_id"],
+        occurrence_index=body["occurrence_index"],
+        mode=body["mode"],
         token=token,
         client_id=body["clientId"],
         undo_context=body["undoContext"],

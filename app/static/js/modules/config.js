@@ -14,6 +14,7 @@ export const CONFIG = {
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
             RUN_SHELL: (noteId) => `${API_NOTES_BASE}/${noteId}/run-shell`,
             JOIN_NEXT: (noteId) => `${API_NOTES_BASE}/${noteId}/join-next`,
+            REFERENCE_MODE: (noteId) => `${API_NOTES_BASE}/${noteId}/reference-mode`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
             INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
             OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,
