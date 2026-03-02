@@ -3,7 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild, splitCurrentNoteFromSelection, joinCurrentNoteWithNextSibling } from '../actions/note-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
-import { actionExitSearchMode } from '../actions/search-actions.js';
+import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
@@ -43,6 +43,76 @@ const DELETE_KEYS = new Set(['Backspace', 'Delete']);
 let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
 let savedEditingCursorOffset = null;
+const referenceNavigationStack = [];
+
+function getReferenceBackButtonElement() {
+    const element = document.getElementById('reference-back-button');
+    if (!element) {
+        return null;
+    }
+    if (!(element instanceof HTMLButtonElement)) {
+        throw new Error('reference-back-button must be a button element');
+    }
+    return element;
+}
+
+function pruneReferenceNavigationStackToExistingTabs() {
+    const tabOrder = ModeContext.tabOrder;
+    if (!Array.isArray(tabOrder)) {
+        throw new Error('ModeContext.tabOrder must be an array');
+    }
+    const existingTabIds = new Set(tabOrder);
+    let writeIndex = 0;
+    for (let i = 0; i < referenceNavigationStack.length; i += 1) {
+        const entry = referenceNavigationStack[i];
+        if (!entry || typeof entry !== 'object') {
+            continue;
+        }
+        if (!existingTabIds.has(entry.fromTabId) || !existingTabIds.has(entry.toTabId)) {
+            continue;
+        }
+        referenceNavigationStack[writeIndex] = entry;
+        writeIndex += 1;
+    }
+    referenceNavigationStack.length = writeIndex;
+}
+
+function findReferenceBackEntryIndexForActiveTab() {
+    const activeTabId = ModeContext.activeTabId;
+    for (let i = referenceNavigationStack.length - 1; i >= 0; i -= 1) {
+        const entry = referenceNavigationStack[i];
+        if (entry.toTabId === activeTabId) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function canNavigateReferenceBackFromActiveTab() {
+    pruneReferenceNavigationStackToExistingTabs();
+    return findReferenceBackEntryIndexForActiveTab() !== -1;
+}
+
+export function updateReferenceBackButtonState() {
+    const backButton = getReferenceBackButtonElement();
+    if (!backButton) {
+        return;
+    }
+    const canNavigateBack = canNavigateReferenceBackFromActiveTab();
+    backButton.disabled = !canNavigateBack;
+    backButton.setAttribute('aria-disabled', canNavigateBack ? 'false' : 'true');
+}
+
+function pushReferenceNavigationEntry(fromTabId, toTabId) {
+    if (typeof fromTabId !== 'string' || fromTabId.length === 0) {
+        throw new Error('pushReferenceNavigationEntry requires fromTabId');
+    }
+    if (typeof toTabId !== 'string' || toTabId.length === 0) {
+        throw new Error('pushReferenceNavigationEntry requires toTabId');
+    }
+    referenceNavigationStack.push({ fromTabId, toTabId });
+    updateReferenceBackButtonState();
+}
 
 function isOntologyModalShortcut(event) {
     if (!event) {
@@ -86,6 +156,7 @@ export function initKeyboardEvents() {
     
     // Initialize search contexts list on startup
     updateSearchContextsList();
+    updateReferenceBackButtonState();
 }
 
 function handleKeyDown(event) {
@@ -2347,6 +2418,7 @@ function handlePasteEvent(event) {
 
 export function updateSearchContextsList() {
     const searchContextsList = document.getElementById('search-contexts-list');
+    updateReferenceBackButtonState();
     if (!searchContextsList) return;
     const showTabUi = document.body.classList.contains('pref-show-tab-ui');
     
@@ -2486,9 +2558,11 @@ export function updateSearchContextsList() {
     } else {
         searchContextsList.style.display = 'none';
     }
+
+    updateReferenceBackButtonState();
 }
 
-async function switchToTabContext(tabId, options) {
+export async function switchToTabContext(tabId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('switchToTabContext requires options object');
 	}
@@ -2649,7 +2723,7 @@ async function duplicateTabContext(sourceTabId) {
     }
     updateSearchContextsList();
 
-    if (CONFIG.TABS.CREATE_AND_SWITCH) {
+	if (CONFIG.TABS.CREATE_AND_SWITCH) {
         const switchOptions = startedEditing
             ? {}
             : {
@@ -2657,11 +2731,59 @@ async function duplicateTabContext(sourceTabId) {
                 expectedVdomOpsMax: 0,
             };
 
-        await switchToTabContext(newTabId, switchOptions);
-        return;
+	        await switchToTabContext(newTabId, switchOptions);
+	        return newTabId;
+	    }
+
+	    return newTabId;
+}
+
+export async function openReferenceInNewTab(referenceNoteId) {
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('openReferenceInNewTab requires referenceNoteId');
     }
 
-    return;
+    const sourceTabId = ModeContext.activeTabId;
+    const newTabId = await duplicateTabContext(sourceTabId);
+    if (typeof newTabId !== 'string' || newTabId.length === 0) {
+        throw new Error('openReferenceInNewTab expected duplicateTabContext to return a tab id');
+    }
+
+    if (ModeContext.activeTabId !== newTabId) {
+        await switchToTabContext(newTabId, {});
+    }
+
+    const searchInput = document.getElementById('search-input');
+    if (!(searchInput instanceof HTMLInputElement)) {
+        throw new Error('Search input element not found for reference tab navigation');
+    }
+
+    const normalizedReferenceId = syncSearchInputValue(searchInput, referenceNoteId).normalizedText;
+    ModeContext.setSearchQuery(normalizedReferenceId);
+    updateSearchContextsList();
+
+    await actionEnterSearchMode();
+    ModeContext.clearActiveTabDiffCacheForSearchExecution(normalizedReferenceId);
+    ModeContext.resetRootTracking({ clear: true });
+    window.scrollTo(0, 0);
+    ModeContext.updateActiveTabScroll(0);
+    ModeContext.updateActiveTabScrollAnchor(null, true);
+    ModeContext.setRootAnchorId(null);
+    const startedAt = performance.now();
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({
+        startedAt,
+        context: 'reference.link_open_tab',
+        requireExecution: true,
+    });
+    await persistTabStateSnapshot();
+
+    searchInput.value = normalizedReferenceId;
+    searchInput.focus();
+    searchInput.setSelectionRange(normalizedReferenceId.length, normalizedReferenceId.length);
+
+    pushReferenceNavigationEntry(sourceTabId, newTabId);
+    return newTabId;
 }
 
 async function moveTabContext(tabId, delta) {
@@ -2746,7 +2868,7 @@ async function deleteTabContext(deleteTabId) {
     syncSearchInputField();
     updateSearchContextsList();
 
-    if (ModeContext.activeTabId !== activeBeforeDelete) {
+	    if (ModeContext.activeTabId !== activeBeforeDelete) {
         restoreNotesDomForTab(ModeContext.activeTabId);
         const afterTabOrder = ModeContext.tabOrder;
         if (!Array.isArray(afterTabOrder) || afterTabOrder.length === 0) {
@@ -2760,8 +2882,55 @@ async function deleteTabContext(deleteTabId) {
         const startedAt = performance.now();
         const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
         await actionRefreshAndMaybeSelect({ startedAt, context: perfContext });
-        ModeContext.restoreScrollForActiveTab();
+	        ModeContext.restoreScrollForActiveTab();
+	    }
+}
+
+export async function navigateBackFromReferenceContext() {
+    pruneReferenceNavigationStackToExistingTabs();
+
+    const backEntryIndex = findReferenceBackEntryIndexForActiveTab();
+    if (backEntryIndex === -1) {
+        updateReferenceBackButtonState();
+        return false;
     }
+
+    const [entry] = referenceNavigationStack.splice(backEntryIndex, 1);
+    if (!entry || typeof entry !== 'object') {
+        updateReferenceBackButtonState();
+        return false;
+    }
+
+    const fromTabId = entry.fromTabId;
+    const toTabId = entry.toTabId;
+    if (typeof fromTabId !== 'string' || fromTabId.length === 0) {
+        throw new Error('Reference back entry missing fromTabId');
+    }
+    if (typeof toTabId !== 'string' || toTabId.length === 0) {
+        throw new Error('Reference back entry missing toTabId');
+    }
+    if (!ModeContext.tabs[fromTabId]) {
+        updateReferenceBackButtonState();
+        return false;
+    }
+
+    await switchToTabContext(fromTabId, {});
+
+    if (
+        !CONFIG.REFERENCE_NAVIGATION
+        || typeof CONFIG.REFERENCE_NAVIGATION.CLOSE_REF_TAB_ON_BACK !== 'boolean'
+    ) {
+        throw new Error('CONFIG.REFERENCE_NAVIGATION.CLOSE_REF_TAB_ON_BACK must be a boolean');
+    }
+
+    if (CONFIG.REFERENCE_NAVIGATION.CLOSE_REF_TAB_ON_BACK) {
+        if (ModeContext.tabs[toTabId]) {
+            await deleteTabContext(toTabId);
+        }
+    }
+
+    updateReferenceBackButtonState();
+    return true;
 }
 
 function syncSearchInputField() {

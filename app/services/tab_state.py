@@ -29,7 +29,7 @@ def _is_uuid_string(value: str) -> bool:
 class TabStateStore:
     """In-memory tab state cache keyed by the single active client."""
 
-    _MAX_TABS = 10
+    _MAX_TABS = 1000
 
     def __init__(self) -> None:
         default_tab_id = self._new_tab_id()

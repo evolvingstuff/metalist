@@ -1350,7 +1350,7 @@ body {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    margin: 8px 0;
+    margin: 0;
     padding: 8px 10px;
     border-radius: 8px;
     border: 1px solid rgba(0, 0, 0, 0.14);
@@ -1770,6 +1770,8 @@ body {
 
 
 .controls .search-controls {
+    --search-input-width: 500px;
+    --search-input-half-width: 250px;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -1786,7 +1788,7 @@ body {
 }
 
 .controls .search-validation-message {
-    width: 500px;
+    width: var(--search-input-width);
     margin: 4px auto 0 auto;
     font-size: 12px;
     color: #ffb4b4;
@@ -1797,7 +1799,7 @@ body {
     top: calc(100% + 6px);
     left: 0;
     right: 0;
-    width: 500px;
+    width: var(--search-input-width);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -1810,6 +1812,39 @@ body {
     max-height: 240px;
     overflow-y: auto;
     z-index: 20;
+}
+
+.controls .reference-back-button {
+    position: absolute;
+    left: calc(50% - var(--search-input-half-width) - 34px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.96);
+    color: #111111;
+    font-size: 16px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+}
+
+.controls .reference-back-button:hover,
+.controls .reference-back-button:focus-visible {
+    background: #ffffff;
+    border-color: rgba(255, 255, 255, 0.55);
+    outline: none;
+}
+
+.controls .reference-back-button:disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
 }
 
 .controls .search-suggestions[hidden],
@@ -1912,7 +1947,7 @@ html[data-theme="dark"] .context-menu-item:hover {
 }
 
 .controls .search-input {
-    width: 500px;
+    width: var(--search-input-width);
     margin: 0;
     padding: 0 12px;
     border: 1px solid var(--border-color);

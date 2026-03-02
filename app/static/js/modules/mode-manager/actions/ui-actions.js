@@ -177,13 +177,27 @@ export async function actionRefreshAndMaybeSelect(options) {
     }
     const requestTabId = ModeContext.activeTabId;
     const requestSearchQuery = ModeContext.searchQuery;
+    const requireExecution = options.requireExecution === true;
 
     if (viewRequestInFlight) {
-        Logger.logNoop('notes.view ignored while view request in-flight', {
-            activeTabId: ModeContext.activeTabId,
-            context: options.context || 'refresh'
-        });
-        return null;
+        if (!requireExecution) {
+            Logger.logNoop('notes.view ignored while view request in-flight', {
+                activeTabId: ModeContext.activeTabId,
+                context: options.context || 'refresh'
+            });
+            return null;
+        }
+
+        const waitStartedAt = performance.now();
+        while (viewRequestInFlight) {
+            const waitedMs = performance.now() - waitStartedAt;
+            if (waitedMs > 5000) {
+                throw new Error('notes.view blocked >5s waiting for in-flight request');
+            }
+            await new Promise((resolve) => {
+                window.setTimeout(resolve, 25);
+            });
+        }
     }
 
     viewRequestInFlight = true;

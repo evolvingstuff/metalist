@@ -113,8 +113,12 @@ export const CONFIG = {
     },
 
     TABS: {
-        MAX_TABS: 10,
+        MAX_TABS: 1000,
         CREATE_AND_SWITCH: true,
+    },
+
+    REFERENCE_NAVIGATION: {
+        CLOSE_REF_TAB_ON_BACK: true,
     },
 
     BACKUP: {

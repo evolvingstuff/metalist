@@ -7,6 +7,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { navigateBackFromReferenceContext, openReferenceInNewTab } from './keyboard-events.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
@@ -436,6 +437,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleReferenceBackButtonClick(event)) {
+        return;
+    }
+
     if (handleReferenceLinkClick(event)) {
         return;
     }
@@ -843,16 +848,39 @@ function handleReferenceLinkClick(event) {
         throw new Error('Reference link missing target note id');
     }
 
-    const searchInput = document.getElementById('search-input');
-    if (!(searchInput instanceof HTMLInputElement)) {
-        throw new Error('Search input element not found for reference navigation');
+    void CommandGate.run('mouse.open_reference_in_new_tab', async () => {
+        await openReferenceInNewTab(referenceNoteId);
+    });
+    return true;
+}
+
+function handleReferenceBackButtonClick(event) {
+    if (!event.target) {
+        throw new Error('Reference back click missing target element');
     }
 
-    void actionEnterSearchMode();
-    searchInput.value = referenceNoteId;
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    searchInput.focus();
-    searchInput.setSelectionRange(referenceNoteId.length, referenceNoteId.length);
+    const backButton = event.target.closest('#reference-back-button');
+    if (!backButton) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Reference back click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    if (backButton instanceof HTMLButtonElement && backButton.disabled) {
+        return true;
+    }
+
+    void CommandGate.run('mouse.reference_back', async () => {
+        await navigateBackFromReferenceContext();
+    });
     return true;
 }
 
