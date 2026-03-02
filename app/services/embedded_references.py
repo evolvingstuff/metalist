@@ -260,6 +260,7 @@ def _render_reference_block(
     toggle_label = "Switch to link view" if is_embed else "Switch to embedded view"
     escaped_reference_note_id = html.escape(reference_note_id, quote=True)
     escaped_host_note_id = html.escape(host_note_id, quote=True)
+    note_exists = context.has_note(reference_note_id)
 
     wrapper_classes = "note-reference-block"
     if is_embed:
@@ -270,13 +271,21 @@ def _render_reference_block(
     if is_embed:
         body_html = _render_embed_body(
             reference_note_id=reference_note_id,
+            note_exists=note_exists,
             context=context,
             ancestry=ancestry,
         )
     else:
         body_html = _render_link_body(
             reference_note_id=reference_note_id,
+            note_exists=note_exists,
             context=context,
+        )
+
+    toggle_button_html = ""
+    if note_exists:
+        toggle_button_html = (
+            f'<button type="button" class="note-reference-toggle" aria-label="{toggle_label}" title="{toggle_label}">{toggle_symbol}</button>'
         )
 
     return (
@@ -287,7 +296,7 @@ def _render_reference_block(
         f'data-ref-mode="{mode}" '
         f'data-ref-target-mode="{target_mode}" '
         f'data-embed-ref-id="{escaped_reference_note_id}">'
-        f'<button type="button" class="note-reference-toggle" aria-label="{toggle_label}" title="{toggle_label}">{toggle_symbol}</button>'
+        f"{toggle_button_html}"
         f'<div class="note-reference-content">{body_html}</div>'
         "</div>"
     )
@@ -296,6 +305,7 @@ def _render_reference_block(
 def _render_embed_body(
     *,
     reference_note_id: str,
+    note_exists: bool,
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
 ) -> str:
@@ -309,7 +319,7 @@ def _render_embed_body(
             "</div>"
         )
 
-    if not context.has_note(reference_note_id):
+    if not note_exists:
         return (
             '<div class="note-reference-marker note-embed-missing">'
             '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'
@@ -329,10 +339,11 @@ def _render_embed_body(
 def _render_link_body(
     *,
     reference_note_id: str,
+    note_exists: bool,
     context: EmbedRenderContext,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
-    if not context.has_note(reference_note_id):
+    if not note_exists:
         return (
             '<div class="note-reference-marker note-embed-missing">'
             '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'

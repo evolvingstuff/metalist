@@ -90,6 +90,25 @@ def test_embed_reference_missing_uuid_shows_missing_marker(monkeypatch: pytest.M
     rendered = state.payloads["a"]["content"]
     assert "note-embed-missing" in rendered
     assert "Missing reference: does-not-exist" in rendered
+    assert "note-reference-toggle" not in rendered
+
+
+def test_link_reference_missing_uuid_shows_missing_marker_without_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, False, "<div>[[does-not-exist]]</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-embed-missing" in rendered
+    assert "Missing reference: does-not-exist" in rendered
+    assert "note-reference-toggle" not in rendered
 
 
 def test_embed_reference_cycle_shows_cycle_marker_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,6 +23,7 @@
 
 ## Failure / Safety Cases
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).
+  - Missing references do not show the `+/-` toggle control.
 - Circular chain (A -> B -> A): render a "circular reference" marker and stop recursion at that point.
 
 ## Keyboard Workflow
