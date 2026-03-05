@@ -35,7 +35,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
 
     const defaults = {
-        showBacklinks: false,
+        showBacklinks: true,
         showNoteTags: false,
         showTabUi: false,
         showPerfOverlay: false,

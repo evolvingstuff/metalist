@@ -6,6 +6,7 @@ import { CONFIG } from '../../config.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
+import { refreshBacklinksPanel } from '../services/backlinks-panel-service.js';
 
 let viewRequestInFlight = false;
 let lastPerfOverlayPayload = null;
@@ -340,6 +341,8 @@ export async function actionRefreshAndMaybeSelect(options) {
         const totalNotesCount = ModeContext.noteCount;
         updatePerfOverlay(roundtripMs, renderMs, totalMs, totalNotesCount,
             rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
+
+        await refreshBacklinksPanel({});
 
         return result;
     })().finally(() => {

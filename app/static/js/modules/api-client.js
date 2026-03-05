@@ -519,6 +519,22 @@ export const NotesAPI = {
         });
     },
 
+    async fetchBacklinks(noteId, searchQuery) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.fetchBacklinks requires noteId string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.fetchBacklinks requires searchQuery string or null');
+        }
+        let url = CONFIG.API.NOTES.BACKLINKS(noteId);
+        if (typeof searchQuery === 'string' && searchQuery.length > 0) {
+            url = `${url}?search=${encodeURIComponent(searchQuery)}`;
+        }
+        return this._apiCall(url, {
+            method: 'GET',
+        });
+    },
+
     async moveNoteUp(noteId) {
         const noteElement = this.getNoteElement(noteId);
         const prevSibling = noteElement.previousElementSibling;

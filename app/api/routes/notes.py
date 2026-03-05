@@ -34,6 +34,7 @@ from app.config import VERSION
 from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
+from app.services.backlinks import list_backlinks_for_note
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
@@ -293,6 +294,37 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
         content_html=content_html,
     )
     return {"suggestions": suggestions}
+
+
+@router.get("/notes/{note_id}/backlinks")
+def backlinks(note_id: str, search: str | None = None) -> Dict[str, object]:
+    _require_note_present(note_id, context="notes.backlinks")
+
+    normalized_search = search
+    if normalized_search == "":
+        normalized_search = None
+
+    source_note_ids = None
+    if normalized_search is not None:
+        all_note_ids = set(note_store.list_note_ids())
+        state = build_view_state(
+            editing_note_id=None,
+            search=normalized_search,
+            client_known_note_ids=all_note_ids,
+            client_seen_root_ids=set(),
+            anchor_root_id=None,
+        )
+        source_note_ids = {
+            source_note_id
+            for source_note_id, payload in state.payloads.items()
+            if not bool(payload.get("flags", {}).get("searchRedacted", False))
+        }
+
+    backlinks = list_backlinks_for_note(note_id, source_note_ids=source_note_ids)
+    return {
+        "targetNoteId": note_id,
+        "backlinks": backlinks,
+    }
 
 
 def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dict[str, str]:

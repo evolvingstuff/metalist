@@ -1391,12 +1391,13 @@ body {
 .note-reference-link {
     display: block;
     color: #1f2937;
-    text-decoration: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
     overflow-wrap: anywhere;
 }
 
 .note-reference-link:hover {
-    text-decoration: underline;
+    text-decoration-thickness: 2px;
 }
 
 .note-embed-node {
@@ -2105,6 +2106,67 @@ body.loading::after {
     font-size: 12px;
     display: none;
     line-height: 1.4;
+}
+
+#backlinks-panel {
+    position: fixed;
+    top: calc(1.5rem - 6px);
+    left: 10px;
+    z-index: 9998;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ccc;
+    padding: 8px 12px;
+    min-width: 195px;
+    max-width: 340px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    display: none;
+}
+
+.backlinks-title {
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.backlinks-empty {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.backlinks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.backlink-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #ccc;
+    padding: 4px 6px;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.35;
+}
+
+.backlink-item:hover,
+.backlink-item:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
+    outline: none;
+}
+
+.backlink-item-preview {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tab-context-item {

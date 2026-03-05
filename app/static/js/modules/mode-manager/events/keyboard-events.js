@@ -2753,6 +2753,20 @@ export async function openReferenceInNewTab(referenceNoteId) {
         await switchToTabContext(newTabId, {});
     }
 
+    await runReferenceSearchInActiveTab(referenceNoteId, 'reference.link_open_tab');
+
+    pushReferenceNavigationEntry(sourceTabId, newTabId);
+    return newTabId;
+}
+
+async function runReferenceSearchInActiveTab(referenceNoteId, context) {
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('runReferenceSearchInActiveTab requires referenceNoteId');
+    }
+    if (typeof context !== 'string' || context.length === 0) {
+        throw new Error('runReferenceSearchInActiveTab requires context');
+    }
+
     const searchInput = document.getElementById('search-input');
     if (!(searchInput instanceof HTMLInputElement)) {
         throw new Error('Search input element not found for reference tab navigation');
@@ -2773,7 +2787,7 @@ export async function openReferenceInNewTab(referenceNoteId) {
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
     await actionRefreshAndMaybeSelect({
         startedAt,
-        context: 'reference.link_open_tab',
+        context,
         requireExecution: true,
     });
     await persistTabStateSnapshot();
@@ -2781,9 +2795,13 @@ export async function openReferenceInNewTab(referenceNoteId) {
     searchInput.value = normalizedReferenceId;
     searchInput.focus();
     searchInput.setSelectionRange(normalizedReferenceId.length, normalizedReferenceId.length);
+}
 
-    pushReferenceNavigationEntry(sourceTabId, newTabId);
-    return newTabId;
+export async function openReferenceInCurrentTab(referenceNoteId) {
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('openReferenceInCurrentTab requires referenceNoteId');
+    }
+    await runReferenceSearchInActiveTab(referenceNoteId, 'reference.link_open_current_tab');
 }
 
 async function moveTabContext(tabId, delta) {
