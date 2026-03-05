@@ -22,10 +22,10 @@
 - Derive the file-store root from the active note DB path (`SafeSession._db_path`) instead of adding another unrelated hardcoded home-directory path.
 - Proposed layout:
   - live notes DB: `<db_parent>/<db_stem>.db` (currently `~/MetaList/metalist2.db`)
-  - file shard directory: `<db_parent>/<db_stem>.files/`
-  - first file shard: `<db_parent>/<db_stem>.files/shard-000.db`
+  - primary file DB: `<db_parent>/<db_stem>.files.db` (currently `~/MetaList/metalist2.files.db`)
+  - future shards, if needed: sibling files derived from the same stem, e.g. `<db_parent>/<db_stem>.files.001.db`
   - backups remain under `<db_parent>/backups/`
-- In test mode, this should mirror the active test DB path, e.g. `./test.db` -> `./test.files/shard-000.db`.
+- In test mode, this should mirror the active test DB path, e.g. `./test.db` -> `./test.files.db`.
 - Introduce a file-db access layer isolated from `SafeSession` note traffic:
   - `app/db/file_schema.py`
   - `app/db/file_session.py`
@@ -109,7 +109,7 @@
 
 ### 9. Backup/restore
 - Extend backup/restore so file DB state is included with note DB state.
-- Backup discovery should start from the active note DB path and include the sibling `<db_stem>.files/` shard directory.
+- Backup discovery should start from the active note DB path and include sibling file DBs matching the same derived stem, starting with `<db_stem>.files.db`.
 - Treat a backup as incomplete if it omits file shards once this feature exists.
 - Restore should rebuild both note runtime state and file UUID registry.
 
