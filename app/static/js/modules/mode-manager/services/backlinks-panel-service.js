@@ -1,0 +1,185 @@
+import { ModeContextInstance as ModeContext } from '../mode-context.js';
+import { NotesAPI } from '../../api-client.js';
+
+let backlinksRequestSerial = 0;
+let lastRenderedKey = null;
+
+function getBacklinksPanelElement() {
+    const panel = document.getElementById('backlinks-panel');
+    if (!panel) {
+        throw new Error('backlinks-panel element missing from DOM');
+    }
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('backlinks-panel must be an HTMLElement');
+    }
+    return panel;
+}
+
+function isBacklinksPreferenceEnabled() {
+    return document.body.classList.contains('pref-show-backlinks');
+}
+
+function isTabUiVisible() {
+    return document.body.classList.contains('pref-show-tab-ui');
+}
+
+function updateBacklinksPanelTop(panel) {
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('updateBacklinksPanelTop requires panel element');
+    }
+
+    const fallbackTop = 'calc(1.5rem - 6px)';
+    if (!isTabUiVisible()) {
+        panel.style.top = fallbackTop;
+        return;
+    }
+
+    const tabList = document.getElementById('search-contexts-list');
+    if (!(tabList instanceof HTMLElement)) {
+        panel.style.top = fallbackTop;
+        return;
+    }
+
+    const tabListVisible = window.getComputedStyle(tabList).display !== 'none';
+    if (!tabListVisible) {
+        panel.style.top = fallbackTop;
+        return;
+    }
+
+    const rect = tabList.getBoundingClientRect();
+    panel.style.top = `${Math.round(rect.bottom + 8)}px`;
+}
+
+function clearPanel(panel) {
+    panel.innerHTML = '';
+}
+
+function showPanel(panel) {
+    panel.style.display = 'block';
+}
+
+function hidePanel(panel) {
+    panel.style.display = 'none';
+}
+
+function createTitleElement(targetNoteId, backlinkCount) {
+    const title = document.createElement('div');
+    title.className = 'backlinks-title';
+    title.textContent = `Backlinks (${backlinkCount})`;
+    title.title = targetNoteId;
+    return title;
+}
+
+function createBacklinkItemElement(entry) {
+    if (!entry || typeof entry !== 'object') {
+        throw new Error('Backlink entry must be an object');
+    }
+    if (typeof entry.id !== 'string' || entry.id.length === 0) {
+        throw new Error('Backlink entry id must be a non-empty string');
+    }
+    if (typeof entry.preview !== 'string') {
+        throw new Error('Backlink entry preview must be a string');
+    }
+
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'backlink-item interactive';
+    item.dataset.backlinkNoteId = entry.id;
+    item.title = entry.id;
+
+    const preview = document.createElement('span');
+    preview.className = 'backlink-item-preview';
+    preview.textContent = entry.preview.length > 0 ? entry.preview : '(empty note)';
+    item.appendChild(preview);
+
+    return item;
+}
+
+function renderPanelWithEntries(panel, targetNoteId, entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        throw new Error('renderPanelWithEntries requires non-empty entries');
+    }
+
+    clearPanel(panel);
+    panel.appendChild(createTitleElement(targetNoteId, entries.length));
+
+    const list = document.createElement('div');
+    list.className = 'backlinks-list';
+    for (const entry of entries) {
+        list.appendChild(createBacklinkItemElement(entry));
+    }
+    panel.appendChild(list);
+}
+
+function validateBacklinksResponse(payload, targetNoteId) {
+    if (!payload || typeof payload !== 'object') {
+        throw new Error('Backlinks response must be an object');
+    }
+    if (payload.targetNoteId !== targetNoteId) {
+        throw new Error('Backlinks response targetNoteId mismatch');
+    }
+    if (!Array.isArray(payload.backlinks)) {
+        throw new Error('Backlinks response must include backlinks array');
+    }
+    return payload.backlinks;
+}
+
+function buildRenderKey(targetNoteId) {
+    const updateUuid = ModeContext.lastUpdateUUID;
+    const stableUpdateUuid = typeof updateUuid === 'string' ? updateUuid : '';
+    const searchQuery = typeof ModeContext.searchQuery === 'string' ? ModeContext.searchQuery : '';
+    return `${targetNoteId}|${searchQuery}|${stableUpdateUuid}|${isBacklinksPreferenceEnabled() ? 'on' : 'off'}|${isTabUiVisible() ? 'tabs' : 'notabs'}`;
+}
+
+export function invalidateBacklinksPanelCache() {
+    lastRenderedKey = null;
+}
+
+export async function refreshBacklinksPanel(options = {}) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('refreshBacklinksPanel requires options object');
+    }
+    const force = options.force === true;
+
+    const panel = getBacklinksPanelElement();
+    updateBacklinksPanelTop(panel);
+
+    if (!isBacklinksPreferenceEnabled()) {
+        hidePanel(panel);
+        clearPanel(panel);
+        lastRenderedKey = null;
+        return;
+    }
+
+    if (!ModeContext.isEditing || typeof ModeContext.currentNoteId !== 'string' || ModeContext.currentNoteId.length === 0) {
+        hidePanel(panel);
+        clearPanel(panel);
+        lastRenderedKey = buildRenderKey('none');
+        return;
+    }
+
+    const targetNoteId = ModeContext.currentNoteId;
+    const renderKey = buildRenderKey(targetNoteId);
+    if (!force && renderKey === lastRenderedKey) {
+        return;
+    }
+
+    const requestId = ++backlinksRequestSerial;
+    const searchQuery = typeof ModeContext.searchQuery === 'string' ? ModeContext.searchQuery : '';
+    const payload = await NotesAPI.fetchBacklinks(targetNoteId, searchQuery);
+    if (requestId !== backlinksRequestSerial) {
+        return;
+    }
+
+    const entries = validateBacklinksResponse(payload, targetNoteId);
+    if (entries.length === 0) {
+        hidePanel(panel);
+        clearPanel(panel);
+        lastRenderedKey = renderKey;
+        return;
+    }
+
+    showPanel(panel);
+    renderPanelWithEntries(panel, targetNoteId, entries);
+    lastRenderedKey = renderKey;
+}

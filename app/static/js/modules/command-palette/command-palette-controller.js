@@ -13,6 +13,7 @@ import { HelpModal } from '../modals/help-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
+import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -358,6 +359,9 @@ class CommandPaletteController {
     }
 
     _applyPreferenceEffectsFromStorage() {
+        const showBacklinks = this._getBoolean('pref.show_backlinks', true);
+        document.body.classList.toggle('pref-show-backlinks', showBacklinks);
+
         const showTags = this._getBoolean('pref.show_note_tags', false);
         document.body.classList.toggle('pref-show-note-tags', showTags);
 
@@ -398,6 +402,9 @@ class CommandPaletteController {
                 searchContextsList.style.display = 'none';
             }
         }
+
+        invalidateBacklinksPanelCache();
+        void refreshBacklinksPanel({ force: true });
     }
 
     _getBoolean(key, defaultValue) {

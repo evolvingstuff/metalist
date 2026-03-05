@@ -7,7 +7,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
-import { navigateBackFromReferenceContext, openReferenceInNewTab } from './keyboard-events.js';
+import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
 
 const collapseToggleClickSkips = new WeakSet();
 
@@ -442,6 +442,14 @@ function handleClick(event) {
     }
 
     if (handleReferenceLinkClick(event)) {
+        return;
+    }
+
+    if (handleBacklinkItemClick(event)) {
+        return;
+    }
+
+    if (event.target.closest('#backlinks-panel')) {
         return;
     }
 
@@ -880,6 +888,37 @@ function handleReferenceBackButtonClick(event) {
 
     void CommandGate.run('mouse.reference_back', async () => {
         await navigateBackFromReferenceContext();
+    });
+    return true;
+}
+
+function handleBacklinkItemClick(event) {
+    if (!event.target) {
+        throw new Error('Backlink click missing target element');
+    }
+
+    const backlinkItem = event.target.closest('.backlink-item');
+    if (!backlinkItem) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Backlink click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    const noteId = backlinkItem.dataset.backlinkNoteId;
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('Backlink click missing data-backlink-note-id');
+    }
+
+    void CommandGate.run('mouse.open_backlink_in_new_tab', async () => {
+        await openReferenceInCurrentTab(noteId);
     });
     return true;
 }

@@ -36,6 +36,7 @@ export const CONFIG = {
             TAB_STATE_DELETE_TAB: `${API_NOTES_BASE}/tab-state/delete-tab`,
             SEARCH_SUGGESTIONS: `${API_NOTES_BASE}/search-suggestions`,
             TAG_SUGGESTIONS: `${API_NOTES_BASE}/tag-suggestions`,
+            BACKLINKS: (noteId) => `${API_NOTES_BASE}/${noteId}/backlinks`,
         },
         AUTH: {
             STATUS: `${API_AUTH_BASE}/status`,
