@@ -22,10 +22,14 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 
 ## Utility Actions
 - `Create backup now`: creates a timestamped SQLite backup in the app backup directory. If total backups are 25 or more, the app opens a retention modal asking how many backups to keep (defaults to 3, with an explicit "Keep all backups" option), then shows a completion modal with `OK`.
+  - When file attachments exist, the backup includes the sibling `*.files.db` database as a paired sidecar backup.
 - `Restore from backup…`: opens a restore picker, applies the selected backup, then shows a success confirmation with `OK` before reload.
+  - Restore also restores the paired file-attachment database, or resets it to empty when the selected backup predates file attachments.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a utility modal for password generation.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
+- `Attach file…`: opens the native file picker, uploads the selected file, and inserts an embedded file reference token into the current note. If no note is active, it creates a new note first.
+- `Trim unused files`: deletes file rows whose UUIDs are no longer referenced anywhere in note content. This is the only automatic cleanup path for orphaned attachments.
 
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).

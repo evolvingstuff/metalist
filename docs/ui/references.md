@@ -1,14 +1,22 @@
-# Note References
+# UUID References
 
 ## Status
 - Implemented reference syntaxes:
   - `![[UUID]]` = embedded mode
   - `[[UUID]]` = link mode
+- A UUID can resolve to either:
+  - a note
+  - a file attachment
 
 ## Rendering Rules
 - **View mode**:
-  - `![[UUID]]` renders the referenced note as an embedded block (with descendants).
-  - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
+  - Note targets:
+    - `![[UUID]]` renders the referenced note as an embedded block (with descendants).
+    - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
+  - File targets:
+    - both `![[UUID]]` and `[[UUID]]` render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
+    - clicking the rendered file reference downloads the decrypted file from the server.
+    - when the host note is collapsed, file references stay visible as a single compact row showing the badge and a truncated title.
   - Each rendered reference has a `+/-` toggle:
     - `-` switches embed -> link.
     - `+` switches link -> embed.
@@ -21,10 +29,20 @@
 - **Edit mode**:
   - Tokens remain literal raw text (`![[UUID]]` or `[[UUID]]`).
 
+## File Attachment Workflow
+- `Attach file…` in the command palette opens the native file picker.
+- If you are editing a note, the selected file is uploaded and its `![[UUID]]` token is inserted into that note.
+- If no note is active, the app creates a new note first, then inserts the file reference there.
+- The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
+- Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
+- Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.
+
 ## Failure / Safety Cases
 - Missing or deleted UUID: render a "missing reference" marker (subtly red-tinted).
   - Missing references do not show the `+/-` toggle control.
 - Circular chain (A -> B -> A): render a "circular reference" marker and stop recursion at that point.
+- Removing every note reference to a file does not delete the file automatically.
+- `Trim unused files` is the explicit cleanup path for unreferenced file rows.
 
 ## Keyboard Workflow
 - `Cmd/Ctrl + C` with no text selection copies a note (server clipboard + system clipboard payload).
@@ -46,6 +64,7 @@
 
 ## Related Docs
 - `docs/ui/content-formatting.md`
+- `docs/ui/command-palette.md`
 - `docs/ui/controls.md`
 - `docs/ui/search-semantics.md`
 - `docs/design/differential-view-protocol.md`

@@ -1403,7 +1403,6 @@ body {
 .note-file-reference-link {
     display: flex;
     flex-direction: column;
-    gap: 4px;
     width: 100%;
     padding: 0;
     border: none;
@@ -1430,6 +1429,7 @@ body {
     align-items: center;
     justify-content: center;
     min-width: 36px;
+    flex-shrink: 0;
     padding: 1px 6px;
     border-radius: 999px;
     background: #d8dde6;
@@ -1457,11 +1457,56 @@ body {
     border-radius: 6px;
 }
 
-.note-file-reference-meta {
-    color: #475569;
-    font-size: 12px;
-    line-height: 1.35;
-    overflow-wrap: anywhere;
+.note.collapsed:not(.editing) .note-content:has(.note-reference-file) {
+    max-height: none;
+    display: block;
+    line-height: 1.25;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file {
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    min-width: 0;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-reference-toggle {
+    display: none;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-reference-content {
+    width: 100%;
+    min-width: 0;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-link {
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-header {
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-badge {
+    min-width: 34px;
+    padding: 1px 5px;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-title {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .note-embed-node {

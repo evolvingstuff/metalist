@@ -277,6 +277,7 @@ def _render_reference_block(
         wrapper_classes = f"{wrapper_classes} note-reference-link-mode"
 
     if note_exists:
+        wrapper_classes = f"{wrapper_classes} note-reference-note"
         if is_embed:
             body_html = _render_embed_body(
                 reference_note_id=reference_note_id,
@@ -289,6 +290,7 @@ def _render_reference_block(
                 context=context,
             )
     elif file_exists:
+        wrapper_classes = f"{wrapper_classes} note-reference-file"
         if is_embed:
             body_html = _render_file_embed_body(
                 reference_note_id=reference_note_id,
@@ -429,19 +431,10 @@ def _render_file_body(
 
     escaped_note_id = html.escape(reference_note_id, quote=True)
     escaped_title = html.escape(title)
-    escaped_meta = html.escape(_format_file_meta_line(
-        original_filename=original_filename,
-        mime_type=mime_type,
-        size_bytes=size_bytes,
-    ))
     badge_text = html.escape(_format_thumbnail_badge(thumbnail_kind))
     button_classes = "note-file-reference-link"
     if is_embed:
         button_classes = f"{button_classes} note-file-reference-link-embed"
-
-    meta_html = ""
-    if is_embed:
-        meta_html = f'<span class="note-file-reference-meta">{escaped_meta}</span>'
 
     return (
         f'<button type="button" class="{button_classes}" data-file-ref-id="{escaped_note_id}">'
@@ -449,7 +442,6 @@ def _render_file_body(
         f'<span class="note-file-reference-badge">{badge_text}</span>'
         f'<span class="note-file-reference-title">{escaped_title}</span>'
         "</span>"
-        f"{meta_html}"
         "</button>"
     )
 
@@ -527,32 +519,6 @@ def _strip_reference_tokens(text: str) -> str:
     without_refs = _REFERENCE_TOKEN_RE.sub(" ", text)
     normalized = _WHITESPACE_RE.sub(" ", without_refs)
     return normalized.strip()
-
-
-def _format_file_meta_line(
-    *,
-    original_filename: str,
-    mime_type: str,
-    size_bytes: int,
-) -> str:
-    if original_filename == "":
-        raise ValueError("original_filename must be non-empty")
-    if mime_type == "":
-        raise ValueError("mime_type must be non-empty")
-    if size_bytes < 0:
-        raise ValueError("size_bytes must be non-negative")
-
-    return f"{mime_type} | {_format_file_size(size_bytes)} | {original_filename}"
-
-
-def _format_file_size(size_bytes: int) -> str:
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    if size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    if size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
 def _format_thumbnail_badge(thumbnail_kind: str) -> str:

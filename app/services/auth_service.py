@@ -29,6 +29,7 @@ from app.db.settings_sql import (
     update_password_settings,
 )
 from app.services.content_cache import cache_note, cache_note_tags, cache_note_text
+from app.services.file_storage import decrypt_all_files_for_plaintext, encrypt_all_files_for_active_dek
 from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
@@ -230,6 +231,7 @@ class AuthService:
         maintenance_service.enter_maintenance("Encrypting all notes with new password")
         encrypted_count = 0
         encrypted_rule_count = 0
+        encrypted_file_count = 0
         try:
             with begin_writer() as connection:
                 with SafeSession.allow_reads("auth:set_password:fetch_notes"):
@@ -339,6 +341,9 @@ class AuthService:
                     dek_tag=dek_tag,
                     encryption_algorithm="AES-256-GCM",
                 )
+                encrypted_file_count = encrypt_all_files_for_active_dek(
+                    encryption_service=self.encryption,
+                )
         finally:
             maintenance_service.exit_maintenance()
 
@@ -350,7 +355,9 @@ class AuthService:
 
         return (
             True,
-            f"Password set successfully. Encrypted {encrypted_count} notes and {encrypted_rule_count} ontology rules.",
+            "Password set successfully. "
+            f"Encrypted {encrypted_count} notes, {encrypted_rule_count} ontology rules, "
+            f"and {encrypted_file_count} files.",
         )
 
     def change_password(
@@ -461,6 +468,7 @@ class AuthService:
         maintenance_service.enter_maintenance("Decrypting all notes (removing password protection)")
         cache_content_updates: dict[str, str] = {}
         cache_tag_updates: dict[str, str] = {}
+        decrypted_file_count = 0
         try:
             decrypted_count = 0
             decrypted_rule_count = 0
@@ -579,6 +587,9 @@ class AuthService:
                     )
                     decrypted_rule_count += 1
 
+                decrypted_file_count = decrypt_all_files_for_plaintext(
+                    encryption_service=self.encryption,
+                )
                 clear_password_settings(connection)
             self.encryption.clear_keys()
         finally:
@@ -598,5 +609,7 @@ class AuthService:
 
         return (
             True,
-            f"Password removed successfully. Decrypted {decrypted_count} notes and {decrypted_rule_count} ontology rules.",
+            "Password removed successfully. "
+            f"Decrypted {decrypted_count} notes, {decrypted_rule_count} ontology rules, "
+            f"and {decrypted_file_count} files.",
         )

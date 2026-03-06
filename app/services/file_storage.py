@@ -10,7 +10,14 @@ import uuid
 from typing import Optional
 
 from app.db.file_session import begin_file_writer, connect_file_reader, resolve_file_database_path
-from app.db.files_sql import delete_files, fetch_all_file_ids, fetch_file, insert_file
+from app.db.files_sql import (
+    delete_files,
+    fetch_all_file_ids,
+    fetch_all_files,
+    fetch_file,
+    insert_file,
+    update_file_storage_fields,
+)
 from app.models.database import SafeSession
 from app.security.encryption import (
     get_encryption_service,
@@ -239,6 +246,48 @@ def trim_unused_files() -> TrimUnusedFilesResult:
     )
 
 
+def encrypt_all_files_for_active_dek(*, encryption_service: object) -> int:
+    service = _coerce_encryption_service(encryption_service)
+    if service is None:
+        raise RuntimeError("File encryption migration requires an active DEK")
+
+    rewritten_count = 0
+    with begin_file_writer() as connection:
+        rows = fetch_all_files(connection)
+        for row in rows:
+            if _row_is_fully_encrypted(row):
+                continue
+            _rewrite_file_row(
+                connection=connection,
+                row=row,
+                decrypt_encryption_service=service,
+                encrypt_encryption_service=service,
+            )
+            rewritten_count += 1
+    return rewritten_count
+
+
+def decrypt_all_files_for_plaintext(*, encryption_service: object) -> int:
+    service = _coerce_encryption_service(encryption_service)
+    if service is None:
+        raise RuntimeError("File decryption migration requires an active DEK")
+
+    rewritten_count = 0
+    with begin_file_writer() as connection:
+        rows = fetch_all_files(connection)
+        for row in rows:
+            if _row_is_fully_plaintext(row):
+                continue
+            _rewrite_file_row(
+                connection=connection,
+                row=row,
+                decrypt_encryption_service=service,
+                encrypt_encryption_service=None,
+            )
+            rewritten_count += 1
+    return rewritten_count
+
+
 def _generate_unique_file_id() -> str:
     for _ in range(100):
         candidate = str(uuid.uuid4())
@@ -266,6 +315,145 @@ def _derive_thumbnail_kind(*, mime_type: str, original_filename: str) -> str:
     if extension in {".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz"}:
         return "archive"
     return "other"
+
+
+def _rewrite_file_row(
+    *,
+    connection,
+    row: dict[str, object],
+    decrypt_encryption_service: object,
+    encrypt_encryption_service: object | None,
+) -> None:
+    file_id = row["id"]
+    if not isinstance(file_id, str) or file_id == "":
+        raise TypeError(f"files.id must be a non-empty string, got {file_id!r}")
+
+    title = _decrypt_text_field(
+        encryption_service=decrypt_encryption_service,
+        value=row["title"],
+        nonce=row["title_encryption_nonce"],
+        tag=row["title_encryption_tag"],
+        field_name="title",
+        file_id=file_id,
+    )
+    metadata_json = _decrypt_text_field(
+        encryption_service=decrypt_encryption_service,
+        value=row["metadata_json"],
+        nonce=row["metadata_encryption_nonce"],
+        tag=row["metadata_encryption_tag"],
+        field_name="metadata_json",
+        file_id=file_id,
+    )
+    blob_data = _decrypt_blob_field(
+        encryption_service=decrypt_encryption_service,
+        value=row["blob_data"],
+        nonce=row["blob_encryption_nonce"],
+        tag=row["blob_encryption_tag"],
+        field_name="blob_data",
+        file_id=file_id,
+    )
+
+    if encrypt_encryption_service is None:
+        next_title = title
+        next_title_nonce = None
+        next_title_tag = None
+        next_metadata_json = metadata_json
+        next_metadata_nonce = None
+        next_metadata_tag = None
+        next_blob_data = blob_data
+        next_blob_nonce = None
+        next_blob_tag = None
+    else:
+        next_title, next_title_nonce, next_title_tag = _encrypt_text_for_storage(
+            encryption_service=encrypt_encryption_service,
+            plaintext=title,
+        )
+        next_metadata_json, next_metadata_nonce, next_metadata_tag = _encrypt_text_for_storage(
+            encryption_service=encrypt_encryption_service,
+            plaintext=metadata_json,
+        )
+        next_blob_data, next_blob_nonce, next_blob_tag = _encrypt_bytes_for_storage(
+            encryption_service=encrypt_encryption_service,
+            plaintext=blob_data,
+        )
+
+    update_file_storage_fields(
+        connection,
+        file_id=file_id,
+        title=next_title,
+        title_encryption_nonce=next_title_nonce,
+        title_encryption_tag=next_title_tag,
+        metadata_json=next_metadata_json,
+        metadata_encryption_nonce=next_metadata_nonce,
+        metadata_encryption_tag=next_metadata_tag,
+        blob_data=next_blob_data,
+        blob_encryption_nonce=next_blob_nonce,
+        blob_encryption_tag=next_blob_tag,
+        updated_at=datetime.now(timezone.utc),
+    )
+
+
+def _row_is_fully_plaintext(row: dict[str, object]) -> bool:
+    return (
+        _field_has_encryption(
+            nonce=row["title_encryption_nonce"],
+            tag=row["title_encryption_tag"],
+            file_id=row["id"],
+            field_name="title",
+        )
+        is False
+        and _field_has_encryption(
+            nonce=row["metadata_encryption_nonce"],
+            tag=row["metadata_encryption_tag"],
+            file_id=row["id"],
+            field_name="metadata_json",
+        )
+        is False
+        and _field_has_encryption(
+            nonce=row["blob_encryption_nonce"],
+            tag=row["blob_encryption_tag"],
+            file_id=row["id"],
+            field_name="blob_data",
+        )
+        is False
+    )
+
+
+def _row_is_fully_encrypted(row: dict[str, object]) -> bool:
+    return (
+        _field_has_encryption(
+            nonce=row["title_encryption_nonce"],
+            tag=row["title_encryption_tag"],
+            file_id=row["id"],
+            field_name="title",
+        )
+        is True
+        and _field_has_encryption(
+            nonce=row["metadata_encryption_nonce"],
+            tag=row["metadata_encryption_tag"],
+            file_id=row["id"],
+            field_name="metadata_json",
+        )
+        is True
+        and _field_has_encryption(
+            nonce=row["blob_encryption_nonce"],
+            tag=row["blob_encryption_tag"],
+            file_id=row["id"],
+            field_name="blob_data",
+        )
+        is True
+    )
+
+
+def _field_has_encryption(*, nonce: object, tag: object, file_id: object, field_name: str) -> bool:
+    if nonce is None and tag is None:
+        return False
+    if not isinstance(nonce, bytes) or not isinstance(tag, bytes):
+        raise RuntimeError(
+            "Encrypted field metadata invalid: "
+            f"file_id={file_id} field={field_name} nonce={nonce is not None} tag={tag is not None}"
+        )
+    return True
 
 
 def _resolve_encryption_service(token: Optional[str]):

@@ -90,11 +90,12 @@ def test_embed_file_reference_renders_file_card(monkeypatch: pytest.MonkeyPatch)
     )
 
     rendered = state.payloads["a"]["content"]
+    assert "note-reference-file" in rendered
     assert "note-file-reference-link" in rendered
-    assert "note-file-reference-meta" in rendered
     assert "report.pdf" in rendered
-    assert "application/pdf" in rendered
     assert "PDF" in rendered
+    assert "note-file-reference-meta" not in rendered
+    assert "application/pdf" not in rendered
 
 
 def test_link_file_reference_renders_compact_file_link(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,6 +120,7 @@ def test_link_file_reference_renders_compact_file_link(monkeypatch: pytest.Monke
     )
 
     rendered = state.payloads["a"]["content"]
+    assert "note-reference-file" in rendered
     assert "note-file-reference-link" in rendered
     assert "note-file-reference-meta" not in rendered
     assert "clip.mp4" in rendered

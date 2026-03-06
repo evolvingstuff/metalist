@@ -13,7 +13,7 @@
 
 ## UI
 - Keyboard + mouse controls: `docs/ui/controls.md`
-- Embedded note references (`![[UUID]]`): `docs/ui/references.md`
+- UUID note/file references (`![[UUID]]`, `[[UUID]]`): `docs/ui/references.md`
 - External HTML paste sanitization: `docs/ui/paste-sanitization.md`
 - Note content meta-tag formatting: `docs/ui/content-formatting.md`
 - Search query syntax (verifier): `docs/ui/search-syntax.md`

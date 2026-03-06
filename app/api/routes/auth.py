@@ -505,6 +505,7 @@ def remove_password(
         raise HTTPException(status_code=400, detail=message)
     token_service.revoke_all_tokens()
     clear_all_locks()
+    clear_encryption_key()
     return {"message": message}
 
 

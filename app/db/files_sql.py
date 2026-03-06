@@ -111,6 +111,61 @@ def fetch_all_file_ids(connection: sqlite3.Connection) -> list[str]:
     return ids
 
 
+def fetch_all_files(connection: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = connection.execute(f"SELECT * FROM {FILES_TABLE} ORDER BY created_at ASC").fetchall()
+    records: list[dict[str, object]] = []
+    for row in rows:
+        records.append(_deserialize_row(row))
+    return records
+
+
+def update_file_storage_fields(
+    connection: sqlite3.Connection,
+    *,
+    file_id: str,
+    title: str,
+    title_encryption_nonce: Optional[bytes],
+    title_encryption_tag: Optional[bytes],
+    metadata_json: str,
+    metadata_encryption_nonce: Optional[bytes],
+    metadata_encryption_tag: Optional[bytes],
+    blob_data: bytes,
+    blob_encryption_nonce: Optional[bytes],
+    blob_encryption_tag: Optional[bytes],
+    updated_at: datetime,
+) -> None:
+    connection.execute(
+        f"""
+        UPDATE {FILES_TABLE}
+        SET
+            title = ?,
+            title_encryption_nonce = ?,
+            title_encryption_tag = ?,
+            metadata_json = ?,
+            metadata_encryption_nonce = ?,
+            metadata_encryption_tag = ?,
+            blob_data = ?,
+            blob_encryption_nonce = ?,
+            blob_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            title,
+            title_encryption_nonce,
+            title_encryption_tag,
+            metadata_json,
+            metadata_encryption_nonce,
+            metadata_encryption_tag,
+            blob_data,
+            blob_encryption_nonce,
+            blob_encryption_tag,
+            _serialize_datetime(updated_at),
+            file_id,
+        ),
+    )
+
+
 def delete_files(connection: sqlite3.Connection, file_ids: Iterable[str]) -> int:
     identifiers = list(file_ids)
     if not identifiers:
