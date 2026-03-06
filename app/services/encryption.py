@@ -1,4 +1,4 @@
-"""AES-256-GCM encryption service for note content."""
+"""AES-256-GCM encryption service for note content and file payloads."""
 
 import base64
 import os
@@ -200,6 +200,23 @@ class EncryptionService:
             nonce,  # nonce as bytes
             tag     # tag as bytes
         )
+
+    def encrypt_bytes(self, plaintext: bytes) -> tuple[bytes, bytes, bytes]:
+        if self.dek is None:
+            raise ValueError("No DEK set - ensure password has been provided")
+        if not isinstance(plaintext, bytes):
+            raise TypeError(f"plaintext must be bytes, got {type(plaintext)}")
+
+        nonce = os.urandom(12)
+        cipher = Cipher(
+            algorithms.AES(self.dek),
+            modes.GCM(nonce),
+            backend=default_backend()
+        )
+        encryptor = cipher.encryptor()
+        ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+        tag = encryptor.tag
+        return ciphertext, nonce, tag
     
     def decrypt(self, ciphertext_base64: str, nonce: bytes, tag: bytes) -> str:
         """Decrypt AES-256-GCM encrypted data from separate database fields using DEK.
@@ -235,6 +252,20 @@ class EncryptionService:
         decryptor = cipher.decryptor()
         plaintext_bytes = decryptor.update(ciphertext) + decryptor.finalize()
         return plaintext_bytes.decode('utf-8')
+
+    def decrypt_bytes(self, ciphertext: bytes, nonce: bytes, tag: bytes) -> bytes:
+        if self.dek is None:
+            raise ValueError("No DEK set - ensure password has been provided")
+        if not isinstance(ciphertext, bytes):
+            raise TypeError(f"ciphertext must be bytes, got {type(ciphertext)}")
+
+        cipher = Cipher(
+            algorithms.AES(self.dek),
+            modes.GCM(nonce, tag),
+            backend=default_backend()
+        )
+        decryptor = cipher.decryptor()
+        return decryptor.update(ciphertext) + decryptor.finalize()
     
     def generate_salt(self) -> bytes:
         """Generate cryptographically secure random salt.
@@ -254,6 +285,9 @@ class EncryptionService:
             Tuple of (ciphertext_base64, nonce_bytes, tag_bytes) for separate DB storage
         """
         return self.encrypt(plaintext)
+
+    def encrypt_bytes_for_storage(self, plaintext: bytes) -> tuple[bytes, bytes, bytes]:
+        return self.encrypt_bytes(plaintext)
     
     def decrypt_from_storage(self, content: str, nonce: Optional[bytes], tag: Optional[bytes]) -> str:
         """Decrypt content from database storage format.
@@ -278,3 +312,20 @@ class EncryptionService:
             
         # Otherwise decrypt using separate parameters
         return self.decrypt(content, nonce, tag)
+
+    def decrypt_bytes_from_storage(
+        self,
+        content: bytes,
+        nonce: Optional[bytes],
+        tag: Optional[bytes],
+    ) -> bytes:
+        if nonce is None and tag is None:
+            return content
+
+        if (nonce is None) != (tag is None):
+            raise ValueError(
+                "Encrypted content provided with incomplete metadata: "
+                f"nonce={nonce is not None} tag={tag is not None}"
+            )
+
+        return self.decrypt_bytes(content, nonce, tag)

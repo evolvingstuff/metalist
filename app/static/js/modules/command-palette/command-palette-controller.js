@@ -1,8 +1,9 @@
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { actionRefreshAndMaybeSelect, showPerfOverlayFromCache } from '../mode-manager/actions/ui-actions.js';
 import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actions/selection-actions.js';
-import { NotesAPI } from '../api-client.js';
+import { FilesAPI, NotesAPI } from '../api-client.js';
 import { CONFIG } from '../config.js';
+import { ErrorHandler } from '../error-handler.js';
 import { PasswordModal } from '../modals/password-modal.js';
 import { BackupRetentionModal } from '../modals/backup-retention-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
@@ -14,6 +15,7 @@ import { syncSearchInputValue } from '../mode-manager/services/search-input-serv
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
+import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -259,6 +261,8 @@ class CommandPaletteController {
                 resetAllPreferences: this.resetAllPreferences.bind(this),
                 runMcpClient: this.runMcpClient.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
+                attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
+                trimUnusedFiles: this.trimUnusedFiles.bind(this),
             },
         });
 
@@ -925,6 +929,88 @@ class CommandPaletteController {
         }
 
         window.open(mcpClientUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    async attachFileToCurrentNote() {
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        try {
+            const preferredNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
+            const file = await pickFileForAttachment();
+            if (file === null) {
+                ErrorHandler.showInfoBanner('Attach file canceled or no file was selected.', 5000);
+                return;
+            }
+
+            const result = await CommandGate.run('commandPalette.attachFileToCurrentNote', async () => {
+                return await attachPickedFileToCurrentNote(file, preferredNoteId);
+            }, {
+                timeoutMs: 120000,
+            });
+            if (result === null) {
+                ErrorHandler.showErrorBanner(
+                    'Attach file did not start because another command is still running.',
+                    'error',
+                    10000,
+                    true,
+                );
+            }
+        } catch (error) {
+            if (
+                error instanceof Error
+                && (error.message.includes('File upload failed:') || error.message.includes('API call failed:'))
+            ) {
+                throw error;
+            }
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            console.error('Attach file failed:', error);
+            ErrorHandler.showErrorBanner(
+                `Attach file failed: ${message}`,
+                'error',
+                10000,
+                true,
+            );
+        }
+    }
+
+    async trimUnusedFiles() {
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        const confirmed = window.confirm(
+            'Trim all files that are not referenced by any saved note? This cannot be undone.',
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        const result = await CommandGate.run('commandPalette.trimUnusedFiles', async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const payload = await FilesAPI.trimUnusedFiles();
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Trim unused files response missing body');
+            }
+            if (!Number.isInteger(payload.deleted_count) || payload.deleted_count < 0) {
+                throw new Error('Trim unused files response missing deleted_count');
+            }
+            if (!Array.isArray(payload.deleted_file_ids)) {
+                throw new Error('Trim unused files response missing deleted_file_ids');
+            }
+
+            await actionRefreshAndMaybeSelect({});
+            return payload;
+        });
+        if (result === null) {
+            return;
+        }
+
+        window.alert(`Trimmed ${result.deleted_count} unused file(s).`);
     }
 
     async resetViewFilters() {

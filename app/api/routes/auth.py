@@ -33,6 +33,8 @@ from app.services.view_cache import view_cache
 from app.services import auth_cache_state
 from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
 from app.services.hydration_state import hydration_state
+from app.services.file_registry import file_registry
+from app.services.file_storage import bootstrap_file_registry
 from app.security.encryption import (
     clear_encryption_key,
     set_encryption_required,
@@ -216,6 +218,8 @@ def _reset_runtime_state_after_restore() -> bool:
     clear_cache()
     note_store.reset()
     auth_cache_state.reset_cache_state()
+    file_registry.reset()
+    bootstrap_file_registry()
 
     session = SafeSession()
     try:

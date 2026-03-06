@@ -33,6 +33,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
     const runMcpClient = requireAction(actions, 'runMcpClient');
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
+    const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
+    const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
 
     const defaults = {
         showBacklinks: true,
@@ -176,6 +178,18 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Edit tag relationships…',
             execute: async () => openOntologyEditor(),
+        },
+        {
+            id: 'action.attach_file_to_current_note',
+            kind: 'action',
+            label: 'Attach file…',
+            execute: async () => attachFileToCurrentNote(),
+        },
+        {
+            id: 'action.trim_unused_files',
+            kind: 'action',
+            label: 'Trim unused files',
+            execute: async () => trimUnusedFiles(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',

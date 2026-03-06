@@ -22,6 +22,8 @@ class EmbedRenderContext:
     has_note: Callable[[str], bool]
     get_note: Callable[[str], object]
     get_children: Callable[[Optional[str]], List[str]]
+    has_file: Callable[[str], bool]
+    get_file: Callable[[str], object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +265,10 @@ def _render_reference_block(
     escaped_reference_note_id = html.escape(reference_note_id, quote=True)
     escaped_host_note_id = html.escape(host_note_id, quote=True)
     note_exists = context.has_note(reference_note_id)
+    file_exists = context.has_file(reference_note_id)
+
+    if note_exists and file_exists:
+        raise RuntimeError(f"Reference UUID {reference_note_id} resolves to both a note and a file")
 
     wrapper_classes = "note-reference-block"
     if is_embed:
@@ -270,22 +276,34 @@ def _render_reference_block(
     else:
         wrapper_classes = f"{wrapper_classes} note-reference-link-mode"
 
-    if is_embed:
-        body_html = _render_embed_body(
-            reference_note_id=reference_note_id,
-            note_exists=note_exists,
-            context=context,
-            ancestry=ancestry,
-        )
+    if note_exists:
+        if is_embed:
+            body_html = _render_embed_body(
+                reference_note_id=reference_note_id,
+                context=context,
+                ancestry=ancestry,
+            )
+        else:
+            body_html = _render_link_body(
+                reference_note_id=reference_note_id,
+                context=context,
+            )
+    elif file_exists:
+        if is_embed:
+            body_html = _render_file_embed_body(
+                reference_note_id=reference_note_id,
+                context=context,
+            )
+        else:
+            body_html = _render_file_link_body(
+                reference_note_id=reference_note_id,
+                context=context,
+            )
     else:
-        body_html = _render_link_body(
-            reference_note_id=reference_note_id,
-            note_exists=note_exists,
-            context=context,
-        )
+        body_html = _render_missing_reference_body(reference_note_id)
 
     toggle_button_html = ""
-    if note_exists:
+    if note_exists or file_exists:
         toggle_button_html = (
             f'<button type="button" class="note-reference-toggle" aria-label="{toggle_label}" title="{toggle_label}">{toggle_symbol}</button>'
         )
@@ -307,7 +325,6 @@ def _render_reference_block(
 def _render_embed_body(
     *,
     reference_note_id: str,
-    note_exists: bool,
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
 ) -> str:
@@ -318,14 +335,6 @@ def _render_embed_body(
             '<div class="note-reference-marker note-embed-cycle">'
             '<span class="note-embed-marker-icon" aria-hidden="true">&#8635;</span>'
             f'<span class="note-embed-marker-text">Circular reference: {escaped_note_id}</span>'
-            "</div>"
-        )
-
-    if not note_exists:
-        return (
-            '<div class="note-reference-marker note-embed-missing">'
-            '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'
-            f'<span class="note-embed-marker-text">Missing reference: {escaped_note_id}</span>'
             "</div>"
         )
 
@@ -341,18 +350,9 @@ def _render_embed_body(
 def _render_link_body(
     *,
     reference_note_id: str,
-    note_exists: bool,
     context: EmbedRenderContext,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
-    if not note_exists:
-        return (
-            '<div class="note-reference-marker note-embed-missing">'
-            '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'
-            f'<span class="note-embed-marker-text">Missing reference: {escaped_note_id}</span>'
-            "</div>"
-        )
-
     record = context.get_note(reference_note_id)
     record_content = record.content
     if not isinstance(record_content, str):
@@ -365,6 +365,92 @@ def _render_link_body(
         f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
         f"{escaped_preview}"
         "</a>"
+    )
+
+
+def _render_missing_reference_body(reference_note_id: str) -> str:
+    escaped_note_id = html.escape(reference_note_id, quote=True)
+    return (
+        '<div class="note-reference-marker note-embed-missing">'
+        '<span class="note-embed-marker-icon" aria-hidden="true">&#9888;</span>'
+        f'<span class="note-embed-marker-text">Missing reference: {escaped_note_id}</span>'
+        "</div>"
+    )
+
+
+def _render_file_embed_body(
+    *,
+    reference_note_id: str,
+    context: EmbedRenderContext,
+) -> str:
+    record = context.get_file(reference_note_id)
+    return _render_file_body(
+        record=record,
+        reference_note_id=reference_note_id,
+        is_embed=True,
+    )
+
+
+def _render_file_link_body(
+    *,
+    reference_note_id: str,
+    context: EmbedRenderContext,
+) -> str:
+    record = context.get_file(reference_note_id)
+    return _render_file_body(
+        record=record,
+        reference_note_id=reference_note_id,
+        is_embed=False,
+    )
+
+
+def _render_file_body(
+    *,
+    record: object,
+    reference_note_id: str,
+    is_embed: bool,
+) -> str:
+    title = getattr(record, "title")
+    original_filename = getattr(record, "original_filename")
+    mime_type = getattr(record, "mime_type")
+    size_bytes = getattr(record, "size_bytes")
+    thumbnail_kind = getattr(record, "thumbnail_kind")
+
+    if not isinstance(title, str) or title == "":
+        raise TypeError("file title must be a non-empty string")
+    if not isinstance(original_filename, str) or original_filename == "":
+        raise TypeError("file original_filename must be a non-empty string")
+    if not isinstance(mime_type, str):
+        raise TypeError("file mime_type must be a string")
+    if not isinstance(size_bytes, int) or size_bytes < 0:
+        raise TypeError("file size_bytes must be a non-negative int")
+    if not isinstance(thumbnail_kind, str) or thumbnail_kind == "":
+        raise TypeError("file thumbnail_kind must be a non-empty string")
+
+    escaped_note_id = html.escape(reference_note_id, quote=True)
+    escaped_title = html.escape(title)
+    escaped_meta = html.escape(_format_file_meta_line(
+        original_filename=original_filename,
+        mime_type=mime_type,
+        size_bytes=size_bytes,
+    ))
+    badge_text = html.escape(_format_thumbnail_badge(thumbnail_kind))
+    button_classes = "note-file-reference-link"
+    if is_embed:
+        button_classes = f"{button_classes} note-file-reference-link-embed"
+
+    meta_html = ""
+    if is_embed:
+        meta_html = f'<span class="note-file-reference-meta">{escaped_meta}</span>'
+
+    return (
+        f'<button type="button" class="{button_classes}" data-file-ref-id="{escaped_note_id}">'
+        f'<span class="note-file-reference-header">'
+        f'<span class="note-file-reference-badge">{badge_text}</span>'
+        f'<span class="note-file-reference-title">{escaped_title}</span>'
+        "</span>"
+        f"{meta_html}"
+        "</button>"
     )
 
 
@@ -441,6 +527,48 @@ def _strip_reference_tokens(text: str) -> str:
     without_refs = _REFERENCE_TOKEN_RE.sub(" ", text)
     normalized = _WHITESPACE_RE.sub(" ", without_refs)
     return normalized.strip()
+
+
+def _format_file_meta_line(
+    *,
+    original_filename: str,
+    mime_type: str,
+    size_bytes: int,
+) -> str:
+    if original_filename == "":
+        raise ValueError("original_filename must be non-empty")
+    if mime_type == "":
+        raise ValueError("mime_type must be non-empty")
+    if size_bytes < 0:
+        raise ValueError("size_bytes must be non-negative")
+
+    return f"{mime_type} | {_format_file_size(size_bytes)} | {original_filename}"
+
+
+def _format_file_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    if size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
+def _format_thumbnail_badge(thumbnail_kind: str) -> str:
+    if thumbnail_kind == "pdf":
+        return "PDF"
+    if thumbnail_kind == "image":
+        return "IMG"
+    if thumbnail_kind == "audio":
+        return "AUD"
+    if thumbnail_kind == "video":
+        return "VID"
+    if thumbnail_kind == "text":
+        return "TXT"
+    if thumbnail_kind == "archive":
+        return "ZIP"
+    return "FILE"
 
 
 def _format_reference_token(*, note_id: str, mode: str) -> str:

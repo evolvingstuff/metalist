@@ -4,6 +4,49 @@ import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.
 import { ErrorHandler } from './error-handler.js';
 import { computeScrollAnchor } from './mode-manager/services/scroll-anchor-service.js';
 
+function buildAuthHeaders(includeContentType) {
+    if (typeof includeContentType !== 'boolean') {
+        throw new Error('buildAuthHeaders requires boolean includeContentType');
+    }
+
+    const tabId = sessionStorage.getItem('metalist_tab_id');
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('metalist_tab_id missing from sessionStorage');
+    }
+
+    const token = localStorage.getItem('auth_token');
+    if (typeof token !== 'string' || token.length === 0) {
+        throw new Error('auth_token missing from localStorage');
+    }
+
+    const headers = {
+        Authorization: `Bearer ${token}`,
+        'X-Metalist-Tab-Id': tabId,
+    };
+    if (includeContentType) {
+        headers['Content-Type'] = 'application/json';
+    }
+    return headers;
+}
+
+function extractFilenameFromContentDisposition(disposition) {
+    if (typeof disposition !== 'string' || disposition.length === 0) {
+        return null;
+    }
+
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+        return decodeURIComponent(utf8Match[1]);
+    }
+
+    const quotedMatch = disposition.match(/filename="([^"]+)"/i);
+    if (quotedMatch) {
+        return quotedMatch[1];
+    }
+
+    return null;
+}
+
 function captureViewportSnapshot() {
     return {
         scrollY: Math.max(0, Math.round(window.scrollY)),
@@ -636,4 +679,63 @@ export const NotesAPI = {
     },
 
     // Note locks removed: single-tab session ownership enforces exclusivity.
+};
+
+export const FilesAPI = {
+    async uploadFile(file) {
+        if (!(file instanceof File)) {
+            throw new Error('FilesAPI.uploadFile requires File');
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(CONFIG.API.FILES.UPLOAD, {
+            method: 'POST',
+            headers: buildAuthHeaders(false),
+            body: formData,
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`File upload failed: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.json();
+    },
+
+    async downloadFile(fileId) {
+        if (typeof fileId !== 'string' || fileId.length === 0) {
+            throw new Error('FilesAPI.downloadFile requires fileId string');
+        }
+
+        const response = await fetch(CONFIG.API.FILES.DOWNLOAD(fileId), {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`File download failed: ${response.status} ${response.statusText}`);
+        }
+
+        return {
+            blob: await response.blob(),
+            filename: extractFilenameFromContentDisposition(
+                response.headers.get('content-disposition')
+            ),
+        };
+    },
+
+    async trimUnusedFiles() {
+        const response = await fetch(CONFIG.API.FILES.TRIM_UNUSED, {
+            method: 'POST',
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({}),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`Trim unused files failed: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.json();
+    },
 };

@@ -7,6 +7,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { downloadFileReference } from '../services/file-reference-service.js';
 import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
 
 const collapseToggleClickSkips = new WeakSet();
@@ -441,6 +442,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleFileReferenceClick(event)) {
+        return;
+    }
+
     if (handleReferenceLinkClick(event)) {
         return;
     }
@@ -487,6 +492,14 @@ function handleClick(event) {
     if (toolbarElement) {
         Logger.logDebug('Click inside rich text toolbar', {
             eventType: event.type
+        }, Logger.LogCategory.EVENT);
+        return;
+    }
+
+    const fileReferenceInputElement = event.target.closest('#file-reference-input');
+    if (fileReferenceInputElement) {
+        Logger.logDebug('Click on hidden file reference input ignored', {
+            eventType: event.type,
         }, Logger.LogCategory.EVENT);
         return;
     }
@@ -858,6 +871,40 @@ function handleReferenceLinkClick(event) {
 
     void CommandGate.run('mouse.open_reference_in_new_tab', async () => {
         await openReferenceInNewTab(referenceNoteId);
+    });
+    return true;
+}
+
+function handleFileReferenceClick(event) {
+    if (!event.target) {
+        throw new Error('File reference click missing target element');
+    }
+
+    const button = event.target.closest('.note-file-reference-link');
+    if (!button) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (ModeContext.isEditing) {
+        return true;
+    }
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('File reference click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    const fileId = button.dataset.fileRefId;
+    if (typeof fileId !== 'string' || fileId.length === 0) {
+        throw new Error('File reference click missing file id');
+    }
+
+    void CommandGate.run('mouse.download_file_reference', async () => {
+        await downloadFileReference(fileId);
     });
     return true;
 }

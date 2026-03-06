@@ -13,6 +13,7 @@ from .db.notes_sql import clear_encryption_metadata_for_empty_notes
 from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.deps import get_db
 from .services.content_cache import populate_cache_from_db
+from .services.file_storage import bootstrap_file_registry
 from .services.auth import AuthService
 from .services.note_store import store as note_store
 from app.services import auth_cache_state
@@ -24,6 +25,7 @@ from app.security.encryption import set_encryption_required
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
+from app.api.routes.files import router as api2_files_router
 from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.mcp import router as api2_mcp_router
 from app.api.routes.test import router as api2_test_router
@@ -110,6 +112,10 @@ with begin_writer() as connection:
         insert_default_settings(connection)
     bootstrap_ontology_rules_store(connection=connection)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
+
+file_registry_start = time.perf_counter()
+bootstrap_file_registry()
+_log_startup_step("file registry bootstrap", time.perf_counter() - file_registry_start)
 
 integrity_start = time.perf_counter()
 integrity_session = SafeSession()
@@ -206,6 +212,7 @@ app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
 app.include_router(api2_auth_router, prefix=API_PREFIX)
 app.include_router(api2_memory_router, prefix=API_PREFIX)
+app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_mcp_router, prefix=API_PREFIX)
 if TEST_MODE:

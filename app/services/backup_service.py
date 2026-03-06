@@ -8,6 +8,8 @@ import sqlite3
 from threading import Lock
 
 from app.models.database import SafeSession
+from app.db.file_schema import initialize_file_schema
+from app.db.file_session import resolve_file_database_path
 
 
 _BACKUP_LOCK = Lock()
@@ -54,6 +56,43 @@ def _validate_backup_filename(filename: str) -> str:
             "filename must match metalist-backup-YYYYMMDD-HHMMSS-ffffff.db"
         )
     return filename
+
+
+def _derive_file_backup_filename(filename: str) -> str:
+    validated_filename = _validate_backup_filename(filename)
+    return validated_filename.replace("metalist-backup-", "metalist-files-backup-", 1)
+
+
+def _resolve_related_file_database_path(database_path: Path) -> Path:
+    return resolve_file_database_path(database_path)
+
+
+def _resolve_related_file_backup_path(backup_directory: Path, filename: str) -> Path:
+    return backup_directory / _derive_file_backup_filename(filename)
+
+
+def _copy_database(source_path: Path, target_path: Path) -> None:
+    source_connection = sqlite3.connect(str(source_path), check_same_thread=False)
+    target_connection = sqlite3.connect(str(target_path), check_same_thread=False)
+    try:
+        source_connection.execute("PRAGMA wal_checkpoint(FULL)")
+        source_connection.backup(target_connection)
+        target_connection.commit()
+    finally:
+        target_connection.close()
+        source_connection.close()
+
+
+def _reset_file_database_to_empty(file_database_path: Path) -> None:
+    file_database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(file_database_path), check_same_thread=False)
+    try:
+        initialize_file_schema(connection)
+        connection.execute("DELETE FROM files")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        connection.close()
 
 
 def resolve_live_database_path() -> Path:
@@ -112,15 +151,16 @@ def create_timestamped_backup_for_paths(
         if backup_path.exists():
             raise FileExistsError(f"Backup already exists: {backup_path}")
 
-        source_connection = sqlite3.connect(str(database_path), check_same_thread=False)
-        target_connection = sqlite3.connect(str(backup_path), check_same_thread=False)
-        try:
-            source_connection.execute("PRAGMA wal_checkpoint(FULL)")
-            source_connection.backup(target_connection)
-            target_connection.commit()
-        finally:
-            target_connection.close()
-            source_connection.close()
+        _copy_database(database_path, backup_path)
+
+        related_file_database_path = _resolve_related_file_database_path(database_path)
+        if related_file_database_path.exists():
+            if not related_file_database_path.is_file():
+                raise ValueError(f"Related file database path is not a file: {related_file_database_path}")
+            related_file_backup_path = _resolve_related_file_backup_path(backup_directory, filename)
+            if related_file_backup_path.exists():
+                raise FileExistsError(f"Backup already exists: {related_file_backup_path}")
+            _copy_database(related_file_database_path, related_file_backup_path)
 
     return _stat_to_backup_info(backup_path)
 
@@ -138,15 +178,24 @@ def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     with _BACKUP_LOCK:
-        source_connection = sqlite3.connect(str(backup_path), check_same_thread=False)
+        _copy_database(backup_path, database_path)
         target_connection = sqlite3.connect(str(database_path), check_same_thread=False)
         try:
-            source_connection.backup(target_connection)
-            target_connection.commit()
             target_connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         finally:
             target_connection.close()
-            source_connection.close()
+
+        related_file_database_path = _resolve_related_file_database_path(database_path)
+        related_file_backup_path = _resolve_related_file_backup_path(backup_path.parent, backup_path.name)
+        if related_file_backup_path.exists():
+            _copy_database(related_file_backup_path, related_file_database_path)
+            file_target_connection = sqlite3.connect(str(related_file_database_path), check_same_thread=False)
+            try:
+                file_target_connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                file_target_connection.close()
+        else:
+            _reset_file_database_to_empty(related_file_database_path)
 
 
 def create_timestamped_backup() -> BackupFileInfo:
@@ -189,6 +238,13 @@ def delete_oldest_backups_in_directory(
             if not backup_path.is_file():
                 raise ValueError(f"Backup path is not a file: {backup_path}")
             backup_path.unlink()
+
+            related_file_backup_path = _resolve_related_file_backup_path(backup_directory, backup.filename)
+            if related_file_backup_path.exists():
+                if not related_file_backup_path.is_file():
+                    raise ValueError(f"Backup path is not a file: {related_file_backup_path}")
+                related_file_backup_path.unlink()
+
             deleted_backups.append(backup)
 
         return deleted_backups

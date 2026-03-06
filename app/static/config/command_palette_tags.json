@@ -73,6 +73,14 @@
       "tags": ["tag", "ontology", "relationships", "synonym", "imply", "graph"]
     },
     {
+      "id": "action.attach_file_to_current_note",
+      "tags": ["attach", "file", "files", "upload", "reference", "note", "insert", "attachment"]
+    },
+    {
+      "id": "action.trim_unused_files",
+      "tags": ["file", "trim", "unused", "orphan", "attachments", "cleanup", "delete"]
+    },
+    {
       "id": "action.open_keyboard_shortcuts_help",
       "tags": ["help", "shortcuts", "keyboard", "commands", "keys", "guide"]
     },

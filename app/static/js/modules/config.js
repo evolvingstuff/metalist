@@ -2,6 +2,7 @@
 const API_BASE = '/api2'; // change to '/api' to switch back to v1
 const API_NOTES_BASE = `${API_BASE}/notes`;
 const API_AUTH_BASE = `${API_BASE}/auth`;
+const API_FILES_BASE = `${API_BASE}/files`;
 
 export const CONFIG = {
     API: {
@@ -62,6 +63,11 @@ export const CONFIG = {
         },
         MEMORY: {
             BASE: `${API_BASE}/memory`
+        },
+        FILES: {
+            UPLOAD: `${API_FILES_BASE}/upload`,
+            DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,
+            TRIM_UNUSED: `${API_FILES_BASE}/trim-unused`,
         }
     },
 

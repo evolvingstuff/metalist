@@ -1400,6 +1400,70 @@ body {
     text-decoration-thickness: 2px;
 }
 
+.note-file-reference-link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #1f2937;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
+.note-file-reference-link-embed {
+    gap: 6px;
+}
+
+.note-file-reference-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.note-file-reference-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #d8dde6;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.note-file-reference-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.note-file-reference-link:hover .note-file-reference-title,
+.note-file-reference-link:focus-visible .note-file-reference-title {
+    text-decoration-thickness: 2px;
+}
+
+.note-file-reference-link:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.25);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+.note-file-reference-meta {
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
 .note-embed-node {
     display: block;
 }

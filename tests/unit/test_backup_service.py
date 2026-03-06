@@ -4,6 +4,8 @@ import os
 import sqlite3
 from pathlib import Path
 
+from app.db.file_schema import initialize_file_schema
+from app.db.file_session import resolve_file_database_path
 from app.services.backup_service import (
     create_timestamped_backup_for_paths,
     delete_oldest_backups_in_directory,
@@ -36,6 +38,59 @@ def _read_counter(database_path: Path) -> int:
         connection.close()
 
 
+def _write_file_marker(database_path: Path, file_id: str) -> None:
+    connection = sqlite3.connect(str(database_path))
+    try:
+        initialize_file_schema(connection)
+        connection.execute("DELETE FROM files")
+        connection.execute(
+            """
+            INSERT INTO files (
+                id,
+                title,
+                title_encryption_nonce,
+                title_encryption_tag,
+                metadata_json,
+                metadata_encryption_nonce,
+                metadata_encryption_tag,
+                blob_data,
+                blob_encryption_nonce,
+                blob_encryption_tag,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                file_id,
+                "title",
+                None,
+                None,
+                "{\"original_filename\":\"file.bin\",\"mime_type\":\"application/octet-stream\",\"size_bytes\":4,\"thumbnail_kind\":\"other\"}",
+                None,
+                None,
+                b"blob",
+                None,
+                None,
+                "2026-03-05T00:00:00+00:00",
+                "2026-03-05T00:00:00+00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _read_file_ids(database_path: Path) -> list[str]:
+    connection = sqlite3.connect(str(database_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        initialize_file_schema(connection)
+        rows = connection.execute("SELECT id FROM files ORDER BY id ASC").fetchall()
+        return [str(row["id"]) for row in rows]
+    finally:
+        connection.close()
+
+
 def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
     database_path = tmp_path / "live.db"
     backup_directory = tmp_path / "backups"
@@ -49,6 +104,33 @@ def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
 
     restore_backup_to_paths(backup_path, database_path)
     assert _read_counter(database_path) == 7
+
+
+def test_create_and_restore_backup_round_trip_includes_related_file_db(tmp_path: Path) -> None:
+    database_path = tmp_path / "live.db"
+    file_database_path = resolve_file_database_path(database_path)
+    backup_directory = tmp_path / "backups"
+
+    _write_counter(database_path, 7)
+    _write_file_marker(file_database_path, "file-a")
+    backup_file = create_timestamped_backup_for_paths(database_path, backup_directory)
+    backup_path = backup_directory / backup_file.filename
+    related_file_backup_path = backup_directory / backup_file.filename.replace(
+        "metalist-backup-",
+        "metalist-files-backup-",
+        1,
+    )
+
+    assert related_file_backup_path.exists()
+
+    _write_counter(database_path, 99)
+    _write_file_marker(file_database_path, "file-b")
+    assert _read_counter(database_path) == 99
+    assert _read_file_ids(file_database_path) == ["file-b"]
+
+    restore_backup_to_paths(backup_path, database_path)
+    assert _read_counter(database_path) == 7
+    assert _read_file_ids(file_database_path) == ["file-a"]
 
 
 def test_list_backups_returns_newest_first(tmp_path: Path) -> None:
@@ -111,3 +193,19 @@ def test_delete_oldest_backups_count_larger_than_available_deletes_all(tmp_path:
 
     remaining = list_backups_in_directory(backup_directory)
     assert remaining == []
+
+
+def test_delete_oldest_backups_removes_matching_file_sidecars(tmp_path: Path) -> None:
+    backup_directory = tmp_path / "backups"
+    backup_directory.mkdir(parents=True, exist_ok=True)
+
+    primary = backup_directory / "metalist-backup-20260101-000000-000001.db"
+    sidecar = backup_directory / "metalist-files-backup-20260101-000000-000001.db"
+
+    primary.write_bytes(b"primary")
+    sidecar.write_bytes(b"sidecar")
+
+    deleted = delete_oldest_backups_in_directory(backup_directory, 1)
+    assert [entry.filename for entry in deleted] == [primary.name]
+    assert primary.exists() is False
+    assert sidecar.exists() is False

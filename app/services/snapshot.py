@@ -11,6 +11,8 @@ from loguru import logger
 
 from app.services.content_formatting import find_list_style
 from app.services.embedded_references import EmbedRenderContext, render_note_content_with_embeds
+from app.services.file_registry import file_registry
+from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
 from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, parse_search_query
@@ -121,10 +123,19 @@ def build_view_state(
     search_root_count_total = 0
 
     force_uncollapsed_ids: Set[str] = set()
+    file_record_cache: Dict[str, object] = {}
+
+    def _get_file_record(file_id: str) -> object:
+        if file_id not in file_record_cache:
+            file_record_cache[file_id] = get_file_reference_record(file_id, token=None)
+        return file_record_cache[file_id]
+
     embed_render_context = EmbedRenderContext(
         has_note=note_store.has_note,
         get_note=note_store.get_note,
         get_children=note_store.get_children,
+        has_file=file_registry.has_file,
+        get_file=_get_file_record,
     )
 
     if search is not None:
