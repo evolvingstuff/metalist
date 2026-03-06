@@ -306,53 +306,63 @@ export async function deleteNoteOutsideEdit(noteId) {
 	}
 
 export async function createNote() {
-    let startedAt = performance.now();
+    const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
+    return await createNoteWithPlacement(currentNoteId === null);
+}
+
+export async function createNoteAtTop() {
+    return await createNoteWithPlacement(true);
+}
+
+async function createNoteWithPlacement(placeAtTop) {
+    if (typeof placeAtTop !== 'boolean') {
+        throw new Error('createNoteWithPlacement requires boolean placeAtTop');
+    }
 
     Logger.logAction('createNote', {
         currentNoteId: ModeContext.currentNoteId,
         isEditing: ModeContext.isEditing,
-        isDirty: ModeContext.isDirty
+        isDirty: ModeContext.isDirty,
+        placeAtTop,
     });
 
     const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
-    const shouldScrollToTopAfterCreate = !currentNoteId;
 
     if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
         await actionSaveNote(currentNoteId);
     }
 
-	    let data;
-    if (currentNoteId) {
-                
-        Logger.logDebug('Creating new sibling note after note', { 
+    let data;
+    if (!placeAtTop && currentNoteId) {
+        Logger.logDebug('Creating new sibling note after note', {
             currentNoteId,
-            searchQuery: ModeContext.searchQuery
+            searchQuery: ModeContext.searchQuery,
         }, Logger.LogCategory.DEBUG);
         data = await NotesAPI.createSibling(currentNoteId, ModeContext.searchQuery);
     } else {
-        // Find the first visible note to insert before
         const firstVisibleNote = document.querySelector('.note');
         const firstVisibleNoteId = firstVisibleNote ? firstVisibleNote.dataset.noteId : '';
-                
+
         Logger.logDebug('Creating new note at top of list', {
             firstVisibleNoteId,
-            searchQuery: ModeContext.searchQuery
+            searchQuery: ModeContext.searchQuery,
         }, Logger.LogCategory.DEBUG);
         data = await NotesAPI.createNote(firstVisibleNoteId, ModeContext.searchQuery);
     }
 
     const newNoteId = data.id;
-
-	    const caretOptions = { initialCaretVisibility: 'visible' };
+    const caretOptions = { initialCaretVisibility: 'visible' };
     if (ModeContext.isEditing) {
         await actionSwitchNotes(newNoteId, caretOptions);
     } else {
         await actionSelectNote(newNoteId, caretOptions);
     }
 
-	if (shouldScrollToTopAfterCreate) {
-		scrollWindowToYFastAnimated(0);
-	}
+    if (placeAtTop) {
+        scrollWindowToYFastAnimated(0);
+    }
+
+    return newNoteId;
 }
 
 export async function createChildNote() {

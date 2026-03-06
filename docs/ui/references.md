@@ -33,6 +33,12 @@
 - `Attach file…` in the command palette opens the native file picker.
 - If you are editing a note, the selected file is uploaded and its `![[UUID]]` token is inserted into that note.
 - If no note is active, the app creates a new note first, then inserts the file reference there.
+- Drag/drop follows the same attachment path for non-image files.
+  - Dropping onto the actively edited note inserts into that note.
+  - Dropping anywhere else creates a new top note first, then inserts there.
+- Dragged image files do **not** become file attachments.
+  - If dropped onto the actively edited note, they are embedded inline as `data:image/...`.
+  - If dropped anywhere else, the app creates a new top note and embeds the image there.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.

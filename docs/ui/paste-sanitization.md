@@ -1,7 +1,9 @@
 # External HTML Paste Sanitization
 
 ## Scope
-- Applies to **system clipboard paste** and **drag/drop file images** while editing note content.
+- Applies to **system clipboard paste** and **drag/drop file images**.
+  - Dropping into the actively edited note embeds the image there.
+  - Dropping an image anywhere else creates a new top note, then embeds the image there.
 - Internal MetaList note clipboard paste (`class="note-content"` payload) still uses server note copy/paste actions.
 
 ## Entry Points
@@ -14,14 +16,15 @@
   - `sanitizeExternalClipboardHtml(rawHtml)`
 
 ## Pipeline
-1. If clipboard or dropped payload contains image/file items (`image/*`) while editing, pick the largest image candidate and process it client-side.
-2. Downscale/re-encode to keep embedded payload in the configured KB range.
-3. Build inline `<img src="data:image/...">` HTML (embedded content, not file links).
-4. Otherwise read `text/html` from clipboard.
-5. Parse with `DOMParser`.
-6. Walk DOM and sanitize nodes/attributes/styles/URLs.
-7. Insert sanitized HTML into current selection.
-8. If no usable HTML remains, fallback to `text/plain`.
+1. If clipboard contains image/file items (`image/*`) while editing, pick the largest image candidate and process it client-side.
+2. If a drag/drop payload contains image files, process each dropped image client-side after resolving the target note (current editor or a new top note).
+3. Downscale/re-encode to keep embedded payload in the configured KB range.
+4. Build inline `<img src="data:image/...">` HTML (embedded content, not file links).
+5. Otherwise read `text/html` from clipboard.
+6. Parse with `DOMParser`.
+7. Walk DOM and sanitize nodes/attributes/styles/URLs.
+8. Insert sanitized HTML into current selection.
+9. If no usable HTML remains, fallback to `text/plain`.
 
 ## Security Policy
 

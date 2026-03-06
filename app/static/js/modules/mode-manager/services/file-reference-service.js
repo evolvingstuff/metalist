@@ -1,7 +1,7 @@
 import { FilesAPI } from '../../api-client.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { captureSelectionSnapshot, getActiveEditable, getActiveNoteId, restoreSelection } from '../../editor-selection.js';
-import { createNote } from '../actions/note-actions.js';
+import { createNote, createNoteAtTop } from '../actions/note-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { actionSelectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 
@@ -259,12 +259,21 @@ function insertReferenceTokenIntoActiveEditor(referenceToken) {
     }
 }
 
-async function ensureAttachTargetNote(preferredNoteId) {
+async function ensureAttachTargetNote(preferredNoteId, options) {
     if (preferredNoteId !== null && typeof preferredNoteId !== 'string') {
         throw new Error('ensureAttachTargetNote preferredNoteId must be string or null');
     }
+    if (typeof options === 'undefined') {
+        options = {};
+    }
+    if (options === null || typeof options !== 'object') {
+        throw new Error('ensureAttachTargetNote options must be object');
+    }
+    const createAtTop = options.createAtTop === true;
 
-    if (typeof preferredNoteId === 'string' && preferredNoteId.length > 0) {
+    if (createAtTop) {
+        await createNoteAtTop();
+    } else if (typeof preferredNoteId === 'string' && preferredNoteId.length > 0) {
         if (ModeContext.isEditing) {
             const currentNoteId = ModeContext.currentNoteId;
             if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
@@ -368,12 +377,18 @@ export async function pickFileForAttachment() {
     return await pickSingleFile();
 }
 
-export async function attachPickedFileToCurrentNote(file, preferredNoteId) {
+export async function attachPickedFileToCurrentNote(file, preferredNoteId, options) {
     if (!(file instanceof File)) {
         throw new Error('attachPickedFileToCurrentNote requires File');
     }
     if (typeof preferredNoteId !== 'undefined' && preferredNoteId !== null && typeof preferredNoteId !== 'string') {
         throw new Error('attachPickedFileToCurrentNote preferredNoteId must be string or null');
+    }
+    if (typeof options === 'undefined') {
+        options = {};
+    }
+    if (options === null || typeof options !== 'object') {
+        throw new Error('attachPickedFileToCurrentNote options must be object');
     }
 
     const payload = await FilesAPI.uploadFile(file);
@@ -387,7 +402,7 @@ export async function attachPickedFileToCurrentNote(file, preferredNoteId) {
     const targetNoteId = typeof preferredNoteId === 'string' && preferredNoteId.length > 0
         ? preferredNoteId
         : null;
-    await ensureAttachTargetNote(targetNoteId);
+    await ensureAttachTargetNote(targetNoteId, options);
     insertReferenceTokenIntoActiveEditor(payload.reference_token);
     const currentNoteId = ModeContext.currentNoteId;
     if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {

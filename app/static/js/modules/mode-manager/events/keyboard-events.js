@@ -1,6 +1,22 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, deleteNoteOutsideEdit, createChildNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, actionCopyNote, actionPasteNoteSibling, actionPasteNoteChild, splitCurrentNoteFromSelection, joinCurrentNoteWithNextSibling } from '../actions/note-actions.js';
+import {
+    createNote,
+    createNoteAtTop,
+    deleteNote,
+    deleteNoteOutsideEdit,
+    createChildNote,
+    moveNoteUp,
+    moveNoteDown,
+    indentNote,
+    outdentNote,
+    actionCopyNote,
+    actionPasteNoteSibling,
+    actionPasteNoteChild,
+    splitCurrentNoteFromSelection,
+    joinCurrentNoteWithNextSibling,
+} from '../actions/note-actions.js';
+import { actionSaveNote } from '../actions/content-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
@@ -19,8 +35,10 @@ import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } fr
 import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { renderLatexHtml } from '../services/latex-render-service.js';
 import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
+import { attachPickedFileToCurrentNote } from '../services/file-reference-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
@@ -1705,9 +1723,16 @@ function getMaxClipboardImageBytes() {
     return getPastePositiveIntegerConfig('MAX_CLIPBOARD_IMAGE_BYTES');
 }
 
-function getImageFilesFromTransfer(transferData) {
+function isImageFile(candidate) {
+    if (!(candidate instanceof File)) {
+        return false;
+    }
+    return typeof candidate.type === 'string' && candidate.type.toLowerCase().startsWith('image/');
+}
+
+function getFilesFromTransfer(transferData) {
     if (!transferData) {
-        throw new Error('getImageFilesFromTransfer expects transferData');
+        throw new Error('getFilesFromTransfer expects transferData');
     }
 
     const foundFiles = [];
@@ -1715,9 +1740,6 @@ function getImageFilesFromTransfer(transferData) {
 
     const addFileCandidate = (candidate) => {
         if (!(candidate instanceof File)) {
-            return;
-        }
-        if (typeof candidate.type !== 'string' || !candidate.type.toLowerCase().startsWith('image/')) {
             return;
         }
         const dedupeKey = `${candidate.name}|${candidate.size}|${candidate.type}|${candidate.lastModified}`;
@@ -1732,7 +1754,7 @@ function getImageFilesFromTransfer(transferData) {
         let i = 0;
         while (i < transferData.items.length) {
             const item = transferData.items[i];
-            if (item && item.kind === 'file' && typeof item.type === 'string' && item.type.toLowerCase().startsWith('image/')) {
+            if (item && item.kind === 'file') {
                 const file = item.getAsFile();
                 addFileCandidate(file);
             }
@@ -1749,6 +1771,11 @@ function getImageFilesFromTransfer(transferData) {
         }
     }
 
+    return foundFiles;
+}
+
+function getImageFilesFromTransfer(transferData) {
+    const foundFiles = getFilesFromTransfer(transferData).filter((file) => isImageFile(file));
     if (foundFiles.length === 0) {
         return foundFiles;
     }
@@ -2122,6 +2149,54 @@ function resolveEditingDropTarget(event) {
     return noteContent;
 }
 
+function getCurrentEditableDropTarget() {
+    const activeEditable = getActiveEditable();
+    if (activeEditable instanceof HTMLElement) {
+        return activeEditable;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        throw new Error('Current editable drop target requires current note id');
+    }
+
+    const noteElement = document.querySelector(`.note[data-note-id="${currentNoteId}"]`);
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error(`Could not find current note element for drop target: ${currentNoteId}`);
+    }
+
+    const noteContent = noteElement.querySelector('.note-content');
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error(`Current note is missing editable content: ${currentNoteId}`);
+    }
+    if (noteContent.getAttribute('contenteditable') !== 'true') {
+        throw new Error(`Current note is not editable for drop target: ${currentNoteId}`);
+    }
+
+    return noteContent;
+}
+
+function focusDropTargetForInsertion(target, event) {
+    if (!(target instanceof HTMLElement)) {
+        throw new Error('focusDropTargetForInsertion requires HTMLElement target');
+    }
+
+    target.focus();
+    const positioned = placeCaretAtDropPoint(target, event);
+    if (!positioned) {
+        placeCaretAtEnd(target);
+    }
+    captureSelectionSnapshot();
+}
+
+function focusCurrentEditableAtEnd() {
+    const target = getCurrentEditableDropTarget();
+    target.focus();
+    placeCaretAtEnd(target);
+    captureSelectionSnapshot();
+    return target;
+}
+
 function placeCaretAtEnd(element) {
     if (!(element instanceof HTMLElement)) {
         throw new Error('placeCaretAtEnd expects HTMLElement');
@@ -2228,15 +2303,94 @@ async function pasteClipboardImagesAsEmbeddedContent(files) {
     return sanitizeAndInsertExternalPaste(syntheticPasteEvent);
 }
 
+async function embedDroppedImageFiles(imageFiles) {
+    if (!Array.isArray(imageFiles) || imageFiles.length === 0) {
+        return false;
+    }
+
+    const inserted = await pasteClipboardImagesAsEmbeddedContent(imageFiles);
+    Logger.logDebug('Dropped image file handled', {
+        imageCount: imageFiles.length,
+        inserted,
+        selectedImageBytes: imageFiles[0] ? imageFiles[0].size : null,
+    }, Logger.LogCategory.EVENT);
+
+    if (inserted) {
+        captureSelectionSnapshot();
+        if (!ModeContext.isDirty) {
+            ModeContext.setDirty(true);
+            Logger.logDebug('Content marked as dirty due to dropped embedded image', {
+                noteId: ModeContext.currentNoteId,
+            }, Logger.LogCategory.STATE);
+        }
+    }
+
+    return inserted;
+}
+
+async function processDroppedFiles(droppedFiles, options) {
+    if (!Array.isArray(droppedFiles) || droppedFiles.length === 0) {
+        return false;
+    }
+    if (options === null || typeof options !== 'object') {
+        throw new Error('processDroppedFiles requires options object');
+    }
+
+    const createTopNote = options.createTopNote === true;
+    let currentTargetNoteId = createTopNote ? null : ModeContext.currentNoteId;
+    let createdTopNote = false;
+    let insertedAnything = false;
+    let sawNonImageFile = false;
+
+    let i = 0;
+    while (i < droppedFiles.length) {
+        const file = droppedFiles[i];
+        if (!(file instanceof File)) {
+            throw new Error(`Dropped file at index ${i} is not a File`);
+        }
+
+        if (isImageFile(file)) {
+            if (createTopNote && !createdTopNote && currentTargetNoteId === null) {
+                await createNoteAtTop();
+                focusCurrentEditableAtEnd();
+                currentTargetNoteId = ModeContext.currentNoteId;
+                createdTopNote = true;
+            }
+
+            const inserted = await embedDroppedImageFiles([file]);
+            insertedAnything = insertedAnything || inserted;
+            currentTargetNoteId = ModeContext.currentNoteId;
+        } else {
+            sawNonImageFile = true;
+            await attachPickedFileToCurrentNote(file, currentTargetNoteId, {
+                createAtTop: createTopNote && !createdTopNote && currentTargetNoteId === null,
+            });
+            insertedAnything = true;
+            currentTargetNoteId = ModeContext.currentNoteId;
+            createdTopNote = createdTopNote || createTopNote;
+        }
+
+        i += 1;
+    }
+
+    const shouldSaveAfterDrop = createTopNote || sawNonImageFile;
+    if (
+        shouldSaveAfterDrop
+        && ModeContext.isDirty
+        && typeof ModeContext.currentNoteId === 'string'
+        && ModeContext.currentNoteId.length > 0
+    ) {
+        await actionSaveNote(ModeContext.currentNoteId);
+    }
+
+    return insertedAnything;
+}
+
 function handleDragOverEvent(event) {
     if (!event || !event.dataTransfer) {
         return;
     }
 
-    const target = resolveEditingDropTarget(event);
-    if (!(target instanceof HTMLElement)) {
-        return;
-    }
     if (!transferHasFiles(event.dataTransfer)) {
         return;
     }
@@ -2250,10 +2404,6 @@ function handleDropEvent(event) {
         return;
     }
 
-    const target = resolveEditingDropTarget(event);
-    if (!(target instanceof HTMLElement)) {
-        return;
-    }
     if (!transferHasFiles(event.dataTransfer)) {
         return;
     }
@@ -2261,44 +2411,69 @@ function handleDropEvent(event) {
     event.preventDefault();
     event.stopPropagation();
 
-    const imageFiles = getImageFilesFromTransfer(event.dataTransfer);
-    if (imageFiles.length === 0) {
-        ErrorHandler.showErrorBanner(
-            'Dropped file is not a supported image.',
-            'error',
-            5000,
-            true,
-        );
+    const droppedFiles = getFilesFromTransfer(event.dataTransfer);
+    if (droppedFiles.length === 0) {
         return;
     }
 
-    target.focus();
-    const positioned = placeCaretAtDropPoint(target, event);
-    if (!positioned) {
-        placeCaretAtEnd(target);
+    const target = resolveEditingDropTarget(event);
+    const onlyImages = droppedFiles.every((file) => isImageFile(file));
+    if (target instanceof HTMLElement) {
+        focusDropTargetForInsertion(target, event);
+        if (onlyImages) {
+            void embedDroppedImageFiles(droppedFiles)
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    Logger.logDebug('Dropped image file handling failed', {
+                        error: message,
+                        fileCount: droppedFiles.length,
+                    }, Logger.LogCategory.EVENT);
+                    showImageEmbedFailureError();
+                });
+            return;
+        }
     }
 
-    void pasteClipboardImagesAsEmbeddedContent(imageFiles)
-        .then((inserted) => {
-            Logger.logDebug('Dropped image file handled', {
-                imageCount: imageFiles.length,
-                inserted,
-                selectedImageBytes: imageFiles[0] ? imageFiles[0].size : null,
-            }, Logger.LogCategory.EVENT);
-
-            if (inserted && !ModeContext.isDirty) {
-                ModeContext.setDirty(true);
-                Logger.logDebug('Content marked as dirty due to dropped embedded image', {
-                    noteId: ModeContext.currentNoteId,
-                }, Logger.LogCategory.STATE);
+    void CommandGate.run('keyboard.dropFiles', async () => {
+        return await processDroppedFiles(droppedFiles, {
+            createTopNote: !(target instanceof HTMLElement),
+        });
+    }, {
+        timeoutMs: 120000,
+    })
+        .then((result) => {
+            if (result === null) {
+                ErrorHandler.showErrorBanner(
+                    'File drop did not start because another command is still running.',
+                    'error',
+                    10000,
+                    true,
+                );
+                return;
             }
+            Logger.logDebug('Dropped files processed', {
+                fileCount: droppedFiles.length,
+                createTopNote: !(target instanceof HTMLElement),
+                inserted: result,
+            }, Logger.LogCategory.EVENT);
         })
         .catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
-            Logger.logDebug('Dropped image file handling failed', {
+            Logger.logDebug('Dropped file handling failed', {
                 error: message,
+                fileCount: droppedFiles.length,
+                onlyImages,
             }, Logger.LogCategory.EVENT);
-            showImageEmbedFailureError();
+            if (onlyImages) {
+                showImageEmbedFailureError();
+                return;
+            }
+            ErrorHandler.showErrorBanner(
+                `File drop failed: ${message}`,
+                'error',
+                10000,
+                true,
+            );
         });
 }
 
