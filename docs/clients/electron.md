@@ -6,7 +6,7 @@ This is a planning doc for an Electron wrapper around the existing FastAPI app s
 ## Current Web App Assumptions
 - The backend is a FastAPI server (Python) serving SSR HTML + JSON APIs.
 - The frontend is vanilla JS.
-- `main.py` defaults to `127.0.0.1:8000`, but now supports `--namespace`, `--port`, `--https-port`, `METALIST_HOST`, `METALIST_PORT`, and optional TLS envs.
+- `main.py` defaults to `127.0.0.1:8000`, but now supports `--namespace`, positional namespace shorthand (`python main.py work`), `--port`, `--https-port`, `--mcp-port`, `METALIST_HOST`, `METALIST_PORT`, and optional TLS envs.
   - For Electron, loopback remains the intended bind target.
 
 ## Electron Wrapper Approach
@@ -84,6 +84,7 @@ pyinstaller --onefile \
 ## Data Storage (Desktop)
 - Current dev/prod default is `~/MetaList/namespaces/default/default.metalist.db`.
 - Namespaced runs use `~/MetaList/namespaces/<namespace>/<namespace>.metalist.db` and a derived sibling file DB `~/MetaList/namespaces/<namespace>/<namespace>.metalist.files.db`.
+- Remembered per-namespace launch ports are stored separately in `~/MetaList/namespaces.db`.
 - Namespaced backups live under `~/MetaList/namespaces/<namespace>/backups/` and keep the namespace in the filename itself.
 - A real desktop build should store the database under the OS app data directory (would require a code/config change).
 

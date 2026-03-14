@@ -6,7 +6,7 @@ from typing import Annotated
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
-from app.config import VERSION
+from app.config import ACTIVE_NAMESPACE, VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.notes_sql import clear_encryption_metadata_for_empty_notes
@@ -119,6 +119,12 @@ _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_st
 file_registry_start = time.perf_counter()
 bootstrap_file_registry()
 _log_startup_step("file registry bootstrap", time.perf_counter() - file_registry_start)
+
+
+def _resolve_page_title(*, base_title: str) -> str:
+    if ACTIVE_NAMESPACE in {None, "default"}:
+        return base_title
+    return f"{base_title} [{ACTIVE_NAMESPACE}]"
 
 integrity_start = time.perf_counter()
 integrity_session = SafeSession()
@@ -299,6 +305,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
             request=request,
             version=VERSION,
             asset_version=ASSET_VERSION,
+            page_title=_resolve_page_title(base_title="MetaList"),
             needs_auth=True,
         )
     return template.render(
@@ -306,6 +313,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         notes=[],
         version=VERSION,
         asset_version=ASSET_VERSION,
+        page_title=_resolve_page_title(base_title="MetaList"),
         needs_auth=False,
     )
 
@@ -333,7 +341,12 @@ async def open_mcp_client_legacy_redirect():
 async def maintenance_page(request: Request):
     """Maintenance mode page shown during bulk operations."""
     template = templates.get_template("maintenance.html")
-    return template.render(request=request, version=VERSION, asset_version=ASSET_VERSION)
+    return template.render(
+        request=request,
+        version=VERSION,
+        asset_version=ASSET_VERSION,
+        page_title=_resolve_page_title(base_title="MetaList - Processing"),
+    )
 
 
 @app.get("/locked", response_class=HTMLResponse)
@@ -346,5 +359,6 @@ async def locked_page(request: Request, db: Annotated[SafeSession, Depends(get_d
         request=request,
         version=VERSION,
         asset_version=ASSET_VERSION,
+        page_title=_resolve_page_title(base_title="MetaList – Locked"),
         has_password=has_password,
     )

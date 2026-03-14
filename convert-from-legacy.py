@@ -9,13 +9,12 @@ legacy JSON format. Use with care: this is destructive.
 from __future__ import annotations
 
 import argparse
-import getpass
 import html
 import importlib.util
 import json
 import os
-import sys
 import re
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -32,21 +31,10 @@ if importlib.util.find_spec("tkinter") is not None:
 else:
     _TK_IMPORT_ERROR = RuntimeError("tkinter is not available")
 
-from app.server_runtime import apply_namespace_arg_to_environ
-
-apply_namespace_arg_to_environ(argv=sys.argv[1:], environ=os.environ)
-
-from app.config import (
-    DATABASE_URL,
-    KDF_MAX_TIME_COST,
-    KDF_MIN_TIME_COST,
-    KDF_TIME_COST,
-)
-from app.db.notes_sql import insert_note, update_links
-from app.db.ontology_rules_sql import insert_rule
-from app.db.settings_sql import insert_default_settings
-from app.models.database import SafeSession
-from app.services.auth_service import AuthService
+from app.server_runtime import prepare_database_runtime_path
+from app.server_runtime import NamespaceLaunchProfile
+from app.server_runtime import resolve_namespace_launch_defaults
+from app.server_runtime import save_namespace_launch_profile
 from app.utils.text_utils import strip_html
 
 
@@ -60,6 +48,30 @@ _INLINE_MATH_LATEX_SIGNAL_RE = re.compile(r"[\\\\{}_^]")
 _INLINE_MATH_OPERATOR_RE = re.compile(r"[=+\-*/<>]")
 _INLINE_MATH_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 _INLINE_MATH_TOKEN_RE = re.compile(r"^[A-Za-z0-9(){}_^,./+=<>*\[\]\-]+$")
+_DEFAULT_NAMESPACE = "default"
+_DEFAULT_KDF_TIME_COST = 3
+_DEFAULT_KDF_MIN_TIME_COST = 1
+_DEFAULT_KDF_MAX_TIME_COST = 10
+
+DATABASE_URL: str
+KDF_MAX_TIME_COST: int
+KDF_MIN_TIME_COST: int
+KDF_TIME_COST: int
+insert_note: Any
+update_links: Any
+insert_rule: Any
+insert_default_settings: Any
+SafeSession: Any
+AuthService: Any
+_RUNTIME_IMPORTS_READY = False
+
+
+@dataclass(frozen=True)
+class BootstrapArgs:
+    namespace: str | None
+    port: int | None
+    https_port: int | None
+    mcp_port: int | None
 
 
 @dataclass(frozen=True)
@@ -69,7 +81,98 @@ class NoteMeta:
     updated_at: datetime
 
 
-def parse_args(argv: list[str]) -> argparse.Namespace:
+def _load_runtime_dependencies() -> None:
+    global DATABASE_URL
+    global KDF_MAX_TIME_COST
+    global KDF_MIN_TIME_COST
+    global KDF_TIME_COST
+    global insert_note
+    global update_links
+    global insert_rule
+    global insert_default_settings
+    global SafeSession
+    global AuthService
+    global _RUNTIME_IMPORTS_READY
+
+    if _RUNTIME_IMPORTS_READY:
+        return
+
+    # Import after namespace bootstrap so app.config binds the correct DB path.
+    from app.config import DATABASE_URL as runtime_database_url
+    from app.config import KDF_MAX_TIME_COST as runtime_kdf_max_time_cost
+    from app.config import KDF_MIN_TIME_COST as runtime_kdf_min_time_cost
+    from app.config import KDF_TIME_COST as runtime_kdf_time_cost
+    from app.db.notes_sql import insert_note as runtime_insert_note
+    from app.db.notes_sql import update_links as runtime_update_links
+    from app.db.ontology_rules_sql import insert_rule as runtime_insert_rule
+    from app.db.settings_sql import insert_default_settings as runtime_insert_default_settings
+    from app.models.database import SafeSession as runtime_safe_session
+    from app.services.auth_service import AuthService as runtime_auth_service
+
+    DATABASE_URL = runtime_database_url
+    KDF_MAX_TIME_COST = runtime_kdf_max_time_cost
+    KDF_MIN_TIME_COST = runtime_kdf_min_time_cost
+    KDF_TIME_COST = runtime_kdf_time_cost
+    insert_note = runtime_insert_note
+    update_links = runtime_update_links
+    insert_rule = runtime_insert_rule
+    insert_default_settings = runtime_insert_default_settings
+    SafeSession = runtime_safe_session
+    AuthService = runtime_auth_service
+    _RUNTIME_IMPORTS_READY = True
+
+
+def _parse_namespace_argument(raw_value: str) -> str:
+    if not isinstance(raw_value, str):
+        raise argparse.ArgumentTypeError(f"namespace must be a string, got {type(raw_value)}")
+    normalized = raw_value.strip()
+    if normalized == "":
+        raise argparse.ArgumentTypeError("Namespace must not be empty")
+    if normalized != normalized.casefold():
+        raise argparse.ArgumentTypeError(
+            "Namespace must contain only lowercase letters, digits, and '-'",
+        )
+    if not re.fullmatch(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", normalized):
+        raise argparse.ArgumentTypeError(
+            "Namespace must contain only lowercase letters, digits, and '-'",
+        )
+    return normalized
+
+
+def _parse_port_argument(raw_value: str) -> int:
+    value = raw_value.strip()
+    if value == "":
+        raise argparse.ArgumentTypeError("port must not be empty")
+    if not value.isdigit():
+        raise argparse.ArgumentTypeError(f"port must be numeric, got: {raw_value!r}")
+    parsed = int(value)
+    if not 0 < parsed < 65536:
+        raise argparse.ArgumentTypeError(f"port must be between 1 and 65535, got: {parsed}")
+    return parsed
+
+
+def parse_bootstrap_args(argv: list[str]) -> BootstrapArgs:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--namespace", dest="namespace", type=_parse_namespace_argument)
+    parser.add_argument("--port", dest="port", type=_parse_port_argument)
+    parser.add_argument("--https-port", dest="https_port", type=_parse_port_argument)
+    parser.add_argument("--mcp-port", dest="mcp_port", type=_parse_port_argument)
+    parsed_args, _ = parser.parse_known_args(argv)
+    return BootstrapArgs(
+        namespace=parsed_args.namespace,
+        port=parsed_args.port,
+        https_port=parsed_args.https_port,
+        mcp_port=parsed_args.mcp_port,
+    )
+
+
+def parse_args(
+    argv: list[str],
+    *,
+    kdf_time_cost: int,
+    kdf_min_time_cost: int,
+    kdf_max_time_cost: int,
+) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert legacy MetaList JSON exports into the current SQLite schema.",
     )
@@ -81,19 +184,116 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--namespace",
         dest="namespace",
+        type=_parse_namespace_argument,
         help="Namespace to target before resolving the destination SQLite database.",
+    )
+    parser.add_argument(
+        "--port",
+        dest="port",
+        type=_parse_port_argument,
+        help="Remember this HTTP port for the selected namespace.",
+    )
+    parser.add_argument(
+        "--https-port",
+        dest="https_port",
+        type=_parse_port_argument,
+        help="Remember this HTTPS port for the selected namespace.",
+    )
+    parser.add_argument(
+        "--mcp-port",
+        dest="mcp_port",
+        type=_parse_port_argument,
+        help="Remember this MCP sidecar port for the selected namespace.",
     )
     parser.add_argument(
         "--kdf-iterations",
         dest="kdf_iterations",
         type=int,
-        default=KDF_TIME_COST,
+        default=kdf_time_cost,
         help=(
             "Argon2id time-cost for password-derived keys when password protection is enabled "
-            f"(range: {KDF_MIN_TIME_COST}-{KDF_MAX_TIME_COST})."
+            f"(range: {kdf_min_time_cost}-{kdf_max_time_cost})."
         ),
     )
     return parser.parse_args(argv)
+
+
+def _prompt_input(*, prompt: str) -> str:
+    return input(prompt)
+
+
+def _prompt_yes_no(*, prompt: str) -> bool:
+    response = input(prompt).strip().lower()
+    return response in {"y", "yes"}
+
+
+def _prompt_secret_input(*, prompt: str) -> str:
+    return input(prompt)
+
+
+def _prompt_for_namespace(*, default_namespace: str) -> str:
+    while True:
+        raw_value = _prompt_input(prompt=f"Namespace [{default_namespace}]: ").strip()
+        if raw_value == "":
+            return default_namespace
+        if raw_value != raw_value.casefold():
+            print("Namespace must contain only lowercase letters, digits, and '-'")
+            continue
+        if not re.fullmatch(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", raw_value):
+            print("Namespace must contain only lowercase letters, digits, and '-'")
+            continue
+        return raw_value
+
+
+def _prompt_for_optional_port(*, label: str, default_port: int | None) -> int | None:
+    if default_port is None:
+        default_text = "disabled"
+    else:
+        default_text = str(default_port)
+    while True:
+        raw_value = _prompt_input(prompt=f"{label} [{default_text}]: ").strip()
+        if raw_value == "":
+            return default_port
+        if raw_value.casefold() in {"disabled", "none", "off"}:
+            return None
+        if not raw_value.isdigit():
+            print(f"port must be numeric, got: {raw_value!r}")
+            continue
+        parsed = int(raw_value)
+        if not 0 < parsed < 65536:
+            print(f"port must be between 1 and 65535, got: {parsed}")
+            continue
+        return parsed
+
+
+def _configure_namespace_launch_profile(argv: list[str]) -> NamespaceLaunchProfile:
+    bootstrap_args = parse_bootstrap_args(argv)
+    if bootstrap_args.namespace is None:
+        namespace = _prompt_for_namespace(default_namespace=_DEFAULT_NAMESPACE)
+    else:
+        namespace = bootstrap_args.namespace
+
+    os.environ["METALIST_NAMESPACE"] = namespace
+    defaults = resolve_namespace_launch_defaults(
+        namespace=namespace,
+        environ=os.environ,
+    )
+    port = bootstrap_args.port
+    if port is None:
+        port = _prompt_for_optional_port(label="HTTP port", default_port=defaults.port)
+    https_port = bootstrap_args.https_port
+    if https_port is None:
+        https_port = _prompt_for_optional_port(label="HTTPS port", default_port=defaults.https_port)
+    mcp_port = bootstrap_args.mcp_port
+    if mcp_port is None:
+        mcp_port = _prompt_for_optional_port(label="MCP sidecar port", default_port=defaults.mcp_port)
+
+    return save_namespace_launch_profile(
+        namespace=namespace,
+        port=port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
 
 
 def _resolve_sqlite_path(database_url: str) -> Path:
@@ -155,16 +355,15 @@ def _resolve_input_path(input_path: str | None) -> Path:
 
 
 def _prompt_for_password() -> str | None:
-    response = input("Enable password protection? [y/N]: ").strip().lower()
-    if response not in {"y", "yes"}:
+    if not _prompt_yes_no(prompt="Enable password protection? [y/N]: "):
         return None
 
     while True:
-        password = getpass.getpass("Enter new password: ")
+        password = _prompt_secret_input(prompt="Enter new password: ")
         if password == "":
             print("Password cannot be empty.")
             continue
-        confirmation = getpass.getpass("Confirm password: ")
+        confirmation = _prompt_secret_input(prompt="Confirm password: ")
         if password != confirmation:
             print("Passwords do not match. Please try again.")
             continue
@@ -546,7 +745,7 @@ def _append_tag_token(tags: str, token: str) -> str:
 
 def _prepare_database() -> Path:
     db_path = _resolve_sqlite_path(DATABASE_URL)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    prepare_database_runtime_path(database_path=db_path)
     _delete_existing_db(db_path)
     SafeSession.use_file_db()
     session = SafeSession()
@@ -731,7 +930,23 @@ def _enable_password(password: str, kdf_iterations: int) -> None:
 
 
 def main(argv: list[str]) -> int:
-    args = parse_args(argv)
+    if "-h" in argv or "--help" in argv:
+        parse_args(
+            argv,
+            kdf_time_cost=_DEFAULT_KDF_TIME_COST,
+            kdf_min_time_cost=_DEFAULT_KDF_MIN_TIME_COST,
+            kdf_max_time_cost=_DEFAULT_KDF_MAX_TIME_COST,
+        )
+        return 0
+
+    launch_profile = _configure_namespace_launch_profile(argv)
+    _load_runtime_dependencies()
+    args = parse_args(
+        argv,
+        kdf_time_cost=KDF_TIME_COST,
+        kdf_min_time_cost=KDF_MIN_TIME_COST,
+        kdf_max_time_cost=KDF_MAX_TIME_COST,
+    )
     input_path = _resolve_input_path(args.input_path)
     payload = _load_json(input_path)
     password = _prompt_for_password()
@@ -741,6 +956,13 @@ def main(argv: list[str]) -> int:
     db_path = _prepare_database()
     print(f"Importing legacy data from {input_path}")
     print(f"Recreated database at {db_path}")
+    print(
+        "Saved namespace launch profile: "
+        f"namespace={launch_profile.namespace!r} "
+        f"http_port={launch_profile.port} "
+        f"https_port={launch_profile.https_port} "
+        f"mcp_port={launch_profile.mcp_port}"
+    )
 
     session = SafeSession()
     note_meta: dict[str, NoteMeta] = {}

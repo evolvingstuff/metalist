@@ -5,12 +5,15 @@ import pytest
 import app.server_runtime as server_runtime
 from app.server_runtime import apply_main_cli_args_to_environ
 from app.server_runtime import apply_namespace_arg_to_environ
+from app.server_runtime import load_namespace_launch_profile
 from app.server_runtime import resolve_database_runtime_config
+from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_main_server_config
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_request_host_for_https_redirect
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_mcp_agent_public_origin
+from app.server_runtime import save_namespace_launch_profile
 
 
 def test_resolve_main_server_config_defaults_to_lan_http_without_tls(tmp_path, monkeypatch) -> None:
@@ -192,7 +195,11 @@ def test_resolve_database_runtime_config_rejects_namespace_in_test_mode() -> Non
         )
 
 
-def test_apply_main_cli_args_to_environ_sets_namespace_and_ports() -> None:
+def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     environ: dict[str, str] = {}
 
     parsed = apply_main_cli_args_to_environ(
@@ -231,6 +238,113 @@ def test_apply_main_cli_args_to_environ_rejects_namespace_in_test_mode() -> None
         )
 
 
+def test_apply_main_cli_args_to_environ_loads_saved_profile_for_positional_namespace(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=9000,
+        https_port=9443,
+        mcp_port=9776,
+    )
+    environ: dict[str, str] = {}
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=["cla"],
+        environ=environ,
+    )
+
+    assert parsed.namespace == "cla"
+    assert parsed.port is None
+    assert parsed.https_port is None
+    assert parsed.mcp_port is None
+    assert environ["METALIST_NAMESPACE"] == "cla"
+    assert environ["METALIST_PORT"] == "9000"
+    assert environ["METALIST_HTTPS_PORT"] == "9443"
+    assert environ["MCP_AGENT_WEB_PORT"] == "9776"
+
+
+def test_apply_main_cli_args_to_environ_explicit_cli_port_overrides_saved_profile_and_persists_merge(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=9000,
+        https_port=9443,
+        mcp_port=9776,
+    )
+    environ: dict[str, str] = {}
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=["cla", "--port", "9001"],
+        environ=environ,
+    )
+
+    assert parsed.namespace == "cla"
+    assert parsed.port == 9001
+    assert environ["METALIST_PORT"] == "9001"
+    assert environ["METALIST_HTTPS_PORT"] == "9443"
+    assert environ["MCP_AGENT_WEB_PORT"] == "9776"
+
+    profile = load_namespace_launch_profile(namespace="cla")
+    assert profile is not None
+    assert profile.port == 9001
+    assert profile.https_port == 9443
+    assert profile.mcp_port == 9776
+
+
+def test_apply_main_cli_args_to_environ_prefers_env_over_saved_profile(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=9000,
+        https_port=9443,
+        mcp_port=9776,
+    )
+    environ = {
+        "METALIST_PORT": "9100",
+        "METALIST_HTTPS_PORT": "9543",
+        "MCP_AGENT_WEB_PORT": "9876",
+    }
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=["cla"],
+        environ=environ,
+    )
+
+    assert parsed.namespace == "cla"
+    assert environ["METALIST_PORT"] == "9100"
+    assert environ["METALIST_HTTPS_PORT"] == "9543"
+    assert environ["MCP_AGENT_WEB_PORT"] == "9876"
+
+
+def test_apply_main_cli_args_to_environ_saves_default_namespace_profile_when_ports_are_explicit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    environ: dict[str, str] = {}
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=["--port", "9000", "--https-port", "9443", "--mcp-port", "9776"],
+        environ=environ,
+    )
+
+    assert parsed.namespace == "default"
+    profile = load_namespace_launch_profile(namespace="default")
+    assert profile is not None
+    assert profile.port == 9000
+    assert profile.https_port == 9443
+    assert profile.mcp_port == 9776
+
+
 def test_apply_namespace_arg_to_environ_bootstraps_known_args_only() -> None:
     environ: dict[str, str] = {}
 
@@ -241,6 +355,35 @@ def test_apply_namespace_arg_to_environ_bootstraps_known_args_only() -> None:
 
     assert namespace == "work"
     assert environ["METALIST_NAMESPACE"] == "work"
+
+
+def test_resolve_namespace_launch_defaults_uses_tls_sensitive_defaults_and_saved_profile(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    cert_path = tmp_path / "metalist-cert.pem"
+    key_path = tmp_path / "metalist-key.pem"
+    cert_path.write_text("cert", encoding="utf-8")
+    key_path.write_text("key", encoding="utf-8")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path / "MetaList")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=9000,
+        https_port=None,
+        mcp_port=9776,
+    )
+
+    defaults = resolve_namespace_launch_defaults(
+        namespace="cla",
+        environ={},
+    )
+
+    assert defaults.namespace == "cla"
+    assert defaults.port == 9000
+    assert defaults.https_port == 8443
+    assert defaults.mcp_port == 9776
 
 
 def test_resolve_main_mcp_url_tracks_main_app_port_and_prefix() -> None:

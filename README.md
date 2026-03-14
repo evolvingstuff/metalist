@@ -55,6 +55,8 @@ Database selection:
 - No explicit namespace: `~/MetaList/namespaces/default/default.metalist.db`
 - `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/namespaces/work/work.metalist.db`
 - The related files DB is derived automatically, so `namespaces/work/work.metalist.db` uses `namespaces/work/work.metalist.files.db`
+- Remembered launch ports are stored per namespace in `~/MetaList/namespaces.db`
+- Launch precedence is: explicit CLI flags > env vars > saved namespace profile > built-in defaults
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use self-identifying filenames like `<timestamp>.work.metalist.db.bak`
 
 Useful env flags:
@@ -83,6 +85,12 @@ python main.py --namespace work --port 8001 --mcp-port 8766
 ```
 This starts a separate process backed by `~/MetaList/namespaces/work/work.metalist.db` on `http://127.0.0.1:8001`.
 Its related backup snapshots live under `~/MetaList/namespaces/work/backups/` with filenames like `<timestamp>.work.metalist.db.bak`.
+
+After you launch a namespace once with explicit ports, MetaList remembers them in `~/MetaList/namespaces.db`, so later you can use the shorthand:
+```bash
+python main.py work
+```
+and MetaList will reuse the saved HTTP / HTTPS / MCP sidecar ports for `work`. The same applies to the default namespace: `python main.py` will reuse the saved default-namespace profile.
 
 For LAN-friendly HTTPS, manually generate or supply PEM files first:
 ```bash
@@ -192,6 +200,8 @@ Target a namespaced database during import:
 ```bash
 python convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
 ```
+
+If `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the import script prompts for them and saves the resulting launch profile to `~/MetaList/namespaces.db`. That means a one-time import into `work` can immediately seed later shorthand launches like `python main.py work`.
 
 If `--input` is omitted, a file picker opens (when `tkinter` is available).
 Notes tagged with `@implies` are converted into ontology rules and are not imported as notes.

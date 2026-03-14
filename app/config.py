@@ -89,6 +89,7 @@ _database_runtime_config = resolve_database_runtime_config(
     argv=sys.argv[1:],
 )
 TEST_MODE = _database_runtime_config.test_mode
+ACTIVE_NAMESPACE = _database_runtime_config.namespace
 
 if TEST_MODE:
     # Use test database

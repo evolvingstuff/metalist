@@ -5,7 +5,8 @@
 
 ## Architecture
 - Entry: `main.py` - runs Uvicorn (`app.main:app`) with access-log noise filtering.
-- Startup bootstrap: `main.py` now resolves `--namespace`, `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so import-time config sees the right DB path and listener ports.
+- Startup bootstrap: `main.py` now resolves `--namespace`, positional namespace shorthand (`python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so import-time config sees the right DB path and listener ports.
+- Namespace launch profiles: `app/server_runtime.py` stores remembered per-namespace HTTP / HTTPS / MCP sidecar ports in `~/MetaList/namespaces.db`.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
@@ -63,7 +64,7 @@
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
 - Startup: `main.py` can select a namespaced DB (`METALIST_NAMESPACE` or `--namespace`) before importing `app.main`; `app/main.py` then initializes schema + settings for that selected DB. If encryption is disabled, it populates the content cache and hydrates NoteStore before enabling the read guard. If encryption is enabled, hydration is deferred until login (`POST /api2/auth/hydrate`) and the UI shows a first-load progress state.
-- Legacy import: `convert-from-legacy.py` is a destructive fresh-import path that can prompt for password setup and writes the same Argon2id vault metadata as runtime auth.
+- Legacy import: `convert-from-legacy.py` is a destructive fresh-import path that prompts for namespace/ports when omitted, persists that namespace launch profile, can prompt for password setup, and writes the same Argon2id vault metadata as runtime auth.
 
 ## Setup
 ```bash
@@ -75,7 +76,8 @@ python main.py
 
 ## Quick Ref
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
-- Namespace DBs: omitted namespace means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work` / `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`.
+- Namespace DBs: omitted namespace means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `python main.py work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`.
+- Launch profile precedence: CLI flags override env vars, which override `~/MetaList/namespaces.db`, which overrides built-in defaults.
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Frontend join shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`joinCurrentNoteWithNextSibling`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+J` binding).

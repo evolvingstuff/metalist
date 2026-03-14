@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
 import re
+import sqlite3
 from urllib.parse import urlsplit
 
 
@@ -17,7 +18,11 @@ _DEFAULT_API_PREFIX = "/api2"
 _DEFAULT_V1_API_PREFIX = "/api"
 _DEFAULT_DATABASE_DIRECTORY = Path.home() / "MetaList"
 _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
+_DEFAULT_NAMESPACE_REGISTRY_FILENAME = "namespaces.db"
 _DEFAULT_NAMESPACE = "default"
+_DEFAULT_HTTP_PORT = 8000
+_DEFAULT_HTTPS_PORT = 8443
+_DEFAULT_MCP_AGENT_WEB_PORT = 8765
 _DEFAULT_TEST_DATABASE_URL = "sqlite:///./test.db"
 _DEFAULT_TEST_DATABASE_PATH = Path("./test.db")
 _NAMESPACE_ENV_NAME = "METALIST_NAMESPACE"
@@ -50,6 +55,14 @@ class MainCliArgs:
     https_port: int | None
     mcp_port: int | None
     test_mode: bool
+
+
+@dataclass(frozen=True)
+class NamespaceLaunchProfile:
+    namespace: str
+    port: int | None
+    https_port: int | None
+    mcp_port: int | None
 
 
 def _parse_port_argument(raw_value: str) -> int:
@@ -88,6 +101,10 @@ def resolve_namespaces_directory() -> Path:
     return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACES_DIRECTORY_NAME
 
 
+def resolve_namespace_registry_path() -> Path:
+    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACE_REGISTRY_FILENAME
+
+
 def resolve_namespace_directory(*, namespace: str) -> Path:
     normalized = validate_namespace(namespace=namespace)
     return resolve_namespaces_directory() / normalized
@@ -108,6 +125,182 @@ def prepare_database_runtime_path(*, database_path: Path) -> None:
     _DEFAULT_DATABASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
     resolve_namespaces_directory().mkdir(parents=True, exist_ok=True)
     database_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _prepare_namespace_registry_path() -> Path:
+    _DEFAULT_DATABASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    return resolve_namespace_registry_path()
+
+
+def _validate_optional_port(*, name: str, value: int | None) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        raise TypeError(f"{name} must be an int or None, got {type(value)}")
+    if not 0 < value < 65536:
+        raise ValueError(f"{name} must be between 1 and 65535, got: {value}")
+    return value
+
+
+def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile | None:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    registry_path = resolve_namespace_registry_path()
+    if not registry_path.exists():
+        return None
+    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
+                namespace TEXT PRIMARY KEY,
+                port INTEGER,
+                https_port INTEGER,
+                mcp_port INTEGER
+            )
+            """
+        )
+        row = connection.execute(
+            """
+            SELECT namespace, port, https_port, mcp_port
+            FROM namespace_launch_profiles
+            WHERE namespace = ?
+            """,
+            (normalized_namespace,),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        return None
+    return NamespaceLaunchProfile(
+        namespace=str(row[0]),
+        port=None if row[1] is None else int(row[1]),
+        https_port=None if row[2] is None else int(row[2]),
+        mcp_port=None if row[3] is None else int(row[3]),
+    )
+
+
+def save_namespace_launch_profile(
+    *,
+    namespace: str,
+    port: int | None,
+    https_port: int | None,
+    mcp_port: int | None,
+) -> NamespaceLaunchProfile:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    normalized_port = _validate_optional_port(name="port", value=port)
+    normalized_https_port = _validate_optional_port(name="https_port", value=https_port)
+    normalized_mcp_port = _validate_optional_port(name="mcp_port", value=mcp_port)
+    registry_path = _prepare_namespace_registry_path()
+    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
+                namespace TEXT PRIMARY KEY,
+                port INTEGER,
+                https_port INTEGER,
+                mcp_port INTEGER
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO namespace_launch_profiles (
+                namespace,
+                port,
+                https_port,
+                mcp_port
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(namespace) DO UPDATE SET
+                port = excluded.port,
+                https_port = excluded.https_port,
+                mcp_port = excluded.mcp_port
+            """,
+            (
+                normalized_namespace,
+                normalized_port,
+                normalized_https_port,
+                normalized_mcp_port,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return NamespaceLaunchProfile(
+        namespace=normalized_namespace,
+        port=normalized_port,
+        https_port=normalized_https_port,
+        mcp_port=normalized_mcp_port,
+    )
+
+
+def resolve_namespace_launch_defaults(
+    *,
+    namespace: str,
+    environ: Mapping[str, str],
+) -> NamespaceLaunchProfile:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    stored_profile = load_namespace_launch_profile(namespace=normalized_namespace)
+    env_port = _read_optional_int(environ=environ, name="METALIST_PORT")
+    env_https_port = _read_optional_int(environ=environ, name="METALIST_HTTPS_PORT")
+    env_mcp_port = _read_optional_int(environ=environ, name="MCP_AGENT_WEB_PORT")
+    ssl_certfile, _ = _resolve_tls_pair(environ=environ)
+
+    if stored_profile is not None and stored_profile.port is not None:
+        port = stored_profile.port
+    else:
+        port = _DEFAULT_HTTP_PORT
+    if env_port is not None:
+        port = env_port
+
+    if stored_profile is not None and stored_profile.https_port is not None:
+        https_port = stored_profile.https_port
+    elif ssl_certfile is not None:
+        https_port = _DEFAULT_HTTPS_PORT
+    else:
+        https_port = None
+    if env_https_port is not None:
+        https_port = env_https_port
+
+    if stored_profile is not None and stored_profile.mcp_port is not None:
+        mcp_port = stored_profile.mcp_port
+    else:
+        mcp_port = _DEFAULT_MCP_AGENT_WEB_PORT
+    if env_mcp_port is not None:
+        mcp_port = env_mcp_port
+
+    return NamespaceLaunchProfile(
+        namespace=normalized_namespace,
+        port=port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
+
+
+def _apply_namespace_profile_to_environ(
+    *,
+    environ: MutableMapping[str, str],
+    profile: NamespaceLaunchProfile | None,
+    cli_port: int | None,
+    cli_https_port: int | None,
+    cli_mcp_port: int | None,
+) -> None:
+    if cli_port is None and "METALIST_PORT" not in environ and profile is not None and profile.port is not None:
+        environ["METALIST_PORT"] = str(profile.port)
+    if (
+        cli_https_port is None
+        and "METALIST_HTTPS_PORT" not in environ
+        and profile is not None
+        and profile.https_port is not None
+    ):
+        environ["METALIST_HTTPS_PORT"] = str(profile.https_port)
+    if (
+        cli_mcp_port is None
+        and "MCP_AGENT_WEB_PORT" not in environ
+        and profile is not None
+        and profile.mcp_port is not None
+    ):
+        environ["MCP_AGENT_WEB_PORT"] = str(profile.mcp_port)
 
 
 def resolve_api_prefix(*, environ: Mapping[str, str]) -> str:
@@ -178,19 +371,66 @@ def apply_main_cli_args_to_environ(
     environ: MutableMapping[str, str],
 ) -> MainCliArgs:
     parser = argparse.ArgumentParser(description="Run the MetaList server")
-    parser.add_argument("--namespace", type=_parse_namespace_argument)
-    parser.add_argument("--port", type=_parse_port_argument)
-    parser.add_argument("--https-port", type=_parse_port_argument)
-    parser.add_argument("--mcp-port", type=_parse_port_argument)
-    parser.add_argument("--test", action="store_true")
+    parser.add_argument(
+        "--namespace",
+        type=_parse_namespace_argument,
+        help="Namespace to run. Defaults to 'default' when omitted.",
+    )
+    parser.add_argument(
+        "namespace_shorthand",
+        nargs="?",
+        type=_parse_namespace_argument,
+        help="Namespace shorthand, e.g. `python main.py cla`.",
+    )
+    parser.add_argument(
+        "--port",
+        type=_parse_port_argument,
+        help="HTTP port for this launch and remembered namespace profile.",
+    )
+    parser.add_argument(
+        "--https-port",
+        type=_parse_port_argument,
+        help="HTTPS port for this launch and remembered namespace profile.",
+    )
+    parser.add_argument(
+        "--mcp-port",
+        type=_parse_port_argument,
+        help="MCP sidecar web port for this launch and remembered namespace profile.",
+    )
+    parser.add_argument("--test", action="store_true", help="Run against the temporary test database.")
     parsed_args = parser.parse_args(list(argv))
 
+    if parsed_args.namespace is not None and parsed_args.namespace_shorthand is not None:
+        raise RuntimeError("Specify namespace either positionally or with --namespace, not both")
+
     namespace = parsed_args.namespace
+    if namespace is None:
+        namespace = parsed_args.namespace_shorthand
+
     if namespace is not None and parsed_args.test:
         raise RuntimeError("Namespace selection cannot be combined with TEST_MODE or --test")
 
-    if namespace is not None:
-        environ[_NAMESPACE_ENV_NAME] = namespace
+    if parsed_args.test:
+        resolved_namespace = None
+    elif namespace is not None:
+        resolved_namespace = namespace
+    elif _NAMESPACE_ENV_NAME in environ:
+        resolved_namespace = validate_namespace(namespace=environ[_NAMESPACE_ENV_NAME])
+    else:
+        resolved_namespace = _DEFAULT_NAMESPACE
+    if resolved_namespace is not None:
+        environ[_NAMESPACE_ENV_NAME] = resolved_namespace
+        stored_profile = load_namespace_launch_profile(namespace=resolved_namespace)
+        _apply_namespace_profile_to_environ(
+            environ=environ,
+            profile=stored_profile,
+            cli_port=parsed_args.port,
+            cli_https_port=parsed_args.https_port,
+            cli_mcp_port=parsed_args.mcp_port,
+        )
+    else:
+        stored_profile = None
+
     if parsed_args.port is not None:
         environ["METALIST_PORT"] = str(parsed_args.port)
     if parsed_args.https_port is not None:
@@ -198,8 +438,29 @@ def apply_main_cli_args_to_environ(
     if parsed_args.mcp_port is not None:
         environ["MCP_AGENT_WEB_PORT"] = str(parsed_args.mcp_port)
 
+    if resolved_namespace is not None:
+        if (
+            parsed_args.port is not None
+            or parsed_args.https_port is not None
+            or parsed_args.mcp_port is not None
+        ):
+            save_namespace_launch_profile(
+                namespace=resolved_namespace,
+                port=parsed_args.port if parsed_args.port is not None else (None if stored_profile is None else stored_profile.port),
+                https_port=(
+                    parsed_args.https_port
+                    if parsed_args.https_port is not None
+                    else (None if stored_profile is None else stored_profile.https_port)
+                ),
+                mcp_port=(
+                    parsed_args.mcp_port
+                    if parsed_args.mcp_port is not None
+                    else (None if stored_profile is None else stored_profile.mcp_port)
+                ),
+            )
+
     return MainCliArgs(
-        namespace=namespace,
+        namespace=resolved_namespace,
         port=parsed_args.port,
         https_port=parsed_args.https_port,
         mcp_port=parsed_args.mcp_port,
@@ -382,7 +643,7 @@ def _resolve_https_port(*, environ: Mapping[str, str], ssl_certfile: str | None)
     if https_port is not None:
         return https_port
     if ssl_certfile is not None:
-        return 8443
+        return _DEFAULT_HTTPS_PORT
     return None
 
 
@@ -390,7 +651,7 @@ def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfi
     ssl_certfile, ssl_keyfile = _resolve_tls_pair(environ=environ)
 
     host = _read_text(environ=environ, name="METALIST_HOST", fallback="0.0.0.0")
-    port = _read_int(environ=environ, name="METALIST_PORT", fallback=8000)
+    port = _read_int(environ=environ, name="METALIST_PORT", fallback=_DEFAULT_HTTP_PORT)
     https_port = _resolve_https_port(environ=environ, ssl_certfile=ssl_certfile)
     proxy_headers = _read_flag(environ=environ, name="METALIST_PROXY_HEADERS", fallback=True)
     forwarded_allow_ips = _read_text(
@@ -478,7 +739,7 @@ def resolve_mcp_agent_public_origin(
     configured_port = _read_int(
         environ=environ,
         name="MCP_AGENT_WEB_PORT",
-        fallback=8765,
+        fallback=_DEFAULT_MCP_AGENT_WEB_PORT,
     )
     resolved_host = configured_host
     if configured_host in _LOOPBACK_BIND_HOSTS and request_host is not None:
