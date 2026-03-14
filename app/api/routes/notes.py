@@ -6,6 +6,7 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, Request
 
 from app.services.snapshot import build_view_state
+from app.services.snapshot import resolve_search_scope
 from app.services.note_store import store as note_store
 from app.usecases.create_note import CmdCreateNote
 from app.usecases.create_sibling import CmdCreateSibling
@@ -306,19 +307,11 @@ def backlinks(note_id: str, search: str | None = None) -> Dict[str, object]:
 
     source_note_ids = None
     if normalized_search is not None:
-        all_note_ids = set(note_store.list_note_ids())
-        state = build_view_state(
-            editing_note_id=None,
+        search_scope = resolve_search_scope(
             search=normalized_search,
-            client_known_note_ids=all_note_ids,
-            client_seen_root_ids=set(),
-            anchor_root_id=None,
+            editing_note_id=None,
         )
-        source_note_ids = {
-            source_note_id
-            for source_note_id, payload in state.payloads.items()
-            if not bool(payload.get("flags", {}).get("searchRedacted", False))
-        }
+        source_note_ids = search_scope.allowed_note_ids
 
     backlinks = list_backlinks_for_note(note_id, source_note_ids=source_note_ids)
     return {

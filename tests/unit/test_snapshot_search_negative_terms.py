@@ -52,12 +52,14 @@ def test_negative_text_term_redacts_notes_containing_phrase(monkeypatch: pytest.
         [
             SearchRecord(
                 note_id=n.id,
-                content_html=n.content,
-                tags=n.tags,
-                tag_terms=extract_tags_for_search(n.tags),
+                    content_text=n.content,
+                    tags=n.tags,
+                    tag_terms=extract_tags_for_search(n.tags),
             )
             for n in notes.values()
-        ]
+        ],
+        progress_update=lambda _: None,
+        progress_interval=1000,
     )
 
     import app.services.snapshot as snapshot
@@ -93,12 +95,14 @@ def test_negative_text_term_redacts_forbidden_descendants(monkeypatch: pytest.Mo
         [
             SearchRecord(
                 note_id=n.id,
-                content_html=n.content,
-                tags=n.tags,
-                tag_terms=extract_tags_for_search(n.tags),
+                    content_text=n.content,
+                    tags=n.tags,
+                    tag_terms=extract_tags_for_search(n.tags),
             )
             for n in notes.values()
-        ]
+        ],
+        progress_update=lambda _: None,
+        progress_interval=1000,
     )
 
     import app.services.snapshot as snapshot

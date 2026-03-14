@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from dataclasses import dataclass
 import re
 import time
 from typing import DefaultDict, Dict, List, Optional, Tuple, Set
@@ -27,6 +28,14 @@ _UUID_IN_TEXT_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class SearchScope:
+    search_active: bool
+    allowed_note_ids: Optional[Set[str]]
+    search_root_ids_ordered: Optional[List[str]]
+    search_root_count_total: int
+
+
 def _extract_direct_uuid_note_ids(parsed_query: ParsedSearchQuery) -> Set[str]:
     candidates: Set[str] = set()
     for token in parsed_query.required_tags:
@@ -41,6 +50,133 @@ def _extract_direct_uuid_note_ids(parsed_query: ParsedSearchQuery) -> Set[str]:
         if note_store.has_note(candidate):
             direct_ids.add(candidate)
     return direct_ids
+
+
+def _has_search_terms(parsed: ParsedSearchQuery) -> bool:
+    if len(parsed.required_tags) > 0:
+        return True
+    if len(parsed.forbidden_tags) > 0:
+        return True
+    if len(parsed.required_text) > 0:
+        return True
+    if len(parsed.forbidden_text) > 0:
+        return True
+    return False
+
+
+def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
+    to_visit = list(starting_ids)
+    while to_visit:
+        current_id = to_visit.pop()
+        if not note_store.has_note(current_id):
+            continue
+        parent_id = note_store.get_note(current_id).parent_id
+        if parent_id is None:
+            continue
+        if parent_id in note_ids:
+            continue
+        note_ids.add(parent_id)
+        to_visit.append(parent_id)
+
+
+def _include_descendants(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
+    to_visit = list(starting_ids)
+    while to_visit:
+        current_id = to_visit.pop()
+        if not note_store.has_note(current_id):
+            continue
+        for child_id in note_store.get_children(current_id):
+            if child_id in note_ids:
+                continue
+            note_ids.add(child_id)
+            to_visit.append(child_id)
+
+
+def _quote_text_term_for_query(phrase: str) -> str:
+    if not isinstance(phrase, str):
+        raise TypeError(f"search phrase must be a string, got {type(phrase)}")
+
+    if '"' not in phrase:
+        escaped = phrase.replace("\\", "\\\\")
+        return f'"{escaped}"'
+
+    if "'" not in phrase:
+        escaped = phrase.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+
+    escaped = phrase.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def resolve_search_scope(
+    *,
+    search: Optional[str],
+    editing_note_id: Optional[str],
+) -> SearchScope:
+    if search is None:
+        return SearchScope(
+            search_active=False,
+            allowed_note_ids=None,
+            search_root_ids_ordered=None,
+            search_root_count_total=0,
+        )
+    if not isinstance(search, str):
+        raise TypeError(f"search must be a string or null, got {type(search)}")
+
+    parsed = parse_search_query(search)
+    if not _has_search_terms(parsed):
+        return SearchScope(
+            search_active=False,
+            allowed_note_ids=None,
+            search_root_ids_ordered=None,
+            search_root_count_total=0,
+        )
+
+    ordered_root_ids = note_store.get_children(None)
+    has_positive_terms = bool(parsed.required_tags or parsed.required_text)
+    direct_uuid_note_ids = _extract_direct_uuid_note_ids(parsed)
+
+    if has_positive_terms:
+        positively_matched_note_ids = set(search_index.query_note_ids(search))
+    else:
+        positively_matched_note_ids = set(ordered_root_ids)
+        _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
+
+    positively_matched_note_ids.update(direct_uuid_note_ids)
+    search_allowed_note_ids = set(positively_matched_note_ids)
+
+    excluded_note_ids: Set[str] = set()
+    for tag in parsed.forbidden_tags:
+        excluded_note_ids.update(search_index.query_note_ids(tag))
+    for phrase in parsed.forbidden_text:
+        excluded_note_ids.update(search_index.query_note_ids(_quote_text_term_for_query(phrase)))
+
+    _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
+    _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
+    if excluded_note_ids:
+        search_allowed_note_ids.difference_update(excluded_note_ids)
+    if direct_uuid_note_ids:
+        search_allowed_note_ids.update(direct_uuid_note_ids)
+
+    search_root_ids_ordered_for_count = [
+        root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
+    ]
+    search_root_count_total = len(search_root_ids_ordered_for_count)
+
+    allowed_note_ids = set(search_allowed_note_ids)
+    if editing_note_id:
+        allowed_note_ids.add(editing_note_id)
+        _include_ancestors(allowed_note_ids, starting_ids={editing_note_id})
+
+    search_root_ids_ordered = [
+        root_id for root_id in ordered_root_ids if root_id in allowed_note_ids
+    ]
+    return SearchScope(
+        search_active=True,
+        allowed_note_ids=allowed_note_ids,
+        search_root_ids_ordered=search_root_ids_ordered,
+        search_root_count_total=search_root_count_total,
+    )
 
 
 def _compute_hash(
@@ -138,109 +274,14 @@ def build_view_state(
         get_file=_get_file_record,
     )
 
-    if search is not None:
-        if not isinstance(search, str):
-            raise TypeError(f"search must be a string or null, got {type(search)}")
-        parsed = parse_search_query(search)
-        has_terms = False
-        if len(parsed.required_tags) > 0:
-            has_terms = True
-        if len(parsed.forbidden_tags) > 0:
-            has_terms = True
-        if len(parsed.required_text) > 0:
-            has_terms = True
-        if len(parsed.forbidden_text) > 0:
-            has_terms = True
-
-        if has_terms:
-            search_active = True
-            has_positive_terms = False
-            if len(parsed.required_tags) > 0:
-                has_positive_terms = True
-            if len(parsed.required_text) > 0:
-                has_positive_terms = True
-
-            direct_uuid_note_ids = _extract_direct_uuid_note_ids(parsed)
-
-            if has_positive_terms:
-                positively_matched_note_ids = set(search_index.query_note_ids(search))
-            else:
-                ordered_root_ids = note_store.get_children(None)
-                positively_matched_note_ids = set(ordered_root_ids)
-                _include_descendants(positively_matched_note_ids, starting_ids=set(ordered_root_ids))
-            positively_matched_note_ids.update(direct_uuid_note_ids)
-            search_allowed_note_ids = set(positively_matched_note_ids)
-
-            def _include_ancestors(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
-                to_visit = list(starting_ids)
-                while to_visit:
-                    current_id = to_visit.pop()
-                    if not note_store.has_note(current_id):
-                        continue
-                    parent_id = note_store.get_note(current_id).parent_id
-                    if parent_id is None:
-                        continue
-                    if parent_id in note_ids:
-                        continue
-                    note_ids.add(parent_id)
-                    to_visit.append(parent_id)
-
-            def _include_descendants(note_ids: Set[str], *, starting_ids: Set[str]) -> None:
-                to_visit = list(starting_ids)
-                while to_visit:
-                    current_id = to_visit.pop()
-                    if not note_store.has_note(current_id):
-                        continue
-                    for child_id in note_store.get_children(current_id):
-                        if child_id in note_ids:
-                            continue
-                        note_ids.add(child_id)
-                        to_visit.append(child_id)
-
-            excluded_note_ids: Set[str] = set()
-
-            def _quote_text_term_for_query(phrase: str) -> str:
-                if not isinstance(phrase, str):
-                    raise TypeError(f"search phrase must be a string, got {type(phrase)}")
-
-                if '"' not in phrase:
-                    escaped = phrase.replace('\\', '\\\\')
-                    return f'"{escaped}"'
-
-                if "'" not in phrase:
-                    escaped = phrase.replace('\\', '\\\\').replace("'", "\\'")
-                    return f"'{escaped}'"
-
-                escaped = phrase.replace('\\', '\\\\').replace('\"', '\\"')
-                return f'"{escaped}"'
-
-            for tag in parsed.forbidden_tags:
-                excluded_note_ids.update(search_index.query_note_ids(tag))
-
-            for phrase in parsed.forbidden_text:
-                excluded_note_ids.update(search_index.query_note_ids(_quote_text_term_for_query(phrase)))
-
-            _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
-            _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
-            if excluded_note_ids:
-                search_allowed_note_ids.difference_update(excluded_note_ids)
-            if direct_uuid_note_ids:
-                search_allowed_note_ids.update(direct_uuid_note_ids)
-
-            ordered_root_ids = note_store.get_children(None)
-            search_root_ids_ordered_for_count = [
-                root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
-            ]
-            search_root_count_total = len(search_root_ids_ordered_for_count)
-
-            allowed_note_ids = set(search_allowed_note_ids)
-            if editing_note_id:
-                allowed_note_ids.add(editing_note_id)
-                _include_ancestors(allowed_note_ids, starting_ids={editing_note_id})
-
-            search_root_ids_ordered = [
-                root_id for root_id in ordered_root_ids if root_id in allowed_note_ids
-            ]
+    search_scope = resolve_search_scope(
+        search=search,
+        editing_note_id=editing_note_id,
+    )
+    search_active = search_scope.search_active
+    allowed_note_ids = search_scope.allowed_note_ids
+    search_root_ids_ordered = search_scope.search_root_ids_ordered
+    search_root_count_total = search_scope.search_root_count_total
 
     # Determine root window
     ordered_root_ids = note_store.get_children(None)

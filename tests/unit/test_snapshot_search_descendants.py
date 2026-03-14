@@ -63,12 +63,14 @@ def test_search_includes_descendants_of_matching_root(monkeypatch: pytest.Monkey
         [
             SearchRecord(
                 note_id=n.id,
-                content_html=n.content,
-                tags=n.tags,
-                tag_terms=extract_tags_for_search(n.tags),
+                    content_text=n.content,
+                    tags=n.tags,
+                    tag_terms=extract_tags_for_search(n.tags),
             )
             for n in notes.values()
-        ]
+        ],
+        progress_update=lambda _: None,
+        progress_interval=1000,
     )
 
     import app.services.snapshot as snapshot
@@ -110,12 +112,14 @@ def test_search_includes_descendants_of_matching_non_root(monkeypatch: pytest.Mo
         [
             SearchRecord(
                 note_id=n.id,
-                content_html=n.content,
-                tags=n.tags,
-                tag_terms=extract_tags_for_search(n.tags),
+                    content_text=n.content,
+                    tags=n.tags,
+                    tag_terms=extract_tags_for_search(n.tags),
             )
             for n in notes.values()
-        ]
+        ],
+        progress_update=lambda _: None,
+        progress_interval=1000,
     )
 
     import app.services.snapshot as snapshot
