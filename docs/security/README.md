@@ -192,6 +192,8 @@ writes).
 ## Remote Access / HTTPS
 
 - `python main.py` binds HTTP on `0.0.0.0:8000` by default, matching old MetaList behavior.
+- `python main.py --namespace work` starts a separate process against `~/MetaList/work.metalist.db`.
+- With no namespace, the legacy default DB remains `~/MetaList/metalist2.db`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
 - When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from `python main.py`, set both:
@@ -202,7 +204,10 @@ writes).
   - `METALIST_HOST=127.0.0.1`
   - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default)
 - Login rate limiting already prefers the first `x-forwarded-for` hop, so when you deploy behind a trusted proxy you still get client-IP-based throttling.
+- Namespace selection is independent of listener ports. Use `--namespace` / `METALIST_NAMESPACE` for DB selection and `--port` / `METALIST_PORT` for listener selection.
 - The MCP sidecar redirect now supports a public override via `MCP_AGENT_PUBLIC_ORIGIN=https://host:port`. If you are not exposing the sidecar remotely, disable it with `MCP_AGENT_WEB_ENABLED=0`.
+- When `main.py` auto-starts the MCP sidecar, its default MCP URL now follows the resolved MetaList HTTP port for that process.
+- If multiple MetaList processes auto-start sidecars on the same machine, use `--mcp-port` or `MCP_AGENT_WEB_PORT` to avoid sidecar port collisions.
 
 ### Multi-Client Support
 - Token issuance clears any previous tokens (single active session enforced)
@@ -240,6 +245,9 @@ For fresh imports using `convert-from-legacy.py`:
 5. Input selection:
    - pass `--input /path/to/export.json` for non-interactive runs
    - omit `--input` to use the Tk file picker.
+6. Namespace targeting:
+   - pass `--namespace work` to import into `~/MetaList/work.metalist.db`
+   - omit `--namespace` to keep importing into the legacy default DB.
 
 ## API Endpoints
 

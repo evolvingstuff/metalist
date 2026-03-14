@@ -4,6 +4,7 @@ This document defines the Phase 1 MCP interface for MetaList.
 
 ## Transport
 - App-integrated HTTP JSON-RPC endpoint: `POST /api2/mcp` (auto-available when `python main.py` is running).
+- Namespace is implicit in the MetaList process you started. If that process was launched with `--namespace work`, the integrated MCP endpoint is serving the `work` database.
 - Local stdio endpoint (manual/advanced):
 
 ```bash
@@ -20,11 +21,14 @@ python mcp_client.py cli tools/call health_check '{}'
 Agentic web app helper (separate port, Ollama-backed):
 
 ```bash
-python mcp_client.py web --port 8765
+python mcp_client.py web --port 8765 --mcp-url http://127.0.0.1:8000/api2/mcp
 ```
 
 Auto-start behavior:
 - Running `python main.py` starts the main app and also launches the agent web app sidecar (default `http://127.0.0.1:8765`).
+- The auto-started sidecar now points at the resolved MCP URL for that MetaList process, so changing the main HTTP port does not require a manual MCP URL override.
+- Use `python main.py --mcp-port 8766 ...` when you want a second MetaList instance to auto-start its own sidecar without reusing `8765`.
+- Standalone `mcp_client.py` remains URL-driven, not namespace-driven: point it at the server URL you want, and that server's process namespace determines the data it can see.
 
 ## Readiness
 - Most tools require the in-memory note store to be loaded.

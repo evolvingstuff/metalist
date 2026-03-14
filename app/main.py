@@ -24,6 +24,7 @@ from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
 from app.server_runtime import resolve_https_redirect_url
+from app.server_runtime import resolve_request_host_for_https_redirect
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
@@ -232,10 +233,15 @@ async def block_v1_root():
 
 @app.middleware("http")
 async def redirect_remote_http_to_https(request: Request, call_next):
+    request_host = resolve_request_host_for_https_redirect(
+        host_header=request.headers.get("host"),
+        forwarded_host_header=request.headers.get("x-forwarded-host"),
+        fallback_host=request.url.hostname,
+    )
     redirect_url = resolve_https_redirect_url(
         environ=os.environ,
         request_scheme=request.url.scheme,
-        request_host=request.url.hostname,
+        request_host=request_host,
         request_path=request.url.path,
         request_query=request.url.query,
     )

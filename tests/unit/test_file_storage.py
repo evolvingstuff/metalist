@@ -18,6 +18,11 @@ def test_resolve_file_database_path_uses_sibling_files_name() -> None:
     assert path == Path("/tmp/metalist2.files.db")
 
 
+def test_resolve_file_database_path_supports_namespaced_database_name() -> None:
+    path = resolve_file_database_path(Path("/tmp/work.metalist.db"))
+    assert path == Path("/tmp/work.metalist.files.db")
+
+
 def test_create_file_encrypts_at_rest_and_download_round_trips(tmp_path: Path, monkeypatch) -> None:
     set_encryption_required(True)
     monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")

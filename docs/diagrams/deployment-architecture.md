@@ -11,7 +11,7 @@ graph TB
     end
     
     subgraph "FastAPI Process"
-        ASGI[Uvicorn ASGI Server<br/>Port 8000]
+        ASGI[Uvicorn ASGI Server<br/>Port 8000 default]
         App[FastAPI Application]
         Middleware[Auth Middleware]
         InMemory[In-Memory Storage<br/>Tokens, Content Cache]
@@ -19,7 +19,7 @@ graph TB
     
     subgraph "File System"
         AppCode[Application Code<br/>Python, JS, CSS]
-        SQLiteFile[~/MetaList/metalist2.db<br/>SQLite Database]
+        SQLiteFile[~/MetaList/metalist2.db<br/>or ~/MetaList/&lt;namespace&gt;.metalist.db]
         Logs[server.log<br/>Application Logs]
         StaticAssets[Static Assets<br/>Images, Fonts]
     end

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import argparse
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 import ipaddress
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 
@@ -11,6 +13,14 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_CERT_PATH = _PROJECT_ROOT / "certs" / "metalist-cert.pem"
 _DEFAULT_KEY_PATH = _PROJECT_ROOT / "certs" / "metalist-key.pem"
 _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
+_DEFAULT_API_PREFIX = "/api2"
+_DEFAULT_V1_API_PREFIX = "/api"
+_DEFAULT_DATABASE_DIRECTORY = Path.home() / "MetaList"
+_DEFAULT_DATABASE_FILENAME = "metalist2.db"
+_DEFAULT_TEST_DATABASE_URL = "sqlite:///./test.db"
+_DEFAULT_TEST_DATABASE_PATH = Path("./test.db")
+_NAMESPACE_ENV_NAME = "METALIST_NAMESPACE"
+_NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 @dataclass(frozen=True)
@@ -22,6 +32,219 @@ class MainServerConfig:
     forwarded_allow_ips: str
     ssl_certfile: str | None
     ssl_keyfile: str | None
+
+
+@dataclass(frozen=True)
+class DatabaseRuntimeConfig:
+    database_path: Path
+    database_url: str
+    namespace: str | None
+    test_mode: bool
+
+
+@dataclass(frozen=True)
+class MainCliArgs:
+    namespace: str | None
+    port: int | None
+    https_port: int | None
+    mcp_port: int | None
+    test_mode: bool
+
+
+def _parse_port_argument(raw_value: str) -> int:
+    value = raw_value.strip()
+    if value == "":
+        raise argparse.ArgumentTypeError("port must not be empty")
+    if not value.isdigit():
+        raise argparse.ArgumentTypeError(f"port must be numeric, got: {raw_value!r}")
+    parsed = int(value)
+    if not 0 < parsed < 65536:
+        raise argparse.ArgumentTypeError(f"port must be between 1 and 65535, got: {parsed}")
+    return parsed
+
+
+def _parse_namespace_argument(raw_value: str) -> str:
+    try:
+        return validate_namespace(namespace=raw_value)
+    except RuntimeError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def validate_namespace(*, namespace: str) -> str:
+    if not isinstance(namespace, str):
+        raise TypeError(f"namespace must be a string, got {type(namespace)}")
+    normalized = namespace.strip()
+    if normalized == "":
+        raise RuntimeError("Namespace must not be empty")
+    if normalized != normalized.casefold():
+        raise RuntimeError("Namespace must contain only lowercase letters, digits, and '-'")
+    if _NAMESPACE_PATTERN.fullmatch(normalized) is None:
+        raise RuntimeError("Namespace must contain only lowercase letters, digits, and '-'")
+    return normalized
+
+
+def resolve_default_database_path() -> Path:
+    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_DATABASE_FILENAME
+
+
+def resolve_namespaced_database_path(*, namespace: str) -> Path:
+    normalized = validate_namespace(namespace=namespace)
+    return _DEFAULT_DATABASE_DIRECTORY / f"{normalized}.metalist.db"
+
+
+def resolve_api_prefix(*, environ: Mapping[str, str]) -> str:
+    if "API_PREFIX" in environ:
+        return environ["API_PREFIX"].rstrip("/")
+    return _DEFAULT_API_PREFIX
+
+
+def resolve_v1_api_prefix(*, environ: Mapping[str, str]) -> str:
+    if "V1_API_PREFIX" in environ:
+        return environ["V1_API_PREFIX"].rstrip("/")
+    return _DEFAULT_V1_API_PREFIX
+
+
+def resolve_test_mode(*, environ: Mapping[str, str], argv: Sequence[str]) -> bool:
+    if "--test" in argv:
+        return True
+    return environ.get("TEST_MODE") == "1"
+
+
+def resolve_database_runtime_config(
+    *,
+    environ: Mapping[str, str],
+    argv: Sequence[str],
+) -> DatabaseRuntimeConfig:
+    test_mode = resolve_test_mode(environ=environ, argv=argv)
+    namespace_value = _read_optional_text(environ=environ, name=_NAMESPACE_ENV_NAME)
+    namespace: str | None
+    if namespace_value is None:
+        namespace = None
+    else:
+        namespace = validate_namespace(namespace=namespace_value)
+
+    if test_mode:
+        if namespace is not None:
+            raise RuntimeError("Namespace selection cannot be combined with TEST_MODE or --test")
+        return DatabaseRuntimeConfig(
+            database_path=_DEFAULT_TEST_DATABASE_PATH,
+            database_url=_DEFAULT_TEST_DATABASE_URL,
+            namespace=None,
+            test_mode=True,
+        )
+
+    if namespace is None:
+        database_path = resolve_default_database_path()
+    else:
+        database_path = resolve_namespaced_database_path(namespace=namespace)
+
+    return DatabaseRuntimeConfig(
+        database_path=database_path,
+        database_url=f"sqlite:///{database_path.expanduser()}",
+        namespace=namespace,
+        test_mode=False,
+    )
+
+
+def apply_namespace_arg_to_environ(
+    *,
+    argv: Sequence[str],
+    environ: MutableMapping[str, str],
+) -> str | None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--namespace", type=_parse_namespace_argument)
+    parsed_args, _ = parser.parse_known_args(list(argv))
+    namespace = parsed_args.namespace
+    if namespace is None:
+        return None
+    environ[_NAMESPACE_ENV_NAME] = namespace
+    return namespace
+
+
+def apply_main_cli_args_to_environ(
+    *,
+    argv: Sequence[str],
+    environ: MutableMapping[str, str],
+) -> MainCliArgs:
+    parser = argparse.ArgumentParser(description="Run the MetaList server")
+    parser.add_argument("--namespace", type=_parse_namespace_argument)
+    parser.add_argument("--port", type=_parse_port_argument)
+    parser.add_argument("--https-port", type=_parse_port_argument)
+    parser.add_argument("--mcp-port", type=_parse_port_argument)
+    parser.add_argument("--test", action="store_true")
+    parsed_args = parser.parse_args(list(argv))
+
+    namespace = parsed_args.namespace
+    if namespace is not None and parsed_args.test:
+        raise RuntimeError("Namespace selection cannot be combined with TEST_MODE or --test")
+
+    if namespace is not None:
+        environ[_NAMESPACE_ENV_NAME] = namespace
+    if parsed_args.port is not None:
+        environ["METALIST_PORT"] = str(parsed_args.port)
+    if parsed_args.https_port is not None:
+        environ["METALIST_HTTPS_PORT"] = str(parsed_args.https_port)
+    if parsed_args.mcp_port is not None:
+        environ["MCP_AGENT_WEB_PORT"] = str(parsed_args.mcp_port)
+
+    return MainCliArgs(
+        namespace=namespace,
+        port=parsed_args.port,
+        https_port=parsed_args.https_port,
+        mcp_port=parsed_args.mcp_port,
+        test_mode=parsed_args.test,
+    )
+
+
+def resolve_backend_connect_host(*, host: str) -> str:
+    stripped_host = host.strip()
+    if stripped_host == "":
+        raise RuntimeError("host must not be empty")
+    if stripped_host in {"0.0.0.0", "127.0.0.1", "localhost"}:
+        return "127.0.0.1"
+    if stripped_host == "::":
+        return "::1"
+    return stripped_host
+
+
+def resolve_local_browser_host(*, host: str) -> str:
+    stripped_host = host.strip()
+    if stripped_host == "":
+        raise RuntimeError("host must not be empty")
+    if stripped_host in {"0.0.0.0", "127.0.0.1", "localhost"}:
+        return "127.0.0.1"
+    if stripped_host in {"::", "::1"}:
+        return "[::1]"
+    return stripped_host
+
+
+def resolve_main_mcp_url(*, environ: Mapping[str, str], host: str, port: int) -> str:
+    formatted_host = _format_host_for_url(host=resolve_backend_connect_host(host=host))
+    api_prefix = resolve_api_prefix(environ=environ)
+    return f"http://{formatted_host}:{port}{api_prefix}/mcp"
+
+
+def resolve_request_host_for_https_redirect(
+    *,
+    host_header: str | None,
+    forwarded_host_header: str | None,
+    fallback_host: str | None,
+) -> str | None:
+    candidate_header: str | None
+    if forwarded_host_header is not None and forwarded_host_header.strip() != "":
+        candidate_header = forwarded_host_header.split(",", 1)[0].strip()
+    elif host_header is not None and host_header.strip() != "":
+        candidate_header = host_header.strip()
+    else:
+        candidate_header = None
+
+    if candidate_header is None:
+        return fallback_host
+
+    parsed = urlsplit(f"//{candidate_header}")
+    if parsed.hostname is None or parsed.hostname.strip() == "":
+        raise RuntimeError(f"Could not parse request host header: {candidate_header!r}")
+    return parsed.hostname
 
 
 def _read_text(*, environ: Mapping[str, str], name: str, fallback: str) -> str:

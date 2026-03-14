@@ -5,6 +5,7 @@
 
 ## Architecture
 - Entry: `main.py` - runs Uvicorn (`app.main:app`) with access-log noise filtering.
+- Startup bootstrap: `main.py` now resolves `--namespace`, `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so import-time config sees the right DB path and listener ports.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
@@ -60,7 +61,7 @@
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
-- Startup: `app/main.py` initializes schema + settings. If encryption is disabled, it populates the content cache and hydrates NoteStore before enabling the read guard. If encryption is enabled, hydration is deferred until login (`POST /api2/auth/hydrate`) and the UI shows a first-load progress state.
+- Startup: `main.py` can select a namespaced DB (`METALIST_NAMESPACE` or `--namespace`) before importing `app.main`; `app/main.py` then initializes schema + settings for that selected DB. If encryption is disabled, it populates the content cache and hydrates NoteStore before enabling the read guard. If encryption is enabled, hydration is deferred until login (`POST /api2/auth/hydrate`) and the UI shows a first-load progress state.
 - Legacy import: `convert-from-legacy.py` is a destructive fresh-import path that can prompt for password setup and writes the same Argon2id vault metadata as runtime auth.
 
 ## Setup
@@ -73,6 +74,7 @@ python main.py
 
 ## Quick Ref
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
+- Namespace DBs: no namespace uses `~/MetaList/metalist2.db`; `--namespace work` / `METALIST_NAMESPACE=work` uses `~/MetaList/work.metalist.db`, and the related files DB derives as `work.metalist.files.db`.
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Frontend join shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`joinCurrentNoteWithNextSibling`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+J` binding).

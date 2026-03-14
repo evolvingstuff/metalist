@@ -51,12 +51,19 @@ python main.py
 By default, this binds HTTP on `0.0.0.0:8000`, matching the old MetaList LAN-friendly behavior.
 HTTPS on `0.0.0.0:8443` only turns on if TLS files already exist at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or if you point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at existing PEM files.
 
+Database selection:
+- No namespace: `~/MetaList/metalist2.db` (legacy default)
+- `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/work.metalist.db`
+- The related files DB is derived automatically, so `work.metalist.db` uses `work.metalist.files.db`
+
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
+- `METALIST_NAMESPACE=work`: select `~/MetaList/work.metalist.db`
 - `METALIST_HOST=0.0.0.0` (default): bind the main app to a different interface such as `127.0.0.1`
 - `METALIST_PORT=8000` (default): bind the main app to a different port
 - `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
+- `MCP_AGENT_WEB_PORT=8765` (default): bind the MCP sidecar web UI to a different port
 - `METALIST_TLS_CERT=/path/to/fullchain.pem` + `METALIST_TLS_KEY=/path/to/privkey.pem`: override TLS paths
 - default TLS paths: `certs/metalist-cert.pem` and `certs/metalist-key.pem`
 - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
@@ -68,6 +75,12 @@ Plain LAN or VPN HTTP works with a normal PyCharm run:
 python main.py
 ```
 Then open `http://<laptop-ip>:8000` from the other machine.
+
+Namespaced launch example:
+```bash
+python main.py --namespace work --port 8001 --mcp-port 8766
+```
+This starts a separate process backed by `~/MetaList/work.metalist.db` on `http://127.0.0.1:8001`.
 
 For LAN-friendly HTTPS, manually generate or supply PEM files first:
 ```bash
@@ -119,6 +132,8 @@ python main.py
 
 `main.py` also auto-starts the agent web app sidecar and prints:
 - `Agent web app: http://127.0.0.1:8765`
+- The sidecar default MCP URL follows the resolved MetaList HTTP port for the current process.
+- Use `--mcp-port` when you want multiple MetaList instances to auto-start sidecars without colliding on `8765`.
 - On startup, local Ollama (`127.0.0.1`) is reset by default so a fresh runner is used.
 - Sidecar Ollama auto-start uses `OLLAMA_CONTEXT_LENGTH=16384` by default.
 
@@ -169,6 +184,11 @@ This is destructive. It deletes the existing DB file before rebuilding it.
 Example usage:
 ```bash
 python convert-from-legacy.py --input /path/to/legacy-export.json
+```
+
+Target a namespaced database during import:
+```bash
+python convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
 ```
 
 If `--input` is omitted, a file picker opens (when `tkinter` is available).

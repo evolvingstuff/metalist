@@ -6,7 +6,7 @@ This is a planning doc for an Electron wrapper around the existing FastAPI app s
 ## Current Web App Assumptions
 - The backend is a FastAPI server (Python) serving SSR HTML + JSON APIs.
 - The frontend is vanilla JS.
-- `main.py` defaults to `127.0.0.1:8000`, but now supports `METALIST_HOST`, `METALIST_PORT`, and optional TLS envs.
+- `main.py` defaults to `127.0.0.1:8000`, but now supports `--namespace`, `--port`, `--https-port`, `METALIST_HOST`, `METALIST_PORT`, and optional TLS envs.
   - For Electron, loopback remains the intended bind target.
 
 ## Electron Wrapper Approach
@@ -82,7 +82,8 @@ pyinstaller --onefile \
 ```
 
 ## Data Storage (Desktop)
-- Current dev/prod default is `~/MetaList/metalist2.db` (`app/config.py`).
+- Current dev/prod default is `~/MetaList/metalist2.db`.
+- Namespaced runs use `~/MetaList/<namespace>.metalist.db` and a derived sibling file DB `~/MetaList/<namespace>.metalist.files.db`.
 - A real desktop build should store the database under the OS app data directory (would require a code/config change).
 
 ## Product Notes
@@ -91,5 +92,6 @@ The Electron wrapper should expose the same feature set as the local web app. An
 ## Next Steps
 1. Validate FastAPI/Uvicorn packaging with PyInstaller.
 2. Create minimal Electron proof-of-concept (start server, load `http://127.0.0.1:8000`).
+   - Decide whether Electron should always launch a fixed namespace or expose namespace choice in the shell.
 3. Decide on DB location strategy for desktop (app data dir vs user-chosen path).
 4. Add lifecycle robustness: health-check the backend instead of a fixed `setTimeout`.

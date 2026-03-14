@@ -1,6 +1,11 @@
 import os
 import sys
 
+from app.server_runtime import resolve_api_prefix
+from app.server_runtime import resolve_database_runtime_config
+from app.server_runtime import resolve_default_database_path
+from app.server_runtime import resolve_v1_api_prefix
+
 VERSION = "0.3.0"
 
 
@@ -76,36 +81,30 @@ assert LOGIN_RATE_LIMIT_BLOCK_SECONDS > 0
 
 # API prefixes (single source of truth)
 # Client uses '/api2' via JS CONFIG; server uses the same here.
-if "API_PREFIX" in os.environ:
-    API_PREFIX = os.environ["API_PREFIX"].rstrip("/")
-else:
-    API_PREFIX = "/api2"
+API_PREFIX = resolve_api_prefix(environ=os.environ)
+V1_API_PREFIX = resolve_v1_api_prefix(environ=os.environ)
 
-if "V1_API_PREFIX" in os.environ:
-    V1_API_PREFIX = os.environ["V1_API_PREFIX"].rstrip("/")
-else:
-    V1_API_PREFIX = "/api"
-
-# Check if running in test mode
-if "--test" in sys.argv:
-    TEST_MODE = True
-else:
-    TEST_MODE = "TEST_MODE" in os.environ and os.environ["TEST_MODE"] == "1"
+_database_runtime_config = resolve_database_runtime_config(
+    environ=os.environ,
+    argv=sys.argv[1:],
+)
+TEST_MODE = _database_runtime_config.test_mode
 
 if TEST_MODE:
     # Use test database
-    DATABASE_URL = "sqlite:///./test.db"
-    
+    DATABASE_URL = _database_runtime_config.database_url
+    test_database_path = _database_runtime_config.database_path
+
     # Delete existing test.db if it exists
-    if os.path.exists('./test.db'):
-        os.remove('./test.db')
+    if test_database_path.exists():
+        test_database_path.unlink()
         print("🧪 Deleted existing test.db")
-    
+
     print("🧪 Running in TEST MODE - using test.db")
 else:
     # Use production database
-    DEFAULT_DB_PATH = os.path.expanduser("~/MetaList/metalist2.db")
-    DATABASE_URL = f"sqlite:///{DEFAULT_DB_PATH}"
+    DEFAULT_DB_PATH = str(resolve_default_database_path())
+    DATABASE_URL = _database_runtime_config.database_url
 
 # Enable verbose SQLite trace logging only when explicitly requested.
 if "SQL_TRACE" in os.environ:

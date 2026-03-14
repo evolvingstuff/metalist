@@ -13,6 +13,7 @@ import getpass
 import html
 import importlib.util
 import json
+import os
 import sys
 import re
 import uuid
@@ -30,6 +31,10 @@ if importlib.util.find_spec("tkinter") is not None:
     from tkinter import filedialog
 else:
     _TK_IMPORT_ERROR = RuntimeError("tkinter is not available")
+
+from app.server_runtime import apply_namespace_arg_to_environ
+
+apply_namespace_arg_to_environ(argv=sys.argv[1:], environ=os.environ)
 
 from app.config import (
     DATABASE_URL,
@@ -72,6 +77,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--input",
         dest="input_path",
         help="Path to the legacy JSON export. If omitted, a file picker opens.",
+    )
+    parser.add_argument(
+        "--namespace",
+        dest="namespace",
+        help="Namespace to target before resolving the destination SQLite database.",
     )
     parser.add_argument(
         "--kdf-iterations",

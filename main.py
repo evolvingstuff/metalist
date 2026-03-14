@@ -1,6 +1,7 @@
 import uvicorn
 import logging
 import os
+import sys
 import threading
 import http.client
 import ssl
@@ -8,12 +9,16 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 
+from app.server_runtime import apply_main_cli_args_to_environ
+from app.server_runtime import resolve_backend_connect_host
+from app.server_runtime import resolve_database_runtime_config
+from app.server_runtime import resolve_local_browser_host
+from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
 from mcp_client import create_web_app
 from mcp_client import DEFAULT_MAX_STEPS
 from mcp_client import DEFAULT_MAX_EXPRESSIONS
 from mcp_client import DEFAULT_HYDRATE_TOP_K
-from mcp_client import DEFAULT_MCP_URL
 from mcp_client import DEFAULT_OLLAMA_CHAT_URL
 from mcp_client import DEFAULT_OLLAMA_MODEL
 from mcp_client import DEFAULT_REGEX_ENGINE
@@ -76,7 +81,7 @@ def _env_choice(name: str, default: str, allowed: set[str]) -> str:
     return value
 
 
-def _start_agent_web_sidecar() -> None:
+def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
     enabled = _env_flag("MCP_AGENT_WEB_ENABLED", True)
     if not enabled:
         print("Agent web app sidecar disabled (MCP_AGENT_WEB_ENABLED=0)")
@@ -94,7 +99,7 @@ def _start_agent_web_sidecar() -> None:
     if "MCP_AGENT_MCP_URL" in os.environ:
         mcp_url = os.environ["MCP_AGENT_MCP_URL"]
     else:
-        mcp_url = DEFAULT_MCP_URL
+        mcp_url = default_mcp_url
     if "MCP_AGENT_OLLAMA_CHAT_URL" in os.environ:
         ollama_chat_url = os.environ["MCP_AGENT_OLLAMA_CHAT_URL"]
     else:
@@ -168,26 +173,6 @@ def _run_main_listener(
         ssl_certfile=ssl_certfile,
         ssl_keyfile=ssl_keyfile,
     )
-
-
-def _resolve_backend_connect_host(*, host: str) -> str:
-    stripped_host = host.strip()
-    assert stripped_host != "", "host must not be empty"
-    if stripped_host in {"0.0.0.0", "127.0.0.1", "localhost"}:
-        return "127.0.0.1"
-    if stripped_host == "::":
-        return "::1"
-    return stripped_host
-
-
-def _resolve_local_browser_host(*, host: str) -> str:
-    stripped_host = host.strip()
-    assert stripped_host != "", "host must not be empty"
-    if stripped_host in {"0.0.0.0", "127.0.0.1", "localhost"}:
-        return "127.0.0.1"
-    if stripped_host in {"::", "::1"}:
-        return "[::1]"
-    return stripped_host
 
 
 def _start_https_proxy_server(
@@ -303,15 +288,28 @@ def _start_https_proxy_server(
 if __name__ == "__main__":
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
-    _start_agent_web_sidecar()
-    from app.main import app as metalist_app
+    apply_main_cli_args_to_environ(argv=sys.argv[1:], environ=os.environ)
+    database_runtime_config = resolve_database_runtime_config(
+        environ=os.environ,
+        argv=sys.argv[1:],
+    )
 
     main_server_config = resolve_main_server_config(environ=os.environ)
+    default_mcp_url = resolve_main_mcp_url(
+        environ=os.environ,
+        host=main_server_config.host,
+        port=main_server_config.port,
+    )
+    from app.main import app as metalist_app
+    _start_agent_web_sidecar(default_mcp_url=default_mcp_url)
     print(
         "MetaList resolved config: "
+        f"namespace={database_runtime_config.namespace!r} "
+        f"database={database_runtime_config.database_path.expanduser()} "
         f"host={main_server_config.host} "
         f"http_port={main_server_config.port} "
         f"https_port={main_server_config.https_port} "
+        f"mcp_url={default_mcp_url} "
         f"ssl_certfile={main_server_config.ssl_certfile!r} "
         f"ssl_keyfile={main_server_config.ssl_keyfile!r}"
     )
@@ -321,7 +319,7 @@ if __name__ == "__main__":
         _start_https_proxy_server(
             host=main_server_config.host,
             https_port=main_server_config.https_port,
-            backend_host=_resolve_backend_connect_host(host=main_server_config.host),
+            backend_host=resolve_backend_connect_host(host=main_server_config.host),
             backend_port=main_server_config.port,
             ssl_certfile=main_server_config.ssl_certfile,
             ssl_keyfile=main_server_config.ssl_keyfile,
@@ -331,7 +329,7 @@ if __name__ == "__main__":
         )
     print(
         "MetaList local URL: "
-        f"http://{_resolve_local_browser_host(host=main_server_config.host)}:{main_server_config.port}"
+        f"http://{resolve_local_browser_host(host=main_server_config.host)}:{main_server_config.port}"
     )
     _run_main_listener(
         app_object=metalist_app,
