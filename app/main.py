@@ -22,6 +22,8 @@ from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
+from app.server_runtime import resolve_mcp_agent_public_origin
+from app.server_runtime import resolve_https_redirect_url
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
@@ -227,6 +229,21 @@ async def block_v1_any(rest_of_path: str):
 async def block_v1_root():
     os._exit(1)
 
+
+@app.middleware("http")
+async def redirect_remote_http_to_https(request: Request, call_next):
+    redirect_url = resolve_https_redirect_url(
+        environ=os.environ,
+        request_scheme=request.url.scheme,
+        request_host=request.url.hostname,
+        request_path=request.url.path,
+        request_query=request.url.query,
+    )
+    if redirect_url is not None:
+        return RedirectResponse(url=redirect_url, status_code=307)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     request_id = uuid.uuid4().hex[:8]
@@ -288,25 +305,11 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
 
 
 def _resolve_agent_web_origin(*, request: Request) -> str:
-    configured_host_raw = os.environ.get("MCP_AGENT_WEB_HOST", "127.0.0.1")
-    configured_host = configured_host_raw.strip()
-    if configured_host == "":
-        raise RuntimeError("MCP_AGENT_WEB_HOST must not be empty")
-
-    configured_port_raw = os.environ.get("MCP_AGENT_WEB_PORT", "8765")
-    configured_port = configured_port_raw.strip()
-    if configured_port == "":
-        raise RuntimeError("MCP_AGENT_WEB_PORT must not be empty")
-    if not configured_port.isdigit():
-        raise RuntimeError(f"MCP_AGENT_WEB_PORT must be numeric, got: {configured_port!r}")
-
-    resolved_host = configured_host
-    if configured_host in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}:
-        request_host = request.url.hostname
-        if request_host is not None and request_host.strip() != "":
-            resolved_host = request_host.strip()
-
-    return f"http://{resolved_host}:{configured_port}"
+    return resolve_mcp_agent_public_origin(
+        environ=os.environ,
+        request_scheme=request.url.scheme,
+        request_host=request.url.hostname,
+    )
 
 
 @app.get("/mcp-client-v2", include_in_schema=False)

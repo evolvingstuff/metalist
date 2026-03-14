@@ -6,8 +6,8 @@ This is a planning doc for an Electron wrapper around the existing FastAPI app s
 ## Current Web App Assumptions
 - The backend is a FastAPI server (Python) serving SSR HTML + JSON APIs.
 - The frontend is vanilla JS.
-- The server currently binds to `127.0.0.1:8000` via `main.py`.
-  - If we want a configurable port, that would require a small code change (not described here).
+- `main.py` defaults to `127.0.0.1:8000`, but now supports `METALIST_HOST`, `METALIST_PORT`, and optional TLS envs.
+  - For Electron, loopback remains the intended bind target.
 
 ## Electron Wrapper Approach
 Wrap the existing server process with minimal app changes:

@@ -47,3 +47,4 @@ test.db
 *.files.db
 *.files.*.db
 .DS_Store
+certs/

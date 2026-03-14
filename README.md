@@ -48,11 +48,68 @@ The default entrypoint starts Uvicorn with the FastAPI app:
 ```bash
 python main.py
 ```
-Then visit `http://127.0.0.1:8000`.
+By default, this binds HTTP on `0.0.0.0:8000`, matching the old MetaList LAN-friendly behavior.
+HTTPS on `0.0.0.0:8443` only turns on if TLS files already exist at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or if you point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at existing PEM files.
 
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
+- `METALIST_HOST=0.0.0.0` (default): bind the main app to a different interface such as `127.0.0.1`
+- `METALIST_PORT=8000` (default): bind the main app to a different port
+- `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
+- `METALIST_TLS_CERT=/path/to/fullchain.pem` + `METALIST_TLS_KEY=/path/to/privkey.pem`: override TLS paths
+- default TLS paths: `certs/metalist-cert.pem` and `certs/metalist-key.pem`
+- `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
+- `MCP_AGENT_PUBLIC_ORIGIN=https://notes.example.com:8765`: public origin for the MCP sidecar redirect when it is exposed behind HTTPS or a separate hostname/port
+
+### Remote Access / HTTPS
+Plain LAN or VPN HTTP works with a normal PyCharm run:
+```bash
+python main.py
+```
+Then open `http://<laptop-ip>:8000` from the other machine.
+
+For LAN-friendly HTTPS, manually generate or supply PEM files first:
+```bash
+./scripts/generate-lan-cert.sh
+```
+Then a plain PyCharm run or `python main.py` will also start `https://<laptop-ip>:8443`.
+
+Equivalent explicit launch, if you want it:
+```bash
+METALIST_HOST=0.0.0.0 \
+METALIST_PORT=8000 \
+METALIST_HTTPS_PORT=8443 \
+python main.py
+```
+From the other machine, open `https://<laptop-ip>:8443`.
+
+If you already have a real certificate and key, use the same dual-listener flow:
+```bash
+METALIST_HOST=0.0.0.0 \
+METALIST_PORT=8000 \
+METALIST_HTTPS_PORT=8443 \
+METALIST_TLS_CERT=/path/to/fullchain.pem \
+METALIST_TLS_KEY=/path/to/privkey.pem \
+python main.py
+```
+
+When HTTPS is enabled:
+- remote HTTP requests to `http://<laptop-ip>:8000` are redirected to HTTPS
+- localhost HTTP requests still stay on plain `http://127.0.0.1:8000` so the laptop can keep using the non-TLS port
+
+If TLS is terminated by a reverse proxy on the same machine instead, keep MetaList on loopback and let the proxy forward to it:
+```bash
+METALIST_HOST=127.0.0.1 \
+METALIST_PORT=8000 \
+METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1 \
+python main.py
+```
+
+If you do not need the MCP sidecar remotely, disable it:
+```bash
+MCP_AGENT_WEB_ENABLED=0 python main.py
+```
 
 ### MCP (Phase 1 Read-Only)
 MCP is available automatically when you run:

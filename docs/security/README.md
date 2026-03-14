@@ -189,6 +189,21 @@ writes).
   - core dump disabling enabled by default
   - macOS hibernation/swap enforcement disabled by default (enable explicitly for strict mode).
 
+## Remote Access / HTTPS
+
+- `python main.py` binds HTTP on `0.0.0.0:8000` by default, matching old MetaList behavior.
+- HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
+- When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
+- For direct HTTPS from `python main.py`, set both:
+  - `METALIST_TLS_CERT=/path/to/fullchain.pem`
+  - `METALIST_TLS_KEY=/path/to/privkey.pem`
+- For a quick LAN cert, use `./scripts/generate-lan-cert.sh` and then open `https://<lan-ip>:8443` from the other machine.
+- For HTTPS terminated by a reverse proxy, keep MetaList on loopback and trust forwarded headers only from the proxy IPs:
+  - `METALIST_HOST=127.0.0.1`
+  - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default)
+- Login rate limiting already prefers the first `x-forwarded-for` hop, so when you deploy behind a trusted proxy you still get client-IP-based throttling.
+- The MCP sidecar redirect now supports a public override via `MCP_AGENT_PUBLIC_ORIGIN=https://host:port`. If you are not exposing the sidecar remotely, disable it with `MCP_AGENT_WEB_ENABLED=0`.
+
 ### Multi-Client Support
 - Token issuance clears any previous tokens (single active session enforced)
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
