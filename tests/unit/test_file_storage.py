@@ -14,13 +14,13 @@ from app.services.file_storage import create_file, download_file, trim_unused_fi
 
 
 def test_resolve_file_database_path_uses_sibling_files_name() -> None:
-    path = resolve_file_database_path(Path("/tmp/metalist2.db"))
-    assert path == Path("/tmp/metalist2.files.db")
+    path = resolve_file_database_path(Path("/tmp/namespaces/default/default.metalist.db"))
+    assert path == Path("/tmp/namespaces/default/default.metalist.files.db")
 
 
 def test_resolve_file_database_path_supports_namespaced_database_name() -> None:
-    path = resolve_file_database_path(Path("/tmp/work.metalist.db"))
-    assert path == Path("/tmp/work.metalist.files.db")
+    path = resolve_file_database_path(Path("/tmp/work/work.metalist.db"))
+    assert path == Path("/tmp/work/work.metalist.files.db")
 
 
 def test_create_file_encrypts_at_rest_and_download_round_trips(tmp_path: Path, monkeypatch) -> None:

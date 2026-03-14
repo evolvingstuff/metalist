@@ -52,14 +52,15 @@ By default, this binds HTTP on `0.0.0.0:8000`, matching the old MetaList LAN-fri
 HTTPS on `0.0.0.0:8443` only turns on if TLS files already exist at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or if you point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at existing PEM files.
 
 Database selection:
-- No namespace: `~/MetaList/metalist2.db` (legacy default)
-- `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/work.metalist.db`
-- The related files DB is derived automatically, so `work.metalist.db` uses `work.metalist.files.db`
+- No explicit namespace: `~/MetaList/namespaces/default/default.metalist.db`
+- `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/namespaces/work/work.metalist.db`
+- The related files DB is derived automatically, so `namespaces/work/work.metalist.db` uses `namespaces/work/work.metalist.files.db`
+- Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use self-identifying filenames like `<timestamp>.work.metalist.db.bak`
 
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
-- `METALIST_NAMESPACE=work`: select `~/MetaList/work.metalist.db`
+- `METALIST_NAMESPACE=work`: select `~/MetaList/namespaces/work/work.metalist.db`
 - `METALIST_HOST=0.0.0.0` (default): bind the main app to a different interface such as `127.0.0.1`
 - `METALIST_PORT=8000` (default): bind the main app to a different port
 - `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
@@ -80,7 +81,8 @@ Namespaced launch example:
 ```bash
 python main.py --namespace work --port 8001 --mcp-port 8766
 ```
-This starts a separate process backed by `~/MetaList/work.metalist.db` on `http://127.0.0.1:8001`.
+This starts a separate process backed by `~/MetaList/namespaces/work/work.metalist.db` on `http://127.0.0.1:8001`.
+Its related backup snapshots live under `~/MetaList/namespaces/work/backups/` with filenames like `<timestamp>.work.metalist.db.bak`.
 
 For LAN-friendly HTTPS, manually generate or supply PEM files first:
 ```bash

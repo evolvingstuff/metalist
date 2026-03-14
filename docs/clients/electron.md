@@ -82,8 +82,9 @@ pyinstaller --onefile \
 ```
 
 ## Data Storage (Desktop)
-- Current dev/prod default is `~/MetaList/metalist2.db`.
-- Namespaced runs use `~/MetaList/<namespace>.metalist.db` and a derived sibling file DB `~/MetaList/<namespace>.metalist.files.db`.
+- Current dev/prod default is `~/MetaList/namespaces/default/default.metalist.db`.
+- Namespaced runs use `~/MetaList/namespaces/<namespace>/<namespace>.metalist.db` and a derived sibling file DB `~/MetaList/namespaces/<namespace>/<namespace>.metalist.files.db`.
+- Namespaced backups live under `~/MetaList/namespaces/<namespace>/backups/` and keep the namespace in the filename itself.
 - A real desktop build should store the database under the OS app data directory (would require a code/config change).
 
 ## Product Notes

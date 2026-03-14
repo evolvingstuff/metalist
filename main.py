@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 
 from app.server_runtime import apply_main_cli_args_to_environ
+from app.server_runtime import prepare_database_runtime_path
 from app.server_runtime import resolve_backend_connect_host
 from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
@@ -293,6 +294,8 @@ if __name__ == "__main__":
         environ=os.environ,
         argv=sys.argv[1:],
     )
+    if not database_runtime_config.test_mode:
+        prepare_database_runtime_path(database_path=database_runtime_config.database_path)
 
     main_server_config = resolve_main_server_config(environ=os.environ)
     default_mcp_url = resolve_main_mcp_url(

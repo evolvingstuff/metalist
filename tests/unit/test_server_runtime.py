@@ -122,7 +122,7 @@ def test_resolve_main_server_config_enables_https_for_remote_bind_when_default_c
     assert config.ssl_keyfile == str(key_path)
 
 
-def test_resolve_database_runtime_config_defaults_to_legacy_database_path(
+def test_resolve_database_runtime_config_defaults_to_default_namespace_path(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -134,9 +134,23 @@ def test_resolve_database_runtime_config_defaults_to_legacy_database_path(
     )
 
     assert config.test_mode is False
-    assert config.namespace is None
-    assert config.database_path == tmp_path / "metalist2.db"
-    assert config.database_url == f"sqlite:///{tmp_path / 'metalist2.db'}"
+    assert config.namespace == "default"
+    assert config.database_path == tmp_path / "namespaces" / "default" / "default.metalist.db"
+    assert config.database_url == f"sqlite:///{tmp_path / 'namespaces' / 'default' / 'default.metalist.db'}"
+
+
+def test_prepare_database_runtime_path_creates_metalist_and_namespaces_directories(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path / "MetaList")
+
+    database_path = server_runtime.resolve_default_database_path()
+    server_runtime.prepare_database_runtime_path(database_path=database_path)
+
+    assert (tmp_path / "MetaList").is_dir() is True
+    assert (tmp_path / "MetaList" / "namespaces").is_dir() is True
+    assert (tmp_path / "MetaList" / "namespaces" / "default").is_dir() is True
 
 
 def test_resolve_database_runtime_config_uses_namespaced_database_path(
@@ -152,8 +166,8 @@ def test_resolve_database_runtime_config_uses_namespaced_database_path(
 
     assert config.test_mode is False
     assert config.namespace == "work"
-    assert config.database_path == tmp_path / "work.metalist.db"
-    assert config.database_url == f"sqlite:///{tmp_path / 'work.metalist.db'}"
+    assert config.database_path == tmp_path / "namespaces" / "work" / "work.metalist.db"
+    assert config.database_url == f"sqlite:///{tmp_path / 'namespaces' / 'work' / 'work.metalist.db'}"
 
 
 def test_resolve_database_runtime_config_rejects_invalid_namespace() -> None:

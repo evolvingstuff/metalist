@@ -192,8 +192,8 @@ writes).
 ## Remote Access / HTTPS
 
 - `python main.py` binds HTTP on `0.0.0.0:8000` by default, matching old MetaList behavior.
-- `python main.py --namespace work` starts a separate process against `~/MetaList/work.metalist.db`.
-- With no namespace, the legacy default DB remains `~/MetaList/metalist2.db`.
+- `python main.py --namespace work` starts a separate process against `~/MetaList/namespaces/work/work.metalist.db`.
+- With no explicit namespace, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
 - When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from `python main.py`, set both:
@@ -246,8 +246,8 @@ For fresh imports using `convert-from-legacy.py`:
    - pass `--input /path/to/export.json` for non-interactive runs
    - omit `--input` to use the Tk file picker.
 6. Namespace targeting:
-   - pass `--namespace work` to import into `~/MetaList/work.metalist.db`
-   - omit `--namespace` to keep importing into the legacy default DB.
+   - pass `--namespace work` to import into `~/MetaList/namespaces/work/work.metalist.db`
+   - omit `--namespace` to import into `~/MetaList/namespaces/default/default.metalist.db`.
 
 ## API Endpoints
 
@@ -263,6 +263,7 @@ Auth:
 - `GET /api2/auth/backup/list` - List available backup snapshots
 - `POST /api2/auth/backup/delete-oldest` - Delete oldest backup snapshots by count
 - `POST /api2/auth/backup/restore` - Restore database from a selected backup and trigger server process re-exec (client must re-authenticate)
+  - Backup scope follows the active DB path, so namespaced runs use `~/MetaList/namespaces/<namespace>/backups/` and self-identifying filenames like `<timestamp>.cla.metalist.db.bak`.
 - `GET /api2/auth/status` - Poll auth/encryption status
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)

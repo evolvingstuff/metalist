@@ -7,13 +7,15 @@ import re
 import sqlite3
 from threading import Lock
 
-from app.models.database import SafeSession
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
+from app.models.database import SafeSession
 
 
 _BACKUP_LOCK = Lock()
-_BACKUP_FILENAME_RE = re.compile(r"^metalist-backup-[0-9]{8}-[0-9]{6}-[0-9]{6}\.db$")
+_PRIMARY_BACKUP_FILENAME_RE = re.compile(
+    r"^(?P<timestamp>[0-9]{8}-[0-9]{6}-[0-9]{6})\.(?P<database_name>.+)\.bak$"
+)
 
 
 @dataclass(frozen=True)
@@ -23,10 +25,13 @@ class BackupFileInfo:
     size_bytes: int
 
 
-def _format_backup_filename(now_utc: datetime) -> str:
+def _format_backup_filename(*, database_path: Path, now_utc: datetime) -> str:
     if now_utc.tzinfo is None:
         raise ValueError("now_utc must be timezone-aware")
-    return now_utc.strftime("metalist-backup-%Y%m%d-%H%M%S-%f.db")
+    if not isinstance(database_path, Path):
+        raise TypeError(f"database_path must be a Path, got {type(database_path)}")
+    timestamp = now_utc.strftime("%Y%m%d-%H%M%S-%f")
+    return f"{timestamp}.{database_path.name}.bak"
 
 
 def _stat_to_backup_info(path: Path) -> BackupFileInfo:
@@ -44,31 +49,61 @@ def _stat_to_backup_info(path: Path) -> BackupFileInfo:
     )
 
 
-def _validate_backup_filename(filename: str) -> str:
+def _match_primary_backup_filename(filename: str) -> re.Match[str] | None:
+    match = _PRIMARY_BACKUP_FILENAME_RE.fullmatch(filename)
+    if match is None:
+        return None
+    database_name = match.group("database_name")
+    if not database_name.endswith(".db") or database_name.endswith(".files.db"):
+        return None
+    return match
+
+
+def _validate_backup_filename(*, filename: str, database_path: Path) -> str:
     if not isinstance(filename, str):
         raise TypeError(f"filename must be a string, got {type(filename)}")
+    if not isinstance(database_path, Path):
+        raise TypeError(f"database_path must be a Path, got {type(database_path)}")
     if filename == "":
         raise ValueError("filename must be non-empty")
     if Path(filename).name != filename:
         raise ValueError("filename must not contain path separators")
-    if _BACKUP_FILENAME_RE.match(filename) is None:
-        raise ValueError(
-            "filename must match metalist-backup-YYYYMMDD-HHMMSS-ffffff.db"
-        )
+
+    match = _match_primary_backup_filename(filename)
+    if match is None or match.group("database_name") != database_path.name:
+        raise ValueError("filename must match the active database backup naming convention")
     return filename
 
 
-def _derive_file_backup_filename(filename: str) -> str:
-    validated_filename = _validate_backup_filename(filename)
-    return validated_filename.replace("metalist-backup-", "metalist-files-backup-", 1)
+def _derive_file_backup_filename(*, filename: str, database_path: Path) -> str:
+    validated_filename = _validate_backup_filename(filename=filename, database_path=database_path)
+    match = _match_primary_backup_filename(validated_filename)
+    assert match is not None
+    database_name = match.group("database_name")
+    file_database_name = f"{database_name[:-len('.db')]}.files.db"
+    return f"{match.group('timestamp')}.{file_database_name}.bak"
+
+
+def _derive_any_file_backup_filename(filename: str) -> str:
+    match = _match_primary_backup_filename(filename)
+    if match is None:
+        raise ValueError(f"Unsupported primary backup filename: {filename}")
+    database_name = match.group("database_name")
+    file_database_name = f"{database_name[:-len('.db')]}.files.db"
+    return f"{match.group('timestamp')}.{file_database_name}.bak"
 
 
 def _resolve_related_file_database_path(database_path: Path) -> Path:
     return resolve_file_database_path(database_path)
 
 
-def _resolve_related_file_backup_path(backup_directory: Path, filename: str) -> Path:
-    return backup_directory / _derive_file_backup_filename(filename)
+def _resolve_related_file_backup_path(
+    backup_directory: Path,
+    filename: str,
+    *,
+    database_path: Path,
+) -> Path:
+    return backup_directory / _derive_file_backup_filename(filename=filename, database_path=database_path)
 
 
 def _copy_database(source_path: Path, target_path: Path) -> None:
@@ -113,7 +148,11 @@ def resolve_backup_directory_for_database(database_path: Path) -> Path:
     return database_path.parent / "backups"
 
 
-def list_backups_in_directory(backup_directory: Path) -> list[BackupFileInfo]:
+def list_backups_in_directory(
+    backup_directory: Path,
+    *,
+    database_path: Path | None = None,
+) -> list[BackupFileInfo]:
     if not isinstance(backup_directory, Path):
         raise TypeError(f"backup_directory must be a Path, got {type(backup_directory)}")
     if not backup_directory.exists():
@@ -121,11 +160,18 @@ def list_backups_in_directory(backup_directory: Path) -> list[BackupFileInfo]:
     if not backup_directory.is_dir():
         raise ValueError(f"backup_directory is not a directory: {backup_directory}")
 
-    candidates = list(backup_directory.glob("metalist-backup-*.db"))
+    candidates = list(backup_directory.iterdir())
     candidates.sort(key=lambda candidate: candidate.stat().st_mtime, reverse=True)
 
-    entries = []
+    entries: list[BackupFileInfo] = []
     for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        match = _match_primary_backup_filename(candidate.name)
+        if match is None:
+            continue
+        if database_path is not None and match.group("database_name") != database_path.name:
+            continue
         entries.append(_stat_to_backup_info(candidate))
     return entries
 
@@ -146,7 +192,8 @@ def create_timestamped_backup_for_paths(
     backup_directory.mkdir(parents=True, exist_ok=True)
 
     with _BACKUP_LOCK:
-        filename = _format_backup_filename(datetime.now(timezone.utc))
+        now_utc = datetime.now(timezone.utc)
+        filename = _format_backup_filename(database_path=database_path, now_utc=now_utc)
         backup_path = backup_directory / filename
         if backup_path.exists():
             raise FileExistsError(f"Backup already exists: {backup_path}")
@@ -157,7 +204,11 @@ def create_timestamped_backup_for_paths(
         if related_file_database_path.exists():
             if not related_file_database_path.is_file():
                 raise ValueError(f"Related file database path is not a file: {related_file_database_path}")
-            related_file_backup_path = _resolve_related_file_backup_path(backup_directory, filename)
+            related_file_backup_filename = _format_backup_filename(
+                database_path=related_file_database_path,
+                now_utc=now_utc,
+            )
+            related_file_backup_path = backup_directory / related_file_backup_filename
             if related_file_backup_path.exists():
                 raise FileExistsError(f"Backup already exists: {related_file_backup_path}")
             _copy_database(related_file_database_path, related_file_backup_path)
@@ -186,7 +237,11 @@ def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
             target_connection.close()
 
         related_file_database_path = _resolve_related_file_database_path(database_path)
-        related_file_backup_path = _resolve_related_file_backup_path(backup_path.parent, backup_path.name)
+        related_file_backup_path = _resolve_related_file_backup_path(
+            backup_path.parent,
+            backup_path.name,
+            database_path=database_path,
+        )
         if related_file_backup_path.exists():
             _copy_database(related_file_backup_path, related_file_database_path)
             file_target_connection = sqlite3.connect(str(related_file_database_path), check_same_thread=False)
@@ -207,12 +262,14 @@ def create_timestamped_backup() -> BackupFileInfo:
 def list_backups() -> list[BackupFileInfo]:
     database_path = resolve_live_database_path()
     backup_directory = resolve_backup_directory_for_database(database_path)
-    return list_backups_in_directory(backup_directory)
+    return list_backups_in_directory(backup_directory, database_path=database_path)
 
 
 def delete_oldest_backups_in_directory(
     backup_directory: Path,
     count: int,
+    *,
+    database_path: Path | None = None,
 ) -> list[BackupFileInfo]:
     if not isinstance(backup_directory, Path):
         raise TypeError(f"backup_directory must be a Path, got {type(backup_directory)}")
@@ -226,7 +283,7 @@ def delete_oldest_backups_in_directory(
         raise ValueError(f"backup_directory is not a directory: {backup_directory}")
 
     with _BACKUP_LOCK:
-        backups_newest_first = list_backups_in_directory(backup_directory)
+        backups_newest_first = list_backups_in_directory(backup_directory, database_path=database_path)
         backups_oldest_first = list(reversed(backups_newest_first))
         backups_to_delete = backups_oldest_first[:count]
         deleted_backups: list[BackupFileInfo] = []
@@ -239,7 +296,14 @@ def delete_oldest_backups_in_directory(
                 raise ValueError(f"Backup path is not a file: {backup_path}")
             backup_path.unlink()
 
-            related_file_backup_path = _resolve_related_file_backup_path(backup_directory, backup.filename)
+            if database_path is None:
+                related_file_backup_filename = _derive_any_file_backup_filename(backup.filename)
+            else:
+                related_file_backup_filename = _derive_file_backup_filename(
+                    filename=backup.filename,
+                    database_path=database_path,
+                )
+            related_file_backup_path = backup_directory / related_file_backup_filename
             if related_file_backup_path.exists():
                 if not related_file_backup_path.is_file():
                     raise ValueError(f"Backup path is not a file: {related_file_backup_path}")
@@ -253,12 +317,16 @@ def delete_oldest_backups_in_directory(
 def delete_oldest_backups(count: int) -> list[BackupFileInfo]:
     database_path = resolve_live_database_path()
     backup_directory = resolve_backup_directory_for_database(database_path)
-    return delete_oldest_backups_in_directory(backup_directory, count)
+    return delete_oldest_backups_in_directory(
+        backup_directory,
+        count,
+        database_path=database_path,
+    )
 
 
 def resolve_backup_path_by_filename(filename: str) -> Path:
-    validated_filename = _validate_backup_filename(filename)
     database_path = resolve_live_database_path()
+    validated_filename = _validate_backup_filename(filename=filename, database_path=database_path)
     backup_directory = resolve_backup_directory_for_database(database_path)
     backup_path = backup_directory / validated_filename
     if not backup_path.exists():

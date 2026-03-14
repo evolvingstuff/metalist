@@ -16,7 +16,8 @@ _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
 _DEFAULT_API_PREFIX = "/api2"
 _DEFAULT_V1_API_PREFIX = "/api"
 _DEFAULT_DATABASE_DIRECTORY = Path.home() / "MetaList"
-_DEFAULT_DATABASE_FILENAME = "metalist2.db"
+_DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
+_DEFAULT_NAMESPACE = "default"
 _DEFAULT_TEST_DATABASE_URL = "sqlite:///./test.db"
 _DEFAULT_TEST_DATABASE_PATH = Path("./test.db")
 _NAMESPACE_ENV_NAME = "METALIST_NAMESPACE"
@@ -83,13 +84,30 @@ def validate_namespace(*, namespace: str) -> str:
     return normalized
 
 
+def resolve_namespaces_directory() -> Path:
+    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACES_DIRECTORY_NAME
+
+
+def resolve_namespace_directory(*, namespace: str) -> Path:
+    normalized = validate_namespace(namespace=namespace)
+    return resolve_namespaces_directory() / normalized
+
+
 def resolve_default_database_path() -> Path:
-    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_DATABASE_FILENAME
+    return resolve_namespaced_database_path(namespace=_DEFAULT_NAMESPACE)
 
 
 def resolve_namespaced_database_path(*, namespace: str) -> Path:
     normalized = validate_namespace(namespace=namespace)
-    return _DEFAULT_DATABASE_DIRECTORY / f"{normalized}.metalist.db"
+    return resolve_namespace_directory(namespace=normalized) / f"{normalized}.metalist.db"
+
+
+def prepare_database_runtime_path(*, database_path: Path) -> None:
+    if not isinstance(database_path, Path):
+        raise TypeError(f"database_path must be a Path, got {type(database_path)}")
+    _DEFAULT_DATABASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    resolve_namespaces_directory().mkdir(parents=True, exist_ok=True)
+    database_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def resolve_api_prefix(*, environ: Mapping[str, str]) -> str:
@@ -117,14 +135,10 @@ def resolve_database_runtime_config(
 ) -> DatabaseRuntimeConfig:
     test_mode = resolve_test_mode(environ=environ, argv=argv)
     namespace_value = _read_optional_text(environ=environ, name=_NAMESPACE_ENV_NAME)
-    namespace: str | None
-    if namespace_value is None:
-        namespace = None
-    else:
-        namespace = validate_namespace(namespace=namespace_value)
+    namespace = _DEFAULT_NAMESPACE if namespace_value is None else validate_namespace(namespace=namespace_value)
 
     if test_mode:
-        if namespace is not None:
+        if namespace_value is not None:
             raise RuntimeError("Namespace selection cannot be combined with TEST_MODE or --test")
         return DatabaseRuntimeConfig(
             database_path=_DEFAULT_TEST_DATABASE_PATH,
@@ -133,10 +147,7 @@ def resolve_database_runtime_config(
             test_mode=True,
         )
 
-    if namespace is None:
-        database_path = resolve_default_database_path()
-    else:
-        database_path = resolve_namespaced_database_path(namespace=namespace)
+    database_path = resolve_namespaced_database_path(namespace=namespace)
 
     return DatabaseRuntimeConfig(
         database_path=database_path,
