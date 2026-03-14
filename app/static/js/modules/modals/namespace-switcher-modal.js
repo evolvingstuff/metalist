@@ -2,6 +2,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { ErrorHandler } from '../error-handler.js';
+import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
 
 
 const NAMESPACE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -654,6 +655,7 @@ export class NamespaceSwitcherModal extends BaseModal {
         }
 
         const pendingTab = window.open('about:blank', '_blank');
+        this._renderLoadingTab(pendingTab, payload.namespace);
         this.updateModalState({
             submitting: true,
             error: '',
@@ -689,6 +691,20 @@ export class NamespaceSwitcherModal extends BaseModal {
                 status: '',
             });
             this.renderModalContent();
+        }
+    }
+
+    _renderLoadingTab(pendingTab, namespace) {
+        if (!pendingTab || pendingTab.closed) {
+            return;
+        }
+        try {
+            const loadingHtml = buildNamespaceLoadingPageHtml(namespace);
+            pendingTab.document.open();
+            pendingTab.document.write(loadingHtml);
+            pendingTab.document.close();
+        } catch (error) {
+            console.warn('Failed to render namespace loading tab:', error);
         }
     }
 
