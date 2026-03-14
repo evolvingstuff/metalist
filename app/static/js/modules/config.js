@@ -53,6 +53,10 @@ export const CONFIG = {
                 DELETE_OLDEST: `${API_AUTH_BASE}/backup/delete-oldest`,
                 RESTORE: `${API_AUTH_BASE}/backup/restore`,
             },
+            NAMESPACES: {
+                LIST: `${API_AUTH_BASE}/namespaces`,
+                OPEN: `${API_AUTH_BASE}/namespaces/open`,
+            },
             SETTINGS: {
                 PASSWORD: {
                     CREATE: `${API_AUTH_BASE}/settings/password/create`,

@@ -26,12 +26,14 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openKeyboardShortcutsHelp: noop,
             attachFileToCurrentNote: noop,
             trimUnusedFiles: noop,
+            openNamespaceSwitcher: noop,
         },
     });
 
     const endpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
     const attachFileEndpoint = endpoints.find((endpoint) => endpoint.id === 'action.attach_file_to_current_note');
     assert.equal(endpointIds.has('action.create_backup'), true);
+    assert.equal(endpointIds.has('form.switch_namespace'), true);
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);

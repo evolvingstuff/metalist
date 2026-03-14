@@ -35,6 +35,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
+    const openNamespaceSwitcher = requireAction(actions, 'openNamespaceSwitcher');
 
     const defaults = {
         showBacklinks: true,
@@ -148,6 +149,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Enable/disable password protection…',
             execute: async () => openPasswordManager(),
+        },
+        {
+            id: 'form.switch_namespace',
+            kind: 'form',
+            label: 'Switch or create namespace…',
+            execute: async () => openNamespaceSwitcher(),
         },
         {
             id: 'action.create_backup',

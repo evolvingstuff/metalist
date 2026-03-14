@@ -191,6 +191,56 @@ html {
     background-color: #0052a3;
 }
 
+.namespace-switcher-modal-content {
+    width: min(560px, 94vw);
+}
+
+.namespace-switcher-mode-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 18px 0 14px;
+}
+
+.namespace-switcher-port-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.namespace-switcher-summary {
+    margin-top: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #f7f9fc;
+}
+
+.namespace-switcher-summary p {
+    margin: 0 0 6px;
+    color: var(--text-color);
+}
+
+.namespace-switcher-summary p:last-child {
+    margin-bottom: 0;
+}
+
+.namespace-switcher-status {
+    min-height: 22px;
+    margin: 14px 0 0;
+    color: #4a5568;
+}
+
+@media (max-width: 640px) {
+    .namespace-switcher-mode-row {
+        grid-template-columns: 1fr;
+    }
+
+    .namespace-switcher-port-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .close {
     color: #aaa;
     float: right;

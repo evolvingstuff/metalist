@@ -53,6 +53,10 @@
       "tags": ["password", "protect", "protection", "enable", "disable", "security"]
     },
     {
+      "id": "form.switch_namespace",
+      "tags": ["namespace", "namespaces", "switch", "switcher", "change", "create", "new", "open", "launch", "select", "ports", "database", "instance", "workspace"]
+    },
+    {
       "id": "action.create_backup",
       "tags": ["backup", "save", "database", "sqlite", "snapshot", "safety"]
     },

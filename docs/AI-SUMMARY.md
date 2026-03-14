@@ -7,6 +7,7 @@
 - Entry: `main.py` - runs Uvicorn (`app.main:app`) with access-log noise filtering.
 - Startup bootstrap: `main.py` now resolves `--namespace`, positional namespace shorthand (`python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so import-time config sees the right DB path and listener ports.
 - Namespace launch profiles: `app/server_runtime.py` stores remembered per-namespace HTTP / HTTPS / MCP sidecar ports in `~/MetaList/namespaces.db`.
+- Namespace switching/launching: `app/services/namespace_switcher.py` lists known namespaces, suggests conflict-free ports, probes running instances, and forks new `main.py` processes when the target namespace is not already up.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
@@ -57,6 +58,7 @@
 - Join shortcut: `Cmd/Ctrl+J` joins the currently edited note with its next sibling by merging raw editable content and tag-bar strings; tag merge is case-insensitive dedupe (first occurrence preserved); no-op when no next sibling exists.
 - Split shortcut: `Cmd/Ctrl+S` splits the currently edited note at selection/caret into sibling notes and preserves the original tag-bar string across all resulting notes; split normalization trims edge-empty nodes to avoid synthetic leading blank lines; no-op when full-note selection or end-caret would yield fewer than two non-empty segments.
 - Command palette help action: `Cmd/Ctrl+/` → `Keyboard shortcuts help…` opens the shortcuts modal from palette utilities.
+- Namespace switcher: `Cmd/Ctrl+/` → `Switch or create namespace…` opens a modal backed by `GET /api2/auth/namespaces` and `POST /api2/auth/namespaces/open`; it reuses saved launch profiles for existing namespaces, suggests next-free ports for new namespaces, opens already-running namespaces in a new tab, and otherwise waits for the freshly spawned instance before returning its URL.
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard and dropped image files are embedded as compressed `data:image/...` payloads (not file links).
 - Backup/restore: `app/services/backup_service.py` pairs the main notes DB backup with a sibling file DB backup and rebuilds the file registry on restore.
 - Backup/restore scope: backup listing/creation/restore are scoped to the active DB path; namespaces live under `~/MetaList/namespaces/<namespace>/` and back up into `~/MetaList/namespaces/<namespace>/backups/` with filenames like `<timestamp>.<namespace>.metalist.db.bak` and `<timestamp>.<namespace>.metalist.files.db.bak`.
@@ -78,6 +80,7 @@ python main.py
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
 - Namespace DBs: omitted namespace means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `python main.py work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`.
 - Launch profile precedence: CLI flags override env vars, which override `~/MetaList/namespaces.db`, which overrides built-in defaults.
+- Namespace UI/runtime bridge: `app/api/routes/auth.py` now exposes namespace catalog + open/launch endpoints; `app/static/js/modules/modals/namespace-switcher-modal.js` is the client modal opened from the command palette.
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Frontend join shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`joinCurrentNoteWithNextSibling`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+J` binding).

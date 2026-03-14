@@ -179,6 +179,44 @@ def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile |
     )
 
 
+def load_all_namespace_launch_profiles() -> list[NamespaceLaunchProfile]:
+    registry_path = resolve_namespace_registry_path()
+    if not registry_path.exists():
+        return []
+    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
+                namespace TEXT PRIMARY KEY,
+                port INTEGER,
+                https_port INTEGER,
+                mcp_port INTEGER
+            )
+            """
+        )
+        rows = connection.execute(
+            """
+            SELECT namespace, port, https_port, mcp_port
+            FROM namespace_launch_profiles
+            ORDER BY namespace ASC
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+    profiles: list[NamespaceLaunchProfile] = []
+    for row in rows:
+        profiles.append(
+            NamespaceLaunchProfile(
+                namespace=str(row[0]),
+                port=None if row[1] is None else int(row[1]),
+                https_port=None if row[2] is None else int(row[2]),
+                mcp_port=None if row[3] is None else int(row[3]),
+            )
+        )
+    return profiles
+
+
 def save_namespace_launch_profile(
     *,
     namespace: str,

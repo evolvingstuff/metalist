@@ -11,7 +11,7 @@ import threading
 import time
 
 from app.api.deps import get_db
-from app.config import KDF_TIME_COST
+from app.config import ACTIVE_NAMESPACE, KDF_TIME_COST
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
 from app.services.auth_service import AuthService
@@ -25,6 +25,8 @@ from app.services.backup_service import (
 from app.services.content_cache import clear_cache, populate_cache_from_db
 from app.services.login_rate_limit import login_rate_limiter
 from app.services.maintenance_mode import maintenance_service
+from app.services.namespace_switcher import build_namespace_catalog
+from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.tokens import token_service
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
@@ -293,6 +295,43 @@ def _require_auth(token: Annotated[Optional[str], Depends(_verify_token)]) -> st
     return token
 
 
+def _require_body_object(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    return payload
+
+
+def _require_string_field(payload: dict[str, object], field_name: str) -> str:
+    if field_name not in payload:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required")
+    value = payload[field_name]
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a string")
+    if value.strip() == "":
+        raise HTTPException(status_code=400, detail=f"{field_name} must not be empty")
+    return value
+
+
+def _require_int_field(payload: dict[str, object], field_name: str) -> int:
+    if field_name not in payload:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required")
+    value = payload[field_name]
+    if not isinstance(value, int):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be an integer")
+    return value
+
+
+def _optional_int_field(payload: dict[str, object], field_name: str) -> int | None:
+    if field_name not in payload:
+        return None
+    value = payload[field_name]
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be an integer or null")
+    return value
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(
     request: Request,
@@ -427,6 +466,51 @@ def auth_status(
         "kdf_memory_cost_kib": settings.kdf_memory_cost_kib if settings else None,
         "kdf_parallelism": settings.kdf_parallelism if settings else None,
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
+        "namespace": ACTIVE_NAMESPACE,
+    }
+
+
+@router.get("/namespaces")
+def namespace_catalog(token: Annotated[str, Depends(_require_auth)]):
+    return build_namespace_catalog(
+        environ=os.environ,
+        current_namespace=ACTIVE_NAMESPACE,
+    )
+
+
+@router.post("/namespaces/open")
+def open_namespace(
+    payload: dict[str, object],
+    token: Annotated[str, Depends(_require_auth)],
+):
+    body = _require_body_object(payload)
+    namespace = _require_string_field(body, "namespace")
+    port = _require_int_field(body, "port")
+    https_port = _optional_int_field(body, "https_port")
+    mcp_port = _require_int_field(body, "mcp_port")
+    try:
+        result = open_or_launch_namespace(
+            environ=os.environ,
+            current_namespace=ACTIVE_NAMESPACE,
+            namespace=namespace,
+            port=port,
+            https_port=https_port,
+            mcp_port=mcp_port,
+        )
+    except (RuntimeError, ValueError, TypeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "namespace": result.namespace,
+        "action": result.action,
+        "url": result.url,
+        "saved_profile": {
+            "namespace": result.saved_profile.namespace,
+            "port": result.saved_profile.port,
+            "https_port": result.saved_profile.https_port,
+            "mcp_port": result.saved_profile.mcp_port,
+        },
+        "saved_for_next_launch": result.saved_for_next_launch,
+        "message": result.message,
     }
 
 
