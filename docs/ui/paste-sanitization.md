@@ -64,11 +64,13 @@
   - if output exceeds hard max, paste is rejected with an error.
 
 ### Embedded image behavior
-- Clipboard image/file paste is embedded into note content as `data:image/...` (no `file://` links).
+- Clipboard image-pixel paste is embedded into note content as `data:image/...` (no `file://` links).
+- Named image files from paste/drop can instead be preserved as file attachments via the image-file choice prompt.
 - Pasted external HTML that already contains inline `data:image/...` sources is recompressed before insertion, so copied rich content does not bypass the embedded-image size controls.
 - Embedded images remain stored with note content, so they are portable across machines with the DB.
 - If the user chooses `Save as File` in the image-file prompt, the original file is uploaded without inline recompression and the editor receives the file UUID token instead.
 - In view mode, embedded image-file references render as an authenticated image preview with a `download image` control beneath it instead of the generic file card used for non-image attachments.
+- In collapsed notes, embedded image-file references fall back to a compact thumbnail-only view so the host note still collapses to a single visual line.
 - If clipboard only contains file-reference metadata (for example Finder file-icon copy) rather than image bytes, paste is blocked with an error instead of inserting icon-preview HTML.
 
 ## Formatting Preservation Policy
