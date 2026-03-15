@@ -125,3 +125,32 @@ def test_link_file_reference_renders_compact_file_link(monkeypatch: pytest.Monke
     assert "note-file-reference-meta" not in rendered
     assert "clip.mp4" in rendered
     assert "VID" in rendered
+
+
+def test_embed_image_file_reference_renders_preview_with_download_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "f9989d26-5ec9-4b09-9647-909c58ad997a"
+    notes = {
+        "a": _Note("a", None, None, None, False, f"<div>![[{file_id}]]</div>", ""),
+    }
+    file_record = SimpleNamespace(
+        id=file_id,
+        title="photo.png",
+        original_filename="photo.png",
+        mime_type="image/png",
+        size_bytes=8_192,
+        thumbnail_kind="image",
+    )
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        file_ids={file_id},
+        file_record=file_record,
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-reference-file-image" in rendered
+    assert "note-file-image-embed" in rendered
+    assert "note-file-image-preview" in rendered
+    assert "download image" in rendered
+    assert "note-file-reference-badge" not in rendered

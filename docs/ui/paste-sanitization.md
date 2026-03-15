@@ -4,6 +4,7 @@
 - Applies to **system clipboard paste** and **drag/drop file images**.
   - Dropping into the actively edited note embeds the image there.
   - Dropping an image anywhere else creates a new top note, then embeds the image there.
+  - For named image files, the user is prompted to either paste inline with compression or save the original file and insert its file UUID token.
 - Internal MetaList note clipboard paste (`class="note-content"` payload) still uses server note copy/paste actions.
 
 ## Entry Points
@@ -16,8 +17,8 @@
   - `sanitizeExternalClipboardHtml(rawHtml)`
 
 ## Pipeline
-1. If clipboard contains image/file items (`image/*`) while editing, pick the largest image candidate and process it client-side.
-2. If a drag/drop payload contains image files, process each dropped image client-side after resolving the target note (current editor or a new top note).
+1. If clipboard contains image/file items (`image/*`) while editing, pick the largest image candidate and either paste it inline or save it as a file, depending on the image-file choice prompt.
+2. If a drag/drop payload contains image files, either embed them inline or save them as files after resolving the target note (current editor or a new top note).
 3. Downscale/re-encode to keep embedded payload in the configured KB range.
 4. Build inline `<img src="data:image/...">` HTML (embedded content, not file links).
 5. Otherwise read `text/html` from clipboard.
@@ -66,6 +67,8 @@
 - Clipboard image/file paste is embedded into note content as `data:image/...` (no `file://` links).
 - Pasted external HTML that already contains inline `data:image/...` sources is recompressed before insertion, so copied rich content does not bypass the embedded-image size controls.
 - Embedded images remain stored with note content, so they are portable across machines with the DB.
+- If the user chooses `Save as File` in the image-file prompt, the original file is uploaded without inline recompression and the editor receives the file UUID token instead.
+- In view mode, embedded image-file references render as an authenticated image preview with a `download image` control beneath it instead of the generic file card used for non-image attachments.
 - If clipboard only contains file-reference metadata (for example Finder file-icon copy) rather than image bytes, paste is blocked with an error instead of inserting icon-preview HTML.
 
 ## Formatting Preservation Policy

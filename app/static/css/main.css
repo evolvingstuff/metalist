@@ -293,6 +293,21 @@ html {
     background-color: #0052a3;
 }
 
+.image-file-insert-choice-modal-content {
+    width: min(460px, 92vw);
+}
+
+.image-file-insert-choice-modal-content p {
+    margin: 0 0 18px;
+    line-height: 1.45;
+}
+
+.image-file-insert-choice-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 .namespace-switcher-modal-content {
     width: min(560px, 94vw);
 }
@@ -1569,6 +1584,71 @@ body {
     gap: 6px;
 }
 
+.note-file-image-embed {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: min(520px, 100%);
+    max-width: 100%;
+}
+
+.note-file-image-preview-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 120px;
+    overflow: hidden;
+    border: 1px solid #d8dde6;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+
+.note-file-image-preview {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+}
+
+.note-file-image-preview[hidden] {
+    display: none;
+}
+
+.note-file-image-preview-placeholder {
+    padding: 24px 18px;
+    color: #64748b;
+    font-size: 13px;
+    text-align: center;
+}
+
+.note-file-image-embed[data-preview-state="loaded"] .note-file-image-preview-placeholder {
+    display: none;
+}
+
+.note-file-image-download-link {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #1f2937;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    font: inherit;
+}
+
+.note-file-image-download-link:hover,
+.note-file-image-download-link:focus-visible {
+    text-decoration-thickness: 2px;
+}
+
+.note-file-image-download-link:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.25);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
 .note-file-reference-header {
     display: flex;
     align-items: center;
@@ -1615,7 +1695,7 @@ body {
     line-height: 1.25;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) {
     align-items: center;
     gap: 0;
     padding: 0;
@@ -1624,16 +1704,16 @@ body {
     min-width: 0;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-reference-toggle {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-reference-toggle {
     display: none;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-reference-content {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-reference-content {
     width: 100%;
     min-width: 0;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-link {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-link {
     flex-direction: row;
     align-items: center;
     gap: 0;
@@ -1641,18 +1721,18 @@ body {
     min-width: 0;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-header {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-header {
     flex: 1;
     min-width: 0;
     gap: 8px;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-badge {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-badge {
     min-width: 34px;
     padding: 1px 5px;
 }
 
-.note.collapsed:not(.editing) .note-reference-block.note-reference-file .note-file-reference-title {
+.note.collapsed:not(.editing) .note-reference-block.note-reference-file:not(.note-reference-file-image) .note-file-reference-title {
     display: block;
     flex: 1;
     min-width: 0;
