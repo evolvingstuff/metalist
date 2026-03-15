@@ -6,7 +6,7 @@ from typing import Annotated
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
-from app.config import ACTIVE_NAMESPACE, VERSION
+from app.config import ACTIVE_NAMESPACE, STARTUP_ANIMATION_ENABLED, VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
 from .db.notes_sql import clear_encryption_metadata_for_empty_notes
@@ -307,6 +307,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
             asset_version=ASSET_VERSION,
             page_title=_resolve_page_title(base_title="MetaList"),
             needs_auth=True,
+            startup_animation_enabled=STARTUP_ANIMATION_ENABLED,
         )
     return template.render(
         request=request,
@@ -315,6 +316,7 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
         asset_version=ASSET_VERSION,
         page_title=_resolve_page_title(base_title="MetaList"),
         needs_auth=False,
+        startup_animation_enabled=STARTUP_ANIMATION_ENABLED,
     )
 
 

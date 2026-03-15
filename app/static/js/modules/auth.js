@@ -9,6 +9,12 @@ export const Auth = {
     hasPassword: null,
     _forcingLogout: false,
     _tabId: null,
+    _startupIntroPromise: null,
+    _startupIntroResolved: false,
+
+    _isStartupIntroEnabled() {
+        return CONFIG.STARTUP.ENABLE_LOGIN_INTRO === true;
+    },
     
     /**
      * Initialize authentication on page load
@@ -17,6 +23,12 @@ export const Auth = {
     async init() {
         this._ensureTabId();
         this.setupEventListeners();
+        if (this._isStartupIntroEnabled()) {
+            this._startStartupIntro();
+        } else {
+            this._startupIntroResolved = true;
+            this._startupIntroPromise = Promise.resolve();
+        }
         return await this.checkAuthStatus();
     },
     
@@ -55,7 +67,14 @@ export const Auth = {
                 this.showLoginModal();
                 return false;
             }
+            if (this._isStartupIntroEnabled()) {
+                this.showStartupSplash('Opening encrypted workspace…', 'Preparing your encrypted workspace…');
+            }
             return true;
+        }
+
+        if (this._isStartupIntroEnabled()) {
+            this.showStartupSplash('Opening workspace…', 'Preparing workspace…');
         }
 
         if (ownerMismatch || missingOwner || !status.authenticated) {
@@ -92,87 +111,171 @@ export const Auth = {
         console.log('[Auth] Passwordless session established');
         return data.token;
     },
+
+    _requireElement(id) {
+        const element = document.getElementById(id);
+        if (element === null) {
+            throw new Error(`Missing required auth element: ${id}`);
+        }
+        return element;
+    },
+
+    _setLoginSubtitle(text) {
+        if (typeof text !== 'string' || text.length === 0) {
+            throw new Error('Auth._setLoginSubtitle requires text string');
+        }
+        const subtitle = this._requireElement('login-subtitle');
+        subtitle.textContent = text;
+    },
+
+    _setStartupMessage(text) {
+        if (typeof text !== 'string' || text.length === 0) {
+            throw new Error('Auth._setStartupMessage requires text string');
+        }
+        const startupMessage = this._requireElement('startup-message');
+        startupMessage.textContent = text;
+    },
+
+    _clearLoginError() {
+        const errorDiv = this._requireElement('login-error');
+        errorDiv.style.display = 'none';
+        errorDiv.textContent = '';
+    },
+
+    _resetHydrationUI() {
+        const message = this._requireElement('login-loading-message');
+        const bar = this._requireElement('login-progress-bar');
+        const firstLoad = this._requireElement('login-loading-first');
+        message.textContent = '';
+        bar.style.width = '0%';
+        firstLoad.style.display = 'none';
+    },
+
+    _startStartupIntro() {
+        if (this._startupIntroPromise !== null) {
+            return;
+        }
+        if (!this._isStartupIntroEnabled()) {
+            throw new Error('Startup intro is disabled');
+        }
+
+        const loginPage = this._requireElement('login-page');
+        const mainApp = this._requireElement('main-app');
+        const video = this._requireElement('login-startup-video');
+
+        loginPage.style.display = 'flex';
+        mainApp.style.display = 'none';
+        this.showStartupSplash('Opening workspace…', 'Preparing workspace…');
+
+        this._startupIntroPromise = new Promise((resolve) => {
+            const finishIntro = () => {
+                if (this._startupIntroResolved) {
+                    return;
+                }
+                this._startupIntroResolved = true;
+                video.pause();
+                resolve();
+            };
+
+            video.addEventListener('ended', finishIntro, { once: true });
+            video.addEventListener('error', finishIntro, { once: true });
+
+            const playPromise = video.play();
+            if (playPromise !== undefined && playPromise !== null && typeof playPromise.then === 'function') {
+                playPromise.catch((error) => {
+                    console.warn('[Auth] Startup intro playback failed:', error);
+                    finishIntro();
+                });
+            }
+        });
+    },
+
+    async waitForStartupIntro() {
+        if (this._startupIntroPromise === null) {
+            throw new Error('Startup intro not initialized');
+        }
+        await this._startupIntroPromise;
+    },
+
+    showStartupSplash(subtitle, message) {
+        if (typeof subtitle !== 'string' || subtitle.length === 0) {
+            throw new Error('Auth.showStartupSplash requires subtitle string');
+        }
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('Auth.showStartupSplash requires message string');
+        }
+        if (!this._isStartupIntroEnabled()) {
+            throw new Error('Startup splash requested while startup intro is disabled');
+        }
+
+        const loginPage = this._requireElement('login-page');
+        const mainApp = this._requireElement('main-app');
+        const startupSplash = this._requireElement('startup-splash');
+        const loginForm = this._requireElement('login-form');
+        const loadingPanel = this._requireElement('login-loading');
+
+        mainApp.style.display = 'none';
+        loginPage.style.display = 'flex';
+        startupSplash.style.display = 'flex';
+        loginForm.style.display = 'none';
+        loadingPanel.style.display = 'none';
+        this._setLoginSubtitle(subtitle);
+        this._setStartupMessage(message);
+        this._resetHydrationUI();
+        this._clearLoginError();
+    },
     
     /**
      * Show the login page and hide main app
      */
     showLoginModal() {
-        const loginPage = document.getElementById('login-page');
-        const mainApp = document.getElementById('main-app');
-        const passwordInput = document.getElementById('login-password');
-        const loginForm = document.getElementById('login-form');
-        const loadingPanel = document.getElementById('login-loading');
-        
-        // Hide main app and show login page
+        const loginPage = this._requireElement('login-page');
+        const mainApp = this._requireElement('main-app');
+        const passwordInput = this._requireElement('login-password');
+        const startupSplash = this._requireElement('startup-splash');
+        const loginForm = this._requireElement('login-form');
+        const loadingPanel = this._requireElement('login-loading');
+
         mainApp.style.display = 'none';
         loginPage.style.display = 'flex';
-        if (loginForm) {
-            loginForm.style.display = 'block';
-        }
-        if (loadingPanel) {
-            loadingPanel.style.display = 'none';
-        }
+        startupSplash.style.display = 'none';
+        loginForm.style.display = 'block';
+        loadingPanel.style.display = 'none';
+        this._setLoginSubtitle('Authentication Required');
         this._resetHydrationUI();
-        
-        // Focus password input after a short delay
+        this._clearLoginError();
+
         setTimeout(() => {
             passwordInput.focus();
         }, 100);
-        
-        // Clear any previous errors
-        const errorDiv = document.getElementById('login-error');
-        errorDiv.style.display = 'none';
-        errorDiv.textContent = '';
     },
     
     /**
      * Hide the login page and show main app
      */
-    hideLoginModal() {
-        const loginPage = document.getElementById('login-page');
-        const mainApp = document.getElementById('main-app');
-        
-        // Show main app and hide login page
+    revealMainApp() {
+        const loginPage = this._requireElement('login-page');
+        const mainApp = this._requireElement('main-app');
+        const passwordInput = this._requireElement('login-password');
+
         loginPage.style.display = 'none';
         mainApp.style.display = 'block';
         this._resetHydrationUI();
-        
-        // Clear the password input
-        document.getElementById('login-password').value = '';
-    },
-
-    _resetHydrationUI() {
-        const loadingPanel = document.getElementById('login-loading');
-        const loginForm = document.getElementById('login-form');
-        const message = document.getElementById('login-loading-message');
-        const bar = document.getElementById('login-progress-bar');
-        const firstLoad = document.getElementById('login-loading-first');
-        if (loadingPanel) {
-            loadingPanel.style.display = 'none';
-        }
-        if (loginForm) {
-            loginForm.style.display = 'block';
-        }
-        if (message) {
-            message.textContent = '';
-        }
-        if (bar) {
-            bar.style.width = '0%';
-        }
-        if (firstLoad) {
-            firstLoad.style.display = 'none';
-        }
+        this._clearLoginError();
+        passwordInput.value = '';
     },
 
     _showHydrationUI() {
-        const loadingPanel = document.getElementById('login-loading');
-        const loginForm = document.getElementById('login-form');
-        if (loginForm) {
-            loginForm.style.display = 'none';
-        }
-        if (loadingPanel) {
-            loadingPanel.style.display = 'block';
-        }
+        const startupSplash = this._requireElement('startup-splash');
+        const loginForm = this._requireElement('login-form');
+        const loadingPanel = this._requireElement('login-loading');
+
+        this._resetHydrationUI();
+        startupSplash.style.display = 'none';
+        loginForm.style.display = 'none';
+        loadingPanel.style.display = 'block';
+        this._setLoginSubtitle('Loading encrypted data…');
+        this._clearLoginError();
     },
 
     _updateHydrationUI(status) {
@@ -320,12 +423,12 @@ export const Auth = {
                     await this._runHydrationFlow();
                 }
 
-                this.hideLoginModal();
-
                 console.log('[Auth] Login successful, initializing ModeManager');
                 if (window.ModeManager) {
                     window.ModeManager.init({});
                     await CommandPalette.init();
+                    await this.waitForStartupIntro();
+                    this.revealMainApp();
                 } else {
                     window.location.reload();
                 }
@@ -341,7 +444,7 @@ export const Auth = {
             }
             this.showLoginError(errorBody.detail);
         } catch (error) {
-            this._resetHydrationUI();
+            this.showLoginModal();
             if (error instanceof Error) {
                 this.showLoginError(error.message);
             }

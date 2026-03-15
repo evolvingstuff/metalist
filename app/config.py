@@ -44,6 +44,7 @@ def _env_int(name: str, default: int) -> int:
 CRASH_SERVER_ON_FAIL = _env_flag("CRASH_SERVER_ON_FAIL", True)
 DEV_ENFORCE_INTEGRITY_CHECKS = _env_flag("DEV_ENFORCE_INTEGRITY_CHECKS", False)
 DISABLE_UNDO_SNAPSHOT = _env_flag("DISABLE_UNDO_SNAPSHOT", True)
+STARTUP_ANIMATION_ENABLED = _env_flag("STARTUP_ANIMATION_ENABLED", False)
 
 # Tag suggestions
 TAG_SUGGESTION_CONNECTORS = "-_/."

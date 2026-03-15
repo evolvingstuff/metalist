@@ -9,6 +9,7 @@
 - Namespace launch profiles: `app/server_runtime.py` stores remembered per-namespace HTTP / HTTPS / MCP sidecar ports in `~/MetaList/namespaces.db`.
 - Namespace switching/launching: `app/services/namespace_switcher.py` lists known namespaces, suggests conflict-free ports, probes running instances, and forks new `main.py` processes when the target namespace is not already up.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
+- Startup intro gate: `app/templates/index.html` + `app/static/js/modules/auth.js` can show a login/startup MP4 before revealing login or the app; this is controlled by `STARTUP_ANIMATION_ENABLED` and defaults off.
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
   - `app/api/routes/auth.py`
@@ -78,6 +79,7 @@ python main.py
 
 ## Quick Ref
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
+- Startup intro toggle: `STARTUP_ANIMATION_ENABLED=1` enables the login/startup MP4 gate; omitted/off skips the intro and uses the legacy immediate app/login reveal.
 - Namespace DBs: omitted namespace means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `python main.py work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`.
 - Launch profile precedence: CLI flags override env vars, which override `~/MetaList/namespaces.db`, which overrides built-in defaults.
 - Namespace UI/runtime bridge: `app/api/routes/auth.py` now exposes namespace catalog + open/launch endpoints; `app/static/js/modules/modals/namespace-switcher-modal.js` is the client modal opened from the command palette.
