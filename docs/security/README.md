@@ -195,6 +195,7 @@ writes).
 - `python main.py --namespace work` starts a separate process against `~/MetaList/namespaces/work/work.metalist.db`.
 - After a namespace has been launched once with explicit ports, `python main.py work` reuses that namespace's remembered HTTP / HTTPS / MCP sidecar ports from `~/MetaList/namespaces.db`.
 - With no explicit namespace, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
+- Deleting a namespace removes both its saved launch profile from `~/MetaList/namespaces.db` and its namespace directory on disk, including the namespace SQLite databases and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
 - When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from `python main.py`, set both:
@@ -270,6 +271,7 @@ Auth:
 - `POST /api2/auth/backup/restore` - Restore database from a selected backup and trigger server process re-exec (client must re-authenticate)
   - Backup scope follows the active DB path, so namespaced runs use `~/MetaList/namespaces/<namespace>/backups/` and self-identifying filenames like `<timestamp>.cla.metalist.db.bak`.
 - `GET /api2/auth/status` - Poll auth/encryption status
+- `POST /api2/auth/namespaces/delete-current` - Delete the active non-default namespace after typed confirmation and, when enabled, password re-entry. The tab moves to a dedicated namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory and saved launch profile.
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)
 - `DELETE /api2/auth/settings/password/remove` - Disable encryption

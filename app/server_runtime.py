@@ -19,6 +19,7 @@ _DEFAULT_V1_API_PREFIX = "/api"
 _DEFAULT_DATABASE_DIRECTORY = Path.home() / "MetaList"
 _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
 _DEFAULT_NAMESPACE_REGISTRY_FILENAME = "namespaces.db"
+_DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME = "namespace-delete-jobs"
 _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
 _DEFAULT_HTTPS_PORT = 8443
@@ -103,6 +104,10 @@ def resolve_namespaces_directory() -> Path:
 
 def resolve_namespace_registry_path() -> Path:
     return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACE_REGISTRY_FILENAME
+
+
+def resolve_namespace_delete_jobs_directory() -> Path:
+    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME
 
 
 def resolve_namespace_directory(*, namespace: str) -> Path:
@@ -270,6 +275,35 @@ def save_namespace_launch_profile(
         https_port=normalized_https_port,
         mcp_port=normalized_mcp_port,
     )
+
+
+def delete_namespace_launch_profile(*, namespace: str) -> None:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    registry_path = resolve_namespace_registry_path()
+    if not registry_path.exists():
+        return
+    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
+                namespace TEXT PRIMARY KEY,
+                port INTEGER,
+                https_port INTEGER,
+                mcp_port INTEGER
+            )
+            """
+        )
+        connection.execute(
+            """
+            DELETE FROM namespace_launch_profiles
+            WHERE namespace = ?
+            """,
+            (normalized_namespace,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def resolve_namespace_launch_defaults(

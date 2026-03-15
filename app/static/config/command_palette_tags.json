@@ -57,6 +57,10 @@
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "create", "new", "open", "launch", "select", "ports", "database", "instance", "workspace"]
     },
     {
+      "id": "form.delete_current_namespace",
+      "tags": ["namespace", "namespaces", "delete", "remove", "destroy", "permanent", "current", "workspace", "database"]
+    },
+    {
       "id": "action.create_backup",
       "tags": ["backup", "save", "database", "sqlite", "snapshot", "safety"]
     },

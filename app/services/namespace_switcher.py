@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from http.client import HTTPConnection
 from pathlib import Path
 import json
+import os
 import socket
 import subprocess
 import sys
 import time
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import app.server_runtime as server_runtime
 from app.server_runtime import NamespaceLaunchProfile
@@ -22,6 +24,7 @@ from app.server_runtime import resolve_namespaces_directory
 from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
+from app.services.namespace_deletion_jobs import create_namespace_deletion_job
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +33,7 @@ _LAUNCH_READY_TIMEOUT_SECONDS = 12.0
 _PORT_PROBE_TIMEOUT_SECONDS = 0.75
 _READY_POLL_INTERVAL_SECONDS = 0.25
 _PROBE_TAB_ID = "namespace-switcher-probe"
+_DELETE_NAMESPACE_CONFIRMATION_PHRASE = "permanently delete"
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,14 @@ class NamespaceOpenResult:
     url: str
     saved_profile: NamespaceLaunchProfile
     saved_for_next_launch: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class NamespaceDeleteResult:
+    deleted_namespace: str
+    redirect_url: str
+    delete_job_id: str
     message: str
 
 
@@ -159,6 +171,28 @@ def open_or_launch_namespace(
         saved_profiles=saved_profiles,
         current_profile=current_profile,
     )
+    if current_profile is not None and current_profile.namespace == normalized_namespace:
+        running_url = _build_browser_url(environ=environ, port=current_profile.port)
+        assert running_url is not None
+        saved_for_next_launch = _save_profile_if_needed(
+            chosen_profile=chosen_profile,
+            saved_profile=saved_profile,
+        )
+        if saved_for_next_launch:
+            message = (
+                f"Namespace {normalized_namespace} is already running. "
+                "Saved the new ports for the next launch."
+            )
+        else:
+            message = f"Namespace {normalized_namespace} is already running."
+        return NamespaceOpenResult(
+            namespace=normalized_namespace,
+            action="opened-running",
+            url=running_url,
+            saved_profile=chosen_profile,
+            saved_for_next_launch=saved_for_next_launch,
+            message=message,
+        )
     running_port = _find_running_namespace_port(
         environ=environ,
         namespace=normalized_namespace,
@@ -211,6 +245,59 @@ def open_or_launch_namespace(
         saved_profile=chosen_profile,
         saved_for_next_launch=saved_for_next_launch,
         message=f"Started namespace {normalized_namespace}.",
+    )
+
+
+def delete_current_namespace(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    confirmation_text: str,
+) -> NamespaceDeleteResult:
+    if current_namespace is None:
+        raise RuntimeError("Current namespace is unavailable")
+    normalized_namespace = validate_namespace(namespace=current_namespace)
+    if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
+        raise RuntimeError("Default namespace cannot be deleted")
+    if confirmation_text.strip() != _DELETE_NAMESPACE_CONFIRMATION_PHRASE:
+        raise RuntimeError(
+            f"Type '{_DELETE_NAMESPACE_CONFIRMATION_PHRASE}' to confirm namespace deletion"
+        )
+
+    fallback_profile = _resolve_fallback_profile(
+        environ=environ,
+        current_namespace=normalized_namespace,
+        fallback_namespace=server_runtime._DEFAULT_NAMESPACE,
+    )
+    fallback_result = open_or_launch_namespace(
+        environ=environ,
+        current_namespace=normalized_namespace,
+        namespace=fallback_profile.namespace,
+        port=fallback_profile.port,
+        https_port=fallback_profile.https_port,
+        mcp_port=fallback_profile.mcp_port,
+    )
+    job_record = create_namespace_deletion_job(
+        deleted_namespace=normalized_namespace,
+        redirect_namespace=fallback_profile.namespace,
+    )
+    redirect_url = _build_namespace_deleted_page_url(
+        url=fallback_result.url,
+        job_id=job_record["job_id"],
+    )
+    _spawn_namespace_deletion_worker(
+        namespace=normalized_namespace,
+        current_pid=os.getpid(),
+        job_id=job_record["job_id"],
+    )
+    return NamespaceDeleteResult(
+        deleted_namespace=normalized_namespace,
+        redirect_url=redirect_url,
+        delete_job_id=job_record["job_id"],
+        message=(
+            f"Deleting namespace {normalized_namespace}. "
+            "Opening the namespace removal page."
+        ),
     )
 
 
@@ -742,3 +829,96 @@ def _build_browser_url(
     main_server_config = resolve_main_server_config(environ=environ)
     browser_host = resolve_local_browser_host(host=main_server_config.host)
     return f"http://{browser_host}:{port}"
+
+
+def _resolve_fallback_profile(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str,
+    fallback_namespace: str,
+) -> NamespaceLaunchProfile:
+    catalog = build_namespace_catalog(
+        environ=environ,
+        current_namespace=current_namespace,
+    )
+    namespaces = catalog.get("namespaces")
+    if not isinstance(namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+    for entry in namespaces:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("namespace") != fallback_namespace:
+            continue
+        profile = entry.get("default_profile")
+        if not isinstance(profile, dict):
+            raise RuntimeError(f"Namespace {fallback_namespace} is missing a default profile")
+        port = profile.get("port")
+        https_port = profile.get("https_port")
+        mcp_port = profile.get("mcp_port")
+        if not isinstance(port, int):
+            raise RuntimeError(f"Namespace {fallback_namespace} default profile is missing HTTP port")
+        if https_port is not None and not isinstance(https_port, int):
+            raise RuntimeError(f"Namespace {fallback_namespace} default profile has invalid HTTPS port")
+        if not isinstance(mcp_port, int):
+            raise RuntimeError(f"Namespace {fallback_namespace} default profile is missing MCP port")
+        return NamespaceLaunchProfile(
+            namespace=fallback_namespace,
+            port=port,
+            https_port=https_port,
+            mcp_port=mcp_port,
+        )
+    raise RuntimeError(f"Fallback namespace {fallback_namespace} is unavailable")
+
+
+def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id: str) -> None:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    if not isinstance(current_pid, int):
+        raise TypeError(f"current_pid must be an int, got {type(current_pid)}")
+    if current_pid <= 0:
+        raise ValueError(f"current_pid must be positive, got: {current_pid}")
+    if not isinstance(job_id, str) or job_id == "":
+        raise TypeError("job_id must be a non-empty string")
+
+    command = [
+        sys.executable,
+        "-m",
+        "app.services.namespace_deletion_worker",
+        "--pid",
+        str(current_pid),
+        "--namespace",
+        normalized_namespace,
+        "--job-id",
+        job_id,
+    ]
+    logs_directory = _PROJECT_ROOT / "logs"
+    logs_directory.mkdir(parents=True, exist_ok=True)
+    log_path = logs_directory / f"namespace-delete-{normalized_namespace}.log"
+    log_handle = open(log_path, "ab")
+    try:
+        subprocess.Popen(
+            command,
+            cwd=str(_PROJECT_ROOT),
+            env=dict(os.environ),
+            stdout=log_handle,
+            stderr=log_handle,
+            start_new_session=True,
+        )
+    finally:
+        log_handle.close()
+
+
+def _build_namespace_deleted_page_url(*, url: str, job_id: str) -> str:
+    if not isinstance(url, str) or url == "":
+        raise TypeError("url must be a non-empty string")
+    if not isinstance(job_id, str) or job_id == "":
+        raise TypeError("job_id must be a non-empty string")
+    parsed = urlsplit(url)
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            "/namespace-deleted",
+            urlencode((("job", job_id),)),
+            "",
+        )
+    )

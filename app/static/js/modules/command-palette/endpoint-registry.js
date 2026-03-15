@@ -36,6 +36,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
     const openNamespaceSwitcher = requireAction(actions, 'openNamespaceSwitcher');
+    const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
 
     const defaults = {
         showBacklinks: true,
@@ -155,6 +156,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Switch or create namespace…',
             execute: async () => openNamespaceSwitcher(),
+        },
+        {
+            id: 'form.delete_current_namespace',
+            kind: 'form',
+            label: 'Delete current namespace…',
+            execute: async () => openDeleteCurrentNamespace(),
         },
         {
             id: 'action.create_backup',

@@ -12,6 +12,7 @@ import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
 import { NamespaceSwitcherModal } from '../modals/namespace-switcher-modal.js';
+import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -226,6 +227,7 @@ class CommandPaletteController {
         this._randomPasswordModal = null;
         this._helpModal = null;
         this._namespaceSwitcherModal = null;
+        this._deleteNamespaceModal = null;
 
         this._elements = null;
 
@@ -266,6 +268,7 @@ class CommandPaletteController {
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
                 openNamespaceSwitcher: this.openNamespaceSwitcher.bind(this),
+                openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
             },
         });
 
@@ -1488,6 +1491,21 @@ class CommandPaletteController {
             this._namespaceSwitcherModal = new NamespaceSwitcherModal();
         }
         this._namespaceSwitcherModal.open();
+    }
+
+    async openDeleteCurrentNamespace() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+        this.close();
+
+        if (this._deleteNamespaceModal === null) {
+            this._deleteNamespaceModal = new DeleteNamespaceModal();
+        }
+        this._deleteNamespaceModal.open();
     }
 
     async openPasswordManager() {

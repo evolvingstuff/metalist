@@ -29,6 +29,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Generate random password…`: opens a utility modal for password generation.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
 - `Switch or create namespace…`: opens a namespace modal that can select an existing namespace or define a new one, prefill remembered ports from `~/MetaList/namespaces.db`, suggest the next free ports for new namespaces, reject port conflicts, open an already-running namespace in a new tab, or fork a new `python main.py --namespace ...` process and then open it.
+- `Delete current namespace…`: opens a destructive confirmation modal for the active non-default namespace. The confirm button is red, the user must type `permanently delete`, and when password protection is enabled they must also re-enter the current password. After submission, the tab moves to a dedicated namespace-removal status page that polls for completion and then offers links to the remaining namespaces.
 - `Attach file…`: opens the native file picker, uploads the selected file, and inserts an embedded file reference token into the current note. If no note is active, it creates a new note first.
 - `Trim unused files`: deletes file rows whose UUIDs are no longer referenced anywhere in note content. This is the only automatic cleanup path for orphaned attachments.
 
