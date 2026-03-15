@@ -1,11 +1,33 @@
 <%inherit file="base.html"/>
 
-<!-- Login Page (full screen, not modal) -->
-<div id="login-page" class="login-page" style="display: none;">
+<!-- Login / Startup Page (full screen, not modal) -->
+<div id="login-page" class="login-page" style="display: ${'flex' if startup_animation_enabled else 'none'};">
+    % if startup_animation_enabled:
+    <div class="login-background" aria-hidden="true">
+        <video
+            id="login-startup-video"
+            class="login-startup-video"
+            autoplay
+            muted
+            playsinline
+            preload="auto"
+        >
+            <source src="/static/video/login-startup.mp4?v=${asset_version}" type="video/mp4">
+        </video>
+        <div class="login-background-scrim"></div>
+        <div class="login-background-glow"></div>
+    </div>
+    % endif
     <div class="login-container">
-        <h1>MetaList</h1>
-        <h2>Authentication Required</h2>
-        <form id="login-form">
+        <div class="login-copy">
+            <p class="login-eyebrow">MetaList</p>
+            <h1>MetaList</h1>
+            <h2 id="login-subtitle">${'Opening workspace…' if startup_animation_enabled else 'Authentication Required'}</h2>
+        </div>
+        <div id="startup-splash" class="startup-splash" style="display: ${'flex' if startup_animation_enabled else 'none'};">
+            <p id="startup-message" class="startup-message">Preparing workspace…</p>
+        </div>
+        <form id="login-form" style="display: ${'none' if startup_animation_enabled else 'block'};">
             <input type="password" id="login-password" placeholder="Enter password" autofocus>
             <button type="submit">Login</button>
             <div id="login-error" class="error-message" style="display: none;"></div>
@@ -28,7 +50,7 @@
 <!-- Password Management Modal will be dynamically created when needed -->
 
 <!-- Main App (hidden when login required) -->
-<div id="main-app" style="display: block;">
+<div id="main-app" style="display: ${'none' if startup_animation_enabled else 'block'};">
     <div class="global-controls">
         <button
             id="menu-button"

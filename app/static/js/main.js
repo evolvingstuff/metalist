@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
+        await Auth.waitForStartupIntro();
+        Auth.revealMainApp();
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');
     }
