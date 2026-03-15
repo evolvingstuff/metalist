@@ -1,4 +1,8 @@
 import { CONFIG } from '../../config.js';
+import {
+    estimateDataUrlPayloadBytes,
+    recompressDataImageUrlForEmbedding,
+} from './embedded-image-service.js';
 
 const ELEMENT_NODE = 1;
 const COMMENT_NODE = 8;
@@ -155,35 +159,6 @@ function normalizeForSchemeCheck(input) {
     return decoded.toLowerCase();
 }
 
-function estimateBase64PayloadBytes(dataImageUrl) {
-    if (typeof dataImageUrl !== 'string') {
-        throw new Error('estimateBase64PayloadBytes expects string input');
-    }
-
-    const commaIndex = dataImageUrl.indexOf(',');
-    if (commaIndex < 0) {
-        return null;
-    }
-
-    const payload = dataImageUrl.slice(commaIndex + 1).replace(/\s+/g, '');
-    if (payload.length === 0) {
-        return 0;
-    }
-
-    let paddingBytes = 0;
-    if (payload.endsWith('==')) {
-        paddingBytes = 2;
-    } else if (payload.endsWith('=')) {
-        paddingBytes = 1;
-    }
-
-    const estimated = Math.floor((payload.length * 3) / 4) - paddingBytes;
-    if (estimated < 0) {
-        return null;
-    }
-    return estimated;
-}
-
 function isSafeDataImageUrl(value) {
     if (typeof value !== 'string') {
         throw new Error('isSafeDataImageUrl expects string input');
@@ -194,7 +169,7 @@ function isSafeDataImageUrl(value) {
         return false;
     }
 
-    const bytes = estimateBase64PayloadBytes(trimmed);
+    const bytes = estimateDataUrlPayloadBytes(trimmed);
     if (bytes === null) {
         return false;
     }
@@ -299,6 +274,52 @@ export function sanitizeUrlAttributeValue(rawValue, mode) {
     if (!SAFE_SRC_SCHEMES.has(scheme)) {
         return null;
     }
+    return trimmed;
+}
+
+function isRecognizedDataImageUrl(value) {
+    if (typeof value !== 'string') {
+        throw new Error('isRecognizedDataImageUrl expects string input');
+    }
+    const trimmed = value.trim();
+    return DATA_IMAGE_URL_PATTERN.test(trimmed);
+}
+
+export function sanitizePastedImageSourceUrl(rawValue) {
+    if (typeof rawValue !== 'string') {
+        throw new Error('sanitizePastedImageSourceUrl expects rawValue string');
+    }
+
+    const trimmed = rawValue.trim();
+    if (trimmed.length === 0) {
+        return null;
+    }
+
+    const normalized = normalizeForSchemeCheck(trimmed);
+    if (startsWithDangerousScheme(normalized)) {
+        return null;
+    }
+
+    if (isRelativeOrAnchorUrl(trimmed)) {
+        return trimmed;
+    }
+
+    const scheme = extractScheme(trimmed);
+    if (scheme === null) {
+        return trimmed;
+    }
+
+    if (scheme === 'data') {
+        if (!isRecognizedDataImageUrl(trimmed)) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    if (!SAFE_SRC_SCHEMES.has(scheme)) {
+        return null;
+    }
+
     return trimmed;
 }
 
@@ -910,7 +931,12 @@ function sanitizeElementAttributes(element, imageSourceFrequencyMap) {
             if (lowerName === 'href') {
                 mode = 'href';
             }
-            const safeUrl = sanitizeUrlAttributeValue(rawValue, mode);
+            let safeUrl = null;
+            if (isImageTag && lowerName === 'src') {
+                safeUrl = sanitizePastedImageSourceUrl(rawValue);
+            } else {
+                safeUrl = sanitizeUrlAttributeValue(rawValue, mode);
+            }
             if (safeUrl === null) {
                 element.removeAttribute(attributeName);
             } else {
@@ -1006,7 +1032,51 @@ function sanitizeTree(rootNode, imageSourceFrequencyMap) {
     }
 }
 
-export function sanitizeExternalClipboardHtml(rawHtml) {
+async function recompressEmbeddedDataImageElements(rootNode) {
+    if (!rootNode) {
+        throw new Error('recompressEmbeddedDataImageElements expects rootNode');
+    }
+
+    const images = Array.from(rootNode.querySelectorAll('img[src]'));
+    const rewrittenSources = new Map();
+
+    let i = 0;
+    while (i < images.length) {
+        const image = images[i];
+        if (!(image instanceof Element)) {
+            throw new Error('recompressEmbeddedDataImageElements encountered non-Element image');
+        }
+        const rawSource = image.getAttribute('src');
+        if (typeof rawSource !== 'string') {
+            i += 1;
+            continue;
+        }
+        const source = rawSource.trim();
+        if (!isRecognizedDataImageUrl(source)) {
+            i += 1;
+            continue;
+        }
+
+        let rewrittenSource = null;
+        if (rewrittenSources.has(source)) {
+            rewrittenSource = rewrittenSources.get(source);
+        } else {
+            rewrittenSource = await recompressDataImageUrlForEmbedding(source);
+            rewrittenSources.set(source, rewrittenSource);
+        }
+
+        if (typeof rewrittenSource !== 'string' || rewrittenSource.length === 0) {
+            image.remove();
+            i += 1;
+            continue;
+        }
+
+        image.setAttribute('src', rewrittenSource);
+        i += 1;
+    }
+}
+
+export async function sanitizeExternalClipboardHtml(rawHtml) {
     if (typeof rawHtml !== 'string') {
         throw new Error('sanitizeExternalClipboardHtml expects rawHtml string');
     }
@@ -1025,6 +1095,7 @@ export function sanitizeExternalClipboardHtml(rawHtml) {
 
     const imageSourceFrequencyMap = buildImageSourceFrequencyMap(parsed.body);
     sanitizeTree(parsed.body, imageSourceFrequencyMap);
+    await recompressEmbeddedDataImageElements(parsed.body);
     return parsed.body.innerHTML;
 }
 
@@ -1090,24 +1161,46 @@ function insertPlainTextAtSelection(text) {
     return true;
 }
 
-export function sanitizeAndInsertExternalPaste(event) {
+function restoreSelectionRange(selectionRange) {
+    if (selectionRange === null) {
+        return;
+    }
+    if (!(selectionRange instanceof Range)) {
+        throw new Error('restoreSelectionRange expects Range or null');
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection missing while restoring paste range');
+    }
+
+    selection.removeAllRanges();
+    selection.addRange(selectionRange.cloneRange());
+}
+
+export async function sanitizeAndInsertExternalPaste(event, selectionRange) {
     if (!event) {
         throw new Error('sanitizeAndInsertExternalPaste expects paste event');
     }
     if (!event.clipboardData) {
         return false;
     }
+    if (selectionRange !== null && !(selectionRange instanceof Range)) {
+        throw new Error('sanitizeAndInsertExternalPaste expects Range or null selectionRange');
+    }
 
     const rawHtml = event.clipboardData.getData('text/html');
     if (typeof rawHtml === 'string' && rawHtml.length > 0) {
-        const sanitizedHtml = sanitizeExternalClipboardHtml(rawHtml);
+        const sanitizedHtml = await sanitizeExternalClipboardHtml(rawHtml);
         if (sanitizedHtml.length > 0) {
+            restoreSelectionRange(selectionRange);
             return insertHtmlAtSelection(sanitizedHtml);
         }
     }
 
     const plainText = event.clipboardData.getData('text/plain');
     if (typeof plainText === 'string' && plainText.length > 0) {
+        restoreSelectionRange(selectionRange);
         return insertPlainTextAtSelection(plainText);
     }
     return false;

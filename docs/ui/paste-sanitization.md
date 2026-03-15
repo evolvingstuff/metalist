@@ -23,8 +23,9 @@
 5. Otherwise read `text/html` from clipboard.
 6. Parse with `DOMParser`.
 7. Walk DOM and sanitize nodes/attributes/styles/URLs.
-8. Insert sanitized HTML into current selection.
-9. If no usable HTML remains, fallback to `text/plain`.
+8. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
+9. Insert sanitized HTML into current selection.
+10. If no usable HTML remains, fallback to `text/plain`.
 
 ## Security Policy
 
@@ -47,7 +48,8 @@
 - Config key: `app/static/js/modules/config.js`
   - `CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`
 - Current default: `10_485_760` bytes (10 MiB estimated decoded payload).
-- Oversized `data:image` URLs are removed.
+- For general URL sanitization, oversized `data:image` URLs are removed.
+- For pasted external HTML `<img src="data:image/...">`, recognized image payloads are allowed through initial attribute sanitization so they can be recompressed first; if recompression still cannot get them under the hard cap, the image is removed.
 
 ### Embedded image footprint controls
 - Config keys:
@@ -62,6 +64,7 @@
 
 ### Embedded image behavior
 - Clipboard image/file paste is embedded into note content as `data:image/...` (no `file://` links).
+- Pasted external HTML that already contains inline `data:image/...` sources is recompressed before insertion, so copied rich content does not bypass the embedded-image size controls.
 - Embedded images remain stored with note content, so they are portable across machines with the DB.
 - If clipboard only contains file-reference metadata (for example Finder file-icon copy) rather than image bytes, paste is blocked with an error instead of inserting icon-preview HTML.
 
@@ -99,5 +102,6 @@
 
 ## Tests
 - Unit tests: `tests/unit/html_paste_sanitizer_service.test.mjs`
+- Unit tests: `tests/unit/embedded_image_service.test.mjs`
 - Validation command:
-  - `node --test tests/unit/html_paste_sanitizer_service.test.mjs`
+  - `node --test tests/unit/html_paste_sanitizer_service.test.mjs tests/unit/embedded_image_service.test.mjs`

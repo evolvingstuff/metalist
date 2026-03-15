@@ -35,6 +35,13 @@ import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } fr
 import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { renderLatexHtml } from '../services/latex-render-service.js';
 import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
+import {
+    estimateDataUrlPayloadBytes,
+    getEmbedTargetImageBytes,
+    getMaxClipboardImageBytes,
+    getMaxPasteDataImageBytes,
+    imageBlobToEmbeddedDataUrl,
+} from '../services/embedded-image-service.js';
 import { attachPickedFileToCurrentNote } from '../services/file-reference-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
@@ -1686,43 +1693,6 @@ function handleHelpModalShortcut(event) {
     Logger.logDebug('Help modal opened via keyboard shortcut', {}, Logger.LogCategory.EVENT);
 }
 
-function getMaxPasteDataImageBytes() {
-    return getPastePositiveIntegerConfig('MAX_DATA_IMAGE_BYTES');
-}
-
-function getPastePositiveIntegerConfig(key) {
-    if (typeof key !== 'string' || key.length === 0) {
-        throw new Error('getPastePositiveIntegerConfig expects non-empty key');
-    }
-    if (!CONFIG || !CONFIG.PASTE) {
-        throw new Error('CONFIG.PASTE is required for image paste handling');
-    }
-    const value = CONFIG.PASTE[key];
-    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-        throw new Error(`CONFIG.PASTE.${key} must be a positive integer`);
-    }
-    return value;
-}
-
-function getEmbedTargetImageBytes() {
-    const targetBytes = getPastePositiveIntegerConfig('EMBED_TARGET_IMAGE_BYTES');
-    const maxBytes = getMaxPasteDataImageBytes();
-    if (targetBytes > maxBytes) {
-        throw new Error(
-            `CONFIG.PASTE.EMBED_TARGET_IMAGE_BYTES (${targetBytes}) cannot exceed CONFIG.PASTE.MAX_DATA_IMAGE_BYTES (${maxBytes})`,
-        );
-    }
-    return targetBytes;
-}
-
-function getEmbedMaxDimensionPx() {
-    return getPastePositiveIntegerConfig('EMBED_MAX_DIMENSION_PX');
-}
-
-function getMaxClipboardImageBytes() {
-    return getPastePositiveIntegerConfig('MAX_CLIPBOARD_IMAGE_BYTES');
-}
-
 function isImageFile(candidate) {
     if (!(candidate instanceof File)) {
         return false;
@@ -1805,230 +1775,6 @@ function transferHasFiles(transferData) {
     }
 
     return false;
-}
-
-function readBlobAsDataUrl(blob) {
-    if (!(blob instanceof Blob)) {
-        throw new Error('readBlobAsDataUrl expects Blob');
-    }
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => {
-            reject(new Error('Failed reading image blob as data URL'));
-        };
-        reader.onload = () => {
-            if (typeof reader.result !== 'string') {
-                reject(new Error('Unexpected FileReader result type'));
-                return;
-            }
-            resolve(reader.result);
-        };
-        reader.readAsDataURL(blob);
-    });
-}
-
-function loadImageElementFromBlob(blob) {
-    if (!(blob instanceof Blob)) {
-        throw new Error('loadImageElementFromBlob expects Blob');
-    }
-    return new Promise((resolve, reject) => {
-        const objectUrl = URL.createObjectURL(blob);
-        const image = new Image();
-
-        image.onload = () => {
-            URL.revokeObjectURL(objectUrl);
-            if (!Number.isFinite(image.naturalWidth) || !Number.isFinite(image.naturalHeight)) {
-                reject(new Error('Loaded image has invalid dimensions'));
-                return;
-            }
-            if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
-                reject(new Error('Loaded image has zero dimensions'));
-                return;
-            }
-            resolve(image);
-        };
-
-        image.onerror = () => {
-            URL.revokeObjectURL(objectUrl);
-            reject(new Error('Failed decoding clipboard image'));
-        };
-
-        image.src = objectUrl;
-    });
-}
-
-function computeScaledDimensions(sourceWidth, sourceHeight, maxDimensionPx) {
-    if (!Number.isFinite(sourceWidth) || sourceWidth <= 0) {
-        throw new Error(`computeScaledDimensions invalid sourceWidth: ${sourceWidth}`);
-    }
-    if (!Number.isFinite(sourceHeight) || sourceHeight <= 0) {
-        throw new Error(`computeScaledDimensions invalid sourceHeight: ${sourceHeight}`);
-    }
-    if (!Number.isFinite(maxDimensionPx) || maxDimensionPx <= 0) {
-        throw new Error(`computeScaledDimensions invalid maxDimensionPx: ${maxDimensionPx}`);
-    }
-
-    const largest = Math.max(sourceWidth, sourceHeight);
-    if (largest <= maxDimensionPx) {
-        return {
-            width: Math.floor(sourceWidth),
-            height: Math.floor(sourceHeight),
-        };
-    }
-
-    const scale = maxDimensionPx / largest;
-    return {
-        width: Math.max(1, Math.floor(sourceWidth * scale)),
-        height: Math.max(1, Math.floor(sourceHeight * scale)),
-    };
-}
-
-function renderImageToBlob(sourceImage, width, height, mimeType, quality) {
-    if (!(sourceImage instanceof HTMLImageElement)) {
-        throw new Error('renderImageToBlob expects HTMLImageElement');
-    }
-    if (!Number.isFinite(width) || width <= 0) {
-        throw new Error(`renderImageToBlob invalid width: ${width}`);
-    }
-    if (!Number.isFinite(height) || height <= 0) {
-        throw new Error(`renderImageToBlob invalid height: ${height}`);
-    }
-    if (typeof mimeType !== 'string' || mimeType.length === 0) {
-        throw new Error('renderImageToBlob expects mimeType');
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d');
-    if (!context) {
-        throw new Error('Canvas 2D context unavailable for image compression');
-    }
-
-    context.clearRect(0, 0, width, height);
-    context.drawImage(sourceImage, 0, 0, width, height);
-
-    return new Promise((resolve, reject) => {
-        canvas.toBlob(
-            (blob) => {
-                if (!(blob instanceof Blob)) {
-                    reject(new Error(`Canvas export failed for ${mimeType}`));
-                    return;
-                }
-                resolve(blob);
-            },
-            mimeType,
-            quality,
-        );
-    });
-}
-
-function estimateDataUrlPayloadBytes(dataUrl) {
-    if (typeof dataUrl !== 'string') {
-        throw new Error('estimateDataUrlPayloadBytes expects dataUrl string');
-    }
-    const commaIndex = dataUrl.indexOf(',');
-    if (commaIndex < 0) {
-        throw new Error('Data URL missing comma separator');
-    }
-    const payload = dataUrl.slice(commaIndex + 1).replace(/\s+/g, '');
-    if (payload.length === 0) {
-        return 0;
-    }
-    let paddingBytes = 0;
-    if (payload.endsWith('==')) {
-        paddingBytes = 2;
-    } else if (payload.endsWith('=')) {
-        paddingBytes = 1;
-    }
-    return Math.floor((payload.length * 3) / 4) - paddingBytes;
-}
-
-async function compressImageFileForEmbedding(file) {
-    if (!(file instanceof File)) {
-        throw new Error('compressImageFileForEmbedding expects File');
-    }
-    if (typeof file.size !== 'number' || file.size <= 0) {
-        throw new Error(`Clipboard image has invalid size: ${file.size}`);
-    }
-
-    const maxClipboardBytes = getMaxClipboardImageBytes();
-    if (file.size > maxClipboardBytes) {
-        const maxMiB = (maxClipboardBytes / (1024 * 1024)).toFixed(1);
-        ErrorHandler.showErrorBanner(
-            `Image too large to process (${file.name || 'clipboard image'}). Max allowed is ${maxMiB} MiB.`,
-            'error',
-            6000,
-            true,
-        );
-        return null;
-    }
-
-    const sourceImage = await loadImageElementFromBlob(file);
-    const maxDimensionPx = getEmbedMaxDimensionPx();
-    const targetBytes = getEmbedTargetImageBytes();
-    const hardMaxBytes = getMaxPasteDataImageBytes();
-    const initialSize = computeScaledDimensions(sourceImage.naturalWidth, sourceImage.naturalHeight, maxDimensionPx);
-
-    const encodePlans = [
-        { mimeType: 'image/webp', qualities: [0.82, 0.72, 0.62, 0.52, 0.42] },
-        { mimeType: 'image/jpeg', qualities: [0.82, 0.72, 0.62, 0.52] },
-    ];
-
-    let bestBlob = null;
-    let planIndex = 0;
-    while (planIndex < encodePlans.length) {
-        const plan = encodePlans[planIndex];
-        let width = initialSize.width;
-        let height = initialSize.height;
-
-        while (true) {
-            let qualityIndex = 0;
-            while (qualityIndex < plan.qualities.length) {
-                const quality = plan.qualities[qualityIndex];
-                const candidate = await renderImageToBlob(sourceImage, width, height, plan.mimeType, quality);
-
-                if (bestBlob === null || candidate.size < bestBlob.size) {
-                    bestBlob = candidate;
-                }
-                if (candidate.size <= targetBytes) {
-                    return candidate;
-                }
-
-                qualityIndex += 1;
-            }
-
-            if (Math.max(width, height) <= 512) {
-                break;
-            }
-            width = Math.max(1, Math.floor(width * 0.85));
-            height = Math.max(1, Math.floor(height * 0.85));
-        }
-
-        planIndex += 1;
-    }
-
-    if (bestBlob !== null && bestBlob.size <= hardMaxBytes) {
-        return bestBlob;
-    }
-
-    return null;
-}
-
-async function imageFileToEmbeddedDataUrl(file) {
-    const compressedBlob = await compressImageFileForEmbedding(file);
-    if (!(compressedBlob instanceof Blob)) {
-        return null;
-    }
-    const dataUrl = await readBlobAsDataUrl(compressedBlob);
-    const payloadBytes = estimateDataUrlPayloadBytes(dataUrl);
-    const maxBytes = getMaxPasteDataImageBytes();
-    if (payloadBytes > maxBytes) {
-        throw new Error(
-            `Compressed clipboard image exceeds MAX_DATA_IMAGE_BYTES: ${payloadBytes} > ${maxBytes}`,
-        );
-    }
-    return dataUrl;
 }
 
 function formatKiB(bytes) {
@@ -2114,6 +1860,43 @@ function clipboardHasFileUriReference(clipboardData) {
         i += 1;
     }
     return false;
+}
+
+function buildClipboardPasteEventSnapshot(html, plainText) {
+    if (typeof html !== 'string') {
+        throw new Error('buildClipboardPasteEventSnapshot expects html string');
+    }
+    if (typeof plainText !== 'string') {
+        throw new Error('buildClipboardPasteEventSnapshot expects plainText string');
+    }
+
+    return {
+        clipboardData: {
+            getData(format) {
+                if (format === 'text/html') {
+                    return html;
+                }
+                if (format === 'text/plain') {
+                    return plainText;
+                }
+                return '';
+            },
+        },
+    };
+}
+
+function getSelectionRangeSnapshot() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+        return null;
+    }
+
+    const range = selection.getRangeAt(0);
+    const activeEditable = getActiveEditable();
+    if (activeEditable instanceof HTMLElement && !activeEditable.contains(range.startContainer)) {
+        return null;
+    }
+    return range.cloneRange();
 }
 
 function resolveEditingDropTarget(event) {
@@ -2260,6 +2043,7 @@ async function pasteClipboardImagesAsEmbeddedContent(files) {
         return false;
     }
 
+    const selectionRange = getSelectionRangeSnapshot();
     const dataUrls = [];
 
     let i = 0;
@@ -2268,12 +2052,27 @@ async function pasteClipboardImagesAsEmbeddedContent(files) {
         if (!(file instanceof File)) {
             throw new Error(`Clipboard image at index ${i} is not a File`);
         }
-        const dataUrl = await imageFileToEmbeddedDataUrl(file);
+        const maxClipboardBytes = getMaxClipboardImageBytes();
+        if (file.size > maxClipboardBytes) {
+            const maxMiB = (maxClipboardBytes / (1024 * 1024)).toFixed(1);
+            ErrorHandler.showErrorBanner(
+                `Image too large to process (${file.name || 'clipboard image'}). Max allowed is ${maxMiB} MiB.`,
+                'error',
+                6000,
+                true,
+            );
+            return false;
+        }
+
+        const dataUrl = await imageBlobToEmbeddedDataUrl(file);
         if (dataUrl === null) {
             showImageTooLargeForEmbedError(file.name);
             return false;
         }
         const embeddedPayloadBytes = estimateDataUrlPayloadBytes(dataUrl);
+        if (embeddedPayloadBytes === null) {
+            throw new Error('Embedded image data URL missing payload bytes');
+        }
         Logger.logDebug('Clipboard image compressed for embed', {
             fileName: file.name || null,
             originalBytes: file.size,
@@ -2290,17 +2089,8 @@ async function pasteClipboardImagesAsEmbeddedContent(files) {
         return false;
     }
 
-    const syntheticPasteEvent = {
-        clipboardData: {
-            getData(format) {
-                if (format === 'text/html') {
-                    return html;
-                }
-                return '';
-            },
-        },
-    };
-    return sanitizeAndInsertExternalPaste(syntheticPasteEvent);
+    const syntheticPasteEvent = buildClipboardPasteEventSnapshot(html, '');
+    return await sanitizeAndInsertExternalPaste(syntheticPasteEvent, selectionRange);
 }
 
 async function embedDroppedImageFiles(imageFiles) {
@@ -2569,24 +2359,48 @@ function handlePasteEvent(event) {
         const shouldSanitizeExternalHtml = ModeContext.isEditing && hasEditableTarget && typeof html === 'string' && html.length > 0;
 
         if (shouldSanitizeExternalHtml) {
+            const plainText = event.clipboardData.getData('text/plain');
+            const pasteEventSnapshot = buildClipboardPasteEventSnapshot(html, plainText);
+            const selectionRange = getSelectionRangeSnapshot();
             event.preventDefault();
-            const inserted = sanitizeAndInsertExternalPaste(event);
-            Logger.logDebug('External HTML paste sanitized and inserted', {
-                inserted,
-                htmlLength: html.length
-            }, Logger.LogCategory.EVENT);
+            void sanitizeAndInsertExternalPaste(pasteEventSnapshot, selectionRange)
+                .then((inserted) => {
+                    Logger.logDebug('External HTML paste sanitized and inserted', {
+                        inserted,
+                        htmlLength: html.length,
+                    }, Logger.LogCategory.EVENT);
+
+                    if (inserted && !ModeContext.isDirty) {
+                        ModeContext.setDirty(true);
+                        Logger.logDebug('Content marked as dirty due to sanitized external paste', {
+                            noteId: ModeContext.currentNoteId,
+                        }, Logger.LogCategory.STATE);
+                    }
+                })
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    Logger.logDebug('External HTML paste sanitization failed', {
+                        error: message,
+                        htmlLength: html.length,
+                    }, Logger.LogCategory.EVENT);
+                    ErrorHandler.showErrorBanner(
+                        'Failed to sanitize pasted HTML.',
+                        'error',
+                        6000,
+                        true,
+                    );
+                });
         } else {
             Logger.logDebug('External content detected - using browser default paste', {
                 hasHtml: !!html
             }, Logger.LogCategory.EVENT);
-        }
-        
-        // Mark content as dirty since we're pasting external content
-        if (ModeContext.isEditing && !ModeContext.isDirty) {
-            ModeContext.setDirty(true);
-            Logger.logDebug('Content marked as dirty due to paste', {
-                noteId: ModeContext.currentNoteId
-            }, Logger.LogCategory.STATE);
+
+            if (ModeContext.isEditing && !ModeContext.isDirty) {
+                ModeContext.setDirty(true);
+                Logger.logDebug('Content marked as dirty due to paste', {
+                    noteId: ModeContext.currentNoteId
+                }, Logger.LogCategory.STATE);
+            }
         }
     }
 }
