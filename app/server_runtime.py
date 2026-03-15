@@ -7,6 +7,7 @@ import ipaddress
 from pathlib import Path
 import re
 import sqlite3
+import tempfile
 from urllib.parse import urlsplit
 
 
@@ -17,6 +18,7 @@ _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
 _DEFAULT_API_PREFIX = "/api2"
 _DEFAULT_V1_API_PREFIX = "/api"
 _DEFAULT_DATABASE_DIRECTORY = Path.home() / "MetaList"
+_DEFAULT_RUNTIME_DIRECTORY = Path(tempfile.gettempdir()) / "metalist-runtime"
 _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
 _DEFAULT_NAMESPACE_REGISTRY_FILENAME = "namespaces.db"
 _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME = "namespace-delete-jobs"
@@ -107,7 +109,7 @@ def resolve_namespace_registry_path() -> Path:
 
 
 def resolve_namespace_delete_jobs_directory() -> Path:
-    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME
+    return _DEFAULT_RUNTIME_DIRECTORY / _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME
 
 
 def resolve_namespace_directory(*, namespace: str) -> Path:

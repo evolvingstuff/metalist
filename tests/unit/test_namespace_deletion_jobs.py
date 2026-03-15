@@ -16,6 +16,7 @@ def test_namespace_deletion_job_lifecycle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_RUNTIME_DIRECTORY", tmp_path / "runtime")
 
     job_record = create_namespace_deletion_job(
         deleted_namespace="cla",
