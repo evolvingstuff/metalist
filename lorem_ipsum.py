@@ -17,9 +17,11 @@ from __future__ import annotations
 import argparse
 import base64
 import html
-import mimetypes
 import random
+import shutil
+import subprocess
 import sys
+import tempfile
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -30,6 +32,7 @@ from types import SimpleNamespace
 from tqdm import tqdm
 
 from app.config import DATABASE_URL
+from app.db.file_session import resolve_file_database_path
 from app.db.notes_sql import insert_note, update_links
 from app.db.ontology_rules_sql import insert_rule
 from app.db.schema import APP_SETTINGS_TABLE, NOTES_TABLE, ONTOLOGY_RULES_TABLE, initialize_schema
@@ -44,18 +47,21 @@ from app.services.content_cache import (
     get_cached_content,
     populate_cache_from_db,
 )
+from app.services.file_storage import bootstrap_file_registry
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.utils.text_utils import strip_html
 
 
-default_root_count =  10_000  # 1000
+default_root_count =  250  # 1000
 default_child_probability = 0.3
 default_image_probability = 0.05
 _TAG_ASSIGNMENT_PROBABILITY = 0.6
 _TAG_MIN_COUNT = 1
 _TAG_MAX_COUNT = 3
 _EXTRA_ONTOLOGY_RULES = 8
+_SEEDED_IMAGE_MAX_DIMENSION_PX = 128
+_SEEDED_IMAGE_JPEG_QUALITY = 70
 
 _TAG_POOL: Sequence[str] = (
     "alpha",
@@ -189,6 +195,31 @@ def ensure_sqlite_file() -> Path:
     return db_path
 
 
+def _database_artifact_paths(database_path: Path) -> tuple[Path, Path, Path]:
+    if not isinstance(database_path, Path):
+        raise TypeError(f"database_path must be a Path, got {type(database_path)}")
+    return (
+        database_path,
+        Path(f"{database_path}-wal"),
+        Path(f"{database_path}-shm"),
+    )
+
+
+def wipe_database_artifacts(database_path: Path) -> None:
+    if not isinstance(database_path, Path):
+        raise TypeError(f"database_path must be a Path, got {type(database_path)}")
+
+    for artifact_path in (
+        *_database_artifact_paths(database_path),
+        *_database_artifact_paths(resolve_file_database_path(database_path)),
+    ):
+        if not artifact_path.exists():
+            continue
+        if not artifact_path.is_file():
+            raise ValueError(f"Database artifact path is not a file: {artifact_path}")
+        artifact_path.unlink()
+
+
 def reset_schema() -> None:
     session = SafeSession()
     try:
@@ -225,14 +256,47 @@ def load_sample_images() -> List[Path]:
 
 
 def encode_image_as_data_uri(image_path: Path) -> str:
-    mime_type, _ = mimetypes.guess_type(image_path.name)
-    if not mime_type:
-        raise RuntimeError(f"Unable to determine MIME type for {image_path}")
-    data = image_path.read_bytes()
+    if not isinstance(image_path, Path):
+        raise TypeError(f"image_path must be a Path, got {type(image_path)}")
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+    if not image_path.is_file():
+        raise ValueError(f"Image path is not a file: {image_path}")
+
+    sips_path = shutil.which("sips")
+    if sips_path is None:
+        raise RuntimeError("The lorem ipsum seeder requires macOS `sips` to resize sample images")
+
+    with tempfile.TemporaryDirectory(prefix="metalist-seed-image-") as temp_directory:
+        output_path = Path(temp_directory) / f"{image_path.stem}.jpg"
+        command = [
+            sips_path,
+            "-s",
+            "format",
+            "jpeg",
+            "-s",
+            "formatOptions",
+            str(_SEEDED_IMAGE_JPEG_QUALITY),
+            "-Z",
+            str(_SEEDED_IMAGE_MAX_DIMENSION_PX),
+            str(image_path),
+            "--out",
+            str(output_path),
+        ]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            failure_output = completed.stderr.strip()
+            if failure_output == "":
+                failure_output = completed.stdout.strip()
+            raise RuntimeError(f"Failed to resize seeded image {image_path}: {failure_output}")
+        if not output_path.exists():
+            raise RuntimeError(f"Resized image not created for {image_path}")
+        data = output_path.read_bytes()
+
     encoded = base64.b64encode(data).decode("ascii")
     alt_text = html.escape(image_path.stem.replace("_", " "))
     return (
-        f'<div><img src="data:{mime_type};base64,{encoded}" '
+        f'<div><img src="data:image/jpeg;base64,{encoded}" '
         f'alt="{alt_text}" /></div>'
     )
 
@@ -510,6 +574,7 @@ def main(argv: Sequence[str]) -> int:
     db_path = ensure_sqlite_file()
     print(f"Reinitializing database at {db_path}")
 
+    wipe_database_artifacts(db_path)
     SafeSession.use_file_db()
 
     clear_cache()
@@ -521,6 +586,7 @@ def main(argv: Sequence[str]) -> int:
 
     prefetched_rows = populate_cache_from_db(None)
     note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+    bootstrap_file_registry()
 
     print(
         "Seed complete:\n"
