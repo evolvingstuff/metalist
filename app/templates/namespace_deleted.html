@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>${page_title}</title>
+    <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico?v=${asset_version}">
+    <style>
+        :root {
+            color-scheme: light;
+            --surface: #f7f2ea;
+            --card: rgba(255, 252, 247, 0.96);
+            --ink: #1c1814;
+            --muted: #675b4d;
+            --accent: #b45309;
+            --accent-strong: #8f3d06;
+            --danger: #991b1b;
+            --success: #166534;
+            --border: rgba(28, 24, 20, 0.12);
+            --shadow: 0 24px 80px rgba(60, 38, 16, 0.16);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(180, 83, 9, 0.12), transparent 36%),
+                radial-gradient(circle at bottom right, rgba(153, 27, 27, 0.10), transparent 28%),
+                linear-gradient(180deg, #fdf9f3 0%, var(--surface) 100%);
+            color: var(--ink);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 20px;
+        }
+
+        .namespace-deleted-card {
+            width: min(720px, 100%);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            box-shadow: var(--shadow);
+            padding: 40px 36px;
+        }
+
+        .namespace-deleted-eyebrow {
+            margin: 0 0 14px;
+            font-family: "Courier New", monospace;
+            font-size: 12px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--accent-strong);
+        }
+
+        .namespace-deleted-title {
+            margin: 0 0 16px;
+            font-size: clamp(2rem, 5vw, 3.4rem);
+            line-height: 0.98;
+            letter-spacing: -0.05em;
+            font-weight: 800;
+        }
+
+        .namespace-deleted-copy {
+            margin: 0;
+            font-size: 1.15rem;
+            line-height: 1.6;
+            color: var(--muted);
+            max-width: 42rem;
+            font-weight: 500;
+        }
+
+        .namespace-deleted-status {
+            margin-top: 28px;
+            padding: 20px 22px;
+            border-radius: 18px;
+            border: 1px solid rgba(180, 83, 9, 0.18);
+            background: rgba(180, 83, 9, 0.08);
+        }
+
+        .namespace-deleted-status[data-state="failed"] {
+            border-color: rgba(153, 27, 27, 0.26);
+            background: rgba(153, 27, 27, 0.08);
+        }
+
+        .namespace-deleted-status[data-state="succeeded"] {
+            border-color: rgba(22, 101, 52, 0.22);
+            background: rgba(22, 101, 52, 0.08);
+        }
+
+        .namespace-deleted-status-label {
+            margin: 0;
+            font-family: "Courier New", monospace;
+            font-size: 0.88rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .namespace-deleted-status-body {
+            margin: 8px 0 0;
+            font-size: 1.08rem;
+            line-height: 1.55;
+        }
+
+        .namespace-deleted-error {
+            margin: 20px 0 0;
+            padding: 16px 18px;
+            border-radius: 14px;
+            background: #1f1720;
+            color: #ffe6e6;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 0.86rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .namespace-deleted-links {
+            margin-top: 30px;
+        }
+
+        .namespace-deleted-links h2 {
+            margin: 0 0 14px;
+            font-size: 1.1rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .namespace-deleted-links-copy {
+            margin: 0 0 16px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .namespace-deleted-link-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .namespace-deleted-link {
+            display: block;
+            text-decoration: none;
+            color: inherit;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px 18px;
+            background: rgba(255, 255, 255, 0.7);
+            transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .namespace-deleted-link:hover {
+            transform: translateY(-2px);
+            border-color: rgba(180, 83, 9, 0.34);
+            box-shadow: 0 10px 24px rgba(180, 83, 9, 0.14);
+        }
+
+        .namespace-deleted-links[data-state="disabled"] .namespace-deleted-link {
+            pointer-events: none;
+            opacity: 0.52;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .namespace-deleted-link-name {
+            display: block;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .namespace-deleted-link-meta {
+            display: block;
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .namespace-deleted-hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <main class="namespace-deleted-card">
+        <p class="namespace-deleted-eyebrow">MetaList Namespace Removal</p>
+        <h1 class="namespace-deleted-title" id="namespace-deleted-title">Deleting namespace ${deleted_namespace}</h1>
+        <p class="namespace-deleted-copy" id="namespace-deleted-copy">
+            Please wait while MetaList removes the namespace from disk and finalizes cleanup.
+        </p>
+
+        <section class="namespace-deleted-status" id="namespace-deleted-status" data-state="pending">
+            <p class="namespace-deleted-status-label" id="namespace-deleted-status-label">In Progress</p>
+            <p class="namespace-deleted-status-body" id="namespace-deleted-status-body">
+                The namespace is being removed. This page will update automatically.
+            </p>
+        </section>
+
+        <pre class="namespace-deleted-error namespace-deleted-hidden" id="namespace-deleted-error"></pre>
+
+        <section class="namespace-deleted-links" id="namespace-deleted-links" data-state="disabled">
+            <h2>Open Another Namespace</h2>
+            <p class="namespace-deleted-links-copy" id="namespace-deleted-links-copy">
+                These links unlock when namespace cleanup finishes.
+            </p>
+            <div class="namespace-deleted-link-grid">
+                % for link in namespace_links:
+                    <a class="namespace-deleted-link" href="${link['href']}">
+                        <span class="namespace-deleted-link-name">${link['label']}</span>
+                        <span class="namespace-deleted-link-meta">${link['meta']}</span>
+                    </a>
+                % endfor
+            </div>
+        </section>
+    </main>
+
+    <script>
+        window.__METALIST_NAMESPACE_DELETED__ = ${page_state_json | n};
+    </script>
+    <script type="module" src="/static/js/namespace-deleted.js?v=${asset_version}"></script>
+</body>
+</html>

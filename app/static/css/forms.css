@@ -78,6 +78,41 @@
     background-color: #c82333;
 }
 
+.namespace-delete-warning {
+    border: 1px solid rgba(220, 53, 69, 0.28);
+    background-color: rgba(220, 53, 69, 0.08);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.namespace-delete-warning p {
+    margin: 0 0 8px;
+}
+
+.namespace-delete-warning p:last-child {
+    margin-bottom: 0;
+}
+
+.namespace-delete-namespace {
+    color: #8a1f2d;
+}
+
+.namespace-delete-phrase {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(220, 53, 69, 0.35);
+    background-color: rgba(255, 255, 255, 0.88);
+    color: #8a1f2d;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 12px;
+}
+
+.namespace-delete-status {
+    min-height: 1.25rem;
+}
+
 /* Form Help Text */
 .form-help {
     display: block;

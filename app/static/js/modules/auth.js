@@ -4,6 +4,7 @@
 import { CONFIG } from './config.js';
 import { createUuid } from './uuid.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
+import { consumeBooleanQueryFlag } from './location-flags.js';
 
 export const Auth = {
     hasPassword: null,
@@ -37,6 +38,16 @@ export const Auth = {
      * Returns true if authenticated/no password, false if login required
      */
     async checkAuthStatus() {
+        const forceReauth = consumeBooleanQueryFlag({
+            location: window.location,
+            history: window.history,
+            flagName: 'force_reauth',
+        });
+        if (forceReauth) {
+            console.log('[Auth] force_reauth requested, clearing local session state');
+            this.clearSessionState();
+        }
+
         const token = localStorage.getItem('auth_token');
         console.log('[Auth] Checking status with token:', token ? token.substring(0, 10) + '...' : 'none');
         const activeOwner = localStorage.getItem('auth_owner');

@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from typing import Annotated
+import json
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
@@ -25,6 +26,9 @@ from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
+from app.services.namespace_deletion_jobs import load_namespace_deletion_job
+from app.services.namespace_switcher import build_namespace_catalog
+from app.services.namespace_switcher import open_or_launch_namespace
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
@@ -44,6 +48,10 @@ from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 import os
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 logger.remove()
 logger.add(
@@ -349,6 +357,159 @@ async def maintenance_page(request: Request):
         asset_version=ASSET_VERSION,
         page_title=_resolve_page_title(base_title="MetaList - Processing"),
     )
+
+
+def _build_namespace_deleted_links(*, job_id: str, deleted_namespace: str) -> list[dict[str, str]]:
+    catalog = build_namespace_catalog(
+        environ=os.environ,
+        current_namespace=ACTIVE_NAMESPACE,
+    )
+    raw_namespaces = catalog["namespaces"]
+    if not isinstance(raw_namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+    links: list[dict[str, str]] = []
+    for entry in raw_namespaces:
+        if not isinstance(entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        namespace = entry["namespace"]
+        if not isinstance(namespace, str) or namespace == "":
+            raise RuntimeError("Namespace catalog entry missing namespace")
+        if namespace == deleted_namespace:
+            continue
+        query = urlencode({"job": job_id, "namespace": namespace})
+        link_meta = "Already running" if namespace == ACTIVE_NAMESPACE else "Open namespace"
+        links.append(
+            {
+                "namespace": namespace,
+                "label": namespace,
+                "meta": link_meta,
+                "href": f"/namespace-deleted/open?{query}",
+            }
+        )
+    return links
+
+
+def _resolve_catalog_profile(*, namespace: str) -> tuple[int, int | None, int]:
+    catalog = build_namespace_catalog(
+        environ=os.environ,
+        current_namespace=ACTIVE_NAMESPACE,
+    )
+    raw_namespaces = catalog["namespaces"]
+    if not isinstance(raw_namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+    for entry in raw_namespaces:
+        if not isinstance(entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        if entry["namespace"] != namespace:
+            continue
+        profile = entry["default_profile"]
+        if not isinstance(profile, dict):
+            raise RuntimeError(f"Namespace {namespace} is missing default profile")
+        port = profile["port"]
+        https_port = profile["https_port"]
+        mcp_port = profile["mcp_port"]
+        if not isinstance(port, int):
+            raise RuntimeError(f"Namespace {namespace} profile missing port")
+        if https_port is not None and not isinstance(https_port, int):
+            raise RuntimeError(f"Namespace {namespace} profile has invalid https_port")
+        if not isinstance(mcp_port, int):
+            raise RuntimeError(f"Namespace {namespace} profile missing mcp_port")
+        return port, https_port, mcp_port
+    raise RuntimeError(f"Unknown namespace: {namespace}")
+
+
+def _build_force_reauth_url(*, url: str) -> str:
+    if not isinstance(url, str) or url == "":
+        raise TypeError("url must be a non-empty string")
+    parsed = urlsplit(url)
+    path = parsed.path
+    if path == "":
+        path = "/"
+    query_items = [
+        (name, value)
+        for name, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if name != "force_reauth"
+    ]
+    query_items.append(("force_reauth", "1"))
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            path,
+            urlencode(query_items),
+            parsed.fragment,
+        )
+    )
+
+
+@app.get("/namespace-deleted", response_class=HTMLResponse)
+async def namespace_deleted_page(request: Request):
+    job_id = request.query_params.get("job")
+    if not isinstance(job_id, str) or job_id.strip() == "":
+        return HTMLResponse("Missing namespace deletion job", status_code=400)
+    try:
+        job_record = load_namespace_deletion_job(job_id=job_id)
+    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    if job_record is None:
+        return HTMLResponse(f"Namespace deletion job not found: {job_id}", status_code=404)
+
+    template = templates.get_template("namespace_deleted.html")
+    namespace_links = _build_namespace_deleted_links(
+        job_id=job_record["job_id"],
+        deleted_namespace=job_record["deleted_namespace"],
+    )
+    page_state = json.dumps(
+        {
+            "jobId": job_record["job_id"],
+            "deletedNamespace": job_record["deleted_namespace"],
+            "initialStatus": job_record["status"],
+            "initialError": job_record["error"],
+        }
+    )
+    return template.render(
+        request=request,
+        version=VERSION,
+        asset_version=ASSET_VERSION,
+        page_title="MetaList - Namespace Deleted",
+        deleted_namespace=job_record["deleted_namespace"],
+        namespace_links=namespace_links,
+        page_state_json=page_state,
+    )
+
+
+@app.get("/namespace-deleted/open")
+async def namespace_deleted_open_page(request: Request):
+    job_id = request.query_params.get("job")
+    namespace = request.query_params.get("namespace")
+    if not isinstance(job_id, str) or job_id.strip() == "":
+        return HTMLResponse("Missing namespace deletion job", status_code=400)
+    if not isinstance(namespace, str) or namespace.strip() == "":
+        return HTMLResponse("Missing namespace", status_code=400)
+    try:
+        job_record = load_namespace_deletion_job(job_id=job_id)
+    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    if job_record is None:
+        return HTMLResponse(f"Namespace deletion job not found: {job_id}", status_code=404)
+    if job_record["status"] == "pending":
+        return HTMLResponse("Namespace deletion is still in progress", status_code=409)
+    if namespace == job_record["deleted_namespace"]:
+        return HTMLResponse("Deleted namespace is unavailable", status_code=400)
+
+    try:
+        port, https_port, mcp_port = _resolve_catalog_profile(namespace=namespace)
+        result = open_or_launch_namespace(
+            environ=os.environ,
+            current_namespace=ACTIVE_NAMESPACE,
+            namespace=namespace,
+            port=port,
+            https_port=https_port,
+            mcp_port=mcp_port,
+        )
+    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+        return HTMLResponse(str(exc), status_code=400)
+    return RedirectResponse(url=_build_force_reauth_url(url=result.url), status_code=307)
 
 
 @app.get("/locked", response_class=HTMLResponse)

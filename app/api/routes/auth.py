@@ -26,7 +26,9 @@ from app.services.content_cache import clear_cache, populate_cache_from_db
 from app.services.login_rate_limit import login_rate_limiter
 from app.services.maintenance_mode import maintenance_service
 from app.services.namespace_switcher import build_namespace_catalog
+from app.services.namespace_switcher import delete_current_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.tokens import token_service
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
@@ -512,6 +514,51 @@ def open_namespace(
         "saved_for_next_launch": result.saved_for_next_launch,
         "message": result.message,
     }
+
+
+@router.post("/namespaces/delete-current")
+def delete_active_namespace(
+    payload: dict[str, object],
+    db: Annotated[SafeSession, Depends(get_db)],
+    token: Annotated[str, Depends(_require_auth)],
+):
+    body = _require_body_object(payload)
+    confirmation_text = _require_string_field(body, "confirmation_text")
+
+    auth = AuthService(db)
+    if auth.has_password():
+        current_password = _require_string_field(body, "current_password")
+        if not auth.verify_password(current_password):
+            raise HTTPException(status_code=401, detail="Invalid password")
+
+    try:
+        result = delete_current_namespace(
+            environ=os.environ,
+            current_namespace=ACTIVE_NAMESPACE,
+            confirmation_text=confirmation_text,
+        )
+    except (RuntimeError, ValueError, TypeError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "deleted_namespace": result.deleted_namespace,
+        "redirect_url": result.redirect_url,
+        "delete_job_id": result.delete_job_id,
+        "message": result.message,
+    }
+
+
+@router.get("/namespaces/delete-jobs/{job_id}")
+def namespace_delete_job_status(
+    job_id: str,
+):
+    try:
+        job_record = load_namespace_deletion_job(job_id=job_id)
+    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if job_record is None:
+        raise HTTPException(status_code=404, detail=f"Namespace deletion job not found: {job_id}")
+    return job_record
 
 
 @router.post("/hydrate", response_model=HydrationStatusResponse)
