@@ -14,9 +14,12 @@
     - `![[UUID]]` renders the referenced note as an embedded block (with descendants).
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
   - File targets:
-    - both `![[UUID]]` and `[[UUID]]` render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
+    - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
+    - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
+    - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
     - clicking the rendered file reference downloads the decrypted file from the server.
-    - when the host note is collapsed, file references stay visible as a single compact row showing the badge and a truncated title.
+    - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
+    - when the host note is collapsed and the first visible line is an embedded image file, the note collapses to a compact thumbnail-only version of that image preview.
   - Each rendered reference has a `+/-` toggle:
     - `-` switches embed -> link.
     - `+` switches link -> embed.
@@ -36,9 +39,10 @@
 - Drag/drop follows the same attachment path for non-image files.
   - Dropping onto the actively edited note inserts into that note.
   - Dropping anywhere else creates a new top note first, then inserts there.
-- Dragged image files do **not** become file attachments.
-  - If dropped onto the actively edited note, they are embedded inline as `data:image/...`.
-  - If dropped anywhere else, the app creates a new top note and embeds the image there.
+- Named image files dropped or pasted into the editor prompt for one of two paths:
+  - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
+  - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.
+- Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
 - Startup only loads the file UUID registry into memory; file metadata/blob rows are decrypted on demand for rendering/download.

@@ -291,15 +291,21 @@ def _render_reference_block(
             )
     elif file_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-file"
+        record = context.get_file(reference_note_id)
+        thumbnail_kind = getattr(record, "thumbnail_kind")
+        if not isinstance(thumbnail_kind, str) or thumbnail_kind == "":
+            raise TypeError("file thumbnail_kind must be a non-empty string")
+        if is_embed and thumbnail_kind == "image":
+            wrapper_classes = f"{wrapper_classes} note-reference-file-image"
         if is_embed:
             body_html = _render_file_embed_body(
+                record=record,
                 reference_note_id=reference_note_id,
-                context=context,
             )
         else:
             body_html = _render_file_link_body(
+                record=record,
                 reference_note_id=reference_note_id,
-                context=context,
             )
     else:
         body_html = _render_missing_reference_body(reference_note_id)
@@ -382,10 +388,9 @@ def _render_missing_reference_body(reference_note_id: str) -> str:
 
 def _render_file_embed_body(
     *,
+    record: object,
     reference_note_id: str,
-    context: EmbedRenderContext,
 ) -> str:
-    record = context.get_file(reference_note_id)
     return _render_file_body(
         record=record,
         reference_note_id=reference_note_id,
@@ -395,10 +400,9 @@ def _render_file_embed_body(
 
 def _render_file_link_body(
     *,
+    record: object,
     reference_note_id: str,
-    context: EmbedRenderContext,
 ) -> str:
-    record = context.get_file(reference_note_id)
     return _render_file_body(
         record=record,
         reference_note_id=reference_note_id,
@@ -431,7 +435,20 @@ def _render_file_body(
 
     escaped_note_id = html.escape(reference_note_id, quote=True)
     escaped_title = html.escape(title)
+    escaped_title_attribute = html.escape(title, quote=True)
     badge_text = html.escape(_format_thumbnail_badge(thumbnail_kind))
+    if is_embed and thumbnail_kind == "image":
+        return (
+            f'<div class="note-file-image-embed" data-file-ref-id="{escaped_note_id}" data-preview-state="idle">'
+            '<div class="note-file-image-preview-frame">'
+            f'<img class="note-file-image-preview" data-file-ref-id="{escaped_note_id}" alt="{escaped_title_attribute}" loading="lazy" decoding="async" hidden />'
+            '<div class="note-file-image-preview-placeholder">Loading image preview...</div>'
+            "</div>"
+            f'<button type="button" class="note-file-image-download-link" data-file-ref-id="{escaped_note_id}" aria-label="Download image file">'
+            "download image"
+            "</button>"
+            "</div>"
+        )
     button_classes = "note-file-reference-link"
     if is_embed:
         button_classes = f"{button_classes} note-file-reference-link-embed"

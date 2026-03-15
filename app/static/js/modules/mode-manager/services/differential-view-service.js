@@ -1,6 +1,7 @@
 import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
+import { hydrateImageFilePreviews } from './file-image-preview-service.js';
 import { renderMarkdownBlocks } from './markdown-render-service.js';
 import { renderLatexBlocks } from './latex-render-service.js';
 
@@ -199,6 +200,7 @@ function applyServerDiffOps(payload) {
 
     renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
+    hydrateImageFilePreviews(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
     return {
@@ -749,6 +751,7 @@ export function applyDifferentialView(payload, options) {
 
     renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
+    hydrateImageFilePreviews(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
     return {

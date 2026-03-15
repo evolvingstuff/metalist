@@ -399,6 +399,10 @@ function handleClick(event) {
         throw new Error('Click event missing target element');
     }
 
+    if (event.target instanceof Element && event.target.closest('.modal')) {
+        return;
+    }
+
     const contextMenu = event.target.closest('#context-menu');
     if (contextMenu) {
         return;
@@ -880,7 +884,7 @@ function handleFileReferenceClick(event) {
         throw new Error('File reference click missing target element');
     }
 
-    const button = event.target.closest('.note-file-reference-link');
+    const button = event.target.closest('.note-file-reference-link, .note-file-image-download-link');
     if (!button) {
         return false;
     }

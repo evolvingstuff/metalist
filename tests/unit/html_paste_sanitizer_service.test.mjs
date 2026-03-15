@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { CONFIG } from '../../app/static/js/modules/config.js';
 import {
+    sanitizePastedImageSourceUrl,
     sanitizeStyleAttributeValue,
     sanitizeUrlAttributeValue,
 } from '../../app/static/js/modules/mode-manager/services/html-paste-sanitizer-service.js';
@@ -32,6 +33,19 @@ test('sanitizeUrlAttributeValue rejects over-limit data image src', () => {
     const payloadLength = Math.ceil(((maxBytes + 1) * 4) / 3);
     const payload = 'A'.repeat(payloadLength);
     const value = sanitizeUrlAttributeValue(`data:image/png;base64,${payload}`, 'src');
+    assert.equal(value, null);
+});
+
+test('sanitizePastedImageSourceUrl keeps oversized data image src for later recompression', () => {
+    const maxBytes = CONFIG.PASTE.MAX_DATA_IMAGE_BYTES;
+    const payloadLength = Math.ceil(((maxBytes + 1) * 4) / 3);
+    const payload = 'A'.repeat(payloadLength);
+    const value = sanitizePastedImageSourceUrl(`data:image/png;base64,${payload}`);
+    assert.equal(value, `data:image/png;base64,${payload}`);
+});
+
+test('sanitizePastedImageSourceUrl rejects non-image data urls', () => {
+    const value = sanitizePastedImageSourceUrl('data:text/html;base64,AAAA');
     assert.equal(value, null);
 });
 
