@@ -36,6 +36,10 @@ import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { renderLatexHtml } from '../services/latex-render-service.js';
 import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
 import {
+    resolveClipboardTrackingAfterPasteEvent,
+    shouldAllowBrowserPasteForShortcut,
+} from '../services/clipboard-shortcut-policy-service.js';
+import {
     estimateDataUrlPayloadBytes,
     getEmbedTargetImageBytes,
     getMaxClipboardImageBytes,
@@ -70,6 +74,7 @@ let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
 let savedEditingCursorOffset = null;
 const referenceNavigationStack = [];
+let noteClipboardRequiresBrowserValidation = false;
 
 function getReferenceBackButtonElement() {
     const element = document.getElementById('reference-back-button');
@@ -175,14 +180,61 @@ export function initKeyboardEvents() {
         
     document.addEventListener('keydown', handleKeyDown, { capture: true });
     document.addEventListener('paste', handlePasteEvent, { capture: false });
+    document.addEventListener('visibilitychange', handleVisibilityChange, { capture: false });
     document.addEventListener('dragover', handleDragOverEvent, { capture: false });
     document.addEventListener('drop', handleDropEvent, { capture: false });
+    window.addEventListener('blur', handleWindowBlur, { capture: false });
         
     Logger.logInit('Keyboard events handler');
     
     // Initialize search contexts list on startup
     updateSearchContextsList();
     updateReferenceBackButtonState();
+}
+
+function markSystemClipboardAsTrusted() {
+    noteClipboardRequiresBrowserValidation = false;
+    if (ModeContext.clipboardMode !== 'system') {
+        ModeContext.setClipboardMode('system');
+    }
+}
+
+function markNoteClipboardAsTrusted() {
+    noteClipboardRequiresBrowserValidation = false;
+    if (ModeContext.clipboardMode !== 'note') {
+        ModeContext.setClipboardMode('note');
+    }
+}
+
+function invalidateTrustedNoteClipboard() {
+    if (ModeContext.clipboardMode !== 'note') {
+        return;
+    }
+    noteClipboardRequiresBrowserValidation = true;
+}
+
+function handleWindowBlur() {
+    invalidateTrustedNoteClipboard();
+}
+
+function handleVisibilityChange() {
+    if (document.visibilityState !== 'hidden') {
+        return;
+    }
+    invalidateTrustedNoteClipboard();
+}
+
+function syncClipboardTrackingFromPasteEventHtml(clipboardHtml) {
+    const resolved = resolveClipboardTrackingAfterPasteEvent({
+        clipboardMode: ModeContext.clipboardMode,
+        noteClipboardRequiresBrowserValidation,
+        clipboardHtml,
+    });
+    noteClipboardRequiresBrowserValidation = resolved.noteClipboardRequiresBrowserValidation;
+    if (ModeContext.clipboardMode !== resolved.clipboardMode) {
+        ModeContext.setClipboardMode(resolved.clipboardMode);
+    }
+    return resolved.hasNoteClipboardHtml;
 }
 
 function handleKeyDown(event) {
@@ -1024,9 +1076,7 @@ async function handleCopyNoteShortcut(event) {
         Logger.logDebug('Text selection detected, using system clipboard for text copy', {}, Logger.LogCategory.EVENT);
 
         // Set clipboard mode to system and allow default browser behavior
-        if (ModeContext.clipboardMode !== 'system') {
-            ModeContext.setClipboardMode('system');
-        }
+        markSystemClipboardAsTrusted();
         
         return; // Let browser handle text copy
     }
@@ -1034,16 +1084,13 @@ async function handleCopyNoteShortcut(event) {
     // No text selected - do note copy
     event.preventDefault();
 
-    if (ModeContext.clipboardMode !== 'note') {
-        ModeContext.setClipboardMode('note');
-    }
-
     const copyResult = await CommandGate.run('keyboard.copy_note', async () => {
         return await actionCopyNote();
     });
     if (copyResult === null) {
         return;
     }
+    markNoteClipboardAsTrusted();
 
     const copiedNoteId = copyResult?.note_id;
     if (typeof copiedNoteId === 'string' && copiedNoteId.length > 0) {
@@ -1440,18 +1487,14 @@ async function handleCutNoteShortcut(event) {
         const selectionStart = activeElement.selectionStart;
         const selectionEnd = activeElement.selectionEnd;
         if (typeof selectionStart === 'number' && typeof selectionEnd === 'number' && selectionEnd > selectionStart) {
-            if (ModeContext.clipboardMode !== 'system') {
-                ModeContext.setClipboardMode('system');
-            }
+            markSystemClipboardAsTrusted();
             return;
         }
     }
 
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && document.activeElement && document.activeElement.isContentEditable) {
-        if (ModeContext.clipboardMode !== 'system') {
-            ModeContext.setClipboardMode('system');
-        }
+        markSystemClipboardAsTrusted();
         return;
     }
 
@@ -1464,10 +1507,6 @@ async function handleCutNoteShortcut(event) {
 
     event.preventDefault();
     event.stopPropagation();
-
-    if (ModeContext.clipboardMode !== 'note') {
-        ModeContext.setClipboardMode('note');
-    }
 
     const cutResult = await CommandGate.run('keyboard.cut_note', async () => {
         const copyResult = await actionCopyNote();
@@ -1506,6 +1545,7 @@ async function handleCutNoteShortcut(event) {
     if (cutResult === null) {
         return;
     }
+    markNoteClipboardAsTrusted();
 }
 
 function handlePasteNoteSiblingShortcut(event) {
@@ -1516,21 +1556,30 @@ function handlePasteNoteSiblingShortcut(event) {
     Logger.logDebug('Paste sibling shortcut triggered', {
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
-        clipboardMode: ModeContext.clipboardMode
+        clipboardMode: ModeContext.clipboardMode,
+        noteClipboardRequiresBrowserValidation,
     }, Logger.LogCategory.EVENT);
 
-    // Check clipboard mode to determine behavior
-    if (ModeContext.clipboardMode === 'system') {
-        Logger.logDebug('System clipboard mode - allowing default paste behavior', {}, Logger.LogCategory.EVENT);
-        return; // NO preventDefault - let browser handle text paste
-    }
-
-    // Note clipboard mode - check conditions for note paste
-    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+    const shouldAllowBrowserPaste = shouldAllowBrowserPasteForShortcut({
+        clipboardMode: ModeContext.clipboardMode,
+        noteClipboardRequiresBrowserValidation,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+    });
+    if (shouldAllowBrowserPaste) {
+        if (ModeContext.clipboardMode === 'system') {
+            Logger.logDebug('System clipboard mode - allowing default paste behavior', {}, Logger.LogCategory.EVENT);
+            return; // NO preventDefault - let browser handle text paste
+        }
+        if (noteClipboardRequiresBrowserValidation) {
+            Logger.logDebug('Note clipboard requires browser validation - allowing paste event inspection', {}, Logger.LogCategory.EVENT);
+            return;
+        }
         Logger.logNoop('Note paste shortcut conditions not met', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
-            clipboardMode: ModeContext.clipboardMode
+            clipboardMode: ModeContext.clipboardMode,
+            noteClipboardRequiresBrowserValidation,
         });
         return;
     }
@@ -1550,21 +1599,30 @@ function handlePasteNoteChildShortcut(event) {
     Logger.logDebug('Paste child shortcut triggered', {
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
-        clipboardMode: ModeContext.clipboardMode
+        clipboardMode: ModeContext.clipboardMode,
+        noteClipboardRequiresBrowserValidation,
     }, Logger.LogCategory.EVENT);
 
-    // Check clipboard mode to determine behavior
-    if (ModeContext.clipboardMode === 'system') {
-        Logger.logDebug('System clipboard mode - allowing default paste behavior', {}, Logger.LogCategory.EVENT);
-        return; // NO preventDefault - let browser handle text paste
-    }
-
-    // Note clipboard mode - check conditions for note paste
-    if (!ModeContext.isEditing || !ModeContext.currentNoteId) {
+    const shouldAllowBrowserPaste = shouldAllowBrowserPasteForShortcut({
+        clipboardMode: ModeContext.clipboardMode,
+        noteClipboardRequiresBrowserValidation,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+    });
+    if (shouldAllowBrowserPaste) {
+        if (ModeContext.clipboardMode === 'system') {
+            Logger.logDebug('System clipboard mode - allowing default paste behavior', {}, Logger.LogCategory.EVENT);
+            return; // NO preventDefault - let browser handle text paste
+        }
+        if (noteClipboardRequiresBrowserValidation) {
+            Logger.logDebug('Note clipboard requires browser validation - allowing paste event inspection', {}, Logger.LogCategory.EVENT);
+            return;
+        }
         Logger.logNoop('Note paste child shortcut conditions not met', {
             isEditing: ModeContext.isEditing,
             currentNoteId: ModeContext.currentNoteId,
-            clipboardMode: ModeContext.clipboardMode
+            clipboardMode: ModeContext.clipboardMode,
+            noteClipboardRequiresBrowserValidation,
         });
         return;
     }
@@ -2560,6 +2618,7 @@ function handlePasteEvent(event) {
 
     // Get HTML from clipboard if available
     const html = event.clipboardData.getData('text/html');
+    const hasTrackedNoteClipboardHtml = syncClipboardTrackingFromPasteEventHtml(html);
     
     Logger.logDebug('Paste event detected', {
         hasHtml: !!html,
@@ -2587,7 +2646,7 @@ function handlePasteEvent(event) {
     }
 
     // Check if this is our note HTML (contains note-content class)
-    if (html && html.includes('class="note-content"')) {
+    if (hasTrackedNoteClipboardHtml) {
         Logger.logDebug('Detected note HTML in clipboard - using server clipboard', {}, Logger.LogCategory.EVENT);
         
         // This is our note HTML - prevent default and use server clipboard

@@ -6,10 +6,12 @@ from http.client import HTTPConnection
 from pathlib import Path
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
 import time
+import shutil
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import app.server_runtime as server_runtime
@@ -22,6 +24,7 @@ from app.server_runtime import resolve_main_server_config
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import resolve_namespaces_directory
 from app.server_runtime import resolve_namespace_launch_defaults
+from app.server_runtime import resolve_runtime_logs_directory
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
 from app.services.namespace_deletion_jobs import create_namespace_deletion_job
@@ -32,6 +35,9 @@ _PLACEHOLDER_NEW_NAMESPACE = "new-namespace"
 _LAUNCH_READY_TIMEOUT_SECONDS = 12.0
 _PORT_PROBE_TIMEOUT_SECONDS = 0.75
 _READY_POLL_INTERVAL_SECONDS = 0.25
+_PROCESS_WAIT_POLL_INTERVAL_SECONDS = 0.25
+_TERMINATE_GRACE_SECONDS = 5.0
+_KILL_GRACE_SECONDS = 5.0
 _PROBE_TAB_ID = "namespace-switcher-probe"
 _DELETE_NAMESPACE_CONFIRMATION_PHRASE = "permanently delete"
 
@@ -70,6 +76,28 @@ class NamespaceDeleteResult:
     redirect_url: str
     delete_job_id: str
     message: str
+
+
+def _resolve_main_launch_command(*, environ: Mapping[str, str]) -> list[str]:
+    recorded_entrypoint = environ.get("METALIST_SELF_EXECUTABLE")
+    if recorded_entrypoint is not None:
+        stripped_entrypoint = recorded_entrypoint.strip()
+        if stripped_entrypoint == "":
+            raise RuntimeError("METALIST_SELF_EXECUTABLE must not be empty")
+        entrypoint_path = Path(stripped_entrypoint).expanduser()
+        if entrypoint_path.suffix.casefold() == ".py":
+            return [sys.executable, str(entrypoint_path)]
+        return [str(entrypoint_path)]
+
+    source_main = _PROJECT_ROOT / "main.py"
+    if source_main.is_file():
+        return [sys.executable, str(source_main)]
+    return [sys.executable, "-m", "main"]
+
+
+def _resolve_delete_worker_command() -> list[str]:
+    worker_path = Path(__file__).resolve().with_name("namespace_deletion_worker.py")
+    return [sys.executable, str(worker_path)]
 
 
 def build_namespace_catalog(
@@ -205,22 +233,21 @@ def open_or_launch_namespace(
         saved_profile=saved_profile,
     )
     if running_port is not None:
-        running_url = _build_browser_url(environ=environ, port=running_port)
+        _restart_running_namespace_process(
+            environ=environ,
+            namespace=normalized_namespace,
+            chosen_profile=chosen_profile,
+            running_port=running_port,
+        )
+        running_url = _build_browser_url(environ=environ, port=chosen_profile.port)
         assert running_url is not None
-        if saved_for_next_launch:
-            message = (
-                f"Namespace {normalized_namespace} is already running. "
-                "Saved the new ports for the next launch."
-            )
-        else:
-            message = f"Namespace {normalized_namespace} is already running."
         return NamespaceOpenResult(
             namespace=normalized_namespace,
-            action="opened-running",
+            action="restarted",
             url=running_url,
             saved_profile=chosen_profile,
             saved_for_next_launch=saved_for_next_launch,
-            message=message,
+            message=f"Restarted namespace {normalized_namespace}.",
         )
     _assert_ports_are_available_for_launch(
         environ=environ,
@@ -659,11 +686,139 @@ def _find_running_namespace_port(
     return None
 
 
+def _read_process_state(*, pid: int) -> str | None:
+    completed = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    process_state = completed.stdout.strip()
+    if process_state == "":
+        return None
+    return process_state
+
+
+def _is_process_running(*, pid: int) -> bool:
+    if not isinstance(pid, int):
+        raise TypeError(f"pid must be an int, got {type(pid)}")
+    if pid <= 0:
+        raise ValueError(f"pid must be positive, got: {pid}")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    process_state = _read_process_state(pid=pid)
+    if process_state is None:
+        return True
+    if process_state.startswith("Z"):
+        return False
+    return True
+
+
+def _wait_for_process_exit(*, pid: int, timeout_seconds: float) -> bool:
+    if not isinstance(timeout_seconds, float):
+        raise TypeError(f"timeout_seconds must be a float, got {type(timeout_seconds)}")
+    if timeout_seconds < 0.0:
+        raise ValueError(f"timeout_seconds must be >= 0.0, got {timeout_seconds}")
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if not _is_process_running(pid=pid):
+            return True
+        time.sleep(_PROCESS_WAIT_POLL_INTERVAL_SECONDS)
+    return not _is_process_running(pid=pid)
+
+
+def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
+    if not _is_process_running(pid=pid):
+        return
+    try:
+        os.kill(pid, signal_number)
+    except ProcessLookupError:
+        return
+
+
+def _stop_process(*, pid: int) -> None:
+    if not _is_process_running(pid=pid):
+        return
+
+    _send_signal_if_running(pid=pid, signal_number=signal.SIGTERM)
+    if _wait_for_process_exit(pid=pid, timeout_seconds=_TERMINATE_GRACE_SECONDS):
+        return
+
+    _send_signal_if_running(pid=pid, signal_number=signal.SIGKILL)
+    if _wait_for_process_exit(pid=pid, timeout_seconds=_KILL_GRACE_SECONDS):
+        return
+
+    raise RuntimeError(f"Timed out waiting for process {pid} to exit")
+
+
+def _find_listening_pids_for_port(*, port: int) -> list[int]:
+    if not isinstance(port, int):
+        raise TypeError(f"port must be an int, got {type(port)}")
+    if port <= 0 or port > 65535:
+        raise ValueError(f"port must be between 1 and 65535, got: {port}")
+
+    lsof_path = shutil.which("lsof")
+    if lsof_path is None:
+        raise RuntimeError("`lsof` is required to restart a running namespace")
+
+    completed = subprocess.run(
+        [lsof_path, "-nP", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode not in {0, 1}:
+        raise RuntimeError(
+            f"`lsof` failed while checking port {port}: "
+            f"exit={completed.returncode} stderr={completed.stderr.strip()!r}"
+        )
+    stdout = completed.stdout.strip()
+    if stdout == "":
+        return []
+
+    seen_pids: set[int] = set()
+    ordered_pids: list[int] = []
+    for raw_line in stdout.splitlines():
+        raw_pid = raw_line.strip()
+        if raw_pid == "":
+            continue
+        if not raw_pid.isdigit():
+            raise RuntimeError(f"`lsof` returned a non-numeric pid for port {port}: {raw_pid!r}")
+        pid = int(raw_pid)
+        if pid <= 0:
+            raise RuntimeError(f"`lsof` returned invalid pid for port {port}: {pid}")
+        if pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        ordered_pids.append(pid)
+    return ordered_pids
+
+
+def _is_port_occupied_only_by_allowed_pids(*, port: int, allowed_listener_pids: frozenset[int]) -> bool:
+    if len(allowed_listener_pids) == 0:
+        return False
+    listener_pids = _find_listening_pids_for_port(port=port)
+    if len(listener_pids) == 0:
+        return False
+    for pid in listener_pids:
+        if pid not in allowed_listener_pids:
+            return False
+    return True
+
+
 def _assert_ports_are_available_for_launch(
     *,
     environ: Mapping[str, str],
     namespace: str,
     chosen_profile: NamespaceLaunchProfile,
+    allowed_listener_pids: frozenset[int] | None = None,
 ) -> None:
     main_server_config = resolve_main_server_config(environ=environ)
     connect_host = resolve_backend_connect_host(host=main_server_config.host)
@@ -692,6 +847,14 @@ def _assert_ports_are_available_for_launch(
         if port is None:
             continue
         if _is_tcp_port_open(host=connect_host, port=port):
+            if (
+                allowed_listener_pids is not None
+                and _is_port_occupied_only_by_allowed_pids(
+                    port=port,
+                    allowed_listener_pids=allowed_listener_pids,
+                )
+            ):
+                continue
             raise RuntimeError(f"{service} port {port} is already in use")
 
 
@@ -730,26 +893,26 @@ def _launch_namespace_process(
     ):
         if name in child_environ:
             del child_environ[name]
-    command = [
-        sys.executable,
-        str(_PROJECT_ROOT / "main.py"),
-        "--namespace",
-        chosen_profile.namespace,
-        "--port",
-        str(chosen_profile.port),
-        "--mcp-port",
-        str(chosen_profile.mcp_port),
-    ]
+    command = _resolve_main_launch_command(environ=child_environ)
+    command.extend(
+        [
+            "--namespace",
+            chosen_profile.namespace,
+            "--port",
+            str(chosen_profile.port),
+            "--mcp-port",
+            str(chosen_profile.mcp_port),
+        ]
+    )
     if chosen_profile.https_port is not None:
         command.extend(["--https-port", str(chosen_profile.https_port)])
-    logs_directory = _PROJECT_ROOT / "logs"
+    logs_directory = resolve_runtime_logs_directory()
     logs_directory.mkdir(parents=True, exist_ok=True)
     log_path = logs_directory / f"namespace-{chosen_profile.namespace}.log"
     log_handle = open(log_path, "ab")
     try:
         subprocess.Popen(
             command,
-            cwd=str(_PROJECT_ROOT),
             env=child_environ,
             stdout=log_handle,
             stderr=log_handle,
@@ -757,6 +920,44 @@ def _launch_namespace_process(
         )
     finally:
         log_handle.close()
+
+
+def _stop_processes_listening_on_port(*, port: int) -> None:
+    listener_pids = _find_listening_pids_for_port(port=port)
+    if len(listener_pids) == 0:
+        return
+
+    current_pid = os.getpid()
+    for pid in listener_pids:
+        if pid == current_pid:
+            raise RuntimeError(f"Refusing to stop the current process on port {port}")
+        _stop_process(pid=pid)
+
+
+def _restart_running_namespace_process(
+    *,
+    environ: Mapping[str, str],
+    namespace: str,
+    chosen_profile: NamespaceLaunchProfile,
+    running_port: int,
+) -> None:
+    allowed_listener_pids = frozenset(_find_listening_pids_for_port(port=running_port))
+    _assert_ports_are_available_for_launch(
+        environ=environ,
+        namespace=namespace,
+        chosen_profile=chosen_profile,
+        allowed_listener_pids=allowed_listener_pids,
+    )
+    _stop_processes_listening_on_port(port=running_port)
+    _launch_namespace_process(
+        environ=environ,
+        chosen_profile=chosen_profile,
+    )
+    _wait_for_namespace_ready(
+        environ=environ,
+        namespace=namespace,
+        port=chosen_profile.port,
+    )
 
 
 def _wait_for_namespace_ready(
@@ -879,25 +1080,24 @@ def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id
     if not isinstance(job_id, str) or job_id == "":
         raise TypeError("job_id must be a non-empty string")
 
-    command = [
-        sys.executable,
-        "-m",
-        "app.services.namespace_deletion_worker",
-        "--pid",
-        str(current_pid),
-        "--namespace",
-        normalized_namespace,
-        "--job-id",
-        job_id,
-    ]
-    logs_directory = _PROJECT_ROOT / "logs"
+    command = _resolve_delete_worker_command()
+    command.extend(
+        [
+            "--pid",
+            str(current_pid),
+            "--namespace",
+            normalized_namespace,
+            "--job-id",
+            job_id,
+        ]
+    )
+    logs_directory = resolve_runtime_logs_directory()
     logs_directory.mkdir(parents=True, exist_ok=True)
     log_path = logs_directory / f"namespace-delete-{normalized_namespace}.log"
     log_handle = open(log_path, "ab")
     try:
         subprocess.Popen(
             command,
-            cwd=str(_PROJECT_ROOT),
             env=dict(os.environ),
             stdout=log_handle,
             stderr=log_handle,

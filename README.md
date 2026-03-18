@@ -35,21 +35,25 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 ## Development
 
 ### Setup
+For a published install, users should run `pip install metalist`. For a non-editable local install from this checkout, use `pip install .` instead of the editable command below.
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .[dev]
 
 npm install
 ```
 
 ### Run
-The default entrypoint starts Uvicorn with the FastAPI app:
+The installed entrypoint starts Uvicorn with the FastAPI app:
 ```bash
-python main.py
+metalist
 ```
+For source-checkout compatibility, `python main.py` still works.
+
 By default, this binds HTTP on `0.0.0.0:8000`, matching the old MetaList LAN-friendly behavior.
-HTTPS on `0.0.0.0:8443` only turns on if TLS files already exist at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or if you point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at existing PEM files.
+On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on `0.0.0.0:8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
 
 Database selection:
 - No explicit namespace: `~/MetaList/namespaces/default/default.metalist.db`
@@ -68,42 +72,37 @@ Useful env flags:
 - `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
 - `MCP_AGENT_WEB_PORT=8765` (default): bind the MCP sidecar web UI to a different port
 - `METALIST_TLS_CERT=/path/to/fullchain.pem` + `METALIST_TLS_KEY=/path/to/privkey.pem`: override TLS paths
-- default TLS paths: `certs/metalist-cert.pem` and `certs/metalist-key.pem`
+- `METALIST_AUTO_GENERATE_TLS=0`: disable automatic creation of the default self-signed TLS pair
+- default TLS paths: `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`
 - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
 - `MCP_AGENT_PUBLIC_ORIGIN=https://notes.example.com:8765`: public origin for the MCP sidecar redirect when it is exposed behind HTTPS or a separate hostname/port
 
 ### Remote Access / HTTPS
 Plain LAN or VPN HTTP works with a normal PyCharm run:
 ```bash
-python main.py
+metalist
 ```
-Then open `http://<laptop-ip>:8000` from the other machine.
+On a fresh machine, that first launch also creates the default TLS cert pair automatically. Then open either `http://<laptop-ip>:8000` or `https://<laptop-ip>:8443` from the other machine.
 
 Namespaced launch example:
 ```bash
-python main.py --namespace work --port 8001 --mcp-port 8766
+metalist --namespace work --port 8001 --mcp-port 8766
 ```
 This starts a separate process backed by `~/MetaList/namespaces/work/work.metalist.db` on `http://127.0.0.1:8001`.
 Its related backup snapshots live under `~/MetaList/namespaces/work/backups/` with filenames like `<timestamp>.work.metalist.db.bak`.
 
 After you launch a namespace once with explicit ports, MetaList remembers them in `~/MetaList/namespaces.db`, so later you can use the shorthand:
 ```bash
-python main.py work
+metalist work
 ```
-and MetaList will reuse the saved HTTP / HTTPS / MCP sidecar ports for `work`. The same applies to the default namespace: `python main.py` will reuse the saved default-namespace profile.
-
-For LAN-friendly HTTPS, manually generate or supply PEM files first:
-```bash
-./scripts/generate-lan-cert.sh
-```
-Then a plain PyCharm run or `python main.py` will also start `https://<laptop-ip>:8443`.
+and MetaList will reuse the saved HTTP / HTTPS / MCP sidecar ports for `work`. The same applies to the default namespace: `metalist` will reuse the saved default-namespace profile.
 
 Equivalent explicit launch, if you want it:
 ```bash
 METALIST_HOST=0.0.0.0 \
 METALIST_PORT=8000 \
 METALIST_HTTPS_PORT=8443 \
-python main.py
+metalist
 ```
 From the other machine, open `https://<laptop-ip>:8443`.
 
@@ -114,7 +113,12 @@ METALIST_PORT=8000 \
 METALIST_HTTPS_PORT=8443 \
 METALIST_TLS_CERT=/path/to/fullchain.pem \
 METALIST_TLS_KEY=/path/to/privkey.pem \
-python main.py
+metalist
+```
+
+If you want to rotate or regenerate the default self-signed pair manually, the helper script is still available:
+```bash
+generate-lan-cert.sh
 ```
 
 When HTTPS is enabled:
@@ -126,21 +130,21 @@ If TLS is terminated by a reverse proxy on the same machine instead, keep MetaLi
 METALIST_HOST=127.0.0.1 \
 METALIST_PORT=8000 \
 METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1 \
-python main.py
+metalist
 ```
 
 If you do not need the MCP sidecar remotely, disable it:
 ```bash
-MCP_AGENT_WEB_ENABLED=0 python main.py
+MCP_AGENT_WEB_ENABLED=0 metalist
 ```
 
 ### MCP (Phase 1 Read-Only)
 MCP is available automatically when you run:
 ```bash
-python main.py
+metalist
 ```
 
-`main.py` also auto-starts the agent web app sidecar and prints:
+`metalist` also auto-starts the agent web app sidecar and prints:
 - `Agent web app: http://127.0.0.1:8765`
 - The sidecar default MCP URL follows the resolved MetaList HTTP port for the current process.
 - Use `--mcp-port` when you want multiple MetaList instances to auto-start sidecars without colliding on `8765`.
@@ -149,14 +153,14 @@ python main.py
 
 Manual web mode (optional):
 ```bash
-python mcp_client.py web --port 8765
+metalist-mcp web --port 8765
 ```
 Then open `http://127.0.0.1:8765`.
 
 Run direct MCP CLI calls:
 ```bash
-python mcp_client.py cli tools/list
-python mcp_client.py cli tools/call health_check '{}'
+metalist-mcp cli tools/list
+metalist-mcp cli tools/call health_check '{}'
 ```
 
 Compatibility shortcut (still works):
@@ -166,16 +170,16 @@ python mcp_client.py tools/list
 
 Disable auto sidecar if needed:
 ```bash
-MCP_AGENT_WEB_ENABLED=0 python main.py
+MCP_AGENT_WEB_ENABLED=0 metalist
 ```
 
 Control Ollama startup behavior:
 ```bash
 # disable Ollama reset-on-start (default is enabled)
-MCP_AGENT_RESET_OLLAMA_ON_START=0 python main.py
+MCP_AGENT_RESET_OLLAMA_ON_START=0 metalist
 
 # override auto-start context length (default 16384)
-MCP_AGENT_OLLAMA_CONTEXT_LENGTH=32768 python main.py
+MCP_AGENT_OLLAMA_CONTEXT_LENGTH=32768 metalist
 ```
 
 Optional: direct stdio transport (advanced/manual):
@@ -193,15 +197,29 @@ This is destructive. It deletes the existing DB file before rebuilding it.
 
 Example usage:
 ```bash
-python convert-from-legacy.py --input /path/to/legacy-export.json
+convert-from-legacy.py --input /path/to/legacy-export.json
 ```
 
 Target a namespaced database during import:
 ```bash
-python convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
+convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
 ```
 
-If `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the import script prompts for them and saves the resulting launch profile to `~/MetaList/namespaces.db`. That means a one-time import into `work` can immediately seed later shorthand launches like `python main.py work`.
+If `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the import script prompts for them and saves the resulting launch profile to `~/MetaList/namespaces.db`. That means a one-time import into `work` can immediately seed later shorthand launches like `metalist work`.
+
+### Publishing
+For the real user-facing install flow:
+```bash
+pip install metalist
+metalist
+```
+
+This repo now packages itself under the PyPI distribution name `metalist`. The remaining release step is publishing version `0.3.0` to the existing PyPI project.
+
+Recommended release path:
+1. In the existing PyPI project `metalist`, configure GitHub Trusted Publishing for `evolvingstuff/metalist3` and the workflow file `.github/workflows/publish-pypi.yml`.
+2. Push a tag such as `v0.3.0`.
+3. After the GitHub Actions workflow completes, users can install with `pip install metalist`.
 
 If `--input` is omitted, a file picker opens (when `tkinter` is available).
 Notes tagged with `@implies` are converted into ontology rules and are not imported as notes.

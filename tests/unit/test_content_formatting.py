@@ -7,6 +7,40 @@ def test_format_note_content_for_view_no_matching_tag_keeps_delimiters() -> None
     assert rendered == html
 
 
+def test_format_note_content_for_view_autolinks_plain_http_url() -> None:
+    html = "<div>https://google.com</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="")
+    assert (
+        '<a href="https://google.com" target="_blank" rel="noopener noreferrer">https://google.com</a>'
+        in rendered
+    )
+
+
+def test_format_note_content_for_view_autolinks_plain_http_url_without_trailing_punctuation() -> None:
+    html = "<div>See https://google.com.</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="")
+    assert (
+        '<a href="https://google.com" target="_blank" rel="noopener noreferrer">https://google.com</a>.'
+        in rendered
+    )
+
+
+def test_format_note_content_for_view_normalizes_existing_anchor_to_new_tab() -> None:
+    html = '<div><a href="https://example.com">Example</a></div>'
+    rendered = format_note_content_for_view(content_html=html, tags="")
+    assert (
+        '<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>'
+        in rendered
+    )
+
+
+def test_format_note_content_for_view_leaves_hash_anchor_unchanged() -> None:
+    html = '<div><a href="#note-123">Example</a></div>'
+    rendered = format_note_content_for_view(content_html=html, tags="")
+    assert '<a href="#note-123">Example</a>' in rendered
+    assert 'target="_blank"' not in rendered
+
+
 def test_format_note_content_for_view_scoped_monospace_consumes_delimiters() -> None:
     html = "<div>{{hello}}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="{{@monospace}}")
@@ -107,6 +141,8 @@ def test_format_note_content_for_view_email_meta_renders_mailto_link() -> None:
     assert 'meta-email' in rendered
     assert 'Email:' in rendered
     assert 'href="mailto:hello@example.com"' in rendered
+    assert 'target="_blank"' in rendered
+    assert 'rel="noopener noreferrer"' in rendered
     assert ">hello@example.com<" in rendered
 
 

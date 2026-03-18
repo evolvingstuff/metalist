@@ -1383,7 +1383,8 @@ body {
     display: -webkit-box;
     -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
-    line-height: 1.35;
+    /* Keep the first preview line on the same baseline as expanded notes. */
+    line-height: inherit;
 }
 
 .note.collapsed:not(.editing) .note-content:has(img) {
@@ -2899,6 +2900,26 @@ body.loading::after {
 
 .meta-status-text {
     display: inline-block;
+}
+
+.note.collapsed:not(.editing) .note-content .meta-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+}
+
+.note.collapsed:not(.editing) .note-content .meta-status-toggle {
+    flex: 0 0 auto;
+}
+
+.note.collapsed:not(.editing) .note-content .meta-status-text {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* JSON meta tags */

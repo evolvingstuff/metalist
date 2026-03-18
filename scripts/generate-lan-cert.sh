@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+show_help() {
+  cat <<'EOF'
+Usage: generate-lan-cert.sh [LAN_IP] [OUTPUT_DIR]
+
+Generates or replaces the default self-signed LAN certificate for MetaList.
+
+Arguments:
+  LAN_IP      Optional explicit LAN IP. If omitted, the script auto-detects one.
+  OUTPUT_DIR  Optional certificate directory. Defaults to ~/MetaList/certs.
+EOF
+}
+
 detect_lan_ip() {
   if [[ -n "${METALIST_LAN_IP:-}" ]]; then
     printf '%s\n' "${METALIST_LAN_IP}"
@@ -42,13 +54,18 @@ detect_lan_ip() {
   exit 1
 }
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
 if ! command -v openssl >/dev/null 2>&1; then
   echo "openssl is required" >&2
   exit 1
 fi
 
 LAN_IP="${1:-$(detect_lan_ip)}"
-OUTPUT_DIR="${2:-certs}"
+OUTPUT_DIR="${2:-${HOME}/MetaList/certs}"
 CERT_PATH="${OUTPUT_DIR}/metalist-cert.pem"
 KEY_PATH="${OUTPUT_DIR}/metalist-key.pem"
 CONF_PATH="${OUTPUT_DIR}/metalist-cert.cnf"
@@ -95,6 +112,8 @@ Generated:
   conf: ${CONF_PATH}
 
 Run MetaList with dual HTTP/HTTPS listeners:
+  metalist
+  # source checkout compatibility:
   python main.py
 
 From the other machine, open:

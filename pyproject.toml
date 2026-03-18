@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=75.6.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metalist"
+version = "0.3.0"
+description = "A minimalist single-user note-taking app with SSR, fast in-memory tree operations, and efficient sync."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "argon2-cffi==23.1.0",
+    "cryptography==42.0.5",
+    "fastapi==0.110.0",
+    "loguru==0.7.2",
+    "Mako==1.3.2",
+    "pydantic==2.9.2",
+    "python-multipart==0.0.9",
+    "starlette==0.36.3",
+    "uvicorn==0.27.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/evolvingstuff/metalist3"
+Repository = "https://github.com/evolvingstuff/metalist3"
+Issues = "https://github.com/evolvingstuff/metalist3/issues"
+
+[project.optional-dependencies]
+dev = [
+    "hypothesis==6.112.0",
+    "pytest==8.0.0",
+    "pytest-cov==4.1.0",
+]
+
+[project.scripts]
+metalist = "main:main"
+metalist-mcp = "mcp_client:main"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = ["main", "mcp_client"]
+script-files = ["convert-from-legacy.py", "scripts/generate-lan-cert.sh"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.exclude-package-data]
+app = [
+    ".DS_Store",
+    "static/.DS_Store",
+    "static/js/.DS_Store",
+]

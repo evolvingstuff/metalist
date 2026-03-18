@@ -117,6 +117,14 @@ _STATUS_META = {
 _JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 _LATEX_PLACEHOLDER_PREFIX = "@@MLLATEX["
 _LATEX_PLACEHOLDER_SUFFIX = "]@@"
+_PLAIN_URL_RE = re.compile(r"https?://[^\s<]+", re.IGNORECASE)
+_HTML_TAG_SPLIT_RE = re.compile(r"(<[^>]+>)")
+_ANCHOR_START_TAG_RE = re.compile(r"<\s*a\b", re.IGNORECASE)
+_ANCHOR_END_TAG_RE = re.compile(r"<\s*/\s*a\s*>", re.IGNORECASE)
+_ANCHOR_HREF_ATTR_RE = re.compile(r'(\bhref\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
+_ANCHOR_TARGET_ATTR_RE = re.compile(r'(\btarget\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
+_ANCHOR_REL_ATTR_RE = re.compile(r'(\brel\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
+_NEW_TAB_REL_TOKENS = ("noopener", "noreferrer")
 
 
 def list_known_meta_tag_terms() -> FrozenSet[str]:
@@ -168,7 +176,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         and email_tag is None
         and status_tag is None
     ):
-        return content_html
+        return _linkify_view_links(content_html)
 
     output = content_html
     apply_wrappers = True
@@ -215,24 +223,30 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         raise KeyError(f"Unknown renderer tag: {renderer_tag}")
 
     if credential_tag is not None:
-        return _render_credential_meta(
-            content_html=output,
-            credential_tag=credential_tag,
-            formatting_tags=config.global_tags,
+        return _linkify_view_links(
+            _render_credential_meta(
+                content_html=output,
+                credential_tag=credential_tag,
+                formatting_tags=config.global_tags,
+            )
         )
 
     if email_tag is not None:
-        return _render_email_meta(
-            content_html=output,
-            email_tag=email_tag,
-            formatting_tags=config.global_tags,
+        return _linkify_view_links(
+            _render_email_meta(
+                content_html=output,
+                email_tag=email_tag,
+                formatting_tags=config.global_tags,
+            )
         )
 
     if status_tag is not None:
-        return _render_status_meta(
-            content_html=output,
-            status_tag=status_tag,
-            formatting_tags=config.global_tags,
+        return _linkify_view_links(
+            _render_status_meta(
+                content_html=output,
+                status_tag=status_tag,
+                formatting_tags=config.global_tags,
+            )
         )
 
     if config.global_tags:
@@ -244,7 +258,144 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
                 copy_attr = _copyable_attr(config.global_tags, plain_text)
             output = f'<span class="meta-global {classes}"{copy_attr}>{output}</span>'
 
-    return output
+    return _linkify_view_links(output)
+
+
+def _linkify_view_links(content_html: str) -> str:
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    if content_html == "":
+        return ""
+
+    pieces = _HTML_TAG_SPLIT_RE.split(content_html)
+    output: List[str] = []
+    inside_anchor_depth = 0
+
+    for piece in pieces:
+        if piece == "":
+            continue
+        if piece.startswith("<") and piece.endswith(">"):
+            normalized_tag = _normalize_anchor_tag(piece)
+            output.append(normalized_tag)
+            if _ANCHOR_END_TAG_RE.fullmatch(piece):
+                if inside_anchor_depth > 0:
+                    inside_anchor_depth -= 1
+                continue
+            if _ANCHOR_START_TAG_RE.match(piece):
+                inside_anchor_depth += 1
+            continue
+        if inside_anchor_depth > 0:
+            output.append(piece)
+            continue
+        output.append(_autolink_plain_urls_in_text(piece))
+
+    return "".join(output)
+
+
+def _autolink_plain_urls_in_text(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    if text == "":
+        return ""
+
+    output: List[str] = []
+    cursor = 0
+    for match in _PLAIN_URL_RE.finditer(text):
+        raw_url = match.group(0)
+        link_text, trailing_suffix = _split_trailing_url_punctuation(raw_url)
+        if link_text == "":
+            continue
+        output.append(text[cursor:match.start()])
+        href_value = html.escape(html.unescape(link_text), quote=True)
+        output.append(
+            f'<a href="{href_value}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
+        )
+        output.append(trailing_suffix)
+        cursor = match.end()
+    output.append(text[cursor:])
+    return "".join(output)
+
+
+def _split_trailing_url_punctuation(raw_url: str) -> Tuple[str, str]:
+    if not isinstance(raw_url, str):
+        raise TypeError(f"raw_url must be a string, got {type(raw_url)}")
+    if raw_url == "":
+        return "", ""
+
+    url_text = raw_url
+    suffix = ""
+    while url_text:
+        last_char = url_text[-1]
+        if last_char in {".", ",", "!", "?", ";", ":", "'", '"'}:
+            suffix = last_char + suffix
+            url_text = url_text[:-1]
+            continue
+        if last_char == ")":
+            if url_text.count(")") > url_text.count("("):
+                suffix = ")" + suffix
+                url_text = url_text[:-1]
+                continue
+            break
+        if last_char == "]":
+            if url_text.count("]") > url_text.count("["):
+                suffix = "]" + suffix
+                url_text = url_text[:-1]
+                continue
+            break
+        if last_char == "}":
+            if url_text.count("}") > url_text.count("{"):
+                suffix = "}" + suffix
+                url_text = url_text[:-1]
+                continue
+            break
+        break
+
+    return url_text, suffix
+
+
+def _normalize_anchor_tag(tag_html: str) -> str:
+    if not isinstance(tag_html, str):
+        raise TypeError(f"tag_html must be a string, got {type(tag_html)}")
+    if not _ANCHOR_START_TAG_RE.match(tag_html):
+        return tag_html
+
+    href_match = _ANCHOR_HREF_ATTR_RE.search(tag_html)
+    if href_match is None:
+        return tag_html
+    href_value = href_match.group(3)
+    if href_value.startswith("#"):
+        return tag_html
+
+    normalized = _ensure_anchor_target_attr(tag_html)
+    normalized = _ensure_anchor_rel_attr(normalized)
+    return normalized
+
+
+def _ensure_anchor_target_attr(tag_html: str) -> str:
+    if _ANCHOR_TARGET_ATTR_RE.search(tag_html):
+        return _ANCHOR_TARGET_ATTR_RE.sub(r'\1\2_blank\2', tag_html, count=1)
+    if tag_html.endswith("/>"):
+        return f'{tag_html[:-2]} target="_blank"/>'
+    return f'{tag_html[:-1]} target="_blank">'
+
+
+def _ensure_anchor_rel_attr(tag_html: str) -> str:
+    rel_match = _ANCHOR_REL_ATTR_RE.search(tag_html)
+    if rel_match is not None:
+        existing_tokens = rel_match.group(3).split()
+        merged_tokens = list(existing_tokens)
+        for token in _NEW_TAB_REL_TOKENS:
+            if token not in merged_tokens:
+                merged_tokens.append(token)
+        merged_value = " ".join(merged_tokens)
+        return _ANCHOR_REL_ATTR_RE.sub(
+            rf'\1\2{merged_value}\2',
+            tag_html,
+            count=1,
+        )
+    if tag_html.endswith("/>"):
+        return f'{tag_html[:-2]} rel="noopener noreferrer"/>'
+    return f'{tag_html[:-1]} rel="noopener noreferrer">'
 
 
 def find_list_style(tags: str) -> str | None:

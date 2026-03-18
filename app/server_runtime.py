@@ -3,25 +3,33 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 import ipaddress
+import os
 from pathlib import Path
 import re
+import socket
 import sqlite3
 import tempfile
 from urllib.parse import urlsplit
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_DEFAULT_CERT_PATH = _PROJECT_ROOT / "certs" / "metalist-cert.pem"
-_DEFAULT_KEY_PATH = _PROJECT_ROOT / "certs" / "metalist-key.pem"
+
 _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
 _DEFAULT_API_PREFIX = "/api2"
 _DEFAULT_V1_API_PREFIX = "/api"
 _DEFAULT_DATABASE_DIRECTORY = Path.home() / "MetaList"
+_DEFAULT_CERT_PATH = _DEFAULT_DATABASE_DIRECTORY / "certs" / "metalist-cert.pem"
+_DEFAULT_KEY_PATH = _DEFAULT_DATABASE_DIRECTORY / "certs" / "metalist-key.pem"
 _DEFAULT_RUNTIME_DIRECTORY = Path(tempfile.gettempdir()) / "metalist-runtime"
 _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
 _DEFAULT_NAMESPACE_REGISTRY_FILENAME = "namespaces.db"
 _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME = "namespace-delete-jobs"
+_DEFAULT_LOGS_DIRECTORY_NAME = "logs"
 _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
 _DEFAULT_HTTPS_PORT = 8443
@@ -110,6 +118,10 @@ def resolve_namespace_registry_path() -> Path:
 
 def resolve_namespace_delete_jobs_directory() -> Path:
     return _DEFAULT_RUNTIME_DIRECTORY / _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME
+
+
+def resolve_runtime_logs_directory() -> Path:
+    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_LOGS_DIRECTORY_NAME
 
 
 def resolve_namespace_directory(*, namespace: str) -> Path:
@@ -327,7 +339,11 @@ def resolve_namespace_launch_defaults(
     if env_port is not None:
         port = env_port
 
-    if stored_profile is not None and stored_profile.https_port is not None:
+    if (
+        stored_profile is not None
+        and stored_profile.https_port is not None
+        and ssl_certfile is not None
+    ):
         https_port = stored_profile.https_port
     elif ssl_certfile is not None:
         https_port = _DEFAULT_HTTPS_PORT
@@ -359,6 +375,7 @@ def _apply_namespace_profile_to_environ(
     cli_https_port: int | None,
     cli_mcp_port: int | None,
 ) -> None:
+    ssl_certfile, _ = _resolve_tls_pair(environ=environ)
     if cli_port is None and "METALIST_PORT" not in environ and profile is not None and profile.port is not None:
         environ["METALIST_PORT"] = str(profile.port)
     if (
@@ -366,6 +383,7 @@ def _apply_namespace_profile_to_environ(
         and "METALIST_HTTPS_PORT" not in environ
         and profile is not None
         and profile.https_port is not None
+        and ssl_certfile is not None
     ):
         environ["METALIST_HTTPS_PORT"] = str(profile.https_port)
     if (
@@ -681,6 +699,111 @@ def _is_loopback_host(*, host: str) -> bool:
         return False
 
 
+def _resolve_tls_hostname() -> str:
+    hostname = socket.gethostname().strip()
+    if hostname == "":
+        return "localhost"
+    return hostname
+
+
+def _detect_lan_ip(*, environ: Mapping[str, str]) -> str | None:
+    configured_lan_ip = _read_optional_text(environ=environ, name="METALIST_LAN_IP")
+    if configured_lan_ip is not None:
+        try:
+            ipaddress.ip_address(configured_lan_ip)
+        except ValueError as exc:
+            raise RuntimeError(f"METALIST_LAN_IP must be a valid IP address: {configured_lan_ip!r}") from exc
+        return configured_lan_ip
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe_socket:
+            probe_socket.connect(("8.8.8.8", 80))
+            candidate_ip = probe_socket.getsockname()[0]
+        if not _is_loopback_host(host=candidate_ip):
+            return candidate_ip
+    except OSError:
+        pass
+
+    hostname = _resolve_tls_hostname()
+    try:
+        for candidate_ip in socket.gethostbyname_ex(hostname)[2]:
+            try:
+                parsed_ip = ipaddress.ip_address(candidate_ip)
+            except ValueError:
+                continue
+            if parsed_ip.is_loopback:
+                continue
+            return candidate_ip
+    except OSError:
+        return None
+
+    return None
+
+
+def ensure_default_tls_pair(*, environ: Mapping[str, str]) -> tuple[str, str] | None:
+    explicit_certfile = _read_optional_text(environ=environ, name="METALIST_SSL_CERTFILE")
+    explicit_keyfile = _read_optional_text(environ=environ, name="METALIST_SSL_KEYFILE")
+    if explicit_certfile is None:
+        explicit_certfile = _read_optional_text(environ=environ, name="METALIST_TLS_CERT")
+    if explicit_keyfile is None:
+        explicit_keyfile = _read_optional_text(environ=environ, name="METALIST_TLS_KEY")
+    if explicit_certfile is not None or explicit_keyfile is not None:
+        return None
+    if not _read_flag(environ=environ, name="METALIST_AUTO_GENERATE_TLS", fallback=True):
+        return None
+
+    if _DEFAULT_CERT_PATH.is_file() and _DEFAULT_KEY_PATH.is_file():
+        return (str(_DEFAULT_CERT_PATH), str(_DEFAULT_KEY_PATH))
+
+    _DEFAULT_CERT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _DEFAULT_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    hostname = _resolve_tls_hostname()
+    lan_ip = _detect_lan_ip(environ=environ)
+    common_name = lan_ip if lan_ip is not None else hostname
+    san_entries: list[x509.GeneralName] = [
+        x509.DNSName("localhost"),
+        x509.DNSName(hostname),
+        x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+    ]
+    if lan_ip is not None and lan_ip != "127.0.0.1":
+        san_entries.append(x509.IPAddress(ipaddress.ip_address(lan_ip)))
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, common_name)]
+    )
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=365))
+        .add_extension(x509.SubjectAlternativeName(san_entries), critical=False)
+        .sign(private_key=private_key, algorithm=hashes.SHA256())
+    )
+
+    _DEFAULT_CERT_PATH.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    _DEFAULT_KEY_PATH.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    os.chmod(_DEFAULT_CERT_PATH, 0o644)
+    os.chmod(_DEFAULT_KEY_PATH, 0o600)
+    print(
+        "Generated default TLS certificate: "
+        f"cert={_DEFAULT_CERT_PATH.expanduser()} "
+        f"key={_DEFAULT_KEY_PATH.expanduser()}"
+    )
+    return (str(_DEFAULT_CERT_PATH), str(_DEFAULT_KEY_PATH))
+
+
 def _resolve_tls_pair(*, environ: Mapping[str, str]) -> tuple[str | None, str | None]:
     cert_env_value = _read_optional_text(environ=environ, name="METALIST_SSL_CERTFILE")
     key_env_value = _read_optional_text(environ=environ, name="METALIST_SSL_KEYFILE")
@@ -736,7 +859,7 @@ def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfi
     if https_port is not None and ssl_certfile is None:
         raise RuntimeError(
             "METALIST_HTTPS_PORT requires TLS certs via "
-            "METALIST_SSL_CERTFILE/METALIST_TLS_CERT or certs/metalist-cert.pem",
+            "METALIST_SSL_CERTFILE/METALIST_TLS_CERT or ~/MetaList/certs/metalist-cert.pem",
         )
     if https_port is not None and https_port == port:
         raise RuntimeError("METALIST_HTTPS_PORT must differ from METALIST_PORT")

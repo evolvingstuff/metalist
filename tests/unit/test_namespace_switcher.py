@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -157,7 +158,155 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
     assert saved_profile.mcp_port == 8766
 
 
-def test_open_or_launch_namespace_opens_running_namespace_and_updates_future_profile(
+def test_restart_running_namespace_process_allows_existing_namespace_ports_before_relaunch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checks: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(namespace_switcher, "_find_listening_pids_for_port", lambda *, port: [2345] if port in {8123, 8766} else [])
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_assert_ports_are_available_for_launch",
+        lambda *, environ, namespace, chosen_profile, allowed_listener_pids: checks.append(
+            ("assert", (namespace, chosen_profile.port, chosen_profile.mcp_port, allowed_listener_pids))
+        ),
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_stop_processes_listening_on_port",
+        lambda *, port: checks.append(("stop", port)),
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_launch_namespace_process",
+        lambda *, environ, chosen_profile: checks.append(("launch", (chosen_profile.namespace, chosen_profile.port))),
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_wait_for_namespace_ready",
+        lambda *, environ, namespace, port: checks.append(("wait", (namespace, port))),
+    )
+
+    namespace_switcher._restart_running_namespace_process(
+        environ={},
+        namespace="work",
+        chosen_profile=NamespaceLaunchProfile(
+            namespace="work",
+            port=8123,
+            https_port=None,
+            mcp_port=8766,
+        ),
+        running_port=8123,
+    )
+
+    assert checks == [
+        ("assert", ("work", 8123, 8766, frozenset({2345}))),
+        ("stop", 8123),
+        ("launch", ("work", 8123)),
+        ("wait", ("work", 8123)),
+    ]
+
+
+def test_assert_ports_are_available_for_launch_allows_namespace_owned_mcp_port_on_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        namespace_switcher,
+        "resolve_main_server_config",
+        lambda *, environ: server_runtime.MainServerConfig(
+            host="127.0.0.1",
+            port=8000,
+            https_port=None,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile=None,
+            ssl_keyfile=None,
+        ),
+    )
+    monkeypatch.setattr(namespace_switcher, "resolve_backend_connect_host", lambda *, host: "127.0.0.1")
+    monkeypatch.setattr(namespace_switcher, "resolve_api_prefix", lambda *, environ: "/api2")
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_probe_namespace_status",
+        lambda *, host, port, api_prefix: {"namespace": "work"} if port == 8123 else None,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_is_tcp_port_open",
+        lambda *, host, port: port in {8123, 8766},
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_find_listening_pids_for_port",
+        lambda *, port: [2345] if port in {8123, 8766} else [],
+    )
+
+    namespace_switcher._assert_ports_are_available_for_launch(
+        environ={},
+        namespace="work",
+        chosen_profile=NamespaceLaunchProfile(
+            namespace="work",
+            port=8123,
+            https_port=None,
+            mcp_port=8766,
+        ),
+        allowed_listener_pids=frozenset({2345}),
+    )
+
+
+def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: dict[str, object] = {}
+
+    def _fake_popen(command, **kwargs):
+        launched["command"] = command
+        launched["env"] = kwargs["env"]
+        launched["stdout_name"] = kwargs["stdout"].name
+
+        class _Process:
+            pass
+
+        return _Process()
+
+    monkeypatch.setattr(
+        namespace_switcher,
+        "resolve_runtime_logs_directory",
+        lambda: tmp_path / "logs",
+    )
+    monkeypatch.setattr(namespace_switcher.subprocess, "Popen", _fake_popen)
+
+    namespace_switcher._launch_namespace_process(
+        environ={"METALIST_SELF_EXECUTABLE": "/tmp/metalist/main.py"},
+        chosen_profile=NamespaceLaunchProfile(
+            namespace="work",
+            port=8123,
+            https_port=None,
+            mcp_port=8766,
+        ),
+    )
+
+    assert launched["command"] == [
+        sys.executable,
+        "/tmp/metalist/main.py",
+        "--namespace",
+        "work",
+        "--port",
+        "8123",
+        "--mcp-port",
+        "8766",
+    ]
+    assert Path(str(launched["stdout_name"])).parent == tmp_path / "logs"
+    launched_env = launched["env"]
+    assert isinstance(launched_env, dict)
+    assert "METALIST_NAMESPACE" not in launched_env
+    assert "METALIST_PORT" not in launched_env
+    assert "METALIST_HTTPS_PORT" not in launched_env
+    assert "MCP_AGENT_WEB_PORT" not in launched_env
+
+
+def test_open_or_launch_namespace_restarts_running_namespace_and_updates_profile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -169,15 +318,15 @@ def test_open_or_launch_namespace_opens_running_namespace_and_updates_future_pro
         https_port=None,
         mcp_port=8766,
     )
-    launched = {"count": 0}
-
-    def _never_launch(*, environ, chosen_profile):
-        launched["count"] += 1
-
     monkeypatch.setattr(namespace_switcher, "_find_running_namespace_port", lambda **kwargs: 8123)
-    monkeypatch.setattr(namespace_switcher, "_launch_namespace_process", _never_launch)
-    monkeypatch.setattr(namespace_switcher, "_wait_for_namespace_ready", lambda **kwargs: None)
-    monkeypatch.setattr(namespace_switcher, "_assert_ports_are_available_for_launch", lambda **kwargs: None)
+    restarted: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_restart_running_namespace_process",
+        lambda *, environ, namespace, chosen_profile, running_port: restarted.append(
+            (namespace, chosen_profile.port, running_port)
+        ),
+    )
 
     result = open_or_launch_namespace(
         environ={},
@@ -188,10 +337,10 @@ def test_open_or_launch_namespace_opens_running_namespace_and_updates_future_pro
         mcp_port=8767,
     )
 
-    assert result.action == "opened-running"
-    assert result.url == "http://127.0.0.1:8123"
+    assert result.action == "restarted"
+    assert result.url == "http://127.0.0.1:8124"
     assert result.saved_for_next_launch is True
-    assert launched["count"] == 0
+    assert restarted == [("work", 8124, 8123)]
     saved_profile = load_namespace_launch_profile(namespace="work")
     assert saved_profile is not None
     assert saved_profile.port == 8124

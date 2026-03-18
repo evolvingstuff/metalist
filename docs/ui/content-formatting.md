@@ -19,6 +19,11 @@
 - In **edit mode**, the token remains literal text (`![[UUID]]`).
 - Full reference behavior and shortcut workflow: `docs/ui/references.md`.
 
+## Links In View Mode
+- Bare `http://...` and `https://...` text in rendered note content is auto-linked in view mode.
+- Existing rendered anchors are normalized to open in a new browser tab.
+- Internal hash-style anchors used by MetaList note-reference UI are left unchanged so in-app reference navigation still works.
+
 ## Content Wrappers
 - Wrappers in note content are semantic markup regions:
   - `{{...}}`, `[[...]]`, `((...))`

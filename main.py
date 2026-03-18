@@ -1,15 +1,20 @@
 import uvicorn
+import http.client
 import logging
 import os
+import signal
+import shutil
+import subprocess
 import sys
 import threading
-import http.client
+import time
 import ssl
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 
 from app.server_runtime import apply_main_cli_args_to_environ
+from app.server_runtime import ensure_default_tls_pair
 from app.server_runtime import prepare_database_runtime_path
 from app.server_runtime import resolve_backend_connect_host
 from app.server_runtime import resolve_database_runtime_config
@@ -34,6 +39,12 @@ class _StartedHttpsProxy:
     server: ThreadingHTTPServer
     thread: threading.Thread
 
+
+_WAIT_POLL_INTERVAL_SECONDS = 0.25
+_TERMINATE_GRACE_SECONDS = 5.0
+_KILL_GRACE_SECONDS = 5.0
+
+
 class FilterCheckUpdates(logging.Filter):
     NOISY_PATTERNS = (
         'POST /api/notes/acquire-lock',
@@ -46,6 +57,27 @@ class FilterCheckUpdates(logging.Filter):
     def filter(self, record):
         message = record.getMessage()
         return not any(pattern in message for pattern in self.NOISY_PATTERNS)
+
+
+def _resolve_current_entrypoint() -> str | None:
+    raw_value = sys.argv[0].strip()
+    if raw_value == "":
+        return None
+    if os.path.sep in raw_value:
+        return os.path.abspath(raw_value)
+    if os.path.altsep is not None and os.path.altsep in raw_value:
+        return os.path.abspath(raw_value)
+    resolved = shutil.which(raw_value)
+    if resolved is None:
+        return None
+    return resolved
+
+
+def _record_self_executable_for_namespace_launch() -> None:
+    entrypoint = _resolve_current_entrypoint()
+    if entrypoint is None:
+        return
+    os.environ["METALIST_SELF_EXECUTABLE"] = entrypoint
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -82,6 +114,140 @@ def _env_choice(name: str, default: str, allowed: set[str]) -> str:
     return value
 
 
+def _read_process_state(*, pid: int) -> str | None:
+    completed = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    process_state = completed.stdout.strip()
+    if process_state == "":
+        return None
+    return process_state
+
+
+def _is_process_running(*, pid: int) -> bool:
+    if not isinstance(pid, int):
+        raise TypeError(f"pid must be an int, got {type(pid)}")
+    if pid <= 0:
+        raise ValueError(f"pid must be positive, got: {pid}")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    process_state = _read_process_state(pid=pid)
+    if process_state is None:
+        return True
+    if process_state.startswith("Z"):
+        return False
+    return True
+
+
+def _wait_for_process_exit(*, pid: int, timeout_seconds: float) -> bool:
+    if not isinstance(timeout_seconds, float):
+        raise TypeError(f"timeout_seconds must be a float, got {type(timeout_seconds)}")
+    if timeout_seconds < 0.0:
+        raise ValueError(f"timeout_seconds must be >= 0.0, got {timeout_seconds}")
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if not _is_process_running(pid=pid):
+            return True
+        time.sleep(_WAIT_POLL_INTERVAL_SECONDS)
+    return not _is_process_running(pid=pid)
+
+
+def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
+    if not _is_process_running(pid=pid):
+        return
+    try:
+        os.kill(pid, signal_number)
+    except ProcessLookupError:
+        return
+
+
+def _stop_process(*, pid: int) -> None:
+    if not _is_process_running(pid=pid):
+        return
+
+    _send_signal_if_running(pid=pid, signal_number=signal.SIGTERM)
+    if _wait_for_process_exit(pid=pid, timeout_seconds=_TERMINATE_GRACE_SECONDS):
+        return
+
+    _send_signal_if_running(pid=pid, signal_number=signal.SIGKILL)
+    if _wait_for_process_exit(pid=pid, timeout_seconds=_KILL_GRACE_SECONDS):
+        return
+
+    raise RuntimeError(f"Timed out waiting for process {pid} to exit")
+
+
+def _find_listening_pids_for_port(*, port: int) -> list[int]:
+    if not isinstance(port, int):
+        raise TypeError(f"port must be an int, got {type(port)}")
+    if port <= 0 or port > 65535:
+        raise ValueError(f"port must be between 1 and 65535, got: {port}")
+
+    lsof_path = shutil.which("lsof")
+    if lsof_path is None:
+        raise RuntimeError("`lsof` is required to evict listeners from occupied ports")
+
+    completed = subprocess.run(
+        [lsof_path, "-nP", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode not in {0, 1}:
+        error_text = completed.stderr.strip()
+        raise RuntimeError(
+            f"`lsof` failed while checking port {port}: exit={completed.returncode} stderr={error_text!r}"
+        )
+    stdout = completed.stdout.strip()
+    if stdout == "":
+        return []
+
+    ordered_pids: list[int] = []
+    seen_pids: set[int] = set()
+    for raw_line in stdout.splitlines():
+        raw_pid = raw_line.strip()
+        if raw_pid == "":
+            continue
+        if not raw_pid.isdigit():
+            raise RuntimeError(f"`lsof` returned a non-numeric pid for port {port}: {raw_pid!r}")
+        pid = int(raw_pid)
+        if pid <= 0:
+            raise RuntimeError(f"`lsof` returned invalid pid for port {port}: {pid}")
+        if pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        ordered_pids.append(pid)
+    return ordered_pids
+
+
+def _evict_processes_listening_on_port(*, port: int) -> None:
+    listener_pids = _find_listening_pids_for_port(port=port)
+    if len(listener_pids) == 0:
+        return
+
+    current_pid = os.getpid()
+    foreign_listener_pids: list[int] = []
+    for pid in listener_pids:
+        if pid == current_pid:
+            raise RuntimeError(
+                f"Port {port} is already held by the current MetaList process (pid {current_pid})"
+            )
+        foreign_listener_pids.append(pid)
+
+    for pid in foreign_listener_pids:
+        print(f"Port {port} is in use; terminating pid {pid}")
+        _stop_process(pid=pid)
+
+
 def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
     enabled = _env_flag("MCP_AGENT_WEB_ENABLED", True)
     if not enabled:
@@ -93,6 +259,7 @@ def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
     else:
         host = DEFAULT_WEB_HOST
     port = _env_int("MCP_AGENT_WEB_PORT", DEFAULT_WEB_PORT)
+    _evict_processes_listening_on_port(port=port)
     if "MCP_AGENT_OLLAMA_MODEL" in os.environ:
         model = os.environ["MCP_AGENT_OLLAMA_MODEL"]
     else:
@@ -163,6 +330,7 @@ def _run_main_listener(
     ssl_certfile: str | None,
     ssl_keyfile: str | None,
 ) -> None:
+    _evict_processes_listening_on_port(port=port)
     uvicorn.run(
         app_object,
         host=host,
@@ -271,6 +439,7 @@ def _start_https_proxy_server(
         def log_message(self, format, *args) -> None:
             return
 
+    _evict_processes_listening_on_port(port=https_port)
     server = ThreadingHTTPServer((host, https_port), ProxyHandler)
     server.daemon_threads = True
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -286,16 +455,20 @@ def _start_https_proxy_server(
     thread.start()
     return _StartedHttpsProxy(server=server, thread=thread)
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv[1:]
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
-    apply_main_cli_args_to_environ(argv=sys.argv[1:], environ=os.environ)
+    _record_self_executable_for_namespace_launch()
+    apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     database_runtime_config = resolve_database_runtime_config(
         environ=os.environ,
-        argv=sys.argv[1:],
+        argv=argv,
     )
     if not database_runtime_config.test_mode:
         prepare_database_runtime_path(database_path=database_runtime_config.database_path)
+        ensure_default_tls_pair(environ=os.environ)
 
     main_server_config = resolve_main_server_config(environ=os.environ)
     default_mcp_url = resolve_main_mcp_url(
@@ -343,3 +516,7 @@ if __name__ == "__main__":
         ssl_certfile=None,
         ssl_keyfile=None,
     )
+
+
+if __name__ == "__main__":
+    main()

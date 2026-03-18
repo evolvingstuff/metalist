@@ -8,6 +8,7 @@ import math
 import os
 import queue
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -1683,27 +1684,41 @@ def _is_local_host(*, host: str) -> bool:
     return host in {"127.0.0.1", "localhost", "::1"}
 
 
+def _report_ollama_reset_skip(*, detail: str) -> None:
+    print(f"Skipping Ollama reset: {detail}", file=sys.stderr)
+
+
 def reset_local_ollama_server(*, ollama_chat_url: str) -> None:
     host, _ = _ollama_host_port(ollama_chat_url=ollama_chat_url)
     if not _is_local_host(host=host):
         return
 
-    completed = subprocess.run(
-        ["pkill", "-f", "ollama serve"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-        check=False,
-    )
+    global _OLLAMA_SIDECAR_PROCESS
+    _OLLAMA_SIDECAR_PROCESS = None
+    if shutil.which("pkill") is None:
+        _report_ollama_reset_skip(detail="`pkill` is unavailable on this system.")
+        return
+
+    try:
+        completed = subprocess.run(
+            ["pkill", "-f", "ollama serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        _report_ollama_reset_skip(detail=f"`pkill -f 'ollama serve'` failed: {error}")
+        return
+
     if completed.returncode not in {0, 1}:
         stderr_output = completed.stderr.strip()
         detail = f"`pkill -f 'ollama serve'` failed with code {completed.returncode}."
         if stderr_output != "":
             detail = f"{detail} stderr: {stderr_output}"
-        raise RuntimeError(detail)
+        _report_ollama_reset_skip(detail=detail)
+        return
 
-    global _OLLAMA_SIDECAR_PROCESS
-    _OLLAMA_SIDECAR_PROCESS = None
     time.sleep(0.25)
 
 

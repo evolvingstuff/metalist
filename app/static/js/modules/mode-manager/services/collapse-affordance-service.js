@@ -1,4 +1,5 @@
 import { NotesAPI } from '../../api-client.js';
+import { syncCollapsedStatusPreview } from './status-collapse-preview-service.js';
 
 const NOTE_SELECTOR = '.note';
 const NOTE_CONTENT_SELECTOR = '.note-content';
@@ -121,31 +122,33 @@ export function updateCollapseAffordanceForNote(noteElement) {
     if (hadCollapsedClass) {
         noteElement.classList.remove('collapsed');
     }
+    const statusPreviewState = syncCollapsedStatusPreview(contentElement, false);
 
     let canCollapse = false;
     if (hasChildren(noteElement)) {
         canCollapse = true;
     } else if (hasMetaCsv) {
         canCollapse = true;
+    } else if (statusPreviewState) {
+        canCollapse = statusPreviewState.hasAdditionalLines;
     } else if (contentHasAdditionalLines(contentElement)) {
         canCollapse = true;
     }
 
-    if (hadCollapsedClass) {
-        noteElement.classList.add('collapsed');
-    }
     noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
+    const shouldApplyCollapsedClass = isCollapsed && canCollapse;
 
     // Ensure the DOM class matches the dataset for consistent styling.
-    if (isCollapsed) {
+    if (shouldApplyCollapsedClass) {
         noteElement.classList.add('collapsed');
     } else {
         noteElement.classList.remove('collapsed');
     }
+    syncCollapsedStatusPreview(contentElement, shouldApplyCollapsedClass);
 
     const collapseToggle = noteElement.querySelector(':scope > .note-collapse-toggle');
     if (collapseToggle) {
-        collapseToggle.setAttribute('aria-label', isCollapsed ? 'Expand note' : 'Collapse note');
+        collapseToggle.setAttribute('aria-label', shouldApplyCollapsedClass ? 'Expand note' : 'Collapse note');
         collapseToggle.removeAttribute('title');
     }
 

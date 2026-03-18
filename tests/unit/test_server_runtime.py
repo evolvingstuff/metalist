@@ -7,6 +7,7 @@ from app.server_runtime import apply_main_cli_args_to_environ
 from app.server_runtime import apply_namespace_arg_to_environ
 from app.server_runtime import load_namespace_launch_profile
 from app.server_runtime import resolve_database_runtime_config
+from app.server_runtime import ensure_default_tls_pair
 from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_main_server_config
 from app.server_runtime import resolve_main_mcp_url
@@ -123,6 +124,71 @@ def test_resolve_main_server_config_enables_https_for_remote_bind_when_default_c
     assert config.https_port == 8443
     assert config.ssl_certfile == str(cert_path)
     assert config.ssl_keyfile == str(key_path)
+
+
+def test_ensure_default_tls_pair_generates_cert_and_key(tmp_path, monkeypatch) -> None:
+    cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    key_path = tmp_path / "certs" / "metalist-key.pem"
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+
+    pair = ensure_default_tls_pair(environ={})
+
+    assert pair == (str(cert_path), str(key_path))
+    assert cert_path.is_file() is True
+    assert key_path.is_file() is True
+    assert b"BEGIN CERTIFICATE" in cert_path.read_bytes()
+    assert b"BEGIN RSA PRIVATE KEY" in key_path.read_bytes()
+
+
+def test_ensure_default_tls_pair_respects_auto_generate_disable_flag(tmp_path, monkeypatch) -> None:
+    cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    key_path = tmp_path / "certs" / "metalist-key.pem"
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+
+    pair = ensure_default_tls_pair(environ={"METALIST_AUTO_GENERATE_TLS": "0"})
+
+    assert pair is None
+    assert cert_path.exists() is False
+    assert key_path.exists() is False
+
+
+def test_ensure_default_tls_pair_reuses_existing_default_paths(tmp_path, monkeypatch) -> None:
+    cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    key_path = tmp_path / "certs" / "metalist-key.pem"
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    cert_path.write_text("existing-cert", encoding="utf-8")
+    key_path.write_text("existing-key", encoding="utf-8")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+
+    pair = ensure_default_tls_pair(environ={})
+
+    assert pair == (str(cert_path), str(key_path))
+    assert cert_path.read_text(encoding="utf-8") == "existing-cert"
+    assert key_path.read_text(encoding="utf-8") == "existing-key"
+
+
+def test_ensure_default_tls_pair_skips_generation_when_explicit_tls_paths_are_set(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    cert_path = tmp_path / "certs" / "metalist-cert.pem"
+    key_path = tmp_path / "certs" / "metalist-key.pem"
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
+
+    pair = ensure_default_tls_pair(
+        environ={
+            "METALIST_TLS_CERT": "/tmp/custom-cert.pem",
+            "METALIST_TLS_KEY": "/tmp/custom-key.pem",
+        }
+    )
+
+    assert pair is None
+    assert cert_path.exists() is False
+    assert key_path.exists() is False
 
 
 def test_resolve_database_runtime_config_defaults_to_default_namespace_path(
@@ -243,6 +309,12 @@ def test_apply_main_cli_args_to_environ_loads_saved_profile_for_positional_names
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    cert_path = tmp_path / "metalist-cert.pem"
+    key_path = tmp_path / "metalist-key.pem"
+    cert_path.write_text("cert", encoding="utf-8")
+    key_path.write_text("key", encoding="utf-8")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
     save_namespace_launch_profile(
         namespace="cla",
         port=9000,
@@ -266,11 +338,43 @@ def test_apply_main_cli_args_to_environ_loads_saved_profile_for_positional_names
     assert environ["MCP_AGENT_WEB_PORT"] == "9776"
 
 
+def test_apply_main_cli_args_to_environ_skips_saved_https_port_when_tls_is_unavailable(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=8443,
+        mcp_port=8765,
+    )
+    environ: dict[str, str] = {}
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=[],
+        environ=environ,
+    )
+
+    assert parsed.namespace == "default"
+    assert environ["METALIST_PORT"] == "8000"
+    assert "METALIST_HTTPS_PORT" not in environ
+    assert environ["MCP_AGENT_WEB_PORT"] == "8765"
+
+
 def test_apply_main_cli_args_to_environ_explicit_cli_port_overrides_saved_profile_and_persists_merge(
     tmp_path,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    cert_path = tmp_path / "metalist-cert.pem"
+    key_path = tmp_path / "metalist-key.pem"
+    cert_path.write_text("cert", encoding="utf-8")
+    key_path.write_text("key", encoding="utf-8")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", cert_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", key_path)
     save_namespace_launch_profile(
         namespace="cla",
         port=9000,
@@ -383,6 +487,31 @@ def test_resolve_namespace_launch_defaults_uses_tls_sensitive_defaults_and_saved
     assert defaults.namespace == "cla"
     assert defaults.port == 9000
     assert defaults.https_port == 8443
+    assert defaults.mcp_port == 9776
+
+
+def test_resolve_namespace_launch_defaults_ignores_saved_https_port_without_tls(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path / "MetaList")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=9000,
+        https_port=9443,
+        mcp_port=9776,
+    )
+
+    defaults = resolve_namespace_launch_defaults(
+        namespace="cla",
+        environ={},
+    )
+
+    assert defaults.namespace == "cla"
+    assert defaults.port == 9000
+    assert defaults.https_port is None
     assert defaults.mcp_port == 9776
 
 

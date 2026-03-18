@@ -2,7 +2,7 @@ import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
-import { renderMarkdownBlocks } from './markdown-render-service.js';
+import { ensureAnchorsOpenInNewTabs, renderMarkdownBlocks } from './markdown-render-service.js';
 import { renderLatexBlocks } from './latex-render-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
@@ -723,6 +723,7 @@ export function applyDifferentialView(payload, options) {
 
         if (shouldRenderContent) {
             contentElement.innerHTML = noteData.content;
+            ensureAnchorsOpenInNewTabs(contentElement);
             logVDOM('replaced note content', { noteId });
             vdomOperations += 1;
             if (incomingHash) {
@@ -752,6 +753,7 @@ export function applyDifferentialView(payload, options) {
     renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
     hydrateImageFilePreviews(notesContainer);
+    ensureAnchorsOpenInNewTabs(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
     return {
@@ -926,6 +928,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     let contentChanged = false;
     if ((forceContentUpdate || !editingByCurrentClient || canReplaceWhileEditing) && typeof noteData.content === 'string') {
         contentElement.innerHTML = noteData.content;
+        ensureAnchorsOpenInNewTabs(contentElement);
         contentChanged = true;
     }
 

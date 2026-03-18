@@ -1,0 +1,3 @@
+recursive-include app/static *
+recursive-include app/templates *.html
+global-exclude .DS_Store

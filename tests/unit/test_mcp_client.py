@@ -1,8 +1,60 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import mcp_client
 import pytest
+
+
+def test_reset_local_ollama_server_skips_when_pkill_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(mcp_client.shutil, "which", lambda command_name: None)
+    mcp_client._OLLAMA_SIDECAR_PROCESS = object()
+
+    def _unexpected_run(**kwargs):
+        raise AssertionError("subprocess.run should not be called when pkill is unavailable")
+
+    monkeypatch.setattr(mcp_client.subprocess, "run", _unexpected_run)
+
+    mcp_client.reset_local_ollama_server(
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+    )
+
+    captured = capsys.readouterr()
+    assert "Skipping Ollama reset" in captured.err
+    assert "unavailable" in captured.err
+    assert mcp_client._OLLAMA_SIDECAR_PROCESS is None
+
+
+def test_reset_local_ollama_server_skips_on_unexpected_pkill_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(mcp_client.shutil, "which", lambda command_name: "/usr/bin/pkill")
+    mcp_client._OLLAMA_SIDECAR_PROCESS = object()
+
+    monkeypatch.setattr(
+        mcp_client.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=["pkill", "-f", "ollama serve"],
+            returncode=3,
+            stdout="",
+            stderr="sysmond service not found",
+        ),
+    )
+
+    mcp_client.reset_local_ollama_server(
+        ollama_chat_url="http://127.0.0.1:11434/api/chat",
+    )
+
+    captured = capsys.readouterr()
+    assert "Skipping Ollama reset" in captured.err
+    assert "failed with code 3" in captured.err
+    assert "sysmond service not found" in captured.err
+    assert mcp_client._OLLAMA_SIDECAR_PROCESS is None
 
 
 def test_agent_error_action_returns_structured_failure(monkeypatch) -> None:
