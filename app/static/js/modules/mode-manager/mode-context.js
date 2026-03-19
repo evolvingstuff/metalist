@@ -1327,6 +1327,10 @@ class ModeContext {
 				const entry = this._ensureTabEntry(tabId);
 				entry.scrollY = Math.max(0, Math.round(window.scrollY));
 				lastProgrammaticScrollY = entry.scrollY;
+                queueMicrotask(async () => {
+                    const module = await import('./services/search-interaction-service.js');
+                    module.primeActiveSearchInteractionState();
+                });
 			}).finally(() => {
 				this.endIgnoreScrollEvents();
 			});

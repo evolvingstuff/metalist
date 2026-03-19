@@ -3,6 +3,7 @@ import { DOMUtils } from './dom-utils.js';
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 import { ErrorHandler } from './error-handler.js';
 import { computeScrollAnchor } from './mode-manager/services/scroll-anchor-service.js';
+import { CommandGate } from './mode-manager/services/command-gate-service.js';
 
 function buildAuthHeaders(includeContentType) {
     if (typeof includeContentType !== 'boolean') {
@@ -186,6 +187,10 @@ export const NotesAPI = {
             }
 
             const data = await response.json();
+
+            if (claimSession) {
+                CommandGate.markCommandServerCall();
+            }
 
             if (CONFIG.DEBUG.LOG_API_CALLS) {
                 const isNotesView = url === CONFIG.API.NOTES.VIEW;
@@ -468,14 +473,38 @@ export const NotesAPI = {
         return this._apiCall(url, { method: 'POST', claimSession: true });
     },
 
-    async recordEditModeTransition(beforeEditingNoteId, afterEditingNoteId) {
+    async recordEditModeTransition(beforeEditingNoteId, afterEditingNoteId, executedSearchQuery) {
+        if (typeof executedSearchQuery === 'undefined') {
+            throw new Error('NotesAPI.recordEditModeTransition requires executedSearchQuery (use empty string when absent)');
+        }
+        if (executedSearchQuery !== null && typeof executedSearchQuery !== 'string') {
+            throw new Error('NotesAPI.recordEditModeTransition requires executedSearchQuery string or null');
+        }
         const body = {
             beforeEditingNoteId,
             afterEditingNoteId,
+            executedSearchQuery: executedSearchQuery === null ? '' : executedSearchQuery,
         };
         return this._apiCall(CONFIG.API.NOTES.EDIT_MODE, {
             method: 'POST',
             claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
+    async recordSearchInteraction(query, interactionType) {
+        if (typeof query !== 'string') {
+            throw new Error('NotesAPI.recordSearchInteraction requires query string');
+        }
+        if (typeof interactionType !== 'string' || interactionType.length === 0) {
+            throw new Error('NotesAPI.recordSearchInteraction requires interactionType string');
+        }
+        const body = {
+            query,
+            interactionType,
+        };
+        return this._apiCall(CONFIG.API.NOTES.SEARCH_INTERACTIONS, {
+            method: 'POST',
             body: JSON.stringify(body),
         });
     },

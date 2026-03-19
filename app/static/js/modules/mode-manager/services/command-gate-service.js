@@ -7,6 +7,7 @@ let busy = false;
 let busyName = null;
 let busyStartedAt = null;
 let watchdogId = null;
+let activeCommandServerCallCount = 0;
 
 function clearWatchdog() {
     if (watchdogId === null) {
@@ -35,6 +36,13 @@ function armWatchdog(timeoutMs) {
 export const CommandGate = {
     isBusy() {
         return busy;
+    },
+
+    markCommandServerCall() {
+        if (!busy) {
+            return;
+        }
+        activeCommandServerCallCount += 1;
     },
 
     run(name, asyncFn, options) {
@@ -72,6 +80,7 @@ export const CommandGate = {
         busy = true;
         busyName = name;
         busyStartedAt = performance.now();
+        activeCommandServerCallCount = 0;
         let watchdogTimeoutMs = WATCHDOG_TIMEOUT_MS;
         if (resolvedOptions !== null && resolvedOptions.disableWatchdog === true) {
             watchdogTimeoutMs = 0;
@@ -84,11 +93,19 @@ export const CommandGate = {
 
         return Promise.resolve()
             .then(() => asyncFn())
+            .then(async (result) => {
+                if (activeCommandServerCallCount > 0 && !name.startsWith('search.')) {
+                    const module = await import('./search-interaction-service.js');
+                    await module.recordCommandInteractionIfEligible();
+                }
+                return result;
+            })
             .finally(() => {
                 Logger.logAction('command_gate.finish', { name });
                 busy = false;
                 busyName = null;
                 busyStartedAt = null;
+                activeCommandServerCallCount = 0;
                 clearWatchdog();
                 if (ModeContext.isLoading) {
                     ModeContext.setLoading(false);

@@ -37,6 +37,11 @@ from app.services.view_diff import generate_diff_ops
 from app.services.tab_state import tab_state_store
 from app.services.backlinks import list_backlinks_for_note
 from app.services.undo_state import maybe_reset_on_context
+from app.services.search_history import (
+    list_recent_search_tags,
+    prioritize_blank_search_suggestions,
+    record_search_interaction,
+)
 from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
 
@@ -262,12 +267,37 @@ def delete_tab(payload: dict) -> Dict[str, object]:
 
 
 @router.post("/notes/search-suggestions")
-def search_suggestions(payload: dict) -> Dict[str, object]:
+def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
     query = payload["query"]
     if not isinstance(query, str):
         raise TypeError("query must be a string")
     suggestions = search_index.suggest_tag_completions(query=query, limit=20)
+    if query.strip() == "":
+        token = _require_bearer_token(request)
+        recent_tags = list_recent_search_tags(limit=3, token=token)
+        suggestions = prioritize_blank_search_suggestions(
+            base_suggestions=suggestions,
+            recent_tags=recent_tags,
+            priority_slots=3,
+        )
     return {"suggestions": suggestions}
+
+
+@router.post("/notes/search-interactions")
+def search_interactions(request: Request, payload: dict) -> Dict[str, object]:
+    token = _require_bearer_token(request)
+    query = payload["query"]
+    interaction_type = payload["interactionType"]
+    if not isinstance(query, str):
+        raise TypeError("query must be a string")
+    if not isinstance(interaction_type, str):
+        raise TypeError("interactionType must be a string")
+    credited = record_search_interaction(
+        query=query,
+        interaction_type=interaction_type,
+        token=token,
+    )
+    return {"credited": credited}
 
 
 @router.post("/notes/tag-suggestions")
@@ -298,10 +328,15 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
 
 
 @router.get("/notes/{note_id}/backlinks")
-def backlinks(note_id: str, search: str | None = None) -> Dict[str, object]:
+def backlinks(request: Request, note_id: str) -> Dict[str, object]:
     _require_note_present(note_id, context="notes.backlinks")
 
-    normalized_search = search
+    normalized_search = None
+    if "search" in request.query_params:
+        raw_search = request.query_params["search"]
+        if not isinstance(raw_search, str):
+            raise TypeError("search query parameter must be a string")
+        normalized_search = raw_search
     if normalized_search == "":
         normalized_search = None
 
@@ -680,8 +715,11 @@ def redo_endpoint(request: Request, client_id: str, undoContext: str):
 
 @router.post("/notes/edit-mode")
 def record_edit_mode_endpoint(request: Request, body: dict) -> Dict[str, object]:
-    _require_bearer_token(request)
+    token = _require_bearer_token(request)
     viewport = _require_viewport(body)
+    executed_search_query = body["executedSearchQuery"]
+    if not isinstance(executed_search_query, str):
+        raise HTTPException(status_code=400, detail="executedSearchQuery must be a string")
     cmd = CmdRecordEditMode(
         client_id=body["clientId"],
         undo_context=body["undoContext"],
@@ -689,4 +727,12 @@ def record_edit_mode_endpoint(request: Request, body: dict) -> Dict[str, object]
         after_editing_note_id=body["afterEditingNoteId"],
         viewport=viewport,
     )
-    return cmd.execute()
+    result = cmd.execute()
+    after_editing_note_id = body["afterEditingNoteId"]
+    if isinstance(after_editing_note_id, str) and after_editing_note_id != "" and executed_search_query != "":
+        record_search_interaction(
+            query=executed_search_query,
+            interaction_type="edit",
+            token=token,
+        )
+    return result

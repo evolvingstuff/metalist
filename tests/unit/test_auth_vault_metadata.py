@@ -13,6 +13,8 @@ from app.config import (
 )
 from app.db.file_session import connect_file_reader
 from app.db.files_sql import fetch_file
+from app.db.search_history_session import begin_search_history_writer
+from app.db.search_history_session import connect_search_history_reader
 from app.db.session import begin_writer
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
@@ -20,6 +22,9 @@ from app.security.encryption import clear_encryption_key, set_encryption_require
 from app.services.auth_service import AuthService
 from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, get_file_reference_record
+from app.services.search_history import list_recent_search_tags, record_search_interaction
+from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
+import app.services.search_history as search_history_module
 
 
 def test_set_password_persists_vault_metadata(
@@ -184,6 +189,104 @@ def test_password_transitions_rewrite_file_storage_rows(
             assert restored_record.title == "transition.pdf"
             assert restored_record.mime_type == "application/pdf"
             assert restored_record.thumbnail_kind == "pdf"
+        finally:
+            session.close()
+    finally:
+        file_registry.reset()
+        clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
+def test_password_transitions_rewrite_search_history_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        with begin_search_history_writer() as connection:
+            connection.execute("DELETE FROM search_interaction_history")
+        index = SearchIndex()
+        index.rebuild(
+            [
+                SearchRecord(
+                    note_id="n1",
+                    content_text="Journal entry",
+                    tags="journal",
+                    tag_terms=extract_tags_for_search("journal"),
+                ),
+            ],
+            progress_update=lambda _processed: None,
+            progress_interval=1000,
+        )
+        monkeypatch.setattr(search_history_module, "search_index", index)
+
+        session = SafeSession()
+        try:
+            auth = AuthService(session)
+            assert record_search_interaction(query="journal", interaction_type="edit", token="token") is True
+
+            with connect_search_history_reader() as connection:
+                row = connection.execute(
+                    """
+                    SELECT
+                        query_key,
+                        query_key_encryption_nonce,
+                        tags_json_encryption_nonce
+                    FROM search_interaction_history
+                    LIMIT 1
+                    """
+                ).fetchone()
+            assert row is not None
+            assert row["query_key"] == "journal"
+            assert row["query_key_encryption_nonce"] is None
+            assert row["tags_json_encryption_nonce"] is None
+
+            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            assert success, message
+
+            with connect_search_history_reader() as connection:
+                encrypted_row = connection.execute(
+                    """
+                    SELECT
+                        query_key,
+                        query_key_encryption_nonce,
+                        tags_json_encryption_nonce
+                    FROM search_interaction_history
+                    LIMIT 1
+                    """
+                ).fetchone()
+            assert encrypted_row is not None
+            assert encrypted_row["query_key"] != "journal"
+            assert isinstance(encrypted_row["query_key_encryption_nonce"], bytes)
+            assert isinstance(encrypted_row["tags_json_encryption_nonce"], bytes)
+
+            dek = auth.unwrap_dek_for_password("abcd")
+            set_session_dek(dek)
+            assert list_recent_search_tags(limit=3, token="token") == ["journal"]
+
+            success, message = auth.remove_password("abcd")
+            assert success, message
+
+            clear_encryption_key()
+
+            with connect_search_history_reader() as connection:
+                decrypted_row = connection.execute(
+                    """
+                    SELECT
+                        query_key,
+                        query_key_encryption_nonce,
+                        tags_json_encryption_nonce
+                    FROM search_interaction_history
+                    LIMIT 1
+                    """
+                ).fetchone()
+            assert decrypted_row is not None
+            assert decrypted_row["query_key"] == "journal"
+            assert decrypted_row["query_key_encryption_nonce"] is None
+            assert decrypted_row["tags_json_encryption_nonce"] is None
         finally:
             session.close()
     finally:

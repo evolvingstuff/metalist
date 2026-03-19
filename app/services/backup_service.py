@@ -9,6 +9,8 @@ from threading import Lock
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
+from app.db.search_history_schema import initialize_search_history_schema
+from app.db.search_history_session import resolve_search_history_database_path
 from app.models.database import SafeSession
 
 
@@ -54,7 +56,11 @@ def _match_primary_backup_filename(filename: str) -> re.Match[str] | None:
     if match is None:
         return None
     database_name = match.group("database_name")
-    if not database_name.endswith(".db") or database_name.endswith(".files.db"):
+    if (
+        not database_name.endswith(".db")
+        or database_name.endswith(".files.db")
+        or database_name.endswith(".search-history.db")
+    ):
         return None
     return match
 
@@ -93,8 +99,30 @@ def _derive_any_file_backup_filename(filename: str) -> str:
     return f"{match.group('timestamp')}.{file_database_name}.bak"
 
 
+def _derive_search_history_backup_filename(*, filename: str, database_path: Path) -> str:
+    validated_filename = _validate_backup_filename(filename=filename, database_path=database_path)
+    match = _match_primary_backup_filename(validated_filename)
+    assert match is not None
+    database_name = match.group("database_name")
+    search_history_database_name = f"{database_name[:-len('.db')]}.search-history.db"
+    return f"{match.group('timestamp')}.{search_history_database_name}.bak"
+
+
+def _derive_any_search_history_backup_filename(filename: str) -> str:
+    match = _match_primary_backup_filename(filename)
+    if match is None:
+        raise ValueError(f"Unsupported primary backup filename: {filename}")
+    database_name = match.group("database_name")
+    search_history_database_name = f"{database_name[:-len('.db')]}.search-history.db"
+    return f"{match.group('timestamp')}.{search_history_database_name}.bak"
+
+
 def _resolve_related_file_database_path(database_path: Path) -> Path:
     return resolve_file_database_path(database_path)
+
+
+def _resolve_related_search_history_database_path(database_path: Path) -> Path:
+    return resolve_search_history_database_path(database_path)
 
 
 def _resolve_related_file_backup_path(
@@ -104,6 +132,18 @@ def _resolve_related_file_backup_path(
     database_path: Path,
 ) -> Path:
     return backup_directory / _derive_file_backup_filename(filename=filename, database_path=database_path)
+
+
+def _resolve_related_search_history_backup_path(
+    backup_directory: Path,
+    filename: str,
+    *,
+    database_path: Path,
+) -> Path:
+    return backup_directory / _derive_search_history_backup_filename(
+        filename=filename,
+        database_path=database_path,
+    )
 
 
 def _copy_database(source_path: Path, target_path: Path) -> None:
@@ -124,6 +164,18 @@ def _reset_file_database_to_empty(file_database_path: Path) -> None:
     try:
         initialize_file_schema(connection)
         connection.execute("DELETE FROM files")
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        connection.close()
+
+
+def _reset_search_history_database_to_empty(search_history_database_path: Path) -> None:
+    search_history_database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(search_history_database_path), check_same_thread=False)
+    try:
+        initialize_search_history_schema(connection)
+        connection.execute("DELETE FROM search_interaction_history")
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
@@ -151,7 +203,7 @@ def resolve_backup_directory_for_database(database_path: Path) -> Path:
 def list_backups_in_directory(
     backup_directory: Path,
     *,
-    database_path: Path | None = None,
+    database_path: Path | None,
 ) -> list[BackupFileInfo]:
     if not isinstance(backup_directory, Path):
         raise TypeError(f"backup_directory must be a Path, got {type(backup_directory)}")
@@ -213,6 +265,22 @@ def create_timestamped_backup_for_paths(
                 raise FileExistsError(f"Backup already exists: {related_file_backup_path}")
             _copy_database(related_file_database_path, related_file_backup_path)
 
+        related_search_history_database_path = _resolve_related_search_history_database_path(database_path)
+        if related_search_history_database_path.exists():
+            if not related_search_history_database_path.is_file():
+                raise ValueError(
+                    "Related search history database path is not a file: "
+                    f"{related_search_history_database_path}"
+                )
+            related_search_history_backup_filename = _format_backup_filename(
+                database_path=related_search_history_database_path,
+                now_utc=now_utc,
+            )
+            related_search_history_backup_path = backup_directory / related_search_history_backup_filename
+            if related_search_history_backup_path.exists():
+                raise FileExistsError(f"Backup already exists: {related_search_history_backup_path}")
+            _copy_database(related_search_history_database_path, related_search_history_backup_path)
+
     return _stat_to_backup_info(backup_path)
 
 
@@ -252,6 +320,25 @@ def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
         else:
             _reset_file_database_to_empty(related_file_database_path)
 
+        related_search_history_database_path = _resolve_related_search_history_database_path(database_path)
+        related_search_history_backup_path = _resolve_related_search_history_backup_path(
+            backup_path.parent,
+            backup_path.name,
+            database_path=database_path,
+        )
+        if related_search_history_backup_path.exists():
+            _copy_database(related_search_history_backup_path, related_search_history_database_path)
+            search_history_target_connection = sqlite3.connect(
+                str(related_search_history_database_path),
+                check_same_thread=False,
+            )
+            try:
+                search_history_target_connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                search_history_target_connection.close()
+        else:
+            _reset_search_history_database_to_empty(related_search_history_database_path)
+
 
 def create_timestamped_backup() -> BackupFileInfo:
     database_path = resolve_live_database_path()
@@ -269,7 +356,7 @@ def delete_oldest_backups_in_directory(
     backup_directory: Path,
     count: int,
     *,
-    database_path: Path | None = None,
+    database_path: Path | None,
 ) -> list[BackupFileInfo]:
     if not isinstance(backup_directory, Path):
         raise TypeError(f"backup_directory must be a Path, got {type(backup_directory)}")
@@ -308,6 +395,21 @@ def delete_oldest_backups_in_directory(
                 if not related_file_backup_path.is_file():
                     raise ValueError(f"Backup path is not a file: {related_file_backup_path}")
                 related_file_backup_path.unlink()
+
+            if database_path is None:
+                related_search_history_backup_filename = _derive_any_search_history_backup_filename(
+                    backup.filename
+                )
+            else:
+                related_search_history_backup_filename = _derive_search_history_backup_filename(
+                    filename=backup.filename,
+                    database_path=database_path,
+                )
+            related_search_history_backup_path = backup_directory / related_search_history_backup_filename
+            if related_search_history_backup_path.exists():
+                if not related_search_history_backup_path.is_file():
+                    raise ValueError(f"Backup path is not a file: {related_search_history_backup_path}")
+                related_search_history_backup_path.unlink()
 
             deleted_backups.append(backup)
 

@@ -3,6 +3,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { computeScrollAnchor } from './scroll-anchor-service.js';
 import { CommandGate } from './command-gate-service.js';
+import { recordScrollInteractionIfEligible } from './search-interaction-service.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
@@ -202,6 +203,7 @@ async function pollPersistScroll() {
     // Update local state first so the snapshot reflects latest scroll
     ModeContext.updateActiveTabScroll(current);
     ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+    await recordScrollInteractionIfEligible();
     await persistTabStateSnapshot();
     lastPersistedScrollByTab[tabId] = current;
 }

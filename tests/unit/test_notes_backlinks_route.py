@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from starlette.requests import Request
 
 import app.api.routes.notes as notes_route
 from app.services.snapshot import SearchScope
@@ -44,7 +45,16 @@ def test_backlinks_search_scope_does_not_build_full_view_state(
 
     monkeypatch.setattr(notes_route, "list_backlinks_for_note", _fake_list_backlinks_for_note)
 
-    payload = notes_route.backlinks(target_id, search="journal")
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": f"/api2/notes/{target_id}/backlinks",
+            "headers": [],
+            "query_string": b"search=journal",
+        }
+    )
+    payload = notes_route.backlinks(request, target_id)
 
     assert captured["note_id"] == target_id
     assert captured["source_note_ids"] == {"source-a", target_id}

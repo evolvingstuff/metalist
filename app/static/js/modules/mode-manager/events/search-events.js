@@ -8,6 +8,7 @@ import { analyzeSearchQueryInput } from '../services/search-syntax-service.js';
 import { enforceSearchInputElement, setSearchValidationState, syncSearchInputValue } from '../services/search-input-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
+import { primeActiveSearchInteractionState } from '../services/search-interaction-service.js';
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 
 export function handleSearchInput(event) {
@@ -80,6 +81,7 @@ export function handleSearchInput(event) {
             ModeContext.setRootAnchorId(null);
             // Refresh the view with the search query (let errors crash)
             await actionRefreshAndMaybeSelect({});
+            primeActiveSearchInteractionState();
         });
     };
 

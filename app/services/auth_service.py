@@ -30,6 +30,10 @@ from app.db.settings_sql import (
 )
 from app.services.content_cache import cache_note, cache_note_tags, cache_note_text
 from app.services.file_storage import decrypt_all_files_for_plaintext, encrypt_all_files_for_active_dek
+from app.services.search_history import (
+    decrypt_all_search_history_for_plaintext,
+    encrypt_all_search_history_for_active_dek,
+)
 from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
@@ -232,6 +236,7 @@ class AuthService:
         encrypted_count = 0
         encrypted_rule_count = 0
         encrypted_file_count = 0
+        encrypted_search_history_count = 0
         try:
             with begin_writer() as connection:
                 with SafeSession.allow_reads("auth:set_password:fetch_notes"):
@@ -344,6 +349,9 @@ class AuthService:
                 encrypted_file_count = encrypt_all_files_for_active_dek(
                     encryption_service=self.encryption,
                 )
+                encrypted_search_history_count = encrypt_all_search_history_for_active_dek(
+                    encryption_service=self.encryption,
+                )
         finally:
             maintenance_service.exit_maintenance()
 
@@ -357,7 +365,7 @@ class AuthService:
             True,
             "Password set successfully. "
             f"Encrypted {encrypted_count} notes, {encrypted_rule_count} ontology rules, "
-            f"and {encrypted_file_count} files.",
+            f"{encrypted_file_count} files, and {encrypted_search_history_count} search histories.",
         )
 
     def change_password(
@@ -469,6 +477,7 @@ class AuthService:
         cache_content_updates: dict[str, str] = {}
         cache_tag_updates: dict[str, str] = {}
         decrypted_file_count = 0
+        decrypted_search_history_count = 0
         try:
             decrypted_count = 0
             decrypted_rule_count = 0
@@ -590,6 +599,9 @@ class AuthService:
                 decrypted_file_count = decrypt_all_files_for_plaintext(
                     encryption_service=self.encryption,
                 )
+                decrypted_search_history_count = decrypt_all_search_history_for_plaintext(
+                    encryption_service=self.encryption,
+                )
                 clear_password_settings(connection)
             self.encryption.clear_keys()
         finally:
@@ -611,5 +623,5 @@ class AuthService:
             True,
             "Password removed successfully. "
             f"Decrypted {decrypted_count} notes, {decrypted_rule_count} ontology rules, "
-            f"and {decrypted_file_count} files.",
+            f"{decrypted_file_count} files, and {decrypted_search_history_count} search histories.",
         )

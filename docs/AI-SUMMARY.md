@@ -22,6 +22,7 @@
 - `app/services`: Auth, tokens, cache, sync, undo, integrity, note store, file storage, snapshots, tab state cache.
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
+- `app/services/search_history.py`: Stores interacted search histories in a sibling `*.search-history.db` SQLite database; blank-search suggestions can reserve the top 3 slots for tags flattened from the highest-scoring interacted queries, and the stored query/tag payloads encrypt at rest when the namespace is password-protected.
 - `app/services/file_registry.py`: In-memory registry of valid file UUIDs only; startup bootstraps this without hydrating file rows/blobs.
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
@@ -68,7 +69,7 @@
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image pixels still embed as compressed `data:image/...`, while named pasted/dropped image files can either embed inline or be saved as file attachments via a choice modal.
 - View-mode links: bare pasted `http(s)` text becomes clickable in rendered note HTML, and rendered non-hash anchors open in a new browser tab instead of replacing the MetaList tab.
 - Image file refs in view mode: embedded image attachments render as authenticated previews with a `download image` control; collapsed notes reduce them to a compact thumbnail.
-- Backup/restore: `app/services/backup_service.py` pairs the main notes DB backup with a sibling file DB backup and rebuilds the file registry on restore.
+- Backup/restore: `app/services/backup_service.py` pairs the main notes DB backup with sibling file and search-history DB backups and rebuilds the file registry on restore.
 - Backup/restore scope: backup listing/creation/restore are scoped to the active DB path; namespaces live under `~/MetaList/namespaces/<namespace>/` and back up into `~/MetaList/namespaces/<namespace>/backups/` with filenames like `<timestamp>.<namespace>.metalist.db.bak` and `<timestamp>.<namespace>.metalist.files.db.bak`.
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
@@ -99,6 +100,7 @@ metalist
 - Frontend join shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`joinCurrentNoteWithNextSibling`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+J` binding).
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
 - File store: `app/services/file_storage.py` + `app/services/file_registry.py`.
+- Search history store: `app/services/search_history.py` + `app/db/search_history_session.py`.
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
 - Runtime hardening: `app/services/runtime_hardening.py` (core-dump disable by default; optional strict macOS swap/hibernation checks can fail startup when enabled).

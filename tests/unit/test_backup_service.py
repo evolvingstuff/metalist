@@ -6,6 +6,8 @@ from pathlib import Path
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
+from app.db.search_history_schema import initialize_search_history_schema
+from app.db.search_history_session import resolve_search_history_database_path
 from app.services.backup_service import (
     create_timestamped_backup_for_paths,
     delete_oldest_backups_in_directory,
@@ -94,6 +96,66 @@ def _read_file_ids(database_path: Path) -> list[str]:
         connection.close()
 
 
+def _write_search_history_marker(database_path: Path, query_key: str) -> None:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database_path))
+    try:
+        initialize_search_history_schema(connection)
+        connection.execute("DELETE FROM search_interaction_history")
+        connection.execute(
+            """
+            INSERT INTO search_interaction_history (
+                query_hash,
+                query_key,
+                query_key_encryption_nonce,
+                query_key_encryption_tag,
+                root_tag,
+                root_tag_encryption_nonce,
+                root_tag_encryption_tag,
+                tags_json,
+                tags_json_encryption_nonce,
+                tags_json_encryption_tag,
+                score,
+                created_at,
+                last_interacted_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"hash:{query_key}",
+                query_key,
+                None,
+                None,
+                query_key.split()[0],
+                None,
+                None,
+                f'["{query_key.split()[0]}"]',
+                None,
+                None,
+                1.0,
+                "2026-03-05T00:00:00+00:00",
+                "2026-03-05T00:00:00+00:00",
+                "2026-03-05T00:00:00+00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _read_search_history_queries(database_path: Path) -> list[str]:
+    connection = sqlite3.connect(str(database_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        initialize_search_history_schema(connection)
+        rows = connection.execute(
+            "SELECT query_key FROM search_interaction_history ORDER BY query_key ASC"
+        ).fetchall()
+        return [str(row["query_key"]) for row in rows]
+    finally:
+        connection.close()
+
+
 def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
     database_path = tmp_path / "live.db"
     backup_directory = tmp_path / "backups"
@@ -148,6 +210,33 @@ def test_create_and_restore_backup_round_trip_includes_related_file_db(tmp_path:
     assert _read_file_ids(file_database_path) == ["file-a"]
 
 
+def test_create_and_restore_backup_round_trip_includes_related_search_history_db(tmp_path: Path) -> None:
+    database_path = tmp_path / "live.db"
+    search_history_database_path = resolve_search_history_database_path(database_path)
+    backup_directory = tmp_path / "backups"
+
+    _write_counter(database_path, 7)
+    _write_search_history_marker(search_history_database_path, "journal")
+    backup_file = create_timestamped_backup_for_paths(database_path, backup_directory)
+    backup_path = backup_directory / backup_file.filename
+    related_search_history_backup_path = backup_directory / backup_file.filename.replace(
+        ".db.bak",
+        ".search-history.db.bak",
+        1,
+    )
+
+    assert related_search_history_backup_path.exists()
+
+    _write_counter(database_path, 99)
+    _write_search_history_marker(search_history_database_path, "exercise")
+    assert _read_counter(database_path) == 99
+    assert _read_search_history_queries(search_history_database_path) == ["exercise"]
+
+    restore_backup_to_paths(backup_path, database_path)
+    assert _read_counter(database_path) == 7
+    assert _read_search_history_queries(search_history_database_path) == ["journal"]
+
+
 def test_namespaced_backup_directories_do_not_mix_files(tmp_path: Path) -> None:
     cla_database_path = tmp_path / "namespaces" / "cla" / "cla.metalist.db"
     work_database_path = tmp_path / "namespaces" / "work" / "work.metalist.db"
@@ -160,8 +249,8 @@ def test_namespaced_backup_directories_do_not_mix_files(tmp_path: Path) -> None:
     cla_backup = create_timestamped_backup_for_paths(cla_database_path, cla_backup_directory)
     work_backup = create_timestamped_backup_for_paths(work_database_path, work_backup_directory)
 
-    cla_backups = list_backups_in_directory(cla_backup_directory)
-    work_backups = list_backups_in_directory(work_backup_directory)
+    cla_backups = list_backups_in_directory(cla_backup_directory, database_path=None)
+    work_backups = list_backups_in_directory(work_backup_directory, database_path=None)
 
     assert [entry.filename for entry in cla_backups] == [cla_backup.filename]
     assert [entry.filename for entry in work_backups] == [work_backup.filename]
@@ -183,7 +272,7 @@ def test_list_backups_returns_newest_first(tmp_path: Path) -> None:
     os.utime(older, (1_700_000_000, 1_700_000_000))
     os.utime(newer, (1_700_000_100, 1_700_000_100))
 
-    backup_list = list_backups_in_directory(backup_directory)
+    backup_list = list_backups_in_directory(backup_directory, database_path=None)
     assert [entry.filename for entry in backup_list] == [newer.name, older.name]
 
 
@@ -207,7 +296,7 @@ def test_delete_oldest_backups_removes_oldest_first(tmp_path: Path) -> None:
     deleted = delete_oldest_backups_in_directory(backup_directory, 2, database_path=database_path)
     assert [entry.filename for entry in deleted] == [oldest.name, middle.name]
 
-    remaining = list_backups_in_directory(backup_directory)
+    remaining = list_backups_in_directory(backup_directory, database_path=None)
     assert [entry.filename for entry in remaining] == [newest.name]
 
 
@@ -228,7 +317,7 @@ def test_delete_oldest_backups_count_larger_than_available_deletes_all(tmp_path:
     deleted = delete_oldest_backups_in_directory(backup_directory, 10, database_path=database_path)
     assert [entry.filename for entry in deleted] == [older.name, newer.name]
 
-    remaining = list_backups_in_directory(backup_directory)
+    remaining = list_backups_in_directory(backup_directory, database_path=None)
     assert remaining == []
 
 
@@ -239,6 +328,23 @@ def test_delete_oldest_backups_removes_matching_file_sidecars(tmp_path: Path) ->
 
     primary = backup_directory / "20260101-000000-000001.cla.metalist.db.bak"
     sidecar = backup_directory / "20260101-000000-000001.cla.metalist.files.db.bak"
+
+    primary.write_bytes(b"primary")
+    sidecar.write_bytes(b"sidecar")
+
+    deleted = delete_oldest_backups_in_directory(backup_directory, 1, database_path=database_path)
+    assert [entry.filename for entry in deleted] == [primary.name]
+    assert primary.exists() is False
+    assert sidecar.exists() is False
+
+
+def test_delete_oldest_backups_removes_matching_search_history_sidecars(tmp_path: Path) -> None:
+    database_path = tmp_path / "namespaces" / "cla" / "cla.metalist.db"
+    backup_directory = tmp_path / "namespaces" / "cla" / "backups"
+    backup_directory.mkdir(parents=True, exist_ok=True)
+
+    primary = backup_directory / "20260101-000000-000001.cla.metalist.db.bak"
+    sidecar = backup_directory / "20260101-000000-000001.cla.metalist.search-history.db.bak"
 
     primary.write_bytes(b"primary")
     sidecar.write_bytes(b"sidecar")

@@ -7,6 +7,31 @@ import { NotesAPI } from '../../api-client.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
+import {
+    beginEditInteractionForActiveQuery,
+    cancelPendingInteraction,
+    finalizeRecordedInteraction,
+} from '../services/search-interaction-service.js';
+
+function recordEditModeTransitionWithInteraction(beforeEditingNoteId, afterEditingNoteId, interactionQuery) {
+    return NotesAPI.recordEditModeTransition(
+        beforeEditingNoteId,
+        afterEditingNoteId,
+        interactionQuery
+    ).then(
+        () => {
+            if (interactionQuery !== null) {
+                finalizeRecordedInteraction(interactionQuery);
+            }
+        },
+        (error) => {
+            if (interactionQuery !== null) {
+                cancelPendingInteraction(interactionQuery);
+            }
+            throw error;
+        }
+    );
+}
 
 export async function actionSelectNote(noteId, options) {
 	if (options === null || typeof options !== 'object') {
@@ -45,7 +70,8 @@ export async function actionSelectNote(noteId, options) {
         ModeContext.markCaretVisible();
     }
 
-	await NotesAPI.recordEditModeTransition(null, noteId);
+    const interactionQuery = beginEditInteractionForActiveQuery();
+    await recordEditModeTransitionWithInteraction(null, noteId, interactionQuery);
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
@@ -83,7 +109,7 @@ export async function actionDeselectNote() {
 
     ModeContext.setCurrentContent(null);
 
-    await NotesAPI.recordEditModeTransition(noteId, null);
+    await NotesAPI.recordEditModeTransition(noteId, null, '');
 
     await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
@@ -108,7 +134,7 @@ export async function actionSaveAndExitEditingWithoutRefreshing() {
 
     await actionSaveNote(noteId);
 
-    await NotesAPI.recordEditModeTransition(noteId, null);
+    await NotesAPI.recordEditModeTransition(noteId, null, '');
 
     actionExitEditingWithoutSavingOrRefreshing();
 }
@@ -178,10 +204,11 @@ export async function actionSwitchNotes(newNoteId, options) {
     if (currentNoteId === newNoteId) {
         Logger.logDebug('Already on this note, not switching', { noteId: newNoteId });
         return;
-    }
+	    }
 
 	    await actionSaveNote(currentNoteId);
-	    await NotesAPI.recordEditModeTransition(currentNoteId, newNoteId);
+        const interactionQuery = beginEditInteractionForActiveQuery();
+        await recordEditModeTransitionWithInteraction(currentNoteId, newNoteId, interactionQuery);
 
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
 
