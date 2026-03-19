@@ -103,7 +103,9 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.
-- Clicking the block runs the script on the server and shows the output inline (output is not saved).
+- Clicking the block starts a background shell session on the connected server and streams stdout/stderr inline while it runs.
+- Running sessions accept stdin from an inline input box, so prompts like `read`, `input()`, or password confirmations can be answered without leaving the note.
+- The transport is cross-platform (Windows/macOS/Linux), but the script itself still runs inside the server host's shell, so command syntax must match that host environment.
 
 ## JSON meta tags
 - `@json`: parses the note content as JSON and pretty-prints it in view mode.

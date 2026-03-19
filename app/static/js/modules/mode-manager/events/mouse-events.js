@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, collapseNote, expandNote, moveNoteUp, moveNoteDown, indentNote, outdentNote, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteUp, moveNoteDown, indentNote, outdentNote, sendShellInput, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -24,12 +24,15 @@ const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
 const SHELL_SELECTOR = '.meta-shell';
 const SHELL_OUTPUT_SELECTOR = '.meta-shell-output';
+const SHELL_INPUT_ROW_SELECTOR = '.meta-shell-output-input-row';
+const SHELL_INPUT_SELECTOR = '.meta-shell-output-input';
+const SHELL_SEND_SELECTOR = '.meta-shell-output-send';
 const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
 const COPYABLE_SELECTOR = '.meta-copyable';
 const COPYABLE_COPY_CLASS = 'meta-copyable-copied';
 const SHELL_RUNNING_CLASS = 'meta-shell-running';
 const SHELL_RUN_TIMEOUT_SECONDS = 0;
-const shellRunTimers = new WeakMap();
+const SHELL_POLL_INTERVAL_MS = 250;
 const copyFeedbackTimers = new WeakMap();
 
 export function initMouseEvents() {
@@ -45,6 +48,13 @@ export function initMouseEvents() {
     document.addEventListener('mouseout', handleMouseOut, { capture: true });
 
     Logger.logInit('Mouse events handler');
+}
+
+function isShellInteractiveTarget(target) {
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    return Boolean(target.closest(SHELL_INPUT_ROW_SELECTOR));
 }
 
 function handleSelectionDragMouseDown(event) {
@@ -114,6 +124,14 @@ function handleMoveDragMouseDown(event) {
     }
     if (!event.target) {
         throw new Error('Move drag mousedown missing target element');
+    }
+    if (event.target instanceof Element && event.target.closest(SHELL_SELECTOR)) {
+        moveDragContext = null;
+        return;
+    }
+    if (isShellInteractiveTarget(event.target)) {
+        moveDragContext = null;
+        return;
     }
 
     if (ModeContext.isLoading) {
@@ -405,6 +423,9 @@ function handleClick(event) {
 
     const contextMenu = event.target.closest('#context-menu');
     if (contextMenu) {
+        return;
+    }
+    if (isShellInteractiveTarget(event.target)) {
         return;
     }
 
@@ -1152,75 +1173,149 @@ function ensureShellOutputElement(shellElement) {
     return outputElement;
 }
 
-function renderShellRunning(outputElement) {
+function ensureShellOutputStructure(outputElement, noteId) {
     if (!outputElement) {
-        throw new Error('renderShellRunning requires outputElement');
+        throw new Error('ensureShellOutputStructure requires outputElement');
     }
-    outputElement.innerHTML = '';
-    const message = document.createElement('div');
-    message.className = 'meta-shell-output-message';
-    const label = document.createElement('span');
-    label.textContent = 'Running';
-    const spacer = document.createTextNode(' ');
-    const elapsed = document.createElement('span');
-    elapsed.className = 'meta-shell-output-elapsed';
-    elapsed.textContent = '0s';
-    message.appendChild(label);
-    message.appendChild(spacer);
-    message.appendChild(elapsed);
-    outputElement.appendChild(message);
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('ensureShellOutputStructure requires noteId');
+    }
+    outputElement.dataset.noteId = noteId;
+
+    let header = outputElement.querySelector('.meta-shell-output-header');
+    if (!(header instanceof HTMLElement)) {
+        header = document.createElement('div');
+        header.className = 'meta-shell-output-header';
+        outputElement.appendChild(header);
+    }
+
+    let statusBadge = outputElement.querySelector('.meta-shell-output-status');
+    if (!(statusBadge instanceof HTMLElement)) {
+        statusBadge = document.createElement('span');
+        statusBadge.className = 'meta-shell-output-status';
+        header.appendChild(statusBadge);
+    }
+
+    let duration = outputElement.querySelector('.meta-shell-output-duration');
+    if (!(duration instanceof HTMLElement)) {
+        duration = document.createElement('span');
+        duration.className = 'meta-shell-output-duration';
+        header.appendChild(duration);
+    }
+
+    let errorRow = outputElement.querySelector('.meta-shell-output-message-error');
+    if (!(errorRow instanceof HTMLElement)) {
+        errorRow = document.createElement('div');
+        errorRow.className = 'meta-shell-output-message meta-shell-output-message-error';
+        outputElement.appendChild(errorRow);
+    }
+
+    let stdoutBlock = outputElement.querySelector('.meta-shell-output-stdout');
+    if (!(stdoutBlock instanceof HTMLElement)) {
+        stdoutBlock = document.createElement('pre');
+        stdoutBlock.className = 'meta-shell-output-stdout';
+        outputElement.appendChild(stdoutBlock);
+    }
+
+    let stderrBlock = outputElement.querySelector('.meta-shell-output-stderr');
+    if (!(stderrBlock instanceof HTMLElement)) {
+        stderrBlock = document.createElement('pre');
+        stderrBlock.className = 'meta-shell-output-stderr';
+        outputElement.appendChild(stderrBlock);
+    }
+
+    let emptyRow = outputElement.querySelector('.meta-shell-output-empty');
+    if (!(emptyRow instanceof HTMLElement)) {
+        emptyRow = document.createElement('div');
+        emptyRow.className = 'meta-shell-output-empty';
+        outputElement.appendChild(emptyRow);
+    }
+
+    let inputRow = outputElement.querySelector(SHELL_INPUT_ROW_SELECTOR);
+    if (!(inputRow instanceof HTMLElement)) {
+        inputRow = document.createElement('div');
+        inputRow.className = 'meta-shell-output-input-row';
+
+        const inputElement = document.createElement('input');
+        inputElement.className = 'meta-shell-output-input';
+        inputElement.type = 'text';
+        inputElement.placeholder = 'Send input to running shell';
+        inputElement.autocomplete = 'off';
+        inputElement.spellcheck = false;
+        inputElement.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            submitShellInput(outputElement).catch((error) => {
+                const shellElement = outputElement.closest(SHELL_SELECTOR);
+                if (!(shellElement instanceof HTMLElement)) {
+                    throw error;
+                }
+                renderShellError(outputElement, shellElement, error);
+            });
+        });
+
+        const sendButton = document.createElement('button');
+        sendButton.className = 'meta-shell-output-send';
+        sendButton.type = 'button';
+        sendButton.textContent = 'Send';
+        sendButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            submitShellInput(outputElement).catch((error) => {
+                const shellElement = outputElement.closest(SHELL_SELECTOR);
+                if (!(shellElement instanceof HTMLElement)) {
+                    throw error;
+                }
+                renderShellError(outputElement, shellElement, error);
+            });
+        });
+
+        inputRow.appendChild(inputElement);
+        inputRow.appendChild(sendButton);
+        outputElement.appendChild(inputRow);
+    }
 }
 
-function startShellElapsedTimer(outputElement) {
-    if (!outputElement) {
-        throw new Error('startShellElapsedTimer requires outputElement');
+function formatShellDuration(durationMs) {
+    if (!Number.isInteger(durationMs) || durationMs < 0) {
+        throw new Error('formatShellDuration requires non-negative integer durationMs');
     }
-    const existing = shellRunTimers.get(outputElement);
-    if (existing) {
-        clearInterval(existing.intervalId);
-        shellRunTimers.delete(outputElement);
+    if (durationMs === 0) {
+        return '0s';
     }
-    const timerElement = outputElement.querySelector('.meta-shell-output-elapsed');
-    if (!(timerElement instanceof HTMLElement)) {
-        return;
+    const durationSeconds = durationMs / 1000;
+    if (durationSeconds < 10) {
+        return `${durationSeconds.toFixed(1)}s`;
     }
-    const startedAt = performance.now();
-    const update = () => {
-        const elapsedSeconds = Math.floor((performance.now() - startedAt) / 1000);
-        timerElement.textContent = `${elapsedSeconds}s`;
-    };
-    update();
-    const intervalId = window.setInterval(update, 250);
-    shellRunTimers.set(outputElement, { intervalId });
+    return `${Math.round(durationSeconds)}s`;
 }
 
-function stopShellElapsedTimer(outputElement) {
+function renderShellSnapshot(outputElement, shellElement, result) {
     if (!outputElement) {
-        return;
+        throw new Error('renderShellSnapshot requires outputElement');
     }
-    const existing = shellRunTimers.get(outputElement);
-    if (!existing) {
-        return;
-    }
-    clearInterval(existing.intervalId);
-    shellRunTimers.delete(outputElement);
-}
-
-function renderShellOutput(outputElement, result) {
-    if (!outputElement) {
-        throw new Error('renderShellOutput requires outputElement');
+    if (!shellElement) {
+        throw new Error('renderShellSnapshot requires shellElement');
     }
     if (!result || typeof result !== 'object') {
-        throw new Error('renderShellOutput requires result object');
+        throw new Error('renderShellSnapshot requires result object');
     }
 
+    const runId = result.runId;
     const status = result.status;
     const exitCode = result.exitCode;
     const stdoutText = result.stdout;
     const stderrText = result.stderr;
     const durationMs = result.durationMs;
     const errorMessage = result.errorMessage;
+    const acceptsInput = result.acceptsInput;
 
+    if (typeof runId !== 'string') {
+        throw new Error('Shell result runId must be a string');
+    }
     if (typeof status !== 'string') {
         throw new Error('Shell result status must be a string');
     }
@@ -1239,78 +1334,227 @@ function renderShellOutput(outputElement, result) {
     if (typeof errorMessage !== 'string') {
         throw new Error('Shell result errorMessage must be a string');
     }
+    if (typeof acceptsInput !== 'boolean') {
+        throw new Error('Shell result acceptsInput must be a boolean');
+    }
 
-    outputElement.innerHTML = '';
+    const noteId = outputElement.dataset.noteId;
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('Shell output element missing noteId');
+    }
 
-    const header = document.createElement('div');
-    header.className = 'meta-shell-output-header';
+    ensureShellOutputStructure(outputElement, noteId);
 
-    const statusBadge = document.createElement('span');
+    outputElement.dataset.runId = runId;
+    outputElement.dataset.status = status;
+
+    const header = outputElement.querySelector('.meta-shell-output-header');
+    const statusBadge = outputElement.querySelector('.meta-shell-output-status');
+    const duration = outputElement.querySelector('.meta-shell-output-duration');
+    const errorRow = outputElement.querySelector('.meta-shell-output-message-error');
+    const stdoutBlock = outputElement.querySelector('.meta-shell-output-stdout');
+    const stderrBlock = outputElement.querySelector('.meta-shell-output-stderr');
+    const emptyRow = outputElement.querySelector('.meta-shell-output-empty');
+    const inputRow = outputElement.querySelector(SHELL_INPUT_ROW_SELECTOR);
+    const inputElement = outputElement.querySelector(SHELL_INPUT_SELECTOR);
+    const sendButton = outputElement.querySelector(SHELL_SEND_SELECTOR);
+
+    if (!(header instanceof HTMLElement)) {
+        throw new Error('Shell output header missing');
+    }
+    if (!(statusBadge instanceof HTMLElement)) {
+        throw new Error('Shell output status badge missing');
+    }
+    if (!(duration instanceof HTMLElement)) {
+        throw new Error('Shell output duration missing');
+    }
+    if (!(errorRow instanceof HTMLElement)) {
+        throw new Error('Shell output error row missing');
+    }
+    if (!(stdoutBlock instanceof HTMLElement)) {
+        throw new Error('Shell output stdout block missing');
+    }
+    if (!(stderrBlock instanceof HTMLElement)) {
+        throw new Error('Shell output stderr block missing');
+    }
+    if (!(emptyRow instanceof HTMLElement)) {
+        throw new Error('Shell output empty row missing');
+    }
+    if (!(inputRow instanceof HTMLElement)) {
+        throw new Error('Shell output input row missing');
+    }
+    if (!(inputElement instanceof HTMLInputElement)) {
+        throw new Error('Shell output input element missing');
+    }
+    if (!(sendButton instanceof HTMLButtonElement)) {
+        throw new Error('Shell output send button missing');
+    }
+
     statusBadge.className = 'meta-shell-output-status';
-
-    let statusText = '';
-    if (status === 'success') {
+    if (status === 'running') {
+        statusBadge.textContent = 'Running';
+    } else if (status === 'success') {
         statusBadge.classList.add('meta-shell-output-status-ok');
-        statusText = `Exit ${exitCode}`;
+        statusBadge.textContent = `Exit ${exitCode}`;
     } else if (status === 'timeout') {
         statusBadge.classList.add('meta-shell-output-status-timeout');
-        statusText = 'Timed out';
+        statusBadge.textContent = 'Timed out';
     } else {
         statusBadge.classList.add('meta-shell-output-status-error');
-        statusText = `Exit ${exitCode}`;
+        statusBadge.textContent = `Exit ${exitCode}`;
     }
-    statusBadge.textContent = statusText;
-    header.appendChild(statusBadge);
+    duration.textContent = formatShellDuration(durationMs);
 
-    const duration = document.createElement('span');
-    duration.className = 'meta-shell-output-duration';
-    duration.textContent = `${durationMs} ms`;
-    header.appendChild(duration);
-
-    outputElement.appendChild(header);
-
-    if (errorMessage !== '') {
-        const errorRow = document.createElement('div');
-        errorRow.className = 'meta-shell-output-message meta-shell-output-message-error';
+    if (errorMessage === '') {
+        errorRow.style.display = 'none';
+        errorRow.textContent = '';
+    } else {
+        errorRow.style.display = '';
         errorRow.textContent = errorMessage;
-        outputElement.appendChild(errorRow);
     }
 
-    if (stdoutText !== '') {
-        const stdoutBlock = document.createElement('pre');
-        stdoutBlock.className = 'meta-shell-output-stdout';
+    if (stdoutText === '') {
+        stdoutBlock.style.display = 'none';
+        stdoutBlock.textContent = '';
+    } else {
+        stdoutBlock.style.display = '';
         stdoutBlock.textContent = stdoutText;
-        outputElement.appendChild(stdoutBlock);
     }
 
-    if (stderrText !== '') {
-        const stderrBlock = document.createElement('pre');
-        stderrBlock.className = 'meta-shell-output-stderr';
+    if (stderrText === '') {
+        stderrBlock.style.display = 'none';
+        stderrBlock.textContent = '';
+    } else {
+        stderrBlock.style.display = '';
         stderrBlock.textContent = stderrText;
-        outputElement.appendChild(stderrBlock);
     }
 
     if (stdoutText === '' && stderrText === '' && errorMessage === '') {
-        const emptyRow = document.createElement('div');
-        emptyRow.className = 'meta-shell-output-empty';
-        emptyRow.textContent = 'No output';
-        outputElement.appendChild(emptyRow);
+        emptyRow.style.display = '';
+        emptyRow.textContent = status === 'running' ? 'Waiting for output...' : 'No output';
+    } else {
+        emptyRow.style.display = 'none';
+        emptyRow.textContent = '';
+    }
+
+    inputRow.style.display = acceptsInput ? '' : 'none';
+    inputElement.disabled = !acceptsInput;
+    sendButton.disabled = !acceptsInput;
+
+    if (status === 'running') {
+        shellElement.classList.add(SHELL_RUNNING_CLASS);
+    } else {
+        shellElement.classList.remove(SHELL_RUNNING_CLASS);
     }
 }
 
-function renderShellError(outputElement, error) {
+function renderShellError(outputElement, shellElement, error) {
     if (!outputElement) {
         throw new Error('renderShellError requires outputElement');
     }
+    if (!shellElement) {
+        throw new Error('renderShellError requires shellElement');
+    }
+    const noteId = outputElement.dataset.noteId;
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('Shell output element missing noteId');
+    }
+
     let message = 'Shell run failed';
     if (error && typeof error.message === 'string') {
         message = error.message;
     }
-    outputElement.innerHTML = '';
-    const errorRow = document.createElement('div');
-    errorRow.className = 'meta-shell-output-message meta-shell-output-message-error';
-    errorRow.textContent = message;
-    outputElement.appendChild(errorRow);
+    renderShellSnapshot(outputElement, shellElement, {
+        runId: outputElement.dataset.runId || '',
+        status: 'error',
+        exitCode: -1,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        errorMessage: message,
+        acceptsInput: false,
+    });
+}
+
+function delayShellPoll() {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, SHELL_POLL_INTERVAL_MS);
+    });
+}
+
+async function submitShellInput(outputElement) {
+    if (!(outputElement instanceof HTMLElement)) {
+        throw new Error('submitShellInput requires outputElement');
+    }
+    const noteId = outputElement.dataset.noteId;
+    const runId = outputElement.dataset.runId;
+    const status = outputElement.dataset.status;
+    const inputElement = outputElement.querySelector(SHELL_INPUT_SELECTOR);
+    const sendButton = outputElement.querySelector(SHELL_SEND_SELECTOR);
+
+    if (!(inputElement instanceof HTMLInputElement)) {
+        throw new Error('Shell output input element missing');
+    }
+    if (!(sendButton instanceof HTMLButtonElement)) {
+        throw new Error('Shell output send button missing');
+    }
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('Shell output missing noteId');
+    }
+    if (typeof runId !== 'string' || runId === '') {
+        throw new Error('Shell output missing runId');
+    }
+    if (status !== 'running') {
+        return;
+    }
+
+    const text = inputElement.value;
+    if (text === '') {
+        return;
+    }
+
+    inputElement.disabled = true;
+    sendButton.disabled = true;
+    try {
+        const snapshot = await sendShellInput(noteId, runId, text, true);
+        inputElement.value = '';
+        const shellElement = outputElement.closest(SHELL_SELECTOR);
+        if (!(shellElement instanceof HTMLElement)) {
+            throw new Error('Shell output missing parent shell element');
+        }
+        renderShellSnapshot(outputElement, shellElement, snapshot);
+        inputElement.focus();
+    } finally {
+        if (outputElement.dataset.status === 'running') {
+            inputElement.disabled = false;
+            sendButton.disabled = false;
+        }
+    }
+}
+
+async function runShellSession(shellElement, outputElement, noteId) {
+    if (!(shellElement instanceof HTMLElement)) {
+        throw new Error('runShellSession requires shellElement');
+    }
+    if (!(outputElement instanceof HTMLElement)) {
+        throw new Error('runShellSession requires outputElement');
+    }
+    if (typeof noteId !== 'string' || noteId === '') {
+        throw new Error('runShellSession requires noteId');
+    }
+
+    let snapshot = await runShellNote(noteId, SHELL_RUN_TIMEOUT_SECONDS);
+    renderShellSnapshot(outputElement, shellElement, snapshot);
+    const runId = snapshot.runId;
+    if (typeof runId !== 'string' || runId === '') {
+        return;
+    }
+
+    while (snapshot.status === 'running') {
+        await delayShellPoll();
+        snapshot = await getShellRun(noteId, runId);
+        renderShellSnapshot(outputElement, shellElement, snapshot);
+    }
 }
 
 function handleShellRunClick(event) {
@@ -1320,7 +1564,11 @@ function handleShellRunClick(event) {
     if (!event.target) {
         throw new Error('Shell run click missing target element');
     }
-    const shellElement = event.target.closest(SHELL_SELECTOR);
+    const scriptElement = event.target.closest('.meta-shell-script');
+    if (!scriptElement) {
+        return false;
+    }
+    const shellElement = scriptElement.closest(SHELL_SELECTOR);
     if (!shellElement) {
         return false;
     }
@@ -1353,27 +1601,22 @@ function handleShellRunClick(event) {
     event.stopPropagation();
 
     const outputElement = ensureShellOutputElement(shellElement);
-    shellElement.classList.add(SHELL_RUNNING_CLASS);
-    renderShellRunning(outputElement);
-    startShellElapsedTimer(outputElement);
+    ensureShellOutputStructure(outputElement, noteId);
+    renderShellSnapshot(outputElement, shellElement, {
+        runId: '',
+        status: 'running',
+        exitCode: -1,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        errorMessage: '',
+        acceptsInput: false,
+    });
 
-    void CommandGate.run('mouse.run_shell', () => {
-        const runPromise = runShellNote(noteId, SHELL_RUN_TIMEOUT_SECONDS)
-            .then((result) => {
-                renderShellOutput(outputElement, result);
-                return result;
-            })
-            .catch((error) => {
-                renderShellError(outputElement, error);
-                throw error;
-            })
-            .finally(() => {
-                stopShellElapsedTimer(outputElement);
-                shellElement.classList.remove(SHELL_RUNNING_CLASS);
-            });
-
-        return runPromise;
-    }, { disableWatchdog: true });
+    void runShellSession(shellElement, outputElement, noteId).catch((error) => {
+        renderShellError(outputElement, shellElement, error);
+        shellElement.classList.remove(SHELL_RUNNING_CLASS);
+    });
 
     return true;
 }

@@ -61,7 +61,9 @@ Examples (autocorrected while typing):
   - Scoped LaTeX works with wrappers (e.g. `{{@LaTeX}}` renders only `{{...}}` segments) and can be combined with `@markdown` to render math inside Markdown.
 - Shell meta tags:
   - `@shell` renders note content as a terminal-style script block in view mode.
-  - Clicking the block runs the script on the server and shows output inline (output is not saved).
+  - Clicking the block starts a background shell session on the server and updates stdout/stderr inline while the command is still running.
+  - A running shell session can accept stdin from an inline input field.
+  - The transport is cross-platform, but note scripts still need to match the connected server host's shell and OS conventions.
 - JSON meta tags:
   - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
 - CSV meta tags:

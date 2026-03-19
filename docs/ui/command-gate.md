@@ -4,7 +4,10 @@
 Prevent UI lockups and request interleaving by centralizing “busy” handling.
 
 ## Core Rule
-All **user-initiated server-bound actions** must run through `CommandGate.run(name, asyncFn)`.
+All **user-initiated server-bound actions** should run through `CommandGate.run(name, asyncFn)`.
+
+Exception:
+- Live `@shell` sessions do not use `CommandGate` because the shell runner must keep accepting input and polling output while the rest of the UI remains usable.
 
 `CommandGate` responsibilities:
 - Set/clear `ModeContext.isLoading` (the only place allowed to call `ModeContext.setLoading(...)`).
@@ -30,3 +33,6 @@ Pattern:
 2. Do not call `ModeContext.setLoading(true/false)` directly.
 3. If you need refresh, call `actionRefreshAndMaybeSelect(...)` inside the gate.
 
+For a live `@shell`-style interaction:
+- Manage a dedicated per-widget running state instead of `ModeContext.isLoading`.
+- Poll only that widget's session endpoint and keep the rest of the UI interactive.

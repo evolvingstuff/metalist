@@ -308,6 +308,42 @@ export const NotesAPI = {
         });
     },
 
+    async getShellRun(noteId, runId) {
+        if (!noteId) {
+            throw new Error('getShellRun requires noteId');
+        }
+        if (!runId) {
+            throw new Error('getShellRun requires runId');
+        }
+
+        return this._apiCall(CONFIG.API.NOTES.RUN_SHELL_STATUS(noteId, runId), {
+            method: 'GET',
+        });
+    },
+
+    async sendShellInput(noteId, runId, text, appendNewline) {
+        if (!noteId) {
+            throw new Error('sendShellInput requires noteId');
+        }
+        if (!runId) {
+            throw new Error('sendShellInput requires runId');
+        }
+        if (typeof text !== 'string') {
+            throw new Error('sendShellInput requires text string');
+        }
+        if (typeof appendNewline !== 'boolean') {
+            throw new Error('sendShellInput requires boolean appendNewline');
+        }
+
+        return this._apiCall(CONFIG.API.NOTES.RUN_SHELL_INPUT(noteId, runId), {
+            method: 'POST',
+            body: JSON.stringify({
+                text,
+                appendNewline,
+            }),
+        });
+    },
+
     async joinNextSibling(noteId) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.joinNextSibling requires noteId string');

@@ -22,7 +22,9 @@ from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
 from app.usecases.set_collapse_in_context import CmdSetCollapseInContext
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.toggle_todo_done import CmdToggleTodoDone
-from app.usecases.run_shell import CmdRunShell
+from app.usecases.run_shell import CmdRunShellInput
+from app.usecases.run_shell import CmdRunShellStart
+from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
 from app.usecases.join_next_sibling import CmdJoinNextSibling
@@ -483,11 +485,37 @@ def toggle_todo_done(request: Request, note_id: str, body: dict):
 def run_shell_endpoint(note_id: str, body: dict) -> Dict[str, object]:
     _require_note_present(note_id, context="notes.run-shell")
     timeout_seconds = body["timeoutSeconds"]
-    cmd = CmdRunShell(
+    cmd = CmdRunShellStart(
         note_id=note_id,
         timeout_seconds=timeout_seconds,
     )
     return cmd.execute()
+
+
+@router.get("/notes/{note_id}/run-shell/{run_id}")
+def run_shell_status_endpoint(note_id: str, run_id: str) -> Dict[str, object]:
+    try:
+        cmd = CmdRunShellStatus(
+            note_id=note_id,
+            run_id=run_id,
+        )
+        return cmd.execute()
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/notes/{note_id}/run-shell/{run_id}/input")
+def run_shell_input_endpoint(note_id: str, run_id: str, body: dict) -> Dict[str, object]:
+    try:
+        cmd = CmdRunShellInput(
+            note_id=note_id,
+            run_id=run_id,
+            text=body["text"],
+            append_newline=body["appendNewline"],
+        )
+        return cmd.execute()
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/notes/{note_id}/join-next")
