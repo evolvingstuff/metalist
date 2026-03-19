@@ -29,6 +29,7 @@ import { CONFIG } from '../../config.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
+import { getDuplicateTabCloneOptions, seedDuplicatedTabNoteHashes } from '../services/tab-duplication-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { syncSearchInputValue } from '../services/search-input-service.js';
 import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
@@ -2994,12 +2995,9 @@ async function duplicateTabContext(sourceTabId) {
     response.tabs[newTabId].anchorRootId = sourceAnchorRootId;
 
     const sourceHashCount = ModeContext.getTabNoteHashCount(sourceTabId);
-    if (sourceHashCount <= 0) {
-        throw new Error('Cannot duplicate tab: source tab has no diff cache yet');
-    }
     const cloneResult = cloneNotesDomForTab(sourceTabId, newTabId, {
         activeTabId: ModeContext.activeTabId,
-        collectNoteHashes: sourceHashCount === 0,
+        ...getDuplicateTabCloneOptions(sourceHashCount),
     });
     if (!cloneResult.cloned) {
         throw new Error('Cannot duplicate tab: source tab DOM is not cached');
@@ -3011,23 +3009,18 @@ async function duplicateTabContext(sourceTabId) {
     // If we seed hashes without DOM, the server can legitimately return a
     // bootstrap payload with an empty `notes` map (hashes match), and the
     // client would then crash when it needs note payloads to insert nodes.
-    if (cloneResult.cloned && cloneResult.nodeCount > 0) {
-        const hashCloneResult = ModeContext.cloneTabNoteHashes(sourceTabId, newTabId);
-        if (!hashCloneResult.cloned && cloneResult.noteHashes instanceof Map) {
-            ModeContext.seedTabNoteHashes(newTabId, cloneResult.noteHashes);
-        } else if (!hashCloneResult.cloned) {
-            throw new Error('Cannot duplicate tab: failed to seed diff cache for new tab');
-        }
-    }
+    seedDuplicatedTabNoteHashes({
+        sourceHashCount,
+        sourceTabId,
+        newTabId,
+        cloneResult,
+        cloneTabNoteHashes: (fromTabId, toTabId) => ModeContext.cloneTabNoteHashes(fromTabId, toTabId),
+        seedTabNoteHashes: (tabId, noteHashes) => ModeContext.seedTabNoteHashes(tabId, noteHashes),
+    });
     updateSearchContextsList();
 
 	if (CONFIG.TABS.CREATE_AND_SWITCH) {
-        const switchOptions = startedEditing
-            ? {}
-            : {
-                expectedUpdatedNotesMax: 0,
-                expectedVdomOpsMax: 0,
-            };
+        const switchOptions = {};
 
 	        await switchToTabContext(newTabId, switchOptions);
 	        return newTabId;
