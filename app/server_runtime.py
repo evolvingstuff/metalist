@@ -66,6 +66,7 @@ class MainCliArgs:
     https_port: int | None
     mcp_port: int | None
     test_mode: bool
+    namespace_requested: bool
 
 
 @dataclass(frozen=True)
@@ -495,6 +496,7 @@ def apply_main_cli_args_to_environ(
     if parsed_args.namespace is not None and parsed_args.namespace_shorthand is not None:
         raise RuntimeError("Specify namespace either positionally or with --namespace, not both")
 
+    namespace_requested = parsed_args.namespace is not None or parsed_args.namespace_shorthand is not None
     namespace = parsed_args.namespace
     if namespace is None:
         namespace = parsed_args.namespace_shorthand
@@ -557,6 +559,7 @@ def apply_main_cli_args_to_environ(
         https_port=parsed_args.https_port,
         mcp_port=parsed_args.mcp_port,
         test_mode=parsed_args.test,
+        namespace_requested=namespace_requested,
     )
 
 

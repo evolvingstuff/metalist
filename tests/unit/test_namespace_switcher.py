@@ -15,6 +15,7 @@ from app.server_runtime import save_namespace_launch_profile
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import delete_current_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import _probe_namespace_status
 
@@ -156,6 +157,55 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
     assert saved_profile.port == 8123
     assert saved_profile.https_port is None
     assert saved_profile.mcp_port == 8766
+
+
+def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=8001,
+        https_port=None,
+        mcp_port=8766,
+    )
+    opened: list[tuple[str | None, str, int, int | None, int]] = []
+
+    def _fake_open_or_launch_namespace(
+        *,
+        environ,
+        current_namespace,
+        namespace,
+        port,
+        https_port,
+        mcp_port,
+    ) -> NamespaceOpenResult:
+        opened.append((current_namespace, namespace, port, https_port, mcp_port))
+        return NamespaceOpenResult(
+            namespace=namespace,
+            action="launched",
+            url=f"http://127.0.0.1:{port}",
+            saved_profile=NamespaceLaunchProfile(
+                namespace=namespace,
+                port=port,
+                https_port=https_port,
+                mcp_port=mcp_port,
+            ),
+            saved_for_next_launch=False,
+            message=f"Started namespace {namespace}.",
+        )
+
+    monkeypatch.setattr(namespace_switcher, "open_or_launch_namespace", _fake_open_or_launch_namespace)
+
+    results = open_or_launch_all_namespaces(environ={})
+
+    assert opened == [
+        (None, "default", 8000, None, 8765),
+        (None, "cla", 8001, None, 8766),
+    ]
+    assert [result.namespace for result in results] == ["default", "cla"]
 
 
 def test_restart_running_namespace_process_allows_existing_namespace_ports_before_relaunch(

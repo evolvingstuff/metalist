@@ -50,13 +50,13 @@ The installed entrypoint starts Uvicorn with the FastAPI app:
 ```bash
 metalist
 ```
-For source-checkout compatibility, `python main.py` still works.
+For source-checkout compatibility, `python main.py` still works. Plain `python main.py` is now an orchestration command: it restarts already-running namespaces from the current checkout, launches stopped namespaces, prints their URLs, and exits. Use `python main.py --namespace work` or `python main.py work` when you want one foreground namespace process.
 
-By default, this binds HTTP on `0.0.0.0:8000`, matching the old MetaList LAN-friendly behavior.
+`metalist` and explicit single-namespace source runs bind HTTP on `0.0.0.0:8000` by default, matching the old MetaList LAN-friendly behavior.
 On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on `0.0.0.0:8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
 
 Database selection:
-- No explicit namespace: `~/MetaList/namespaces/default/default.metalist.db`
+- No explicit namespace on a single-namespace launch: `~/MetaList/namespaces/default/default.metalist.db`
 - `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/namespaces/work/work.metalist.db`
 - The related files DB is derived automatically, so `namespaces/work/work.metalist.db` uses `namespaces/work/work.metalist.files.db`
 - Remembered launch ports are stored per namespace in `~/MetaList/namespaces.db`

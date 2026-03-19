@@ -4,10 +4,10 @@
 - Single-user FastAPI app for hierarchical notes with SSR + a diff-based `POST /api2/notes/view`.
 
 ## Architecture
-- Entry: installed CLI `metalist` → `main.py:main()`; source-checkout `python main.py` still works and shares the same startup path.
+- Entry: installed CLI `metalist` → `main.py:main()`; source-checkout `python main.py` still works, but plain `python main.py` now bootstraps every known namespace from the current checkout and exits after printing the per-namespace URLs.
 - Packaging: `pyproject.toml` packages the `app/` package plus templates/static assets; installed helper commands include `metalist-mcp`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
 - Release workflow: `.github/workflows/publish-pypi.yml` builds the package and publishes it to PyPI via GitHub Trusted Publishing on `v*` tags or manual dispatch.
-- Startup bootstrap: `main.py` resolves `--namespace`, positional namespace shorthand (`metalist cla` or `python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so import-time config sees the right DB path and listener ports.
+- Startup bootstrap: `main.py` resolves `--namespace`, positional namespace shorthand (`metalist cla` or `python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so explicit single-namespace launches still expose the right DB path and listener ports at import time.
 - Namespace launch profiles: `app/server_runtime.py` stores remembered per-namespace HTTP / HTTPS / MCP sidecar ports in `~/MetaList/namespaces.db`.
 - Namespace switching/launching: `app/services/namespace_switcher.py` lists known namespaces, suggests conflict-free ports, restarts already-running target namespaces so they pick up current code, relaunches the recorded entrypoint (installed CLI or source script), and writes child logs under `~/MetaList/logs/`.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
@@ -74,7 +74,7 @@
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
-- Startup: `main.py` can select a namespaced DB (`METALIST_NAMESPACE` or `--namespace`) before importing `app.main`; `app/main.py` then initializes schema + settings for that selected DB. If encryption is disabled, it populates the content cache and hydrates NoteStore before enabling the read guard. If encryption is enabled, hydration is deferred until login (`POST /api2/auth/hydrate`) and the UI shows a first-load progress state.
+- Startup: explicit single-namespace `main.py` runs can select a namespaced DB (`METALIST_NAMESPACE` or `--namespace`) before importing `app.main`; `app/main.py` then initializes schema + settings for that selected DB. If encryption is disabled, it populates the content cache and hydrates NoteStore before enabling the read guard. If encryption is enabled, hydration is deferred until login (`POST /api2/auth/hydrate`) and the UI shows a first-load progress state. Plain source-checkout `python main.py` uses the namespace switcher to restart/start every known namespace instead of running just `default` in-process.
 - Legacy import: `convert-from-legacy.py` is a destructive fresh-import path that prompts for namespace/ports when omitted, persists that namespace launch profile, can prompt for password setup, and writes the same Argon2id vault metadata as runtime auth.
 
 ## Setup
@@ -91,7 +91,7 @@ metalist
 ## Quick Ref
 - Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
 - Startup intro toggle: `STARTUP_ANIMATION_ENABLED=1` enables the login/startup MP4 gate; omitted/off skips the intro and uses the legacy immediate app/login reveal.
-- Namespace DBs: omitted namespace means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `metalist work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`.
+- Namespace DBs: omitted namespace on a single-namespace launch means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `metalist work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`. Plain source-checkout `python main.py` bootstraps all known namespaces instead of selecting only `default`.
 - Default TLS paths: `~/MetaList/certs/metalist-cert.pem` + `~/MetaList/certs/metalist-key.pem`; `main.py` auto-generates that self-signed pair on first non-test startup unless `METALIST_AUTO_GENERATE_TLS=0`, and `generate-lan-cert.sh` remains an optional manual regeneration path.
 - Launch profile precedence: CLI flags override env vars, which override `~/MetaList/namespaces.db`, which overrides built-in defaults.
 - Namespace UI/runtime bridge: `app/api/routes/auth.py` now exposes namespace catalog + open/launch endpoints; `app/static/js/modules/modals/namespace-switcher-modal.js` is the client modal opened from the command palette.

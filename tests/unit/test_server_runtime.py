@@ -287,6 +287,7 @@ def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
     assert parsed.https_port == 8444
     assert parsed.mcp_port == 8766
     assert parsed.test_mode is False
+    assert parsed.namespace_requested is True
     assert environ["METALIST_NAMESPACE"] == "work"
     assert environ["METALIST_PORT"] == "8123"
     assert environ["METALIST_HTTPS_PORT"] == "8444"
@@ -332,6 +333,7 @@ def test_apply_main_cli_args_to_environ_loads_saved_profile_for_positional_names
     assert parsed.port is None
     assert parsed.https_port is None
     assert parsed.mcp_port is None
+    assert parsed.namespace_requested is True
     assert environ["METALIST_NAMESPACE"] == "cla"
     assert environ["METALIST_PORT"] == "9000"
     assert environ["METALIST_HTTPS_PORT"] == "9443"
@@ -359,6 +361,7 @@ def test_apply_main_cli_args_to_environ_skips_saved_https_port_when_tls_is_unava
     )
 
     assert parsed.namespace == "default"
+    assert parsed.namespace_requested is False
     assert environ["METALIST_PORT"] == "8000"
     assert "METALIST_HTTPS_PORT" not in environ
     assert environ["MCP_AGENT_WEB_PORT"] == "8765"

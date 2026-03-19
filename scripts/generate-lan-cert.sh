@@ -113,8 +113,8 @@ Generated:
 
 Run MetaList with dual HTTP/HTTPS listeners:
   metalist
-  # source checkout compatibility:
-  python main.py
+  # source checkout compatibility (single namespace):
+  python main.py --namespace default
 
 From the other machine, open:
   https://${LAN_IP}:8443

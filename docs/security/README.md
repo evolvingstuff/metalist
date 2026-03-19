@@ -191,14 +191,14 @@ writes).
 
 ## Remote Access / HTTPS
 
-- `python main.py` binds HTTP on `0.0.0.0:8000` by default, matching old MetaList behavior.
+- Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved/default profiles, prints their URLs, and exits.
 - `python main.py --namespace work` starts a separate process against `~/MetaList/namespaces/work/work.metalist.db`.
 - After a namespace has been launched once with explicit ports, `python main.py work` reuses that namespace's remembered HTTP / HTTPS / MCP sidecar ports from `~/MetaList/namespaces.db`.
-- With no explicit namespace, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
+- With no explicit namespace on a single-namespace launch, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
 - Deleting a namespace removes both its saved launch profile from `~/MetaList/namespaces.db` and its namespace directory on disk, including the namespace SQLite databases and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
 - When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
-- For direct HTTPS from `python main.py`, set both:
+- For direct HTTPS from an explicit single-namespace `python main.py ...` run, set both:
   - `METALIST_TLS_CERT=/path/to/fullchain.pem`
   - `METALIST_TLS_KEY=/path/to/privkey.pem`
 - For a quick LAN cert, use `./scripts/generate-lan-cert.sh` and then open `https://<lan-ip>:8443` from the other machine.

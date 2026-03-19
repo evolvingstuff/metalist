@@ -275,6 +275,34 @@ def open_or_launch_namespace(
     )
 
 
+def open_or_launch_all_namespaces(
+    *,
+    environ: Mapping[str, str],
+) -> list[NamespaceOpenResult]:
+    catalog = build_namespace_catalog(
+        environ=environ,
+        current_namespace=None,
+    )
+    raw_namespaces = catalog.get("namespaces")
+    if not isinstance(raw_namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+
+    results: list[NamespaceOpenResult] = []
+    for entry in raw_namespaces:
+        profile = _catalog_default_profile(entry=entry)
+        results.append(
+            open_or_launch_namespace(
+                environ=environ,
+                current_namespace=None,
+                namespace=profile.namespace,
+                port=profile.port,
+                https_port=profile.https_port,
+                mcp_port=profile.mcp_port,
+            )
+        )
+    return results
+
+
 def delete_current_namespace(
     *,
     environ: Mapping[str, str],
@@ -355,6 +383,38 @@ def _serialize_profile(*, profile: NamespaceLaunchProfile) -> dict[str, object]:
         "https_port": profile.https_port,
         "mcp_port": profile.mcp_port,
     }
+
+
+def _catalog_default_profile(*, entry: object) -> NamespaceLaunchProfile:
+    if not isinstance(entry, dict):
+        raise RuntimeError("Namespace catalog entry must be an object")
+
+    namespace = entry.get("namespace")
+    if not isinstance(namespace, str) or namespace == "":
+        raise RuntimeError("Namespace catalog entry missing namespace")
+
+    raw_profile = entry.get("default_profile")
+    if not isinstance(raw_profile, dict):
+        raise RuntimeError(f"Namespace {namespace} is missing default profile")
+
+    port = raw_profile.get("port")
+    if not isinstance(port, int):
+        raise RuntimeError(f"Namespace {namespace} profile missing port")
+
+    https_port = raw_profile.get("https_port")
+    if https_port is not None and not isinstance(https_port, int):
+        raise RuntimeError(f"Namespace {namespace} profile has invalid https_port")
+
+    mcp_port = raw_profile.get("mcp_port")
+    if not isinstance(mcp_port, int):
+        raise RuntimeError(f"Namespace {namespace} profile missing mcp_port")
+
+    return NamespaceLaunchProfile(
+        namespace=namespace,
+        port=port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
 
 
 def _load_saved_profiles_by_namespace() -> dict[str, NamespaceLaunchProfile]:

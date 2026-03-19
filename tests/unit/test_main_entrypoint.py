@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 import sys
 from types import ModuleType
@@ -7,7 +8,10 @@ from types import ModuleType
 import main as main_entrypoint
 import pytest
 from app.server_runtime import DatabaseRuntimeConfig
+from app.server_runtime import MainCliArgs
 from app.server_runtime import MainServerConfig
+from app.server_runtime import NamespaceLaunchProfile
+from app.services.namespace_switcher import NamespaceOpenResult
 
 
 def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch) -> None:
@@ -17,8 +21,16 @@ def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch
     fake_app_module.app = fake_app_object
     monkeypatch.setitem(sys.modules, "app.main", fake_app_module)
 
-    def fake_apply_main_cli_args_to_environ(*, argv, environ) -> None:
+    def fake_apply_main_cli_args_to_environ(*, argv, environ) -> MainCliArgs:
         calls.append("apply_main_cli_args_to_environ")
+        return MainCliArgs(
+            namespace="default",
+            port=None,
+            https_port=None,
+            mcp_port=None,
+            test_mode=False,
+            namespace_requested=True,
+        )
 
     def fake_resolve_database_runtime_config(*, environ, argv) -> DatabaseRuntimeConfig:
         calls.append("resolve_database_runtime_config")
@@ -139,7 +151,18 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
             ssl_keyfile=None,
         )
 
-    monkeypatch.setattr(main_entrypoint, "apply_main_cli_args_to_environ", lambda *, argv, environ: calls.append("apply_main_cli_args_to_environ"))
+    def _fake_apply_main_cli_args_to_environ(*, argv, environ) -> MainCliArgs:
+        calls.append("apply_main_cli_args_to_environ")
+        return MainCliArgs(
+            namespace=None,
+            port=None,
+            https_port=None,
+            mcp_port=None,
+            test_mode=True,
+            namespace_requested=False,
+        )
+
+    monkeypatch.setattr(main_entrypoint, "apply_main_cli_args_to_environ", _fake_apply_main_cli_args_to_environ)
     monkeypatch.setattr(
         main_entrypoint,
         "resolve_database_runtime_config",
@@ -171,6 +194,128 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
         "resolve_main_mcp_url",
         "_start_agent_web_sidecar",
         "_run_main_listener",
+    ]
+
+
+def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def _fake_apply_main_cli_args_to_environ(*, argv, environ) -> MainCliArgs:
+        calls.append("apply_main_cli_args_to_environ")
+        return MainCliArgs(
+            namespace="default",
+            port=None,
+            https_port=None,
+            mcp_port=None,
+            test_mode=False,
+            namespace_requested=False,
+        )
+
+    def _fake_ensure_default_tls_pair(*, environ) -> None:
+        calls.append("ensure_default_tls_pair")
+
+    def _fake_open_or_launch_all_namespaces(*, environ):
+        calls.append("open_or_launch_all_namespaces")
+        return [
+            type(
+                "LaunchResult",
+                (),
+                {"namespace": "default", "action": "launched", "url": "http://127.0.0.1:8000"},
+            )(),
+            type(
+                "LaunchResult",
+                (),
+                {"namespace": "work", "action": "restarted", "url": "http://127.0.0.1:8001"},
+            )(),
+        ]
+
+    monkeypatch.setattr(main_entrypoint, "apply_main_cli_args_to_environ", _fake_apply_main_cli_args_to_environ)
+    monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", _fake_ensure_default_tls_pair)
+    monkeypatch.setattr(main_entrypoint, "open_or_launch_all_namespaces", _fake_open_or_launch_all_namespaces)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_print_namespace_bootstrap_results",
+        lambda *, environ, launch_results: calls.append("_print_namespace_bootstrap_results"),
+    )
+    monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
+    monkeypatch.setattr(main_entrypoint, "_resolve_current_entrypoint", lambda: "/tmp/main.py")
+    monkeypatch.setattr(
+        main_entrypoint,
+        "resolve_database_runtime_config",
+        lambda *, environ, argv: (_ for _ in ()).throw(AssertionError("resolve_database_runtime_config should not run")),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_run_main_listener",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("_run_main_listener should not run")),
+    )
+
+    main_entrypoint.main(argv=[])
+
+    assert calls == [
+        "_record_self_executable_for_namespace_launch",
+        "apply_main_cli_args_to_environ",
+        "ensure_default_tls_pair",
+        "open_or_launch_all_namespaces",
+        "_print_namespace_bootstrap_results",
+    ]
+
+
+def test_print_namespace_bootstrap_results_shows_http_https_and_mcp_urls(monkeypatch) -> None:
+    printed: list[str] = []
+
+    monkeypatch.setattr(
+        main_entrypoint,
+        "resolve_main_server_config",
+        lambda *, environ: MainServerConfig(
+            host="0.0.0.0",
+            port=8000,
+            https_port=8443,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile=None,
+            ssl_keyfile=None,
+        ),
+    )
+    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
+
+    main_entrypoint._print_namespace_bootstrap_results(
+        environ={},
+        launch_results=[
+            NamespaceOpenResult(
+                namespace="default",
+                action="launched",
+                url="http://127.0.0.1:8000",
+                saved_profile=NamespaceLaunchProfile(
+                    namespace="default",
+                    port=8000,
+                    https_port=8443,
+                    mcp_port=8765,
+                ),
+                saved_for_next_launch=False,
+                message="Started namespace default.",
+            ),
+            NamespaceOpenResult(
+                namespace="cla",
+                action="restarted",
+                url="http://127.0.0.1:8001",
+                saved_profile=NamespaceLaunchProfile(
+                    namespace="cla",
+                    port=8001,
+                    https_port=None,
+                    mcp_port=8766,
+                ),
+                saved_for_next_launch=False,
+                message="Restarted namespace cla.",
+            ),
+        ],
+    )
+
+    assert printed == [
+        "MetaList namespace bootstrap:",
+        "namespace\taction\thttp\thttps\tmcp",
+        "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443\thttp://127.0.0.1:8765",
+        "cla\trestarted\thttp://127.0.0.1:8001\tdisabled\thttp://127.0.0.1:8766",
     ]
 
 

@@ -15,12 +15,15 @@ from http.server import ThreadingHTTPServer
 
 from app.server_runtime import apply_main_cli_args_to_environ
 from app.server_runtime import ensure_default_tls_pair
+from app.server_runtime import MainCliArgs
 from app.server_runtime import prepare_database_runtime_path
 from app.server_runtime import resolve_backend_connect_host
 from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
+from app.services.namespace_switcher import NamespaceOpenResult
+from app.services.namespace_switcher import open_or_launch_all_namespaces
 from mcp_client import create_web_app
 from mcp_client import DEFAULT_MAX_STEPS
 from mcp_client import DEFAULT_MAX_EXPRESSIONS
@@ -43,6 +46,12 @@ class _StartedHttpsProxy:
 _WAIT_POLL_INTERVAL_SECONDS = 0.25
 _TERMINATE_GRACE_SECONDS = 5.0
 _KILL_GRACE_SECONDS = 5.0
+_EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES = (
+    "METALIST_NAMESPACE",
+    "METALIST_PORT",
+    "METALIST_HTTPS_PORT",
+    "MCP_AGENT_WEB_PORT",
+)
 
 
 class FilterCheckUpdates(logging.Filter):
@@ -80,6 +89,81 @@ def _record_self_executable_for_namespace_launch() -> None:
     os.environ["METALIST_SELF_EXECUTABLE"] = entrypoint
 
 
+def _is_source_main_entrypoint() -> bool:
+    entrypoint = _resolve_current_entrypoint()
+    if entrypoint is None:
+        return False
+    return os.path.basename(entrypoint) == "main.py"
+
+
+def _should_open_or_launch_all_namespaces(
+    *,
+    original_environ: dict[str, str],
+    cli_args: MainCliArgs,
+) -> bool:
+    if cli_args.test_mode:
+        return False
+    if cli_args.namespace_requested:
+        return False
+    if cli_args.port is not None or cli_args.https_port is not None or cli_args.mcp_port is not None:
+        return False
+    if not _is_source_main_entrypoint():
+        return False
+    return not any(name in original_environ for name in _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES)
+
+
+def _resolve_agent_web_browser_host(*, environ: dict[str, str]) -> str:
+    if "MCP_AGENT_WEB_HOST" in environ:
+        host = environ["MCP_AGENT_WEB_HOST"]
+        if host.strip() == "":
+            raise RuntimeError("MCP_AGENT_WEB_HOST must not be empty")
+    else:
+        host = DEFAULT_WEB_HOST
+    return resolve_local_browser_host(host=host)
+
+
+def _build_https_namespace_url(*, host: str, result: NamespaceOpenResult) -> str:
+    https_port = result.saved_profile.https_port
+    if https_port is None:
+        return "disabled"
+    return f"https://{host}:{https_port}"
+
+
+def _build_mcp_namespace_url(*, environ: dict[str, str], result: NamespaceOpenResult) -> str:
+    if not _env_flag_from_mapping(environ=environ, name="MCP_AGENT_WEB_ENABLED", default=True):
+        return "disabled"
+    mcp_port = result.saved_profile.mcp_port
+    if not isinstance(mcp_port, int):
+        raise RuntimeError(f"Namespace {result.namespace} is missing an MCP port")
+    mcp_host = _resolve_agent_web_browser_host(environ=environ)
+    return f"http://{mcp_host}:{mcp_port}"
+
+
+def _print_namespace_bootstrap_results(
+    *,
+    environ: dict[str, str],
+    launch_results: list[NamespaceOpenResult],
+) -> None:
+    main_server_config = resolve_main_server_config(environ=environ)
+    browser_host = resolve_local_browser_host(host=main_server_config.host)
+    print("MetaList namespace bootstrap:")
+    print("namespace\taction\thttp\thttps\tmcp")
+    for result in launch_results:
+        https_url = _build_https_namespace_url(host=browser_host, result=result)
+        mcp_url = _build_mcp_namespace_url(environ=environ, result=result)
+        print(
+            "\t".join(
+                [
+                    result.namespace,
+                    result.action,
+                    result.url,
+                    https_url,
+                    mcp_url,
+                ]
+            )
+        )
+
+
 def _env_flag(name: str, default: bool) -> bool:
     if name not in os.environ:
         return default
@@ -87,6 +171,18 @@ def _env_flag(name: str, default: bool) -> bool:
     value = os.environ[name].strip().lower()
     assert value != "", f"Empty env flag: {name}"
 
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean env flag {name}={value!r}")
+
+
+def _env_flag_from_mapping(*, environ: dict[str, str], name: str, default: bool) -> bool:
+    if name not in environ:
+        return default
+    value = environ[name].strip().lower()
+    assert value != "", f"Empty env flag: {name}"
     if value in {"1", "true", "yes", "on"}:
         return True
     if value in {"0", "false", "no", "off"}:
@@ -461,7 +557,16 @@ def main(argv: list[str] | None = None) -> None:
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     _record_self_executable_for_namespace_launch()
-    apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
+    original_environ = dict(os.environ)
+    cli_args = apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
+    if _should_open_or_launch_all_namespaces(
+        original_environ=original_environ,
+        cli_args=cli_args,
+    ):
+        ensure_default_tls_pair(environ=os.environ)
+        launch_results = open_or_launch_all_namespaces(environ=os.environ)
+        _print_namespace_bootstrap_results(environ=os.environ, launch_results=launch_results)
+        return
     database_runtime_config = resolve_database_runtime_config(
         environ=os.environ,
         argv=argv,

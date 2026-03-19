@@ -3,7 +3,7 @@
 This document defines the Phase 1 MCP interface for MetaList.
 
 ## Transport
-- App-integrated HTTP JSON-RPC endpoint: `POST /api2/mcp` (auto-available when `python main.py` is running).
+- App-integrated HTTP JSON-RPC endpoint: `POST /api2/mcp` (auto-available while a MetaList namespace process is running).
 - Namespace is implicit in the MetaList process you started. If that process was launched with `--namespace work`, the integrated MCP endpoint is serving the `work` database.
 - Local stdio endpoint (manual/advanced):
 
@@ -25,7 +25,8 @@ python mcp_client.py web --port 8765 --mcp-url http://127.0.0.1:8000/api2/mcp
 ```
 
 Auto-start behavior:
-- Running `python main.py` starts the main app and also launches the agent web app sidecar (default `http://127.0.0.1:8765`).
+- Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved/default profiles, prints their URLs, and exits.
+- `python main.py work` or `python main.py --namespace work` starts one main app process and also launches that namespace's agent web app sidecar.
 - The auto-started sidecar now points at the resolved MCP URL for that MetaList process, so changing the main HTTP port does not require a manual MCP URL override.
 - Namespace launch profiles live in `~/MetaList/namespaces.db`, so after a first explicit run you can use `python main.py work` and the sidecar will reuse the saved ports for `work`.
 - Use `python main.py --mcp-port 8766 ...` when you want a second MetaList instance to auto-start its own sidecar without reusing `8765`.
