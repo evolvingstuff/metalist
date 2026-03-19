@@ -605,7 +605,9 @@ function handleClick(event) {
                 coordinates 
             }, Logger.LogCategory.EVENT);
 
-            deleteNote(noteId);
+            void CommandGate.run('mouse.delete', async () => {
+                await deleteNote(noteId);
+            });
         } else {
                         
             Logger.logNoop('Delete button clicked but no note is selected', { 

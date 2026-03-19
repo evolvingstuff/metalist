@@ -4,6 +4,13 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 
+function getNoteElementIfPresent(noteId) {
+    if (!noteId) {
+        throw new Error('noteId is required');
+    }
+    return document.querySelector(`[data-note-id="${noteId}"]`);
+}
+
 export async function actionSaveNote(noteId) {
     Logger.logAction('saveNote', { noteId });
 
@@ -15,8 +22,11 @@ export async function actionSaveNote(noteId) {
         throw new Error(`Cannot save note ${noteId} - not the current note being edited (${ModeContext.currentNoteId})`);
     }
 
-    const noteElement = DOMUtils.getNoteById(noteId);
-    const noteContentElement = DOMUtils.getNoteContent(noteElement);
+    const noteElement = getNoteElementIfPresent(noteId);
+    if (noteElement === null) {
+        Logger.logDebug('Skipping save for missing note element', { noteId });
+        return Promise.resolve();
+    }
     const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
     const tags = getTagBarValue(noteElement);
     const previousTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
@@ -66,8 +76,11 @@ export async function actionSaveNoteOnIdle(noteId) {
         return Promise.resolve(); 
     }
 
-    const noteElement = DOMUtils.getNoteById(noteId);
-    const noteContentElement = DOMUtils.getNoteContent(noteElement);
+    const noteElement = getNoteElementIfPresent(noteId);
+    if (noteElement === null) {
+        Logger.logDebug('Skipping idle save for missing note element', { noteId });
+        return Promise.resolve();
+    }
     const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
     const tags = getTagBarValue(noteElement);
     

@@ -33,6 +33,13 @@ function recordEditModeTransitionWithInteraction(beforeEditingNoteId, afterEditi
     );
 }
 
+function getNoteElementIfPresent(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('getNoteElementIfPresent requires noteId');
+    }
+    return document.querySelector(`[data-note-id="${noteId}"]`);
+}
+
 export async function actionSelectNote(noteId, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('actionSelectNote requires options object');
@@ -101,7 +108,15 @@ export async function actionDeselectNote() {
         throw new Error('Cannot deselect note: not currently editing');
     }
 
-    await actionSaveNote(noteId);
+    const noteElement = getNoteElementIfPresent(noteId);
+    if (noteElement !== null) {
+        await actionSaveNote(noteId);
+    } else {
+        Logger.logDebug('Deselecting after note disappeared from DOM', { noteId });
+        if (ModeContext.isDirty) {
+            ModeContext.setDirty(false);
+        }
+    }
 
     ModeContext.setEditing(false);
 
@@ -158,8 +173,10 @@ export function actionExitEditingWithoutSavingOrRefreshing() {
         throw new Error('Cannot exit editing locally: currentNoteId is missing');
     }
 
-    const noteElement = DOMUtils.getNoteById(noteId);
-    DOMUtils.setNoteEditable(noteElement, false);
+    const noteElement = getNoteElementIfPresent(noteId);
+    if (noteElement !== null) {
+        DOMUtils.setNoteEditable(noteElement, false);
+    }
     detachEditorSurface();
     clearTagBar();
 
