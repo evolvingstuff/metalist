@@ -6,7 +6,7 @@ Recency-weighted blank-search suggestions
 ## Goal
 - When the search input is blank, reserve the top 3 suggestion slots for tags drawn from searches the user most recently searched and then meaningfully interacted with.
 - A qualifying interaction is the first scroll after an executed search, or entering edit mode on a note while that search is active.
-- Ranking must decay exponentially over time and persist per namespace.
+- Ranking must decay exponentially across credited interactions and persist per namespace.
 
 ## Current State
 - `POST /api2/notes/search-suggestions` calls `search_index.suggest_tag_completions(query, limit)`.
@@ -36,8 +36,8 @@ Recency-weighted blank-search suggestions
 - Add a service that:
   - normalizes a search into the exact ordered sequence of non-negated tag terms
   - records interaction against that normalized query entry
-  - applies lazy exponential decay on write/read using elapsed time since `last_interacted_at`
-  - opportunistically prunes stale near-zero rows
+  - applies event-based exponential decay when a new qualifying interaction is credited
+  - opportunistically prunes near-zero rows during writes or reads
   - can return the highest-scoring histories and flatten them into unique tag suggestions
 - Encryption at rest:
   - follow the app's existing namespace encryption model
@@ -68,6 +68,7 @@ Recency-weighted blank-search suggestions
 - Legacy difference:
   - the old app credited on qualifying rendered search changes
   - this feature should credit only after user interaction, so we do not need render-based crediting
+  - decay should happen only when a qualifying interaction is credited, not while the app sits idle
 
 ### 4. Add client-side interaction gating and dedupe
 - Add a small client-only tracker keyed by `tabId + executedSearchQuery`.
@@ -110,13 +111,13 @@ Recency-weighted blank-search suggestions
   - ranking histories by overlap first and score second as a future-compatible direction
   - fallback to plain included-tag frequency after history-derived suggestions
   - hard separation between namespace runtime metadata and search-history data
+  - event-based exponential decay
 - Change:
-  - decay should be time-based, not event-count-based
   - credit should require interaction, not just rendered search changes
   - phase 1 scope should be blank-query top-3 promotion only unless we explicitly expand it
 
 ## Open Decisions For Discussion
-- Decay half-life: start at 7 days, 14 days, or another explicit value?
+- Decay factor per credited interaction: keep the legacy `0.98`, or use another multiplier?
 - Scroll threshold: any non-zero scroll, or a larger threshold such as 50 px?
 - Interaction cap: one record per executed query per tab only, or allow another credit after a cooldown?
 - Should phase 1 stay blank-query-only, or should we also restore the legacy overlap weighting for non-empty searches with fewer than 5 parsed terms?
@@ -131,6 +132,7 @@ Recency-weighted blank-search suggestions
   - flattening unique tags from ranked histories
   - sidecar DB initialization/bootstrap
   - encrypted row round-trip when namespace encryption is enabled
+  - event-based global decay on each newly credited interaction
   - ignoring blank, negative-only, quoted-text-only, and UUID-only searches
 - Client tests or targeted manual verification for:
   - no interaction recorded on mere typing
@@ -147,5 +149,5 @@ Recency-weighted blank-search suggestions
 ## Success Criteria
 - Blank search shows up to 3 recency-prioritized tags first.
 - Those tags come only from searches the user later scrolled or edited within.
-- Ranking decays over time and persists across reloads/restarts.
+- Ranking decays only when new qualifying interactions are credited and persists across reloads/restarts.
 - Existing non-blank suggestion behavior stays unchanged.
