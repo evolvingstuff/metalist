@@ -26,6 +26,7 @@
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping, auto-links bare `http(s)` URLs in rendered notes, and normalizes rendered anchors to open in a new tab.
+- `app/services/tag_term_matching.py`: Shared helper for connector-aware tag suggestion matching/ranking (`-`, `_`, `.`, `/`) used by search suggestions and tag suggestions.
 - `app/services/embedded_references.py`: Resolves note/file UUID references in view mode (embedded notes, note previews, file cards, missing/cycle markers).
 - `app/services/tab_state.py`: Tracks `(client, tab)` search + scroll metadata used by the UI between reloads.
 - `app/services/login_rate_limit.py`: In-memory login attempt throttling for `/api2/auth/login`.
@@ -55,6 +56,8 @@
 - File trimming: `POST /api2/files/trim-unused` deletes attachment rows no longer referenced by any note; removing refs does not auto-delete files so undo/redo remains safe until trim runs.
 - Tag persistence: tags are included in `snapshot.notes[*].tags` and are saved alongside note content on `PUT /api2/notes/{id}/save`.
   - Tag bar grammar (wrappers + /* comments */): `docs/ui/tag-bar.md`.
+- Suggestion behavior: search-bar and tag-bar suggestions are segment-aware for connector-separated tags, but actual search filtering remains exact on effective tag terms.
+- Tag suggestion ranking: literal content segment hits can surface connector-separated tags, and full multi-segment phrase hits outrank single-segment hits.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
 - Reference shortcut: `Cmd/Ctrl+R` copies as embedded reference (`![[UUID]]`) from the last note copied with `Cmd/Ctrl+C` (when no text selection).

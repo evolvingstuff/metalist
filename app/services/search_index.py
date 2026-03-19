@@ -10,6 +10,7 @@ from loguru import logger
 
 from app.services.content_formatting import _tokenize_tag_bar, _unwrap_tag_token, list_known_meta_tag_terms
 from app.services.search_query import ParsedSearchQuery, parse_search_query
+from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.search_text import build_searchable_text_casefold_from_plaintext
 
 
@@ -335,7 +336,6 @@ class SearchIndex:
         if partial_prefix.startswith("@"):
             return _suggest_meta_tag_completions(partial_prefix=partial_prefix, limit=limit)
 
-        prefix_casefold = partial_prefix.casefold()
         anchor_set = {anchor for anchor in anchors if anchor and not anchor.startswith("@")}
 
         with self._lock:
@@ -347,7 +347,7 @@ class SearchIndex:
                     continue
                 if partial_prefix != "" and term == partial_prefix:
                     continue
-                if partial_prefix != "" and not term.casefold().startswith(prefix_casefold):
+                if partial_prefix != "" and not tag_term_matches_prefix(term=term, prefix=partial_prefix):
                     continue
                 candidates.append(term)
 
@@ -708,12 +708,11 @@ def _suggest_meta_tag_completions(*, partial_prefix: str, limit: int) -> List[st
     if not isinstance(limit, int) or limit <= 0:
         raise TypeError("limit must be a positive integer")
 
-    prefix_casefold = partial_prefix.casefold()
     candidates = []
     for term in list_known_meta_tag_terms():
         if partial_prefix != "" and term == partial_prefix:
             continue
-        if partial_prefix != "" and not term.casefold().startswith(prefix_casefold):
+        if partial_prefix != "" and not term.casefold().startswith(partial_prefix.casefold()):
             continue
         candidates.append(term)
 

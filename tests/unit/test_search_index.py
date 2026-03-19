@@ -3,6 +3,16 @@ from app.services.search_query import parse_search_query
 from app.utils.text_utils import strip_html
 
 
+def _build_index(records: list[SearchRecord]) -> SearchIndex:
+    index = SearchIndex()
+    index.rebuild(
+        records,
+        progress_update=lambda _processed: None,
+        progress_interval=1000,
+    )
+    return index
+
+
 def test_strip_html_ignores_script_and_inserts_whitespace() -> None:
     assert strip_html("<div>Hello</div><div>world</div>") == "Hello world"
     assert strip_html("<div>ok</div><script>alert(1)</script>hi") == "ok hi"
@@ -17,24 +27,23 @@ def test_search_query_parser_tags_and_text() -> None:
 
 
 def test_search_index_tag_and_text_queries() -> None:
-    index = SearchIndex()
-    index.rebuild(
+    index = _build_index(
         [
             SearchRecord(
                 note_id="n1",
-                content_html="<div>Hello world</div>",
+                content_text="Hello world",
                 tags="foo",
                 tag_terms=extract_tags_for_search("foo"),
             ),
             SearchRecord(
                 note_id="n2",
-                content_html="<div>Other</div>",
+                content_text="Other",
                 tags="bar",
                 tag_terms=extract_tags_for_search("bar"),
             ),
             SearchRecord(
                 note_id="n3",
-                content_html="<div>Hello there</div>",
+                content_text="Hello there",
                 tags="foo bar",
                 tag_terms=extract_tags_for_search("foo bar"),
             ),
@@ -49,18 +58,17 @@ def test_search_index_tag_and_text_queries() -> None:
 
 
 def test_search_index_short_text_term_falls_back_to_verification() -> None:
-    index = SearchIndex()
-    index.rebuild(
+    index = _build_index(
         [
             SearchRecord(
                 note_id="n1",
-                content_html="<div>Hello</div>",
+                content_text="Hello",
                 tags="",
                 tag_terms=extract_tags_for_search(""),
             ),
             SearchRecord(
                 note_id="n2",
-                content_html="<div>Other</div>",
+                content_text="Other",
                 tags="",
                 tag_terms=extract_tags_for_search(""),
             ),
@@ -70,71 +78,68 @@ def test_search_index_short_text_term_falls_back_to_verification() -> None:
 
 
 def test_search_index_tag_suggestions_rank_by_anchor_overlap() -> None:
-    index = SearchIndex()
-    index.rebuild(
+    index = _build_index(
         [
             SearchRecord(
                 note_id="n1",
-                content_html="<div>Alpha</div>",
+                content_text="Alpha",
                 tags="a b c alpine",
                 tag_terms=extract_tags_for_search("a b c alpine"),
             ),
             SearchRecord(
                 note_id="n2",
-                content_html="<div>Beta</div>",
+                content_text="Beta",
                 tags="a b alpha",
                 tag_terms=extract_tags_for_search("a b alpha"),
             ),
             SearchRecord(
                 note_id="n3",
-                content_html="<div>Gamma</div>",
+                content_text="Gamma",
                 tags="alto",
                 tag_terms=extract_tags_for_search("alto"),
             ),
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="a b c al")
+    suggestions = index.suggest_tag_completions(query="a b c al", limit=20)
     assert suggestions[:3] == ["alpine", "alpha", "alto"]
 
-    suggestions = index.suggest_tag_completions(query="alpha ")
+    suggestions = index.suggest_tag_completions(query="alpha ", limit=20)
     assert suggestions == ["a", "b"]
 
-    suggestions = index.suggest_tag_completions(query="alpha")
-    assert suggestions == ["a", "b"]
+    suggestions = index.suggest_tag_completions(query="alpha", limit=20)
+    assert suggestions == []
 
 
 def test_search_index_tag_suggestions_ignore_quotes_and_include_prefix_only() -> None:
-    index = SearchIndex()
-    index.rebuild(
+    index = _build_index(
         [
             SearchRecord(
                 note_id="n1",
-                content_html="<div>Socrates</div>",
+                content_text="Socrates",
                 tags="socrates philosopher",
                 tag_terms=extract_tags_for_search("socrates philosopher"),
             ),
             SearchRecord(
                 note_id="n2",
-                content_html="<div>Other</div>",
+                content_text="Other",
                 tags="journal",
                 tag_terms=extract_tags_for_search("journal"),
             ),
         ]
     )
 
-    suggestions = index.suggest_tag_completions(query="socrates \"ancient greece\" phil")
+    suggestions = index.suggest_tag_completions(query="socrates \"ancient greece\" phil", limit=20)
     assert suggestions == ["philosopher"]
 
-    suggestions = index.suggest_tag_completions(query="a b c jour")
+    suggestions = index.suggest_tag_completions(query="a b c jour", limit=20)
     assert suggestions == ["journal"]
 
 
 def test_search_index_tag_suggestions_include_meta_tags() -> None:
-    index = SearchIndex()
-    index.rebuild([])
+    index = _build_index([])
 
-    suggestions = index.suggest_tag_completions(query="@")
+    suggestions = index.suggest_tag_completions(query="@", limit=100)
     assert "@json" in suggestions
     assert "@markdown" in suggestions
     assert "@LaTeX" in suggestions
@@ -146,5 +151,5 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
     assert "@todo" in suggestions
     assert "@monospace" in suggestions
 
-    suggestions = index.suggest_tag_completions(query="@d")
-    assert suggestions == ["@done"]
+    suggestions = index.suggest_tag_completions(query="@d", limit=20)
+    assert suggestions == ["@dark-theme", "@done"]

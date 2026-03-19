@@ -95,8 +95,10 @@ Unclosed comments behave like unclosed wrappers:
 
 ## Tag Suggestions
 - Suggestions appear only while the tag bar input is focused.
-- Prefix completions appear while typing; after a space, suggestions are ranked by tag co-occurrence.
+- While typing inside a tag token, matching is segment-aware for connector-separated tags: a prefix can match the start of the whole tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`). Example: `wor` suggests both `workspaces` and `databricks-workspaces`, while `orksp` suggests neither.
+- After a space, suggestions are ranked by tag co-occurrence.
 - Tags that match phrases in the note content are listed first.
+- A literal content hit on any connector-separated segment can also surface a tag. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward and the ordering reverses so the closest suggestion sits nearest the input.
 - The connector characters used for content matching are configurable via `TAG_SUGGESTION_CONNECTORS` in `app/config.py`.

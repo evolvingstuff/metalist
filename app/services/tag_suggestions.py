@@ -1,30 +1,14 @@
 from __future__ import annotations
 
-import re
-from typing import Iterable, List, Set
+from typing import Dict, Iterable, List
 
-from app.config import TAG_SUGGESTION_CONNECTORS
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
+from app.services.tag_term_matching import match_tag_term_in_normalized_content
+from app.services.tag_term_matching import normalize_tag_match_text
+from app.services.tag_term_matching import tag_term_matches_prefix
 from app.utils.text_utils import strip_html
-
-
-_CONNECTOR_CHARS = TAG_SUGGESTION_CONNECTORS
-if not isinstance(_CONNECTOR_CHARS, str):
-    raise TypeError("TAG_SUGGESTION_CONNECTORS must be a string")
-if _CONNECTOR_CHARS == "":
-    raise ValueError("TAG_SUGGESTION_CONNECTORS must be non-empty")
-if any(char.isspace() for char in _CONNECTOR_CHARS):
-    raise ValueError("TAG_SUGGESTION_CONNECTORS must not include whitespace")
-
-_CONNECTOR_RE = re.compile(f"[{re.escape(_CONNECTOR_CHARS)}\\s]+")
-
-
-def _normalize_for_content_match(text: str) -> str:
-    if not isinstance(text, str):
-        raise TypeError("text must be a string")
-    return _CONNECTOR_RE.sub(" ", text.casefold()).strip()
 
 
 def _sanitize_anchor_tags(anchors: Iterable[str]) -> List[str]:
@@ -90,26 +74,19 @@ def suggest_tags_for_note(
     already_present = {tag for tag in effective_tags if not tag.startswith("@")}
 
     all_terms = search_index.list_non_meta_tag_terms()
-    prefix_casefold = prefix.casefold()
     has_prefix = prefix != ""
 
-    content_matches: Set[str] = set()
-    normalized_content = _normalize_for_content_match(plaintext)
-    padded_content = ""
-    if normalized_content:
-        padded_content = f" {normalized_content} "
-    if padded_content:
-        for term in all_terms:
-            if term in already_present:
-                continue
-            if has_prefix and not term.casefold().startswith(prefix_casefold):
-                continue
-            phrase = _normalize_for_content_match(term)
-            if phrase == "":
-                continue
-            needle = f" {phrase} "
-            if needle in padded_content:
-                content_matches.add(term)
+    content_match_scores: Dict[str, tuple[int, int, int, int]] = {}
+    normalized_content = normalize_tag_match_text(plaintext)
+    for term in all_terms:
+        if term in already_present:
+            continue
+        if has_prefix and not tag_term_matches_prefix(term=term, prefix=prefix):
+            continue
+        match = match_tag_term_in_normalized_content(term=term, normalized_content=normalized_content)
+        if match is None:
+            continue
+        content_match_scores[term] = match.sort_key()
 
     cooccurrence: List[str] = []
     term_count = len(all_terms)
@@ -119,20 +96,32 @@ def suggest_tags_for_note(
 
     content_first: List[str] = []
     remaining: List[str] = []
+    cooccurrence_rank = {term: index for index, term in enumerate(cooccurrence)}
     for term in cooccurrence:
         if term in already_present:
             continue
-        if term in content_matches:
+        if term in content_match_scores:
             content_first.append(term)
             continue
         remaining.append(term)
+
+    content_first.sort(
+        key=lambda term: (
+            -content_match_scores[term][0],
+            -content_match_scores[term][1],
+            -content_match_scores[term][2],
+            -content_match_scores[term][3],
+            cooccurrence_rank[term],
+            term,
+        )
+    )
 
     suggestions = content_first + remaining
 
     if has_prefix:
         present_suffix: List[str] = []
         for term in already_present:
-            if term.casefold().startswith(prefix_casefold):
+            if tag_term_matches_prefix(term=term, prefix=prefix):
                 present_suffix.append(term)
         present_suffix.sort()
         suggestions.extend(present_suffix)

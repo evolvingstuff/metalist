@@ -51,15 +51,18 @@
 
 ### Search Suggestions
 - Suggestions are **tag-only** (no text suggestions).
-- While typing a partial tag token (e.g. `jour`), suggestions are prefix completions.
+- While typing a partial tag token, suggestions are segment-aware for connector-separated tags: a prefix can match the start of the full tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`).
+- Example: `wor` can suggest `workspaces` and `databricks-workspaces`; `orksp` suggests neither.
 - After completing a tag and adding a space, suggestions are ordered by tag co-occurrence with all existing tag tokens in the query (strict overlap count > Jaccard within overlap).
 - Suggestions appear only when the search input is focused.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
+- Suggestion matching is broader than actual filtering: search results still match exact effective tag terms only.
 
 ### Tag Suggestions
 - Suggestions appear only when the tag bar is focused.
-- Prefix behavior mirrors search suggestions (prefix completions while typing, co-occurrence after a space).
-- Content matches (tag phrases found in the note body) are listed first.
+- Prefix behavior mirrors search suggestions (segment-aware while typing, co-occurrence after a space).
+- Content matches are listed first, and literal segment hits can surface connector-separated tags.
+- Full multi-segment phrase hits rank above single-segment hits, so note content like `databricks workspaces` prefers `databricks-workspaces` over `databricks` or `workspaces`.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions may render above the tag bar if space below is tight; the ordering reverses so the closest suggestion sits nearest the input.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.

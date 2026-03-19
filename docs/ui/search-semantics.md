@@ -27,6 +27,13 @@ Ontology rules also add **inferred tags** before search matching:
 - Implication + matcher rules are applied per note, and inferred tags are added to the effective tag set.
 - See `docs/design/ontology-rules-v1.md` for the rule language and semantics.
 
+### Search Suggestions
+- Search-bar tag suggestions are segment-aware for connector-separated tags.
+- A typed prefix can match either the start of the full tag or the start of any connector-separated segment.
+  - Example: `wor` suggests `workspaces` and `databricks-workspaces`.
+  - Example: `orksp` suggests neither.
+- This affects suggestions only; actual tag search matching remains exact against effective tag terms.
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`
