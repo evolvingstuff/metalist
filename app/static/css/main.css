@@ -1471,10 +1471,25 @@ body {
     overflow: hidden;
     background: rgba(0, 0, 0, 0.28);
     border-radius: 2px;
+    transition: opacity 120ms ease, filter 120ms ease, background-color 120ms ease;
 }
 
 .note.search-redacted .note-content::before {
     content: none;
+}
+
+.note.search-revealed {
+    opacity: 0.72;
+}
+
+.note.search-revealed:not(.editing) {
+    background: rgba(60, 60, 60, 0.08);
+    border-color: rgba(40, 40, 40, 0.2);
+}
+
+.note.search-revealed .note-content {
+    opacity: 0.9;
+    filter: grayscale(0.35);
 }
 
 .note.editing {

@@ -71,6 +71,7 @@ class ModeContext {
         this._tabRootCountTotals = Object.create(null);
         this._tabSearchRootCountTotals = Object.create(null);
         this._tabExecutedSearchQuery = Object.create(null);
+        this._tabRevealedRedactions = Object.create(null);
         this._ensureTabContainers(this._activeTabId);
         this._lowestVisibleRootId = null;
 
@@ -106,6 +107,9 @@ class ModeContext {
         }
         if (typeof this._tabExecutedSearchQuery[tabId] !== 'string') {
             this._tabExecutedSearchQuery[tabId] = '';
+        }
+        if (!(this._tabRevealedRedactions[tabId] instanceof Set)) {
+            this._tabRevealedRedactions[tabId] = new Set();
         }
     }
 
@@ -164,6 +168,7 @@ class ModeContext {
         if (previousExecuted === normalized) {
             return this;
         }
+        this.clearTabRevealedRedactions(tabId);
         this.resetTabDiffCache(tabId, { preserveRootAnchor: false });
         this.setExecutedSearchQuery(normalized, tabId);
         return this;
@@ -344,6 +349,85 @@ class ModeContext {
             target.set(noteId, hash);
         }
         return { cloned: true, count: target.size };
+    }
+
+    clearActiveTabRevealedRedactions() {
+        return this.clearTabRevealedRedactions(this._activeTabId);
+    }
+
+    clearTabRevealedRedactions(tabId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        this._ensureTabContainers(tabId);
+        this._tabRevealedRedactions[tabId].clear();
+        return this;
+    }
+
+    revealTabRedactedNote(tabId, noteId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('noteId must be a non-empty string');
+        }
+        this._ensureTabContainers(tabId);
+        this._tabRevealedRedactions[tabId].add(noteId);
+        return this;
+    }
+
+    revealActiveTabRedactedNote(noteId) {
+        return this.revealTabRedactedNote(this._activeTabId, noteId);
+    }
+
+    hideTabRedactedNote(tabId, noteId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('noteId must be a non-empty string');
+        }
+        this._ensureTabContainers(tabId);
+        this._tabRevealedRedactions[tabId].delete(noteId);
+        return this;
+    }
+
+    hideActiveTabRedactedNote(noteId) {
+        return this.hideTabRedactedNote(this._activeTabId, noteId);
+    }
+
+    isTabRedactedNoteRevealed(tabId, noteId) {
+        if (typeof tabId !== 'string' || tabId.length === 0) {
+            throw new Error('tabId must be a non-empty string');
+        }
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('noteId must be a non-empty string');
+        }
+        this._ensureTabContainers(tabId);
+        return this._tabRevealedRedactions[tabId].has(noteId);
+    }
+
+    isActiveTabRedactedNoteRevealed(noteId) {
+        return this.isTabRedactedNoteRevealed(this._activeTabId, noteId);
+    }
+
+    cloneTabRedactedReveals(sourceTabId, targetTabId) {
+        if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
+            throw new Error('sourceTabId must be a non-empty string');
+        }
+        if (typeof targetTabId !== 'string' || targetTabId.length === 0) {
+            throw new Error('targetTabId must be a non-empty string');
+        }
+        if (!this._tabs[sourceTabId]) {
+            throw new Error(`Unknown sourceTabId: ${sourceTabId}`);
+        }
+        if (!this._tabs[targetTabId]) {
+            throw new Error(`Unknown targetTabId: ${targetTabId}`);
+        }
+        this._ensureTabContainers(sourceTabId);
+        this._ensureTabContainers(targetTabId);
+        this._tabRevealedRedactions[targetTabId] = new Set(this._tabRevealedRedactions[sourceTabId]);
+        return this;
     }
 
 	clearAllTabViewCaches() {
@@ -1218,6 +1302,8 @@ class ModeContext {
 		const nextKnownRoots = Object.create(null);
 		const previousSeenRoots = this._tabSeenRootIds ? this._tabSeenRootIds : Object.create(null);
 		const nextSeenRoots = Object.create(null);
+        const previousRevealedRedactions = this._tabRevealedRedactions ? this._tabRevealedRedactions : Object.create(null);
+        const nextRevealedRedactions = Object.create(null);
 
 		for (const tabId of tabIdsList) {
 			const existingHashes = previousHashCaches[tabId];
@@ -1226,6 +1312,10 @@ class ModeContext {
 			nextKnownRoots[tabId] = existingKnownRoots ? existingKnownRoots : new Set();
 			const existingSeenRoots = previousSeenRoots[tabId];
 			nextSeenRoots[tabId] = existingSeenRoots ? existingSeenRoots : new Set();
+            const existingRevealedRedactions = previousRevealedRedactions[tabId];
+            nextRevealedRedactions[tabId] = existingRevealedRedactions instanceof Set
+                ? existingRevealedRedactions
+                : new Set();
 		}
 
         this._tabs = normalized;
@@ -1233,6 +1323,7 @@ class ModeContext {
         this._tabNoteHashes = nextHashCaches;
         this._tabKnownRootIds = nextKnownRoots;
         this._tabSeenRootIds = nextSeenRoots;
+        this._tabRevealedRedactions = nextRevealedRedactions;
         this._activeTabId = activeTabId;
         this._ensureTabContainers(activeTabId);
         this._searchQuery = normalized[activeTabId].searchQuery;

@@ -3004,6 +3004,7 @@ async function duplicateTabContext(sourceTabId) {
     }
 
     ModeContext.hydrateTabState(response);
+    ModeContext.cloneTabRedactedReveals(sourceTabId, newTabId);
 
     // Only seed the new tab's diff cache if we also cloned its DOM.
     // If we seed hashes without DOM, the server can legitimately return a

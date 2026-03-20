@@ -4,6 +4,7 @@ import { updateCollapseAffordancesForNotes } from './collapse-affordance-service
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
 import { ensureAnchorsOpenInNewTabs, renderMarkdownBlocks } from './markdown-render-service.js';
 import { renderLatexBlocks } from './latex-render-service.js';
+import { setNoteSearchRedactionState } from './search-redaction-reveal-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
 const CHILD_CONTAINER_CACHE = new WeakMap();
@@ -305,6 +306,7 @@ function createNoteElement(noteId) {
     noteElement.dataset.isCollapsed = 'false';
     noteElement.dataset.hasChildren = 'false';
     noteElement.dataset.noteTags = '';
+    noteElement.dataset.searchRedacted = 'false';
 
     const collapseToggle = document.createElement('button');
     collapseToggle.classList.add('note-collapse-toggle');
@@ -630,6 +632,14 @@ export function applyDifferentialView(payload, options) {
             ) {
                 noteElement.dataset.hasChildren = Boolean(noteData.flags.hasChildren).toString();
             }
+            if (
+                noteData
+                && noteData.flags
+                && typeof noteData.flags === 'object'
+                && Object.prototype.hasOwnProperty.call(noteData.flags, 'searchRedacted')
+            ) {
+                setNoteSearchRedactionState(noteElement, Boolean(noteData.flags.searchRedacted));
+            }
             noteElement.dataset.lockOwner = nextLockOwner;
             noteElement.classList.toggle('locked', lockedByOther);
             noteElement.classList.toggle('interactive', !lockedByOther);
@@ -655,7 +665,7 @@ export function applyDifferentialView(payload, options) {
             isCollapsed: noteElement.classList.contains('collapsed'),
             memoryMode: noteElement.classList.contains('memory-mode'),
             memorySelected: noteElement.classList.contains('memory-selected'),
-            searchRedacted: noteElement.classList.contains('search-redacted'),
+            searchRedacted: noteElement.dataset.searchRedacted === 'true',
         };
         let flags = existingFlags;
         if (noteData && noteData.flags && typeof noteData.flags === 'object') {
@@ -694,9 +704,9 @@ export function applyDifferentialView(payload, options) {
         noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
         noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
         noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
-        noteElement.classList.toggle('search-redacted', Boolean(flags.searchRedacted));
         noteElement.classList.toggle('list-bulleted', flags.listStyle === 'bulleted');
         noteElement.classList.toggle('list-numbered', flags.listStyle === 'numbered');
+        setNoteSearchRedactionState(noteElement, Boolean(flags.searchRedacted));
 
         updateLockIcon(noteElement, lockedByOther);
 
@@ -911,6 +921,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
     noteElement.classList.toggle('list-bulleted', flags.listStyle === 'bulleted');
     noteElement.classList.toggle('list-numbered', flags.listStyle === 'numbered');
+    setNoteSearchRedactionState(noteElement, Boolean(flags.searchRedacted));
 
     updateLockIcon(noteElement, lockedByOther);
 

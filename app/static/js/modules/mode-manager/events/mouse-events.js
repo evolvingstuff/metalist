@@ -8,6 +8,7 @@ import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
+import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
 
 const collapseToggleClickSkips = new WeakSet();
@@ -658,9 +659,10 @@ function handleClick(event) {
         }
 
         if (noteElement.classList.contains('search-redacted')) {
-            Logger.logNoop('Click on redacted note ignored', {
+            const revealResult = revealRedactedNoteWithScrollPreservation(noteId);
+            Logger.logAction('reveal search-redacted note', {
                 noteId,
-                reason: 'search_redacted'
+                result: revealResult.reason,
             });
             event.preventDefault();
             event.stopPropagation();
