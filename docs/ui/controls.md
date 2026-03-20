@@ -80,7 +80,7 @@
 | Click `↑` button | Scroll to the top |
 | Click note arrow | Toggle collapse/expand note |
 | Click note | Edit note |
-| Click redacted note | Reveal just that note in-place for the current tab; it stays dimmed to show it is still excluded by the active search |
+| Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
 | Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
 | Drag note body (while not editing) | Move note one step in the dragged cardinal direction (up/down/indent/outdent). Short drags act like clicks. |

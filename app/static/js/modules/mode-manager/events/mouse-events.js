@@ -663,6 +663,8 @@ function handleClick(event) {
             Logger.logAction('reveal search-redacted note', {
                 noteId,
                 result: revealResult.reason,
+                revealedCount: revealResult.revealedCount,
+                scopeNoteId: revealResult.scopeNoteId,
             });
             event.preventDefault();
             event.stopPropagation();

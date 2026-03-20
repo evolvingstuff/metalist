@@ -8,6 +8,62 @@ function getNoteElementById(noteId) {
     return document.querySelector(`.note[data-note-id="${noteId}"]`);
 }
 
+function getParentNoteElement(noteElement) {
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error('getParentNoteElement requires note element');
+    }
+    const parentId = typeof noteElement.dataset.parentId === 'string' ? noteElement.dataset.parentId : '';
+    if (parentId === '') {
+        return null;
+    }
+    return getNoteElementById(parentId);
+}
+
+function getRevealScopeNoteElement(noteElement) {
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error('getRevealScopeNoteElement requires note element');
+    }
+
+    let currentElement = noteElement;
+    let highestRedactedAncestor = noteElement;
+    let parentElement = getParentNoteElement(currentElement);
+
+    while (parentElement) {
+        if (parentElement.dataset.searchRedacted !== 'true') {
+            return parentElement;
+        }
+        highestRedactedAncestor = parentElement;
+        currentElement = parentElement;
+        parentElement = getParentNoteElement(currentElement);
+    }
+
+    return highestRedactedAncestor;
+}
+
+function collectRedactedNotesInScope(scopeNoteElement) {
+    if (!(scopeNoteElement instanceof HTMLElement)) {
+        throw new Error('collectRedactedNotesInScope requires note element');
+    }
+
+    const noteElements = [];
+    if (scopeNoteElement.dataset.searchRedacted === 'true') {
+        noteElements.push(scopeNoteElement);
+    }
+
+    const descendants = scopeNoteElement.querySelectorAll('.note[data-search-redacted="true"]');
+    for (const descendant of descendants) {
+        if (!(descendant instanceof HTMLElement)) {
+            continue;
+        }
+        if (descendant === scopeNoteElement) {
+            continue;
+        }
+        noteElements.push(descendant);
+    }
+
+    return noteElements;
+}
+
 function getViewportTopInset() {
     const controls = document.querySelector('.controls');
     if (!controls) {
@@ -188,13 +244,39 @@ export function revealRedactedNoteWithScrollPreservation(noteId) {
     if (noteElement.dataset.searchRedacted !== 'true') {
         return { revealed: false, reason: 'not_redacted' };
     }
-    if (ModeContext.isActiveTabRedactedNoteRevealed(noteId)) {
-        return { revealed: false, reason: 'already_revealed' };
+
+    const scopeNoteElement = getRevealScopeNoteElement(noteElement);
+    const scopeNoteId = typeof scopeNoteElement.dataset.noteId === 'string' ? scopeNoteElement.dataset.noteId : '';
+    const redactedElementsInScope = collectRedactedNotesInScope(scopeNoteElement);
+    const unrevealedNoteIds = [];
+
+    for (const redactedElement of redactedElementsInScope) {
+        const redactedNoteId = typeof redactedElement.dataset.noteId === 'string' ? redactedElement.dataset.noteId : '';
+        if (redactedNoteId === '') {
+            continue;
+        }
+        if (ModeContext.isActiveTabRedactedNoteRevealed(redactedNoteId)) {
+            continue;
+        }
+        unrevealedNoteIds.push(redactedNoteId);
+    }
+
+    if (unrevealedNoteIds.length === 0) {
+        return {
+            revealed: false,
+            reason: 'already_revealed',
+            revealedCount: 0,
+            scopeNoteId,
+        };
     }
 
     const reference = captureScrollReference(noteId);
-    ModeContext.revealActiveTabRedactedNote(noteId);
-    syncSearchRedactionState(noteElement);
+    for (const redactedNoteId of unrevealedNoteIds) {
+        ModeContext.revealActiveTabRedactedNote(redactedNoteId);
+    }
+    for (const redactedElement of redactedElementsInScope) {
+        syncSearchRedactionState(redactedElement);
+    }
     restoreScrollReference(reference);
 
     window.requestAnimationFrame(() => {
@@ -202,5 +284,10 @@ export function revealRedactedNoteWithScrollPreservation(noteId) {
         syncLocalScrollState();
     });
 
-    return { revealed: true, reason: 'revealed' };
+    return {
+        revealed: true,
+        reason: 'revealed_scope',
+        revealedCount: unrevealedNoteIds.length,
+        scopeNoteId,
+    };
 }

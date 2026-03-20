@@ -12,7 +12,7 @@ function triggerMetaEnter({ shiftKey }) {
 }
 
 describe('Search redacted note reveal', () => {
-  it('reveals one redacted note in place without moving the nearby visible note', () => {
+  it('reveals all redacted portions in the same note subtree without moving the nearby visible note', () => {
     let visibleNoteTopBefore = 0
 
     cy.intercept('POST', '/api2/notes/view', (req) => {
@@ -41,7 +41,7 @@ describe('Search redacted note reveal', () => {
     cy.wait('@createChild').then((interception) => {
       expect(interception.response).to.exist
       expect(interception.response.body).to.have.property('id')
-      cy.wrap(interception.response.body.id).as('redactedNoteId')
+      cy.wrap(interception.response.body.id).as('redactedNoteOneId')
     })
     cy.wait('@saveNote')
 
@@ -49,6 +49,20 @@ describe('Search redacted note reveal', () => {
       .should('exist')
       .click()
       .type('{selectall}AAB{enter}line two{enter}line three{enter}line four{enter}line five')
+
+    triggerMetaEnter({ shiftKey: false })
+
+    cy.wait('@createSibling').then((interception) => {
+      expect(interception.response).to.exist
+      expect(interception.response.body).to.have.property('id')
+      cy.wrap(interception.response.body.id).as('redactedNoteTwoId')
+    })
+    cy.wait('@saveNote')
+
+    cy.get('.note.editing .note-content', { timeout: 10000 })
+      .should('exist')
+      .click()
+      .type('{selectall}AAB second child')
 
     triggerMetaEnter({ shiftKey: false })
 
@@ -70,7 +84,13 @@ describe('Search redacted note reveal', () => {
     cy.get('#search-input').focus().type('{selectall}-"AAB"')
     cy.wait('@viewNegativeSearch')
 
-    cy.get('@redactedNoteId').then((redactedNoteId) => {
+    cy.get('@redactedNoteOneId').then((redactedNoteId) => {
+      cy.get(`[data-note-id="${redactedNoteId}"]`, { timeout: 10000 })
+        .should('exist')
+        .and('have.class', 'search-redacted')
+    })
+
+    cy.get('@redactedNoteTwoId').then((redactedNoteId) => {
       cy.get(`[data-note-id="${redactedNoteId}"]`, { timeout: 10000 })
         .should('exist')
         .and('have.class', 'search-redacted')
@@ -85,7 +105,7 @@ describe('Search redacted note reveal', () => {
         })
     })
 
-    cy.get('@redactedNoteId').then((redactedNoteId) => {
+    cy.get('@redactedNoteOneId').then((redactedNoteId) => {
       cy.get(`[data-note-id="${redactedNoteId}"] .note-content`, { timeout: 10000 })
         .click()
     })
@@ -93,7 +113,7 @@ describe('Search redacted note reveal', () => {
     cy.wait(100)
     cy.get('#search-input').should('have.value', '-"AAB"')
 
-    cy.get('@redactedNoteId').then((redactedNoteId) => {
+    cy.get('@redactedNoteOneId').then((redactedNoteId) => {
       cy.get(`[data-note-id="${redactedNoteId}"]`, { timeout: 10000 })
         .should('have.class', 'search-revealed')
         .and('not.have.class', 'search-redacted')
@@ -101,6 +121,12 @@ describe('Search redacted note reveal', () => {
         .then(($content) => {
           expect($content[0].getBoundingClientRect().height).to.be.greaterThan(20)
         })
+    })
+
+    cy.get('@redactedNoteTwoId').then((redactedNoteId) => {
+      cy.get(`[data-note-id="${redactedNoteId}"]`, { timeout: 10000 })
+        .should('have.class', 'search-revealed')
+        .and('not.have.class', 'search-redacted')
     })
 
     cy.get('@visibleNoteId').then((visibleNoteId) => {
