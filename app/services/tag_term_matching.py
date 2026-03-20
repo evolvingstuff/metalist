@@ -24,14 +24,16 @@ class TagContentMatch:
     phrase_match: bool
     matched_segment_count: int
     segment_count: int
+    first_position: int
     normalized_length: int
 
-    def sort_key(self) -> tuple[int, int, int, int]:
+    def sort_key(self) -> tuple[int, int, int, int, int]:
         phrase_match_score = 1 if self.phrase_match else 0
         return (
             phrase_match_score,
             self.matched_segment_count,
             self.segment_count,
+            -self.first_position,
             self.normalized_length,
         )
 
@@ -83,28 +85,42 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     if not segments:
         return None
 
-    padded_content = ""
-    if normalized_content != "":
-        padded_content = f" {normalized_content} "
-
     phrase = " ".join(segments)
-    phrase_match = False
-    if padded_content:
-        phrase_match = f" {phrase} " in padded_content
+    content_tokens = normalized_content.split()
+    token_positions: dict[str, int] = {}
+    for index, token in enumerate(content_tokens):
+        if token not in token_positions:
+            token_positions[token] = index
 
-    content_tokens = set(normalized_content.split())
+    phrase_match = False
+    phrase_position = -1
+    if len(content_tokens) >= len(segments):
+        for index in range(len(content_tokens) - len(segments) + 1):
+            if tuple(content_tokens[index : index + len(segments)]) == segments:
+                phrase_match = True
+                phrase_position = index
+                break
+
     matched_segment_count = 0
+    matched_positions: list[int] = []
     for segment in set(segments):
-        if segment in content_tokens:
+        if segment in token_positions:
             matched_segment_count += 1
+            matched_positions.append(token_positions[segment])
 
     if not phrase_match and matched_segment_count == 0:
         return None
+
+    first_position = phrase_position
+    if not phrase_match:
+        assert matched_positions
+        first_position = min(matched_positions)
 
     return TagContentMatch(
         phrase_match=phrase_match,
         matched_segment_count=matched_segment_count,
         segment_count=len(segments),
+        first_position=first_position,
         normalized_length=len(phrase),
     )
 
