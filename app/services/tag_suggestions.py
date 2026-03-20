@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
+from app.services.tag_term_matching import TagContentMatch
 from app.services.tag_term_matching import match_tag_term_in_normalized_content
 from app.services.tag_term_matching import normalize_tag_match_text
 from app.services.tag_term_matching import tag_term_matches_prefix
@@ -103,7 +104,7 @@ def suggest_tags_for_note(
     all_terms = search_index.list_non_meta_tag_suggestion_terms()
     has_prefix = prefix != ""
 
-    content_match_scores: Dict[str, tuple[int, int, int, int]] = {}
+    content_match_scores: Dict[str, TagContentMatch] = {}
     normalized_content = normalize_tag_match_text(plaintext)
     for term in all_terms:
         if term.casefold() in already_present_casefold:
@@ -113,7 +114,7 @@ def suggest_tags_for_note(
         match = match_tag_term_in_normalized_content(term=term, normalized_content=normalized_content)
         if match is None:
             continue
-        content_match_scores[term] = match.sort_key()
+        content_match_scores[term] = match
 
     cooccurrence: List[str] = []
     term_count = len(all_terms)
@@ -134,10 +135,11 @@ def suggest_tags_for_note(
 
     content_first.sort(
         key=lambda term: (
-            -content_match_scores[term][0],
-            -content_match_scores[term][1],
-            -content_match_scores[term][2],
-            -content_match_scores[term][3],
+            -(1 if content_match_scores[term].phrase_match else 0),
+            -content_match_scores[term].matched_segment_count,
+            -content_match_scores[term].segment_count,
+            content_match_scores[term].first_position,
+            -content_match_scores[term].normalized_length,
             cooccurrence_rank[term],
             term,
         )

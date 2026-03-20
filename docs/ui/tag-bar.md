@@ -101,6 +101,7 @@ Unclosed comments behave like unclosed wrappers:
 - After a space, suggestions are ranked by tag co-occurrence.
 - Tags that match phrases in the note content are listed first.
 - A literal content hit on any connector-separated segment can also surface a tag. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
+- When content-hit strength ties, earlier mentions in the note rank ahead of later mentions.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
 - Case-equivalent tags are collapsed in suggestions (for example `Databricks` vs `databricks`), and the most-used spelling is shown.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
