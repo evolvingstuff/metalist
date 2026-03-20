@@ -54,6 +54,33 @@ class SearchHistoryEntry:
     updated_at: datetime
 
 
+def _build_preferred_case_variant_map(*, exact_tag_counts: dict[str, int]) -> dict[str, str]:
+    preferred: dict[str, str] = {}
+    for term in exact_tag_counts.keys():
+        if term == "" or term.startswith("@"):
+            continue
+        term_casefold = term.casefold()
+        if term_casefold not in preferred:
+            preferred[term_casefold] = term
+            continue
+        current = preferred[term_casefold]
+        current_count = exact_tag_counts[current]
+        candidate_count = exact_tag_counts[term]
+        if candidate_count > current_count:
+            preferred[term_casefold] = term
+            continue
+        if candidate_count < current_count:
+            continue
+        current_penalty = 0 if current == current.casefold() else 1
+        candidate_penalty = 0 if term == term.casefold() else 1
+        if candidate_penalty < current_penalty:
+            preferred[term_casefold] = term
+            continue
+        if candidate_penalty == current_penalty and term < current:
+            preferred[term_casefold] = term
+    return preferred
+
+
 def normalize_search_history_query(query: str) -> NormalizedSearchHistoryQuery | None:
     if not isinstance(query, str):
         raise TypeError(f"query must be a string, got {type(query)}")
@@ -221,8 +248,11 @@ def list_recent_search_tags(*, limit: int, token: str) -> list[str]:
     if not isinstance(token, str) or token == "":
         raise ValueError("token must be a non-empty string")
 
-    available_terms = search_index.list_non_meta_tag_terms()
-    if not available_terms:
+    exact_tag_counts = search_index.list_tag_frequencies()
+    preferred_terms_by_casefold = _build_preferred_case_variant_map(
+        exact_tag_counts=exact_tag_counts,
+    )
+    if not preferred_terms_by_casefold:
         return []
 
     service = _resolve_encryption_service(token)
@@ -235,7 +265,11 @@ def list_recent_search_tags(*, limit: int, token: str) -> list[str]:
             encryption_service=service,
             row=row,
         )
-        filtered_tags = tuple(tag for tag in entry.tags if tag in available_terms)
+        filtered_tags = tuple(
+            preferred_terms_by_casefold[tag.casefold()]
+            for tag in entry.tags
+            if tag.casefold() in preferred_terms_by_casefold
+        )
         if not filtered_tags:
             continue
         entries.append(
@@ -260,12 +294,13 @@ def list_recent_search_tags(*, limit: int, token: str) -> list[str]:
     )
 
     tags: list[str] = []
-    seen: set[str] = set()
+    seen_casefold: set[str] = set()
     for entry in entries:
         for tag in entry.tags:
-            if tag in seen:
+            tag_casefold = tag.casefold()
+            if tag_casefold in seen_casefold:
                 continue
-            seen.add(tag)
+            seen_casefold.add(tag_casefold)
             tags.append(tag)
             if len(tags) >= limit:
                 return tags
@@ -286,14 +321,15 @@ def prioritize_blank_search_suggestions(
         raise ValueError("priority_slots must be a non-negative integer")
 
     prioritized: list[str] = []
-    seen: set[str] = set()
+    seen_casefold: set[str] = set()
 
     for tag in recent_tags:
         if not isinstance(tag, str) or tag == "":
             raise TypeError("recent_tags entries must be non-empty strings")
-        if tag in seen:
+        tag_casefold = tag.casefold()
+        if tag_casefold in seen_casefold:
             continue
-        seen.add(tag)
+        seen_casefold.add(tag_casefold)
         prioritized.append(tag)
         if len(prioritized) >= priority_slots:
             break
@@ -302,9 +338,10 @@ def prioritize_blank_search_suggestions(
     for tag in base_suggestions:
         if not isinstance(tag, str) or tag == "":
             raise TypeError("base_suggestions entries must be non-empty strings")
-        if tag in seen:
+        tag_casefold = tag.casefold()
+        if tag_casefold in seen_casefold:
             continue
-        seen.add(tag)
+        seen_casefold.add(tag_casefold)
         merged.append(tag)
     return merged
 
