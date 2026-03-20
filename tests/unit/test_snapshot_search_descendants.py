@@ -39,7 +39,7 @@ def _visible_ids(state) -> set[str]:
     return {entry["id"] for entry in state.structure}
 
 
-def test_search_includes_descendants_of_matching_root(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyPatch) -> None:
     # Tree:
     # r1(asdf)
     #   c1
@@ -88,9 +88,12 @@ def test_search_includes_descendants_of_matching_root(monkeypatch: pytest.Monkey
     )
 
     assert _visible_ids(state) == {"r1", "c1", "g1", "c2"}
+    assert not state.payloads["r1"]["flags"]["searchRedacted"]
+    assert state.payloads["c1"]["flags"]["searchRedacted"]
+    assert state.payloads["g1"]["flags"]["searchRedacted"]
+    assert state.payloads["c2"]["flags"]["searchRedacted"]
 
-
-def test_search_includes_descendants_of_matching_non_root(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.MonkeyPatch) -> None:
     # Tree:
     # r1
     #   c1(asdf)
@@ -139,5 +142,5 @@ def test_search_includes_descendants_of_matching_non_root(monkeypatch: pytest.Mo
     assert _visible_ids(state) == {"r1", "c1", "g1", "c2"}
     assert not state.payloads["r1"]["flags"]["searchRedacted"]
     assert not state.payloads["c1"]["flags"]["searchRedacted"]
-    assert not state.payloads["g1"]["flags"]["searchRedacted"]
+    assert state.payloads["g1"]["flags"]["searchRedacted"]
     assert state.payloads["c2"]["flags"]["searchRedacted"]

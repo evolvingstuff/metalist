@@ -152,11 +152,14 @@ def resolve_search_scope(
         excluded_note_ids.update(search_index.query_note_ids(_quote_text_term_for_query(phrase)))
 
     _include_ancestors(search_allowed_note_ids, starting_ids=set(search_allowed_note_ids))
-    _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
+    if not has_positive_terms:
+        _include_descendants(search_allowed_note_ids, starting_ids=set(positively_matched_note_ids))
     if excluded_note_ids:
         search_allowed_note_ids.difference_update(excluded_note_ids)
     if direct_uuid_note_ids:
         search_allowed_note_ids.update(direct_uuid_note_ids)
+        _include_ancestors(search_allowed_note_ids, starting_ids=set(direct_uuid_note_ids))
+        _include_descendants(search_allowed_note_ids, starting_ids=set(direct_uuid_note_ids))
 
     search_root_ids_ordered_for_count = [
         root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
