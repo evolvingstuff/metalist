@@ -66,8 +66,8 @@ Forbidden terms exclude matches:
 The UI renders a tree, so search returns context:
 - All matching notes are included.
 - All ancestors of a matching note are included (so matches are reachable).
-- All descendants of a matching note are included (so the full subtree under a match is visible).
-- Within a visible root, excluded siblings/branches are rendered as redacted placeholders on the client (fixed-height grey lines) rather than disappearing.
+- Non-matching descendants are not promoted to full matches just because an ancestor matched.
+- Within a visible root, excluded child/sibling branches are rendered as redacted placeholders on the client (fixed-height grey lines) rather than disappearing.
 - Clicking a redacted placeholder reveals the whole redacted set within that note's local subtree in the current tab; the revealed notes stay visually dimmed so excluded search context is still obvious.
 - For UUID-direct targeting specifically:
   - The target note is included.
