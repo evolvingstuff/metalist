@@ -312,6 +312,14 @@ class SearchIndex:
                 if term and not term.startswith("@")
             )
 
+    def list_non_meta_tag_suggestion_terms(self) -> FrozenSet[str]:
+        with self._lock:
+            representatives = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=frozenset(),
+                partial_prefix="",
+            )
+            return frozenset(representatives.values())
+
     def list_tag_frequencies(self) -> Dict[str, int]:
         """Return tag term -> note count (excluding @meta tags)."""
         with self._lock:
@@ -336,39 +344,45 @@ class SearchIndex:
         if partial_prefix.startswith("@"):
             return _suggest_meta_tag_completions(partial_prefix=partial_prefix, limit=limit)
 
-        anchor_set = {anchor for anchor in anchors if anchor and not anchor.startswith("@")}
+        anchor_casefold_set = frozenset(
+            anchor.casefold()
+            for anchor in anchors
+            if anchor and not anchor.startswith("@")
+        )
 
         with self._lock:
-            candidates: List[str] = []
-            for term in self._tag_notes.keys():
-                if not term or term.startswith("@"):
-                    continue
-                if term in anchor_set:
-                    continue
-                if partial_prefix != "" and term == partial_prefix:
-                    continue
-                if partial_prefix != "" and not tag_term_matches_prefix(term=term, prefix=partial_prefix):
-                    continue
-                candidates.append(term)
+            representative_by_casefold = self._build_suggestion_representatives_locked(
+                anchor_casefold_set=anchor_casefold_set,
+                partial_prefix=partial_prefix,
+            )
+            candidate_casefolds = list(representative_by_casefold.keys())
 
-            if not candidates and partial_prefix != "":
+            if not candidate_casefolds and partial_prefix != "":
                 return []
 
-            if not anchor_set:
-                candidates.sort(key=lambda term: (-len(self._tag_notes[term]), term))
-                return candidates[:limit]
+            if not anchor_casefold_set:
+                candidate_casefolds.sort(
+                    key=lambda term_casefold: (
+                        -len(self._tag_notes_casefold[term_casefold]),
+                        *self._suggestion_term_tiebreak_locked(representative_by_casefold[term_casefold]),
+                    )
+                )
+                return [
+                    representative_by_casefold[term_casefold]
+                    for term_casefold in candidate_casefolds[:limit]
+                ]
 
             note_count = len(self._note_tag_terms)
             anchor_counts = [0] * note_count
-            for anchor in anchor_set:
-                note_ids = self._tag_notes.get(anchor)
+            for anchor_casefold in anchor_casefold_set:
+                note_ids = self._tag_notes_casefold.get(anchor_casefold)
                 if not note_ids:
                     continue
                 for note_id in note_ids:
                     if note_id in self._alive:
                         anchor_counts[note_id] += 1
 
-            max_anchor_count = len(anchor_set)
+            max_anchor_count = len(anchor_casefold_set)
             counts_by_anchor = [0] * (max_anchor_count + 1)
             for note_id in self._alive:
                 count = anchor_counts[note_id]
@@ -382,9 +396,9 @@ class SearchIndex:
                 running += counts_by_anchor[k]
                 support_counts[k] = running
 
-            scored: List[Tuple[int, float, str]] = []
-            for term in candidates:
-                note_ids = self._tag_notes.get(term)
+            scored: List[Tuple[int, float, int, str]] = []
+            for term_casefold in candidate_casefolds:
+                note_ids = self._tag_notes_casefold.get(term_casefold)
                 if not note_ids:
                     continue
                 candidate_count = 0
@@ -416,10 +430,12 @@ class SearchIndex:
                     if union_count > 0:
                         jaccard = intersection_count / union_count
 
-                scored.append((-max_k, -jaccard, term))
+                representative = representative_by_casefold[term_casefold]
+                lower_case_penalty, term_tiebreak = self._suggestion_term_tiebreak_locked(representative)
+                scored.append((-max_k, -jaccard, lower_case_penalty, term_tiebreak))
 
             scored.sort()
-            return [term for _, __, term in scored[:limit]]
+            return [representative_by_casefold[term.casefold()] for _, __, ___, term in scored[:limit]]
     def query_note_ids(self, search: str) -> Set[str]:
         t0 = time.perf_counter()
         if not isinstance(search, str):
@@ -625,6 +641,49 @@ class SearchIndex:
         text_casefold = build_searchable_text_casefold_from_plaintext(content_text, tags)
         trigrams = _extract_trigram_keys(text_casefold)
         return text_casefold, trigrams
+
+    def _build_suggestion_representatives_locked(
+        self,
+        *,
+        anchor_casefold_set: FrozenSet[str],
+        partial_prefix: str,
+    ) -> Dict[str, str]:
+        partial_prefix_casefold = partial_prefix.casefold()
+        representatives: Dict[str, str] = {}
+        for term in self._tag_notes.keys():
+            if not term or term.startswith("@"):
+                continue
+            term_casefold = term.casefold()
+            if term_casefold in anchor_casefold_set:
+                continue
+            if partial_prefix != "" and term_casefold == partial_prefix_casefold:
+                continue
+            if partial_prefix != "" and not tag_term_matches_prefix(term=term, prefix=partial_prefix):
+                continue
+            if term_casefold not in representatives:
+                representatives[term_casefold] = term
+                continue
+            current = representatives[term_casefold]
+            if self._is_better_suggestion_variant_locked(candidate=term, incumbent=current):
+                representatives[term_casefold] = term
+        return representatives
+
+    def _is_better_suggestion_variant_locked(self, *, candidate: str, incumbent: str) -> bool:
+        candidate_count = len(self._tag_notes[candidate])
+        incumbent_count = len(self._tag_notes[incumbent])
+        if candidate_count != incumbent_count:
+            return candidate_count > incumbent_count
+        candidate_penalty, candidate_tiebreak = self._suggestion_term_tiebreak_locked(candidate)
+        incumbent_penalty, incumbent_tiebreak = self._suggestion_term_tiebreak_locked(incumbent)
+        if candidate_penalty != incumbent_penalty:
+            return candidate_penalty < incumbent_penalty
+        return candidate_tiebreak < incumbent_tiebreak
+
+    def _suggestion_term_tiebreak_locked(self, term: str) -> Tuple[int, str]:
+        lower_case_penalty = 0
+        if term != term.casefold():
+            lower_case_penalty = 1
+        return (lower_case_penalty, term)
 
     def _candidate_note_ids_locked(self, parsed: ParsedSearchQuery) -> Set[int]:
         constraints: List[Set[int]] = []

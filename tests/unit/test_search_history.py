@@ -147,6 +147,60 @@ def test_prioritize_blank_search_suggestions_reserves_top_slots() -> None:
     assert merged == ["journal", "beta", "todo", "alpha", "gamma"]
 
 
+def test_prioritize_blank_search_suggestions_collapses_case_equivalent_terms() -> None:
+    merged = prioritize_blank_search_suggestions(
+        base_suggestions=["databricks", "alpha"],
+        recent_tags=["Databricks", "todo"],
+        priority_slots=3,
+    )
+    assert merged == ["Databricks", "todo", "alpha"]
+
+
+def test_list_recent_search_tags_canonicalizes_case_equivalent_terms(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        with begin_search_history_writer() as connection:
+            connection.execute("DELETE FROM search_interaction_history")
+        index = _build_index(
+            [
+                SearchRecord(
+                    note_id="n1",
+                    content_text="One",
+                    tags="databricks",
+                    tag_terms=extract_tags_for_search("databricks"),
+                ),
+                SearchRecord(
+                    note_id="n2",
+                    content_text="Two",
+                    tags="databricks",
+                    tag_terms=extract_tags_for_search("databricks"),
+                ),
+                SearchRecord(
+                    note_id="n3",
+                    content_text="Three",
+                    tags="Databricks",
+                    tag_terms=extract_tags_for_search("Databricks"),
+                ),
+            ]
+        )
+        monkeypatch.setattr(search_history_module, "search_index", index)
+
+        assert record_search_interaction(query="Databricks", interaction_type="edit", token="token") is True
+        assert record_search_interaction(query="databricks", interaction_type="edit", token="token") is True
+
+        recent_tags = list_recent_search_tags(limit=3, token="token")
+        assert recent_tags == ["databricks"]
+    finally:
+        clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
 def test_search_history_encrypts_at_rest_and_round_trips(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

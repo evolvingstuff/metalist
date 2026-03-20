@@ -30,6 +30,7 @@ Ontology rules also add **inferred tags** before search matching:
 ### Search Suggestions
 - Search-bar tag suggestions are segment-aware for connector-separated tags.
 - For a blank query only, the top 3 suggestion slots can be promoted from persisted interacted-search history for the active namespace.
+- Case-equivalent tags are collapsed in suggestions, and the most-used spelling is shown.
 - That history stores ordered positive tag-query sequences, credits only after a qualifying interaction against that active result set, and decays on each newly credited interaction rather than over wall-clock time.
 - Qualifying interactions include server-backed note actions performed while the executed search is active, plus qualifying scroll persistence.
 - A typed prefix can match either the start of the full tag or the start of any connector-separated segment.

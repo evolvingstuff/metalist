@@ -52,6 +52,7 @@
 ### Search Suggestions
 - Suggestions are **tag-only** (no text suggestions).
 - For a blank search, up to the top 3 suggestion slots are reserved for tags pulled from recently interacted-with searches in the current namespace.
+- Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
 - A search counts toward that blank-search recency weighting after the user makes a server-backed note interaction while that executed search is active.
 - Examples include toggling todo/done, creating, moving, collapsing/expanding, saving, deleting, or entering edit mode on notes in that filtered result set.
 - Scrolling can also qualify once it triggers the persisted tab-state server write while that search is active.
@@ -68,6 +69,8 @@
 - Prefix behavior mirrors search suggestions (segment-aware while typing, co-occurrence after a space).
 - Content matches are listed first, and literal segment hits can surface connector-separated tags.
 - Full multi-segment phrase hits rank above single-segment hits, so note content like `databricks workspaces` prefers `databricks-workspaces` over `databricks` or `workspaces`.
+- Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes `github`.
+- Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions may render above the tag bar if space below is tight; the ordering reverses so the closest suggestion sits nearest the input.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.

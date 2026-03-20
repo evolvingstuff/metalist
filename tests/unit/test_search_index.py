@@ -153,3 +153,44 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
 
     suggestions = index.suggest_tag_completions(query="@d", limit=20)
     assert suggestions == ["@dark-theme", "@done"]
+
+
+def test_search_index_tag_suggestions_collapse_case_equivalent_terms() -> None:
+    index = _build_index(
+        [
+            SearchRecord(
+                note_id="n1",
+                content_text="One",
+                tags="databricks",
+                tag_terms=extract_tags_for_search("databricks"),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_text="Two",
+                tags="databricks",
+                tag_terms=extract_tags_for_search("databricks"),
+            ),
+            SearchRecord(
+                note_id="n3",
+                content_text="Three",
+                tags="Databricks",
+                tag_terms=extract_tags_for_search("Databricks"),
+            ),
+            SearchRecord(
+                note_id="n4",
+                content_text="Four",
+                tags="delta",
+                tag_terms=extract_tags_for_search("delta"),
+            ),
+        ]
+    )
+
+    suggestions = index.suggest_tag_completions(query="", limit=20)
+    assert "Databricks" not in suggestions
+    assert suggestions[:2] == ["databricks", "delta"]
+
+    suggestions = index.suggest_tag_completions(query="databricks", limit=20)
+    assert suggestions == []
+
+    suggestions = index.suggest_tag_completions(query="Databricks ", limit=20)
+    assert suggestions == []
