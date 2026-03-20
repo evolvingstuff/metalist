@@ -14,7 +14,9 @@ if _CONNECTOR_CHARS == "":
 if any(char.isspace() for char in _CONNECTOR_CHARS):
     raise ValueError("TAG_SUGGESTION_CONNECTORS must not include whitespace")
 
-_CONNECTOR_OR_WHITESPACE_RE = re.compile(f"[{re.escape(_CONNECTOR_CHARS)}\\s]+")
+_CONNECTOR_RE = re.compile(f"[{re.escape(_CONNECTOR_CHARS)}]")
+_MATCH_NOISE_RE = re.compile(r"[^\w@#+%&']+")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +39,10 @@ class TagContentMatch:
 def normalize_tag_match_text(text: str) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
-    return _CONNECTOR_OR_WHITESPACE_RE.sub(" ", text.casefold()).strip()
+    casefolded = text.casefold()
+    connectors_as_spaces = _CONNECTOR_RE.sub(" ", casefolded)
+    stripped_noise = _MATCH_NOISE_RE.sub(" ", connectors_as_spaces)
+    return _WHITESPACE_RE.sub(" ", stripped_noise).strip()
 
 
 def split_tag_term_segments(term: str) -> tuple[str, ...]:
