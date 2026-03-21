@@ -82,7 +82,7 @@
 | Click menu (`≡`) button | Open command palette |
 | Click `↑` button | Scroll to the top |
 | Click note arrow | Toggle collapse/expand note |
-| Click note | Edit note |
+| Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
 | Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
