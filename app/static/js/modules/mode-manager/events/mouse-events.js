@@ -9,6 +9,7 @@ import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
+import { resolveNonContentNoteSelectionTarget } from '../services/note-click-target-service.js';
 import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
 
 const collapseToggleClickSkips = new WeakSet();
@@ -609,6 +610,7 @@ function handleClick(event) {
     }
 
     const noteContent = event.target.closest('.note-content');
+    const noteShellSelectionTarget = resolveNonContentNoteSelectionTarget(event.target);
     const searchField = event.target.closest('#search-input');
     const createButton = event.target.closest('.add-note');
     const deleteButton = event.target.closest('#trash-can');
@@ -685,36 +687,35 @@ function handleClick(event) {
         );
                 
         if (isWithinBounds) {
-                        
             if (ModeContext.isSearching) {
-                console.log('DEBUG: About to call exitSearchMode', { 
-                    isSearching: ModeContext.isSearching, 
-                    where: 'click in note' 
+                console.log('DEBUG: About to call exitSearchMode', {
+                    isSearching: ModeContext.isSearching,
+                    where: 'click in note'
                 });
                 actionExitSearchMode();
             } else {
-                console.log('DEBUG: Search mode already inactive', { 
-                    isSearching: ModeContext.isSearching, 
-                    where: 'click in note' 
+                console.log('DEBUG: Search mode already inactive', {
+                    isSearching: ModeContext.isSearching,
+                    where: 'click in note'
                 });
             }
 
             if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
                 // Don't calculate or save cursor position when entering edit mode
-                // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully 
+                // The click position on rendered content (e.g., LaTeX) doesn't map meaningfully
                 // to cursor position in source text
 
-				if (ModeContext.currentNoteId) {
-					void CommandGate.run('mouse.switch_note', async () => {
-						await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
-					});
-				} else {
-					void CommandGate.run('mouse.select_note', async () => {
-						await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
-					});
-				}
-                                
-                Logger.logDebug('Click in note content - selecting note', { 
+                if (ModeContext.currentNoteId) {
+                    void CommandGate.run('mouse.switch_note', async () => {
+                        await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+                    });
+                } else {
+                    void CommandGate.run('mouse.select_note', async () => {
+                        await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+                    });
+                }
+
+                Logger.logDebug('Click in note content - selecting note', {
                     noteId,
                     coordinates,
                     isEditing: true
@@ -725,13 +726,13 @@ function handleClick(event) {
                     ModeContext.markCaretVisible();
                 }
 
-                Logger.logNoop('Click in already selected note - no action needed', { 
+                Logger.logNoop('Click in already selected note - no action needed', {
                     noteId,
                     coordinates,
                     isEditing: true
                 });
             }
-		} else {
+        } else {
 			            
 			if (ModeContext.isEditing) {
 				void CommandGate.run('mouse.deselect', async () => {
@@ -750,6 +751,78 @@ function handleClick(event) {
                 },
                 isEditing: false
             }, Logger.LogCategory.EVENT);
+        }
+	} else if (noteShellSelectionTarget) {
+        const noteElement = noteShellSelectionTarget;
+
+        if (noteElement.classList.contains('locked')) {
+            Logger.logNoop('Click on locked note ignored', {
+                noteId: noteElement.dataset.noteId,
+                reason: 'note_locked'
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
+        const noteId = noteElement.dataset.noteId;
+        if (!noteId) {
+            throw new Error('Note shell selection target missing data-note-id attribute');
+        }
+
+        if (noteElement.classList.contains('search-redacted')) {
+            const revealResult = revealRedactedNoteWithScrollPreservation(noteId);
+            Logger.logAction('reveal search-redacted note', {
+                noteId,
+                result: revealResult.reason,
+                revealedCount: revealResult.revealedCount,
+                scopeNoteId: revealResult.scopeNoteId,
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
+        if (ModeContext.isSearching) {
+            console.log('DEBUG: About to call exitSearchMode', {
+                isSearching: ModeContext.isSearching,
+                where: 'click in note shell'
+            });
+            actionExitSearchMode();
+        } else {
+            console.log('DEBUG: Search mode already inactive', {
+                isSearching: ModeContext.isSearching,
+                where: 'click in note shell'
+            });
+        }
+
+        if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+            if (ModeContext.currentNoteId) {
+                void CommandGate.run('mouse.switch_note', async () => {
+                    await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+                });
+            } else {
+                void CommandGate.run('mouse.select_note', async () => {
+                    await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+                });
+            }
+
+            Logger.logDebug('Click in note shell - selecting note', {
+                noteId,
+                coordinates,
+                isEditing: true
+            }, Logger.LogCategory.EVENT);
+        } else {
+            if (ModeContext.isCaretHidden && ModeContext.currentNoteId === noteId) {
+                DOMUtils.revealCaret(noteElement);
+                ModeContext.markCaretVisible();
+            }
+
+            Logger.logNoop('Click in already selected note shell - no action needed', {
+                noteId,
+                coordinates,
+                isEditing: true
+            });
         }
 	} else if (searchField) {
 		void CommandGate.run('mouse.enter_search_mode', async () => {
