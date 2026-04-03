@@ -111,8 +111,6 @@ export function updateCollapseAffordanceForNote(noteElement) {
     }
 
     const hasMetaCsv = Boolean(contentElement.querySelector(META_CSV_SELECTOR));
-    noteElement.classList.toggle('has-meta-csv', hasMetaCsv);
-
     const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
 
     // Determine collapsibility based on the *expanded* layout.

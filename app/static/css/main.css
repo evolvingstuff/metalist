@@ -3544,20 +3544,6 @@ body.pref-show-note-tags .note-tags {
     opacity: 0.9;
 }
 
-body.pref-auto-collapse-long-notes .note:not(.editing) > .note-content {
-    display: -webkit-box;
-    -webkit-line-clamp: 10;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-body.pref-auto-collapse-long-notes .note.has-meta-csv:not(.editing):not(.collapsed) > .note-content {
-    display: block;
-    -webkit-line-clamp: unset;
-    -webkit-box-orient: unset;
-    overflow: visible;
-}
-
 .command-palette-modal {
     background-color: rgba(0, 0, 0, 0.72);
 }

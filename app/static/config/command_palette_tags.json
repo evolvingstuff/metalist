@@ -17,10 +17,6 @@
       "tags": ["perf", "performance", "overlay", "debug", "metrics", "dev", "ui", "show", "hide", "toggle"]
     },
     {
-      "id": "pref.auto_collapse_long_notes",
-      "tags": ["collapse", "long", "notes", "auto", "toggle", "view"]
-    },
-    {
       "id": "pref.sort_order",
       "tags": ["sort", "order", "newest", "oldest", "updated", "view"]
     },

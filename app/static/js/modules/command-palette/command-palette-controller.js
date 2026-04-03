@@ -378,9 +378,6 @@ class CommandPaletteController {
         const showTabUi = this._getBoolean('pref.show_tab_ui', false);
         document.body.classList.toggle('pref-show-tab-ui', showTabUi);
 
-        const autoCollapse = this._getBoolean('pref.auto_collapse_long_notes', false);
-        document.body.classList.toggle('pref-auto-collapse-long-notes', autoCollapse);
-
         const showPerfOverlay = this._getBoolean('pref.show_perf_overlay', false);
         document.body.classList.toggle('pref-show-perf-overlay', showPerfOverlay);
         if (!showPerfOverlay) {

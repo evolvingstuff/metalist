@@ -43,7 +43,6 @@ export function buildCommandPaletteEndpoints(deps) {
         showNoteTags: false,
         showTabUi: false,
         showPerfOverlay: false,
-        autoCollapseLongNotes: false,
         sortOrder: 'updated',
         theme: 'system',
     };
@@ -80,14 +79,6 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_perf_overlay',
             defaultValue: defaults.showPerfOverlay,
             apply: (next) => applyPreference('pref.show_perf_overlay', next),
-        },
-        {
-            id: 'pref.auto_collapse_long_notes',
-            kind: 'boolean',
-            label: 'Auto-collapse long notes',
-            persistenceKey: 'pref.auto_collapse_long_notes',
-            defaultValue: defaults.autoCollapseLongNotes,
-            apply: (next) => applyPreference('pref.auto_collapse_long_notes', next),
         },
         {
             id: 'pref.sort_order',
