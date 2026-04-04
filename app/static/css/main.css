@@ -2683,6 +2683,14 @@ body.loading::after {
     display: contents;
 }
 
+.meta-box-inline {
+    display: inline;
+}
+
+.meta-box-block {
+    display: block;
+}
+
 .meta-global.meta-copyable,
 .meta-scope.meta-copyable,
 .meta-global.meta-dark-theme,
@@ -2766,6 +2774,11 @@ body.loading::after {
 .meta-strikethrough {
     text-decoration: line-through;
     text-decoration-thickness: 1.5px;
+}
+
+.meta-strikethrough * {
+    text-decoration-line: inherit;
+    text-decoration-thickness: inherit;
 }
 
 .meta-red {

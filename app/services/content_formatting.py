@@ -125,6 +125,10 @@ _ANCHOR_HREF_ATTR_RE = re.compile(r'(\bhref\s*=\s*)(["\'])(.*?)\2', re.IGNORECAS
 _ANCHOR_TARGET_ATTR_RE = re.compile(r'(\btarget\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
 _ANCHOR_REL_ATTR_RE = re.compile(r'(\brel\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
 _NEW_TAB_REL_TOKENS = ("noopener", "noreferrer")
+_BLOCK_HTML_TAG_RE = re.compile(
+    r"<(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|hr|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b",
+    re.IGNORECASE,
+)
 
 
 def list_known_meta_tag_terms() -> FrozenSet[str]:
@@ -250,13 +254,17 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         )
 
     if config.global_tags:
-        classes = _meta_classes_for_tag_names(config.global_tags)
-        if classes:
-            copy_attr = ""
-            if "copyable" in config.global_tags:
-                plain_text = _extract_plain_text(output)
-                copy_attr = _copyable_attr(config.global_tags, plain_text)
-            output = f'<span class="meta-global {classes}"{copy_attr}>{output}</span>'
+        copy_attr = ""
+        if "copyable" in config.global_tags:
+            plain_text = _extract_plain_text(output)
+            copy_attr = _copyable_attr(config.global_tags, plain_text)
+        output = _wrap_meta_html(
+            inner_html=output,
+            tag_names=config.global_tags,
+            wrapper_class="meta-global",
+            copy_attr=copy_attr,
+            allow_block_wrapper=True,
+        )
 
     return _linkify_view_links(output)
 
@@ -609,18 +617,25 @@ def _render_status_meta(
     status_meta = _STATUS_META[status_tag]
     icon_html = status_meta["icon"]
 
-    extra_classes = ""
-    if formatting_tags:
-        extra_classes = _meta_classes_for_tag_names(formatting_tags)
-
     text_class = "meta-status-text"
-    if extra_classes:
-        text_class = f"{text_class} {extra_classes}"
+    formatted_content = content_html
+    if formatting_tags:
+        if _should_use_box_wrapper(formatting_tags):
+            formatted_content = _wrap_meta_html(
+                inner_html=content_html,
+                tag_names=formatting_tags,
+                wrapper_class="meta-status-format",
+                allow_block_wrapper=True,
+            )
+        else:
+            extra_classes = _meta_classes_for_tag_names(formatting_tags)
+            if extra_classes:
+                text_class = f"{text_class} {extra_classes}"
 
     return (
         f'<div class="meta-status meta-status-{status_tag}">'
         f'<span class="meta-status-toggle" data-status="{status_tag}">{icon_html}</span>'
-        f'<div class="{text_class}">{content_html}</div>'
+        f'<div class="{text_class}">{formatted_content}</div>'
         "</div>"
     )
 
@@ -1058,6 +1073,48 @@ def _copyable_attr(formatting_tags: FrozenSet[str], raw_text: str) -> str:
     return f' data-copy-value="{escaped_text}"'
 
 
+def _should_use_box_wrapper(tag_names: Set[str] | FrozenSet[str]) -> bool:
+    return "strikethrough" in tag_names
+
+
+def _html_contains_block_elements(content_html: str) -> bool:
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+    return _BLOCK_HTML_TAG_RE.search(content_html) is not None
+
+
+def _wrap_meta_html(
+    *,
+    inner_html: str,
+    tag_names: Set[str] | FrozenSet[str],
+    wrapper_class: str,
+    copy_attr: str = "",
+    allow_block_wrapper: bool,
+) -> str:
+    if not isinstance(inner_html, str):
+        raise TypeError("inner_html must be a string")
+    if not isinstance(wrapper_class, str) or wrapper_class == "":
+        raise TypeError("wrapper_class must be a non-empty string")
+    if not isinstance(copy_attr, str):
+        raise TypeError("copy_attr must be a string")
+
+    classes = _meta_classes_for_tag_names(tag_names)
+    if classes == "":
+        raise AssertionError("Formatted wrapper requires at least one CSS class")
+
+    class_names: List[str] = [wrapper_class]
+    wrapper_tag = "span"
+    if _should_use_box_wrapper(tag_names):
+        if allow_block_wrapper and _html_contains_block_elements(inner_html):
+            wrapper_tag = "div"
+            class_names.append("meta-box-block")
+        else:
+            class_names.append("meta-box-inline")
+    class_names.append(classes)
+    class_attr = " ".join(class_names)
+    return f'<{wrapper_tag} class="{class_attr}"{copy_attr}>{inner_html}</{wrapper_tag}>'
+
+
 def _encode_latex_placeholder(raw_text: str, extra_classes: str) -> str:
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string")
@@ -1340,6 +1397,7 @@ def _process_text_segment(
                         formatting_tags = frozenset()
                     render_key = key
                 if key in scoped_tags:
+                    formatting_tags = scoped_tags[key]
                     classes = _meta_classes_for_tag_names(scoped_tags[key])
                     assert classes, "Scoped meta tags must resolve to at least one CSS class"
                     open_html = f'<span class="meta-scope {classes}">'
@@ -1377,6 +1435,24 @@ def _process_text_segment(
                 top = stack[-1]
                 if top.closer == char and top.depth == run:
                     stack.pop()
+                    if (
+                        top.render_tag is None
+                        and top.formatting_tags is not None
+                        and _should_use_box_wrapper(top.formatting_tags)
+                    ):
+                        inner_parts = output[top.placeholder_index + 1 :]
+                        inner_html = "".join(inner_parts)
+                        if not _html_contains_block_elements(inner_html):
+                            rendered = _wrap_meta_html(
+                                inner_html=inner_html,
+                                tag_names=top.formatting_tags,
+                                wrapper_class="meta-scope",
+                                allow_block_wrapper=False,
+                            )
+                            del output[top.placeholder_index :]
+                            output.append(rendered)
+                            index += run
+                            continue
                     output[top.placeholder_index] = top.open_html
                     output.append(top.close_html)
                     index += run

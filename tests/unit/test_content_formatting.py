@@ -111,6 +111,18 @@ def test_format_note_content_for_view_scoped_meta_tags_do_not_apply_globally() -
     assert '<span class="meta-scope meta-red">bar</span>' in rendered
 
 
+def test_format_note_content_for_view_scoped_strikethrough_uses_inline_box_wrapper() -> None:
+    html = "<div>{hello}</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="{@strikethrough}")
+    assert rendered == '<div><span class="meta-scope meta-box-inline meta-strikethrough">hello</span></div>'
+
+
+def test_format_note_content_for_view_global_strikethrough_wraps_block_content() -> None:
+    html = "<div>hello</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@strikethrough")
+    assert rendered == '<div class="meta-global meta-box-block meta-strikethrough"><div>hello</div></div>'
+
+
 def test_format_note_content_for_view_username_meta_renders_credential_row() -> None:
     html = "<div><b>tomlahore1</b></div>"
     rendered = format_note_content_for_view(content_html=html, tags="@username")
@@ -168,6 +180,12 @@ def test_format_note_content_for_view_status_meta_applies_other_global_classes()
     html = "<div>stuff</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@done @red")
     assert 'meta-status-text meta-red' in rendered
+
+
+def test_format_note_content_for_view_status_meta_strikethrough_wraps_inner_content() -> None:
+    html = "<div>stuff</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@done @strikethrough")
+    assert '<div class="meta-status-text"><div class="meta-status-format meta-box-block meta-strikethrough"><div>stuff</div></div></div>' in rendered
 
 
 def test_format_note_content_for_view_markdown_meta_renders_plain_text_container() -> None:
