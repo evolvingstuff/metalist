@@ -122,6 +122,7 @@ function handleInput(event) {
             throw new Error(`Tag bar input fired while not editing note ${noteId}`);
         }
 
+        ModeContext.markEditSessionHasEdits();
         enforceTagBarInputElement(tagBarInput);
         ensureEditingCaretVisible(tagBarInput);
         validateAndRenderTagBar(noteElement);

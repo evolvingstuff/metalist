@@ -32,6 +32,8 @@ class ModeContext {
         // This is intentionally separate from "dirty" because autosave can clear dirty
         // while the editor still has undo history.
         this._editSessionHasEdits = false;
+        this._editSessionStartedCollapsed = false;
+        this._editSessionExpandedPersisted = false;
 
         this._listeners = [];
         this._lastContentChangeTime = null;
@@ -524,7 +526,7 @@ class ModeContext {
         const oldValue = this._editing;
         this._editing = Boolean(value);
 
-        this._editSessionHasEdits = false;
+        this.resetEditSessionState({ startedCollapsed: false });
         if (!this._editing) {
             this._caretHidden = false;
         }
@@ -544,6 +546,21 @@ class ModeContext {
         return this._getActiveNoteHashes().size;
     }
 
+    resetEditSessionState(options) {
+        if (typeof options === 'undefined') {
+            options = {};
+        }
+        if (options === null || typeof options !== 'object') {
+            throw new Error('resetEditSessionState requires options object');
+        }
+
+        const startedCollapsed = options.startedCollapsed === true;
+        this._editSessionHasEdits = false;
+        this._editSessionStartedCollapsed = startedCollapsed;
+        this._editSessionExpandedPersisted = false;
+        return this;
+    }
+
     markEditSessionHasEdits() {
         if (!this._editSessionHasEdits) {
             this._editSessionHasEdits = true;
@@ -553,6 +570,21 @@ class ModeContext {
 
     get editSessionHasEdits() {
         return Boolean(this._editSessionHasEdits);
+    }
+
+    get editSessionStartedCollapsed() {
+        return Boolean(this._editSessionStartedCollapsed);
+    }
+
+    markEditSessionExpandedPersisted() {
+        if (!this._editSessionExpandedPersisted) {
+            this._editSessionExpandedPersisted = true;
+        }
+        return this;
+    }
+
+    get editSessionExpandedPersisted() {
+        return Boolean(this._editSessionExpandedPersisted);
     }
 
     setSearching(value) {
@@ -599,12 +631,16 @@ class ModeContext {
     }
 
     setDirty(value) {
-                
-        if (this._dirty === value) {
-            throw new Error(`Redundant state change: dirty is already ${value}`);
+        const normalized = Boolean(value);
+
+        if (this._dirty === normalized) {
+            throw new Error(`Redundant state change: dirty is already ${normalized}`);
         }
-                
-        this._dirty = Boolean(value);
+
+        this._dirty = normalized;
+        if (this._dirty && this._editing) {
+            this.markEditSessionHasEdits();
+        }
         this._notifyListeners('dirty', this._dirty);
         return this;
     }

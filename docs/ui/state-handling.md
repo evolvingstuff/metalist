@@ -479,6 +479,8 @@ Important UX rule:
 Concrete expectations:
 - Select collapsed note `N` (auto-expands) → `Cmd+Z` exits edit mode and re-collapses `N`.
 - Select collapsed note `N` → delete `N` → `Cmd+Z` restores `N` (expanded+selected) → `Cmd+Z` exits edit mode and re-collapses `N`.
+- Select collapsed note `N` → enter edit mode → make no edits → exit edit mode: `N` returns to collapsed.
+- Select collapsed note `N` → enter edit mode → make any content/tag edit → exit edit mode: `N` stays expanded.
 
 The server also coalesces “empty” edit sessions:
 - If you enter edit mode and then immediately exit without any intervening edits, the history keeps **one** `edit_mode` op.

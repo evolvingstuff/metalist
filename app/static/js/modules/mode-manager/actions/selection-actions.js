@@ -5,8 +5,8 @@ import { detachEditorSurface } from '../../editor-toolbar.js';
 import { actionSaveNote } from './content-actions.js';
 import { NotesAPI } from '../../api-client.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
-import { ensureNoteExpanded } from '../services/collapse-affordance-service.js';
 import { clearTagBar } from '../services/tag-bar-service.js';
+import { restoreCollapsedStateLocallyIfNeeded } from '../services/edit-session-collapse-service.js';
 import {
     beginEditInteractionForActiveQuery,
     cancelPendingInteraction,
@@ -86,11 +86,6 @@ export async function actionSelectNote(noteId, options) {
         ModeContext.setCurrentContent(newContent);
     }
 
-	const maybeNoteElement = document.querySelector(`[data-note-id="${noteId}"]`);
-	if (maybeNoteElement) {
-		await ensureNoteExpanded(noteId);
-	}
-
     ModeContext.validate();
 }
 
@@ -111,6 +106,7 @@ export async function actionDeselectNote() {
     const noteElement = getNoteElementIfPresent(noteId);
     if (noteElement !== null) {
         await actionSaveNote(noteId);
+        restoreCollapsedStateLocallyIfNeeded(noteElement);
     } else {
         Logger.logDebug('Deselecting after note disappeared from DOM', { noteId });
         if (ModeContext.isDirty) {
@@ -148,6 +144,10 @@ export async function actionSaveAndExitEditingWithoutRefreshing() {
     }
 
     await actionSaveNote(noteId);
+    const noteElement = getNoteElementIfPresent(noteId);
+    if (noteElement !== null) {
+        restoreCollapsedStateLocallyIfNeeded(noteElement);
+    }
 
     await NotesAPI.recordEditModeTransition(noteId, null, '');
 
@@ -230,6 +230,7 @@ export async function actionSwitchNotes(newNoteId, options) {
     const currentNoteElement = currentNoteId ? DOMUtils.getNoteById(currentNoteId) : null;
 
     if (currentNoteElement) {
+        restoreCollapsedStateLocallyIfNeeded(currentNoteElement);
         DOMUtils.setNoteEditable(currentNoteElement, false);
         clearTagBar();
     }
@@ -241,6 +242,7 @@ export async function actionSwitchNotes(newNoteId, options) {
     ModeContext.setCurrentContent(null);
 
     ModeContext.setCurrentNoteId(newNoteId);
+    ModeContext.resetEditSessionState({ startedCollapsed: false });
 
     if (initialCaretVisibility === 'hidden') {
         ModeContext.markCaretHidden();
@@ -251,11 +253,6 @@ export async function actionSwitchNotes(newNoteId, options) {
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
     
     ModeContext.setCurrentContent(newContent);
-
-	const maybeNoteElement = document.querySelector(`[data-note-id="${newNoteId}"]`);
-	if (maybeNoteElement) {
-		await ensureNoteExpanded(newNoteId);
-	}
   
     ModeContext.validate();
 }

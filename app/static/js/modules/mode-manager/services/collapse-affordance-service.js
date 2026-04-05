@@ -153,6 +153,31 @@ export function updateCollapseAffordanceForNote(noteElement) {
     refreshAffordanceAfterPendingImagesLoad(noteElement, contentElement);
 }
 
+export function setNoteCollapsedLocally(noteElement, collapsed) {
+    if (!(noteElement instanceof HTMLElement) || !noteElement.classList.contains('note')) {
+        throw new Error('setNoteCollapsedLocally requires note element');
+    }
+    if (typeof collapsed !== 'boolean') {
+        throw new Error('setNoteCollapsedLocally requires collapsed boolean');
+    }
+
+    noteElement.dataset[COLLAPSED_DATA_KEY] = collapsed ? 'true' : 'false';
+    updateCollapseAffordanceForNote(noteElement);
+}
+
+export function ensureNoteExpandedLocally(noteId) {
+    if (!noteId) {
+        throw new Error('ensureNoteExpandedLocally requires a noteId');
+    }
+
+    const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+    if (!noteElement) {
+        throw new Error(`Cannot ensure local expanded state: note ${noteId} not found`);
+    }
+
+    setNoteCollapsedLocally(noteElement, false);
+}
+
 export async function ensureNoteExpanded(noteId) {
     if (!noteId) {
         throw new Error('ensureNoteExpanded requires a noteId');

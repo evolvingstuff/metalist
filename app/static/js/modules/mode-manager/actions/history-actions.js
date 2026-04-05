@@ -72,13 +72,17 @@ function _applyHistorySelectionState({
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('History selection state requires a non-empty noteId when shouldEdit is true');
         }
+        const noteChanged = ModeContext.currentNoteId !== noteId;
 
-        if (ModeContext.currentNoteId !== noteId) {
+        if (noteChanged) {
             ModeContext.setCurrentNoteId(noteId);
         }
 
         if (!ModeContext.isEditing) {
             ModeContext.setEditing(true);
+        }
+        if (noteChanged) {
+            ModeContext.resetEditSessionState({ startedCollapsed: false });
         }
 
         ModeContext.markCaretVisible();

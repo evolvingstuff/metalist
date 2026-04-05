@@ -3,6 +3,7 @@ import * as Logger from '../mode-logger.js';
 import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
+import { persistExpandedEditSessionIfNeeded } from '../services/edit-session-collapse-service.js';
 
 function getNoteElementIfPresent(noteId) {
     if (!noteId) {
@@ -21,6 +22,8 @@ export async function actionSaveNote(noteId) {
     if (ModeContext.currentNoteId !== noteId) {
         throw new Error(`Cannot save note ${noteId} - not the current note being edited (${ModeContext.currentNoteId})`);
     }
+
+    await persistExpandedEditSessionIfNeeded(noteId);
 
     const noteElement = getNoteElementIfPresent(noteId);
     if (noteElement === null) {
@@ -67,6 +70,8 @@ export async function actionSaveNoteOnIdle(noteId) {
     if (ModeContext.currentNoteId !== noteId) {
         throw new Error(`Cannot save note ${noteId} on idle - not the current note being edited (${ModeContext.currentNoteId})`);
     }
+
+    await persistExpandedEditSessionIfNeeded(noteId);
 
     if (!ModeContext.isDirty) {
         Logger.logDebug('Note not dirty, skipping idle save', { 

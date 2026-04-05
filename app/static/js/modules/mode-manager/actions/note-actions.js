@@ -686,6 +686,7 @@ export async function splitCurrentNoteFromSelection() {
         return false;
     }
 
+    ModeContext.markEditSessionHasEdits();
     const tags = getTagBarValue(noteElement);
     await NotesAPI.saveNote(currentNoteId, splitSegments[0], tags);
 
@@ -750,6 +751,8 @@ export async function joinCurrentNoteWithNextSibling() {
         });
         return false;
     }
+
+    ModeContext.markEditSessionHasEdits();
 
     const startedAt = performance.now();
     const refreshedContent = await actionRefreshAndMaybeSelect({
@@ -829,6 +832,7 @@ export async function actionPasteNoteSibling() {
     }
 
     if (newNoteId === currentNoteId) {
+        ModeContext.markEditSessionHasEdits();
         const startedAt = performance.now();
         const newContent = await actionRefreshAndMaybeSelect({ startedAt, context: 'pasteNoteSiblingInto' });
         if (ModeContext.currentContent !== newContent && newContent !== null) {
