@@ -356,7 +356,7 @@ async function createNoteWithPlacement(placeAtTop) {
 
     const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
 
-    if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
+    if (ModeContext.isEditing && ModeContext.editSessionHasEdits && currentNoteId) {
         await actionSaveNote(currentNoteId);
     }
 
@@ -409,7 +409,7 @@ export async function createChildNote() {
         return await createNote();
     }
 
-    if (ModeContext.isEditing && ModeContext.isDirty && currentNoteId) {
+    if (ModeContext.isEditing && ModeContext.editSessionHasEdits && currentNoteId) {
         await actionSaveNote(currentNoteId);
     }
 
@@ -442,7 +442,7 @@ export async function moveNoteUp(noteId) {
         throw new Error('Cannot move note: noteId is required');
     }
 
-    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+    if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
 
@@ -473,7 +473,7 @@ export async function moveNoteDown(noteId) {
         throw new Error('Cannot move note: noteId is required');
     }
 
-    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+    if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
 
@@ -521,7 +521,7 @@ export async function indentNote(noteId) {
         throw new Error('Visible previous sibling missing note id');
     }
 
-    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+    if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
 
@@ -552,7 +552,7 @@ export async function outdentNote(noteId) {
         throw new Error('Cannot outdent note: noteId is required');
     }
 
-    if (ModeContext.isDirty && noteId === ModeContext.currentNoteId) {
+    if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
     }
 
@@ -595,7 +595,7 @@ async function setNoteCollapse(noteId, collapsed) {
             collapsed
         }, Logger.LogCategory.EVENT);
 
-        if (ModeContext.isDirty) {
+        if (ModeContext.editSessionHasEdits) {
             await actionSaveNote(editingNoteId);
         }
 
@@ -644,7 +644,7 @@ export async function actionCopyNote() {
     }
 
     // Save the note first if it's dirty to ensure we copy the current edited content
-    if (ModeContext.isDirty) {
+    if (ModeContext.editSessionHasEdits) {
         await actionSaveNote(currentNoteId);
     }
 
@@ -740,7 +740,7 @@ export async function joinCurrentNoteWithNextSibling() {
         return false;
     }
 
-    if (ModeContext.isDirty) {
+    if (ModeContext.editSessionHasEdits) {
         await actionSaveNote(currentNoteId);
     }
 
@@ -820,7 +820,7 @@ export async function actionPasteNoteSibling() {
         throw new Error('Cannot paste sibling: no note selected');
     }
 
-    if (ModeContext.isDirty) {
+    if (ModeContext.editSessionHasEdits) {
         await actionSaveNote(currentNoteId);
     }
 
@@ -862,7 +862,7 @@ export async function actionPasteNoteChild() {
         throw new Error('Cannot paste child: no note selected');
     }
 
-    if (ModeContext.isDirty) {
+    if (ModeContext.editSessionHasEdits) {
         await actionSaveNote(currentNoteId);
     }
 

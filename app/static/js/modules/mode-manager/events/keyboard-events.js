@@ -70,6 +70,7 @@ const NAVIGATION_KEYS = new Set([
 ]);
 const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const DELETE_KEYS = new Set(['Backspace', 'Delete']);
+const TAG_BAR_META_SHORTCUT_KEYS = new Set(['c', 'x', 'v', 'z', 'y', 'r', 's', 'j', 'p']);
 
 let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
@@ -166,6 +167,34 @@ function isOntologyModalShortcut(event) {
         return false;
     }
     return true;
+}
+
+function isTagBarNoteShortcut(event) {
+    if (!event) {
+        throw new Error('isTagBarNoteShortcut called without event');
+    }
+    if (typeof event.key !== 'string') {
+        throw new Error('isTagBarNoteShortcut requires event.key');
+    }
+
+    if (event.key === 'Tab') {
+        return true;
+    }
+
+    if (!(event.metaKey || event.ctrlKey)) {
+        return false;
+    }
+
+    if (event.key === 'Enter') {
+        return true;
+    }
+    if (DELETE_KEYS.has(event.key)) {
+        return true;
+    }
+    if (MOVE_KEYS.has(event.key)) {
+        return true;
+    }
+    return TAG_BAR_META_SHORTCUT_KEYS.has(event.key);
 }
 
 async function openOntologyModalFromShortcut() {
@@ -277,11 +306,10 @@ function handleKeyDown(event) {
 	            const isTagBarInput = tagName === 'INPUT' && target.classList.contains('note-tag-bar-input');
 	            const isCommandPaletteShortcut = event.key === '/' && (event.metaKey || event.ctrlKey);
 	            const isTagEditorShortcut = isOntologyModalShortcut(event);
+                const isTagBarShortcut = isTagBarInput && ModeContext.isEditing && isTagBarNoteShortcut(event);
 
 	            if (isTextInput && !(isSearchInput && event.key === 'Enter') && !isCommandPaletteShortcut && !isTagEditorShortcut) {
-	                const isCreateShortcut = event.key === 'Enter' && (event.metaKey || event.ctrlKey);
-	                const isTabToggleShortcut = event.key === 'Tab';
-	                if (!(isTagBarInput && (isCreateShortcut || isTabToggleShortcut))) {
+	                if (!isTagBarShortcut) {
 	                    return;
 	                }
 	            }
@@ -1069,6 +1097,18 @@ async function handleCopyNoteShortcut(event) {
             currentNoteId: null
         });
         return;
+    }
+
+    const activeElement = document.activeElement;
+    const activeElementIsTextInput = activeElement
+        && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+    if (activeElementIsTextInput) {
+        const selectionStart = activeElement.selectionStart;
+        const selectionEnd = activeElement.selectionEnd;
+        if (typeof selectionStart === 'number' && typeof selectionEnd === 'number' && selectionEnd > selectionStart) {
+            markSystemClipboardAsTrusted();
+            return;
+        }
     }
 
     const selection = window.getSelection();

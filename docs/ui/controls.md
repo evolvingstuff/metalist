@@ -29,6 +29,7 @@
 - `⌘ + J` merges tag bars without duplicates (case-insensitive dedupe; first-seen casing/order wins).
 - `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
+- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, indent/outdent, join, split, note copy/cut/paste, and password modal.
 
 ### General Shortcuts
 | Shortcut | Action |

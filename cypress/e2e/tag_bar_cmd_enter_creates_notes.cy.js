@@ -3,6 +3,7 @@ describe('Tag bar shortcuts for note creation', () => {
     cy.intercept('POST', '/api2/notes/view').as('initialView')
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
     cy.intercept('POST', '/api2/notes/new-sibling/*').as('createSibling')
+    cy.intercept('PUT', '/api2/notes/*/save').as('saveNote')
 
     cy.visitApp('/')
     cy.wait('@initialView')
@@ -13,6 +14,8 @@ describe('Tag bar shortcuts for note creation', () => {
     cy.get('.note').should('have.length', 1)
     cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
       .should('exist')
+      .clear()
+      .type('alpha')
       .focus()
       .trigger('keydown', {
         key: 'Enter',
@@ -25,14 +28,18 @@ describe('Tag bar shortcuts for note creation', () => {
         cancelable: true,
       })
 
+    cy.wait('@saveNote')
     cy.wait('@createSibling')
     cy.get('.note').should('have.length', 2)
+    cy.get('.note').eq(0).find('> .note-content').click()
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).should('have.value', 'alpha')
   })
 
   it('creates a child note when Cmd-Shift-Enter is pressed while the tag bar is focused', () => {
     cy.intercept('POST', '/api2/notes/view').as('initialView')
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
     cy.intercept('POST', '/api2/notes/new-child/*').as('createChild')
+    cy.intercept('PUT', '/api2/notes/*/save').as('saveNote')
 
     cy.visitApp('/')
     cy.wait('@initialView')
@@ -43,6 +50,8 @@ describe('Tag bar shortcuts for note creation', () => {
     cy.get('.note').should('have.length', 1)
     cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
       .should('exist')
+      .clear()
+      .type('alpha')
       .focus()
       .trigger('keydown', {
         key: 'Enter',
@@ -55,9 +64,11 @@ describe('Tag bar shortcuts for note creation', () => {
         cancelable: true,
       })
 
+    cy.wait('@saveNote')
     cy.wait('@createChild')
     cy.get('.note').should('have.length', 2)
     cy.get('.note-children .note').should('exist')
+    cy.get('.note').eq(0).find('> .note-content').click()
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).should('have.value', 'alpha')
   })
 })
-
