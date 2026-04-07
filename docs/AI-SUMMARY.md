@@ -11,6 +11,7 @@
 - Namespace launch profiles: `app/server_runtime.py` stores remembered per-namespace HTTP / HTTPS / MCP sidecar ports in `~/MetaList/namespaces.db`.
 - Namespace switching/launching: `app/services/namespace_switcher.py` lists known namespaces, suggests conflict-free ports, restarts already-running target namespaces so they pick up current code, relaunches the recorded entrypoint (installed CLI or source script), and writes child logs under `~/MetaList/logs/`.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
+- `app/static/js/main.js`: Browser bootstrap; awaits `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` before revealing the app, and sets `document.body.dataset.appReady` for deterministic Cypress startup waits.
 - Startup intro gate: `app/templates/index.html` + `app/static/js/modules/auth.js` can show a login/startup MP4 before revealing login or the app; this is controlled by `STARTUP_ANIMATION_ENABLED` and defaults off.
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
@@ -61,6 +62,7 @@
 - Tag suggestion ranking: literal content segment hits can surface connector-separated tags, full multi-segment phrase hits outrank single-segment hits, and surrounding prose punctuation is ignored for content matching.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
+- Cypress harness determinism: `POST /api2/test/reset` clears DB/search-history/cache/tab/auth/sync state, and `cypress/support/commands.js` waits for `body[data-app-ready="true"]` before each spec starts interacting.
 - Reference shortcut: `Cmd/Ctrl+R` copies as embedded reference (`![[UUID]]`) from the last note copied with `Cmd/Ctrl+C` (when no text selection).
 - Join shortcut: `Cmd/Ctrl+J` joins the currently edited note with its next sibling by merging raw editable content and tag-bar strings; tag merge is case-insensitive dedupe (first occurrence preserved); no-op when no next sibling exists.
 - Split shortcut: `Cmd/Ctrl+S` splits the currently edited note at selection/caret into sibling notes and preserves the original tag-bar string across all resulting notes; split normalization trims edge-empty nodes to avoid synthetic leading blank lines; no-op when full-note selection or end-caret would yield fewer than two non-empty segments.
