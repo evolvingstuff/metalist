@@ -258,12 +258,33 @@ function getNormalizedParentId(noteElement) {
     return rawParentId;
 }
 
-function resolveVerticalMoveDestination(noteId, dropY) {
+function getHoveredDirectSiblingNoteId(noteElement, eventTarget) {
+    if (!(eventTarget instanceof Node)) {
+        return null;
+    }
+
+    const siblingNotes = getDirectSiblingNotes(noteElement);
+    for (const siblingNote of siblingNotes) {
+        if (siblingNote === noteElement) {
+            continue;
+        }
+        if (siblingNote.contains(eventTarget)) {
+            return DOMUtils.getNoteId(siblingNote);
+        }
+    }
+
+    return null;
+}
+
+function resolveVerticalMoveDestination(noteId, dropY, dragDirection, eventTarget) {
     if (!noteId) {
         throw new Error('resolveVerticalMoveDestination requires noteId');
     }
     if (typeof dropY !== 'number' || Number.isNaN(dropY)) {
         throw new Error('resolveVerticalMoveDestination requires numeric dropY');
+    }
+    if (dragDirection !== 'up' && dragDirection !== 'down') {
+        throw new Error('resolveVerticalMoveDestination requires dragDirection up|down');
     }
 
     const noteElement = DOMUtils.getNoteById(noteId);
@@ -283,6 +304,8 @@ function resolveVerticalMoveDestination(noteId, dropY) {
         currentPrevId: getAdjacentSiblingNoteId(noteElement, 'previous'),
         currentNextId: getAdjacentSiblingNoteId(noteElement, 'next'),
         parentId: getNormalizedParentId(noteElement),
+        hoveredSiblingId: getHoveredDirectSiblingNoteId(noteElement, eventTarget),
+        dragDirection,
     });
 }
 
@@ -343,7 +366,7 @@ function handleMoveDragMouseUp(event) {
     }
 
     if (direction === 'up' || direction === 'down') {
-        const destination = resolveVerticalMoveDestination(context.noteId, event.clientY);
+        const destination = resolveVerticalMoveDestination(context.noteId, event.clientY, direction, event.target);
         if (!destination) {
             return;
         }

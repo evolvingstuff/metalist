@@ -58,3 +58,43 @@ test('resolveVerticalSiblingDropDestination returns null for a no-op drop betwee
 
     assert.equal(destination, null);
 });
+
+test('resolveVerticalSiblingDropDestination moves above the hovered sibling subtree on upward drags', () => {
+    const destination = resolveVerticalSiblingDropDestination({
+        siblingPlacements: [
+            { id: 'A', midY: 100 },
+            { id: 'B', midY: 200 },
+        ],
+        dropY: 260,
+        currentPrevId: 'B',
+        currentNextId: null,
+        hoveredSiblingId: 'B',
+        dragDirection: 'up',
+    });
+
+    assert.deepEqual(destination, {
+        siblingId: 'B',
+        position: 'BEFORE',
+        newParentId: null,
+    });
+});
+
+test('resolveVerticalSiblingDropDestination moves below the hovered sibling subtree on downward drags', () => {
+    const destination = resolveVerticalSiblingDropDestination({
+        siblingPlacements: [
+            { id: 'A', midY: 100 },
+            { id: 'C', midY: 300 },
+        ],
+        dropY: 120,
+        currentPrevId: 'A',
+        currentNextId: 'C',
+        hoveredSiblingId: 'C',
+        dragDirection: 'down',
+    });
+
+    assert.deepEqual(destination, {
+        siblingId: 'C',
+        position: 'AFTER',
+        newParentId: null,
+    });
+});
