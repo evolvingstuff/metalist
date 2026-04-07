@@ -104,7 +104,8 @@ Unclosed comments behave like unclosed wrappers:
 - When content-hit strength ties, earlier mentions in the note rank ahead of later mentions.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
 - Case-equivalent tags are collapsed in suggestions (for example `Databricks` vs `databricks`), and the most-used spelling is shown.
-- Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
+- Tags already present explicitly in the current tag bar are never suggested.
+- Tags already present only via inheritance or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward and the ordering reverses so the closest suggestion sits nearest the input.
 - The connector characters used for content matching are configurable via `TAG_SUGGESTION_CONNECTORS` in `app/config.py`.
 

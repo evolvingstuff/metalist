@@ -307,6 +307,7 @@ def search_interactions(request: Request, payload: dict) -> Dict[str, object]:
 def tag_suggestions(payload: dict) -> Dict[str, object]:
     note_id = payload["note_id"]
     anchors = payload["anchors"]
+    explicit_tags = payload["explicit_tags"]
     prefix = payload["prefix"]
     content_html = payload["content_html"]
 
@@ -314,6 +315,8 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
         raise TypeError("note_id must be a non-empty string")
     if not isinstance(anchors, list):
         raise TypeError("anchors must be a list")
+    if not isinstance(explicit_tags, list):
+        raise TypeError("explicit_tags must be a list")
     if not isinstance(prefix, str):
         raise TypeError("prefix must be a string")
     if not isinstance(content_html, str):
@@ -324,6 +327,7 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
     suggestions = suggest_tags_for_note(
         note_id=note_id,
         anchors=anchors,
+        explicit_tags=explicit_tags,
         prefix=prefix,
         content_html=content_html,
     )

@@ -70,6 +70,7 @@ def test_tag_suggestions_promote_specific_multi_segment_content_matches(
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
+        explicit_tags=[],
         prefix="",
         content_html="<p>blah blah databricks workspaces blah blah</p>",
     )
@@ -98,6 +99,7 @@ def test_tag_suggestions_include_segment_literal_matches(
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
+        explicit_tags=[],
         prefix="wor",
         content_html="<p>blah blah workspaces blah blah</p>",
     )
@@ -106,6 +108,7 @@ def test_tag_suggestions_include_segment_literal_matches(
     assert tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
+        explicit_tags=[],
         prefix="orksp",
         content_html="<p>blah blah workspaces blah blah</p>",
     ) == []
@@ -133,6 +136,7 @@ def test_tag_suggestions_promote_content_matches_wrapped_in_punctuation(
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
+        explicit_tags=[],
         prefix="",
         content_html="<p>Team Lime (github?)</p>",
     )
@@ -162,6 +166,7 @@ def test_tag_suggestions_collapse_case_equivalent_candidates(
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
+        explicit_tags=[],
         prefix="d",
         content_html="<p>databricks delta</p>",
     )
@@ -169,6 +174,34 @@ def test_tag_suggestions_collapse_case_equivalent_candidates(
     assert "Databricks" not in suggestions
     assert suggestions.count("databricks") == 1
     assert suggestions[:2] == ["databricks", "delta"]
+
+
+def test_tag_suggestions_do_not_repeat_current_explicit_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "Pandoc"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=["Pandoc"],
+        prefix="Pandoc",
+        content_html="<p>experimenting with pandoc outputs</p>",
+    )
+
+    assert suggestions == []
 
 
 def test_tag_suggestions_prefer_earlier_content_hits_when_scores_tie(
@@ -192,6 +225,7 @@ def test_tag_suggestions_prefer_earlier_content_hits_when_scores_tie(
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
+        explicit_tags=[],
         prefix="",
         content_html="<p>My boss has a github project called Dex</p>",
     )
@@ -222,6 +256,7 @@ def test_tag_suggestions_include_literal_content_hits_even_without_anchor_cooccu
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=["diagram"],
+        explicit_tags=["diagram"],
         prefix="",
         content_html="<p>port diagram to LucidCharts?</p>",
     )
@@ -252,6 +287,7 @@ def test_tag_suggestions_include_acronym_content_hits_even_without_anchor_cooccu
     suggestions = tag_suggestions_module.suggest_tags_for_note(
         note_id="note-1",
         anchors=["LinuxVM"],
+        explicit_tags=["LinuxVM"],
         prefix="",
         content_html=(
             "<p>why do we need the LinuxVM? Can I install enterprise codex directly on the "

@@ -567,6 +567,13 @@ export function parseTagBarSuggestionContext(rawInput, cursorIndex) {
         }
     }
 
+    const explicitTags = [];
+    for (const atom of atoms) {
+        if (atom.text.length > 0) {
+            explicitTags.push(atom.text);
+        }
+    }
+
     const anchors = [];
     for (const atom of atoms) {
         if (currentAtom && atom === currentAtom) {
@@ -588,6 +595,7 @@ export function parseTagBarSuggestionContext(rawInput, cursorIndex) {
 
     return {
         anchors,
+        explicitTags,
         prefix,
         replaceStart,
         replaceEnd

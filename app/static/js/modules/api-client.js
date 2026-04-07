@@ -602,12 +602,15 @@ export const NotesAPI = {
         });
     },
 
-    async fetchTagSuggestions(noteId, anchors, prefix, contentHtml) {
+    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');
         }
         if (!Array.isArray(anchors)) {
             throw new Error('NotesAPI.fetchTagSuggestions requires anchors array');
+        }
+        if (!Array.isArray(explicitTags)) {
+            throw new Error('NotesAPI.fetchTagSuggestions requires explicitTags array');
         }
         if (typeof prefix !== 'string') {
             throw new Error('NotesAPI.fetchTagSuggestions requires prefix string');
@@ -618,6 +621,7 @@ export const NotesAPI = {
         const payload = {
             note_id: noteId,
             anchors: anchors,
+            explicit_tags: explicitTags,
             prefix: prefix,
             content_html: contentHtml
         };

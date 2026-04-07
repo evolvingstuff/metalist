@@ -214,6 +214,7 @@ export function updateTagSuggestions(tagBarInput) {
         const response = await NotesAPI.fetchTagSuggestions(
             noteId,
             context.anchors,
+            context.explicitTags,
             context.prefix,
             contentHtml
         );

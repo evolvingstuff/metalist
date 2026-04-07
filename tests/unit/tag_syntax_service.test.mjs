@@ -5,6 +5,7 @@ import {
     analyzeTagBarInput,
     enforceTagBarInputForEditing,
     normalizeTagBarInput,
+    parseTagBarSuggestionContext,
 } from '../../app/static/js/modules/mode-manager/services/tag-syntax-service.js';
 
 test('allows matching bracket wrappers up to 3', () => {
@@ -66,4 +67,17 @@ test('warns on unclosed comments with content and preserves normalizedText', () 
 test('normalizeTagBarInput preserves closed wrappers', () => {
     assert.equal(normalizeTagBarInput(' [tag]  '), '[tag]');
     assert.equal(normalizeTagBarInput('((tag))   {{{tag}}}'), '((tag)) {{{tag}}}');
+});
+
+test('parseTagBarSuggestionContext exposes all explicit tags including the current token', () => {
+    const rawInput = 'linux Pandoc';
+    const context = parseTagBarSuggestionContext(rawInput, rawInput.length);
+
+    assert.deepEqual(context, {
+        anchors: ['linux'],
+        explicitTags: ['linux', 'Pandoc'],
+        prefix: 'Pandoc',
+        replaceStart: 6,
+        replaceEnd: 12,
+    });
 });

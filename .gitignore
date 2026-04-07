@@ -46,5 +46,6 @@ sanitycheck/
 test.db
 *.files.db
 *.files.*.db
+*.search-history.db
 .DS_Store
 certs/

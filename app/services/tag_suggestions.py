@@ -45,14 +45,14 @@ def _select_preferred_case_variants(*, terms: Iterable[str], exact_tag_counts: D
     return list(by_casefold.values())
 
 
-def _sanitize_anchor_tags(anchors: Iterable[str]) -> List[str]:
-    if anchors is None:
-        raise TypeError("anchors must be provided")
+def _sanitize_tag_terms(*, tags: Iterable[str], field_name: str) -> List[str]:
+    if tags is None:
+        raise TypeError(f"{field_name} must be provided")
 
     cleaned: List[str] = []
-    for tag in anchors:
+    for tag in tags:
         if not isinstance(tag, str):
-            raise TypeError("anchors must be strings")
+            raise TypeError(f"{field_name} must be strings")
         if tag:
             cleaned.append(tag)
     return cleaned
@@ -83,6 +83,7 @@ def suggest_tags_for_note(
     *,
     note_id: str,
     anchors: Iterable[str],
+    explicit_tags: Iterable[str],
     prefix: str,
     content_html: str,
 ) -> List[str]:
@@ -93,9 +94,10 @@ def suggest_tags_for_note(
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
 
-    anchor_list = _sanitize_anchor_tags(anchors)
+    anchor_list = _sanitize_tag_terms(tags=anchors, field_name="anchors")
+    explicit_tag_list = _sanitize_tag_terms(tags=explicit_tags, field_name="explicit_tags")
     anchor_set = {tag for tag in anchor_list if not tag.startswith("@")}
-    anchor_casefold_set = {tag.casefold() for tag in anchor_set}
+    explicit_tag_casefold_set = {tag.casefold() for tag in explicit_tag_list if not tag.startswith("@")}
 
     inherited_non_meta = note_store.get_inherited_non_meta_tag_terms(note_id)
     base_tags = frozenset(anchor_set | inherited_non_meta)
@@ -106,8 +108,12 @@ def suggest_tags_for_note(
         effective_tags = base_tags
     else:
         effective_tags = ontology.infer_effective_tags(base_tags=base_tags, plaintext=plaintext)
-    already_present = {tag for tag in effective_tags if not tag.startswith("@")}
-    already_present_casefold = {tag.casefold() for tag in already_present}
+    inherited_or_inferred_tags = {
+        tag for tag in effective_tags
+        if not tag.startswith("@") and tag.casefold() not in explicit_tag_casefold_set
+    }
+    suppressed_casefold = set(explicit_tag_casefold_set)
+    suppressed_casefold.update(tag.casefold() for tag in inherited_or_inferred_tags)
 
     all_terms = search_index.list_non_meta_tag_suggestion_terms()
     has_prefix = prefix != ""
@@ -115,7 +121,7 @@ def suggest_tags_for_note(
     content_match_scores: Dict[str, TagContentMatch] = {}
     normalized_content = normalize_tag_match_text(plaintext)
     for term in all_terms:
-        if term.casefold() in already_present_casefold:
+        if term.casefold() in suppressed_casefold:
             continue
         if has_prefix and not tag_term_matches_prefix(term=term, prefix=prefix):
             continue
@@ -147,7 +153,7 @@ def suggest_tags_for_note(
 
     remaining: List[str] = []
     for term in cooccurrence:
-        if term.casefold() in already_present_casefold:
+        if term.casefold() in suppressed_casefold:
             continue
         if term in content_match_scores:
             continue
@@ -159,12 +165,10 @@ def suggest_tags_for_note(
         present_suffix: List[str] = []
         exact_tag_counts = search_index.list_tag_frequencies()
         preferred_present_terms = _select_preferred_case_variants(
-            terms=already_present,
+            terms=inherited_or_inferred_tags,
             exact_tag_counts=exact_tag_counts,
         )
         for term in preferred_present_terms:
-            if term.casefold() in anchor_casefold_set:
-                continue
             if tag_term_matches_prefix(term=term, prefix=prefix):
                 present_suffix.append(term)
         present_suffix.sort()
