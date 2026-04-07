@@ -23,6 +23,7 @@ from app.services.backup_service import (
     restore_backup,
 )
 from app.services.content_cache import clear_cache, populate_cache_from_db
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.login_rate_limit import login_rate_limiter
 from app.services.maintenance_mode import maintenance_service
 from app.services.namespace_switcher import build_namespace_catalog
@@ -490,7 +491,14 @@ def open_namespace(
     port = _require_int_field(body, "port")
     https_port = _optional_int_field(body, "https_port")
     mcp_port = _require_int_field(body, "mcp_port")
-    try:
+    launch_capture = CapturedExceptionContext(
+        RuntimeError,
+        ValueError,
+        TypeError,
+        FileNotFoundError,
+    )
+    result = None
+    with launch_capture:
         result = open_or_launch_namespace(
             environ=os.environ,
             current_namespace=ACTIVE_NAMESPACE,
@@ -499,8 +507,11 @@ def open_namespace(
             https_port=https_port,
             mcp_port=mcp_port,
         )
-    except (RuntimeError, ValueError, TypeError, FileNotFoundError) as exc:
+    if launch_capture.captured_exception is not None:
+        exc = launch_capture.captured_exception
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Namespace launch did not return a result")
     return {
         "namespace": result.namespace,
         "action": result.action,
@@ -531,14 +542,24 @@ def delete_active_namespace(
         if not auth.verify_password(current_password):
             raise HTTPException(status_code=401, detail="Invalid password")
 
-    try:
+    delete_capture = CapturedExceptionContext(
+        RuntimeError,
+        ValueError,
+        TypeError,
+        FileNotFoundError,
+    )
+    result = None
+    with delete_capture:
         result = delete_current_namespace(
             environ=os.environ,
             current_namespace=ACTIVE_NAMESPACE,
             confirmation_text=confirmation_text,
         )
-    except (RuntimeError, ValueError, TypeError, FileNotFoundError) as exc:
+    if delete_capture.captured_exception is not None:
+        exc = delete_capture.captured_exception
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Namespace deletion did not return a result")
 
     return {
         "deleted_namespace": result.deleted_namespace,
@@ -552,9 +573,17 @@ def delete_active_namespace(
 def namespace_delete_job_status(
     job_id: str,
 ):
-    try:
+    job_record_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    job_record: dict[str, object] | None = None
+    with job_record_capture:
         job_record = load_namespace_deletion_job(job_id=job_id)
-    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+    if job_record_capture.captured_exception is not None:
+        exc = job_record_capture.captured_exception
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if job_record is None:
         raise HTTPException(status_code=404, detail=f"Namespace deletion job not found: {job_id}")

@@ -48,7 +48,7 @@ def test_list_backlinks_for_note_finds_embed_and_link_tokens(monkeypatch: pytest
     )
     monkeypatch.setattr(backlinks, "note_store", fake_store)
 
-    rows = backlinks.list_backlinks_for_note(target_id)
+    rows = backlinks.list_backlinks_for_note(target_id, None)
 
     assert [row["id"] for row in rows] == ["root-a", "child-b1"]
 
@@ -65,7 +65,7 @@ def test_list_backlinks_for_note_strips_reference_tokens_from_preview(monkeypatc
     )
     monkeypatch.setattr(backlinks, "note_store", fake_store)
 
-    rows = backlinks.list_backlinks_for_note(target_id)
+    rows = backlinks.list_backlinks_for_note(target_id, None)
 
     assert len(rows) == 1
     assert rows[0]["id"] == "ref-note"
@@ -78,7 +78,7 @@ def test_list_backlinks_for_note_raises_for_missing_target(monkeypatch: pytest.M
     monkeypatch.setattr(backlinks, "note_store", fake_store)
 
     with pytest.raises(KeyError):
-        backlinks.list_backlinks_for_note("does-not-exist")
+        backlinks.list_backlinks_for_note("does-not-exist", None)
 
 
 def test_list_backlinks_for_note_returns_multiple_rows_for_multiple_occurrences(
@@ -95,7 +95,7 @@ def test_list_backlinks_for_note_returns_multiple_rows_for_multiple_occurrences(
     )
     monkeypatch.setattr(backlinks, "note_store", fake_store)
 
-    rows = backlinks.list_backlinks_for_note(target_id)
+    rows = backlinks.list_backlinks_for_note(target_id, None)
 
     assert len(rows) == 2
     assert rows[0]["id"] == "source"

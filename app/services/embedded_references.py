@@ -84,7 +84,9 @@ def replace_reference_token_mode_in_html(
     if token.note_id != reference_note_id:
         return content_html, False
 
-    token_mode = "embed" if token.is_embed else "link"
+    token_mode = "link"
+    if token.is_embed:
+        token_mode = "embed"
     if token_mode == target_mode:
         return content_html, False
 
@@ -258,10 +260,15 @@ def _render_reference_block(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
 ) -> str:
-    mode = "embed" if is_embed else "link"
-    target_mode = "link" if is_embed else "embed"
-    toggle_symbol = "-" if is_embed else "+"
-    toggle_label = "Switch to link view" if is_embed else "Switch to embedded view"
+    mode = "link"
+    target_mode = "embed"
+    toggle_symbol = "+"
+    toggle_label = "Switch to embedded view"
+    if is_embed:
+        mode = "embed"
+        target_mode = "link"
+        toggle_symbol = "-"
+        toggle_label = "Switch to link view"
     escaped_reference_note_id = html.escape(reference_note_id, quote=True)
     escaped_host_note_id = html.escape(host_note_id, quote=True)
     note_exists = context.has_note(reference_note_id)

@@ -157,11 +157,9 @@ async function run(pageState) {
 
 async function main() {
     let deletedNamespace = 'this namespace';
-    try {
-        const pageState = requirePageState();
-        deletedNamespace = pageState.deletedNamespace;
-        await run(pageState);
-    } catch (error) {
+    const pageStateResult = await settleResult(() => requirePageState());
+    if (!pageStateResult.ok) {
+        const error = pageStateResult.error;
         const errorText = error instanceof Error
             ? error.message
             : 'Unknown namespace deletion status error';
@@ -169,8 +167,24 @@ async function main() {
             deletedNamespace,
             `Namespace deletion status page failed: ${errorText}`,
         );
+        return;
+    }
+    const pageState = pageStateResult.value;
+    deletedNamespace = pageState.deletedNamespace;
+    const runResult = await settleResult(() => run(pageState));
+    if (!runResult.ok) {
+        const error = runResult.error;
+        const errorText = error instanceof Error
+            ? error.message
+            : 'Unknown namespace deletion status error';
+        updatePageForFailure(
+            deletedNamespace,
+            `Namespace deletion status page failed: ${errorText}`,
+        );
+        return;
     }
 }
 
 
 void main();
+import { settleResult } from './modules/async-result.js';

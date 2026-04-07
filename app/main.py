@@ -26,6 +26,7 @@ from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import open_or_launch_namespace
@@ -377,7 +378,9 @@ def _build_namespace_deleted_links(*, job_id: str, deleted_namespace: str) -> li
         if namespace == deleted_namespace:
             continue
         query = urlencode({"job": job_id, "namespace": namespace})
-        link_meta = "Already running" if namespace == ACTIVE_NAMESPACE else "Open namespace"
+        link_meta = "Open namespace"
+        if namespace == ACTIVE_NAMESPACE:
+            link_meta = "Already running"
         links.append(
             {
                 "namespace": namespace,
@@ -447,9 +450,17 @@ async def namespace_deleted_page(request: Request):
     job_id = request.query_params.get("job")
     if not isinstance(job_id, str) or job_id.strip() == "":
         return HTMLResponse("Missing namespace deletion job", status_code=400)
-    try:
+    job_record_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    job_record: dict[str, object] | None = None
+    with job_record_capture:
         job_record = load_namespace_deletion_job(job_id=job_id)
-    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+    if job_record_capture.captured_exception is not None:
+        exc = job_record_capture.captured_exception
         return HTMLResponse(str(exc), status_code=400)
     if job_record is None:
         return HTMLResponse(f"Namespace deletion job not found: {job_id}", status_code=404)
@@ -486,9 +497,17 @@ async def namespace_deleted_open_page(request: Request):
         return HTMLResponse("Missing namespace deletion job", status_code=400)
     if not isinstance(namespace, str) or namespace.strip() == "":
         return HTMLResponse("Missing namespace", status_code=400)
-    try:
+    job_record_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    job_record: dict[str, object] | None = None
+    with job_record_capture:
         job_record = load_namespace_deletion_job(job_id=job_id)
-    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+    if job_record_capture.captured_exception is not None:
+        exc = job_record_capture.captured_exception
         return HTMLResponse(str(exc), status_code=400)
     if job_record is None:
         return HTMLResponse(f"Namespace deletion job not found: {job_id}", status_code=404)
@@ -497,7 +516,14 @@ async def namespace_deleted_open_page(request: Request):
     if namespace == job_record["deleted_namespace"]:
         return HTMLResponse("Deleted namespace is unavailable", status_code=400)
 
-    try:
+    launch_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    result = None
+    with launch_capture:
         port, https_port, mcp_port = _resolve_catalog_profile(namespace=namespace)
         result = open_or_launch_namespace(
             environ=os.environ,
@@ -507,8 +533,11 @@ async def namespace_deleted_open_page(request: Request):
             https_port=https_port,
             mcp_port=mcp_port,
         )
-    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as exc:
+    if launch_capture.captured_exception is not None:
+        exc = launch_capture.captured_exception
         return HTMLResponse(str(exc), status_code=400)
+    if result is None:
+        raise RuntimeError("Namespace launch did not return a result")
     return RedirectResponse(url=_build_force_reauth_url(url=result.url), status_code=307)
 
 

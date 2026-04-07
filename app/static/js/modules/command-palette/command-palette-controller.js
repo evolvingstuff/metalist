@@ -18,6 +18,7 @@ import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
+import { settleResult } from '../async-result.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -939,12 +940,12 @@ class CommandPaletteController {
             this.close();
         }
 
-        try {
+        const attachResult = await settleResult(async () => {
             const preferredNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
             const file = await pickFileForAttachment();
             if (file === null) {
                 ErrorHandler.showInfoBanner('Attach file canceled or no file was selected.', 5000);
-                return;
+                return null;
             }
 
             const result = await CommandGate.run('commandPalette.attachFileToCurrentNote', async () => {
@@ -960,7 +961,10 @@ class CommandPaletteController {
                     true,
                 );
             }
-        } catch (error) {
+            return result;
+        });
+        if (!attachResult.ok) {
+            const error = attachResult.error;
             if (
                 error instanceof Error
                 && (error.message.includes('File upload failed:') || error.message.includes('API call failed:'))

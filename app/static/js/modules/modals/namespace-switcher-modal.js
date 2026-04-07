@@ -2,6 +2,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { ErrorHandler } from '../error-handler.js';
+import { settleResult } from '../async-result.js';
 import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
 
 
@@ -171,7 +172,10 @@ export class NamespaceSwitcherModal extends BaseModal {
         const namespaces = Array.isArray(catalog.namespaces) ? catalog.namespaces : [];
         const currentNamespace = typeof catalog.current_namespace === 'string' ? catalog.current_namespace : 'default';
         const supportsHttps = Boolean(catalog.supports_https);
-        const selectedEntry = namespaces.find((entry) => entry.namespace === selectedNamespace) || null;
+        let selectedEntry = namespaces.find((entry) => entry.namespace === selectedNamespace);
+        if (selectedEntry === undefined) {
+            selectedEntry = null;
+        }
         const summaryHtml = this._renderSummary({
             mode,
             currentNamespace,
@@ -409,7 +413,7 @@ export class NamespaceSwitcherModal extends BaseModal {
             status: 'Loading namespaces...',
         });
         this.renderModalContent();
-        try {
+        const catalogResult = await settleResult(async () => {
             const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
             this._assertCatalogShape(catalog);
             const initialSelection = this._pickInitialExistingNamespace(catalog);
@@ -426,7 +430,9 @@ export class NamespaceSwitcherModal extends BaseModal {
                 error: '',
                 status: '',
             });
-        } catch (error) {
+        });
+        if (!catalogResult.ok) {
+            const error = catalogResult.error;
             const message = error instanceof Error ? error.message : 'Failed to load namespaces';
             this.updateModalState({
                 loading: false,
@@ -452,7 +458,10 @@ export class NamespaceSwitcherModal extends BaseModal {
 
     _buildStateForExistingNamespace(namespace, catalogOverride) {
         const state = this.getModalState();
-        const catalog = catalogOverride || state.catalog;
+        let catalog = state.catalog;
+        if (catalogOverride) {
+            catalog = catalogOverride;
+        }
         this._assertCatalogShape(catalog);
         if (typeof namespace !== 'string' || namespace.length === 0) {
             throw new Error('Existing namespace selection requires namespace');
@@ -490,7 +499,12 @@ export class NamespaceSwitcherModal extends BaseModal {
             throw new Error('Namespace switcher mode must be existing or create');
         }
         if (nextMode === 'existing') {
-            const stateForExisting = this._buildStateForExistingNamespace(this.getModalState().selectedNamespace || this._pickInitialExistingNamespace(this.getModalState().catalog));
+            const modalState = this.getModalState();
+            let selectedNamespace = modalState.selectedNamespace;
+            if (!selectedNamespace) {
+                selectedNamespace = this._pickInitialExistingNamespace(modalState.catalog);
+            }
+            const stateForExisting = this._buildStateForExistingNamespace(selectedNamespace, modalState.catalog);
             this.updateModalState({
                 mode: 'existing',
                 selectedNamespace: stateForExisting.selectedNamespace,
@@ -641,10 +655,9 @@ export class NamespaceSwitcherModal extends BaseModal {
     }
 
     async handleSubmit() {
-        let payload;
-        try {
-            payload = this._validateSubmission();
-        } catch (error) {
+        const payloadResult = await settleResult(() => this._validateSubmission());
+        if (!payloadResult.ok) {
+            const error = payloadResult.error;
             const message = error instanceof Error ? error.message : 'Invalid namespace settings';
             this.updateModalState({
                 error: message,
@@ -653,6 +666,7 @@ export class NamespaceSwitcherModal extends BaseModal {
             this.renderModalContent();
             return;
         }
+        const payload = payloadResult.value;
 
         const pendingTab = window.open('about:blank', '_blank');
         this._renderLoadingTab(pendingTab, payload.namespace);
@@ -663,7 +677,7 @@ export class NamespaceSwitcherModal extends BaseModal {
         });
         this.renderModalContent();
 
-        try {
+        const openResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.open, 'POST', payload);
             if (!response || typeof response !== 'object') {
                 throw new Error('Namespace open response missing body');
@@ -680,7 +694,9 @@ export class NamespaceSwitcherModal extends BaseModal {
                 ErrorHandler.showInfoBanner(response.message, 5000);
             }
             this.close();
-        } catch (error) {
+        });
+        if (!openResult.ok) {
+            const error = openResult.error;
             if (pendingTab && !pendingTab.closed) {
                 pendingTab.close();
             }
@@ -698,14 +714,14 @@ export class NamespaceSwitcherModal extends BaseModal {
         if (!pendingTab || pendingTab.closed) {
             return;
         }
-        try {
+        Promise.resolve().then(() => {
             const loadingHtml = buildNamespaceLoadingPageHtml(namespace);
             pendingTab.document.open();
             pendingTab.document.write(loadingHtml);
             pendingTab.document.close();
-        } catch (error) {
+        }).catch((error) => {
             console.warn('Failed to render namespace loading tab:', error);
-        }
+        });
     }
 
     _buildAuthHeaders(includeContentType) {

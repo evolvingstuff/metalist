@@ -133,7 +133,11 @@ def resolve_search_scope(
         )
 
     ordered_root_ids = note_store.get_children(None)
-    has_positive_terms = bool(parsed.required_tags or parsed.required_text)
+    has_positive_terms = False
+    if parsed.required_tags:
+        has_positive_terms = True
+    if parsed.required_text:
+        has_positive_terms = True
     direct_uuid_note_ids = _extract_direct_uuid_note_ids(parsed)
 
     if has_positive_terms:

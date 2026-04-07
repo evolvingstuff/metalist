@@ -1680,21 +1680,19 @@ async function submitShellInput(outputElement) {
 
     inputElement.disabled = true;
     sendButton.disabled = true;
-    try {
-        const snapshot = await sendShellInput(noteId, runId, text, true);
-        inputElement.value = '';
-        const shellElement = outputElement.closest(SHELL_SELECTOR);
-        if (!(shellElement instanceof HTMLElement)) {
-            throw new Error('Shell output missing parent shell element');
-        }
-        renderShellSnapshot(outputElement, shellElement, snapshot);
-        inputElement.focus();
-    } finally {
+    const snapshot = await sendShellInput(noteId, runId, text, true).finally(() => {
         if (outputElement.dataset.status === 'running') {
             inputElement.disabled = false;
             sendButton.disabled = false;
         }
+    });
+    inputElement.value = '';
+    const shellElement = outputElement.closest(SHELL_SELECTOR);
+    if (!(shellElement instanceof HTMLElement)) {
+        throw new Error('Shell output missing parent shell element');
     }
+    renderShellSnapshot(outputElement, shellElement, snapshot);
+    inputElement.focus();
 }
 
 async function runShellSession(shellElement, outputElement, noteId) {

@@ -6,6 +6,35 @@ import mcp_client
 import pytest
 
 
+_DEFAULT_PLANNER_SEED_TAG_LIMIT = mcp_client._DEFAULT_PLANNER_SEED_TAG_LIMIT
+_DEFAULT_PLANNER_TAG_COUNT_MODE = mcp_client._DEFAULT_PLANNER_TAG_COUNT_MODE
+
+
+def _run_agentic_request(**kwargs):
+    return mcp_client._run_agentic_request(
+        planner_seed_tag_limit=_DEFAULT_PLANNER_SEED_TAG_LIMIT,
+        planner_tag_count_mode=_DEFAULT_PLANNER_TAG_COUNT_MODE,
+        progress_callback=None,
+        **kwargs,
+    )
+
+
+def _run_rewrite_request(**kwargs):
+    return mcp_client._run_rewrite_request(
+        progress_callback=None,
+        status_callback=None,
+        **kwargs,
+    )
+
+
+def _patch_no_relevance_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        mcp_client,
+        "_ollama_chat_text",
+        lambda *, ollama_chat_url, model, messages, num_ctx: "NONE",
+    )
+
+
 def test_reset_local_ollama_server_skips_when_pkill_missing(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -84,19 +113,18 @@ def test_agent_error_action_returns_structured_failure(monkeypatch) -> None:
         ),
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="What is my birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="llama3.1",
         max_steps=3,
         planner_only=False,
-        progress_callback=None,
     )
 
     assert result["ok"] is False
     assert "cannot determine birthday" in result["answer"]
-    assert any(step.get("action") == "agent_error" for step in result["steps"])
+    assert any(step["action"] == "agent_error" for step in result["steps"])
 
 
 def test_unknown_agent_action_returns_structured_failure(monkeypatch) -> None:
@@ -125,19 +153,18 @@ def test_unknown_agent_action_returns_structured_failure(monkeypatch) -> None:
         ),
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="What is my birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="llama3.1",
         max_steps=3,
         planner_only=False,
-        progress_callback=None,
     )
 
     assert result["ok"] is False
     assert "unsupported action" in result["answer"]
-    assert any(step.get("action") == "invalid_decision" for step in result["steps"])
+    assert any(step["action"] == "invalid_decision" for step in result["steps"])
 
 
 def test_agent_hypothesizes_tags_before_agent_loop(monkeypatch) -> None:
@@ -187,14 +214,13 @@ def test_agent_hypothesizes_tags_before_agent_loop(monkeypatch) -> None:
         ),
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="When is my Dad's birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="llama3.1",
         max_steps=3,
         planner_only=False,
-        progress_callback=None,
     )
 
     assert result["ok"] is True
@@ -255,14 +281,13 @@ def test_planner_only_returns_after_model_plan(monkeypatch) -> None:
         },
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="When is my dad's birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="qwen2.5:7b-instruct",
         max_steps=3,
         planner_only=True,
-        progress_callback=None,
     )
 
     assert result["ok"] is True
@@ -308,12 +333,11 @@ def test_normalize_expression_plan_filters_cross_language_when_query_is_ascii() 
     )
 
     assert normalized["expressions"] == [
-        {"type": "phrase", "value": "social security number"},
         {"type": "regex", "pattern": "[0-9]{3}-[0-9]{2}-[0-9]{4}", "flags": "ims"},
     ]
 
 
-def test_normalize_expression_plan_rejects_only_conjunctive_label_value_regex() -> None:
+def test_normalize_expression_plan_allows_conjunctive_label_value_regex() -> None:
     payload = {
         "reasoning": "Single combined regex",
         "expressions": [
@@ -325,13 +349,14 @@ def test_normalize_expression_plan_rejects_only_conjunctive_label_value_regex() 
         ],
     }
 
-    with pytest.raises(ValueError, match="over-constrains label/value co-location"):
-        mcp_client._normalize_expression_plan(
-            payload=payload,
-            max_expressions=20,
-            min_expressions=1,
-            source_message="What is my id number?",
-        )
+    normalized = mcp_client._normalize_expression_plan(
+        payload=payload,
+        max_expressions=20,
+        min_expressions=1,
+        source_message="What is my id number?",
+    )
+
+    assert normalized["expressions"] == payload["expressions"]
 
 
 def test_normalize_expression_plan_accepts_mixed_regex_when_standalone_value_regex_present() -> None:
@@ -386,7 +411,7 @@ def test_normalize_expression_plan_filters_question_like_phrases() -> None:
         "reasoning": "Question-style phrase should be dropped.",
         "expressions": [
             {"type": "phrase", "value": "When is my mom's birthday?"},
-            {"type": "phrase", "value": "mom's birthday"},
+            {"type": "phrase", "value": "mom birthday"},
         ],
     }
 
@@ -398,7 +423,7 @@ def test_normalize_expression_plan_filters_question_like_phrases() -> None:
     )
 
     assert normalized["expressions"] == [
-        {"type": "phrase", "value": "mom's birthday"},
+        {"type": "phrase", "value": "mom birthday"},
     ]
 
 
@@ -417,7 +442,9 @@ def test_normalize_expression_plan_allows_phrase_only_for_structured_value_queri
         min_expressions=1,
         source_message="What is my social security number?",
     )
-    assert normalized["expressions"] == payload["expressions"]
+    assert normalized["expressions"] == [
+        {"type": "phrase", "value": "ssn"},
+    ]
 
 
 def test_normalize_expression_plan_allows_non_numeric_regex_for_structured_value_queries() -> None:
@@ -436,10 +463,13 @@ def test_normalize_expression_plan_allows_non_numeric_regex_for_structured_value
         min_expressions=1,
         source_message="What is my social security number?",
     )
-    assert normalized["expressions"] == payload["expressions"]
+    assert normalized["expressions"] == [
+        {"type": "regex", "pattern": "(?:social security number|ssn)", "flags": "ims"},
+        {"type": "regex", "pattern": "identifier|account number", "flags": "ims"},
+    ]
 
 
-def test_normalize_expression_plan_rejects_regexy_near_anchors() -> None:
+def test_normalize_expression_plan_keeps_regexy_near_anchors() -> None:
     payload = {
         "reasoning": "Near with regex syntax should be dropped.",
         "expressions": [
@@ -454,9 +484,7 @@ def test_normalize_expression_plan_rejects_regexy_near_anchors() -> None:
         min_expressions=1,
         source_message="When is my mom's birthday?",
     )
-    assert normalized["expressions"] == [
-        {"type": "near", "left": "mom", "right": "birthday", "window_chars": 200},
-    ]
+    assert normalized["expressions"] == payload["expressions"]
 
 
 def test_match_hypothesized_tags_to_catalog_returns_exact_and_fuzzy() -> None:
@@ -631,14 +659,13 @@ def test_planner_only_exact_matches_include_seed_membership_split(monkeypatch) -
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="When did I sleep and talk to dad?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="qwen2.5:7b-instruct",
         max_steps=3,
         planner_only=True,
-        progress_callback=None,
     )
 
     assert result["ok"] is True
@@ -685,19 +712,18 @@ def test_invalid_decision_gets_one_repair_attempt(monkeypatch) -> None:
         ),
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="When is my dad's birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="llama3.1",
         max_steps=3,
         planner_only=False,
-        progress_callback=None,
     )
 
     assert result["ok"] is True
     assert result["answer"] == "Done"
-    assert any(step.get("action") == "invalid_decision" for step in result["steps"])
+    assert any(step["action"] == "invalid_decision" for step in result["steps"])
 
 
 def test_action_as_tool_name_is_accepted(monkeypatch) -> None:
@@ -775,20 +801,19 @@ def test_action_as_tool_name_is_accepted(monkeypatch) -> None:
         ),
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="When is my dad's birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="qwen2.5:7b-instruct",
         max_steps=3,
         planner_only=False,
-        progress_callback=None,
     )
 
     assert result["ok"] is True
     assert result["answer"] == "No exact match found."
     assert calls["search_notes"] == 1
-    tool_steps = [step for step in result["steps"] if step.get("action") == "tool"]
+    tool_steps = [step for step in result["steps"] if step["action"] == "tool"]
     assert len(tool_steps) >= 1
     assert tool_steps[0]["tool_name"] == "search_notes"
 
@@ -1040,14 +1065,13 @@ def test_duplicate_semantic_search_notes_call_is_blocked(monkeypatch) -> None:
         ),
     )
 
-    result = mcp_client._run_agentic_request(
+    result = _run_agentic_request(
         user_message="When is my dad's birthday?",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
         ollama_chat_url="http://127.0.0.1:11434/api/chat",
         model="qwen2.5:7b-instruct",
         max_steps=5,
         planner_only=False,
-        progress_callback=None,
     )
 
     assert result["ok"] is True
@@ -1055,7 +1079,7 @@ def test_duplicate_semantic_search_notes_call_is_blocked(monkeypatch) -> None:
     tool_steps = [
         step
         for step in result["steps"]
-        if step.get("action") == "tool" and step.get("tool_name") == "search_notes"
+        if step["action"] == "tool" and step["tool_name"] == "search_notes"
     ]
     assert len(tool_steps) == 2
     assert tool_steps[1]["tool_response"]["ok"] is False
@@ -1082,6 +1106,7 @@ def test_compact_json_payload_keeps_scalar_leaf_values_at_depth_zero() -> None:
 
 
 def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1178,7 +1203,7 @@ def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(m
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="When is my dad's birthday?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1188,29 +1213,30 @@ def test_run_rewrite_global_universe_uses_count_notes_and_skips_universe_stage(m
         max_expressions=5,
         hydrate_top_k=20,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    assert result["steps"][0]["action"] == "run_config"
-    assert result["steps"][1]["action"] == "expression_plan"
     assert all(step["action"] != "universe_resolve" for step in result["steps"])
-
-    run_config_data = result["steps"][0]["tool_response"]["data"]
+    run_config_data = result["run_config"]
     assert run_config_data["universe_mode"] == "global"
     assert run_config_data["universe_boundary_tool"] == "count_notes"
     assert run_config_data["universe_note_count"] == 500
     assert isinstance(result["total_execution_ms"], float)
     assert result["total_execution_ms"] >= 0.0
 
-    expression_step = next(
-        step for step in result["steps"] if step.get("action") == "expression_execute"
+    relevance_prompt_step = next(
+        step
+        for step in result["steps"]
+        if step["action"] == "loop_iteration"
+        and step["stats"]["phase"] == "relevance_prompt"
     )
-    assert expression_step["arguments"]["query"] == '"dad birthday"'
+    first_query = relevance_prompt_step["tool_response"]["data"]["queries_executed"][0]
+    assert first_query["arguments"]["query"] == '"dad birthday"'
     assert tool_calls[0][0] == "count_notes"
 
 
 def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1339,7 +1365,7 @@ def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="When is my dad's birthday?",
         search_context_query="work-journal -private",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1349,24 +1375,28 @@ def test_run_rewrite_scoped_universe_uses_search_context_boundary(monkeypatch) -
         max_expressions=5,
         hydrate_top_k=20,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    run_config_data = result["steps"][0]["tool_response"]["data"]
+    run_config_data = result["run_config"]
     assert run_config_data["universe_mode"] == "scoped"
     assert run_config_data["universe_boundary_tool"] == "search_note_ids"
     assert run_config_data["universe_boundary_arguments"]["query"] == "work-journal -private"
     assert isinstance(result["total_execution_ms"], float)
     assert result["total_execution_ms"] >= 0.0
 
-    expression_step = next(
-        step for step in result["steps"] if step.get("action") == "expression_execute"
+    relevance_prompt_step = next(
+        step
+        for step in result["steps"]
+        if step["action"] == "loop_iteration"
+        and step["stats"]["phase"] == "relevance_prompt"
     )
-    assert expression_step["stats"]["scoped_match_count"] == 1
+    first_query = relevance_prompt_step["tool_response"]["data"]["queries_executed"][0]
+    assert first_query["scoped_match_count"] == 1
 
 
 def test_run_rewrite_expression_plan_repairs_underproduced_model_output(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1447,7 +1477,7 @@ def test_run_rewrite_expression_plan_repairs_underproduced_model_output(monkeypa
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="When is my mom's birthday?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1457,22 +1487,22 @@ def test_run_rewrite_expression_plan_repairs_underproduced_model_output(monkeypa
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    run_config = result["steps"][0]["tool_response"]["data"]
+    run_config = result["run_config"]
     assert run_config["expression_target_count"] == 8
     assert "expression_min_required" not in run_config
     assert run_config["expression_probe_points"] == [4, 8]
 
-    first_plan = result["steps"][1]
-    assert first_plan["action"] == "expression_plan"
-    assert first_plan["model_payload"]["accepted"] is True
-    assert all(step.get("action") != "expression_plan_repair" for step in result["steps"])
+    first_plan = result["steps"][0]
+    assert first_plan["action"] == "loop_iteration"
+    assert first_plan["stats"]["phase"] == "planning_prompt"
+    assert all(step["action"] != "expression_plan_repair" for step in result["steps"])
 
 
 def test_run_rewrite_uses_partial_model_plan_instead_of_fallback(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1484,9 +1514,12 @@ def test_run_rewrite_uses_partial_model_plan_instead_of_fallback(monkeypatch) ->
             (
                 {
                     "reasoning": "Initial short draft.",
-                    "expressions": [{"type": "phrase", "value": "social security number"}],
+                    "expressions": [
+                        {"type": "phrase", "value": "social security number"},
+                        {"type": "phrase", "value": "ssn"},
+                    ],
                 },
-                '{"reasoning":"Initial short draft.","expressions":[{"type":"phrase","value":"social security number"}]}',
+                '{"reasoning":"Initial short draft.","expressions":[{"type":"phrase","value":"social security number"},{"type":"phrase","value":"ssn"}]}',
             ),
             (
                 {
@@ -1542,7 +1575,7 @@ def test_run_rewrite_uses_partial_model_plan_instead_of_fallback(monkeypatch) ->
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="What is my social security number?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1552,16 +1585,17 @@ def test_run_rewrite_uses_partial_model_plan_instead_of_fallback(monkeypatch) ->
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    assert all(step.get("action") != "expression_plan_repair" for step in result["steps"])
-    assert all(step.get("action") != "expression_plan_partial_accept" for step in result["steps"])
-    assert all(step.get("action") != "expression_plan_fallback" for step in result["steps"])
+    assert all(step["action"] != "expression_plan_repair" for step in result["steps"])
+    assert all(step["action"] != "expression_plan_partial_accept" for step in result["steps"])
+    assert all(step["action"] != "expression_plan_fallback" for step in result["steps"])
+    assert result["expression_stats"][0]["expression_label"] == 'phrase:"ssn"'
 
 
-def test_run_rewrite_fails_fast_when_planner_returns_no_usable_expressions(monkeypatch) -> None:
+def test_run_rewrite_returns_empty_relevance_pass_when_planner_returns_no_usable_expressions(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1599,7 +1633,7 @@ def test_run_rewrite_fails_fast_when_planner_returns_no_usable_expressions(monke
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="What is my social security number?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1609,15 +1643,21 @@ def test_run_rewrite_fails_fast_when_planner_returns_no_usable_expressions(monke
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
-    assert result["ok"] is False
-    assert "Expression planning failed" in result["answer"]
-    assert any(step.get("action") == "expression_plan_error" for step in result["steps"])
+    assert result["ok"] is True
+    assert "Relevant notes: 0 / 0." in result["answer"]
+    relevance_prompt_step = next(
+        step
+        for step in result["steps"]
+        if step["action"] == "loop_iteration"
+        and step["stats"]["phase"] == "relevance_prompt"
+    )
+    assert relevance_prompt_step["tool_response"]["data"]["queries_executed"] == []
 
 
-def test_run_rewrite_prioritizes_regex_before_phrase_for_structured_queries(monkeypatch) -> None:
+def test_run_rewrite_executes_regex_when_long_structured_phrase_is_dropped(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1673,6 +1713,9 @@ def test_run_rewrite_prioritizes_regex_before_phrase_for_structured_queries(monk
             return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
         if tool_name == "search_notes_regex":
             expression_tool_order.append(tool_name)
+            scope_note_ids = []
+            if "scope_note_ids" in arguments:
+                scope_note_ids = arguments["scope_note_ids"]
             return {
                 "result": {
                     "structuredContent": {
@@ -1682,27 +1725,7 @@ def test_run_rewrite_prioritizes_regex_before_phrase_for_structured_queries(monk
                             "flags": arguments["flags"],
                             "regex_engine": arguments["regex_engine"],
                             "target": arguments["target"],
-                            "scope_count": len(arguments.get("scope_note_ids", [])),
-                            "limit": arguments["limit"],
-                            "offset": arguments["offset"],
-                            "total_matches": 1,
-                            "returned_count": 1,
-                            "note_ids": ["n1"],
-                        },
-                    }
-                }
-            }
-        if tool_name == "search_notes_regex":
-            return {
-                "result": {
-                    "structuredContent": {
-                        "ok": True,
-                        "data": {
-                            "pattern": arguments["pattern"],
-                            "flags": arguments["flags"],
-                            "regex_engine": arguments["regex_engine"],
-                            "target": arguments["target"],
-                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "scope_count": len(scope_note_ids),
                             "limit": arguments["limit"],
                             "offset": arguments["offset"],
                             "total_matches": 1,
@@ -1763,7 +1786,7 @@ def test_run_rewrite_prioritizes_regex_before_phrase_for_structured_queries(monk
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="What is my social security number?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1773,15 +1796,14 @@ def test_run_rewrite_prioritizes_regex_before_phrase_for_structured_queries(monk
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    assert len(expression_tool_order) >= 2
-    assert expression_tool_order[0] == "search_notes_regex"
+    assert expression_tool_order == ["search_notes_regex"]
 
 
-def test_run_rewrite_fails_fast_on_synthesis_access_refusal_with_evidence(monkeypatch) -> None:
+def test_run_rewrite_completes_relevance_filter_without_synthesis_stage(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1835,7 +1857,7 @@ def test_run_rewrite_fails_fast_on_synthesis_access_refusal_with_evidence(monkey
                             "flags": arguments["flags"],
                             "regex_engine": arguments["regex_engine"],
                             "target": arguments["target"],
-                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "scope_count": len(arguments["scope_note_ids"]),
                             "limit": arguments["limit"],
                             "offset": arguments["offset"],
                             "total_matches": 1,
@@ -1867,7 +1889,7 @@ def test_run_rewrite_fails_fast_on_synthesis_access_refusal_with_evidence(monkey
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="What is my social security number?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1877,15 +1899,15 @@ def test_run_rewrite_fails_fast_on_synthesis_access_refusal_with_evidence(monkey
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
-    assert result["ok"] is False
-    assert "Synthesis failed" in result["answer"]
-    assert any(step.get("action") == "synthesis_error" for step in result["steps"])
+    assert result["ok"] is True
+    assert "Relevant notes: 0 / 1." in result["answer"]
+    assert all(step["action"] != "synthesis_error" for step in result["steps"])
 
 
 def test_run_rewrite_returns_no_evidence_without_synthesis(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -1946,7 +1968,7 @@ def test_run_rewrite_returns_no_evidence_without_synthesis(monkeypatch) -> None:
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="When is my mom's birthday?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -1956,15 +1978,15 @@ def test_run_rewrite_returns_no_evidence_without_synthesis(monkeypatch) -> None:
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    assert "No matching evidence found" in result["answer"]
-    assert any(step.get("action") == "no_evidence" for step in result["steps"])
+    assert "Relevant notes: 0 / 0." in result["answer"]
+    assert any(step["action"] == "evidence_relevance_filter" for step in result["steps"])
 
 
-def test_run_rewrite_skips_duplicate_compiled_queries_and_tracks_history(monkeypatch) -> None:
+def test_run_rewrite_skips_duplicate_compiled_queries(monkeypatch) -> None:
+    _patch_no_relevance_filter(monkeypatch)
     monkeypatch.setattr(
         mcp_client,
         "ensure_ollama_model_available",
@@ -2025,6 +2047,9 @@ def test_run_rewrite_skips_duplicate_compiled_queries_and_tracks_history(monkeyp
             return {"result": {"structuredContent": {"ok": True, "data": {"total_notes": 100}}}}
         if tool_name == "search_notes_regex":
             regex_calls.append(dict(arguments))
+            scope_note_ids = []
+            if "scope_note_ids" in arguments:
+                scope_note_ids = arguments["scope_note_ids"]
             return {
                 "result": {
                     "structuredContent": {
@@ -2034,7 +2059,7 @@ def test_run_rewrite_skips_duplicate_compiled_queries_and_tracks_history(monkeyp
                             "flags": arguments["flags"],
                             "regex_engine": arguments["regex_engine"],
                             "target": arguments["target"],
-                            "scope_count": len(arguments.get("scope_note_ids", [])),
+                            "scope_count": len(scope_note_ids),
                             "limit": arguments["limit"],
                             "offset": arguments["offset"],
                             "total_matches": 0,
@@ -2048,7 +2073,7 @@ def test_run_rewrite_skips_duplicate_compiled_queries_and_tracks_history(monkeyp
 
     monkeypatch.setattr(mcp_client, "_tools_call", fake_tools_call)
 
-    result = mcp_client._run_rewrite_request(
+    result = _run_rewrite_request(
         user_message="Where are 123 and 456 near each other?",
         search_context_query="",
         mcp_url="http://127.0.0.1:8000/api2/mcp",
@@ -2058,28 +2083,19 @@ def test_run_rewrite_skips_duplicate_compiled_queries_and_tracks_history(monkeyp
         max_expressions=20,
         hydrate_top_k=10,
         regex_engine="python-re",
-        progress_callback=None,
     )
 
     assert result["ok"] is True
-    assert "No matching evidence found" in result["answer"]
+    assert "Relevant notes: 0 / 0." in result["answer"]
     assert len(regex_calls) == 1
-    assert any(
-        step.get("action") == "expression_execute_skip_duplicate_query"
+    relevance_prompt_step = next(
+        step
         for step in result["steps"]
+        if step["action"] == "loop_iteration"
+        and step["stats"]["phase"] == "relevance_prompt"
     )
-
-    reasoning_steps = [
-        step for step in result["steps"] if step.get("action") == "iteration_reasoning"
-    ]
-    assert len(reasoning_steps) == 1
-    messages = reasoning_steps[0]["model_payload"]["messages"]
-    assert isinstance(messages, list)
-    assert len(messages) >= 2
-    user_payload = json.loads(messages[1]["content"])
-    assert "already_executed_queries" in user_payload
-    assert isinstance(user_payload["already_executed_queries"], list)
-    assert len(user_payload["already_executed_queries"]) == 1
+    duplicate_queries = relevance_prompt_step["tool_response"]["data"]["duplicate_queries_skipped"]
+    assert len(duplicate_queries) == 1
 
 
 def test_extract_synthesis_answer_supports_nested_payloads() -> None:
@@ -2103,6 +2119,7 @@ def test_build_rewrite_synthesis_messages_blocks_access_disclaimer_pattern() -> 
             "expressions": [{"type": "phrase", "value": "ssn"}],
         },
         expression_stats=[],
+        evidence_notes=None,
         hydrated_notes=[
             {
                 "note_id": "n1",

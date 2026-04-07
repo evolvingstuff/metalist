@@ -71,8 +71,12 @@ def _build_preferred_case_variant_map(*, exact_tag_counts: dict[str, int]) -> di
             continue
         if candidate_count < current_count:
             continue
-        current_penalty = 0 if current == current.casefold() else 1
-        candidate_penalty = 0 if term == term.casefold() else 1
+        current_penalty = 1
+        if current == current.casefold():
+            current_penalty = 0
+        candidate_penalty = 1
+        if term == term.casefold():
+            candidate_penalty = 0
         if candidate_penalty < current_penalty:
             preferred[term_casefold] = term
             continue

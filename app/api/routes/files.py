@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
@@ -41,7 +42,7 @@ def _require_bearer_token(request: Request) -> str:
 @router.post("/upload", response_model=UploadedFileResponse)
 async def upload_file_endpoint(
     request: Request,
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
 ):
     token = _require_bearer_token(request)
     if not isinstance(file.filename, str) or file.filename == "":

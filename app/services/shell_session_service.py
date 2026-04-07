@@ -6,9 +6,11 @@ import subprocess
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, TextIO
+
+from app.services.exception_capture import CapturedExceptionContext
 
 
 _STATUS_RUNNING = "running"
@@ -23,12 +25,16 @@ def _resolve_shell_command(*, script_text: str) -> list[str]:
         raise ValueError("script_text must be a non-empty string")
 
     if os.name == "nt":
-        comspec = os.environ.get("COMSPEC")
+        comspec = None
+        if "COMSPEC" in os.environ:
+            comspec = os.environ["COMSPEC"]
         if not isinstance(comspec, str) or comspec.strip() == "":
             raise RuntimeError("COMSPEC is required for shell execution on Windows")
         return [comspec, "/d", "/s", "/c", script_text]
 
-    shell_path = os.environ.get("SHELL")
+    shell_path = None
+    if "SHELL" in os.environ:
+        shell_path = os.environ["SHELL"]
     if not isinstance(shell_path, str) or shell_path.strip() == "":
         detected_shell = shutil.which("bash")
         if detected_shell is None:
@@ -50,16 +56,16 @@ class _ShellRunRecord:
     process: subprocess.Popen[str]
     timeout_seconds: int
     started_at_monotonic: float
-    stdout_chunks: list[str] = field(default_factory=list)
-    stderr_chunks: list[str] = field(default_factory=list)
-    status: str = _STATUS_RUNNING
-    exit_code: int = -1
-    error_message: str = ""
-    finished_at_monotonic: float = 0.0
-    lock: threading.RLock = field(default_factory=threading.RLock)
-    stdout_thread: threading.Thread | None = None
-    stderr_thread: threading.Thread | None = None
-    monitor_thread: threading.Thread | None = None
+    stdout_chunks: list[str]
+    stderr_chunks: list[str]
+    status: str
+    exit_code: int
+    error_message: str
+    finished_at_monotonic: float
+    lock: threading.RLock
+    stdout_thread: threading.Thread | None
+    stderr_thread: threading.Thread | None
+    monitor_thread: threading.Thread | None
 
     def snapshot(self) -> Dict[str, object]:
         with self.lock:
@@ -126,6 +132,16 @@ class ShellSessionService:
             process=process,
             timeout_seconds=timeout_seconds,
             started_at_monotonic=started_at,
+            stdout_chunks=[],
+            stderr_chunks=[],
+            status=_STATUS_RUNNING,
+            exit_code=-1,
+            error_message="",
+            finished_at_monotonic=0.0,
+            lock=threading.RLock(),
+            stdout_thread=None,
+            stderr_thread=None,
+            monitor_thread=None,
         )
 
         stdout_thread = threading.Thread(
@@ -217,13 +233,19 @@ class ShellSessionService:
 
     def _monitor_run(self, *, record: _ShellRunRecord) -> None:
         timed_out = False
-        timeout = None if record.timeout_seconds == 0 else record.timeout_seconds
-        try:
+        timeout = None
+        if record.timeout_seconds != 0:
+            timeout = record.timeout_seconds
+        wait_capture = CapturedExceptionContext(subprocess.TimeoutExpired)
+        return_code: int | None = None
+        with wait_capture:
             return_code = record.process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
+        if wait_capture.captured_exception is not None:
             timed_out = True
             record.process.kill()
             return_code = record.process.wait()
+        if return_code is None:
+            raise RuntimeError("Shell process wait did not return an exit code")
 
         stdout_thread = record.stdout_thread
         if stdout_thread is not None:

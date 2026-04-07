@@ -38,7 +38,7 @@ def test_backlinks_search_scope_does_not_build_full_view_state(
 
     captured: dict[str, object] = {}
 
-    def _fake_list_backlinks_for_note(note_id: str, source_note_ids: set[str] | None = None):
+    def _fake_list_backlinks_for_note(note_id: str, source_note_ids: set[str] | None):
         captured["note_id"] = note_id
         captured["source_note_ids"] = source_note_ids
         return [{"id": "source-a", "preview": "hello"}]

@@ -43,7 +43,12 @@ class _BlockingPopen:
         self._returncode = returncode
         self.kill_called = False
 
-    def wait(self, timeout: float | None = None) -> int:
+    def wait(self, *args, **kwargs) -> int:
+        timeout = None
+        if len(args) > 0:
+            timeout = args[0]
+        if "timeout" in kwargs:
+            timeout = kwargs["timeout"]
         if timeout is None:
             self._wait_event.wait()
             return self._returncode
@@ -65,7 +70,12 @@ class _ImmediateTimeoutPopen:
         self.kill_called = False
         self._timed_out = False
 
-    def wait(self, timeout: float | None = None) -> int:
+    def wait(self, *args, **kwargs) -> int:
+        timeout = None
+        if len(args) > 0:
+            timeout = args[0]
+        if "timeout" in kwargs:
+            timeout = kwargs["timeout"]
         if timeout is not None and not self._timed_out:
             self._timed_out = True
             raise subprocess.TimeoutExpired(cmd=["fake-shell"], timeout=timeout)

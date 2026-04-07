@@ -20,15 +20,23 @@ def _select_preferred_case_variants(*, terms: Iterable[str], exact_tag_counts: D
             by_casefold[term_casefold] = term
             continue
         current = by_casefold[term_casefold]
-        current_count = exact_tag_counts[current] if current in exact_tag_counts else 0
-        candidate_count = exact_tag_counts[term] if term in exact_tag_counts else 0
+        current_count = 0
+        if current in exact_tag_counts:
+            current_count = exact_tag_counts[current]
+        candidate_count = 0
+        if term in exact_tag_counts:
+            candidate_count = exact_tag_counts[term]
         if candidate_count > current_count:
             by_casefold[term_casefold] = term
             continue
         if candidate_count < current_count:
             continue
-        current_penalty = 0 if current == current.casefold() else 1
-        candidate_penalty = 0 if term == term.casefold() else 1
+        current_penalty = 1
+        if current == current.casefold():
+            current_penalty = 0
+        candidate_penalty = 1
+        if term == term.casefold():
+            candidate_penalty = 0
         if candidate_penalty < current_penalty:
             by_casefold[term_casefold] = term
             continue

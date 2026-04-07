@@ -2077,7 +2077,9 @@ async function attachFilesAsReferenceTokens(files, options) {
         });
         insertedAnything = true;
         currentTargetNoteId = ModeContext.currentNoteId;
-        createdTopNote = createdTopNote || createTopNote;
+        if (createTopNote) {
+            createdTopNote = true;
+        }
         i += 1;
     }
 
@@ -2401,7 +2403,9 @@ async function processDroppedFiles(droppedFiles, options) {
                 });
                 insertedAnything = true;
                 currentTargetNoteId = ModeContext.currentNoteId;
-                createdTopNote = createdTopNote || createTopNote;
+                if (createTopNote) {
+                    createdTopNote = true;
+                }
             } else {
                 if (createTopNote && !createdTopNote && currentTargetNoteId === null) {
                     await createNoteAtTop();
@@ -2411,7 +2415,9 @@ async function processDroppedFiles(droppedFiles, options) {
                 }
 
                 const inserted = await embedDroppedImageFiles([file], pendingSelectionRange);
-                insertedAnything = insertedAnything || inserted;
+                if (inserted) {
+                    insertedAnything = true;
+                }
                 pendingSelectionRange = null;
                 currentTargetNoteId = ModeContext.currentNoteId;
             }
@@ -2426,13 +2432,21 @@ async function processDroppedFiles(droppedFiles, options) {
             });
             insertedAnything = true;
             currentTargetNoteId = ModeContext.currentNoteId;
-            createdTopNote = createdTopNote || createTopNote;
+            if (createTopNote) {
+                createdTopNote = true;
+            }
         }
 
         i += 1;
     }
 
-    const shouldSaveAfterDrop = createTopNote || sawAttachedFile;
+    let shouldSaveAfterDrop = false;
+    if (createTopNote) {
+        shouldSaveAfterDrop = true;
+    }
+    if (sawAttachedFile) {
+        shouldSaveAfterDrop = true;
+    }
     if (
         shouldSaveAfterDrop
         && ModeContext.isDirty

@@ -44,6 +44,7 @@ _DEFAULT_OLLAMA_AUTOPULL = True
 _DEFAULT_OLLAMA_PULL_TIMEOUT_SECONDS = 30
 _DEFAULT_OLLAMA_TEMPERATURE = 0.0
 _DEFAULT_OLLAMA_CONTEXT_LENGTH = 16384
+_DEFAULT_POST_JSON_TIMEOUT_SECONDS = 60
 _PLANNER_MAX_PHRASE_TOKENS = 2
 _MAX_INVALID_DECISION_REPAIRS = 2
 _OLLAMA_CHAT_TIMEOUT_SECONDS = 600
@@ -155,9 +156,59 @@ def _decode_error_detail(*, raw_error_payload: bytes) -> str:
     return raw_error_payload.decode("utf-8", errors="replace").strip()
 
 
-def _post_json(*, url: str, payload: dict, timeout_seconds: int | None = None) -> dict | None:
-    if timeout_seconds is None:
-        timeout_seconds = 60
+def _mapping_value_or_none(*, mapping: dict, key: str) -> object | None:
+    if not isinstance(mapping, dict):
+        raise TypeError("mapping must be an object")
+    if not isinstance(key, str) or key == "":
+        raise TypeError("key must be a non-empty string")
+    if key in mapping:
+        return mapping[key]
+    return None
+
+
+def _mapping_dict_or_none(*, mapping: dict, key: str) -> dict | None:
+    value = _mapping_value_or_none(mapping=mapping, key=key)
+    if not isinstance(value, dict):
+        return None
+    return value
+
+
+def _mapping_list_or_empty(*, mapping: dict, key: str) -> list:
+    value = _mapping_value_or_none(mapping=mapping, key=key)
+    if not isinstance(value, list):
+        return []
+    return value
+
+
+class _CapturedExceptionContext:
+    def __init__(self, *exception_types: type[BaseException]) -> None:
+        if len(exception_types) == 0:
+            raise ValueError("exception_types must not be empty")
+        self._exception_types = exception_types
+        self.captured_exception: BaseException | None = None
+
+    def __enter__(self) -> "_CapturedExceptionContext":
+        self.captured_exception = None
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        _traceback: object,
+    ) -> bool:
+        if exc_type is None:
+            return False
+        for expected_type in self._exception_types:
+            if issubclass(exc_type, expected_type):
+                if exc is None:
+                    raise RuntimeError("Captured exception context received missing exception")
+                self.captured_exception = exc
+                return True
+        return False
+
+
+def _post_json(*, url: str, payload: dict, timeout_seconds: int) -> dict | None:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url=url,
@@ -223,6 +274,7 @@ def _initialize(*, url: str) -> dict | None:
             "method": "initialize",
             "params": {},
         },
+        timeout_seconds=_DEFAULT_POST_JSON_TIMEOUT_SECONDS,
     )
 
 
@@ -235,6 +287,7 @@ def _tools_list(*, url: str, request_id: int) -> dict:
             "method": "tools/list",
             "params": {},
         },
+        timeout_seconds=_DEFAULT_POST_JSON_TIMEOUT_SECONDS,
     )
     if response is None:
         raise RuntimeError("tools/list returned empty response")
@@ -253,6 +306,7 @@ def _tools_call(*, url: str, request_id: int, tool_name: str, arguments: dict) -
                 "arguments": arguments,
             },
         },
+        timeout_seconds=_DEFAULT_POST_JSON_TIMEOUT_SECONDS,
     )
     if response is None:
         raise RuntimeError("tools/call returned empty response")
@@ -411,12 +465,12 @@ def _ancestor_plus_content_context_text(*, entry: dict) -> str:
     if not isinstance(entry, dict):
         raise TypeError("entry must be an object")
 
-    content_text = entry.get("content_text")
+    content_text = _mapping_value_or_none(mapping=entry, key="content_text")
     if not isinstance(content_text, str):
         content_text = ""
     content_text = re.sub(r"\s+", " ", content_text).strip()
 
-    ancestor_texts_raw = entry.get("ancestor_texts")
+    ancestor_texts_raw = _mapping_value_or_none(mapping=entry, key="ancestor_texts")
     ancestor_texts: List[str] = []
     if isinstance(ancestor_texts_raw, list):
         for ancestor in ancestor_texts_raw:
@@ -434,7 +488,7 @@ def _ancestor_plus_content_context_text(*, entry: dict) -> str:
     if content_text != "":
         return content_text
 
-    context_text = entry.get("context_text")
+    context_text = _mapping_value_or_none(mapping=entry, key="context_text")
     if isinstance(context_text, str):
         normalized_context = re.sub(r"\s+", " ", context_text).strip()
         if normalized_context != "":
@@ -446,7 +500,7 @@ def _note_snippet_text(*, note: dict) -> str:
     if not isinstance(note, dict):
         raise TypeError("note must be an object")
     for key in ("snippet_excerpt", "context_excerpt", "content_excerpt"):
-        value = note.get(key)
+        value = _mapping_value_or_none(mapping=note, key=key)
         if isinstance(value, str):
             normalized = re.sub(r"\s+", " ", value).strip()
             if normalized != "":
@@ -1079,8 +1133,8 @@ def _match_hypothesized_tags_to_catalog(*, hypothesized_tags: List[str], tag_ent
     for entry in tag_entries:
         if not isinstance(entry, dict):
             continue
-        tag = entry.get("tag")
-        count = entry.get("count")
+        tag = _mapping_value_or_none(mapping=entry, key="tag")
+        count = _mapping_value_or_none(mapping=entry, key="count")
         if not isinstance(tag, str) or tag == "":
             continue
         if not isinstance(count, int) or count <= 0:
@@ -1095,7 +1149,7 @@ def _match_hypothesized_tags_to_catalog(*, hypothesized_tags: List[str], tag_ent
             "tokens": set(_tokenize_tag_term(value=key)),
         }
         catalog.append(record)
-        previous = by_key.get(key)
+        previous = _mapping_value_or_none(mapping=by_key, key=key)
         if previous is None or previous["count"] < count:
             by_key[key] = record
 
@@ -1110,9 +1164,9 @@ def _match_hypothesized_tags_to_catalog(*, hypothesized_tags: List[str], tag_ent
         if guess_key == "":
             continue
 
-        exact = by_key.get(guess_key)
-        has_exact = exact is not None
-        if exact is not None:
+        exact = _mapping_value_or_none(mapping=by_key, key=guess_key)
+        has_exact = isinstance(exact, dict)
+        if isinstance(exact, dict):
             exact_matches.append(
                 {
                     "hypothesis": guess_key,
@@ -1270,12 +1324,12 @@ def _normalize_query_hypothesis(*, payload: object) -> dict:
     if "reasoning" not in payload or "hypothesized_tags" not in payload:
         raise ValueError("Planner output missing required fields")
 
-    reasoning_value = payload.get("reasoning")
+    reasoning_value = payload["reasoning"]
     if not isinstance(reasoning_value, str) or reasoning_value.strip() == "":
         raise ValueError("Planner reasoning must be a non-empty string")
     reasoning = reasoning_value.strip()
 
-    raw_hypothesized_tags = _coerce_string_list(value=payload.get("hypothesized_tags"), max_items=32)
+    raw_hypothesized_tags = _coerce_string_list(value=payload["hypothesized_tags"], max_items=32)
     if len(raw_hypothesized_tags) == 0:
         raise ValueError("Planner hypothesized_tags must include at least one entry")
 
@@ -1310,8 +1364,8 @@ def _build_planner_seed_tags_prompt_message(*, seed_tag_entries: List[dict], mod
     for entry in seed_tag_entries:
         if not isinstance(entry, dict):
             continue
-        tag = entry.get("tag")
-        count = entry.get("count")
+        tag = _mapping_value_or_none(mapping=entry, key="tag")
+        count = _mapping_value_or_none(mapping=entry, key="count")
         if not isinstance(tag, str) or tag == "":
             continue
         if not isinstance(count, int) or count <= 0:
@@ -1401,8 +1455,8 @@ def _extract_tag_entries_from_list_tags(*, parsed_list_tags: dict) -> List[dict]
     for tag_entry in tags:
         if not isinstance(tag_entry, dict):
             continue
-        tag = tag_entry.get("tag")
-        count = tag_entry.get("count")
+        tag = _mapping_value_or_none(mapping=tag_entry, key="tag")
+        count = _mapping_value_or_none(mapping=tag_entry, key="count")
         if not isinstance(tag, str) or tag == "":
             continue
         if not isinstance(count, int) or count <= 0:
@@ -1498,7 +1552,7 @@ def _ollama_chat_text(
     ollama_chat_url: str,
     model: str,
     messages: List[dict],
-    num_ctx: int | None = None,
+    num_ctx: int | None,
 ) -> str:
     runtime = _ollama_chat_text_with_runtime(
         ollama_chat_url=ollama_chat_url,
@@ -1506,7 +1560,7 @@ def _ollama_chat_text(
         messages=messages,
         num_ctx=num_ctx,
     )
-    content = runtime.get("content")
+    content = _mapping_value_or_none(mapping=runtime, key="content")
     if not isinstance(content, str):
         raise TypeError("runtime content must be a string")
     return content
@@ -1517,7 +1571,7 @@ def _ollama_chat_text_with_runtime(
     ollama_chat_url: str,
     model: str,
     messages: List[dict],
-    num_ctx: int | None = None,
+    num_ctx: int | None,
 ) -> dict:
     if num_ctx is not None and num_ctx <= 0:
         raise ValueError("num_ctx must be > 0")
@@ -1552,7 +1606,7 @@ def _ollama_chat_text_with_runtime(
     content = message["content"]
     if not isinstance(content, str):
         raise TypeError("Ollama message content must be a string")
-    served_model = response.get("model")
+    served_model = _mapping_value_or_none(mapping=response, key="model")
     if not isinstance(served_model, str):
         served_model = ""
     return {
@@ -1583,7 +1637,7 @@ def _derive_ps_url(*, ollama_chat_url: str) -> str:
 
 
 def _extract_model_context_length_from_show_response(*, show_response: dict) -> int | None:
-    model_info = show_response.get("model_info")
+    model_info = _mapping_value_or_none(mapping=show_response, key="model_info")
     if not isinstance(model_info, dict):
         return None
 
@@ -1596,9 +1650,9 @@ def _extract_model_context_length_from_show_response(*, show_response: dict) -> 
         if isinstance(value, int) and value > 0:
             return value
 
-    details = show_response.get("details")
+    details = _mapping_value_or_none(mapping=show_response, key="details")
     if isinstance(details, dict):
-        context_length = details.get("context_length")
+        context_length = _mapping_value_or_none(mapping=details, key="context_length")
         if isinstance(context_length, int) and context_length > 0:
             return context_length
 
@@ -1618,7 +1672,7 @@ def _ollama_model_context_length(*, ollama_chat_url: str, model: str) -> int | N
 
 
 def _extract_running_model_num_ctx(*, ps_payload: dict, model: str) -> int | None:
-    models = ps_payload.get("models")
+    models = _mapping_value_or_none(mapping=ps_payload, key="models")
     if not isinstance(models, list):
         return None
 
@@ -1626,25 +1680,25 @@ def _extract_running_model_num_ctx(*, ps_payload: dict, model: str) -> int | Non
     for model_entry in models:
         if not isinstance(model_entry, dict):
             continue
-        entry_model = model_entry.get("model")
+        entry_model = _mapping_value_or_none(mapping=model_entry, key="model")
         if not isinstance(entry_model, str):
             continue
         if entry_model.strip().casefold() != target:
             continue
 
-        top_level_num_ctx = model_entry.get("num_ctx")
+        top_level_num_ctx = _mapping_value_or_none(mapping=model_entry, key="num_ctx")
         if isinstance(top_level_num_ctx, int) and top_level_num_ctx > 0:
             return top_level_num_ctx
 
-        details = model_entry.get("details")
+        details = _mapping_value_or_none(mapping=model_entry, key="details")
         if isinstance(details, dict):
-            details_num_ctx = details.get("num_ctx")
+            details_num_ctx = _mapping_value_or_none(mapping=details, key="num_ctx")
             if isinstance(details_num_ctx, int) and details_num_ctx > 0:
                 return details_num_ctx
 
-        options = model_entry.get("options")
+        options = _mapping_value_or_none(mapping=model_entry, key="options")
         if isinstance(options, dict):
-            options_num_ctx = options.get("num_ctx")
+            options_num_ctx = _mapping_value_or_none(mapping=options, key="num_ctx")
             if isinstance(options_num_ctx, int) and options_num_ctx > 0:
                 return options_num_ctx
 
@@ -1699,7 +1753,9 @@ def reset_local_ollama_server(*, ollama_chat_url: str) -> None:
         _report_ollama_reset_skip(detail="`pkill` is unavailable on this system.")
         return
 
-    try:
+    run_capture = _CapturedExceptionContext(OSError)
+    completed: subprocess.CompletedProcess[str] | None = None
+    with run_capture:
         completed = subprocess.run(
             ["pkill", "-f", "ollama serve"],
             stdout=subprocess.DEVNULL,
@@ -1707,9 +1763,12 @@ def reset_local_ollama_server(*, ollama_chat_url: str) -> None:
             text=True,
             check=False,
         )
-    except OSError as error:
+    if run_capture.captured_exception is not None:
+        error = run_capture.captured_exception
         _report_ollama_reset_skip(detail=f"`pkill -f 'ollama serve'` failed: {error}")
         return
+    if completed is None:
+        raise RuntimeError("pkill subprocess did not produce a completion record")
 
     if completed.returncode not in {0, 1}:
         stderr_output = completed.stderr.strip()
@@ -2008,8 +2067,12 @@ def _canonicalize_search_notes_arguments(*, arguments: dict) -> dict:
             "error": "search_notes query must be a string.",
         }
 
-    required_raw = arguments["required_tags"] if "required_tags" in arguments else []
-    forbidden_raw = arguments["forbidden_tags"] if "forbidden_tags" in arguments else []
+    required_raw: object = []
+    if "required_tags" in arguments:
+        required_raw = arguments["required_tags"]
+    forbidden_raw: object = []
+    if "forbidden_tags" in arguments:
+        forbidden_raw = arguments["forbidden_tags"]
     normalized_required_result = _normalize_search_notes_tag_list(
         values=required_raw,
         field_name="required_tags",
@@ -2046,9 +2109,11 @@ def _canonicalize_search_notes_arguments(*, arguments: dict) -> dict:
     query_parts.extend(f"-{tag}" for tag in normalized_forbidden)
     canonical_query = " ".join(query_parts).strip()
 
-    try:
+    parse_capture = _CapturedExceptionContext(ValueError)
+    with parse_capture:
         parse_search_query(canonical_query)
-    except ValueError as error:
+    if parse_capture.captured_exception is not None:
+        error = parse_capture.captured_exception
         return {
             "ok": False,
             "error": f"Invalid search_notes query: {error}",
@@ -2075,12 +2140,16 @@ def _search_notes_semantic_signature(*, arguments: dict) -> str:
 
     parsed = parse_search_query(query)
 
-    limit = arguments["limit"] if "limit" in arguments else None
-    offset = arguments["offset"] if "offset" in arguments else None
-    if limit is not None and not isinstance(limit, int):
-        limit = None
-    if offset is not None and not isinstance(offset, int):
-        offset = None
+    limit: int | None = None
+    if "limit" in arguments:
+        limit_value = arguments["limit"]
+        if isinstance(limit_value, int):
+            limit = limit_value
+    offset: int | None = None
+    if "offset" in arguments:
+        offset_value = arguments["offset"]
+        if isinstance(offset_value, int):
+            offset = offset_value
 
     signature_payload = {
         "required_tags": sorted(tag.casefold() for tag in parsed.required_tags),
@@ -2094,12 +2163,12 @@ def _search_notes_semantic_signature(*, arguments: dict) -> str:
 
 
 def _search_notes_regex_semantic_signature(*, arguments: dict) -> str:
-    pattern = arguments.get("pattern")
-    flags = arguments.get("flags")
-    regex_engine = arguments.get("regex_engine")
-    target = arguments.get("target")
-    limit = arguments.get("limit")
-    offset = arguments.get("offset")
+    pattern = _mapping_value_or_none(mapping=arguments, key="pattern")
+    flags = _mapping_value_or_none(mapping=arguments, key="flags")
+    regex_engine = _mapping_value_or_none(mapping=arguments, key="regex_engine")
+    target = _mapping_value_or_none(mapping=arguments, key="target")
+    limit = _mapping_value_or_none(mapping=arguments, key="limit")
+    offset = _mapping_value_or_none(mapping=arguments, key="offset")
     if not isinstance(pattern, str):
         pattern = ""
     if not isinstance(flags, str):
@@ -2113,11 +2182,11 @@ def _search_notes_regex_semantic_signature(*, arguments: dict) -> str:
     if not isinstance(offset, int):
         offset = None
 
-    scope_note_ids = arguments.get("scope_note_ids")
+    scope_note_ids = _mapping_value_or_none(mapping=arguments, key="scope_note_ids")
     scope_note_ids_count = 0
     if isinstance(scope_note_ids, list):
         scope_note_ids_count = len(scope_note_ids)
-    scope_query = arguments.get("scope_query")
+    scope_query = _mapping_value_or_none(mapping=arguments, key="scope_query")
     if not isinstance(scope_query, str):
         scope_query = ""
 
@@ -2755,9 +2824,9 @@ def _bootstrap_search_step(
 def _ordered_note_ids_from_search_tool(*, tool_response: dict) -> List[str]:
     if not isinstance(tool_response, dict):
         raise TypeError("tool_response must be an object")
-    if tool_response.get("ok") is not True:
+    if _mapping_value_or_none(mapping=tool_response, key="ok") is not True:
         return []
-    data = tool_response.get("data")
+    data = _mapping_value_or_none(mapping=tool_response, key="data")
     if not isinstance(data, dict):
         return []
     return _extract_note_ids_from_tool_data(data=data)
@@ -2766,9 +2835,9 @@ def _ordered_note_ids_from_search_tool(*, tool_response: dict) -> List[str]:
 def _extract_ordered_note_ids_from_tool_results(*, tool_response: dict) -> List[str]:
     if not isinstance(tool_response, dict):
         raise TypeError("tool_response must be an object")
-    if tool_response.get("ok") is not True:
+    if _mapping_value_or_none(mapping=tool_response, key="ok") is not True:
         return []
-    data = tool_response.get("data")
+    data = _mapping_value_or_none(mapping=tool_response, key="data")
     if not isinstance(data, dict):
         return []
     return _extract_note_ids_from_tool_data(data=data)
@@ -2781,7 +2850,7 @@ def _extract_note_ids_from_tool_data(*, data: dict) -> List[str]:
     ordered: List[str] = []
     seen = set()
 
-    note_ids = data.get("note_ids")
+    note_ids = _mapping_value_or_none(mapping=data, key="note_ids")
     if isinstance(note_ids, list):
         for note_id in note_ids:
             if not isinstance(note_id, str) or note_id == "":
@@ -2792,14 +2861,14 @@ def _extract_note_ids_from_tool_data(*, data: dict) -> List[str]:
             ordered.append(note_id)
         return ordered
 
-    results = data.get("results")
+    results = _mapping_value_or_none(mapping=data, key="results")
     if not isinstance(results, list):
         return ordered
 
     for entry in results:
         if not isinstance(entry, dict):
             continue
-        note_id = entry.get("note_id")
+        note_id = _mapping_value_or_none(mapping=entry, key="note_id")
         if not isinstance(note_id, str) or note_id == "":
             continue
         if note_id in seen:
@@ -2814,10 +2883,10 @@ def _summarize_rewrite_tool_response(*, tool_response: dict, note_id_sample_limi
         raise TypeError("tool_response must be an object")
     if not isinstance(note_id_sample_limit, int) or note_id_sample_limit <= 0:
         raise ValueError("note_id_sample_limit must be a positive integer")
-    if tool_response.get("ok") is not True:
+    if _mapping_value_or_none(mapping=tool_response, key="ok") is not True:
         return tool_response
 
-    data = tool_response.get("data")
+    data = _mapping_value_or_none(mapping=tool_response, key="data")
     if not isinstance(data, dict):
         return tool_response
 
@@ -2843,20 +2912,20 @@ def _summarize_rewrite_tool_response(*, tool_response: dict, note_id_sample_limi
         if key in data:
             summary_data[key] = data[key]
 
-    notes = data.get("notes")
+    notes = _mapping_value_or_none(mapping=data, key="notes")
     if isinstance(notes, list):
         note_entries: List[dict] = []
         for note in notes:
             if not isinstance(note, dict):
                 continue
             entry: Dict[str, object] = {}
-            content_text = note.get("content_text")
+            content_text = _mapping_value_or_none(mapping=note, key="content_text")
             if isinstance(content_text, str) and content_text.strip() != "":
                 entry["content_excerpt"] = _clip_text_for_synthesis(
                     text=content_text,
                     max_chars=220,
                 )
-            context_text = note.get("context_text")
+            context_text = _mapping_value_or_none(mapping=note, key="context_text")
             if isinstance(context_text, str) and context_text.strip() != "":
                 entry["context_excerpt"] = _clip_text_for_synthesis(
                     text=context_text,
@@ -2868,23 +2937,23 @@ def _summarize_rewrite_tool_response(*, tool_response: dict, note_id_sample_limi
         summary_data["notes_total"] = len(note_entries)
         summary_data["notes_sample"] = note_entries[:note_id_sample_limit]
 
-    results = data.get("results")
+    results = _mapping_value_or_none(mapping=data, key="results")
     if isinstance(results, list):
         regex_match_samples: List[dict] = []
         max_samples = max(4, min(note_id_sample_limit * 2, 24))
         for entry in results:
             if not isinstance(entry, dict):
                 continue
-            matches = entry.get("matches")
+            matches = _mapping_value_or_none(mapping=entry, key="matches")
             if not isinstance(matches, list):
                 continue
             for match in matches:
                 if not isinstance(match, dict):
                     continue
-                snippet = match.get("snippet")
+                snippet = _mapping_value_or_none(mapping=match, key="snippet")
                 if not isinstance(snippet, str) or snippet.strip() == "":
                     continue
-                field = match.get("field")
+                field = _mapping_value_or_none(mapping=match, key="field")
                 if not isinstance(field, str):
                     field = "unknown"
                 collapsed_snippet = re.sub(r"\s+", " ", snippet).strip()
@@ -2931,8 +3000,8 @@ def _compact_tool_response_for_iteration(*, tool_response: dict, max_results: in
     if max_results <= 0:
         raise ValueError("max_results must be > 0")
 
-    if tool_response.get("ok") is not True:
-        error_value = tool_response.get("error")
+    if _mapping_value_or_none(mapping=tool_response, key="ok") is not True:
+        error_value = _mapping_value_or_none(mapping=tool_response, key="error")
         error_text = "tool call failed"
         if isinstance(error_value, str) and error_value.strip() != "":
             error_text = error_value
@@ -2941,7 +3010,7 @@ def _compact_tool_response_for_iteration(*, tool_response: dict, max_results: in
             "error": error_text,
         }
 
-    data = tool_response.get("data")
+    data = _mapping_value_or_none(mapping=tool_response, key="data")
     if not isinstance(data, dict):
         return {
             "ok": True,
@@ -2965,7 +3034,7 @@ def _compact_tool_response_for_iteration(*, tool_response: dict, max_results: in
         if key in data:
             compact_data[key] = data[key]
 
-    results = data.get("results")
+    results = _mapping_value_or_none(mapping=data, key="results")
     if isinstance(results, list):
         compact_results: List[dict] = []
         for entry in results[:max_results]:
@@ -3003,8 +3072,8 @@ def _normalize_expression_plan(
     *,
     payload: object,
     max_expressions: int,
-    min_expressions: int = 0,
-    source_message: str | None = None,
+    min_expressions: int,
+    source_message: str | None,
 ) -> dict:
     if min_expressions < 0:
         raise ValueError("min_expressions must be >= 0")
@@ -3013,7 +3082,7 @@ def _normalize_expression_plan(
     if not isinstance(payload, dict):
         raise ValueError("Expression planner output must be a JSON object")
 
-    reasoning_value = payload.get("reasoning")
+    reasoning_value = _mapping_value_or_none(mapping=payload, key="reasoning")
     if not isinstance(reasoning_value, str):
         reasoning = "Model omitted reasoning."
     else:
@@ -3021,7 +3090,7 @@ def _normalize_expression_plan(
         if reasoning == "":
             reasoning = "Model omitted reasoning."
 
-    raw_expressions = payload.get("expressions")
+    raw_expressions = _mapping_value_or_none(mapping=payload, key="expressions")
     if not isinstance(raw_expressions, list):
         raise ValueError("Expression planner must include expressions array")
 
@@ -3033,7 +3102,7 @@ def _normalize_expression_plan(
     for raw_expression in raw_expressions:
         if not isinstance(raw_expression, dict):
             continue
-        raw_type = raw_expression.get("type")
+        raw_type = _mapping_value_or_none(mapping=raw_expression, key="type")
         if not isinstance(raw_type, str):
             continue
         normalized_type = raw_type.casefold().strip()
@@ -3043,7 +3112,7 @@ def _normalize_expression_plan(
         normalized_expression: dict
         dedupe_key: tuple
         if normalized_type == "phrase":
-            value = raw_expression.get("value")
+            value = _mapping_value_or_none(mapping=raw_expression, key="value")
             if not isinstance(value, str):
                 continue
             normalized_value = re.sub(r"\s+", " ", value).strip()
@@ -3059,13 +3128,15 @@ def _normalize_expression_plan(
             }
             dedupe_key = ("phrase", normalized_value.casefold())
         elif normalized_type == "regex":
-            pattern = raw_expression.get("pattern")
+            pattern = _mapping_value_or_none(mapping=raw_expression, key="pattern")
             if not isinstance(pattern, str) or pattern.strip() == "":
                 continue
             pattern = pattern.replace("\x08", r"\b")
             if enforce_ascii_only and not pattern.isascii():
                 continue
-            flags_value = raw_expression.get("flags", "")
+            flags_value = _mapping_value_or_none(mapping=raw_expression, key="flags")
+            if flags_value is None:
+                flags_value = ""
             if not isinstance(flags_value, str):
                 continue
             normalized_flags = ""
@@ -3085,9 +3156,9 @@ def _normalize_expression_plan(
             }
             dedupe_key = ("regex", pattern, normalized_flags)
         elif normalized_type == "near":
-            left_value = raw_expression.get("left")
-            right_value = raw_expression.get("right")
-            window_chars = raw_expression.get("window_chars")
+            left_value = _mapping_value_or_none(mapping=raw_expression, key="left")
+            right_value = _mapping_value_or_none(mapping=raw_expression, key="right")
+            window_chars = _mapping_value_or_none(mapping=raw_expression, key="window_chars")
             if not isinstance(left_value, str) or not isinstance(right_value, str):
                 continue
             left_normalized = re.sub(r"\s+", " ", left_value).strip()
@@ -3174,7 +3245,7 @@ def _phrase_token_count(*, value: str) -> int:
     return len(re.findall(r"[A-Za-z0-9]+", value))
 
 
-def _extract_planner_anchor_terms(*, source_message: str, max_terms: int = 8) -> List[str]:
+def _extract_planner_anchor_terms(*, source_message: str, max_terms: int) -> List[str]:
     if not isinstance(source_message, str):
         raise TypeError("source_message must be a string")
     if max_terms <= 0:
@@ -3204,13 +3275,13 @@ def _extract_planner_anchor_terms(*, source_message: str, max_terms: int = 8) ->
 def _expression_execution_tier(*, expression: dict) -> int:
     if not isinstance(expression, dict):
         raise TypeError("expression must be an object")
-    expression_type = expression.get("type")
+    expression_type = _mapping_value_or_none(mapping=expression, key="type")
     if not isinstance(expression_type, str):
         return 2
     if expression_type == "near":
         return 1
     if expression_type == "phrase":
-        value = expression.get("value")
+        value = _mapping_value_or_none(mapping=expression, key="value")
         if not isinstance(value, str):
             return 2
         token_count = _phrase_token_count(value=value)
@@ -3218,7 +3289,7 @@ def _expression_execution_tier(*, expression: dict) -> int:
             return 0
         return 2
     if expression_type == "regex":
-        pattern = expression.get("pattern")
+        pattern = _mapping_value_or_none(mapping=expression, key="pattern")
         if not isinstance(pattern, str):
             return 2
         has_numeric_shape = _regex_has_numeric_shape(pattern=pattern)
@@ -3300,12 +3371,12 @@ def _compile_rewrite_expression_call(
 ) -> dict:
     if not isinstance(expression, dict):
         raise TypeError("expression must be an object")
-    expression_type = expression.get("type")
+    expression_type = _mapping_value_or_none(mapping=expression, key="type")
     if not isinstance(expression_type, str):
         raise TypeError("expression.type must be a string")
 
     if expression_type == "phrase":
-        phrase_value = expression.get("value")
+        phrase_value = _mapping_value_or_none(mapping=expression, key="value")
         if not isinstance(phrase_value, str):
             raise TypeError("phrase expression value must be a string")
         escaped = phrase_value.replace("\\", "\\\\").replace('"', '\\"')
@@ -3334,7 +3405,7 @@ def _compile_rewrite_expression_call(
         }
 
     if expression_type == "tag":
-        tag_value = expression.get("value")
+        tag_value = _mapping_value_or_none(mapping=expression, key="value")
         if not isinstance(tag_value, str):
             raise TypeError("tag expression value must be a string")
         tool_name = "search_notes"
@@ -3361,19 +3432,24 @@ def _compile_rewrite_expression_call(
         }
 
     if expression_type == "regex":
-        pattern = expression.get("pattern")
-        flags = expression.get("flags")
+        pattern = _mapping_value_or_none(mapping=expression, key="pattern")
+        flags = _mapping_value_or_none(mapping=expression, key="flags")
         if not isinstance(pattern, str):
             raise TypeError("regex expression pattern must be a string")
         if not isinstance(flags, str):
             raise TypeError("regex expression flags must be a string")
+        scope_note_ids: List[str] = []
+        scope_note_ids_count = 0
+        if universe_note_ids is not None:
+            scope_note_ids = universe_note_ids
+            scope_note_ids_count = len(universe_note_ids)
         tool_name = "search_notes_regex"
         tool_args = {
             "pattern": pattern,
             "flags": flags,
             "regex_engine": normalized_regex_engine,
             "target": "both",
-            "scope_note_ids": universe_note_ids if universe_note_ids is not None else [],
+            "scope_note_ids": scope_note_ids,
             "limit": per_expression_limit,
             "offset": 0,
         }
@@ -3382,7 +3458,7 @@ def _compile_rewrite_expression_call(
             "flags": flags,
             "regex_engine": normalized_regex_engine,
             "target": "both",
-            "scope_note_ids_count": len(universe_note_ids) if universe_note_ids is not None else 0,
+            "scope_note_ids_count": scope_note_ids_count,
             "limit": per_expression_limit,
             "offset": 0,
         }
@@ -3395,9 +3471,9 @@ def _compile_rewrite_expression_call(
         }
 
     if expression_type == "near":
-        left = expression.get("left")
-        right = expression.get("right")
-        window_chars = expression.get("window_chars")
+        left = _mapping_value_or_none(mapping=expression, key="left")
+        right = _mapping_value_or_none(mapping=expression, key="right")
+        window_chars = _mapping_value_or_none(mapping=expression, key="window_chars")
         if not isinstance(left, str):
             raise TypeError("near expression left must be a string")
         if not isinstance(right, str):
@@ -3458,19 +3534,25 @@ def _normalize_expression_plan_best_effort(
     *,
     payload: object,
     max_expressions: int,
-    source_message: str | None = None,
+    source_message: str | None,
 ) -> dict:
-    try:
-        return _normalize_expression_plan(
+    normalize_capture = _CapturedExceptionContext(ValueError)
+    normalized_plan: dict | None = None
+    with normalize_capture:
+        normalized_plan = _normalize_expression_plan(
             payload=payload,
             max_expressions=max_expressions,
+            min_expressions=0,
             source_message=source_message,
         )
-    except ValueError:
+    if normalize_capture.captured_exception is not None:
         return {
             "reasoning": "",
             "expressions": [],
         }
+    if normalized_plan is None:
+        raise RuntimeError("Expression-plan normalization did not return a plan")
+    return normalized_plan
 
 
 def _compute_expression_plan_target_count(*, max_expressions: int) -> int:
@@ -3496,11 +3578,11 @@ def _build_rewrite_expression_plan_messages(
     user_message: str,
     search_context_query: str,
     max_expressions: int,
-    elapsed_ms: float = 0.0,
-    iteration_index: int = 1,
-    executed_query_history: List[dict] | None = None,
-    prior_evidence_notes: List[dict] | None = None,
-    planner_feedback: List[str] | None = None,
+    elapsed_ms: float,
+    iteration_index: int,
+    executed_query_history: List[dict] | None,
+    prior_evidence_notes: List[dict] | None,
+    planner_feedback: List[str] | None,
 ) -> List[dict]:
     if executed_query_history is None:
         executed_query_history = []
@@ -3513,27 +3595,34 @@ def _build_rewrite_expression_plan_messages(
         max_terms=8,
     )
     question_lower = user_message.casefold()
-    likely_structured_value = (
-        ("number" in question_lower)
-        or ("date" in question_lower)
-        or ("birth" in question_lower)
-        or ("ssn" in question_lower)
-        or ("identifier" in question_lower)
-        or (" id" in (" " + question_lower))
-        or ("phone" in question_lower)
-        or ("account" in question_lower)
-        or ("code" in question_lower)
+    likely_structured_value = any(
+        [
+            "number" in question_lower,
+            "date" in question_lower,
+            "birth" in question_lower,
+            "ssn" in question_lower,
+            "identifier" in question_lower,
+            " id" in (" " + question_lower),
+            "phone" in question_lower,
+            "account" in question_lower,
+            "code" in question_lower,
+        ]
     )
-    likely_event_time_query = (
-        ("when" in question_lower)
-        and (
-            ("last" in question_lower)
-            or ("most recent" in question_lower)
-            or ("recently" in question_lower)
+    likely_event_time_query = False
+    if "when" in question_lower:
+        likely_event_time_query = any(
+            [
+                "last" in question_lower,
+                "most recent" in question_lower,
+                "recently" in question_lower,
+            ]
         )
-    )
-    structured_hint_text = "yes" if likely_structured_value else "no"
-    event_time_hint_text = "yes" if likely_event_time_query else "no"
+    structured_hint_text = "no"
+    if likely_structured_value:
+        structured_hint_text = "yes"
+    event_time_hint_text = "no"
+    if likely_event_time_query:
+        event_time_hint_text = "yes"
     system_prompt = "\n".join(
         [
             "You are a MetaList retrieval planner for one loop iteration.",
@@ -3638,7 +3727,9 @@ def _build_rewrite_expression_plan_repair_messages(
             + ").",
         ]
     )
-    scoped_hint = search_context_query if search_context_query.strip() != "" else ""
+    scoped_hint = ""
+    if search_context_query.strip() != "":
+        scoped_hint = search_context_query
     user_prompt_payload = {
         "user_question": user_message,
         "active_search_context_query": scoped_hint,
@@ -3659,11 +3750,13 @@ def _build_rewrite_synthesis_messages(
     search_context_query: str,
     expression_plan: dict,
     expression_stats: List[dict],
-    evidence_notes: List[dict] | None = None,
-    hydrated_notes: List[dict] | None = None,
+    evidence_notes: List[dict] | None,
+    hydrated_notes: List[dict] | None,
 ) -> List[dict]:
     if evidence_notes is None:
-        evidence_notes = hydrated_notes if hydrated_notes is not None else []
+        evidence_notes = []
+        if hydrated_notes is not None:
+            evidence_notes = hydrated_notes
     system_prompt = (
         "You are answering from retrieved MetaList evidence only. "
         "MetaList schema reminder: notes are hierarchical and context may include ancestor text. "
@@ -3699,32 +3792,32 @@ def _build_rewrite_synthesis_messages(
 def _expression_signature(*, expression: dict) -> str:
     if not isinstance(expression, dict):
         raise TypeError("expression must be an object")
-    expression_type = expression.get("type")
+    expression_type = _mapping_value_or_none(mapping=expression, key="type")
     if not isinstance(expression_type, str):
         return "unknown"
     normalized_type = expression_type.casefold()
     if normalized_type == "phrase":
-        value = expression.get("value")
+        value = _mapping_value_or_none(mapping=expression, key="value")
         if not isinstance(value, str):
             return "phrase:"
         return "phrase:" + value.casefold().strip()
     if normalized_type == "tag":
-        value = expression.get("value")
+        value = _mapping_value_or_none(mapping=expression, key="value")
         if not isinstance(value, str):
             return "tag:"
         return "tag:" + value.casefold().strip()
     if normalized_type == "regex":
-        pattern = expression.get("pattern")
-        flags = expression.get("flags")
+        pattern = _mapping_value_or_none(mapping=expression, key="pattern")
+        flags = _mapping_value_or_none(mapping=expression, key="flags")
         if not isinstance(pattern, str):
             pattern = ""
         if not isinstance(flags, str):
             flags = ""
         return "regex:/" + pattern + "/" + flags
     if normalized_type == "near":
-        left = expression.get("left")
-        right = expression.get("right")
-        window_chars = expression.get("window_chars")
+        left = _mapping_value_or_none(mapping=expression, key="left")
+        right = _mapping_value_or_none(mapping=expression, key="right")
+        window_chars = _mapping_value_or_none(mapping=expression, key="window_chars")
         if not isinstance(left, str):
             left = ""
         if not isinstance(right, str):
@@ -3753,12 +3846,12 @@ def _scoped_result_entries_from_tool_response(
         raise TypeError("tool_response must be an object")
     if universe_mode not in {"global", "scoped"}:
         raise ValueError("universe_mode must be one of: global, scoped")
-    if tool_response.get("ok") is not True:
+    if _mapping_value_or_none(mapping=tool_response, key="ok") is not True:
         return []
-    data = tool_response.get("data")
+    data = _mapping_value_or_none(mapping=tool_response, key="data")
     if not isinstance(data, dict):
         return []
-    results = data.get("results")
+    results = _mapping_value_or_none(mapping=data, key="results")
     if not isinstance(results, list):
         return []
 
@@ -3767,7 +3860,7 @@ def _scoped_result_entries_from_tool_response(
     for row in results:
         if not isinstance(row, dict):
             continue
-        note_id = row.get("note_id")
+        note_id = _mapping_value_or_none(mapping=row, key="note_id")
         if not isinstance(note_id, str) or note_id == "":
             continue
         if note_id in by_note_id:
@@ -3785,7 +3878,7 @@ def _scoped_result_entries_from_tool_response(
     for note_id in universe_note_ids:
         if note_id not in universe_note_id_set:
             continue
-        entry = by_note_id.get(note_id)
+        entry = _mapping_value_or_none(mapping=by_note_id, key=note_id)
         if entry is None:
             continue
         scoped_results.append(entry)
@@ -3812,17 +3905,17 @@ def _sanitize_expression_stats_for_model(*, expression_stats: List[dict]) -> Lis
         ):
             if key in row:
                 clean_row[key] = row[key]
-        expression_payload = row.get("expression")
+        expression_payload = _mapping_value_or_none(mapping=row, key="expression")
         if isinstance(expression_payload, dict):
             clean_row["expression"] = expression_payload
-        regex_samples = row.get("regex_match_samples")
+        regex_samples = _mapping_value_or_none(mapping=row, key="regex_match_samples")
         if isinstance(regex_samples, list):
             clean_samples: List[dict] = []
             for sample in regex_samples[:8]:
                 if not isinstance(sample, dict):
                     continue
-                field = sample.get("field")
-                snippet = sample.get("snippet")
+                field = _mapping_value_or_none(mapping=sample, key="field")
+                snippet = _mapping_value_or_none(mapping=sample, key="snippet")
                 if not isinstance(field, str):
                     field = "unknown"
                 if not isinstance(snippet, str) or snippet.strip() == "":
@@ -3855,7 +3948,7 @@ def _prepare_model_evidence_notes(
     for note in note_entries[:max_notes]:
         if not isinstance(note, dict):
             continue
-        content_text = note.get("content_text")
+        content_text = _mapping_value_or_none(mapping=note, key="content_text")
         if not isinstance(content_text, str):
             content_text = ""
         context_text = _ancestor_plus_content_context_text(entry=note)
@@ -3890,10 +3983,10 @@ def _order_candidate_note_ids_by_note_order(
     for fallback_index, note_id in enumerate(ranked_note_ids):
         if not isinstance(note_id, str) or note_id == "":
             continue
-        entry = note_evidence_by_id.get(note_id)
+        entry = _mapping_value_or_none(mapping=note_evidence_by_id, key=note_id)
         if not isinstance(entry, dict):
             continue
-        note_order_index = entry.get("note_order_index")
+        note_order_index = _mapping_value_or_none(mapping=entry, key="note_order_index")
         if not isinstance(note_order_index, int) or note_order_index < 0:
             note_order_index = 10**9
         sortable_rows.append((note_order_index, fallback_index, note_id))
@@ -3957,21 +4050,32 @@ def _candidate_sample_without_ids(
     for note_id in ordered_note_ids:
         if len(sample) >= max_items:
             break
-        entry = note_evidence_by_id.get(note_id)
+        if not isinstance(note_id, str) or note_id == "":
+            continue
+        entry = _mapping_value_or_none(mapping=note_evidence_by_id, key=note_id)
         if not isinstance(entry, dict):
             continue
-        preview_text = entry.get("preview_text")
-        context_text = entry.get("context_text")
+        preview_text = _mapping_value_or_none(mapping=entry, key="preview_text")
+        context_text = _mapping_value_or_none(mapping=entry, key="context_text")
         if not isinstance(preview_text, str):
             preview_text = ""
         if not isinstance(context_text, str):
             context_text = ""
+        hit_count = _mapping_value_or_none(mapping=note_hit_counts, key=note_id)
+        if not isinstance(hit_count, int):
+            hit_count = 0
+        matched_expressions = _mapping_value_or_none(mapping=note_hit_expressions, key=note_id)
+        if not isinstance(matched_expressions, list):
+            matched_expressions = []
+        preview_source = context_text
+        if preview_text != "":
+            preview_source = preview_text
         sample.append(
             {
-                "hit_count": note_hit_counts.get(note_id, 0),
-                "matched_expression_count": len(note_hit_expressions.get(note_id, [])),
+                "hit_count": hit_count,
+                "matched_expression_count": len(matched_expressions),
                 "preview_excerpt": _clip_text_for_synthesis(
-                    text=preview_text if preview_text != "" else context_text,
+                    text=preview_source,
                     max_chars=180,
                 ),
             }
@@ -4117,23 +4221,25 @@ def _build_rewrite_relevance_filter_messages(
     for row in iteration_query_results:
         if not isinstance(row, dict):
             continue
-        label = row.get("expression_label")
+        label = _mapping_value_or_none(mapping=row, key="expression_label")
         if not isinstance(label, str) or label.strip() == "":
             label = "query"
-        scoped_match_count = row.get("scoped_match_count")
+        scoped_match_count = _mapping_value_or_none(mapping=row, key="scoped_match_count")
         if not isinstance(scoped_match_count, int):
             scoped_match_count = 0
-        execution_ms = row.get("execution_ms")
+        execution_ms = _mapping_value_or_none(mapping=row, key="execution_ms")
         if not isinstance(execution_ms, (int, float)):
             execution_ms = 0.0
         query_summary_lines.append(
             f"- {label} (matches={scoped_match_count}, ms={round(float(execution_ms), 3)})"
         )
 
-    context_query_display = search_context_query if search_context_query.strip() != "" else "none"
+    context_query_display = "none"
+    if search_context_query.strip() != "":
+        context_query_display = search_context_query
     evidence_band = "none"
     if isinstance(evidence_overview, dict):
-        band = evidence_overview.get("band")
+        band = _mapping_value_or_none(mapping=evidence_overview, key="band")
         if isinstance(band, str) and band.strip() != "":
             evidence_band = band
 
@@ -4236,42 +4342,14 @@ def _normalize_rewrite_relevance_filter(*, raw_model_output: str, notes: List[di
             "relevant_note_indexes": [],
         }
 
-    maybe_json = None
-    if text.startswith("{") or text.startswith("["):
-        try:
-            maybe_json = json.loads(text)
-        except json.JSONDecodeError:
-            maybe_json = None
-
     selected_lines: List[str] = []
-    if isinstance(maybe_json, dict):
-        raw_snippets = maybe_json.get("relevant_snippets")
-        if isinstance(raw_snippets, list):
-            for value in raw_snippets:
-                if not isinstance(value, str):
-                    continue
-                cleaned = _clean_relevance_line(line=value)
-                if cleaned != "":
-                    selected_lines.append(cleaned)
-        else:
-            raw_indexes = maybe_json.get("relevant_note_indexes")
-            if isinstance(raw_indexes, list):
-                for index in raw_indexes:
-                    if not isinstance(index, int):
-                        continue
-                    if index < 1 or index > len(candidate_snippets):
-                        continue
-                    snippet = candidate_snippets[index - 1]
-                    if snippet != "":
-                        selected_lines.append(snippet)
-    else:
-        for line in text.splitlines():
-            cleaned = _clean_relevance_line(line=line)
-            if cleaned == "":
-                continue
-            if cleaned.casefold() in {"none", "no relevant notes", "no relevant snippets"}:
-                continue
-            selected_lines.append(cleaned)
+    for line in text.splitlines():
+        cleaned = _clean_relevance_line(line=line)
+        if cleaned == "":
+            continue
+        if cleaned.casefold() in {"none", "no relevant notes", "no relevant snippets"}:
+            continue
+        selected_lines.append(cleaned)
 
     selected_indexes: List[int] = []
     selected_snippets: List[str] = []
@@ -4326,9 +4404,9 @@ def _normalize_rewrite_iteration_decision(*, payload: object) -> dict:
     if not isinstance(payload, dict):
         payload = {}
 
-    decision = payload.get("decision")
+    decision = _mapping_value_or_none(mapping=payload, key="decision")
     if not isinstance(decision, str) or decision.strip() == "":
-        fallback_action = payload.get("action")
+        fallback_action = _mapping_value_or_none(mapping=payload, key="action")
         if isinstance(fallback_action, str):
             mapped = fallback_action.casefold().strip()
             if mapped in {"final", "answer"}:
@@ -4340,9 +4418,9 @@ def _normalize_rewrite_iteration_decision(*, payload: object) -> dict:
             elif mapped in {"uncertain", "unknown", "dont_know"}:
                 decision = "uncertain"
     if not isinstance(decision, str) or decision.strip() == "":
-        fallback_answer = payload.get("answer")
-        fallback_question = payload.get("clarifying_question")
-        fallback_continue_reason = payload.get("continue_reason")
+        fallback_answer = _mapping_value_or_none(mapping=payload, key="answer")
+        fallback_question = _mapping_value_or_none(mapping=payload, key="clarifying_question")
+        fallback_continue_reason = _mapping_value_or_none(mapping=payload, key="continue_reason")
         if isinstance(fallback_answer, str) and fallback_answer.strip() != "":
             decision = "answer"
         elif isinstance(fallback_question, str) and fallback_question.strip() != "":
@@ -4353,29 +4431,29 @@ def _normalize_rewrite_iteration_decision(*, payload: object) -> dict:
             decision = "uncertain"
     normalized_decision = str(decision).casefold().strip()
 
-    reasoning = payload.get("reasoning")
+    reasoning = _mapping_value_or_none(mapping=payload, key="reasoning")
     if not isinstance(reasoning, str):
         reasoning = ""
     normalized_reasoning = reasoning.strip()
 
-    confidence = payload.get("confidence")
+    confidence = _mapping_value_or_none(mapping=payload, key="confidence")
     if not isinstance(confidence, str):
         confidence = "medium"
     normalized_confidence = confidence.casefold().strip()
     if normalized_confidence not in {"high", "medium", "low"}:
         normalized_confidence = "medium"
 
-    answer = payload.get("answer")
+    answer = _mapping_value_or_none(mapping=payload, key="answer")
     if not isinstance(answer, str):
         answer = ""
     normalized_answer = answer.strip()
 
-    clarifying_question = payload.get("clarifying_question")
+    clarifying_question = _mapping_value_or_none(mapping=payload, key="clarifying_question")
     if not isinstance(clarifying_question, str):
         clarifying_question = ""
     normalized_clarifying_question = clarifying_question.strip()
 
-    continue_reason = payload.get("continue_reason")
+    continue_reason = _mapping_value_or_none(mapping=payload, key="continue_reason")
     if not isinstance(continue_reason, str):
         continue_reason = ""
     normalized_continue_reason = continue_reason.strip()
@@ -4447,7 +4525,7 @@ def _find_first_answer_like_string(*, payload: object, max_depth: int) -> str:
             continue
         if isinstance(value, dict):
             for key in answer_keys:
-                candidate = value.get(key)
+                candidate = _mapping_value_or_none(mapping=value, key=key)
                 if isinstance(candidate, str) and candidate.strip() != "":
                     return candidate.strip()
             for child in value.values():
@@ -4495,7 +4573,7 @@ def _expression_rank_weight(
 ) -> float:
     if scoped_match_count < 0:
         raise ValueError("scoped_match_count must be >= 0")
-    expression_type = expression.get("type")
+    expression_type = _mapping_value_or_none(mapping=expression, key="type")
     if not isinstance(expression_type, str):
         expression_type = ""
 
@@ -4503,7 +4581,7 @@ def _expression_rank_weight(
     if expression_type == "regex":
         base_weight = 3.0
     elif expression_type == "phrase":
-        value = expression.get("value")
+        value = _mapping_value_or_none(mapping=expression, key="value")
         if isinstance(value, str):
             token_count = len(re.findall(r"[A-Za-z0-9]+", value))
             normalized_length = len(value.strip())
@@ -4537,13 +4615,13 @@ def _rank_candidate_note_ids(
     for row in expression_stats:
         if not isinstance(row, dict):
             continue
-        label = row.get("expression_label")
+        label = _mapping_value_or_none(mapping=row, key="expression_label")
         if not isinstance(label, str) or label == "":
             continue
-        expression = row.get("expression")
+        expression = _mapping_value_or_none(mapping=row, key="expression")
         if not isinstance(expression, dict):
             continue
-        scoped_match_count = row.get("scoped_match_count")
+        scoped_match_count = _mapping_value_or_none(mapping=row, key="scoped_match_count")
         if not isinstance(scoped_match_count, int):
             continue
         expression_weight_by_label[label] = _expression_rank_weight(
@@ -4561,9 +4639,13 @@ def _rank_candidate_note_ids(
     first_seen_rank: Dict[str, int] = {}
     ranked_rows: List[dict] = []
     for index, note_id in enumerate(note_hit_counts.keys()):
+        if not isinstance(note_id, str) or note_id == "":
+            continue
         first_seen_rank[note_id] = index
-        hit_count = note_hit_counts.get(note_id, 0)
-        labels = note_hit_expressions.get(note_id, [])
+        hit_count = _mapping_value_or_none(mapping=note_hit_counts, key=note_id)
+        if not isinstance(hit_count, int):
+            hit_count = 0
+        labels = _mapping_value_or_none(mapping=note_hit_expressions, key=note_id)
         if not isinstance(labels, list):
             labels = []
         score = 0.0
@@ -4574,8 +4656,14 @@ def _rank_candidate_note_ids(
             if label in seen_labels:
                 continue
             seen_labels.add(label)
-            score += expression_weight_by_label.get(label, 0.0)
+            expression_weight = _mapping_value_or_none(mapping=expression_weight_by_label, key=label)
+            if not isinstance(expression_weight, (int, float)):
+                expression_weight = 0.0
+            score += float(expression_weight)
         score += float(hit_count) * 0.05
+        note_universe_rank = _mapping_value_or_none(mapping=universe_rank, key=note_id)
+        if not isinstance(note_universe_rank, int):
+            note_universe_rank = 10**9
         ranked_rows.append(
             {
                 "note_id": note_id,
@@ -4584,7 +4672,7 @@ def _rank_candidate_note_ids(
                 "matched_expression_count": len(seen_labels),
                 "matched_expressions": list(seen_labels),
                 "first_seen_rank": index,
-                "universe_rank": universe_rank.get(note_id, 10**9),
+                "universe_rank": note_universe_rank,
             }
         )
 
@@ -4639,16 +4727,20 @@ def _prepare_synthesis_notes(
     for note in hydrated_notes[:max_notes]:
         if not isinstance(note, dict):
             continue
-        note_id = note.get("note_id")
+        note_id = _mapping_value_or_none(mapping=note, key="note_id")
         if not isinstance(note_id, str) or note_id == "":
             continue
-        content_text = note.get("content_text")
+        content_text = _mapping_value_or_none(mapping=note, key="content_text")
         if not isinstance(content_text, str):
             content_text = ""
-        context_text = note.get("context_text")
+        context_text = _mapping_value_or_none(mapping=note, key="context_text")
         if not isinstance(context_text, str):
             context_text = ""
-        source_text = context_text if context_text != "" else content_text
+        source_text = content_text
+        if context_text != "":
+            source_text = context_text
+        hit_count = _mapping_value_or_none(mapping=note, key="hit_count")
+        matched_expressions = _mapping_value_or_none(mapping=note, key="matched_expressions")
         snippets: List[str] = []
         if source_text != "" and len(query_terms) > 0:
             snippets = _extract_term_snippets(
@@ -4659,8 +4751,8 @@ def _prepare_synthesis_notes(
         prepared.append(
             {
                 "note_id": note_id,
-                "hit_count": note.get("hit_count"),
-                "matched_expressions": note.get("matched_expressions"),
+                "hit_count": hit_count,
+                "matched_expressions": matched_expressions,
                 "term_snippets": snippets,
                 "content_excerpt": _clip_text_for_synthesis(
                     text=content_text,
@@ -4688,7 +4780,7 @@ def _run_rewrite_request(
     hydrate_top_k: int,
     regex_engine: str,
     progress_callback: Callable[[dict], None] | None,
-    status_callback: Callable[[str], None] | None = None,
+    status_callback: Callable[[str], None] | None,
 ) -> dict:
     if max_steps <= 0:
         raise ValueError("max_steps must be > 0")
@@ -4724,7 +4816,9 @@ def _run_rewrite_request(
             progress_callback(step_record)
 
     request_id = 100
-    universe_mode = "scoped" if search_context_query.strip() != "" else "global"
+    universe_mode = "global"
+    if search_context_query.strip() != "":
+        universe_mode = "scoped"
     universe_note_ids: List[str] | None = None
     universe_note_id_set: set[str] | None = None
     universe_note_count = 0
@@ -4752,8 +4846,11 @@ def _run_rewrite_request(
         universe_resolution_ms = round((time.perf_counter() - universe_start) * 1000, 3)
         request_id += 1
         universe_tool_response = _extract_tool_response(call_response=universe_call)
-        if universe_tool_response.get("ok") is not True:
-            error = universe_tool_response.get("error", "Universe resolution failed")
+        universe_ok = _mapping_value_or_none(mapping=universe_tool_response, key="ok")
+        if universe_ok is not True:
+            error = _mapping_value_or_none(mapping=universe_tool_response, key="error")
+            if not isinstance(error, str) or error.strip() == "":
+                error = "Universe resolution failed"
             return {
                 "ok": False,
                 "answer": str(error),
@@ -4778,8 +4875,11 @@ def _run_rewrite_request(
         universe_resolution_ms = round((time.perf_counter() - count_start) * 1000, 3)
         request_id += 1
         count_tool_response = _extract_tool_response(call_response=count_call)
-        if count_tool_response.get("ok") is not True:
-            error = count_tool_response.get("error", "Universe resolution failed")
+        count_ok = _mapping_value_or_none(mapping=count_tool_response, key="ok")
+        if count_ok is not True:
+            error = _mapping_value_or_none(mapping=count_tool_response, key="error")
+            if not isinstance(error, str) or error.strip() == "":
+                error = "Universe resolution failed"
             return {
                 "ok": False,
                 "answer": str(error),
@@ -4788,10 +4888,10 @@ def _run_rewrite_request(
                 "mode": "rewrite",
                 "total_execution_ms": _total_execution_ms(),
             }
-        count_data = count_tool_response.get("data")
-        if not isinstance(count_data, dict):
+        count_data = _mapping_dict_or_none(mapping=count_tool_response, key="data")
+        if count_data is None:
             raise TypeError("count_notes data must be an object")
-        total_notes = count_data.get("total_notes")
+        total_notes = _mapping_value_or_none(mapping=count_data, key="total_notes")
         if not isinstance(total_notes, int) or total_notes < 0:
             raise TypeError("count_notes.total_notes must be a non-negative integer")
         universe_note_count = total_notes
@@ -4832,32 +4932,52 @@ def _run_rewrite_request(
     def merge_scoped_entries(*, entries: List[dict], expression_label: str) -> List[str]:
         latest_note_ids: List[str] = []
         for entry in entries:
-            note_id = entry.get("note_id")
+            note_id = _mapping_value_or_none(mapping=entry, key="note_id")
             if not isinstance(note_id, str) or note_id == "":
                 continue
             latest_note_ids.append(note_id)
 
-            note_hit_counts[note_id] = note_hit_counts.get(note_id, 0) + 1
-            matched_expression_list = note_hit_expressions.get(note_id)
+            note_hit_count = 0
+            if note_id in note_hit_counts:
+                note_hit_count = note_hit_counts[note_id]
+            note_hit_counts[note_id] = note_hit_count + 1
+
+            matched_expression_list: List[str] | None = None
+            if note_id in note_hit_expressions:
+                matched_expression_list = note_hit_expressions[note_id]
             if matched_expression_list is None:
                 matched_expression_list = []
                 note_hit_expressions[note_id] = matched_expression_list
             if expression_label not in matched_expression_list:
                 matched_expression_list.append(expression_label)
 
-            existing_evidence = note_evidence_by_id.get(note_id)
+            existing_evidence: dict | None = None
+            if note_id in note_evidence_by_id:
+                existing_evidence = note_evidence_by_id[note_id]
             entry_context_no_descendants = _ancestor_plus_content_context_text(entry=entry)
             if existing_evidence is None:
-                note_order_index = entry.get("note_order_index")
+                note_order_index = _mapping_value_or_none(mapping=entry, key="note_order_index")
                 if not isinstance(note_order_index, int) or note_order_index < 0:
                     note_order_index = 10**9
+                preview_text = _mapping_value_or_none(mapping=entry, key="preview_text")
+                if not isinstance(preview_text, str):
+                    preview_text = ""
+                content_text = _mapping_value_or_none(mapping=entry, key="content_text")
+                if not isinstance(content_text, str):
+                    content_text = ""
+                ancestor_texts = _mapping_list_or_empty(mapping=entry, key="ancestor_texts")
+                tag_terms = _mapping_list_or_empty(mapping=entry, key="tag_terms")
+                effective_tag_terms = _mapping_list_or_empty(
+                    mapping=entry,
+                    key="effective_tag_terms",
+                )
                 existing_evidence = {
-                    "preview_text": entry.get("preview_text", ""),
-                    "content_text": entry.get("content_text", ""),
+                    "preview_text": preview_text,
+                    "content_text": content_text,
                     "context_text": entry_context_no_descendants,
-                    "ancestor_texts": entry.get("ancestor_texts", []),
-                    "tag_terms": entry.get("tag_terms", []),
-                    "effective_tag_terms": entry.get("effective_tag_terms", []),
+                    "ancestor_texts": ancestor_texts,
+                    "tag_terms": tag_terms,
+                    "effective_tag_terms": effective_tag_terms,
                     "matches": [],
                     "matched_expressions": [],
                     "hit_count": 0,
@@ -4865,8 +4985,14 @@ def _run_rewrite_request(
                 }
                 note_evidence_by_id[note_id] = existing_evidence
             else:
-                existing_order_index = existing_evidence.get("note_order_index")
-                candidate_order_index = entry.get("note_order_index")
+                existing_order_index = _mapping_value_or_none(
+                    mapping=existing_evidence,
+                    key="note_order_index",
+                )
+                candidate_order_index = _mapping_value_or_none(
+                    mapping=entry,
+                    key="note_order_index",
+                )
                 if not isinstance(existing_order_index, int):
                     existing_order_index = 10**9
                 if not isinstance(candidate_order_index, int):
@@ -4876,41 +5002,52 @@ def _run_rewrite_request(
                     candidate_order_index,
                 )
 
+            existing_context_text = _mapping_value_or_none(mapping=existing_evidence, key="context_text")
             if (
-                isinstance(existing_evidence.get("context_text"), str)
+                isinstance(existing_context_text, str)
                 and isinstance(entry_context_no_descendants, str)
                 and len(entry_context_no_descendants) > len(existing_evidence["context_text"])
             ):
                 existing_evidence["context_text"] = entry_context_no_descendants
+            existing_content_text = _mapping_value_or_none(mapping=existing_evidence, key="content_text")
+            entry_content_text = _mapping_value_or_none(mapping=entry, key="content_text")
             if (
-                isinstance(existing_evidence.get("content_text"), str)
-                and isinstance(entry.get("content_text"), str)
+                isinstance(existing_content_text, str)
+                and isinstance(entry_content_text, str)
                 and len(entry["content_text"]) > len(existing_evidence["content_text"])
             ):
                 existing_evidence["content_text"] = entry["content_text"]
+            existing_preview_text = _mapping_value_or_none(mapping=existing_evidence, key="preview_text")
+            entry_preview_text = _mapping_value_or_none(mapping=entry, key="preview_text")
             if (
-                isinstance(existing_evidence.get("preview_text"), str)
-                and isinstance(entry.get("preview_text"), str)
+                isinstance(existing_preview_text, str)
+                and isinstance(entry_preview_text, str)
                 and len(entry["preview_text"]) > len(existing_evidence["preview_text"])
             ):
                 existing_evidence["preview_text"] = entry["preview_text"]
-            if isinstance(entry.get("tag_terms"), list):
+            entry_tag_terms = _mapping_value_or_none(mapping=entry, key="tag_terms")
+            if isinstance(entry_tag_terms, list):
                 existing_evidence["tag_terms"] = entry["tag_terms"]
-            if isinstance(entry.get("effective_tag_terms"), list):
+            entry_effective_tag_terms = _mapping_value_or_none(
+                mapping=entry,
+                key="effective_tag_terms",
+            )
+            if isinstance(entry_effective_tag_terms, list):
                 existing_evidence["effective_tag_terms"] = entry["effective_tag_terms"]
-            if isinstance(entry.get("ancestor_texts"), list):
+            entry_ancestor_texts = _mapping_value_or_none(mapping=entry, key="ancestor_texts")
+            if isinstance(entry_ancestor_texts, list):
                 existing_evidence["ancestor_texts"] = entry["ancestor_texts"]
-            existing_matches = existing_evidence.get("matches")
+            existing_matches = _mapping_value_or_none(mapping=existing_evidence, key="matches")
             if not isinstance(existing_matches, list):
                 existing_matches = []
                 existing_evidence["matches"] = existing_matches
-            entry_matches = entry.get("matches")
+            entry_matches = _mapping_value_or_none(mapping=entry, key="matches")
             if isinstance(entry_matches, list):
                 for match in entry_matches:
                     if not isinstance(match, dict):
                         continue
-                    snippet = match.get("snippet")
-                    field = match.get("field")
+                    snippet = _mapping_value_or_none(mapping=match, key="snippet")
+                    field = _mapping_value_or_none(mapping=match, key="field")
                     if not isinstance(snippet, str) or snippet.strip() == "":
                         continue
                     if not isinstance(field, str):
@@ -4925,20 +5062,28 @@ def _run_rewrite_request(
                     }
                     if sample not in existing_matches:
                         existing_matches.append(sample)
-            existing_matched_expressions = existing_evidence.get("matched_expressions")
+            existing_matched_expressions = _mapping_value_or_none(
+                mapping=existing_evidence,
+                key="matched_expressions",
+            )
             if not isinstance(existing_matched_expressions, list):
                 existing_matched_expressions = []
                 existing_evidence["matched_expressions"] = existing_matched_expressions
             if expression_label not in existing_matched_expressions:
                 existing_matched_expressions.append(expression_label)
-            existing_evidence["hit_count"] = note_hit_counts.get(note_id, 0)
+            hit_count = 0
+            if note_id in note_hit_counts:
+                hit_count = note_hit_counts[note_id]
+            existing_evidence["hit_count"] = hit_count
         return latest_note_ids
 
     for iteration_index in range(1, max_steps + 1):
         _emit_status(detail=f"Iteration {iteration_index}: planning queries...")
         ranking_universe_ids: List[str] | None
         if universe_mode == "scoped":
-            ranking_universe_ids = universe_note_ids if universe_note_ids is not None else []
+            ranking_universe_ids = []
+            if universe_note_ids is not None:
+                ranking_universe_ids = universe_note_ids
         else:
             ranking_universe_ids = None
         ordered_candidate_note_ids, _ = _rank_candidate_note_ids(
@@ -4954,7 +5099,9 @@ def _run_rewrite_request(
         )
         carried_entries: List[dict] = []
         for note_id in ordered_candidate_note_ids:
-            evidence_entry = note_evidence_by_id.get(note_id)
+            evidence_entry = None
+            if note_id in note_evidence_by_id:
+                evidence_entry = note_evidence_by_id[note_id]
             if evidence_entry is None:
                 continue
             carried_entries.append(evidence_entry)
@@ -5024,21 +5171,26 @@ def _run_rewrite_request(
             source_message=user_message,
         )
         planner_validation_error = ""
-        try:
+        planner_capture = _CapturedExceptionContext(ValueError)
+        expression_plan: dict | None = None
+        with planner_capture:
             expression_plan = _normalize_expression_plan(
                 payload=planned_payload,
                 max_expressions=max_expressions,
+                min_expressions=0,
                 source_message=user_message,
             )
-        except ValueError as error:
-            planner_validation_error = str(error)
+        if planner_capture.captured_exception is not None:
+            planner_validation_error = str(planner_capture.captured_exception)
             planner_feedback_messages.append(
                 "Planner normalization warning: " + planner_validation_error
             )
             expression_plan = {
                 "reasoning": "Planner output was partially invalid; continuing with usable subset for this iteration.",
-                "expressions": plan_preview.get("expressions", []),
+                "expressions": plan_preview["expressions"],
             }
+        elif expression_plan is None:
+            raise RuntimeError("Planner normalization did not return a plan")
 
         expression_items: List[dict] = []
         skipped_invalid_expressions: List[dict] = []
@@ -5083,14 +5235,17 @@ def _run_rewrite_request(
 
         for item in expression_items:
             expression = item["expression"]
-            try:
+            compile_capture = _CapturedExceptionContext(TypeError, ValueError)
+            compiled: dict | None = None
+            with compile_capture:
                 compiled = _compile_rewrite_expression_call(
                     expression=expression,
                     per_expression_limit=per_expression_limit,
                     normalized_regex_engine=normalized_regex_engine,
                     universe_note_ids=universe_note_ids,
                 )
-            except (TypeError, ValueError) as error:
+            if compile_capture.captured_exception is not None:
+                error = compile_capture.captured_exception
                 skipped_unexecutable_queries.append(
                     {
                         "expression": expression,
@@ -5101,6 +5256,8 @@ def _run_rewrite_request(
                     "Skipped unexecutable expression: " + str(error)
                 )
                 continue
+            if compiled is None:
+                raise RuntimeError("Expression compilation did not return a tool call")
             tool_name = compiled["tool_name"]
             tool_args = compiled["tool_args"]
             display_args = compiled["display_args"]
@@ -5139,7 +5296,11 @@ def _run_rewrite_request(
             request_id += 1
             execution_ms = round((time.perf_counter() - expression_start) * 1000, 3)
             tool_response = _extract_tool_response(call_response=tool_call)
-            if tool_response.get("ok") is not True:
+            tool_ok = _mapping_value_or_none(mapping=tool_response, key="ok")
+            tool_error = _mapping_value_or_none(mapping=tool_response, key="error")
+            if not isinstance(tool_error, str) or tool_error.strip() == "":
+                tool_error = f"{tool_name} failed"
+            if tool_ok is not True:
                 append_step(
                     step_record={
                         "step": len(steps) + 1,
@@ -5161,12 +5322,12 @@ def _run_rewrite_request(
                         "model_payload": {
                             "planner_prompt_messages": plan_messages,
                             "planner_raw_model_output": planner_raw_output,
-                            "planner_reasoning": expression_plan.get("reasoning", ""),
-                            "planned_expressions": expression_plan.get("expressions", []),
+                            "planner_reasoning": expression_plan["reasoning"],
+                            "planned_expressions": expression_plan["expressions"],
                         },
                         "tool_response": {
                             "ok": False,
-                            "error": str(tool_response.get("error", f"{tool_name} failed")),
+                            "error": str(tool_error),
                             "data": {
                                 "iteration_index": iteration_index,
                                 "failed_query": {
@@ -5188,7 +5349,7 @@ def _run_rewrite_request(
                 )
                 return {
                     "ok": False,
-                    "answer": str(tool_response.get("error", f"{tool_name} failed")),
+                    "answer": str(tool_error),
                     "model": resolved_model,
                     "steps": steps,
                     "mode": "rewrite",
@@ -5270,7 +5431,9 @@ def _run_rewrite_request(
         )
         latest_entries: List[dict] = []
         for note_id in interleaved_iteration_note_ids:
-            evidence_entry = note_evidence_by_id.get(note_id)
+            evidence_entry = None
+            if note_id in note_evidence_by_id:
+                evidence_entry = note_evidence_by_id[note_id]
             if evidence_entry is None:
                 continue
             latest_entries.append(evidence_entry)
@@ -5279,16 +5442,8 @@ def _run_rewrite_request(
             user_message=user_message,
             max_notes=hydrate_top_k,
         )
-        matched_query_count = sum(
-            1
-            for row in iteration_query_runs
-            if isinstance(row.get("scoped_match_count"), int) and row["scoped_match_count"] > 0
-        )
-        total_scoped_matches = sum(
-            int(row["scoped_match_count"])
-            for row in iteration_query_runs
-            if isinstance(row.get("scoped_match_count"), int)
-        )
+        matched_query_count = sum(1 for row in iteration_query_runs if row["scoped_match_count"] > 0)
+        total_scoped_matches = sum(int(row["scoped_match_count"]) for row in iteration_query_runs)
         candidate_note_count = len(latest_result_notes)
         evidence_band = "none"
         if candidate_note_count > 0:
@@ -5347,8 +5502,8 @@ def _run_rewrite_request(
                 "model_payload": {
                     "planner_prompt_messages": plan_messages,
                     "planner_raw_model_output": planner_raw_output,
-                    "planner_reasoning": expression_plan.get("reasoning", ""),
-                    "planned_expressions": expression_plan.get("expressions", []),
+                    "planner_reasoning": expression_plan["reasoning"],
+                    "planned_expressions": expression_plan["expressions"],
                     "planner_validation_error": planner_validation_error,
                     "relevance_prompt_messages": relevance_messages,
                 },
@@ -5376,6 +5531,7 @@ def _run_rewrite_request(
             ollama_chat_url=ollama_chat_url,
             model=resolved_model,
             messages=relevance_messages,
+            num_ctx=None,
         )
         relevance_ms = round((time.perf_counter() - relevance_start) * 1000, 3)
         relevance_result = _normalize_rewrite_relevance_filter(
@@ -5461,8 +5617,8 @@ def _run_agentic_request(
     model: str,
     max_steps: int,
     planner_only: bool,
-    planner_seed_tag_limit: int = _DEFAULT_PLANNER_SEED_TAG_LIMIT,
-    planner_tag_count_mode: str = _DEFAULT_PLANNER_TAG_COUNT_MODE,
+    planner_seed_tag_limit: int,
+    planner_tag_count_mode: str,
     progress_callback: Callable[[dict], None] | None,
 ) -> dict:
     if max_steps <= 0:
@@ -5540,16 +5696,20 @@ def _run_agentic_request(
         messages=query_hypothesis_messages,
     )
     planner_error_text = ""
-    try:
+    query_hypothesis_capture = _CapturedExceptionContext(ValueError)
+    query_hypothesis: dict | None = None
+    with query_hypothesis_capture:
         query_hypothesis = _normalize_query_hypothesis(
             payload=query_hypothesis_payload,
         )
-    except ValueError as error:
-        planner_error_text = str(error)
+    if query_hypothesis_capture.captured_exception is not None:
+        planner_error_text = str(query_hypothesis_capture.captured_exception)
         query_hypothesis = {
             "reasoning": "Planner output was invalid, so using heuristic tags from the question tokens.",
             "hypothesized_tags": _build_tag_discovery_terms(user_message=user_message),
         }
+    elif query_hypothesis is None:
+        raise RuntimeError("Query-hypothesis normalization did not return a payload")
     planning_context = {
         "query_hypothesis": query_hypothesis,
     }
@@ -5600,7 +5760,7 @@ def _run_agentic_request(
         for seed_entry in seed_tag_entries:
             if not isinstance(seed_entry, dict):
                 continue
-            seed_tag = seed_entry.get("tag")
+            seed_tag = _mapping_value_or_none(mapping=seed_entry, key="tag")
             if not isinstance(seed_tag, str) or seed_tag == "":
                 continue
             seed_key = _normalize_tag_term(value=seed_tag)
@@ -5610,12 +5770,12 @@ def _run_agentic_request(
 
         exact_matches_from_seed: List[str] = []
         exact_matches_not_from_seed: List[str] = []
-        exact_matches = tag_match_data.get("exact_matches")
+        exact_matches = _mapping_value_or_none(mapping=tag_match_data, key="exact_matches")
         if isinstance(exact_matches, list):
             for match_entry in exact_matches:
                 if not isinstance(match_entry, dict):
                     continue
-                catalog_tag = match_entry.get("catalog_tag")
+                catalog_tag = _mapping_value_or_none(mapping=match_entry, key="catalog_tag")
                 if not isinstance(catalog_tag, str) or catalog_tag == "":
                     continue
                 catalog_key = _normalize_tag_term(value=catalog_tag)
@@ -5629,15 +5789,17 @@ def _run_agentic_request(
         tag_match_data["exact_matches_from_seed"] = exact_matches_from_seed
         tag_match_data["exact_matches_not_from_seed"] = exact_matches_not_from_seed
         tag_match_data["seed_tag_count"] = len(seed_tag_entries)
+        parsed_list_tags_data = _mapping_dict_or_none(mapping=parsed_list_tags, key="data")
+        total_matches = None
+        returned_count = None
+        if parsed_list_tags_data is not None:
+            total_matches = _mapping_value_or_none(mapping=parsed_list_tags_data, key="total_matches")
+            returned_count = _mapping_value_or_none(mapping=parsed_list_tags_data, key="returned_count")
         tag_match_data["catalog_fetch"] = {
             "mode": planner_tag_count_mode,
             "limit": list_tags_args["limit"],
-            "total_matches": parsed_list_tags.get("data", {}).get("total_matches")
-            if isinstance(parsed_list_tags.get("data"), dict)
-            else None,
-            "returned_count": parsed_list_tags.get("data", {}).get("returned_count")
-            if isinstance(parsed_list_tags.get("data"), dict)
-            else None,
+            "total_matches": total_matches,
+            "returned_count": returned_count,
         }
         append_step(
             step_record={
@@ -6042,11 +6204,9 @@ def _validate_v2_conversation_history(
 
 
 def _build_v2_system_prompt(*, include_tags_in_context_window: bool) -> str:
-    tags_line = (
-        "Tag lines start with '# ' and represent direct raw tags only. "
-        if include_tags_in_context_window
-        else "Tag lines are omitted in this run to save context space. "
-    )
+    tags_line = "Tag lines are omitted in this run to save context space. "
+    if include_tags_in_context_window:
+        tags_line = "Tag lines start with '# ' and represent direct raw tags only. "
     return (
         "You are the MetaList assistant. "
         "You must answer using only the provided context window and conversation history. "
@@ -6068,11 +6228,13 @@ def _build_v2_note_block(
     if not isinstance(note, dict):
         return None
 
-    note_id_value = note.get("note_id")
-    note_id = note_id_value if isinstance(note_id_value, str) and note_id_value != "" else None
+    note_id_value = _mapping_value_or_none(mapping=note, key="note_id")
+    note_id: str | None = None
+    if isinstance(note_id_value, str) and note_id_value != "":
+        note_id = note_id_value
 
     ancestor_texts: List[str] = []
-    ancestor_texts_raw = note.get("ancestor_texts")
+    ancestor_texts_raw = _mapping_value_or_none(mapping=note, key="ancestor_texts")
     if isinstance(ancestor_texts_raw, list):
         for ancestor_text in ancestor_texts_raw:
             if not isinstance(ancestor_text, str):
@@ -6083,7 +6245,7 @@ def _build_v2_note_block(
 
     ancestor_raw_tags: List[str] = []
     if include_tags_in_context_window:
-        ancestor_raw_tags_raw = note.get("ancestor_raw_tag_strings")
+        ancestor_raw_tags_raw = _mapping_value_or_none(mapping=note, key="ancestor_raw_tag_strings")
         if isinstance(ancestor_raw_tags_raw, list):
             for ancestor_tag in ancestor_raw_tags_raw:
                 if not isinstance(ancestor_tag, str):
@@ -6092,14 +6254,14 @@ def _build_v2_note_block(
                 normalized_tag = re.sub(r"\s+", " ", ancestor_tag).strip()
                 ancestor_raw_tags.append(normalized_tag)
 
-    content_raw = note.get("content_text")
+    content_raw = _mapping_value_or_none(mapping=note, key="content_text")
     if not isinstance(content_raw, str):
         content_raw = ""
     content_text = _strip_html_to_text(text=content_raw)
     content_text = re.sub(r"\s+", " ", content_text).strip()
 
     descendant_texts: List[str] = []
-    descendant_texts_raw = note.get("descendant_texts")
+    descendant_texts_raw = _mapping_value_or_none(mapping=note, key="descendant_texts")
     if isinstance(descendant_texts_raw, list):
         for descendant_text in descendant_texts_raw:
             if not isinstance(descendant_text, str):
@@ -6110,7 +6272,7 @@ def _build_v2_note_block(
 
     descendant_raw_tags: List[str] = []
     if include_tags_in_context_window:
-        descendant_raw_tags_raw = note.get("descendant_raw_tag_strings")
+        descendant_raw_tags_raw = _mapping_value_or_none(mapping=note, key="descendant_raw_tag_strings")
         if isinstance(descendant_raw_tags_raw, list):
             for descendant_tag in descendant_raw_tags_raw:
                 if not isinstance(descendant_tag, str):
@@ -6120,7 +6282,7 @@ def _build_v2_note_block(
                 descendant_raw_tags.append(normalized_tag)
 
     descendant_relative_depths: List[int] = []
-    descendant_relative_depths_raw = note.get("descendant_relative_depths")
+    descendant_relative_depths_raw = _mapping_value_or_none(mapping=note, key="descendant_relative_depths")
     if isinstance(descendant_relative_depths_raw, list):
         for relative_depth in descendant_relative_depths_raw:
             if not isinstance(relative_depth, int) or relative_depth < 1:
@@ -6130,14 +6292,14 @@ def _build_v2_note_block(
 
     raw_tag_string = ""
     if include_tags_in_context_window:
-        raw_tag_value = note.get("raw_tag_string")
+        raw_tag_value = _mapping_value_or_none(mapping=note, key="raw_tag_string")
         if isinstance(raw_tag_value, str):
             raw_tag_string = re.sub(r"\s+", " ", raw_tag_value).strip()
 
     covered_note_ids: List[str] = []
     if note_id is not None:
         covered_note_ids.append(note_id)
-    descendant_note_ids_raw = note.get("descendant_note_ids")
+    descendant_note_ids_raw = _mapping_value_or_none(mapping=note, key="descendant_note_ids")
     if isinstance(descendant_note_ids_raw, list):
         seen_covered = set(covered_note_ids)
         for descendant_note_id in descendant_note_ids_raw:
@@ -6148,7 +6310,7 @@ def _build_v2_note_block(
             seen_covered.add(descendant_note_id)
             covered_note_ids.append(descendant_note_id)
 
-    ancestor_note_ids = note.get("ancestor_note_ids")
+    ancestor_note_ids = _mapping_value_or_none(mapping=note, key="ancestor_note_ids")
     depth = 0
     if isinstance(ancestor_note_ids, list):
         for ancestor_note_id in ancestor_note_ids:
@@ -6158,8 +6320,12 @@ def _build_v2_note_block(
     lines: List[str] = []
     ancestor_item_count = max(len(ancestor_texts), len(ancestor_raw_tags))
     for ancestor_index in range(ancestor_item_count):
-        ancestor_text = ancestor_texts[ancestor_index] if ancestor_index < len(ancestor_texts) else ""
-        ancestor_tag = ancestor_raw_tags[ancestor_index] if ancestor_index < len(ancestor_raw_tags) else ""
+        ancestor_text = ""
+        if ancestor_index < len(ancestor_texts):
+            ancestor_text = ancestor_texts[ancestor_index]
+        ancestor_tag = ""
+        if ancestor_index < len(ancestor_raw_tags):
+            ancestor_tag = ancestor_raw_tags[ancestor_index]
         ancestor_indent = "    " * ancestor_index
         if ancestor_text != "":
             lines.append(ancestor_indent + ancestor_text)
@@ -6178,21 +6344,15 @@ def _build_v2_note_block(
         len(descendant_relative_depths),
     )
     for descendant_index in range(descendant_item_count):
-        descendant_text = (
-            descendant_texts[descendant_index]
-            if descendant_index < len(descendant_texts)
-            else ""
-        )
-        descendant_tag = (
-            descendant_raw_tags[descendant_index]
-            if descendant_index < len(descendant_raw_tags)
-            else ""
-        )
-        relative_depth = (
-            descendant_relative_depths[descendant_index]
-            if descendant_index < len(descendant_relative_depths)
-            else 1
-        )
+        descendant_text = ""
+        if descendant_index < len(descendant_texts):
+            descendant_text = descendant_texts[descendant_index]
+        descendant_tag = ""
+        if descendant_index < len(descendant_raw_tags):
+            descendant_tag = descendant_raw_tags[descendant_index]
+        relative_depth = 1
+        if descendant_index < len(descendant_relative_depths):
+            relative_depth = descendant_relative_depths[descendant_index]
         descendant_indent = "    " * (depth + relative_depth)
         if descendant_text != "":
             lines.append(descendant_indent + descendant_text)
@@ -6240,24 +6400,27 @@ def _build_v2_context_window(
         3,
     )
     context_tool_response = _extract_tool_response(call_response=context_call)
-    if context_tool_response.get("ok") is not True:
-        error = context_tool_response.get("error", "get_active_search_context failed")
+    context_ok = _mapping_value_or_none(mapping=context_tool_response, key="ok")
+    if context_ok is not True:
+        error = _mapping_value_or_none(mapping=context_tool_response, key="error")
+        if not isinstance(error, str) or error.strip() == "":
+            error = "get_active_search_context failed"
         raise RuntimeError(str(error))
 
-    context_data = context_tool_response.get("data")
-    if not isinstance(context_data, dict):
+    context_data = _mapping_dict_or_none(mapping=context_tool_response, key="data")
+    if context_data is None:
         raise TypeError("get_active_search_context data must be an object")
 
-    active_search_context_query = context_data.get("search_query")
+    active_search_context_query = _mapping_value_or_none(mapping=context_data, key="search_query")
     if not isinstance(active_search_context_query, str):
         raise TypeError("get_active_search_context search_query must be a string")
-    active_tab_id = context_data.get("active_tab_id")
+    active_tab_id = _mapping_value_or_none(mapping=context_data, key="active_tab_id")
     if not isinstance(active_tab_id, str) or active_tab_id == "":
         raise TypeError("get_active_search_context active_tab_id must be a non-empty string")
-    tab_state_version = context_data.get("tab_state_version")
+    tab_state_version = _mapping_value_or_none(mapping=context_data, key="tab_state_version")
     if not isinstance(tab_state_version, int) or tab_state_version < 0:
         raise TypeError("get_active_search_context tab_state_version must be a non-negative integer")
-    tab_count = context_data.get("tab_count")
+    tab_count = _mapping_value_or_none(mapping=context_data, key="tab_count")
     if not isinstance(tab_count, int) or tab_count <= 0:
         raise TypeError("get_active_search_context tab_count must be a positive integer")
 
@@ -6278,21 +6441,24 @@ def _build_v2_context_window(
     )
     search_execution_ms = round((time.perf_counter() - search_started_at) * 1000, 3)
     search_tool_response = _extract_tool_response(call_response=search_call)
-    if search_tool_response.get("ok") is not True:
-        error = search_tool_response.get("error", "search_notes failed")
+    search_ok = _mapping_value_or_none(mapping=search_tool_response, key="ok")
+    if search_ok is not True:
+        error = _mapping_value_or_none(mapping=search_tool_response, key="error")
+        if not isinstance(error, str) or error.strip() == "":
+            error = "search_notes failed"
         raise RuntimeError(str(error))
 
-    search_data = search_tool_response.get("data")
-    if not isinstance(search_data, dict):
+    search_data = _mapping_dict_or_none(mapping=search_tool_response, key="data")
+    if search_data is None:
         raise TypeError("search_notes data must be an object")
 
-    results = search_data.get("results")
+    results = _mapping_value_or_none(mapping=search_data, key="results")
     if not isinstance(results, list):
         raise TypeError("search_notes results must be an array")
-    total_matches = search_data.get("total_matches")
+    total_matches = _mapping_value_or_none(mapping=search_data, key="total_matches")
     if not isinstance(total_matches, int) or total_matches < 0:
         raise TypeError("search_notes total_matches must be a non-negative integer")
-    returned_count = search_data.get("returned_count")
+    returned_count = _mapping_value_or_none(mapping=search_data, key="returned_count")
     if not isinstance(returned_count, int) or returned_count < 0:
         raise TypeError("search_notes returned_count must be a non-negative integer")
 
@@ -6304,7 +6470,7 @@ def _build_v2_context_window(
     skipped_duplicate_note_count = 0
 
     for order_index, entry in enumerate(results, start=1):
-        entry_note_id = entry.get("note_id")
+        entry_note_id = _mapping_value_or_none(mapping=entry, key="note_id")
         if not isinstance(entry_note_id, str) or entry_note_id == "":
             raise TypeError("search_notes result entry missing note_id")
         if entry_note_id in covered_note_ids:
@@ -6321,12 +6487,10 @@ def _build_v2_context_window(
         block_text = rendered["block_text"]
         if not isinstance(block_text, str):
             raise TypeError("block_text must be a string")
-        rendered_note = rendered.get("note")
-        if not isinstance(rendered_note, dict):
+        rendered_note = _mapping_dict_or_none(mapping=rendered, key="note")
+        if rendered_note is None:
             raise TypeError("rendered note metadata must be an object")
-        block_covered_note_ids_raw = rendered_note.get("covered_note_ids")
-        if not isinstance(block_covered_note_ids_raw, list):
-            raise TypeError("covered_note_ids must be a list")
+        block_covered_note_ids_raw = _mapping_list_or_empty(mapping=rendered_note, key="covered_note_ids")
         block_covered_note_ids: List[str] = []
         for covered_note_id in block_covered_note_ids_raw:
             if not isinstance(covered_note_id, str) or covered_note_id == "":
@@ -6373,10 +6537,10 @@ def _build_v2_context_window(
         "tab_state_version": tab_state_version,
         "tab_count": tab_count,
         "search_data": {
-            "query": search_data.get("query"),
-            "resolved_query": search_data.get("resolved_query"),
-            "limit": search_data.get("limit"),
-            "offset": search_data.get("offset"),
+            "query": _mapping_value_or_none(mapping=search_data, key="query"),
+            "resolved_query": _mapping_value_or_none(mapping=search_data, key="resolved_query"),
+            "limit": _mapping_value_or_none(mapping=search_data, key="limit"),
+            "offset": _mapping_value_or_none(mapping=search_data, key="offset"),
             "total_matches": total_matches,
             "returned_count": returned_count,
         },
@@ -6411,7 +6575,10 @@ def _build_v2_prompt_messages(
     context_lines: List[str] = []
     context_lines.append("NOTES")
 
-    context_window_text_for_prompt = context_window.get("context_window_text_for_prompt")
+    context_window_text_for_prompt = _mapping_value_or_none(
+        mapping=context_window,
+        key="context_window_text_for_prompt",
+    )
     if (
         isinstance(context_window_text_for_prompt, str)
         and context_window_text_for_prompt.strip() != ""
@@ -6423,33 +6590,58 @@ def _build_v2_prompt_messages(
     context_lines.append("END OF NOTES")
     context_lines.append("")
     context_lines.append("CONTEXT METADATA")
+    active_search_context_query = _mapping_value_or_none(
+        mapping=context_window,
+        key="active_search_context_query",
+    )
+    if not isinstance(active_search_context_query, str):
+        active_search_context_query = ""
     context_lines.append(
         "Active search context query: "
-        + json.dumps(context_window.get("active_search_context_query", ""), ensure_ascii=False)
+        + json.dumps(active_search_context_query, ensure_ascii=False)
     )
+    universe_note_count = _mapping_value_or_none(mapping=context_window, key="universe_note_count")
+    if not isinstance(universe_note_count, int):
+        universe_note_count = 0
     context_lines.append(
-        "Universe notes: " + str(context_window.get("universe_note_count", 0))
+        "Universe notes: " + str(universe_note_count)
     )
+    included_note_count = _mapping_value_or_none(mapping=context_window, key="included_note_count")
+    if not isinstance(included_note_count, int):
+        included_note_count = 0
     context_lines.append(
-        "Included notes: " + str(context_window.get("included_note_count", 0))
+        "Included notes: " + str(included_note_count)
     )
+    omitted_note_count = _mapping_value_or_none(mapping=context_window, key="omitted_note_count")
+    if not isinstance(omitted_note_count, int):
+        omitted_note_count = 0
     context_lines.append(
-        "Omitted notes: " + str(context_window.get("omitted_note_count", 0))
+        "Omitted notes: " + str(omitted_note_count)
     )
-    budget = context_window.get("budget")
+    budget = _mapping_dict_or_none(mapping=context_window, key="budget")
     if isinstance(budget, dict):
+        used_chars = _mapping_value_or_none(mapping=budget, key="used_chars")
+        if not isinstance(used_chars, int):
+            used_chars = 0
+        max_chars = _mapping_value_or_none(mapping=budget, key="max_chars")
+        if not isinstance(max_chars, int):
+            max_chars = 0
         context_lines.append(
             "Context budget (chars): "
-            + str(budget.get("used_chars", 0))
+            + str(used_chars)
             + " / "
-            + str(budget.get("max_chars", 0))
+            + str(max_chars)
         )
+    include_tags_in_context_window = _mapping_value_or_none(
+        mapping=context_window,
+        key="include_tags_in_context_window",
+    )
     context_lines.append(
         "Ordering for model input: top notes are generally lower-priority; notes farther down are generally more recent and/or higher-priority."
     )
     context_lines.append(
         "Include tags in context window: "
-        + str(bool(context_window.get("include_tags_in_context_window"))).lower()
+        + str(bool(include_tags_in_context_window)).lower()
     )
     context_lines.append("Requested Ollama num_ctx: " + str(num_ctx))
 
@@ -6464,9 +6656,7 @@ def _build_v2_prompt_messages(
         {
             "role": "system",
             "content": _build_v2_system_prompt(
-                include_tags_in_context_window=bool(
-                    context_window.get("include_tags_in_context_window")
-                )
+                include_tags_in_context_window=bool(include_tags_in_context_window)
             ),
         }
     )
@@ -6490,7 +6680,7 @@ def _run_context_window_request(
     ollama_chat_url: str,
     model: str,
     progress_callback: Callable[[dict], None] | None,
-    status_callback: Callable[[str], None] | None = None,
+    status_callback: Callable[[str], None] | None,
 ) -> dict:
     if user_message.strip() == "":
         raise ValueError("message must not be empty")
@@ -6604,45 +6794,29 @@ def _run_context_window_request(
         num_ctx=num_ctx,
     )
     model_execution_ms = round((time.perf_counter() - model_started_at) * 1000, 3)
-    answer = model_runtime.get("content")
+    answer = _mapping_value_or_none(mapping=model_runtime, key="content")
     if not isinstance(answer, str):
         raise TypeError("model runtime content must be a string")
-    served_model = model_runtime.get("served_model")
+    served_model = _mapping_value_or_none(mapping=model_runtime, key="served_model")
     if not isinstance(served_model, str) or served_model.strip() == "":
         served_model = resolved_model
 
     _emit_status(detail="Verifying runtime model/context...")
-    running_num_ctx: int | None = None
-    running_num_ctx_verify_error = ""
-    try:
-        running_num_ctx = _ollama_running_model_num_ctx(
-            ollama_chat_url=ollama_chat_url,
-            model=served_model,
-        )
-    except Exception as exc:
-        running_num_ctx_verify_error = f"{type(exc).__name__}: {exc}"
-
-    model_max_context_window: int | None = None
-    model_context_verify_error = ""
-    try:
-        model_max_context_window = _ollama_model_context_length(
-            ollama_chat_url=ollama_chat_url,
-            model=served_model,
-        )
-    except Exception as exc:
-        model_context_verify_error = f"{type(exc).__name__}: {exc}"
+    running_num_ctx = _ollama_running_model_num_ctx(
+        ollama_chat_url=ollama_chat_url,
+        model=served_model,
+    )
+    model_max_context_window = _ollama_model_context_length(
+        ollama_chat_url=ollama_chat_url,
+        model=served_model,
+    )
 
     effective_context_window = num_ctx
     if isinstance(running_num_ctx, int):
         effective_context_window = running_num_ctx
     elif isinstance(model_max_context_window, int):
         effective_context_window = min(num_ctx, model_max_context_window)
-    verify_error_parts: List[str] = []
-    if running_num_ctx_verify_error != "":
-        verify_error_parts.append("ps: " + running_num_ctx_verify_error)
-    if model_context_verify_error != "":
-        verify_error_parts.append("show: " + model_context_verify_error)
-    combined_verify_error = "; ".join(verify_error_parts)
+    combined_verify_error = ""
 
     append_step(
         step_record={
@@ -6661,7 +6835,7 @@ def _run_context_window_request(
                 "raw_model_output": answer,
             },
             "tool_response": {
-                "ok": combined_verify_error == "",
+                "ok": True,
                 "data": {
                     "served_model": served_model,
                     "requested_num_ctx": num_ctx,
@@ -6727,10 +6901,12 @@ def _web_html(
     max_steps_value = str(default_max_steps)
     max_expressions_value = str(default_max_expressions)
     hydrate_top_k_value = str(default_hydrate_top_k)
-    regex_engine_python_re_selected = (
-        "selected" if default_regex_engine == "python-re" else ""
-    )
-    regex_engine_re2_selected = "selected" if default_regex_engine == "re2" else ""
+    regex_engine_python_re_selected = ""
+    if default_regex_engine == "python-re":
+        regex_engine_python_re_selected = "selected"
+    regex_engine_re2_selected = ""
+    if default_regex_engine == "re2":
+        regex_engine_re2_selected = "selected"
     search_context_query_value = json.dumps(default_search_context_query)
     return f"""<!doctype html>
 <html>
@@ -9500,7 +9676,9 @@ def create_web_app(
             )
 
         def worker() -> None:
-            try:
+            worker_capture = _CapturedExceptionContext(Exception)
+            result: dict | None = None
+            with worker_capture:
                 result = _run_rewrite_request(
                     user_message=payload.message,
                     search_context_query=payload.search_context_query,
@@ -9514,23 +9692,26 @@ def create_web_app(
                     progress_callback=progress_callback,
                     status_callback=status_callback,
                 )
-                event_queue.put(
-                    {
-                        "type": "final",
-                        "result": result,
-                    }
-                )
-            except Exception as exc:
-                traceback.print_exc()
+            if worker_capture.captured_exception is not None:
+                exc = worker_capture.captured_exception
+                traceback.print_exception(exc)
                 event_queue.put(
                     {
                         "type": "error",
                         "detail": f"{type(exc).__name__}: {exc}",
                     }
                 )
-            finally:
-                worker_finished.set()
-                event_queue.put({"type": "end"})
+            else:
+                if result is None:
+                    raise RuntimeError("Rewrite worker did not produce a result")
+                event_queue.put(
+                    {
+                        "type": "final",
+                        "result": result,
+                    }
+                )
+            worker_finished.set()
+            event_queue.put({"type": "end"})
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
@@ -9538,14 +9719,19 @@ def create_web_app(
         def event_stream():
             yield json.dumps({"type": "status", "status": "running", "detail": "Running..."}, ensure_ascii=False) + "\n"
             while True:
-                try:
+                event_capture = _CapturedExceptionContext(queue.Empty)
+                event: dict | None = None
+                with event_capture:
                     event = event_queue.get(timeout=1.0)
-                except queue.Empty:
+                if event_capture.captured_exception is not None:
                     if worker_finished.is_set():
                         continue
                     with heartbeat_lock:
-                        latest_detail = heartbeat_state.get("detail")
-                        run_started_at = heartbeat_state.get("run_started_at")
+                        latest_detail = _mapping_value_or_none(mapping=heartbeat_state, key="detail")
+                        run_started_at = _mapping_value_or_none(
+                            mapping=heartbeat_state,
+                            key="run_started_at",
+                        )
                     if not isinstance(latest_detail, str) or latest_detail.strip() == "":
                         latest_detail = "Running..."
                     elapsed_ms = 0.0
@@ -9563,6 +9749,8 @@ def create_web_app(
                         ensure_ascii=False,
                     ) + "\n"
                     continue
+                if event is None:
+                    raise RuntimeError("Event stream did not receive an event")
                 if not isinstance(event, dict):
                     continue
                 if "type" not in event:
@@ -9589,12 +9777,17 @@ def create_web_app(
             )
         if payload.num_ctx <= 0:
             raise HTTPException(status_code=400, detail="num_ctx must be > 0")
-        try:
+        history_capture = _CapturedExceptionContext(ValueError)
+        normalized_history: List[dict] | None = None
+        with history_capture:
             normalized_history = _validate_v2_conversation_history(
                 entries=payload.conversation_history
             )
-        except ValueError as exc:
+        if history_capture.captured_exception is not None:
+            exc = history_capture.captured_exception
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if normalized_history is None:
+            raise RuntimeError("Conversation-history normalization did not return entries")
 
         event_queue: queue.Queue[dict] = queue.Queue()
         worker_finished = threading.Event()
@@ -9624,7 +9817,9 @@ def create_web_app(
             )
 
         def worker() -> None:
-            try:
+            worker_capture = _CapturedExceptionContext(Exception)
+            result: dict | None = None
+            with worker_capture:
                 result = _run_context_window_request(
                     user_message=payload.message,
                     conversation_history=normalized_history,
@@ -9637,23 +9832,26 @@ def create_web_app(
                     progress_callback=progress_callback,
                     status_callback=status_callback,
                 )
-                event_queue.put(
-                    {
-                        "type": "final",
-                        "result": result,
-                    }
-                )
-            except Exception as exc:
-                traceback.print_exc()
+            if worker_capture.captured_exception is not None:
+                exc = worker_capture.captured_exception
+                traceback.print_exception(exc)
                 event_queue.put(
                     {
                         "type": "error",
                         "detail": f"{type(exc).__name__}: {exc}",
                     }
                 )
-            finally:
-                worker_finished.set()
-                event_queue.put({"type": "end"})
+            else:
+                if result is None:
+                    raise RuntimeError("Context-window worker did not produce a result")
+                event_queue.put(
+                    {
+                        "type": "final",
+                        "result": result,
+                    }
+                )
+            worker_finished.set()
+            event_queue.put({"type": "end"})
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
@@ -9664,14 +9862,19 @@ def create_web_app(
                 ensure_ascii=False,
             ) + "\n"
             while True:
-                try:
+                event_capture = _CapturedExceptionContext(queue.Empty)
+                event: dict | None = None
+                with event_capture:
                     event = event_queue.get(timeout=1.0)
-                except queue.Empty:
+                if event_capture.captured_exception is not None:
                     if worker_finished.is_set():
                         continue
                     with heartbeat_lock:
-                        latest_detail = heartbeat_state.get("detail")
-                        run_started_at = heartbeat_state.get("run_started_at")
+                        latest_detail = _mapping_value_or_none(mapping=heartbeat_state, key="detail")
+                        run_started_at = _mapping_value_or_none(
+                            mapping=heartbeat_state,
+                            key="run_started_at",
+                        )
                     if not isinstance(latest_detail, str) or latest_detail.strip() == "":
                         latest_detail = "Running..."
                     elapsed_ms = 0.0
@@ -9689,9 +9892,11 @@ def create_web_app(
                         ensure_ascii=False,
                     ) + "\n"
                     continue
+                if event is None:
+                    raise RuntimeError("Event stream did not receive an event")
                 if not isinstance(event, dict):
                     continue
-                event_type = event.get("type")
+                event_type = _mapping_value_or_none(mapping=event, key="type")
                 if not isinstance(event_type, str):
                     continue
                 if event_type == "end":

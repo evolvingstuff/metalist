@@ -5,6 +5,7 @@ import {
     DELETE_NAMESPACE_CONFIRMATION_PHRASE,
     validateNamespaceDeletionSubmission,
 } from './delete-namespace-validation.js';
+import { settleResult } from '../async-result.js';
 
 
 function escapeHtml(value) {
@@ -266,7 +267,7 @@ export class DeleteNamespaceModal extends BaseModal {
             status: 'Loading namespace settings...',
         });
         this.renderModalContent();
-        try {
+        const statusResult = await settleResult(async () => {
             const status = await this._authRequest(this.apiEndpoints.status, 'GET', null);
             if (!status || typeof status !== 'object') {
                 throw new Error('Namespace delete status response missing body');
@@ -286,7 +287,9 @@ export class DeleteNamespaceModal extends BaseModal {
                 error: '',
                 status: '',
             });
-        } catch (error) {
+        });
+        if (!statusResult.ok) {
+            const error = statusResult.error;
             const message = error instanceof Error ? error.message : 'Failed to load namespace settings';
             this.updateModalState({
                 loading: false,
@@ -299,15 +302,16 @@ export class DeleteNamespaceModal extends BaseModal {
 
     async handleSubmit() {
         const state = this.getModalState();
-        let payload;
-        try {
-            payload = validateNamespaceDeletionSubmission({
+        const payloadResult = await settleResult(() => {
+            return validateNamespaceDeletionSubmission({
                 namespace: state.namespace,
                 confirmationText: state.confirmationText,
                 currentPassword: state.currentPassword,
                 hasPassword: state.hasPassword === true,
             });
-        } catch (error) {
+        });
+        if (!payloadResult.ok) {
+            const error = payloadResult.error;
             const message = error instanceof Error ? error.message : 'Invalid namespace deletion request';
             this.updateModalState({
                 error: message,
@@ -316,6 +320,7 @@ export class DeleteNamespaceModal extends BaseModal {
             this.renderModalContent();
             return;
         }
+        const payload = payloadResult.value;
 
         this.updateModalState({
             deleting: true,
@@ -324,7 +329,7 @@ export class DeleteNamespaceModal extends BaseModal {
         });
         this.renderModalContent();
 
-        try {
+        const deleteResult = await settleResult(async () => {
             const response = await this._authRequest(this.apiEndpoints.deleteCurrent, 'POST', payload);
             if (!response || typeof response !== 'object') {
                 throw new Error('Namespace delete response missing body');
@@ -339,7 +344,9 @@ export class DeleteNamespaceModal extends BaseModal {
                 throw new Error('Namespace delete response missing job redirect state');
             }
             window.location.replace(response.redirect_url);
-        } catch (error) {
+        });
+        if (!deleteResult.ok) {
+            const error = deleteResult.error;
             const message = error instanceof Error ? error.message : 'Failed to delete namespace';
             this.updateModalState({
                 deleting: false,

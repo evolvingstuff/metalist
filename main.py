@@ -22,6 +22,7 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from mcp_client import create_web_app
@@ -230,12 +231,15 @@ def _is_process_running(*, pid: int) -> bool:
         raise TypeError(f"pid must be an int, got {type(pid)}")
     if pid <= 0:
         raise ValueError(f"pid must be positive, got: {pid}")
-    try:
+    kill_capture = CapturedExceptionContext(ProcessLookupError, PermissionError)
+    with kill_capture:
         os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    if kill_capture.captured_exception is not None:
+        if isinstance(kill_capture.captured_exception, ProcessLookupError):
+            return False
+        if isinstance(kill_capture.captured_exception, PermissionError):
+            return True
+        raise RuntimeError("Unexpected process-probe exception type")
     process_state = _read_process_state(pid=pid)
     if process_state is None:
         return True
@@ -261,9 +265,10 @@ def _wait_for_process_exit(*, pid: int, timeout_seconds: float) -> bool:
 def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
     if not _is_process_running(pid=pid):
         return
-    try:
+    signal_capture = CapturedExceptionContext(ProcessLookupError)
+    with signal_capture:
         os.kill(pid, signal_number)
-    except ProcessLookupError:
+    if signal_capture.captured_exception is not None:
         return
 
 
@@ -551,9 +556,7 @@ def _start_https_proxy_server(
     thread.start()
     return _StartedHttpsProxy(server=server, thread=thread)
 
-def main(argv: list[str] | None = None) -> None:
-    if argv is None:
-        argv = sys.argv[1:]
+def main(argv: list[str]) -> None:
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     _record_self_executable_for_namespace_launch()
@@ -624,4 +627,4 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

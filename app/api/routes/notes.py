@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app.services.snapshot import build_view_state
 from app.services.snapshot import resolve_search_scope
 from app.services.note_store import store as note_store
+from app.services.exception_capture import CapturedExceptionContext
 from app.usecases.create_note import CmdCreateNote
 from app.usecases.create_sibling import CmdCreateSibling
 from app.usecases.create_child import CmdCreateChild
@@ -494,28 +495,40 @@ def run_shell_endpoint(note_id: str, body: dict) -> Dict[str, object]:
 
 @router.get("/notes/{note_id}/run-shell/{run_id}")
 def run_shell_status_endpoint(note_id: str, run_id: str) -> Dict[str, object]:
-    try:
+    run_capture = CapturedExceptionContext(RuntimeError, TypeError, ValueError)
+    result: Dict[str, object] | None = None
+    with run_capture:
         cmd = CmdRunShellStatus(
             note_id=note_id,
             run_id=run_id,
         )
-        return cmd.execute()
-    except (RuntimeError, TypeError, ValueError) as exc:
+        result = cmd.execute()
+    if run_capture.captured_exception is not None:
+        exc = run_capture.captured_exception
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Shell status command did not return a result")
+    return result
 
 
 @router.post("/notes/{note_id}/run-shell/{run_id}/input")
 def run_shell_input_endpoint(note_id: str, run_id: str, body: dict) -> Dict[str, object]:
-    try:
+    run_capture = CapturedExceptionContext(RuntimeError, TypeError, ValueError)
+    result: Dict[str, object] | None = None
+    with run_capture:
         cmd = CmdRunShellInput(
             note_id=note_id,
             run_id=run_id,
             text=body["text"],
             append_newline=body["appendNewline"],
         )
-        return cmd.execute()
-    except (RuntimeError, TypeError, ValueError) as exc:
+        result = cmd.execute()
+    if run_capture.captured_exception is not None:
+        exc = run_capture.captured_exception
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Shell input command did not return a result")
+    return result
 
 
 @router.post("/notes/{note_id}/join-next")

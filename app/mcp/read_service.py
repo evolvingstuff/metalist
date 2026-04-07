@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+import importlib
+import importlib.util
 import re
 import unicodedata
 from typing import Dict, FrozenSet, List, Set
 
 from app.config import VERSION
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.note_store import NoteRecord
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import get_ontology
@@ -40,10 +43,9 @@ _REGEX_NORMALIZE_TRANSLATION = str.maketrans(
     }
 )
 
-try:
-    import re2 as _re2_module
-except ModuleNotFoundError:
-    _re2_module = None
+_re2_module = None
+if importlib.util.find_spec("re2") is not None:
+    _re2_module = importlib.import_module("re2")
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -495,10 +497,15 @@ class ReadService:
         normalized_flags, python_flags = self._normalize_regex_flags(flags=flags)
 
         if normalized_engine == "python-re":
-            try:
+            compile_capture = CapturedExceptionContext(re.error)
+            compiled = None
+            with compile_capture:
                 compiled = re.compile(pattern, python_flags)
-            except re.error as error:
+            if compile_capture.captured_exception is not None:
+                error = compile_capture.captured_exception
                 raise InvalidArgumentsError(f"invalid regex pattern: {error}") from error
+            if compiled is None:
+                raise RuntimeError("Python regex compilation did not return a pattern")
             return compiled, normalized_flags, normalized_engine
 
         if _re2_module is None:
@@ -512,10 +519,15 @@ class ReadService:
         if "s" in normalized_flags and hasattr(_re2_module, "DOTALL"):
             re2_flags |= _re2_module.DOTALL
 
-        try:
+        compile_capture = CapturedExceptionContext(Exception)
+        compiled = None
+        with compile_capture:
             compiled = _re2_module.compile(pattern, re2_flags)
-        except Exception as error:
+        if compile_capture.captured_exception is not None:
+            error = compile_capture.captured_exception
             raise InvalidArgumentsError(f"invalid re2 pattern: {error}") from error
+        if compiled is None:
+            raise RuntimeError("re2 compilation did not return a pattern")
         return compiled, normalized_flags, normalized_engine
 
     def _match_snippet(
@@ -524,7 +536,7 @@ class ReadService:
         text: str,
         start: int,
         end: int,
-        window: int = 80,
+        window: int,
     ) -> str:
         left = max(0, start - window)
         right = min(len(text), end + window)
@@ -844,7 +856,9 @@ class ReadService:
                     note_id=note_id,
                     content_text=content_text,
                 )
-                context_value = context_bundle.get("context_text")
+                if "context_text" not in context_bundle:
+                    raise RuntimeError("context bundle missing context_text")
+                context_value = context_bundle["context_text"]
                 if not isinstance(context_value, str):
                     raise RuntimeError("context_text must be a string")
                 context_text = context_value
@@ -865,6 +879,7 @@ class ReadService:
                                 text=matched_text,
                                 start=int(match.start()),
                                 end=int(match.end()),
+                                window=80,
                             ),
                             "normalized_text_match": normalized_used,
                         }
@@ -885,6 +900,7 @@ class ReadService:
                                 text=matched_text,
                                 start=int(match.start()),
                                 end=int(match.end()),
+                                window=80,
                             ),
                             "normalized_text_match": normalized_used,
                         }
@@ -972,7 +988,9 @@ class ReadService:
                     note_id=note_id,
                     content_text=content_text,
                 )
-                context_value = context_bundle.get("context_text")
+                if "context_text" not in context_bundle:
+                    raise RuntimeError("context bundle missing context_text")
+                context_value = context_bundle["context_text"]
                 if not isinstance(context_value, str):
                     raise RuntimeError("context_text must be a string")
                 context_text = context_value

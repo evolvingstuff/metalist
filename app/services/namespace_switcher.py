@@ -27,6 +27,7 @@ from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_runtime_logs_directory
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import create_namespace_deletion_job
 
 
@@ -139,9 +140,12 @@ def build_namespace_catalog(
             default_profile=default_profile,
         )
         entries.append(_serialize_catalog_entry(entry=entry))
+    current_profile_port = None
+    if current_profile is not None:
+        current_profile_port = current_profile.port
     current_url = _build_browser_url(
         environ=environ,
-        port=None if current_profile is None else current_profile.port,
+        port=current_profile_port,
     )
     new_namespace_profile = _suggest_profile(
         namespace=_PLACEHOLDER_NEW_NAMESPACE,
@@ -253,6 +257,7 @@ def open_or_launch_namespace(
         environ=environ,
         namespace=normalized_namespace,
         chosen_profile=chosen_profile,
+        allowed_listener_pids=frozenset(),
     )
     _launch_namespace_process(
         environ=environ,
@@ -440,9 +445,10 @@ def _discover_namespaces(
         for child in namespaces_directory.iterdir():
             if not child.is_dir():
                 continue
-            try:
+            validate_capture = CapturedExceptionContext(RuntimeError)
+            with validate_capture:
                 discovered.add(validate_namespace(namespace=child.name))
-            except RuntimeError:
+            if validate_capture.captured_exception is not None:
                 continue
     ordered_namespaces = sorted(discovered)
     if server_runtime._DEFAULT_NAMESPACE in ordered_namespaces:
@@ -766,12 +772,15 @@ def _is_process_running(*, pid: int) -> bool:
         raise TypeError(f"pid must be an int, got {type(pid)}")
     if pid <= 0:
         raise ValueError(f"pid must be positive, got: {pid}")
-    try:
+    kill_capture = CapturedExceptionContext(ProcessLookupError, PermissionError)
+    with kill_capture:
         os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    if kill_capture.captured_exception is not None:
+        if isinstance(kill_capture.captured_exception, ProcessLookupError):
+            return False
+        if isinstance(kill_capture.captured_exception, PermissionError):
+            return True
+        raise RuntimeError("Unexpected process-probe exception type")
     process_state = _read_process_state(pid=pid)
     if process_state is None:
         return True
@@ -797,9 +806,10 @@ def _wait_for_process_exit(*, pid: int, timeout_seconds: float) -> bool:
 def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
     if not _is_process_running(pid=pid):
         return
-    try:
+    signal_capture = CapturedExceptionContext(ProcessLookupError)
+    with signal_capture:
         os.kill(pid, signal_number)
-    except ProcessLookupError:
+    if signal_capture.captured_exception is not None:
         return
 
 
@@ -878,7 +888,7 @@ def _assert_ports_are_available_for_launch(
     environ: Mapping[str, str],
     namespace: str,
     chosen_profile: NamespaceLaunchProfile,
-    allowed_listener_pids: frozenset[int] | None = None,
+    allowed_listener_pids: frozenset[int] | None,
 ) -> None:
     main_server_config = resolve_main_server_config(environ=environ)
     connect_host = resolve_backend_connect_host(host=main_server_config.host)
@@ -1049,7 +1059,9 @@ def _probe_namespace_status(
     api_prefix: str,
 ) -> dict[str, object] | None:
     connection = HTTPConnection(host=host, port=port, timeout=_PORT_PROBE_TIMEOUT_SECONDS)
-    try:
+    request_capture = CapturedExceptionContext(OSError)
+    payload_bytes: bytes | None = None
+    with request_capture:
         connection.request(
             "GET",
             f"{api_prefix}/auth/status",
@@ -1057,15 +1069,20 @@ def _probe_namespace_status(
         )
         response = connection.getresponse()
         if response.status != 200:
+            connection.close()
             return None
         payload_bytes = response.read()
-    except OSError:
+    connection.close()
+    if request_capture.captured_exception is not None:
         return None
-    finally:
-        connection.close()
-    try:
+    if payload_bytes is None:
+        raise RuntimeError("Namespace probe did not return a payload")
+
+    decode_capture = CapturedExceptionContext(UnicodeDecodeError, json.JSONDecodeError)
+    payload = None
+    with decode_capture:
         payload = json.loads(payload_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    if decode_capture.captured_exception is not None:
         return None
     if not isinstance(payload, dict):
         return None
@@ -1073,11 +1090,13 @@ def _probe_namespace_status(
 
 
 def _is_tcp_port_open(*, host: str, port: int) -> bool:
-    try:
+    connect_capture = CapturedExceptionContext(OSError)
+    with connect_capture:
         with socket.create_connection((host, port), timeout=_PORT_PROBE_TIMEOUT_SECONDS):
             return True
-    except OSError:
+    if connect_capture.captured_exception is not None:
         return False
+    raise RuntimeError("TCP port probe finished without returning a result")
 
 
 def _build_browser_url(

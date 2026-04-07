@@ -135,7 +135,11 @@ export function invalidateBacklinksPanelCache() {
     lastRenderedKey = null;
 }
 
-export async function refreshBacklinksPanel(options = {}) {
+export async function refreshBacklinksPanel(...args) {
+    let options = {};
+    if (args.length > 0) {
+        options = args[0];
+    }
     if (options === null || typeof options !== 'object') {
         throw new Error('refreshBacklinksPanel requires options object');
     }

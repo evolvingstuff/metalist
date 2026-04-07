@@ -39,8 +39,13 @@ def _state_for(
     monkeypatch: pytest.MonkeyPatch,
     notes: Dict[str, _Note],
     children_by_parent: Dict[Optional[str], List[str]],
-    editing_note_id: Optional[str] = None,
+    **kwargs: object,
 ):
+    editing_note_id = None
+    if "editing_note_id" in kwargs:
+        editing_note_id = kwargs["editing_note_id"]
+    if editing_note_id is not None and not isinstance(editing_note_id, str):
+        raise TypeError("editing_note_id must be a string or None")
     store = _FakeNoteStore(notes=notes, children_by_parent=children_by_parent)
 
     import app.services.snapshot as snapshot

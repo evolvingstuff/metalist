@@ -15,7 +15,7 @@ _REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def list_backlinks_for_note(target_note_id: str, source_note_ids: Optional[Set[str]] = None) -> List[Dict[str, str]]:
+def list_backlinks_for_note(target_note_id: str, source_note_ids: Optional[Set[str]]) -> List[Dict[str, str]]:
     if not isinstance(target_note_id, str) or target_note_id == "":
         raise TypeError("target_note_id must be a non-empty string")
     if not note_store.has_note(target_note_id):

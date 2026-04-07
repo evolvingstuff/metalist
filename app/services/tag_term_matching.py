@@ -28,7 +28,9 @@ class TagContentMatch:
     normalized_length: int
 
     def sort_key(self) -> tuple[int, int, int, int, int]:
-        phrase_match_score = 1 if self.phrase_match else 0
+        phrase_match_score = 0
+        if self.phrase_match:
+            phrase_match_score = 1
         return (
             phrase_match_score,
             self.matched_segment_count,

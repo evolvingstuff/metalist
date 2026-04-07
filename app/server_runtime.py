@@ -17,6 +17,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from app.services.exception_capture import CapturedExceptionContext
 
 
 _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
@@ -90,10 +91,16 @@ def _parse_port_argument(raw_value: str) -> int:
 
 
 def _parse_namespace_argument(raw_value: str) -> str:
-    try:
-        return validate_namespace(namespace=raw_value)
-    except RuntimeError as exc:
+    namespace_capture = CapturedExceptionContext(RuntimeError)
+    normalized_namespace: str | None = None
+    with namespace_capture:
+        normalized_namespace = validate_namespace(namespace=raw_value)
+    if namespace_capture.captured_exception is not None:
+        exc = namespace_capture.captured_exception
         raise argparse.ArgumentTypeError(str(exc)) from exc
+    if normalized_namespace is None:
+        raise RuntimeError("Namespace argument parser did not return a namespace")
+    return normalized_namespace
 
 
 def validate_namespace(*, namespace: str) -> str:
@@ -162,6 +169,12 @@ def _validate_optional_port(*, name: str, value: int | None) -> int | None:
     return value
 
 
+def _coerce_optional_db_port(*, value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)
+
+
 def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile | None:
     normalized_namespace = validate_namespace(namespace=namespace)
     registry_path = resolve_namespace_registry_path()
@@ -193,9 +206,9 @@ def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile |
         return None
     return NamespaceLaunchProfile(
         namespace=str(row[0]),
-        port=None if row[1] is None else int(row[1]),
-        https_port=None if row[2] is None else int(row[2]),
-        mcp_port=None if row[3] is None else int(row[3]),
+        port=_coerce_optional_db_port(value=row[1]),
+        https_port=_coerce_optional_db_port(value=row[2]),
+        mcp_port=_coerce_optional_db_port(value=row[3]),
     )
 
 
@@ -229,9 +242,9 @@ def load_all_namespace_launch_profiles() -> list[NamespaceLaunchProfile]:
         profiles.append(
             NamespaceLaunchProfile(
                 namespace=str(row[0]),
-                port=None if row[1] is None else int(row[1]),
-                https_port=None if row[2] is None else int(row[2]),
-                mcp_port=None if row[3] is None else int(row[3]),
+                port=_coerce_optional_db_port(value=row[1]),
+                https_port=_coerce_optional_db_port(value=row[2]),
+                mcp_port=_coerce_optional_db_port(value=row[3]),
             )
         )
     return profiles
@@ -411,7 +424,9 @@ def resolve_v1_api_prefix(*, environ: Mapping[str, str]) -> str:
 def resolve_test_mode(*, environ: Mapping[str, str], argv: Sequence[str]) -> bool:
     if "--test" in argv:
         return True
-    return environ.get("TEST_MODE") == "1"
+    if "TEST_MODE" in environ:
+        return environ["TEST_MODE"] == "1"
+    return False
 
 
 def resolve_database_runtime_config(
@@ -421,7 +436,9 @@ def resolve_database_runtime_config(
 ) -> DatabaseRuntimeConfig:
     test_mode = resolve_test_mode(environ=environ, argv=argv)
     namespace_value = _read_optional_text(environ=environ, name=_NAMESPACE_ENV_NAME)
-    namespace = _DEFAULT_NAMESPACE if namespace_value is None else validate_namespace(namespace=namespace_value)
+    namespace = _DEFAULT_NAMESPACE
+    if namespace_value is not None:
+        namespace = validate_namespace(namespace=namespace_value)
 
     if test_mode:
         if namespace_value is not None:
@@ -496,7 +513,11 @@ def apply_main_cli_args_to_environ(
     if parsed_args.namespace is not None and parsed_args.namespace_shorthand is not None:
         raise RuntimeError("Specify namespace either positionally or with --namespace, not both")
 
-    namespace_requested = parsed_args.namespace is not None or parsed_args.namespace_shorthand is not None
+    namespace_requested = False
+    if parsed_args.namespace is not None:
+        namespace_requested = True
+    if parsed_args.namespace_shorthand is not None:
+        namespace_requested = True
     namespace = parsed_args.namespace
     if namespace is None:
         namespace = parsed_args.namespace_shorthand
@@ -538,19 +559,27 @@ def apply_main_cli_args_to_environ(
             or parsed_args.https_port is not None
             or parsed_args.mcp_port is not None
         ):
+            stored_port = None
+            stored_https_port = None
+            stored_mcp_port = None
+            if stored_profile is not None:
+                stored_port = stored_profile.port
+                stored_https_port = stored_profile.https_port
+                stored_mcp_port = stored_profile.mcp_port
+            resolved_port = stored_port
+            if parsed_args.port is not None:
+                resolved_port = parsed_args.port
+            resolved_https_port = stored_https_port
+            if parsed_args.https_port is not None:
+                resolved_https_port = parsed_args.https_port
+            resolved_mcp_port = stored_mcp_port
+            if parsed_args.mcp_port is not None:
+                resolved_mcp_port = parsed_args.mcp_port
             save_namespace_launch_profile(
                 namespace=resolved_namespace,
-                port=parsed_args.port if parsed_args.port is not None else (None if stored_profile is None else stored_profile.port),
-                https_port=(
-                    parsed_args.https_port
-                    if parsed_args.https_port is not None
-                    else (None if stored_profile is None else stored_profile.https_port)
-                ),
-                mcp_port=(
-                    parsed_args.mcp_port
-                    if parsed_args.mcp_port is not None
-                    else (None if stored_profile is None else stored_profile.mcp_port)
-                ),
+                port=resolved_port,
+                https_port=resolved_https_port,
+                mcp_port=resolved_mcp_port,
             )
 
     return MainCliArgs(
@@ -666,7 +695,9 @@ def _read_flag(*, environ: Mapping[str, str], name: str, fallback: bool) -> bool
     if name in environ:
         raw_value = environ[name]
     else:
-        raw_value = "1" if fallback else "0"
+        raw_value = "0"
+        if fallback:
+            raw_value = "1"
     value = raw_value.strip().lower()
     if value == "":
         raise RuntimeError(f"{name} must not be empty")
@@ -696,10 +727,15 @@ def _is_loopback_host(*, host: str) -> bool:
         return False
     if normalized == "localhost":
         return True
-    try:
-        return ipaddress.ip_address(normalized).is_loopback
-    except ValueError:
+    parse_capture = CapturedExceptionContext(ValueError)
+    parsed_ip: ipaddress._BaseAddress | None = None
+    with parse_capture:
+        parsed_ip = ipaddress.ip_address(normalized)
+    if parse_capture.captured_exception is not None:
         return False
+    if parsed_ip is None:
+        raise RuntimeError("Loopback-host parser did not return an IP address")
+    return parsed_ip.is_loopback
 
 
 def _resolve_tls_hostname() -> str:
@@ -712,33 +748,47 @@ def _resolve_tls_hostname() -> str:
 def _detect_lan_ip(*, environ: Mapping[str, str]) -> str | None:
     configured_lan_ip = _read_optional_text(environ=environ, name="METALIST_LAN_IP")
     if configured_lan_ip is not None:
-        try:
+        configured_ip_capture = CapturedExceptionContext(ValueError)
+        with configured_ip_capture:
             ipaddress.ip_address(configured_lan_ip)
-        except ValueError as exc:
+        if configured_ip_capture.captured_exception is not None:
+            exc = configured_ip_capture.captured_exception
             raise RuntimeError(f"METALIST_LAN_IP must be a valid IP address: {configured_lan_ip!r}") from exc
         return configured_lan_ip
 
-    try:
+    probe_capture = CapturedExceptionContext(OSError)
+    candidate_ip: str | None = None
+    with probe_capture:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe_socket:
             probe_socket.connect(("8.8.8.8", 80))
             candidate_ip = probe_socket.getsockname()[0]
+    if probe_capture.captured_exception is None:
+        if candidate_ip is None:
+            raise RuntimeError("LAN-IP probe did not return an address")
         if not _is_loopback_host(host=candidate_ip):
             return candidate_ip
-    except OSError:
-        pass
 
     hostname = _resolve_tls_hostname()
-    try:
-        for candidate_ip in socket.gethostbyname_ex(hostname)[2]:
-            try:
-                parsed_ip = ipaddress.ip_address(candidate_ip)
-            except ValueError:
-                continue
-            if parsed_ip.is_loopback:
-                continue
-            return candidate_ip
-    except OSError:
+    resolve_capture = CapturedExceptionContext(OSError)
+    resolved_ips: list[str] | None = None
+    with resolve_capture:
+        resolved_ips = socket.gethostbyname_ex(hostname)[2]
+    if resolve_capture.captured_exception is not None:
         return None
+    if resolved_ips is None:
+        raise RuntimeError("Hostname resolution did not return an IP list")
+    for candidate_ip in resolved_ips:
+        parsed_ip_capture = CapturedExceptionContext(ValueError)
+        parsed_ip: ipaddress._BaseAddress | None = None
+        with parsed_ip_capture:
+            parsed_ip = ipaddress.ip_address(candidate_ip)
+        if parsed_ip_capture.captured_exception is not None:
+            continue
+        if parsed_ip is None:
+            raise RuntimeError("Resolved IP parser did not return an IP address")
+        if parsed_ip.is_loopback:
+            continue
+        return candidate_ip
 
     return None
 
@@ -763,7 +813,9 @@ def ensure_default_tls_pair(*, environ: Mapping[str, str]) -> tuple[str, str] | 
 
     hostname = _resolve_tls_hostname()
     lan_ip = _detect_lan_ip(environ=environ)
-    common_name = lan_ip if lan_ip is not None else hostname
+    common_name = hostname
+    if lan_ip is not None:
+        common_name = lan_ip
     san_entries: list[x509.GeneralName] = [
         x509.DNSName("localhost"),
         x509.DNSName(hostname),

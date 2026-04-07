@@ -12,6 +12,7 @@ import app.server_runtime as server_runtime
 from app.server_runtime import delete_namespace_launch_profile
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import validate_namespace
+from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import mark_namespace_deletion_job_failed
 from app.services.namespace_deletion_jobs import mark_namespace_deletion_job_succeeded
 
@@ -50,12 +51,15 @@ def _is_process_running(*, pid: int) -> bool:
         raise TypeError(f"pid must be an int, got {type(pid)}")
     if pid <= 0:
         raise ValueError(f"pid must be positive, got: {pid}")
-    try:
+    kill_capture = CapturedExceptionContext(ProcessLookupError, PermissionError)
+    with kill_capture:
         os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    if kill_capture.captured_exception is not None:
+        if isinstance(kill_capture.captured_exception, ProcessLookupError):
+            return False
+        if isinstance(kill_capture.captured_exception, PermissionError):
+            return True
+        raise RuntimeError("Unexpected process-probe exception type")
     process_state = _read_process_state(pid=pid)
     if process_state is None:
         return True
@@ -81,9 +85,10 @@ def _wait_for_process_exit(*, pid: int, timeout_seconds: float) -> bool:
 def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
     if not _is_process_running(pid=pid):
         return
-    try:
+    signal_capture = CapturedExceptionContext(ProcessLookupError)
+    with signal_capture:
         os.kill(pid, signal_number)
-    except ProcessLookupError:
+    if signal_capture.captured_exception is not None:
         return
 
 
@@ -113,7 +118,8 @@ def _delete_namespace_directory(*, namespace: str) -> None:
 
 def main() -> None:
     args = _parse_args()
-    try:
+    main_capture = CapturedExceptionContext(Exception)
+    with main_capture:
         normalized_namespace = validate_namespace(namespace=args.namespace)
         if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
             raise RuntimeError("Default namespace cannot be deleted")
@@ -122,12 +128,12 @@ def main() -> None:
         _delete_namespace_directory(namespace=normalized_namespace)
         delete_namespace_launch_profile(namespace=normalized_namespace)
         mark_namespace_deletion_job_succeeded(job_id=args.job_id)
-    except Exception:
+    if main_capture.captured_exception is not None:
         mark_namespace_deletion_job_failed(
             job_id=args.job_id,
             error=traceback.format_exc(),
         )
-        raise
+        raise main_capture.captured_exception
 
 
 if __name__ == "__main__":

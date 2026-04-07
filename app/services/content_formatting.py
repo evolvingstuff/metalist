@@ -625,6 +625,7 @@ def _render_status_meta(
                 inner_html=content_html,
                 tag_names=formatting_tags,
                 wrapper_class="meta-status-format",
+                copy_attr="",
                 allow_block_wrapper=True,
             )
         else:
@@ -1088,7 +1089,7 @@ def _wrap_meta_html(
     inner_html: str,
     tag_names: Set[str] | FrozenSet[str],
     wrapper_class: str,
-    copy_attr: str = "",
+    copy_attr: str,
     allow_block_wrapper: bool,
 ) -> str:
     if not isinstance(inner_html, str):
@@ -1447,6 +1448,7 @@ def _process_text_segment(
                                 inner_html=inner_html,
                                 tag_names=top.formatting_tags,
                                 wrapper_class="meta-scope",
+                                copy_attr="",
                                 allow_block_wrapper=False,
                             )
                             del output[top.placeholder_index :]
