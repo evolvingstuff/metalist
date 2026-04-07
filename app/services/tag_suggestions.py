@@ -122,16 +122,8 @@ def suggest_tags_for_note(
         query = _build_search_query_for_suggestions(anchors=anchor_list, prefix=prefix)
         cooccurrence = search_index.suggest_tag_completions(query=query, limit=term_count)
 
-    content_first: List[str] = []
-    remaining: List[str] = []
     cooccurrence_rank = {term: index for index, term in enumerate(cooccurrence)}
-    for term in cooccurrence:
-        if term.casefold() in already_present_casefold:
-            continue
-        if term in content_match_scores:
-            content_first.append(term)
-            continue
-        remaining.append(term)
+    content_first = list(content_match_scores.keys())
 
     content_first.sort(
         key=lambda term: (
@@ -140,10 +132,18 @@ def suggest_tags_for_note(
             -content_match_scores[term].segment_count,
             content_match_scores[term].first_position,
             -content_match_scores[term].normalized_length,
-            cooccurrence_rank[term],
+            cooccurrence_rank.get(term, len(cooccurrence)),
             term,
         )
     )
+
+    remaining: List[str] = []
+    for term in cooccurrence:
+        if term.casefold() in already_present_casefold:
+            continue
+        if term in content_match_scores:
+            continue
+        remaining.append(term)
 
     suggestions = content_first + remaining
 

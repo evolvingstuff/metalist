@@ -197,3 +197,67 @@ def test_tag_suggestions_prefer_earlier_content_hits_when_scores_tie(
     )
 
     assert suggestions[:2] == ["github", "project"]
+
+
+def test_tag_suggestions_include_literal_content_hits_even_without_anchor_cooccurrence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "diagram veggie-peeler"),
+            ("n2", "diagram project"),
+            ("n3", "diagram projects"),
+            ("n4", "LucidCharts"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=["diagram"],
+        prefix="",
+        content_html="<p>port diagram to LucidCharts?</p>",
+    )
+
+    assert suggestions[0] == "LucidCharts"
+    assert suggestions[1:] == ["project", "projects", "veggie-peeler"]
+
+
+def test_tag_suggestions_include_acronym_content_hits_even_without_anchor_cooccurrence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "LinuxVM databricks"),
+            ("n2", "LinuxVM DBX"),
+            ("n3", "AVD"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=["LinuxVM"],
+        prefix="",
+        content_html=(
+            "<p>why do we need the LinuxVM? Can I install enterprise codex directly on the "
+            "AVD? can I do git pulls on the AVD?</p>"
+        ),
+    )
+
+    assert suggestions[0] == "AVD"
+    assert suggestions[1:] == ["databricks", "DBX"]
