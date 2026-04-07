@@ -1524,6 +1524,12 @@ body {
     cursor: default;
 }
 
+.note:not(.editing) .note-content,
+.note:not(.editing) .note-content * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 .note.editing .note-content {
     cursor: text;
 }

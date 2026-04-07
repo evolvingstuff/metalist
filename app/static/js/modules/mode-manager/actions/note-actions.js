@@ -490,6 +490,55 @@ export async function moveNoteDown(noteId) {
     }
 }
 
+export async function moveNoteToSiblingPosition(noteId, siblingId, position, newParentId) {
+    const startedAt = performance.now();
+
+    Logger.logAction('moveNoteToSiblingPosition', {
+        noteId,
+        siblingId,
+        position,
+        newParentId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isDirty: ModeContext.isDirty,
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot move note: noteId is required');
+    }
+    if (!siblingId) {
+        throw new Error('Cannot move note: siblingId is required');
+    }
+
+    const normalizedPosition = typeof position === 'string' ? position.toUpperCase() : '';
+    if (normalizedPosition !== 'BEFORE' && normalizedPosition !== 'AFTER') {
+        throw new Error('Cannot move note: position must be BEFORE or AFTER');
+    }
+
+    if (newParentId !== null && newParentId !== undefined && typeof newParentId !== 'string') {
+        throw new Error('Cannot move note: newParentId must be a string, null, or undefined');
+    }
+
+    if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
+        await actionSaveNote(noteId);
+    }
+
+    await NotesAPI.moveNote(noteId, siblingId, normalizedPosition, newParentId);
+
+    if (ModeContext.isEditing) {
+        ModeContext.markCaretHidden();
+    }
+
+    const newContent = await actionRefreshAndMaybeSelect({
+        startedAt,
+        context: 'moveNoteToSiblingPosition',
+    });
+
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
+}
+
 export async function indentNote(noteId) {
     let startedAt = performance.now();
 

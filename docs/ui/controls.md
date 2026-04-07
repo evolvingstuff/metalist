@@ -87,8 +87,8 @@
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
 | Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
-| Drag note body (while not editing) | Move note one step in the dragged cardinal direction (up/down/indent/outdent). Short drags act like clicks. |
-| Drag-select text in note | Releasing mouse outside note keeps edit mode + selection |
+| Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Short drags act like clicks. |
+| Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).

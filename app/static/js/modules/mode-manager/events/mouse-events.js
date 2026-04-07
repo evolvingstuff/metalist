@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteUp, moveNoteDown, indentNote, outdentNote, sendShellInput, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, sendShellInput, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -9,6 +9,7 @@ import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
+import { resolveVerticalSiblingDropDestination } from '../services/note-drag-service.js';
 import { resolveNonContentNoteSelectionTarget } from '../services/note-click-target-service.js';
 import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
 
@@ -223,6 +224,68 @@ function resolveDragDirection(dx, dy) {
     return dy > 0 ? 'down' : 'up';
 }
 
+function getDirectSiblingNotes(noteElement) {
+    const container = noteElement.parentElement;
+    if (!container) {
+        throw new Error('Dragged note is missing its sibling container');
+    }
+    return Array.from(container.children).filter((child) => (
+        child instanceof HTMLElement && child.classList.contains('note')
+    ));
+}
+
+function getAdjacentSiblingNoteId(noteElement, direction) {
+    if (direction !== 'previous' && direction !== 'next') {
+        throw new Error('getAdjacentSiblingNoteId direction must be previous or next');
+    }
+
+    let cursor = direction === 'previous' ? noteElement.previousElementSibling : noteElement.nextElementSibling;
+    while (cursor && !cursor.classList.contains('note')) {
+        cursor = direction === 'previous' ? cursor.previousElementSibling : cursor.nextElementSibling;
+    }
+
+    if (!cursor) {
+        return null;
+    }
+    return DOMUtils.getNoteId(cursor);
+}
+
+function getNormalizedParentId(noteElement) {
+    const rawParentId = noteElement.dataset.parentId;
+    if (typeof rawParentId !== 'string' || rawParentId.length === 0) {
+        return null;
+    }
+    return rawParentId;
+}
+
+function resolveVerticalMoveDestination(noteId, dropY) {
+    if (!noteId) {
+        throw new Error('resolveVerticalMoveDestination requires noteId');
+    }
+    if (typeof dropY !== 'number' || Number.isNaN(dropY)) {
+        throw new Error('resolveVerticalMoveDestination requires numeric dropY');
+    }
+
+    const noteElement = DOMUtils.getNoteById(noteId);
+    const siblingPlacements = getDirectSiblingNotes(noteElement)
+        .filter((element) => element !== noteElement)
+        .map((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+                id: DOMUtils.getNoteId(element),
+                midY: rect.top + (rect.height / 2),
+            };
+        });
+
+    return resolveVerticalSiblingDropDestination({
+        siblingPlacements,
+        dropY,
+        currentPrevId: getAdjacentSiblingNoteId(noteElement, 'previous'),
+        currentNextId: getAdjacentSiblingNoteId(noteElement, 'next'),
+        parentId: getNormalizedParentId(noteElement),
+    });
+}
+
 function handleMoveDragMouseUp(event) {
     const context = moveDragContext;
     moveDragContext = null;
@@ -279,15 +342,18 @@ function handleMoveDragMouseUp(event) {
         throw new Error('Move drag context missing noteId on mouseup');
     }
 
-    if (direction === 'up') {
-        void CommandGate.run('mouse.drag_up', async () => {
-            await moveNoteUp(context.noteId);
-        });
-        return;
-    }
-    if (direction === 'down') {
-        void CommandGate.run('mouse.drag_down', async () => {
-            await moveNoteDown(context.noteId);
+    if (direction === 'up' || direction === 'down') {
+        const destination = resolveVerticalMoveDestination(context.noteId, event.clientY);
+        if (!destination) {
+            return;
+        }
+        void CommandGate.run(`mouse.drag_reorder_${direction}`, async () => {
+            await moveNoteToSiblingPosition(
+                context.noteId,
+                destination.siblingId,
+                destination.position,
+                destination.newParentId,
+            );
         });
         return;
     }
