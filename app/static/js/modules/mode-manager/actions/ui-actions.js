@@ -7,6 +7,7 @@ import { applyDifferentialView } from '../services/differential-view-service.js'
 import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
 import { ensureNoteExpandedLocally } from '../services/collapse-affordance-service.js';
 import { initializeEditSessionCollapseStateFromNoteElement } from '../services/edit-session-collapse-service.js';
+import { clearEditingStateForHiddenFilteredNote } from '../services/filtered-refresh-selection-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 import { refreshBacklinksPanel } from '../services/backlinks-panel-service.js';
 
@@ -283,7 +284,20 @@ export async function actionRefreshAndMaybeSelect(options) {
         let result = null;
 
         if (noteId) {
-            const noteElement = DOMUtils.getNoteById(noteId);
+            const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+            if (!noteElement) {
+                Logger.logAction('refresh_hidden_filtered_editing_note', {
+                    noteId,
+                    searchQuery: requestSearchQuery,
+                    tabId: requestTabId,
+                });
+                clearEditingStateForHiddenFilteredNote({
+                    modeContext: ModeContext,
+                    detachEditorSurfaceFn: detachEditorSurface,
+                    clearTagBarFn: clearTagBar,
+                });
+                return null;
+            }
             contentHtml = DOMUtils.getNoteContentHTML(noteElement);
             const noteContentElement = DOMUtils.getNoteContent(noteElement);
 

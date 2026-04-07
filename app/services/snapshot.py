@@ -170,17 +170,12 @@ def resolve_search_scope(
     ]
     search_root_count_total = len(search_root_ids_ordered_for_count)
 
-    allowed_note_ids = set(search_allowed_note_ids)
-    if editing_note_id:
-        allowed_note_ids.add(editing_note_id)
-        _include_ancestors(allowed_note_ids, starting_ids={editing_note_id})
-
     search_root_ids_ordered = [
-        root_id for root_id in ordered_root_ids if root_id in allowed_note_ids
+        root_id for root_id in ordered_root_ids if root_id in search_allowed_note_ids
     ]
     return SearchScope(
         search_active=True,
-        allowed_note_ids=allowed_note_ids,
+        allowed_note_ids=set(search_allowed_note_ids),
         search_root_ids_ordered=search_root_ids_ordered,
         search_root_count_total=search_root_count_total,
     )

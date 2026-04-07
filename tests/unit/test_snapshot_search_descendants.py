@@ -144,3 +144,45 @@ def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.Mon
     assert not state.payloads["c1"]["flags"]["searchRedacted"]
     assert state.payloads["g1"]["flags"]["searchRedacted"]
     assert state.payloads["c2"]["flags"]["searchRedacted"]
+
+
+def test_search_does_not_force_include_nonmatching_editing_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "r1": _Note("r1", None, None, "r2", False, "<div>r1</div>", "scratchpad"),
+        "r2": _Note("r2", None, "r1", None, False, "<div>r2</div>", "vocab"),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["r1", "r2"]},
+    )
+
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id=n.id,
+                content_text=n.content,
+                tags=n.tags,
+                tag_terms=extract_tags_for_search(n.tags),
+            )
+            for n in notes.values()
+        ],
+        progress_update=lambda _: None,
+        progress_interval=1000,
+    )
+
+    import app.services.snapshot as snapshot
+
+    monkeypatch.setattr(snapshot, "note_store", store)
+    monkeypatch.setattr(snapshot, "search_index", index)
+    monkeypatch.setattr(snapshot, "get_all_locks", lambda: {})
+
+    state = build_view_state(
+        editing_note_id="r2",
+        search="scratchpad",
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+    )
+
+    assert _visible_ids(state) == {"r1"}
