@@ -6,7 +6,7 @@ import { CONFIG } from '../../config.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
 import { clearTagBar, getTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
-import { scrollNoteIntoView } from '../services/scroll-restoration-service.js';
+import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -57,6 +57,13 @@ function isVisuallyEmptyElement(node) {
     }
     const normalizedText = node.textContent ? node.textContent.replace(/\u00A0/g, ' ') : '';
     return normalizedText.trim().length === 0;
+}
+
+function scheduleMovedNoteIntoView(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('scheduleMovedNoteIntoView requires a non-empty noteId');
+    }
+    scheduleScrollNoteIntoView(noteId, {});
 }
 
 function stripEdgeEmptyNodes(fragment) {
@@ -457,6 +464,8 @@ export async function moveNoteUp(noteId) {
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }
+
+    scheduleMovedNoteIntoView(noteId);
 }
 
 export async function moveNoteDown(noteId) {
@@ -488,6 +497,8 @@ export async function moveNoteDown(noteId) {
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }
+
+    scheduleMovedNoteIntoView(noteId);
 }
 
 export async function moveNoteToSiblingPosition(noteId, siblingId, position, newParentId) {
@@ -537,6 +548,8 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     if (ModeContext.currentContent !== newContent) {
         ModeContext.setCurrentContent(newContent);
     }
+
+    scheduleMovedNoteIntoView(noteId);
 }
 
 export async function indentNote(noteId) {

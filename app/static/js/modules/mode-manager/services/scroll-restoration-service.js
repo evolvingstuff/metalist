@@ -1,5 +1,8 @@
 import { scrollWindowToYFastAnimated } from './animated-scroll-service.js';
 
+let pendingScrollNoteIntoViewAnimationFrame = null;
+let pendingScrollNoteIntoViewTimeout = null;
+
 function clampNumber(value, min, max) {
     if (typeof value !== 'number' || Number.isNaN(value)) {
         throw new Error('clampNumber requires a number');
@@ -190,4 +193,49 @@ export function scrollNoteIntoView(noteId, options) {
     const clamped = Math.round(clampNumber(target, 0, getScrollMaxY()));
     scrollWindowToYFastAnimated(clamped);
     return { scrolled: true, reason: 'scroll' };
+}
+
+export function scheduleScrollNoteIntoView(noteId, options) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('scheduleScrollNoteIntoView requires options object');
+    }
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('scheduleScrollNoteIntoView requires a non-empty noteId');
+    }
+
+    let followUpDelayMs = 180;
+    if (Object.prototype.hasOwnProperty.call(options, 'followUpDelayMs')) {
+        followUpDelayMs = options.followUpDelayMs;
+    }
+    if (!Number.isInteger(followUpDelayMs) || followUpDelayMs < 0) {
+        throw new Error('scheduleScrollNoteIntoView followUpDelayMs must be a non-negative integer');
+    }
+
+    let scrollOptions = {};
+    if (Object.prototype.hasOwnProperty.call(options, 'scrollOptions')) {
+        scrollOptions = options.scrollOptions;
+    }
+    if (scrollOptions === null || typeof scrollOptions !== 'object') {
+        throw new Error('scheduleScrollNoteIntoView scrollOptions must be an object');
+    }
+
+    if (pendingScrollNoteIntoViewAnimationFrame !== null) {
+        window.cancelAnimationFrame(pendingScrollNoteIntoViewAnimationFrame);
+        pendingScrollNoteIntoViewAnimationFrame = null;
+    }
+    if (pendingScrollNoteIntoViewTimeout !== null) {
+        window.clearTimeout(pendingScrollNoteIntoViewTimeout);
+        pendingScrollNoteIntoViewTimeout = null;
+    }
+
+    pendingScrollNoteIntoViewAnimationFrame = window.requestAnimationFrame(() => {
+        pendingScrollNoteIntoViewAnimationFrame = null;
+        scrollNoteIntoView(noteId, scrollOptions);
+        pendingScrollNoteIntoViewTimeout = window.setTimeout(() => {
+            pendingScrollNoteIntoViewTimeout = null;
+            scrollNoteIntoView(noteId, scrollOptions);
+        }, followUpDelayMs);
+    });
+
+    return { scheduled: true };
 }

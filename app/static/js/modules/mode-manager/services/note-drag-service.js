@@ -11,15 +11,55 @@ function normalizeNullableNoteId(noteId, fieldName) {
     return noteId;
 }
 
-export function resolveVerticalSiblingDropDestination({
-    siblingPlacements,
-    dropY,
-    currentPrevId = null,
-    currentNextId = null,
-    parentId = null,
-    hoveredSiblingId = null,
-    dragDirection = null,
-}) {
+const MOVE_DRAG_VERTICAL_ACTIVATION_PX = 8;
+const MOVE_DRAG_DISTANCE_ACTIVATION_PX = 20;
+const MOVE_DRAG_DISTANCE_ACTIVATION_SQ = MOVE_DRAG_DISTANCE_ACTIVATION_PX * MOVE_DRAG_DISTANCE_ACTIVATION_PX;
+
+export function shouldActivateMoveDrag({ dx, dy }) {
+    if (typeof dx !== 'number' || Number.isNaN(dx)) {
+        throw new Error('shouldActivateMoveDrag requires numeric dx');
+    }
+    if (typeof dy !== 'number' || Number.isNaN(dy)) {
+        throw new Error('shouldActivateMoveDrag requires numeric dy');
+    }
+
+    const absY = Math.abs(dy);
+    if (absY >= MOVE_DRAG_VERTICAL_ACTIVATION_PX) {
+        return true;
+    }
+
+    const distanceSq = dx * dx + dy * dy;
+    return distanceSq >= MOVE_DRAG_DISTANCE_ACTIVATION_SQ;
+}
+
+export function resolveVerticalSiblingDropDestination(args) {
+    if (args === null || typeof args !== 'object') {
+        throw new Error('resolveVerticalSiblingDropDestination requires args object');
+    }
+
+    const siblingPlacements = args.siblingPlacements;
+    const dropY = args.dropY;
+    let currentPrevId = null;
+    if (Object.prototype.hasOwnProperty.call(args, 'currentPrevId')) {
+        currentPrevId = args.currentPrevId;
+    }
+    let currentNextId = null;
+    if (Object.prototype.hasOwnProperty.call(args, 'currentNextId')) {
+        currentNextId = args.currentNextId;
+    }
+    let parentId = null;
+    if (Object.prototype.hasOwnProperty.call(args, 'parentId')) {
+        parentId = args.parentId;
+    }
+    let hoveredSiblingId = null;
+    if (Object.prototype.hasOwnProperty.call(args, 'hoveredSiblingId')) {
+        hoveredSiblingId = args.hoveredSiblingId;
+    }
+    let dragDirection = null;
+    if (Object.prototype.hasOwnProperty.call(args, 'dragDirection')) {
+        dragDirection = args.dragDirection;
+    }
+
     if (!Array.isArray(siblingPlacements)) {
         throw new Error('resolveVerticalSiblingDropDestination requires siblingPlacements array');
     }

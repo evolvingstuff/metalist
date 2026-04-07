@@ -9,7 +9,7 @@ import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
-import { resolveVerticalSiblingDropDestination } from '../services/note-drag-service.js';
+import { resolveVerticalSiblingDropDestination, shouldActivateMoveDrag } from '../services/note-drag-service.js';
 import { resolveNonContentNoteSelectionTarget } from '../services/note-click-target-service.js';
 import { navigateBackFromReferenceContext, openReferenceInCurrentTab, openReferenceInNewTab } from './keyboard-events.js';
 
@@ -20,8 +20,8 @@ let ignoreClickAfterSelectionDrag = null;
 let moveDragContext = null;
 let ignoreClickAfterMoveDrag = null;
 
-const MOVE_DRAG_THRESHOLD_PX = 20;
-const MOVE_DRAG_THRESHOLD_SQ = MOVE_DRAG_THRESHOLD_PX * MOVE_DRAG_THRESHOLD_PX;
+const MOVE_DRAG_COMMIT_THRESHOLD_PX = 20;
+const MOVE_DRAG_COMMIT_THRESHOLD_SQ = MOVE_DRAG_COMMIT_THRESHOLD_PX * MOVE_DRAG_COMMIT_THRESHOLD_PX;
 const CREDENTIAL_VALUE_SELECTOR = '.meta-credential-value';
 const EMAIL_VALUE_SELECTOR = '.meta-email-value';
 const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
@@ -194,8 +194,7 @@ function handleMoveDragMouseMove(event) {
 
     const dx = event.clientX - context.startX;
     const dy = event.clientY - context.startY;
-    const distanceSq = dx * dx + dy * dy;
-    const shouldBeActive = distanceSq >= MOVE_DRAG_THRESHOLD_SQ;
+    const shouldBeActive = shouldActivateMoveDrag({ dx, dy });
 
     if (shouldBeActive && !context.dragActive) {
         context.dragActive = true;
@@ -335,7 +334,7 @@ function handleMoveDragMouseUp(event) {
     const dx = event.clientX - context.startX;
     const dy = event.clientY - context.startY;
     const distanceSq = dx * dx + dy * dy;
-    if (distanceSq < MOVE_DRAG_THRESHOLD_SQ) {
+    if (distanceSq < MOVE_DRAG_COMMIT_THRESHOLD_SQ) {
         return;
     }
 

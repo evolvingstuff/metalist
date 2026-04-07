@@ -1,7 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveVerticalSiblingDropDestination } from '../../app/static/js/modules/mode-manager/services/note-drag-service.js';
+import {
+    resolveVerticalSiblingDropDestination,
+    shouldActivateMoveDrag,
+} from '../../app/static/js/modules/mode-manager/services/note-drag-service.js';
+
+test('shouldActivateMoveDrag activates after modest vertical movement', () => {
+    const active = shouldActivateMoveDrag({ dx: 0, dy: 8 });
+    assert.equal(active, true);
+});
+
+test('shouldActivateMoveDrag stays inactive for tiny motion within the note body', () => {
+    const active = shouldActivateMoveDrag({ dx: 3, dy: 4 });
+    assert.equal(active, false);
+});
+
+test('shouldActivateMoveDrag still activates for large non-vertical drags', () => {
+    const active = shouldActivateMoveDrag({ dx: 20, dy: 0 });
+    assert.equal(active, true);
+});
 
 test('resolveVerticalSiblingDropDestination moves to the top slot when dropped above the first sibling midpoint', () => {
     const destination = resolveVerticalSiblingDropDestination({
