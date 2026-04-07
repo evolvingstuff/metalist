@@ -128,6 +128,7 @@ describe('Tag bar note-level shortcuts', () => {
 
     cy.wait('@deleteNote')
     cy.get('.note').should('have.length', 1)
-    cy.get('.note.editing .note-content', { timeout: 10000 }).should('contain.text', 'keep')
+    cy.get('.note').eq(0).find('> .note-content').should('contain.text', 'keep')
+    cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
   })
 })

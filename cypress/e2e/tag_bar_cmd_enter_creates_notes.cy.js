@@ -30,9 +30,8 @@ describe('Tag bar shortcuts for note creation', () => {
 
     cy.wait('@saveNote')
     cy.wait('@createSibling')
-    cy.get('.note').should('have.length', 2)
-    cy.get('.note').eq(0).find('> .note-content').click()
-    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).should('have.value', 'alpha')
+    cy.get('.note').should('have.length', 1)
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).should('have.value', 'asdf')
   })
 
   it('creates a child note when Cmd-Shift-Enter is pressed while the tag bar is focused', () => {

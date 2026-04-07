@@ -35,9 +35,18 @@ describe('Collapse affordance for parents with children', () => {
       expect(interception.response.body).to.have.property('id')
       cy.wrap(interception.response.body.id).as('childNoteId')
     })
+    cy.get('@childNoteId').then((childNoteId) => {
+      cy.get(`[data-note-id="${childNoteId}"]`, { timeout: 10000 }).should('have.class', 'editing')
+    })
 
     // Exit edit mode so collapse/expand only affects the tree view.
-    cy.get('#search-input').click()
+    cy.get('body').trigger('keydown', {
+      key: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    })
     cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
 
     cy.get('@parentNoteId').then((parentNoteId) => {

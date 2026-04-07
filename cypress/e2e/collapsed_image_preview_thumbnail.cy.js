@@ -22,7 +22,8 @@ describe('Collapsed image preview thumbnail', () => {
 
     cy.get('.note.editing .note-content', { timeout: 10000 }).should('exist').then(($content) => {
       const contentElement = $content[0]
-      if (!(contentElement instanceof HTMLElement)) {
+      const browserWindow = contentElement.ownerDocument.defaultView
+      if (!browserWindow || !(contentElement instanceof browserWindow.HTMLElement)) {
         throw new Error('Expected editable note content element')
       }
 
@@ -32,7 +33,7 @@ describe('Collapsed image preview thumbnail', () => {
       contentElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }))
     })
 
-    cy.get('#search-input').click()
+    cy.get('#notes-container').click('bottomRight', { force: true })
     cy.wait('@saveNote')
     cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
 
@@ -49,14 +50,15 @@ describe('Collapsed image preview thumbnail', () => {
       cy.get(noteSelector, { timeout: 10000 }).should('have.class', 'collapsed')
       cy.get(imageSelector, { timeout: 10000 }).should(($img) => {
         const imageElement = $img[0]
-        if (!(imageElement instanceof HTMLImageElement)) {
+        const browserWindow = imageElement.ownerDocument.defaultView
+        if (!browserWindow || !(imageElement instanceof browserWindow.HTMLImageElement)) {
           throw new Error('Expected collapsed preview image element')
         }
         if (!imageElement.complete) {
           throw new Error('Collapsed preview image is not loaded yet')
         }
         const contentElement = imageElement.closest('.note-content')
-        if (!(contentElement instanceof HTMLElement)) {
+        if (!browserWindow || !(contentElement instanceof browserWindow.HTMLElement)) {
           throw new Error('Expected note-content container for collapsed preview image')
         }
 

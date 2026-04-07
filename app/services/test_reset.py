@@ -9,6 +9,7 @@ from app.db.session import begin_writer
 from app.db.settings_sql import insert_default_settings
 from app.services.content_cache import populate_cache_from_db
 from app.services.note_store import store as note_store
+from app.services.sync import reset_state as reset_sync_state
 from app.services.tab_state import tab_state_store
 from app.services.tokens import token_service
 from app.services.view_cache import view_cache
@@ -34,6 +35,7 @@ def reset_state_for_tests() -> None:
     with begin_search_history_writer() as connection:
         _execute_sql(connection, "DELETE FROM search_interaction_history")
 
+    reset_sync_state()
     view_cache.clear()
     tab_state_store.reset()
     token_service.reset()

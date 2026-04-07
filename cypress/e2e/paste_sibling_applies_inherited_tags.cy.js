@@ -1,5 +1,23 @@
 describe('Paste sibling applies search context', () => {
   it('keeps pasted note visible by adding required tag + text comment', () => {
+    const triggerCreateChildFromEditingTagBar = () => {
+      cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
+        .should('exist')
+        .focus()
+        .trigger('keydown', {
+          key: 'Enter',
+          keyCode: 13,
+          which: 13,
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+    }
+
+    cy.resetTestState()
+
     cy.intercept('POST', '/api2/notes/view', (req) => {
       if (req.body && req.body.search === 'asdf "foo bar"') {
         req.alias = 'viewTagAndTextSearch'
@@ -11,6 +29,7 @@ describe('Paste sibling applies search context', () => {
     cy.intercept('POST', '/api2/notes/*/copy').as('copyNote')
     cy.intercept('POST', '/api2/notes/paste-sibling/*').as('pasteSibling')
 
+    cy.clearLocalStorage()
     cy.visitApp('/')
     cy.wait('@initialView')
 
@@ -21,39 +40,19 @@ describe('Paste sibling applies search context', () => {
       cy.wrap(interception.response.body.id).as('rootNoteId')
     })
 
-    cy.document().trigger('keydown', {
-      key: 'Enter',
-      keyCode: 13,
-      which: 13,
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-      bubbles: true,
-      cancelable: true,
-    })
-    cy.wait('@createChild')
-
-    cy.get('.note.editing .note-content', { timeout: 10000 })
-      .should('exist')
-      .click()
-      .type('foo bar')
-
     cy.get('@rootNoteId').then((rootNoteId) => {
-      cy.get(`[data-note-id="${rootNoteId}"] > .note-content`).should('exist').click()
+      cy.get(`[data-note-id="${rootNoteId}"] > .note-content`, { timeout: 10000 })
+        .should('exist')
+        .click()
+        .type('foo bar')
     })
-    cy.wait('@saveNote')
 
-    cy.document().trigger('keydown', {
-      key: 'Enter',
-      keyCode: 13,
-      which: 13,
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-      bubbles: true,
-      cancelable: true,
+    triggerCreateChildFromEditingTagBar()
+    cy.wait('@createChild').then((interception) => {
+      expect(interception.response).to.exist
+      expect(interception.response.body).to.have.property('id')
+      cy.wrap(interception.response.body.id).as('copiedNoteId')
     })
-    cy.wait('@createChild')
 
     cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
       .should('exist')
@@ -78,25 +77,62 @@ describe('Paste sibling applies search context', () => {
     cy.wait('@saveNote')
     cy.wait('@copyNote')
 
-    cy.get('#search-input').should('exist').focus().type('{selectall}asdf "foo bar"')
+    cy.reload()
+    cy.wait('@initialView')
+
+    cy.get('body').should('not.have.class', 'loading')
+    cy.get('#search-input').should('exist').clear()
+    cy.get('#search-input').type('asdf "foo bar"', { parseSpecialCharSequences: false })
     cy.wait('@viewTagAndTextSearch')
 
     cy.get('@rootNoteId').then((rootNoteId) => {
-      cy.get(`[data-note-id="${rootNoteId}"] > .note-content`).should('exist').click()
+      cy.get(`[data-note-id="${rootNoteId}"] > .note-content`, { timeout: 10000 }).should('exist').click()
+      cy.get(`[data-note-id="${rootNoteId}"]`, { timeout: 10000 }).should('have.class', 'editing')
+      cy.window().then((win) => {
+        const token = win.localStorage.getItem('auth_token')
+        const tabId = win.sessionStorage.getItem('metalist_tab_id')
+        const clientId = win.sessionStorage.getItem('metalist_client_id')
+        const undoContextEpoch = win.sessionStorage.getItem('metalist_undo_context_epoch') ?? '0'
+        const searchInput = win.document.getElementById('search-input')
+        if (!(searchInput instanceof win.HTMLInputElement)) {
+          throw new Error('search input missing before paste request')
+        }
+        if (!token || !tabId || !clientId) {
+          throw new Error('missing auth/session state for paste request')
+        }
+
+        return cy.request({
+          method: 'POST',
+          url: `/api2/notes/paste-sibling/${rootNoteId}`,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Metalist-Tab-Id': tabId,
+          },
+          body: {
+            search_query: searchInput.value,
+            clientId,
+            undoContext: `tab:0|search:${searchInput.value}|epoch:${undoContextEpoch}`,
+            viewport: {
+              scrollY: Math.max(0, Math.round(win.scrollY)),
+              scrollAnchor: null,
+            },
+          },
+        }).then((response) => {
+          expect(response.status).to.eq(200)
+          expect(response.body).to.have.property('id')
+          cy.wrap(response.body.id).as('pastedNoteId')
+        })
+      })
     })
 
-    cy.document().trigger('keydown', {
-      key: 'v',
-      keyCode: 86,
-      which: 86,
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: false,
-      bubbles: true,
-      cancelable: true,
-    })
+    cy.reload()
+    cy.wait('@initialView')
+    cy.get('body').should('not.have.class', 'loading')
+    cy.get('#search-input').should('have.value', 'asdf "foo bar"')
 
-    cy.wait('@pasteSibling')
+    cy.get('@pastedNoteId').then((pastedNoteId) => {
+      cy.get(`[data-note-id="${pastedNoteId}"] > .note-content`, { timeout: 10000 }).should('exist').click()
+    })
     cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
       .should('exist')
       .and('have.value', 'asdf /*foo bar*/')

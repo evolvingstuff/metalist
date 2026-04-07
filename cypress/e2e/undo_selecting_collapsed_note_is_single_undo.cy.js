@@ -6,8 +6,6 @@ describe('Undo selection on collapsed notes', () => {
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
     cy.intercept('POST', '/api2/notes/new-child/*').as('createChild')
     cy.intercept('POST', '/api2/notes/*/collapse').as('collapse')
-    cy.intercept('POST', '/api2/notes/*/expand').as('expand')
-    cy.intercept('POST', '/api2/notes/edit-mode').as('editMode')
     cy.intercept('POST', '/api2/notes/undo*').as('undo')
 
     cy.clearLocalStorage()
@@ -20,7 +18,6 @@ describe('Undo selection on collapsed notes', () => {
       expect(interception.response.body).to.have.property('id')
       cy.wrap(interception.response.body.id).as('parentNoteId')
     })
-    cy.wait('@editMode')
 
     cy.get('body').trigger('keydown', {
       key: 'Enter',
@@ -31,15 +28,28 @@ describe('Undo selection on collapsed notes', () => {
       bubbles: true,
       cancelable: true,
     })
-    cy.wait('@createChild')
+    cy.wait('@createChild').then((interception) => {
+      expect(interception.response).to.exist
+      expect(interception.response.body).to.have.property('id')
+      cy.wrap(interception.response.body.id).as('childNoteId')
+    })
+    cy.get('@childNoteId').then((childNoteId) => {
+      cy.get(`[data-note-id="${childNoteId}"]`, { timeout: 10000 }).should('have.class', 'editing')
+    })
 
-    cy.get('#search-input').click()
+    cy.get('body').trigger('keydown', {
+      key: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    })
     cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
 
     cy.get('@parentNoteId').then((parentNoteId) => {
       cy.get(`[data-note-id="${parentNoteId}"] > .note-collapse-toggle`, { timeout: 10000 })
         .should('exist')
-        .click({ force: true })
+        .click()
     })
     cy.wait('@collapse')
 
@@ -48,8 +58,6 @@ describe('Undo selection on collapsed notes', () => {
 
       cy.get(`[data-note-id="${parentNoteId}"] > .note-content`).click()
     })
-    cy.wait('@editMode')
-    cy.wait('@expand')
 
     cy.get('@parentNoteId').then((parentNoteId) => {
       cy.get(`[data-note-id="${parentNoteId}"]`, { timeout: 10000 })

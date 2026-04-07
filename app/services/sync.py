@@ -64,3 +64,11 @@ def clear_all_locks() -> None:
     if _locks:
         _locks.clear()
         generate_new_uuid()
+
+
+def reset_state() -> None:
+    """Clear all in-memory sync state for deterministic test setup."""
+    global _update_uuid
+    _locks.clear()
+    _clipboards.clear()
+    _update_uuid = uuid.uuid4().hex

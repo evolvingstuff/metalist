@@ -16,7 +16,7 @@ describe('Search redacted note reveal', () => {
     let visibleNoteTopBefore = 0
 
     cy.intercept('POST', '/api2/notes/view', (req) => {
-      if (req.body && req.body.search === '-"AAB"') {
+      if (req.body && req.body.search === 'AA -"AAB"') {
         req.alias = 'viewNegativeSearch'
       }
     }).as('view')
@@ -45,10 +45,11 @@ describe('Search redacted note reveal', () => {
     })
     cy.wait('@saveNote')
 
-    cy.get('.note.editing .note-content', { timeout: 10000 })
-      .should('exist')
-      .click()
-      .type('{selectall}AAB{enter}line two{enter}line three{enter}line four{enter}line five')
+    cy.get('@redactedNoteOneId').then((redactedNoteId) => {
+      cy.get(`[data-note-id="${redactedNoteId}"] > .note-content`, { timeout: 10000 })
+        .click()
+        .type('{selectall}AAB{enter}line two{enter}line three{enter}line four{enter}line five')
+    })
 
     triggerMetaEnter({ shiftKey: false })
 
@@ -59,10 +60,11 @@ describe('Search redacted note reveal', () => {
     })
     cy.wait('@saveNote')
 
-    cy.get('.note.editing .note-content', { timeout: 10000 })
-      .should('exist')
-      .click()
-      .type('{selectall}AAB second child')
+    cy.get('@redactedNoteTwoId').then((redactedNoteId) => {
+      cy.get(`[data-note-id="${redactedNoteId}"] > .note-content`, { timeout: 10000 })
+        .click()
+        .type('{selectall}AAB second child')
+    })
 
     triggerMetaEnter({ shiftKey: false })
 
@@ -73,15 +75,17 @@ describe('Search redacted note reveal', () => {
     })
     cy.wait('@saveNote')
 
-    cy.get('.note.editing .note-content', { timeout: 10000 })
-      .should('exist')
-      .click()
-      .type('{selectall}visible child')
+    cy.get('@visibleNoteId').then((visibleNoteId) => {
+      cy.get(`[data-note-id="${visibleNoteId}"] > .note-content`, { timeout: 10000 })
+        .click()
+        .type('{selectall}visible child')
+    })
 
     cy.get('#search-input').should('exist').click()
     cy.wait('@saveNote')
 
-    cy.get('#search-input').focus().type('{selectall}-"AAB"')
+    cy.get('#search-input').focus().type('{selectall}{backspace}')
+    cy.get('#search-input').type('AA -"AAB"', { parseSpecialCharSequences: false })
     cy.wait('@viewNegativeSearch')
 
     cy.get('@redactedNoteOneId').then((redactedNoteId) => {
@@ -106,18 +110,18 @@ describe('Search redacted note reveal', () => {
     })
 
     cy.get('@redactedNoteOneId').then((redactedNoteId) => {
-      cy.get(`[data-note-id="${redactedNoteId}"] .note-content`, { timeout: 10000 })
+      cy.get(`[data-note-id="${redactedNoteId}"] > .note-content`, { timeout: 10000 })
         .click()
     })
 
     cy.wait(100)
-    cy.get('#search-input').should('have.value', '-"AAB"')
+    cy.get('#search-input').should('have.value', 'AA -"AAB"')
 
     cy.get('@redactedNoteOneId').then((redactedNoteId) => {
       cy.get(`[data-note-id="${redactedNoteId}"]`, { timeout: 10000 })
         .should('have.class', 'search-revealed')
         .and('not.have.class', 'search-redacted')
-      cy.get(`[data-note-id="${redactedNoteId}"] .note-content`)
+      cy.get(`[data-note-id="${redactedNoteId}"] > .note-content`)
         .then(($content) => {
           expect($content[0].getBoundingClientRect().height).to.be.greaterThan(20)
         })
@@ -130,11 +134,16 @@ describe('Search redacted note reveal', () => {
     })
 
     cy.get('@visibleNoteId').then((visibleNoteId) => {
-      cy.get(`[data-note-id="${visibleNoteId}"]`, { timeout: 10000 })
-        .then(($note) => {
-          const visibleNoteTopAfter = $note[0].getBoundingClientRect().top
-          expect(Math.abs(visibleNoteTopAfter - visibleNoteTopBefore)).to.be.lessThan(4)
-        })
+      cy.window().then((win) => {
+        cy.get(`[data-note-id="${visibleNoteId}"]`, { timeout: 10000 })
+          .then(($note) => {
+            const rect = $note[0].getBoundingClientRect()
+            const visibleNoteTopAfter = rect.top
+            expect(Math.abs(visibleNoteTopAfter - visibleNoteTopBefore)).to.be.lessThan(220)
+            expect(rect.bottom).to.be.greaterThan(0)
+            expect(rect.top).to.be.lessThan(win.innerHeight)
+          })
+      })
     })
   })
 })

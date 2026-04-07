@@ -13,11 +13,14 @@ function triggerJoinShortcut() {
 
 describe('Join shortcut (Cmd+J)', () => {
   it('joins selected note with its next sibling and merges tags', () => {
+    cy.resetTestState()
+
     cy.intercept('POST', '/api2/notes/view').as('initialView')
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
     cy.intercept('POST', '/api2/notes/new-sibling/*').as('createSibling')
     cy.intercept('POST', '/api2/notes/*/join-next').as('joinNext')
 
+    cy.clearLocalStorage()
     cy.visitApp('/')
     cy.wait('@initialView')
 
@@ -26,7 +29,7 @@ describe('Join shortcut (Cmd+J)', () => {
 
     cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
       .clear()
-      .type('alpha')
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).type('alpha')
     cy.get('.note.editing .note-content', { timeout: 10000 })
       .click()
       .type('foo')
@@ -42,10 +45,11 @@ describe('Join shortcut (Cmd+J)', () => {
       cancelable: true,
     })
     cy.wait('@createSibling')
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).should('exist')
 
     cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
       .clear()
-      .type('beta')
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).type('beta')
     cy.get('.note.editing .note-content', { timeout: 10000 })
       .click()
       .type('bar')
@@ -60,10 +64,13 @@ describe('Join shortcut (Cmd+J)', () => {
   })
 
   it('no-ops when there is no next sibling', () => {
+    cy.resetTestState()
+
     cy.intercept('POST', '/api2/notes/view').as('initialView')
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
     cy.intercept('POST', '/api2/notes/*/join-next').as('joinNext')
 
+    cy.clearLocalStorage()
     cy.visitApp('/')
     cy.wait('@initialView')
 

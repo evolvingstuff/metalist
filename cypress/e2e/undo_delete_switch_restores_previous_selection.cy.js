@@ -21,8 +21,14 @@ describe('Undo after switching selection and deleting', () => {
     cy.wait('@editMode')
     cy.wait('@view')
 
-    cy.get('body').type('{esc}')
-    cy.wait('@editMode')
+    cy.document().trigger('keydown', {
+      key: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    })
+    cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
     cy.wait('@view')
 
     cy.get('body').type('{enter}')
@@ -34,8 +40,14 @@ describe('Undo after switching selection and deleting', () => {
     cy.wait('@editMode')
     cy.wait('@view')
 
-    cy.get('body').type('{esc}')
-    cy.wait('@editMode')
+    cy.document().trigger('keydown', {
+      key: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    })
+    cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
     cy.wait('@view')
 
     cy.get('@noteAId').then((noteAId) => {

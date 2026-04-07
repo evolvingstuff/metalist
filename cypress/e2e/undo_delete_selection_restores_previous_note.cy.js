@@ -6,7 +6,6 @@ describe('Undo selection after delete', () => {
     cy.intercept('POST', '/api2/notes/new').as('createRoot')
     cy.intercept('POST', '/api2/notes/new-child/*').as('createChild')
     cy.intercept('POST', '/api2/notes/*/collapse').as('collapse')
-    cy.intercept('POST', '/api2/notes/*/expand').as('expand')
     cy.intercept('DELETE', '/api2/notes/*').as('deleteNote')
     cy.intercept('POST', '/api2/notes/undo*').as('undo')
 
@@ -36,25 +35,43 @@ describe('Undo selection after delete', () => {
       bubbles: true,
       cancelable: true,
     })
-    cy.wait('@createChild')
+    cy.wait('@createChild').then((interception) => {
+      expect(interception.response).to.exist
+      expect(interception.response.body).to.have.property('id')
+      cy.wrap(interception.response.body.id).as('childNoteId')
+    })
+    cy.get('@childNoteId').then((childNoteId) => {
+      cy.get(`[data-note-id="${childNoteId}"]`, { timeout: 10000 }).should('have.class', 'editing')
+    })
 
-    cy.get('#search-input').click()
+    cy.get('body').trigger('keydown', {
+      key: 'Escape',
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    })
     cy.get('.note.editing', { timeout: 10000 }).should('not.exist')
 
     cy.get('@noteId').then((noteId) => {
       cy.get(`[data-note-id="${noteId}"] > .note-collapse-toggle`, { timeout: 10000 })
         .should('exist')
-        .click({ force: true })
+        .click()
     })
     cy.wait('@collapse')
-    cy.wait('@view')
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"]`, { timeout: 10000 }).should('have.class', 'collapsed')
+    })
 
     // Select the collapsed note; it auto-expands into edit mode.
     cy.get('@noteId').then((noteId) => {
       cy.get(`[data-note-id="${noteId}"] > .note-content`, { timeout: 10000 }).click()
     })
-    cy.wait('@expand')
-    cy.wait('@view')
+    cy.get('@noteId').then((noteId) => {
+      cy.get(`[data-note-id="${noteId}"]`, { timeout: 10000 })
+        .should('have.class', 'editing')
+        .and('not.have.class', 'collapsed')
+    })
 
     cy.get('body').type('{meta}{backspace}')
     cy.wait('@deleteNote')

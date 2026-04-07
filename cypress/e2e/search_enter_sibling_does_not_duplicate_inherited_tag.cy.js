@@ -33,9 +33,9 @@ describe('Search tag inheritance on sibling creation', () => {
       .should('exist')
       .and('have.value', '')
 
-    cy.get('.note.editing .note-content').should('exist').click()
-
-    cy.document().trigger('keydown', {
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
+      .focus()
+      .trigger('keydown', {
       key: 'Enter',
       keyCode: 13,
       which: 13,
@@ -46,10 +46,19 @@ describe('Search tag inheritance on sibling creation', () => {
       cancelable: true,
     })
 
-    cy.wait('@createSibling')
-    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 })
-      .should('exist')
-      .and('have.value', '')
+    cy.wait('@createSibling').then((interception) => {
+      expect(interception.response).to.exist
+      expect(interception.response.body).to.have.property('id')
+      cy.wrap(interception.response.body.id).as('siblingNoteId')
+    })
+
+    cy.get('#search-input').focus().type('{selectall}{backspace}')
+    cy.wait('@initialView')
+
+    cy.get('.note').should('have.length', 3)
+    cy.get('@siblingNoteId').then((siblingNoteId) => {
+      cy.get(`[data-note-id="${siblingNoteId}"] > .note-content`, { timeout: 10000 }).click()
+    })
+    cy.get('.note.editing .note-tag-bar-input', { timeout: 10000 }).should('have.value', '')
   })
 })
-

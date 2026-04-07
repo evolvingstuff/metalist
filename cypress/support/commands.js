@@ -3,7 +3,12 @@ function cacheBuster() {
 }
 
 Cypress.Commands.add('resetTestState', () => {
-  cy.request('POST', '/api2/test/reset')
+  cy.clearAllCookies({ log: false })
+  cy.clearAllLocalStorage({ log: false })
+  cy.clearAllSessionStorage({ log: false })
+  return cy.request('POST', '/api2/test/reset')
+    .its('body')
+    .should('deep.equal', { ok: true })
 })
 
 Cypress.Commands.add('visitApp', (path) => {
@@ -17,4 +22,7 @@ Cypress.Commands.add('visitApp', (path) => {
       win.sessionStorage.clear()
     },
   })
+  cy.get('body', { timeout: 10000 }).should('not.have.class', 'loading')
+  cy.get('body', { timeout: 10000 }).should('have.attr', 'data-app-ready', 'true')
+  return cy.get('#search-input', { timeout: 10000 }).should('exist')
 })
