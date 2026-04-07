@@ -103,6 +103,65 @@ function computeScrollYForElement(contentElement, anchorBias, intraOffset) {
     return Math.round(clampNumber(target, 0, getScrollMaxY()));
 }
 
+export function computeScrollYToRevealRect(args) {
+    if (args === null || typeof args !== 'object') {
+        throw new Error('computeScrollYToRevealRect requires args object');
+    }
+
+    const rectTop = args.rectTop;
+    const rectBottom = args.rectBottom;
+    const currentScrollY = args.currentScrollY;
+    const viewportTop = args.viewportTop;
+    const viewportBottom = args.viewportBottom;
+    const scrollMaxY = args.scrollMaxY;
+    let align = 'top';
+    if (Object.prototype.hasOwnProperty.call(args, 'align')) {
+        align = args.align;
+    }
+
+    if (typeof rectTop !== 'number' || Number.isNaN(rectTop)) {
+        throw new Error('computeScrollYToRevealRect requires numeric rectTop');
+    }
+    if (typeof rectBottom !== 'number' || Number.isNaN(rectBottom)) {
+        throw new Error('computeScrollYToRevealRect requires numeric rectBottom');
+    }
+    if (typeof currentScrollY !== 'number' || Number.isNaN(currentScrollY)) {
+        throw new Error('computeScrollYToRevealRect requires numeric currentScrollY');
+    }
+    if (typeof viewportTop !== 'number' || Number.isNaN(viewportTop)) {
+        throw new Error('computeScrollYToRevealRect requires numeric viewportTop');
+    }
+    if (typeof viewportBottom !== 'number' || Number.isNaN(viewportBottom)) {
+        throw new Error('computeScrollYToRevealRect requires numeric viewportBottom');
+    }
+    if (typeof scrollMaxY !== 'number' || Number.isNaN(scrollMaxY)) {
+        throw new Error('computeScrollYToRevealRect requires numeric scrollMaxY');
+    }
+    if (align !== 'top' && align !== 'bottom' && align !== 'nearest') {
+        throw new Error('computeScrollYToRevealRect align must be top, bottom, or nearest');
+    }
+
+    const fullyVisible = rectTop >= viewportTop && rectBottom <= viewportBottom;
+    if (fullyVisible) {
+        return null;
+    }
+
+    const docTop = rectTop + currentScrollY;
+    const docBottom = rectBottom + currentScrollY;
+
+    if (align === 'bottom') {
+        return Math.round(clampNumber(docBottom - viewportBottom, 0, scrollMaxY));
+    }
+    if (align === 'nearest') {
+        if (rectTop < viewportTop) {
+            return Math.round(clampNumber(docTop - viewportTop, 0, scrollMaxY));
+        }
+        return Math.round(clampNumber(docBottom - viewportBottom, 0, scrollMaxY));
+    }
+
+    return Math.round(clampNumber(docTop - viewportTop, 0, scrollMaxY));
+}
+
 export function restoreScrollFromAnchor(savedAnchor, options) {
 	if (options === null || typeof options !== 'object') {
 		throw new Error('restoreScrollFromAnchor requires options object');
@@ -179,19 +238,31 @@ export function scrollNoteIntoView(noteId, options) {
 
     const topInset = getViewportTopInset();
     const padding = typeof options.padding === 'number' && options.padding >= 0 ? options.padding : 12;
+    let align = 'top';
+    if (Object.prototype.hasOwnProperty.call(options, 'align')) {
+        align = options.align;
+    }
+    if (align !== 'top' && align !== 'bottom' && align !== 'nearest') {
+        throw new Error('scrollNoteIntoView align must be top, bottom, or nearest');
+    }
 
     const rect = noteElement.getBoundingClientRect();
     const visibleTop = topInset + padding;
     const visibleBottom = window.innerHeight - padding;
-    const fullyVisible = rect.top >= visibleTop && rect.bottom <= visibleBottom;
-    if (fullyVisible) {
+    const targetScrollY = computeScrollYToRevealRect({
+        rectTop: rect.top,
+        rectBottom: rect.bottom,
+        currentScrollY: window.scrollY,
+        viewportTop: visibleTop,
+        viewportBottom: visibleBottom,
+        scrollMaxY: getScrollMaxY(),
+        align,
+    });
+    if (targetScrollY === null) {
         return { scrolled: false, reason: 'already_visible' };
     }
 
-    const docTop = rect.top + window.scrollY;
-    const target = docTop - visibleTop;
-    const clamped = Math.round(clampNumber(target, 0, getScrollMaxY()));
-    scrollWindowToYFastAnimated(clamped);
+    scrollWindowToYFastAnimated(targetScrollY);
     return { scrolled: true, reason: 'scroll' };
 }
 

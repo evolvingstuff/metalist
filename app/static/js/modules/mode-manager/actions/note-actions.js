@@ -63,7 +63,11 @@ function scheduleMovedNoteIntoView(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('scheduleMovedNoteIntoView requires a non-empty noteId');
     }
-    scheduleScrollNoteIntoView(noteId, {});
+    scheduleScrollNoteIntoView(noteId, {
+        scrollOptions: {
+            align: 'nearest',
+        },
+    });
 }
 
 function stripEdgeEmptyNodes(fragment) {
