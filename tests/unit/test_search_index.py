@@ -150,9 +150,10 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
     assert "@list-numbered" in suggestions
     assert "@todo" in suggestions
     assert "@monospace" in suggestions
+    assert "@dark-theme" not in suggestions
 
     suggestions = index.suggest_tag_completions(query="@d", limit=20)
-    assert suggestions == ["@dark-theme", "@done"]
+    assert suggestions == ["@done"]
 
 
 def test_search_index_meta_tag_suggestions_rank_by_usage() -> None:
@@ -201,7 +202,7 @@ def test_search_index_meta_tag_suggestions_rank_by_usage() -> None:
     assert suggestions[:3] == ["@todo", "@done", "@LaTeX"]
 
     suggestions = index.suggest_tag_completions(query="@d", limit=20)
-    assert suggestions == ["@done", "@dark-theme"]
+    assert suggestions == ["@done"]
 
 
 def test_search_index_tag_suggestions_collapse_case_equivalent_terms() -> None:

@@ -104,6 +104,12 @@ def test_format_note_content_for_view_basic_meta_tags_apply_classes() -> None:
     assert 'meta-serif' in rendered
 
 
+def test_format_note_content_for_view_dark_theme_meta_is_ignored() -> None:
+    html = "<div>hello</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@dark-theme")
+    assert rendered == html
+
+
 def test_format_note_content_for_view_scoped_meta_tags_do_not_apply_globally() -> None:
     html = "<div>foo [bar]</div>"
     rendered = format_note_content_for_view(content_html=html, tags="[@red]")

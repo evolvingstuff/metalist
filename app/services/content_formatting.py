@@ -37,7 +37,6 @@ _META_TAG_TO_CLASS = {
     "strikethrough": "meta-strikethrough",
     "serif": "meta-serif",
     "copyable": "meta-copyable",
-    "dark-theme": "meta-dark-theme",
 }
 
 _LIST_STYLE_TAGS = {
