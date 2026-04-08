@@ -204,6 +204,39 @@ def test_tag_suggestions_do_not_repeat_current_explicit_tag(
     assert suggestions == []
 
 
+def test_tag_suggestions_rank_meta_tags_by_frequency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "@todo alpha"),
+            ("n2", "@todo beta"),
+            ("n3", "@todo gamma"),
+            ("n4", "@done delta"),
+            ("n5", "@done epsilon"),
+            ("n6", "@LaTeX zeta"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="@",
+        content_html="<p></p>",
+    )
+
+    assert suggestions[:3] == ["@todo", "@done", "@LaTeX"]
+
+
 def test_tag_suggestions_prefer_earlier_content_hits_when_scores_tie(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

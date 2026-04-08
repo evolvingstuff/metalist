@@ -342,7 +342,11 @@ class SearchIndex:
             partial_prefix = ""
 
         if partial_prefix.startswith("@"):
-            return _suggest_meta_tag_completions(partial_prefix=partial_prefix, limit=limit)
+            with self._lock:
+                return self._suggest_meta_tag_completions_locked(
+                    partial_prefix=partial_prefix,
+                    limit=limit,
+                )
 
         anchor_casefold_set = frozenset(
             anchor.casefold()
@@ -685,6 +689,20 @@ class SearchIndex:
             lower_case_penalty = 1
         return (lower_case_penalty, term)
 
+    def _suggest_meta_tag_completions_locked(self, *, partial_prefix: str, limit: int) -> List[str]:
+        partial_prefix_casefold = partial_prefix.casefold()
+        candidates: List[Tuple[int, int, str, str]] = []
+        for term in list_known_meta_tag_terms():
+            if partial_prefix != "" and term.casefold() == partial_prefix_casefold:
+                continue
+            if partial_prefix != "" and not term.casefold().startswith(partial_prefix_casefold):
+                continue
+            usage_count = len(self._tag_notes_casefold.get(term.casefold(), set()))
+            lower_case_penalty, term_tiebreak = self._suggestion_term_tiebreak_locked(term)
+            candidates.append((-usage_count, lower_case_penalty, term_tiebreak, term))
+        candidates.sort()
+        return [term for _, __, ___, term in candidates[:limit]]
+
     def _candidate_note_ids_locked(self, parsed: ParsedSearchQuery) -> Set[int]:
         constraints: List[Set[int]] = []
 
@@ -759,24 +777,6 @@ class SearchIndex:
             if tag.casefold() in note_tag_terms_casefold:
                 return False
         return True
-
-
-def _suggest_meta_tag_completions(*, partial_prefix: str, limit: int) -> List[str]:
-    if not isinstance(partial_prefix, str):
-        raise TypeError("partial_prefix must be a string")
-    if not isinstance(limit, int) or limit <= 0:
-        raise TypeError("limit must be a positive integer")
-
-    candidates = []
-    for term in list_known_meta_tag_terms():
-        if partial_prefix != "" and term == partial_prefix:
-            continue
-        if partial_prefix != "" and not term.casefold().startswith(partial_prefix.casefold()):
-            continue
-        candidates.append(term)
-
-    candidates.sort()
-    return candidates[:limit]
 
 
 search_index = SearchIndex()

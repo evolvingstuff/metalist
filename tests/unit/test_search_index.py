@@ -155,6 +155,55 @@ def test_search_index_tag_suggestions_include_meta_tags() -> None:
     assert suggestions == ["@dark-theme", "@done"]
 
 
+def test_search_index_meta_tag_suggestions_rank_by_usage() -> None:
+    index = _build_index(
+        [
+            SearchRecord(
+                note_id="n1",
+                content_text="One",
+                tags="@todo alpha",
+                tag_terms=extract_tags_for_search("@todo alpha"),
+            ),
+            SearchRecord(
+                note_id="n2",
+                content_text="Two",
+                tags="@todo beta",
+                tag_terms=extract_tags_for_search("@todo beta"),
+            ),
+            SearchRecord(
+                note_id="n3",
+                content_text="Three",
+                tags="@todo gamma",
+                tag_terms=extract_tags_for_search("@todo gamma"),
+            ),
+            SearchRecord(
+                note_id="n4",
+                content_text="Four",
+                tags="@done delta",
+                tag_terms=extract_tags_for_search("@done delta"),
+            ),
+            SearchRecord(
+                note_id="n5",
+                content_text="Five",
+                tags="@done epsilon",
+                tag_terms=extract_tags_for_search("@done epsilon"),
+            ),
+            SearchRecord(
+                note_id="n6",
+                content_text="Six",
+                tags="@LaTeX zeta",
+                tag_terms=extract_tags_for_search("@LaTeX zeta"),
+            ),
+        ]
+    )
+
+    suggestions = index.suggest_tag_completions(query="@", limit=20)
+    assert suggestions[:3] == ["@todo", "@done", "@LaTeX"]
+
+    suggestions = index.suggest_tag_completions(query="@d", limit=20)
+    assert suggestions == ["@done", "@dark-theme"]
+
+
 def test_search_index_tag_suggestions_collapse_case_equivalent_terms() -> None:
     index = _build_index(
         [

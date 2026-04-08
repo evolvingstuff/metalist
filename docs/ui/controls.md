@@ -60,6 +60,7 @@
 - Recency weighting uses event-based exponential decay, so scores shift only when new qualifying search interactions are credited.
 - While typing a partial tag token, suggestions are segment-aware for connector-separated tags: a prefix can match the start of the full tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`).
 - Example: `wor` can suggest `workspaces` and `databricks-workspaces`; `orksp` suggests neither.
+- When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
 - After completing a tag and adding a space, suggestions are ordered by tag co-occurrence with all existing tag tokens in the query (strict overlap count > Jaccard within overlap).
 - Suggestions appear only when the search input is focused.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
@@ -71,6 +72,7 @@
 - Content matches are listed first, and literal segment hits can surface connector-separated tags.
 - Full multi-segment phrase hits rank above single-segment hits, so note content like `databricks workspaces` prefers `databricks-workspaces` over `databricks` or `workspaces`.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes `github`.
+- When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
 - Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions may render above the tag bar if space below is tight; the ordering reverses so the closest suggestion sits nearest the input.

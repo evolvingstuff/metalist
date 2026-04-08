@@ -98,6 +98,7 @@ Unclosed comments behave like unclosed wrappers:
 ## Tag Suggestions
 - Suggestions appear only while the tag bar input is focused.
 - While typing inside a tag token, matching is segment-aware for connector-separated tags: a prefix can match the start of the whole tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`). Example: `wor` suggests both `workspaces` and `databricks-workspaces`, while `orksp` suggests neither.
+- When the active prefix starts with `@`, matching meta tags are ranked by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
 - After a space, suggestions are ranked by tag co-occurrence.
 - Tags that match phrases in the note content are listed first.
 - A literal content hit on any connector-separated segment can also surface a tag. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
