@@ -11,6 +11,8 @@
 | `⇧ + ⌘ + Enter` | Add new child note under current note |
 | `⌘ + ←` | Outdent note (one level left) |
 | `⌘ + →` | Indent note (one level right) |
+| `⌘ + ↑` | Move current note up (one visible sibling) |
+| `⌘ + ↓` | Move current note down (one visible sibling) |
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + J` | Join current note with next sibling (merges content and tags) |
@@ -42,8 +44,6 @@
 | `⌘ + ;` | Open tag relationships editor |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
-| `⌘ + ↑` | Move note up (one visible sibling) |
-| `⌘ + ↓` | Move note down (one visible sibling) |
 
 ### Search Input Behavior
 - Pressing `Enter` while focused in the search input creates a new **root** note.
