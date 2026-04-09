@@ -25,7 +25,7 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - CSS custom properties for theming
 
 ### Testing
-- Cypress end-to-end UI suite (primary automated coverage)
+- Python/unit tests plus manual regression passes
 
 ## Architecture (High Level)
 - Server renders the base page via Mako templates.
@@ -224,28 +224,17 @@ Recommended release path:
 If `--input` is omitted, a file picker opens (when `tkinter` is available).
 Notes tagged with `@implies` are converted into ontology rules and are not imported as notes.
 
-### Run Tests (Cypress)
+### Run Tests
 
-**Headless (recommended)**: starts the server in `TEST_MODE=1` and runs Cypress:
+Python/unit test examples:
 ```bash
-bash run_cypress_tests.sh
+source .venv/bin/activate
+.venv/bin/pytest
+node --test tests/unit/*.mjs
+./sanitycheck/run
 ```
 
-Notes:
-- `TEST_MODE=1` uses `test.db` and deletes it on startup.
-- The script will kill anything already listening on port `8000`.
-
-**Interactive**:
-1. Start the server in test mode:
-   ```bash
-   source .venv/bin/activate
-   TEST_MODE=1 uvicorn app.main:app --port 8000
-   ```
-2. In another terminal:
-   ```bash
-   cd tests/ui
-   npx cypress open
-   ```
+`TEST_MODE=1` and `POST /api2/test/reset` still exist for deterministic browser automation if we decide to add a new harness later, but Cypress is not part of the current workflow.
 
 ### Diagrams
 Render Mermaid diagrams to PNGs:

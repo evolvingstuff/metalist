@@ -1,18 +1,18 @@
 # Testing Status
 
 The legacy unit/integration suites were removed during the API2
-migration. Manual regression passes plus the Cypress UI suite now
-cover the project.
+migration. Current coverage is a mix of Python/unit tests, small JS unit
+tests, sanitycheck, and manual regression passes.
 
 There is targeted JS unit coverage for external HTML paste sanitization:
 
 - `tests/unit/html_paste_sanitizer_service.test.mjs`
 - Run with: `node --test tests/unit/html_paste_sanitizer_service.test.mjs`
 
-For deterministic Cypress runs, the server exposes a TEST_MODE-only reset
-endpoint: `POST /api2/test/reset`.
+For deterministic browser automation, the server still exposes a
+`TEST_MODE`-only reset endpoint: `POST /api2/test/reset`.
 
-That reset now clears all state the Cypress suite is allowed to assume away:
+That reset clears all state a browser harness is allowed to assume away:
 
 - notes + app settings tables
 - search interaction history
@@ -22,43 +22,20 @@ That reset now clears all state the Cypress suite is allowed to assume away:
 - in-memory sync state in `app/services/sync.py` including note locks and
   server clipboard contents
 
-The Cypress harness also enforces a browser-side clean boot for every spec:
-
-- `cypress/support/e2e.js` calls `cy.resetTestState()` before each test
-- `cypress/support/commands.js` clears cookies/localStorage/sessionStorage in
-  `cy.resetTestState()`
-- `cy.visitApp(...)` clears browser storage again before navigation and waits
-  for both:
-  - `body` to not have class `loading`
-  - `body[data-app-ready="true"]`
-
 `app/static/js/main.js` sets `data-app-ready="true"` only after
 `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` finish and
-the main app has been revealed. This prevents Cypress from racing event-handler
-registration during startup.
+the main app has been revealed. Any future browser harness should wait on
+that boundary instead of racing startup.
 
-## Deterministic Cypress Rules
+## Current Direction
 
-Every new Cypress spec must follow these rules:
+As of 2026-04-08, the Cypress harness was removed because it was costing more
+time than it was saving. If browser automation is reintroduced later:
 
-- Build all required notes, search state, clipboard state, selection state,
-  and auth/tab context inside that spec. Never rely on a prior spec.
-- Use `cy.visitApp('/')` instead of raw `cy.visit('/')` so the test waits for
-  the real app-ready boundary.
-- If a shortcut depends on focus, explicitly establish the correct focus target
-  first and assert it when needed.
-- If a shortcut would be swallowed by the wrong element after a refresh
-  (for example the search input), click the intended surface before typing.
-- If the behavior under test is not the click/shortcut transport itself, prefer
-  deterministic setup via authenticated `cy.request(...)` and then assert the
-  current UI outcome after reload.
-- A spec must pass no matter where it lands in a randomized full-suite order.
-
-Run headless UI tests via `./run_cypress_tests.sh` (starts the server with
-`TEST_MODE=1`, then runs `npx cypress run`).
-
-If we decide to rebuild automated backend coverage, treat this file as
-the starting point for a new plan.
+- start with a very small smoke suite
+- keep shared interaction logic covered below the browser layer
+- treat full-browser coverage as optional confidence testing, not the primary
+  debugging loop
 
 ## Ontology
 
