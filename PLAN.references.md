@@ -54,7 +54,7 @@ Defer backlinks UI; keep minimal rendering only.
 
 7. Tests.
 Add unit tests for reference parsing/indexing + snapshot hashing.
-Add a focused Cypress flow if the UI interaction is non-trivial.
+Add focused lower-level tests for any non-trivial interaction logic.
 Run `./sanitycheck/run` if present.
 
 **Success Criteria**

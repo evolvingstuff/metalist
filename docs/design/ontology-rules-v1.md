@@ -20,7 +20,8 @@ Operators:
 
 Comments:
 - Blank lines are ignored
-- Comment syntax is not supported in v1
+- Whole-line comments are ignored when they start with `#` or `//`
+- Inline comments are not supported in v1
 
 ### Tags
 

@@ -32,7 +32,6 @@ graph TB
     end
     
     subgraph "Development Tools"
-        Cypress[Cypress Tests<br/>E2E Testing]
         NPM[NPM Scripts<br/>Diagram Rendering]
         Venv[Python Venv<br/>Dependencies]
     end
@@ -60,7 +59,6 @@ graph TB
     TokenAuth --> InMemory
     DEKMgmt --> SQLiteFile
     
-    Cypress -.->|tests| ASGI
     NPM -.->|builds| StaticAssets
     Venv -.->|provides| App
 ```

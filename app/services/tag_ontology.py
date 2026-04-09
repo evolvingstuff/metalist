@@ -131,6 +131,8 @@ def parse_rules_text(*, text: str, filename: str) -> List[Rule]:
         stripped = raw_line.lstrip()
         if stripped == "":
             continue
+        if stripped.startswith("#") or stripped.startswith("//"):
+            continue
         rules.extend(
             _parse_rule_line(raw_line=raw_line, filename=filename, line_number=line_number)
         )

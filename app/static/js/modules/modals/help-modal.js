@@ -6,7 +6,6 @@
  */
 
 import { BaseModal } from './base-modal.js';
-import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 
 export class HelpModal extends BaseModal {
     constructor() {
@@ -55,82 +54,117 @@ export class HelpModal extends BaseModal {
      */
     buildShortcutsHTML() {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const modKey = isMac ? '⌘' : 'Ctrl';
+        const modKey = isMac ? 'Cmd' : 'Ctrl';
+        const shiftKey = 'Shift';
+        const enterKey = 'Enter';
+        const backspaceKey = isMac ? 'Delete' : 'Backspace';
+        const deleteKey = isMac ? 'Forward Delete' : 'Delete';
+        const upArrowKey = 'Up';
+        const downArrowKey = 'Down';
+        const leftArrowKey = 'Left';
+        const rightArrowKey = 'Right';
 
         const shortcuts = [
             {
-                category: 'Global',
+                category: 'Global and Idle',
+                columnCount: 2,
                 items: [
-                    { keys: `${modKey}+/`, description: 'Open command palette' },
-                    { keys: '?', description: 'Show this help dialog (idle mode)' },
-                    { keys: 'Esc', description: 'Exit search/edit mode or close top modal' }
+                    { keys: `${modKey}+/`, description: 'Open menu' },
+                    { keys: '?', description: 'Open keyboard shortcuts cheatsheet (idle only)' },
+                    { keys: 'Esc', description: 'Exit search/edit mode or close top modal' },
+                    { keys: 'Enter', description: 'Create new root note (idle or from search)' },
+                    { keys: 'Space', description: 'Toggle collapse on hovered note' },
+                    { keys: `${backspaceKey} / ${deleteKey}`, description: 'Delete hovered note (idle)' },
+                    { keys: `${modKey}+Z`, description: 'Undo' },
+                    { keys: `${modKey}+${shiftKey}+Z / ${modKey}+Y`, description: 'Redo' },
+                    { keys: `${modKey}+;`, description: 'Edit tag relationships' },
+                    { keys: 'M', description: 'Open memory/search contexts (idle)' },
                 ]
             },
             {
                 category: 'When Editing',
+                columnCount: 2,
                 items: [
                     { keys: 'Tab', description: 'Toggle focus between note content and tag bar' },
-                    { keys: `${modKey}+Enter`, description: 'Create sibling note' },
-                    { keys: `${modKey}+Shift+Enter`, description: 'Create child note' },
-                    { keys: `${modKey}+←`, description: 'Outdent note one level' },
-                    { keys: `${modKey}+→`, description: 'Indent note one level' },
-                    { keys: `${modKey}+C`, description: 'Copy selection (or whole note if no selection)' },
-                    { keys: `${modKey}+X`, description: 'Cut selection (or whole note if no selection)' },
+                    { keys: `${modKey}+${enterKey}`, description: 'Create sibling note' },
+                    { keys: `${modKey}+${shiftKey}+${enterKey}`, description: 'Create child note' },
+                    { keys: `${modKey}+${leftArrowKey}`, description: 'Outdent note' },
+                    { keys: `${modKey}+${rightArrowKey}`, description: 'Indent note' },
+                    { keys: `${modKey}+${upArrowKey}`, description: 'Move current note up' },
+                    { keys: `${modKey}+${downArrowKey}`, description: 'Move current note down' },
+                    { keys: `${modKey}+C`, description: 'Copy selection, or whole note if none' },
+                    { keys: `${modKey}+X`, description: 'Cut selection, or whole note if none' },
                     { keys: `${modKey}+V`, description: 'Paste note as sibling in note-clipboard mode' },
-                    { keys: `${modKey}+Shift+V`, description: 'Paste note as child in note-clipboard mode' },
-                    { keys: `${modKey}+R`, description: 'Copy as embedded reference from last copied note' },
-                    { keys: `${modKey}+S`, description: 'Split note at selection/caret' },
-                    { keys: `${modKey}+J`, description: 'Join note with next sibling' },
-                    { keys: `${modKey}+P`, description: 'Save/exit edit mode, then open password modal' },
-                    { keys: `${modKey}+Backspace`, description: 'Delete selected note' },
-                    { keys: `${modKey}+Delete`, description: 'Delete selected note' }
-                ]
-            },
-            {
-                category: 'Navigation & Structure',
-                items: [
-                    { keys: 'Enter', description: 'Create new root note (idle, or when search input is focused)' },
-                    { keys: 'Space', description: 'Toggle collapse/expand hovered note' },
-                    { keys: 'Backspace/Delete', description: 'Delete hovered note (idle mode)' },
-                    { keys: `${modKey}+↑`, description: 'Move selected note up' },
-                    { keys: `${modKey}+↓`, description: 'Move selected note down' }
-                ]
-            },
-            {
-                category: 'Undo / Redo',
-                items: [
-                    { keys: `${modKey}+Z`, description: 'Undo' },
-                    { keys: `${modKey}+Shift+Z`, description: 'Redo' },
-                    { keys: `${modKey}+Y`, description: 'Redo' }
-                ]
-            },
-            {
-                category: 'Modals & Tools',
-                items: [
-                    { keys: `${modKey}+;`, description: 'Edit tag relationships' },
-                    { keys: 'M', description: 'Open memory/search contexts (idle mode)' }
+                    { keys: `${modKey}+${shiftKey}+V`, description: 'Paste note as child in note-clipboard mode' },
+                    { keys: `${modKey}+R`, description: 'Copy embedded reference from last copied note' },
+                    { keys: `${modKey}+S`, description: 'Split note at selection or caret' },
+                    { keys: `${modKey}+J`, description: 'Join current note with next sibling' },
+                    { keys: `${modKey}+P`, description: 'Open password settings' },
+                    { keys: `${modKey}+${backspaceKey} / ${modKey}+${deleteKey}`, description: 'Delete selected note' },
                 ]
             }
         ];
 
-        return shortcuts.map(section => `
-            <div class="help-section">
+        const splitItemsIntoColumns = (items, columnCount) => {
+            if (!Array.isArray(items)) {
+                throw new Error('Help modal section items must be an array');
+            }
+            if (!Number.isInteger(columnCount) || columnCount < 1) {
+                throw new Error('Help modal section columnCount must be a positive integer');
+            }
+
+            const rowsPerColumn = Math.ceil(items.length / columnCount);
+            const columns = [];
+
+            let startIndex = 0;
+            while (startIndex < items.length) {
+                columns.push(items.slice(startIndex, startIndex + rowsPerColumn));
+                startIndex += rowsPerColumn;
+            }
+
+            return columns;
+        };
+
+        const sectionsHTML = shortcuts.map((section) => `
+            <section class="help-section">
                 <h3 class="help-category">${section.category}</h3>
-                <div class="help-shortcuts">
-                    ${section.items.map(item => `
-                        <div class="help-shortcut-row">
-                            <span class="help-keys">${item.keys}</span>
-                            <span class="help-description">${item.description}</span>
-                        </div>
+                <div class="help-section-grid help-section-grid-${section.columnCount}">
+                    ${splitItemsIntoColumns(section.items, section.columnCount).map((columnItems) => `
+                        <table class="help-shortcuts-table">
+                            <tbody>
+                                ${columnItems.map((item) => `
+                                    <tr class="help-shortcut-row">
+                                        <th scope="row" class="help-keys-cell">
+                                            <span class="help-keys">${item.keys}</span>
+                                        </th>
+                                        <td class="help-description-cell">${item.description}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
                     `).join('')}
                 </div>
-            </div>
+            </section>
         `).join('');
+
+        const footnotes = [
+            isMac ? 'Use Ctrl instead of Cmd on Windows/Linux.' : 'Shown with Ctrl for this platform.',
+            'Tag-bar focus still honors note-level editing shortcuts.',
+            'Paste-note shortcuts fall back to normal paste when note clipboard mode is inactive.',
+        ];
+
+        return `
+            <div class="help-shortcuts-grid">
+                ${sectionsHTML}
+            </div>
+            <div class="help-shortcuts-footnotes">
+                ${footnotes.map((note) => `<p class="help-shortcuts-note">${note}</p>`).join('')}
+            </div>
+        `;
     }
 
     /**
-     * Override to prevent click outside from closing
-     * (users may want to reference this while using the app)
+     * Allow click outside to close the modal.
      */
     shouldCloseOnClickOutside() {
         return true;

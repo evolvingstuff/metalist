@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
+from pathlib import Path
+
 import pytest
 
 from app.db.engine import GuardedConnection, begin_writer
@@ -21,7 +23,14 @@ from app.services.ontology_rules_store import (
 from app.services.tokens import token_service
 
 
-def test_ontology_rules_store_bootstrap_and_crud() -> None:
+def _set_temp_file_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+
+def test_ontology_rules_store_bootstrap_and_crud(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_temp_file_db(monkeypatch, tmp_path)
     set_encryption_required(False)
     SafeSession.use_memory_db()
     try:
@@ -59,7 +68,11 @@ def test_ontology_rules_store_bootstrap_and_crud() -> None:
         SafeSession.use_file_db()
 
 
-def test_ontology_rules_store_respects_read_guard() -> None:
+def test_ontology_rules_store_respects_read_guard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_temp_file_db(monkeypatch, tmp_path)
     set_encryption_required(False)
     SafeSession.use_memory_db()
     try:
@@ -102,7 +115,11 @@ def test_ontology_rules_store_respects_read_guard() -> None:
         SafeSession.use_file_db()
 
 
-def test_ontology_rules_store_encrypted_bootstrap_and_decrypt() -> None:
+def test_ontology_rules_store_encrypted_bootstrap_and_decrypt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_temp_file_db(monkeypatch, tmp_path)
     set_encryption_required(True)
     SafeSession.use_memory_db()
     token_service.reset()
