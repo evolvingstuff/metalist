@@ -618,6 +618,47 @@ def record_edit_mode(
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
 
+    if before_editing_note_id is not None and after_editing_note_id is None and ctx.history:
+        last_op = ctx.history[-1]
+        if "type" not in last_op:
+            raise RuntimeError(f"Undo op missing required key: type | op={last_op}")
+        if last_op["type"] == "edit_mode":
+            if "before_editing_note_id" not in last_op:
+                raise RuntimeError(
+                    f"Undo op edit_mode missing required key: before_editing_note_id | op={last_op}"
+                )
+            if "after_editing_note_id" not in last_op:
+                raise RuntimeError(
+                    f"Undo op edit_mode missing required key: after_editing_note_id | op={last_op}"
+                )
+            previous_before = last_op["before_editing_note_id"]
+            previous_after = last_op["after_editing_note_id"]
+            if previous_before is None and previous_after == before_editing_note_id:
+                op = {
+                    "type": "edit_mode",
+                    "before_editing_note_id": before_editing_note_id,
+                    "after_editing_note_id": None,
+                    "viewport": normalized_viewport,
+                    "viewAnchorRootId": view_anchor_root_id,
+                }
+                for key in (
+                    "auto_expand_note_id",
+                    "auto_expand_before_collapsed",
+                    "auto_expand_after_collapsed",
+                ):
+                    if key in last_op:
+                        op[key] = last_op[key]
+                ctx.history[-1] = op
+                ctx.redo.clear()
+                logger.info(
+                    "undo.coalesce edit_mode enter+exit: note_id=%s history_len=%s redo_len=%s history_tail=%s",
+                    before_editing_note_id,
+                    len(ctx.history),
+                    len(ctx.redo),
+                    _summarize_stack(ctx.history, 12),
+                )
+                return
+
     # Don't record an extra undo stage when the client enters edit mode
     # immediately after creating a note. The create op already captures the
     # intended "note exists" transition, and keeping edit_mode as a separate

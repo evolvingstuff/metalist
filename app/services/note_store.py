@@ -19,7 +19,7 @@ from app.db.session import connect_reader
 from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
-from app.services.content_cache import get_cached_content, get_cached_tags, get_cached_text
+from app.services.content_cache import get_cached_content, get_cached_tags
 from app.services.hydration_state import hydration_state
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index
@@ -247,6 +247,7 @@ class NoteStore:
                     )
 
             note_map: Dict[str, NoteRecord] = {}
+            content_text_by_id: Dict[str, str] = {}
 
             loop_start = time.perf_counter()
             processed = 0
@@ -262,6 +263,7 @@ class NoteStore:
                 note = SimpleNamespace(**row)
                 plaintext = get_cached_content(note.id)
                 tags = get_cached_tags(note.id)
+                content_text_by_id[note.id] = strip_html(plaintext)
                 tag_terms, non_meta_tag_terms = _derive_own_tag_terms(tags)
 
                 note_map[note.id] = NoteRecord(
@@ -343,12 +345,14 @@ class NoteStore:
             effective_terms = effective_tag_terms_by_id.get(record.id)
             if effective_terms is None:
                 raise RuntimeError(f"Integrity failure: missing effective tags for note {record.id}")
+            if record.id not in content_text_by_id:
+                raise RuntimeError(f"Integrity failure: missing raw text for note {record.id}")
             tag_only_terms = ontology.infer_implication_only(base_tags=effective_terms)
             tag_only_terms_by_id[record.id] = tag_only_terms
             search_records.append(
                 SearchRecord(
                     note_id=record.id,
-                    content_text=get_cached_text(record.id),
+                    content_text=content_text_by_id[record.id],
                     tags=record.tags,
                     tag_terms=tag_only_terms,
                 )
@@ -395,7 +399,7 @@ class NoteStore:
         needs_plaintext = any(
             rule.required_text_patterns or rule.required_regexes for rule in ontology.matcher_rules
         )
-        raw_text_cache: Dict[str, str] = {}
+        raw_text_cache: Dict[str, str] = dict(content_text_by_id)
 
         for rule in ontology.matcher_rules:
             required_tags = [tag for tag in rule.required_tags if tag not in matcher_generated_tags]
@@ -416,11 +420,11 @@ class NoteStore:
             if rule.required_regexes:
                 filtered: Set[str] = set()
                 for note_id in rule_candidates:
-                    if note_id in raw_text_cache:
-                        raw_text = raw_text_cache[note_id]
-                    else:
-                        raw_text = get_cached_text(note_id)
-                        raw_text_cache[note_id] = raw_text
+                    if note_id not in raw_text_cache:
+                        raise RuntimeError(
+                            f"Integrity failure: missing raw text for candidate note {note_id}"
+                        )
+                    raw_text = raw_text_cache[note_id]
                     matched = True
                     for regex in rule.required_regexes:
                         if regex.search(raw_text) is None:
@@ -458,11 +462,11 @@ class NoteStore:
             base_terms = tag_only_terms_by_id[note_id]
             inferred_plaintext = ""
             if needs_plaintext:
-                if note_id in raw_text_cache:
-                    inferred_plaintext = raw_text_cache[note_id]
-                else:
-                    inferred_plaintext = get_cached_text(note_id)
-                    raw_text_cache[note_id] = inferred_plaintext
+                if note_id not in raw_text_cache:
+                    raise RuntimeError(
+                        f"Integrity failure: missing raw text for ontology inference note {note_id}"
+                    )
+                inferred_plaintext = raw_text_cache[note_id]
             effective_with_ontology = ontology.infer_effective_tags(
                 base_tags=base_terms,
                 plaintext=inferred_plaintext,
