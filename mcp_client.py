@@ -29,6 +29,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
+from app.api.transactions import transactional_route
 from app.services.search_query import parse_search_query
 
 
@@ -9596,6 +9597,7 @@ def create_web_app(
         }
 
     @app.post("/api/chat")
+    @transactional_route
     def chat(payload: AgentChatRequest) -> dict:
         if payload.message.strip() == "":
             raise HTTPException(status_code=400, detail="message must not be empty")
@@ -9629,6 +9631,7 @@ def create_web_app(
         return result
 
     @app.post("/api/chat_stream")
+    @transactional_route
     def chat_stream(payload: AgentChatRequest) -> StreamingResponse:
         if payload.message.strip() == "":
             raise HTTPException(status_code=400, detail="message must not be empty")
@@ -9765,6 +9768,7 @@ def create_web_app(
         return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
     @app.post("/api/chat_stream_v2")
+    @transactional_route
     def chat_stream_v2(payload: AgentChatV2Request) -> StreamingResponse:
         if payload.message.strip() == "":
             raise HTTPException(status_code=400, detail="message must not be empty")

@@ -91,6 +91,7 @@ export class HelpModal extends BaseModal {
                     { keys: `${modKey}+${leftArrowKey}`, description: 'Outdent note' },
                     { keys: `${modKey}+${rightArrowKey}`, description: 'Indent note' },
                     { keys: `${modKey}+${upArrowKey}`, description: 'Move current note up' },
+                    { keys: `${modKey}+${shiftKey}+${upArrowKey}`, description: 'Move current note to top' },
                     { keys: `${modKey}+${downArrowKey}`, description: 'Move current note down' },
                     { keys: `${modKey}+C`, description: 'Copy selection, or whole note if none' },
                     { keys: `${modKey}+X`, description: 'Cut selection, or whole note if none' },

@@ -8,6 +8,7 @@ import {
     createChildNote,
     moveNoteUp,
     moveNoteDown,
+    moveNoteToTop,
     indentNote,
     outdentNote,
     actionCopyNote,
@@ -492,7 +493,11 @@ function handleKeyDown(event) {
             break;
 	        case 'ArrowUp':
 	            if (event.metaKey || event.ctrlKey) {
-	                handleMoveNoteUpShortcut(event);
+                    if (event.shiftKey) {
+                        handleMoveNoteToTopShortcut(event);
+                    } else {
+	                    handleMoveNoteUpShortcut(event);
+                    }
 	            }
 	            break;
 	        case 'ArrowDown':
@@ -923,6 +928,33 @@ function handleMoveNoteUpShortcut(event) {
 	void CommandGate.run('keyboard.move_up', async () => {
 		await moveNoteUp(noteId);
 	});
+}
+
+function handleMoveNoteToTopShortcut(event) {
+    if (!event) {
+        throw new Error('handleMoveNoteToTopShortcut called without an event object');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const noteId = ModeContext.currentNoteId;
+    if (!noteId) {
+        Logger.logNoop('Move to top shortcut pressed but no note is selected', {
+            isEditing: ModeContext.isEditing,
+            currentNoteId: null,
+        });
+        return;
+    }
+
+    Logger.logDebug('Move note to top shortcut triggered', {
+        noteId: ModeContext.currentNoteId,
+        searchQuery: ModeContext.searchQuery,
+    }, Logger.LogCategory.EVENT);
+
+    void CommandGate.run('keyboard.move_to_top', async () => {
+        await moveNoteToTop(noteId);
+    });
 }
 
 function handleMoveNoteDownShortcut(event) {

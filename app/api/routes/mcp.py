@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import Response
 
+from app.api.transactions import transactional_route
 from app.mcp.read_service import ReadService
 from app.mcp.server import handle_message
 
@@ -12,6 +13,7 @@ _read_service = ReadService()
 
 
 @router.post("")
+@transactional_route
 def mcp_endpoint(payload: dict):
     response = handle_message(payload=payload, read_service=_read_service)
     if response is None:

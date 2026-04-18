@@ -304,6 +304,62 @@ def test_assert_ports_are_available_for_launch_allows_namespace_owned_mcp_port_o
     )
 
 
+def test_assert_ports_are_available_for_launch_evicts_conflicting_ports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evicted_ports: list[int] = []
+
+    monkeypatch.setattr(
+        namespace_switcher,
+        "resolve_main_server_config",
+        lambda *, environ: server_runtime.MainServerConfig(
+            host="127.0.0.1",
+            port=8000,
+            https_port=None,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile=None,
+            ssl_keyfile=None,
+        ),
+    )
+    monkeypatch.setattr(namespace_switcher, "resolve_backend_connect_host", lambda *, host: "127.0.0.1")
+    monkeypatch.setattr(namespace_switcher, "resolve_api_prefix", lambda *, environ: "/api2")
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_probe_namespace_status",
+        lambda *, host, port, api_prefix: {"namespace": "default"} if port == 8123 else None,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_is_tcp_port_open",
+        lambda *, host, port: port in {8123, 8766},
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_find_listening_pids_for_port",
+        lambda *, port: [9999] if port in {8123, 8766} else [],
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_stop_processes_listening_on_port",
+        lambda *, port: evicted_ports.append(port),
+    )
+
+    namespace_switcher._assert_ports_are_available_for_launch(
+        environ={},
+        namespace="work",
+        chosen_profile=NamespaceLaunchProfile(
+            namespace="work",
+            port=8123,
+            https_port=None,
+            mcp_port=8766,
+        ),
+        allowed_listener_pids=frozenset(),
+    )
+
+    assert evicted_ports == [8123, 8766]
+
+
 def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -482,7 +538,6 @@ def test_probe_namespace_status_sends_required_tab_header(
     assert requested["url"] == "/api2/auth/status"
     assert requested["headers"] == {"X-Metalist-Tab-Id": "namespace-switcher-probe"}
     assert requested["closed"] is True
-
 
 def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
     tmp_path: Path,

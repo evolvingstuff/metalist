@@ -7,6 +7,8 @@ exposes thin helpers used across the app (writers/readers + read guard).
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 import sys
 from typing import Iterator, Optional
 
@@ -52,6 +54,42 @@ class GuardedConnection:
         return self._connection
 
 
+@dataclass
+class _RequestTransactionState:
+    session: Optional[SafeSession]
+    guard: Optional[GuardedConnection]
+
+
+_request_transaction_state: ContextVar[Optional[_RequestTransactionState]] = ContextVar(
+    "request_transaction_state",
+    default=None,
+)
+
+
+def _ensure_request_transaction_resources(state: _RequestTransactionState) -> tuple[SafeSession, GuardedConnection]:
+    session = state.session
+    guard = state.guard
+    if session is not None and guard is not None:
+        return session, guard
+    if session is not None or guard is not None:
+        raise RuntimeError("Request transaction state must initialize session and guard together")
+
+    session = SafeSession()
+    connection = session.connection()
+    guard = GuardedConnection(connection)
+    state.session = session
+    state.guard = guard
+    return session, guard
+
+
+def get_request_session() -> Optional[SafeSession]:
+    state = _request_transaction_state.get()
+    if state is None:
+        return None
+    session, _ = _ensure_request_transaction_resources(state)
+    return session
+
+
 def enable_read_guard() -> None:
     SafeSession.enable_read_guard()
 
@@ -67,7 +105,34 @@ def allow_reads(reason: str) -> Iterator[None]:
 
 
 @contextmanager
+def begin_request_transaction() -> Iterator[None]:
+    existing_state = _request_transaction_state.get()
+    if existing_state is not None:
+        raise RuntimeError("Request transaction already active")
+
+    state = _RequestTransactionState(session=None, guard=None)
+    token = _request_transaction_state.set(state)
+    try:
+        yield
+    finally:
+        exc_type, _, _ = sys.exc_info()
+        if state.session is not None:
+            if exc_type is None:
+                state.session.commit()
+            else:
+                state.session.connection().rollback()
+            state.session.close()
+        _request_transaction_state.reset(token)
+
+
+@contextmanager
 def begin_writer() -> Iterator[GuardedConnection]:
+    request_state = _request_transaction_state.get()
+    if request_state is not None:
+        _, guard = _ensure_request_transaction_resources(request_state)
+        yield guard
+        return
+
     session = SafeSession()
     connection = session.connection()
     guard = GuardedConnection(connection)
@@ -88,6 +153,13 @@ def connect_reader(reason: Optional[str]) -> Iterator[GuardedConnection]:
         read_reason = "reader"
     else:
         read_reason = reason
+
+    request_state = _request_transaction_state.get()
+    if request_state is not None:
+        with SafeSession.allow_reads(read_reason):
+            _, guard = _ensure_request_transaction_resources(request_state)
+            yield guard
+        return
 
     with SafeSession.allow_reads(read_reason):
         session = SafeSession()

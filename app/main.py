@@ -37,6 +37,7 @@ from app.api.routes.files import router as api2_files_router
 from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.mcp import router as api2_mcp_router
 from app.api.routes.test import router as api2_test_router
+from app.api.transactions import transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
 from app.config import CRASH_SERVER_ON_FAIL
 from .models.database import SafeSession
@@ -238,10 +239,12 @@ if TEST_MODE:
 
 # Catch-all guard for any v1 API access (hard exit)
 @app.api_route(f"{V1_API_PREFIX}/{{rest_of_path:path}}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
+@transactional_route
 async def block_v1_any(rest_of_path: str):
     os._exit(1)
 
 @app.api_route(f"{V1_API_PREFIX}", methods=["GET","POST","PUT","DELETE","PATCH","OPTIONS","HEAD"])
+@transactional_route
 async def block_v1_root():
     os._exit(1)
 

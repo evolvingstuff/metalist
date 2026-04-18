@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 import logging
 
+from app.api.transactions import transactional_route
 from ..models.database import SafeSession
 from app.db.session import begin_writer
 from app.db.schema import initialize_schema, NOTES_TABLE
@@ -10,6 +11,7 @@ router = APIRouter()
 
 
 @router.post("/use-dev-db")
+@transactional_route
 async def use_dev_db():
     logger.info("Switching to dev DB")
     SafeSession.use_memory_db()
@@ -23,6 +25,7 @@ async def use_dev_db():
 
 
 @router.post("/use-file-db")
+@transactional_route
 async def use_file_db():
     logger.info("Switching to file DB")
     SafeSession.use_file_db()

@@ -25,6 +25,7 @@ export const CONFIG = {
             JOIN_NEXT: (noteId) => `${API_NOTES_BASE}/${noteId}/join-next`,
             REFERENCE_MODE: (noteId) => `${API_NOTES_BASE}/${noteId}/reference-mode`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,
+            MOVE_TO_TOP: (noteId) => `${API_NOTES_BASE}/${noteId}/move-to-top`,
             INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
             OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,
             COLLAPSE: (noteId) => `${API_NOTES_BASE}/${noteId}/collapse`,

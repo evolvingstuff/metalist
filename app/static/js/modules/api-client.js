@@ -685,6 +685,23 @@ export const NotesAPI = {
         );
     },
 
+    async moveNoteToTop(noteId, searchQuery) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.moveNoteToTop requires noteId string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.moveNoteToTop requires searchQuery string or null');
+        }
+        const body = {
+            search_query: searchQuery,
+        };
+        return this._apiCall(CONFIG.API.NOTES.MOVE_TO_TOP(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async indentNote(noteId, visiblePrevId) {
         if (typeof visiblePrevId !== 'string' || visiblePrevId.length === 0) {
             throw new Error('NotesAPI.indentNote requires visiblePrevId string');
