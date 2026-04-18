@@ -47,6 +47,7 @@ export const CONFIG = {
             TAB_STATE_DELETE_TAB: `${API_NOTES_BASE}/tab-state/delete-tab`,
             SEARCH_INTERACTIONS: `${API_NOTES_BASE}/search-interactions`,
             SEARCH_SUGGESTIONS: `${API_NOTES_BASE}/search-suggestions`,
+            PRIORITIZE_TAG_SUGGESTIONS: `${API_NOTES_BASE}/prioritize-tag-suggestions`,
             TAG_SUGGESTIONS: `${API_NOTES_BASE}/tag-suggestions`,
             BACKLINKS: (noteId) => `${API_NOTES_BASE}/${noteId}/backlinks`,
         },

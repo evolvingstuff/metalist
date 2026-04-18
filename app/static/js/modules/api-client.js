@@ -602,6 +602,23 @@ export const NotesAPI = {
         });
     },
 
+    async fetchPrioritizeTagSuggestions(query, searchQuery) {
+        if (typeof query !== 'string') {
+            throw new Error('NotesAPI.fetchPrioritizeTagSuggestions requires query string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.fetchPrioritizeTagSuggestions requires searchQuery string or null');
+        }
+        const payload = {
+            query,
+            search_query: searchQuery,
+        };
+        return this._apiCall(CONFIG.API.NOTES.PRIORITIZE_TAG_SUGGESTIONS, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    },
+
     async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');

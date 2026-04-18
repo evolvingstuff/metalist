@@ -50,6 +50,7 @@ from app.services.search_history import (
 )
 from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
+from app.usecases.prioritize import list_prioritize_tag_suggestions
 
 
 logger = logging.getLogger(__name__)
@@ -291,6 +292,28 @@ def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
             recent_tags=recent_tags,
             priority_slots=3,
         )
+    return {"suggestions": suggestions}
+
+
+@router.post("/notes/prioritize-tag-suggestions")
+@transactional_route
+def prioritize_tag_suggestions(payload: dict) -> Dict[str, object]:
+    query = payload["query"]
+    search_query = payload["search_query"]
+
+    if not isinstance(query, str):
+        raise TypeError("query must be a string")
+    normalized_search: str | None = search_query
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search_query must be a string or null")
+
+    suggestions = list_prioritize_tag_suggestions(
+        search_query=normalized_search,
+        query=query,
+        limit=20,
+    )
     return {"suggestions": suggestions}
 
 

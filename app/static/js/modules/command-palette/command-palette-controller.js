@@ -13,6 +13,7 @@ import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
 import { NamespaceSwitcherModal } from '../modals/namespace-switcher-modal.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
+import { PrioritizeModal } from '../modals/prioritize-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -230,6 +231,7 @@ class CommandPaletteController {
         this._helpModal = null;
         this._namespaceSwitcherModal = null;
         this._deleteNamespaceModal = null;
+        this._prioritizeModal = null;
 
         this._elements = null;
 
@@ -1023,34 +1025,6 @@ class CommandPaletteController {
         window.alert(`Trimmed ${result.deleted_count} unused file(s).`);
     }
 
-    _promptForPrioritizeTag(direction) {
-        if (direction !== 'front' && direction !== 'back') {
-            throw new Error("direction must be 'front' or 'back'");
-        }
-        const rawValue = window.prompt(
-            `Enter a tag to prioritize to the ${direction} of the current view.`,
-            '',
-        );
-        if (rawValue === null) {
-            return null;
-        }
-        const tag = rawValue.trim();
-        if (tag === '') {
-            ErrorHandler.showErrorBanner('Enter a tag.', 'error', 8000, true);
-            return null;
-        }
-        if (!isValidTagToken(tag)) {
-            ErrorHandler.showErrorBanner(
-                'That input is not a valid tag token. This action only supports a single tag (no spaces, quotes, regex, or parentheses).',
-                'error',
-                10000,
-                true,
-            );
-            return null;
-        }
-        return tag;
-    }
-
     async _prioritizeTag(direction) {
         if (direction !== 'front' && direction !== 'back') {
             throw new Error("direction must be 'front' or 'back'");
@@ -1059,19 +1033,35 @@ class CommandPaletteController {
             this.close();
         }
 
-        const tag = this._promptForPrioritizeTag(direction);
+        const searchQuery = ModeContext.searchQuery;
+        if (typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string');
+        }
+
+        if (this._prioritizeModal === null) {
+            this._prioritizeModal = new PrioritizeModal();
+        }
+
+        const tag = await this._prioritizeModal.openForDirection({
+            direction,
+            searchQuery,
+        });
         if (tag === null) {
+            return;
+        }
+        if (!isValidTagToken(tag)) {
+            ErrorHandler.showErrorBanner(
+                'That input is not a valid tag token. This action only supports a single tag (no spaces, quotes, regex, or parentheses).',
+                'error',
+                10000,
+                true,
+            );
             return;
         }
 
         const result = await CommandGate.run(`commandPalette.prioritize.${direction}`, async () => {
             if (ModeContext.isEditing) {
                 await actionSaveAndExitEditingWithoutRefreshing();
-            }
-
-            const searchQuery = ModeContext.searchQuery;
-            if (typeof searchQuery !== 'string') {
-                throw new Error('ModeContext.searchQuery must be a string');
             }
 
             const payload = await NotesAPI.prioritize(tag, direction, searchQuery);

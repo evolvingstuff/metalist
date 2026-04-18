@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
+from typing import DefaultDict
 from typing import Dict, List, Optional
 
+from app.services.search_index import extract_tags_for_search
 from app.services.search_index import search_index
 from app.services.snapshot import resolve_search_scope
 from app.services.store import store
+from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.sync import generate_new_uuid
 from app.services.tag_ontology import is_valid_tag_token
 from app.services.undo_state import record_move_batch
@@ -87,6 +91,70 @@ def _build_target_root_ids(
     if desired_index != len(desired_visible_root_ids):
         raise RuntimeError("Desired visible root ids overflowed root order reconstruction")
     return target_root_ids
+
+
+def list_prioritize_tag_suggestions(
+    *,
+    search_query: Optional[str],
+    query: str,
+    limit: int,
+) -> List[str]:
+    if not isinstance(query, str):
+        raise TypeError(f"query must be a string, got {type(query)}")
+    if not isinstance(limit, int) or limit <= 0:
+        raise TypeError("limit must be a positive integer")
+
+    normalized_prefix = query.strip()
+    visible_root_ids = _resolve_visible_root_ids(search_query)
+
+    total_counts: DefaultDict[str, int] = defaultdict(int)
+    representative_counts: DefaultDict[str, Dict[str, int]] = defaultdict(dict)
+    direct_prefix_matches: Dict[str, bool] = {}
+    first_seen_indices: Dict[str, int] = {}
+    next_index = 0
+
+    for root_id in visible_root_ids:
+        record = store.get(root_id)
+        if not isinstance(record.tags, str):
+            raise RuntimeError(f"Note tags must be a string | note_id={root_id}")
+        for tag in extract_tags_for_search(record.tags):
+            if normalized_prefix != "" and not tag_term_matches_prefix(term=tag, prefix=normalized_prefix):
+                continue
+            tag_casefold = tag.casefold()
+            total_counts[tag_casefold] += 1
+            spelling_counts = representative_counts[tag_casefold]
+            if tag not in spelling_counts:
+                spelling_counts[tag] = 0
+            spelling_counts[tag] += 1
+            if tag not in first_seen_indices:
+                first_seen_indices[tag] = next_index
+                next_index += 1
+            if tag_casefold not in direct_prefix_matches:
+                direct_prefix_matches[tag_casefold] = tag.casefold().startswith(normalized_prefix.casefold())
+            elif not direct_prefix_matches[tag_casefold] and tag.casefold().startswith(normalized_prefix.casefold()):
+                direct_prefix_matches[tag_casefold] = True
+
+    scored_terms: List[tuple[int, int, str, str]] = []
+    for tag_casefold, count in total_counts.items():
+        spellings = representative_counts[tag_casefold]
+        representative = sorted(
+            spellings.items(),
+            key=lambda item: (-item[1], first_seen_indices[item[0]], item[0].casefold(), item[0]),
+        )[0][0]
+        direct_prefix_score = 0
+        if tag_casefold in direct_prefix_matches and direct_prefix_matches[tag_casefold]:
+            direct_prefix_score = 1
+        scored_terms.append(
+            (
+                direct_prefix_score,
+                count,
+                representative.casefold(),
+                representative,
+            )
+        )
+
+    scored_terms.sort(key=lambda item: (-item[0], -item[1], item[2], item[3]))
+    return [representative for _, _, _, representative in scored_terms[:limit]]
 
 
 @dataclass

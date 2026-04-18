@@ -8,6 +8,7 @@ import app.api.routes.notes as notes_route
 import app.usecases.prioritize as prioritize_module
 from app.services.snapshot import SearchScope
 from app.usecases.prioritize import CmdPrioritize
+from app.usecases.prioritize import list_prioritize_tag_suggestions
 
 
 @dataclass
@@ -18,12 +19,16 @@ class _FakeRecord:
 
 
 class _FakeStore:
-    def __init__(self, root_ids: list[str]) -> None:
+    def __init__(self, root_ids: list[str], *, tags_by_note_id: dict[str, str]) -> None:
+        if not isinstance(tags_by_note_id, dict):
+            raise TypeError("tags_by_note_id must be a dict")
         self.root_ids = list(root_ids)
-        self._records = {
-            note_id: _FakeRecord(id=note_id, parent_id=None, tags="")
-            for note_id in root_ids
-        }
+        self._records = {}
+        for note_id in root_ids:
+            tags = ""
+            if note_id in tags_by_note_id:
+                tags = tags_by_note_id[note_id]
+            self._records[note_id] = _FakeRecord(id=note_id, parent_id=None, tags=tags)
 
     def get(self, note_id: str) -> _FakeRecord:
         return self._records[note_id]
@@ -81,7 +86,10 @@ def _install_root_move_fakes(
 def test_prioritize_front_reorders_visible_roots_and_records_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_store = _FakeStore(["hidden-root", "root-b", "root-c", "root-d", "after-root"])
+    fake_store = _FakeStore(
+        ["hidden-root", "root-b", "root-c", "root-d", "after-root"],
+        tags_by_note_id={},
+    )
     move_calls = _install_root_move_fakes(
         monkeypatch=monkeypatch,
         fake_store=fake_store,
@@ -156,7 +164,10 @@ def test_prioritize_front_reorders_visible_roots_and_records_batch(
 def test_prioritize_back_keeps_match_and_non_match_order_stable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_store = _FakeStore(["root-a", "root-b", "root-c", "root-d", "root-e", "root-f"])
+    fake_store = _FakeStore(
+        ["root-a", "root-b", "root-c", "root-d", "root-e", "root-f"],
+        tags_by_note_id={},
+    )
     _install_root_move_fakes(
         monkeypatch=monkeypatch,
         fake_store=fake_store,
@@ -201,7 +212,7 @@ def test_prioritize_back_keeps_match_and_non_match_order_stable(
 
 
 def test_prioritize_noops_when_no_visible_roots_match(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_store = _FakeStore(["root-a", "root-b", "root-c"])
+    fake_store = _FakeStore(["root-a", "root-b", "root-c"], tags_by_note_id={})
     _install_root_move_fakes(
         monkeypatch=monkeypatch,
         fake_store=fake_store,
@@ -248,7 +259,10 @@ def test_prioritize_noops_when_no_visible_roots_match(monkeypatch: pytest.Monkey
 def test_prioritize_noops_when_order_is_already_prioritized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_store = _FakeStore(["root-a", "root-b", "root-d", "root-c", "root-e"])
+    fake_store = _FakeStore(
+        ["root-a", "root-b", "root-d", "root-c", "root-e"],
+        tags_by_note_id={},
+    )
     _install_root_move_fakes(
         monkeypatch=monkeypatch,
         fake_store=fake_store,
@@ -308,6 +322,71 @@ def test_prioritize_rejects_invalid_tag() -> None:
         ).execute()
 
 
+def test_list_prioritize_tag_suggestions_limits_to_visible_roots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_store = _FakeStore(
+        ["hidden-root", "root-a", "root-b", "root-c"],
+        tags_by_note_id={
+            "hidden-root": "hidden",
+            "root-a": "foo workspaces",
+            "root-b": "Foo databricks-workspaces",
+            "root-c": "bar",
+        },
+    )
+    monkeypatch.setattr(prioritize_module, "store", fake_store)
+    monkeypatch.setattr(
+        prioritize_module,
+        "resolve_search_scope",
+        lambda *, search, editing_note_id: SearchScope(
+            search_active=True,
+            allowed_note_ids={"root-a", "root-b", "root-c"},
+            search_root_ids_ordered=["root-a", "root-b", "root-c"],
+            search_root_count_total=3,
+        ),
+    )
+
+    suggestions = list_prioritize_tag_suggestions(
+        search_query="journal",
+        query="",
+        limit=10,
+    )
+
+    assert suggestions == ["foo", "bar", "databricks-workspaces", "workspaces"]
+
+
+def test_list_prioritize_tag_suggestions_filters_by_segment_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_store = _FakeStore(
+        ["root-a", "root-b", "root-c"],
+        tags_by_note_id={
+            "root-a": "workspaces",
+            "root-b": "databricks-workspaces",
+            "root-c": "personal",
+        },
+    )
+    monkeypatch.setattr(prioritize_module, "store", fake_store)
+    monkeypatch.setattr(
+        prioritize_module,
+        "resolve_search_scope",
+        lambda *, search, editing_note_id: SearchScope(
+            search_active=True,
+            allowed_note_ids={"root-a", "root-b", "root-c"},
+            search_root_ids_ordered=["root-a", "root-b", "root-c"],
+            search_root_count_total=3,
+        ),
+    )
+
+    suggestions = list_prioritize_tag_suggestions(
+        search_query="journal",
+        query="wor",
+        limit=10,
+    )
+
+    assert suggestions == ["workspaces", "databricks-workspaces"]
+
+
 def test_prioritize_route_normalizes_empty_search_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(notes_route, "_require_viewport", lambda body: {"scrollY": 0})
 
@@ -342,3 +421,32 @@ def test_prioritize_route_normalizes_empty_search_query(monkeypatch: pytest.Monk
         "viewport": {"scrollY": 0},
     }
     assert result == {"status": "moved"}
+
+
+def test_prioritize_tag_suggestions_route_normalizes_empty_search_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        notes_route,
+        "list_prioritize_tag_suggestions",
+        lambda *, search_query, query, limit: captured.update(
+            search_query=search_query,
+            query=query,
+            limit=limit,
+        ) or ["foo"],
+    )
+
+    result = notes_route.prioritize_tag_suggestions(
+        {
+            "query": "fo",
+            "search_query": "",
+        }
+    )
+
+    assert captured == {
+        "search_query": None,
+        "query": "fo",
+        "limit": 20,
+    }
+    assert result == {"suggestions": ["foo"]}
