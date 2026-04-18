@@ -1,5 +1,6 @@
 import uvicorn
 import http.client
+import importlib
 import logging
 import os
 import signal
@@ -12,6 +13,7 @@ import ssl
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 from app.server_runtime import apply_main_cli_args_to_environ
 from app.server_runtime import ensure_default_tls_pair
@@ -22,21 +24,11 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
+from app.startup_js_sanity import assert_startup_js_sanity
+from app.startup_sanity import assert_startup_sanity
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import open_or_launch_all_namespaces
-from mcp_client import create_web_app
-from mcp_client import DEFAULT_MAX_STEPS
-from mcp_client import DEFAULT_MAX_EXPRESSIONS
-from mcp_client import DEFAULT_HYDRATE_TOP_K
-from mcp_client import DEFAULT_OLLAMA_CHAT_URL
-from mcp_client import DEFAULT_OLLAMA_MODEL
-from mcp_client import DEFAULT_REGEX_ENGINE
-from mcp_client import DEFAULT_SEARCH_CONTEXT_QUERY
-from mcp_client import DEFAULT_WEB_HOST
-from mcp_client import DEFAULT_WEB_PORT
-from mcp_client import reset_local_ollama_server
-
 
 @dataclass(frozen=True)
 class _StartedHttpsProxy:
@@ -53,6 +45,16 @@ _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES = (
     "METALIST_HTTPS_PORT",
     "MCP_AGENT_WEB_PORT",
 )
+
+
+def _load_mcp_client_module():
+    # Delay importing mcp_client until after CLI/env namespace selection runs.
+    return importlib.import_module("mcp_client")
+
+
+def _run_startup_sanity_gates(*, repo_root: Path) -> None:
+    assert_startup_sanity(repo_root)
+    assert_startup_js_sanity(repo_root)
 
 
 class FilterCheckUpdates(logging.Filter):
@@ -119,7 +121,7 @@ def _resolve_agent_web_browser_host(*, environ: dict[str, str]) -> str:
         if host.strip() == "":
             raise RuntimeError("MCP_AGENT_WEB_HOST must not be empty")
     else:
-        host = DEFAULT_WEB_HOST
+        host = _load_mcp_client_module().DEFAULT_WEB_HOST
     return resolve_local_browser_host(host=host)
 
 
@@ -350,6 +352,7 @@ def _evict_processes_listening_on_port(*, port: int) -> None:
 
 
 def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
+    mcp_client = _load_mcp_client_module()
     enabled = _env_flag("MCP_AGENT_WEB_ENABLED", True)
     if not enabled:
         print("Agent web app sidecar disabled (MCP_AGENT_WEB_ENABLED=0)")
@@ -358,13 +361,13 @@ def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
     if "MCP_AGENT_WEB_HOST" in os.environ:
         host = os.environ["MCP_AGENT_WEB_HOST"]
     else:
-        host = DEFAULT_WEB_HOST
-    port = _env_int("MCP_AGENT_WEB_PORT", DEFAULT_WEB_PORT)
+        host = mcp_client.DEFAULT_WEB_HOST
+    port = _env_int("MCP_AGENT_WEB_PORT", mcp_client.DEFAULT_WEB_PORT)
     _evict_processes_listening_on_port(port=port)
     if "MCP_AGENT_OLLAMA_MODEL" in os.environ:
         model = os.environ["MCP_AGENT_OLLAMA_MODEL"]
     else:
-        model = DEFAULT_OLLAMA_MODEL
+        model = mcp_client.DEFAULT_OLLAMA_MODEL
     if "MCP_AGENT_MCP_URL" in os.environ:
         mcp_url = os.environ["MCP_AGENT_MCP_URL"]
     else:
@@ -372,30 +375,30 @@ def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
     if "MCP_AGENT_OLLAMA_CHAT_URL" in os.environ:
         ollama_chat_url = os.environ["MCP_AGENT_OLLAMA_CHAT_URL"]
     else:
-        ollama_chat_url = DEFAULT_OLLAMA_CHAT_URL
-    max_steps = _env_int("MCP_AGENT_MAX_STEPS", DEFAULT_MAX_STEPS)
+        ollama_chat_url = mcp_client.DEFAULT_OLLAMA_CHAT_URL
+    max_steps = _env_int("MCP_AGENT_MAX_STEPS", mcp_client.DEFAULT_MAX_STEPS)
     max_expressions = _env_int(
         "MCP_AGENT_MAX_EXPRESSIONS",
-        DEFAULT_MAX_EXPRESSIONS,
+        mcp_client.DEFAULT_MAX_EXPRESSIONS,
     )
     hydrate_top_k = _env_int(
         "MCP_AGENT_HYDRATE_TOP_K",
-        DEFAULT_HYDRATE_TOP_K,
+        mcp_client.DEFAULT_HYDRATE_TOP_K,
     )
     regex_engine = _env_choice(
         "MCP_AGENT_REGEX_ENGINE",
-        DEFAULT_REGEX_ENGINE,
+        mcp_client.DEFAULT_REGEX_ENGINE,
         {"python-re", "re2"},
     )
     if "MCP_AGENT_SEARCH_CONTEXT_QUERY" in os.environ:
         search_context_query = os.environ["MCP_AGENT_SEARCH_CONTEXT_QUERY"]
     else:
-        search_context_query = DEFAULT_SEARCH_CONTEXT_QUERY
+        search_context_query = mcp_client.DEFAULT_SEARCH_CONTEXT_QUERY
     reset_ollama_on_start = _env_flag("MCP_AGENT_RESET_OLLAMA_ON_START", True)
     if reset_ollama_on_start:
-        reset_local_ollama_server(ollama_chat_url=ollama_chat_url)
+        mcp_client.reset_local_ollama_server(ollama_chat_url=ollama_chat_url)
 
-    agent_app = create_web_app(
+    agent_app = mcp_client.create_web_app(
         default_model=model,
         default_max_steps=max_steps,
         default_max_expressions=max_expressions,
@@ -560,6 +563,7 @@ def main(argv: list[str]) -> None:
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     _record_self_executable_for_namespace_launch()
+    _run_startup_sanity_gates(repo_root=Path(__file__).resolve().parent)
     original_environ = dict(os.environ)
     cli_args = apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     if _should_open_or_launch_all_namespaces(
@@ -570,6 +574,16 @@ def main(argv: list[str]) -> None:
         launch_results = open_or_launch_all_namespaces(environ=os.environ)
         _print_namespace_bootstrap_results(environ=os.environ, launch_results=launch_results)
         return
+    _run_namespace_server_for_current_env(argv=argv)
+
+
+def run_namespace_server(argv: list[str]) -> None:
+    logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
+    apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
+    _run_namespace_server_for_current_env(argv=argv)
+
+
+def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
     database_runtime_config = resolve_database_runtime_config(
         environ=os.environ,
         argv=argv,

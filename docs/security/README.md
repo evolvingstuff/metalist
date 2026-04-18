@@ -12,6 +12,9 @@ This document describes the security architecture for MetaList3's password prote
 - Runtime hardening runs at startup:
   - core dumps disabled on POSIX
   - optional macOS checks for encrypted swap and no RAM-to-disk hibernation behavior.
+- Before any namespace restart/launch work, `main.py` also runs source-level startup sanity gates:
+  - Python AST/default/transaction-route rules
+  - JS tree-sitter sanity rules for `try/catch`, default params, destructuring defaults, and defaulting operators.
 - Password policy is intentionally permissive in current dev mode (see "Password Requirements").
 
 ## Two-Key Encryption System
@@ -174,6 +177,11 @@ writes).
 - DEK is tied to authentication tokens
 - DEK cleared on logout or token expiry
 - Server restart requires re-authentication
+
+### Mutation Transaction Enforcement
+- Mutating FastAPI routes are expected to use `@transactional_route`.
+- Startup sanity rejects mutation endpoints that omit the decorator or place it in the wrong order.
+- Request-scoped writer sessions are reused across the wrapped route path so the commit happens once at the end of the request, not in intermediate steps.
 
 ### Runtime Memory Safeguards
 - Core dumps are disabled at process startup (`RLIMIT_CORE=0`) on POSIX systems.

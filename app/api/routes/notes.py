@@ -5,6 +5,7 @@ from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app.api.transactions import transactional_route
 from app.services.snapshot import build_view_state
 from app.services.snapshot import resolve_search_scope
 from app.services.note_store import store as note_store
@@ -15,6 +16,7 @@ from app.usecases.create_child import CmdCreateChild
 from app.usecases.update_content import CmdUpdateContent
 from app.usecases.delete_subtree import CmdDeleteSubtree
 from app.usecases.move import CmdMove
+from app.usecases.move_to_top import CmdMoveToTop
 from app.usecases.indent import CmdIndent
 from app.usecases.outdent import CmdOutdent
 from app.usecases.collapse import CmdCollapse
@@ -68,6 +70,7 @@ def _require_note_present(note_id: str, *, context: str) -> None:
 
 
 @router.post("/notes/view")
+@transactional_route
 def view_diff(payload: dict):
     # Strict: require keys, let FastAPI raise if invalid
     client_id = payload["clientId"]
@@ -241,6 +244,7 @@ def get_tab_state() -> Dict[str, object]:
 
 
 @router.post("/notes/tab-state")
+@transactional_route
 def update_tab_state(payload: dict) -> Dict[str, object]:
     if "activeTabId" not in payload or "tabs" not in payload or "tabOrder" not in payload:
         raise HTTPException(status_code=400, detail="activeTabId, tabs, and tabOrder are required")
@@ -254,6 +258,7 @@ def update_tab_state(payload: dict) -> Dict[str, object]:
 
 
 @router.post("/notes/tab-state/new-tab")
+@transactional_route
 def create_new_tab(payload: dict) -> Dict[str, object]:
     if "copyFromTabId" not in payload:
         raise HTTPException(status_code=400, detail="copyFromTabId is required")
@@ -262,6 +267,7 @@ def create_new_tab(payload: dict) -> Dict[str, object]:
 
 
 @router.post("/notes/tab-state/delete-tab")
+@transactional_route
 def delete_tab(payload: dict) -> Dict[str, object]:
     if "tabId" not in payload:
         raise HTTPException(status_code=400, detail="tabId is required")
@@ -270,6 +276,7 @@ def delete_tab(payload: dict) -> Dict[str, object]:
 
 
 @router.post("/notes/search-suggestions")
+@transactional_route
 def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
     query = payload["query"]
     if not isinstance(query, str):
@@ -287,6 +294,7 @@ def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
 
 
 @router.post("/notes/search-interactions")
+@transactional_route
 def search_interactions(request: Request, payload: dict) -> Dict[str, object]:
     token = _require_bearer_token(request)
     query = payload["query"]
@@ -304,6 +312,7 @@ def search_interactions(request: Request, payload: dict) -> Dict[str, object]:
 
 
 @router.post("/notes/tag-suggestions")
+@transactional_route
 def tag_suggestions(payload: dict) -> Dict[str, object]:
     note_id = payload["note_id"]
     anchors = payload["anchors"]
@@ -383,6 +392,7 @@ def _not_impl(exc: Exception) -> None:
 
 
 @router.post("/notes/new")
+@transactional_route
 def create_note_top(request: Request, body: dict):
     token = _require_bearer_token(request)
     viewport = _require_viewport(body)
@@ -398,6 +408,7 @@ def create_note_top(request: Request, body: dict):
 
 
 @router.post("/notes/new-sibling/{note_id}")
+@transactional_route
 def create_sibling(request: Request, note_id: str, body: dict):
     token = _require_bearer_token(request)
     viewport = _require_viewport(body)
@@ -414,6 +425,7 @@ def create_sibling(request: Request, note_id: str, body: dict):
 
 
 @router.post("/notes/new-child/{note_id}")
+@transactional_route
 def create_child(request: Request, note_id: str, body: dict):
     token = _require_bearer_token(request)
     viewport = _require_viewport(body)
@@ -430,6 +442,7 @@ def create_child(request: Request, note_id: str, body: dict):
 
 
 @router.put("/notes/{note_id}")
+@transactional_route
 def update_note(request: Request, note_id: str, body: dict):
     # Required fields; let KeyError surface for missing keys
     client_id = body["clientId"]
@@ -451,6 +464,7 @@ def update_note(request: Request, note_id: str, body: dict):
 
 
 @router.put("/notes/{note_id}/save")
+@transactional_route
 def save_note(request: Request, note_id: str, body: dict):
     client_id = body["clientId"]
     content = body["content"]
@@ -471,6 +485,7 @@ def save_note(request: Request, note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/toggle-todo")
+@transactional_route
 def toggle_todo_done(request: Request, note_id: str, body: dict):
     client_id = body["clientId"]
     viewport = _require_viewport(body)
@@ -487,6 +502,7 @@ def toggle_todo_done(request: Request, note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/run-shell")
+@transactional_route
 def run_shell_endpoint(note_id: str, body: dict) -> Dict[str, object]:
     _require_note_present(note_id, context="notes.run-shell")
     timeout_seconds = body["timeoutSeconds"]
@@ -516,6 +532,7 @@ def run_shell_status_endpoint(note_id: str, run_id: str) -> Dict[str, object]:
 
 
 @router.post("/notes/{note_id}/run-shell/{run_id}/input")
+@transactional_route
 def run_shell_input_endpoint(note_id: str, run_id: str, body: dict) -> Dict[str, object]:
     run_capture = CapturedExceptionContext(RuntimeError, TypeError, ValueError)
     result: Dict[str, object] | None = None
@@ -536,6 +553,7 @@ def run_shell_input_endpoint(note_id: str, run_id: str, body: dict) -> Dict[str,
 
 
 @router.post("/notes/{note_id}/join-next")
+@transactional_route
 def join_next_endpoint(request: Request, note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
@@ -551,6 +569,7 @@ def join_next_endpoint(request: Request, note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/reference-mode")
+@transactional_route
 def toggle_reference_mode_endpoint(request: Request, note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
@@ -569,6 +588,7 @@ def toggle_reference_mode_endpoint(request: Request, note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/move")
+@transactional_route
 def move_note_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.move")
@@ -584,7 +604,31 @@ def move_note_endpoint(note_id: str, body: dict):
     return cmd.execute()
 
 
+@router.post("/notes/{note_id}/move-to-top")
+@transactional_route
+def move_note_to_top_endpoint(note_id: str, body: dict):
+    viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.move-to-top")
+
+    search_query = body["search_query"]
+    normalized_search: str | None = search_query
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search_query must be a string or null")
+
+    cmd = CmdMoveToTop(
+        note_id=note_id,
+        search_query=normalized_search,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
 @router.post("/notes/{note_id}/indent")
+@transactional_route
 def indent_note_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.indent")
@@ -599,6 +643,7 @@ def indent_note_endpoint(note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/outdent")
+@transactional_route
 def outdent_note_endpoint(request: Request, note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
@@ -615,6 +660,7 @@ def outdent_note_endpoint(request: Request, note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/collapse")
+@transactional_route
 def collapse_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.collapse")
@@ -623,6 +669,7 @@ def collapse_endpoint(note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/expand")
+@transactional_route
 def expand_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.expand")
@@ -631,6 +678,7 @@ def expand_endpoint(note_id: str, body: dict):
 
 
 @router.post("/notes/set-collapsed-bulk")
+@transactional_route
 def set_collapsed_bulk_endpoint(body: dict):
     viewport = _require_viewport(body)
     note_ids = body["note_ids"]
@@ -657,6 +705,7 @@ def set_collapsed_bulk_endpoint(body: dict):
 
 
 @router.post("/notes/set-collapsed-in-context")
+@transactional_route
 def set_collapsed_in_context_endpoint(body: dict):
     viewport = _require_viewport(body)
     search_query = body["search_query"]
@@ -683,6 +732,7 @@ def set_collapsed_in_context_endpoint(body: dict):
 
 
 @router.delete("/notes/{note_id}")
+@transactional_route
 def delete_note(note_id: str, body: dict):
     client_id = body["clientId"]
     viewport = _require_viewport(body)
@@ -692,12 +742,14 @@ def delete_note(note_id: str, body: dict):
 
 
 @router.post("/notes/{note_id}/copy")
+@transactional_route
 def copy_note_endpoint(note_id: str, body: dict):
     cmd = CmdCopyNote(note_id=note_id, client_id=body["clientId"])  
     return cmd.execute()
 
 
 @router.post("/notes/paste-sibling/{target_note_id}")
+@transactional_route
 def paste_sibling_endpoint(request: Request, target_note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
@@ -714,6 +766,7 @@ def paste_sibling_endpoint(request: Request, target_note_id: str, body: dict):
 
 
 @router.post("/notes/paste-child/{target_note_id}")
+@transactional_route
 def paste_child_endpoint(request: Request, target_note_id: str, body: dict):
     viewport = _require_viewport(body)
     token = _require_bearer_token(request)
@@ -747,18 +800,21 @@ def _require_bearer_token(request: Request) -> str:
 
 
 @router.post("/notes/undo")
+@transactional_route
 def undo_endpoint(request: Request, client_id: str, undoContext: str):
     token = _require_bearer_token(request)
     return CmdUndo(client_id=client_id, token=token, undo_context=undoContext).execute()
 
 
 @router.post("/notes/redo")
+@transactional_route
 def redo_endpoint(request: Request, client_id: str, undoContext: str):
     token = _require_bearer_token(request)
     return CmdRedo(client_id=client_id, token=token, undo_context=undoContext).execute()
 
 
 @router.post("/notes/edit-mode")
+@transactional_route
 def record_edit_mode_endpoint(request: Request, body: dict) -> Dict[str, object]:
     token = _require_bearer_token(request)
     viewport = _require_viewport(body)

@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 
+from app.api.transactions import transactional_route
 from app.api.deps import get_db
 from app.config import ACTIVE_NAMESPACE, KDF_TIME_COST
 from app.db.settings_sql import fetch_settings
@@ -336,6 +337,7 @@ def _optional_int_field(payload: dict[str, object], field_name: str) -> int | No
 
 
 @router.post("/login", response_model=LoginResponse)
+@transactional_route
 def login(
     request: Request,
     payload: LoginRequest,
@@ -377,6 +379,7 @@ def login(
 
 
 @router.post("/logout")
+@transactional_route
 def logout(token: Annotated[str, Depends(_require_auth)]):
     token_service.revoke_token(token)
     clear_all_locks()
@@ -385,6 +388,7 @@ def logout(token: Annotated[str, Depends(_require_auth)]):
 
 
 @router.post("/backup/create", response_model=BackupCreateResponse)
+@transactional_route
 def create_backup(token: Annotated[str, Depends(_require_auth)]):
     backup_file = create_timestamped_backup()
     return BackupCreateResponse(
@@ -402,6 +406,7 @@ def list_available_backups(token: Annotated[str, Depends(_require_auth)]):
 
 
 @router.post("/backup/delete-oldest", response_model=BackupDeleteOldestResponse)
+@transactional_route
 def delete_oldest_backup_files(
     payload: BackupDeleteOldestRequest,
     token: Annotated[str, Depends(_require_auth)],
@@ -416,6 +421,7 @@ def delete_oldest_backup_files(
 
 
 @router.post("/backup/restore", response_model=BackupRestoreResponse)
+@transactional_route
 def restore_from_backup(
     payload: BackupRestoreRequest,
     token: Annotated[str, Depends(_require_auth)],
@@ -438,6 +444,7 @@ def restore_from_backup(
 
 
 @router.post("/session", response_model=SessionResponse)
+@transactional_route
 def create_passwordless_session(
     request: Request,
     tab_id: Annotated[str, Depends(_require_tab_id)],
@@ -482,6 +489,7 @@ def namespace_catalog(token: Annotated[str, Depends(_require_auth)]):
 
 
 @router.post("/namespaces/open")
+@transactional_route
 def open_namespace(
     payload: dict[str, object],
     token: Annotated[str, Depends(_require_auth)],
@@ -528,6 +536,7 @@ def open_namespace(
 
 
 @router.post("/namespaces/delete-current")
+@transactional_route
 def delete_active_namespace(
     payload: dict[str, object],
     db: Annotated[SafeSession, Depends(get_db)],
@@ -591,6 +600,7 @@ def namespace_delete_job_status(
 
 
 @router.post("/hydrate", response_model=HydrationStatusResponse)
+@transactional_route
 def hydrate_cache(
     db: Annotated[SafeSession, Depends(get_db)],
     token: Annotated[str, Depends(_require_auth)],
@@ -615,6 +625,7 @@ def hydration_status(token: Annotated[str, Depends(_require_auth)]):
 
 
 @router.post("/settings/password/create")
+@transactional_route
 def create_password(
     payload: PasswordCreateRequest,
     db: Annotated[SafeSession, Depends(get_db)],
@@ -631,6 +642,7 @@ def create_password(
 
 
 @router.put("/settings/password/change")
+@transactional_route
 def change_password(
     payload: PasswordChangeRequest,
     db: Annotated[SafeSession, Depends(get_db)],
@@ -654,6 +666,7 @@ def change_password(
 
 
 @router.delete("/settings/password/remove")
+@transactional_route
 def remove_password(
     payload: PasswordRemoveRequest,
     db: Annotated[SafeSession, Depends(get_db)],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import builtins
 from pathlib import Path
 import sys
@@ -12,6 +13,41 @@ from app.server_runtime import MainCliArgs
 from app.server_runtime import MainServerConfig
 from app.server_runtime import NamespaceLaunchProfile
 from app.services.namespace_switcher import NamespaceOpenResult
+
+
+def test_main_entrypoint_has_no_top_level_mcp_client_import() -> None:
+    source_path = Path(main_entrypoint.__file__)
+    source_text = source_path.read_text(encoding="utf-8")
+    tree = ast.parse(source_text, filename=str(source_path))
+
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name != "mcp_client"
+        if isinstance(node, ast.ImportFrom):
+            assert node.module != "mcp_client"
+
+
+def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        main_entrypoint,
+        "assert_startup_sanity",
+        lambda repo_root: calls.append(f"python:{repo_root}"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "assert_startup_js_sanity",
+        lambda repo_root: calls.append(f"js:{repo_root}"),
+    )
+
+    main_entrypoint._run_startup_sanity_gates(repo_root=tmp_path)
+
+    assert calls == [
+        f"python:{tmp_path}",
+        f"js:{tmp_path}",
+    ]
 
 
 def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch) -> None:
@@ -102,11 +138,13 @@ def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch
     monkeypatch.setattr(main_entrypoint, "_start_agent_web_sidecar", fake_start_agent_web_sidecar)
     monkeypatch.setattr(main_entrypoint, "_run_main_listener", fake_run_main_listener)
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
 
     main_entrypoint.main(argv=[])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
+        "_run_startup_sanity_gates",
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "prepare_database_runtime_path",
@@ -183,11 +221,13 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
         lambda **kwargs: calls.append("_run_main_listener"),
     )
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
 
     main_entrypoint.main(argv=["--test"])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
+        "_run_startup_sanity_gates",
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "resolve_main_server_config",
@@ -238,6 +278,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
         lambda *, environ, launch_results: calls.append("_print_namespace_bootstrap_results"),
     )
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
     monkeypatch.setattr(main_entrypoint, "_resolve_current_entrypoint", lambda: "/tmp/main.py")
     monkeypatch.setattr(
         main_entrypoint,
@@ -254,11 +295,38 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
+        "_run_startup_sanity_gates",
         "apply_main_cli_args_to_environ",
         "ensure_default_tls_pair",
         "open_or_launch_all_namespaces",
         "_print_namespace_bootstrap_results",
     ]
+
+
+def test_main_aborts_before_namespace_bootstrap_when_sanity_fails(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_run_startup_sanity_gates",
+        lambda *, repo_root: (_ for _ in ()).throw(RuntimeError("sanity failed")),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "apply_main_cli_args_to_environ",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("apply_main_cli_args_to_environ should not run")),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "open_or_launch_all_namespaces",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("open_or_launch_all_namespaces should not run")),
+    )
+
+    with pytest.raises(RuntimeError, match="sanity failed"):
+        main_entrypoint.main(argv=[])
+
+    assert calls == ["_record_self_executable_for_namespace_launch"]
 
 
 def test_print_namespace_bootstrap_results_shows_http_https_and_mcp_urls(monkeypatch) -> None:

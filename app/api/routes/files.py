@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.api.transactions import transactional_route
 from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, download_file, trim_unused_files
 
@@ -40,6 +41,7 @@ def _require_bearer_token(request: Request) -> str:
 
 
 @router.post("/upload", response_model=UploadedFileResponse)
+@transactional_route
 async def upload_file_endpoint(
     request: Request,
     file: Annotated[UploadFile, File()],
@@ -90,6 +92,7 @@ def download_file_endpoint(request: Request, file_id: str):
 
 
 @router.post("/trim-unused", response_model=TrimUnusedFilesResponse)
+@transactional_route
 def trim_unused_files_endpoint(request: Request):
     _require_bearer_token(request)
     result = trim_unused_files()

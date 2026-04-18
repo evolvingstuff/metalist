@@ -231,7 +231,7 @@ Python/unit test examples:
 source .venv/bin/activate
 .venv/bin/pytest
 node --test tests/unit/*.mjs
-./sanitycheck/run
+.venv/bin/python -c "from pathlib import Path; import main; main._run_startup_sanity_gates(repo_root=Path.cwd())"
 ```
 
 `TEST_MODE=1` and `POST /api2/test/reset` still exist for deterministic browser automation if we decide to add a new harness later, but Cypress is not part of the current workflow.

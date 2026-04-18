@@ -87,9 +87,15 @@ def _resolve_main_launch_command(*, environ: Mapping[str, str]) -> list[str]:
             raise RuntimeError("METALIST_SELF_EXECUTABLE must not be empty")
         entrypoint_path = Path(stripped_entrypoint).expanduser()
         if entrypoint_path.suffix.casefold() == ".py":
+            if entrypoint_path.name == "main.py":
+                namespace_entrypoint = entrypoint_path.with_name("serve_namespace.py")
+                return [sys.executable, str(namespace_entrypoint)]
             return [sys.executable, str(entrypoint_path)]
         return [str(entrypoint_path)]
 
+    namespace_main = _PROJECT_ROOT / "serve_namespace.py"
+    if namespace_main.is_file():
+        return [sys.executable, str(namespace_main)]
     source_main = _PROJECT_ROOT / "main.py"
     if source_main.is_file():
         return [sys.executable, str(source_main)]
@@ -890,9 +896,19 @@ def _assert_ports_are_available_for_launch(
     chosen_profile: NamespaceLaunchProfile,
     allowed_listener_pids: frozenset[int] | None,
 ) -> None:
+    def _port_is_owned_by_allowed_pids(*, port: int) -> bool:
+        return (
+            allowed_listener_pids is not None
+            and _is_port_occupied_only_by_allowed_pids(
+                port=port,
+                allowed_listener_pids=allowed_listener_pids,
+            )
+        )
+
     main_server_config = resolve_main_server_config(environ=environ)
     connect_host = resolve_backend_connect_host(host=main_server_config.host)
     api_prefix = resolve_api_prefix(environ=environ)
+    http_port_handled = False
     http_status = _probe_namespace_status(
         host=connect_host,
         port=chosen_profile.port,
@@ -903,12 +919,16 @@ def _assert_ports_are_available_for_launch(
         if running_namespace == namespace:
             return
         if isinstance(running_namespace, str) and running_namespace != "":
-            raise RuntimeError(
-                f"HTTP port {chosen_profile.port} is already serving namespace {running_namespace}"
-            )
-        raise RuntimeError(f"HTTP port {chosen_profile.port} is already serving another process")
-    if _is_tcp_port_open(host=connect_host, port=chosen_profile.port):
-        raise RuntimeError(f"HTTP port {chosen_profile.port} is already in use")
+            if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
+                _stop_processes_listening_on_port(port=chosen_profile.port)
+                http_port_handled = True
+        else:
+            if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
+                _stop_processes_listening_on_port(port=chosen_profile.port)
+                http_port_handled = True
+    if not http_port_handled and _is_tcp_port_open(host=connect_host, port=chosen_profile.port):
+        if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
+            _stop_processes_listening_on_port(port=chosen_profile.port)
     other_ports = [
         ("HTTPS", chosen_profile.https_port),
         ("MCP", chosen_profile.mcp_port),
@@ -917,15 +937,9 @@ def _assert_ports_are_available_for_launch(
         if port is None:
             continue
         if _is_tcp_port_open(host=connect_host, port=port):
-            if (
-                allowed_listener_pids is not None
-                and _is_port_occupied_only_by_allowed_pids(
-                    port=port,
-                    allowed_listener_pids=allowed_listener_pids,
-                )
-            ):
+            if _port_is_owned_by_allowed_pids(port=port):
                 continue
-            raise RuntimeError(f"{service} port {port} is already in use")
+            _stop_processes_listening_on_port(port=port)
 
 
 def _save_profile_if_needed(

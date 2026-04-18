@@ -106,7 +106,9 @@ def count_c_style_code_lines(text: str) -> int:
 
         while index < len(raw_line):
             char = raw_line[index]
-            next_char = raw_line[index + 1] if index + 1 < len(raw_line) else ""
+            next_char = ""
+            if index + 1 < len(raw_line):
+                next_char = raw_line[index + 1]
 
             if in_block_comment:
                 if char == "*" and next_char == "/":
@@ -202,9 +204,9 @@ def collect_stats(root: Path) -> dict[str, LanguageStats]:
             if should_skip_relative_parts(relative_file_parts):
                 continue
 
-            language = LANGUAGE_BY_SUFFIX.get(path.suffix)
-            if language is None:
+            if path.suffix not in LANGUAGE_BY_SUFFIX:
                 continue
+            language = LANGUAGE_BY_SUFFIX[path.suffix]
 
             text = read_text(path)
             language_stats = stats_by_language[language]

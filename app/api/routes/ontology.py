@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 import re
 
+from app.api.transactions import transactional_route
 from app.services.search_index import search_index
 from app.services.note_store import store as note_store
 from app.services.sync import generate_new_uuid
@@ -119,6 +120,7 @@ def list_rules() -> dict:
 
 
 @router.post("/rules")
+@transactional_route
 def create_rule(request: Request, payload: dict) -> dict:
     text = payload["text"]
     if not isinstance(text, str):
@@ -142,6 +144,7 @@ def create_rule(request: Request, payload: dict) -> dict:
 
 
 @router.put("/rules/{rule_id}")
+@transactional_route
 def update_rule(request: Request, rule_id: int, payload: dict) -> dict:
     text = payload["text"]
     if not isinstance(text, str):
@@ -179,6 +182,7 @@ def update_rule(request: Request, rule_id: int, payload: dict) -> dict:
 
 
 @router.delete("/rules/{rule_id}")
+@transactional_route
 def delete_rule(rule_id: int) -> dict:
     existing_lines = list_rule_lines()
     existing_by_id = {existing_id for existing_id, _text in existing_lines}
@@ -209,6 +213,7 @@ def delete_rule(rule_id: int) -> dict:
 
 
 @router.post("/rename-tag")
+@transactional_route
 def rename_tag(request: Request, payload: dict) -> dict:
     old = payload["old"]
     new = payload["new"]

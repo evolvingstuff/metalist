@@ -112,5 +112,5 @@ Unclosed comments behave like unclosed wrappers:
 ## Focus / Tab Behavior
 - `Tab` toggles focus between the note content and the tag bar.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
-- While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, indent/outdent, join, split, note copy/cut/paste, and the password modal shortcut.
+- While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, note copy/cut/paste, and the password modal shortcut.
 - `Cmd/Ctrl+J` join-note merges tag bars and dedupes repeated tokens case-insensitively, preserving first occurrence order/casing.

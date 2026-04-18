@@ -520,7 +520,10 @@ export class PasswordModal extends BaseModal {
         
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || `Server error: ${response.status}`);
+            if (typeof error.detail === 'string' && error.detail !== '') {
+                throw new Error(error.detail);
+            }
+            throw new Error(`Server error: ${response.status}`);
         }
         
         return await response.json();

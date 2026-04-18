@@ -505,6 +505,43 @@ export async function moveNoteDown(noteId) {
     scheduleMovedNoteIntoView(noteId);
 }
 
+export async function moveNoteToTop(noteId) {
+    const startedAt = performance.now();
+
+    Logger.logAction('moveNoteToTop', {
+        noteId,
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        isDirty: ModeContext.isDirty,
+        searchQuery: ModeContext.searchQuery,
+    });
+
+    if (!noteId) {
+        throw new Error('Cannot move note to top: noteId is required');
+    }
+
+    if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
+        await actionSaveNote(noteId);
+    }
+
+    await NotesAPI.moveNoteToTop(noteId, ModeContext.searchQuery);
+
+    if (ModeContext.isEditing) {
+        ModeContext.markCaretHidden();
+    }
+
+    const newContent = await actionRefreshAndMaybeSelect({
+        startedAt,
+        context: 'moveNoteToTop',
+    });
+
+    if (ModeContext.currentContent !== newContent) {
+        ModeContext.setCurrentContent(newContent);
+    }
+
+    scheduleMovedNoteIntoView(noteId);
+}
+
 export async function moveNoteToSiblingPosition(noteId, siblingId, position, newParentId) {
     const startedAt = performance.now();
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Annotated, Optional
 
+from app.api.transactions import transactional_route
 from app.api.deps import get_db
 from app.models.database import SafeSession
 from app.config import VERSION
@@ -58,6 +59,7 @@ class MemoryResponse(BaseModel):
 
 
 @router.post("/memory", response_model=MemoryResponse)
+@transactional_route
 def memory_endpoint(
     payload: MemoryRequest,
     db: Annotated[SafeSession, Depends(get_db)],
