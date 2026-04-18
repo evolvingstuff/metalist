@@ -23,7 +23,7 @@
 - `app/services`: Auth, tokens, cache, sync, undo, integrity, note store, file storage, snapshots, tab state cache.
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
-- `app/services/search_history.py`: Stores interacted search histories in a sibling `*.search-history.db` SQLite database; blank-search suggestions can reserve the top 3 slots for tags flattened from the highest-scoring interacted queries, case-equivalent tags are collapsed to the most-used spelling, and the stored query/tag payloads encrypt at rest when the namespace is password-protected.
+- `app/services/search_history.py`: Stores interacted search histories in a sibling `*.search-history.db` SQLite database; blank-search suggestions can reserve the top 3 slots for the highest-scoring recently interacted tags aggregated across persisted queries, case-equivalent tags are collapsed to the most-used spelling, and the stored query/tag payloads encrypt at rest when the namespace is password-protected.
 - `app/services/file_registry.py`: In-memory registry of valid file UUIDs only; startup bootstraps this without hydrating file rows/blobs.
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.

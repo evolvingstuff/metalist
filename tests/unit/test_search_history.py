@@ -99,7 +99,7 @@ def test_record_search_interaction_uses_event_decay_and_returns_recent_tags(
         SafeSession.use_file_db()
 
 
-def test_record_search_interaction_flattens_ranked_multi_term_histories(
+def test_list_recent_search_tags_aggregates_recent_frequency_across_queries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -113,25 +113,32 @@ def test_record_search_interaction_flattens_ranked_multi_term_histories(
             [
                 SearchRecord(
                     note_id="n1",
-                    content_text="Journal todo",
-                    tags="journal todo",
-                    tag_terms=extract_tags_for_search("journal todo"),
+                    content_text="Alpha beta",
+                    tags="alpha beta",
+                    tag_terms=extract_tags_for_search("alpha beta"),
                 ),
                 SearchRecord(
                     note_id="n2",
-                    content_text="Journal exercise",
-                    tags="journal exercise",
-                    tag_terms=extract_tags_for_search("journal exercise"),
+                    content_text="Alpha gamma",
+                    tags="alpha gamma",
+                    tag_terms=extract_tags_for_search("alpha gamma"),
+                ),
+                SearchRecord(
+                    note_id="n3",
+                    content_text="Delta epsilon zeta",
+                    tags="delta epsilon zeta",
+                    tag_terms=extract_tags_for_search("delta epsilon zeta"),
                 ),
             ]
         )
         monkeypatch.setattr(search_history_module, "search_index", index)
 
-        assert record_search_interaction(query="journal exercise", interaction_type="edit", token="token") is True
-        assert record_search_interaction(query="journal todo", interaction_type="edit", token="token") is True
+        assert record_search_interaction(query="alpha beta", interaction_type="edit", token="token") is True
+        assert record_search_interaction(query="alpha gamma", interaction_type="edit", token="token") is True
+        assert record_search_interaction(query="delta epsilon zeta", interaction_type="edit", token="token") is True
 
         recent_tags = list_recent_search_tags(limit=3, token="token")
-        assert recent_tags == ["journal", "todo", "exercise"]
+        assert recent_tags == ["alpha", "delta", "epsilon"]
     finally:
         clear_encryption_key()
         set_encryption_required(False)

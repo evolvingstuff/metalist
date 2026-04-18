@@ -297,18 +297,41 @@ def list_recent_search_tags(*, limit: int, token: str) -> list[str]:
         )
     )
 
-    tags: list[str] = []
-    seen_casefold: set[str] = set()
+    tag_scores_by_casefold: dict[str, float] = {}
+    tag_last_interacted_at_by_casefold: dict[str, float] = {}
+    tag_display_by_casefold: dict[str, str] = {}
+    tag_first_seen_order_by_casefold: dict[str, int] = {}
+    next_tag_order = 0
     for entry in entries:
+        seen_casefold_in_entry: set[str] = set()
         for tag in entry.tags:
             tag_casefold = tag.casefold()
-            if tag_casefold in seen_casefold:
+            if tag_casefold in seen_casefold_in_entry:
                 continue
-            seen_casefold.add(tag_casefold)
-            tags.append(tag)
-            if len(tags) >= limit:
-                return tags
-    return tags
+            seen_casefold_in_entry.add(tag_casefold)
+            if tag_casefold in tag_scores_by_casefold:
+                tag_scores_by_casefold[tag_casefold] += entry.score
+            else:
+                tag_scores_by_casefold[tag_casefold] = entry.score
+            entry_last_interacted_at = entry.last_interacted_at.timestamp()
+            if tag_casefold not in tag_last_interacted_at_by_casefold:
+                tag_last_interacted_at_by_casefold[tag_casefold] = entry_last_interacted_at
+            elif entry_last_interacted_at > tag_last_interacted_at_by_casefold[tag_casefold]:
+                tag_last_interacted_at_by_casefold[tag_casefold] = entry_last_interacted_at
+            tag_display_by_casefold[tag_casefold] = tag
+            if tag_casefold not in tag_first_seen_order_by_casefold:
+                tag_first_seen_order_by_casefold[tag_casefold] = next_tag_order
+                next_tag_order += 1
+
+    ranked_casefolds = sorted(
+        tag_scores_by_casefold.keys(),
+        key=lambda tag_casefold: (
+            -tag_scores_by_casefold[tag_casefold],
+            -tag_last_interacted_at_by_casefold[tag_casefold],
+            tag_first_seen_order_by_casefold[tag_casefold],
+        ),
+    )
+    return [tag_display_by_casefold[tag_casefold] for tag_casefold in ranked_casefolds[:limit]]
 
 
 def prioritize_blank_search_suggestions(

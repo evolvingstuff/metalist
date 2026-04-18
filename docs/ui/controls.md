@@ -52,12 +52,13 @@
 
 ### Search Suggestions
 - Suggestions are **tag-only** (no text suggestions).
-- For a blank search, up to the top 3 suggestion slots are reserved for tags pulled from recently interacted-with searches in the current namespace.
+- For a blank search, up to the top 3 suggestion slots are reserved for the tags with the strongest recent interaction scores in the current namespace.
 - Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
 - A search counts toward that blank-search recency weighting after the user makes a server-backed note interaction while that executed search is active.
 - Examples include toggling todo/done, creating, moving, collapsing/expanding, saving, deleting, or entering edit mode on notes in that filtered result set.
 - Scrolling can also qualify once it triggers the persisted tab-state server write while that search is active.
 - Recency weighting uses event-based exponential decay, so scores shift only when new qualifying search interactions are credited.
+- Blank-search promotion ranks tags directly by summing those decayed interaction scores across the qualifying searches that include each tag, with most-recent interaction time breaking ties.
 - While typing a partial tag token, suggestions are segment-aware for connector-separated tags: a prefix can match the start of the full tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`).
 - Example: `wor` can suggest `workspaces` and `databricks-workspaces`; `orksp` suggests neither.
 - When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
