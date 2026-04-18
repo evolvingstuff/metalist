@@ -45,6 +45,18 @@ def _summarize_op(op: dict) -> str:
             raise RuntimeError(f"Undo op {op_type}.note_id must be a non-empty string | op={op}")
         return f"{op_type}({note_id})"
 
+    if op_type == "move_batch":
+        moves = op["moves"]
+        if not isinstance(moves, list) or len(moves) == 0:
+            raise RuntimeError(f"Undo op move_batch.moves must be a non-empty list | op={op}")
+        first = moves[0]
+        if not isinstance(first, dict):
+            raise RuntimeError(f"Undo op move_batch.moves[0] must be a dict | op={op}")
+        note_id = first["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise RuntimeError(f"Undo op move_batch.moves[0].note_id must be a non-empty string | op={op}")
+        return f"move_batch({len(moves)}:{note_id})"
+
     if op_type == "create_note":
         record = op["record"]
         if not isinstance(record, dict):
@@ -186,6 +198,18 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
             raise RuntimeError(f"Undo op note_id must be a non-empty string | op={op}")
+        return note_id
+
+    if op_type == "move_batch":
+        moves = op["moves"]
+        if not isinstance(moves, list) or len(moves) == 0:
+            raise RuntimeError(f"Undo op move_batch.moves must be a non-empty list | op={op}")
+        first = moves[0]
+        if not isinstance(first, dict):
+            raise RuntimeError(f"Undo op move_batch.moves[0] must be a dict | op={op}")
+        note_id = first["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise RuntimeError(f"Undo op move_batch.moves[0].note_id must be a non-empty string | op={op}")
         return note_id
 
     if op_type == "edit_mode":
@@ -397,6 +421,56 @@ def record_move(
         "after_prev": after_prev,
         "after_next": after_next,
         "after_tags": after_tags,
+        "viewport": normalized_viewport,
+        "viewAnchorRootId": view_anchor_root_id,
+    })
+    ctx.redo.clear()
+
+
+def record_move_batch(
+    client_id: str,
+    undo_context: str,
+    *,
+    move_ops: List[Dict[str, object]],
+    viewport: Dict[str, object],
+) -> None:
+    maybe_reset_on_context(client_id, undo_context)
+    if len(move_ops) == 0:
+        raise ValueError("move_ops must be a non-empty list")
+
+    normalized_moves: List[Dict[str, object]] = []
+    for move_op in move_ops:
+        if not isinstance(move_op, dict):
+            raise TypeError(f"move_ops entries must be dicts, got {type(move_op)}")
+        note_id = move_op["note_id"]
+        if not isinstance(note_id, str) or not note_id:
+            raise ValueError("move_ops.note_id must be a non-empty string")
+        before_tags = move_op["before_tags"]
+        after_tags = move_op["after_tags"]
+        if not isinstance(before_tags, str):
+            raise TypeError("move_ops.before_tags must be a string")
+        if not isinstance(after_tags, str):
+            raise TypeError("move_ops.after_tags must be a string")
+        normalized_moves.append(
+            {
+                "note_id": note_id,
+                "before_parent": move_op["before_parent"],
+                "before_prev": move_op["before_prev"],
+                "before_next": move_op["before_next"],
+                "before_tags": before_tags,
+                "after_parent": move_op["after_parent"],
+                "after_prev": move_op["after_prev"],
+                "after_next": move_op["after_next"],
+                "after_tags": after_tags,
+            }
+        )
+
+    ctx = _ctx(client_id)
+    normalized_viewport = _normalize_viewport_snapshot(viewport)
+    view_anchor_root_id = _anchor_root_id(normalized_viewport)
+    ctx.history.append({
+        "type": "move_batch",
+        "moves": normalized_moves,
         "viewport": normalized_viewport,
         "viewAnchorRootId": view_anchor_root_id,
     })
@@ -832,6 +906,27 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         _apply_move_tags(op, tags_key="before_tags", token=token)
         ctx.redo.append(op)
         generate_new_uuid()
+    elif op_type == "move_batch":
+        moves = op["moves"]
+        if not isinstance(moves, list) or len(moves) == 0:
+            raise RuntimeError(f"Undo op move_batch.moves must be a non-empty list | op={op}")
+        for move_op in reversed(moves):
+            if not isinstance(move_op, dict):
+                raise RuntimeError(f"Undo op move_batch entry must be a dict | op={op}")
+            note_id = move_op["note_id"]
+            before_parent = move_op["before_parent"]
+            before_prev = move_op["before_prev"]
+            before_next = move_op["before_next"]
+            apply_move(
+                note_id,
+                before_parent,
+                before_prev,
+                before_next,
+            )
+            _assert_neighbors(note_id, before_parent, before_prev, before_next)
+            _apply_move_tags(move_op, tags_key="before_tags", token=token)
+        ctx.redo.append(op)
+        generate_new_uuid()
     elif op_type == "collapse":
         # invert collapse
         apply_set_collapse(op["note_id"], bool(op["before"]))
@@ -1041,6 +1136,27 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
         )
         _assert_neighbors(op["note_id"], op["after_parent"], op["after_prev"], op["after_next"]) 
         _apply_move_tags(op, tags_key="after_tags", token=token)
+        ctx.history.append(op)
+        generate_new_uuid()
+    elif op_type == "move_batch":
+        moves = op["moves"]
+        if not isinstance(moves, list) or len(moves) == 0:
+            raise RuntimeError(f"Redo op move_batch.moves must be a non-empty list | op={op}")
+        for move_op in moves:
+            if not isinstance(move_op, dict):
+                raise RuntimeError(f"Redo op move_batch entry must be a dict | op={op}")
+            note_id = move_op["note_id"]
+            after_parent = move_op["after_parent"]
+            after_prev = move_op["after_prev"]
+            after_next = move_op["after_next"]
+            apply_move(
+                note_id,
+                after_parent,
+                after_prev,
+                after_next,
+            )
+            _assert_neighbors(note_id, after_parent, after_prev, after_next)
+            _apply_move_tags(move_op, tags_key="after_tags", token=token)
         ctx.history.append(op)
         generate_new_uuid()
     elif op_type == "collapse":

@@ -13,12 +13,14 @@ import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
 import { NamespaceSwitcherModal } from '../modals/namespace-switcher-modal.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
+import { PrioritizeModal } from '../modals/prioritize-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 import { settleResult } from '../async-result.js';
+import { isValidTagToken } from '../tag-token.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -229,6 +231,7 @@ class CommandPaletteController {
         this._helpModal = null;
         this._namespaceSwitcherModal = null;
         this._deleteNamespaceModal = null;
+        this._prioritizeModal = null;
 
         this._elements = null;
 
@@ -270,6 +273,8 @@ class CommandPaletteController {
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
                 openNamespaceSwitcher: this.openNamespaceSwitcher.bind(this),
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
+                prioritizeTagToFront: this.prioritizeTagToFront.bind(this),
+                prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
             },
         });
 
@@ -1018,6 +1023,78 @@ class CommandPaletteController {
         }
 
         window.alert(`Trimmed ${result.deleted_count} unused file(s).`);
+    }
+
+    async _prioritizeTag(direction) {
+        if (direction !== 'front' && direction !== 'back') {
+            throw new Error("direction must be 'front' or 'back'");
+        }
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        const searchQuery = ModeContext.searchQuery;
+        if (typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string');
+        }
+
+        if (this._prioritizeModal === null) {
+            this._prioritizeModal = new PrioritizeModal();
+        }
+
+        const tag = await this._prioritizeModal.openForDirection({
+            direction,
+            searchQuery,
+        });
+        if (tag === null) {
+            return;
+        }
+        if (!isValidTagToken(tag)) {
+            ErrorHandler.showErrorBanner(
+                'That input is not a valid tag token. This action only supports a single tag (no spaces, quotes, regex, or parentheses).',
+                'error',
+                10000,
+                true,
+            );
+            return;
+        }
+
+        const result = await CommandGate.run(`commandPalette.prioritize.${direction}`, async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const payload = await NotesAPI.prioritize(tag, direction, searchQuery);
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Prioritize response missing body');
+            }
+
+            if (payload.status === 'moved') {
+                await actionRefreshAndMaybeSelect({});
+            }
+            return payload;
+        });
+        if (result === null) {
+            return;
+        }
+        if (result.status === 'noop') {
+            if (result.reason === 'no_matches') {
+                ErrorHandler.showInfoBanner(`No visible notes matched tag "${tag}".`, 6000);
+                return;
+            }
+            if (result.reason === 'already_prioritized') {
+                ErrorHandler.showInfoBanner(`Tag "${tag}" is already prioritized to the ${direction}.`, 6000);
+                return;
+            }
+        }
+    }
+
+    async prioritizeTagToFront() {
+        await this._prioritizeTag('front');
+    }
+
+    async prioritizeTagToBack() {
+        await this._prioritizeTag('back');
     }
 
     async resetViewFilters() {

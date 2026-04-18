@@ -1377,6 +1377,162 @@ body.ontology-modal-open #ontology-modal {
     min-width: 140px;
 }
 
+.prioritize-modal-content {
+    width: min(560px, 94vw);
+    overflow: visible;
+    max-height: none;
+}
+
+.prioritize-modal-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.prioritize-modal-eyebrow {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.prioritize-modal-header h3 {
+    margin: 0;
+}
+
+.prioritize-modal-description {
+    margin: 0;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.prioritize-modal-input-group {
+    margin-bottom: 18px;
+}
+
+.prioritize-modal-tag-bar {
+    width: 100%;
+    margin: 0;
+    padding: 1px 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 10px;
+    background: rgba(245, 245, 245, 0.95);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+    position: relative;
+    z-index: 80;
+}
+
+.prioritize-modal-content input.prioritize-modal-tag-input {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #1f1f1f;
+    font-size: 0.72rem;
+    line-height: 1.1;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    box-sizing: border-box;
+}
+
+.prioritize-modal-content input.prioritize-modal-tag-input::placeholder {
+    color: rgba(0, 0, 0, 0.28);
+}
+
+.prioritize-modal-content input.prioritize-modal-tag-input:focus {
+    box-shadow: none;
+}
+
+.prioritize-modal-suggestions {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: calc(100% + 8px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(18, 18, 18, 0.98);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    z-index: 90;
+}
+
+.prioritize-modal-suggestions[hidden],
+.prioritize-modal-suggestions.is-hidden,
+.prioritize-modal-suggestions:empty {
+    display: none;
+}
+
+.prioritize-modal-content button.prioritize-modal-suggestion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.08);
+    color: #f5f5f5;
+    cursor: pointer;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9rem;
+    font-weight: 400;
+    text-align: left;
+    box-shadow: none;
+    outline: none;
+}
+
+.prioritize-modal-content button.prioritize-modal-suggestion:hover,
+.prioritize-modal-content button.prioritize-modal-suggestion:focus,
+.prioritize-modal-content button.prioritize-modal-suggestion:focus-visible {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: none;
+    outline: none;
+}
+
+.prioritize-modal-content button.prioritize-modal-suggestion.is-selected {
+    background: rgba(255, 255, 255, 0.24);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+.prioritize-modal-suggestion-status {
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.78;
+}
+
+.prioritize-modal-content #prioritize-modal-error:empty {
+    display: none;
+}
+
+.prioritize-modal-actions {
+    margin-top: 18px;
+}
+
+html[data-theme="dark"] .prioritize-modal-tag-bar {
+    border-color: var(--app-border-soft);
+    background: rgba(10, 13, 18, 0.94);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+}
+
+html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-input {
+    color: #edf3ff;
+}
+
+html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-input::placeholder {
+    color: rgba(229, 235, 243, 0.34);
+}
+
 #password-result-copy-hint:empty {
     display: none;
 }

@@ -602,6 +602,23 @@ export const NotesAPI = {
         });
     },
 
+    async fetchPrioritizeTagSuggestions(query, searchQuery) {
+        if (typeof query !== 'string') {
+            throw new Error('NotesAPI.fetchPrioritizeTagSuggestions requires query string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.fetchPrioritizeTagSuggestions requires searchQuery string or null');
+        }
+        const payload = {
+            query,
+            search_query: searchQuery,
+        };
+        return this._apiCall(CONFIG.API.NOTES.PRIORITIZE_TAG_SUGGESTIONS, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    },
+
     async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');
@@ -696,6 +713,28 @@ export const NotesAPI = {
             search_query: searchQuery,
         };
         return this._apiCall(CONFIG.API.NOTES.MOVE_TO_TOP(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
+    async prioritize(tag, direction, searchQuery) {
+        if (typeof tag !== 'string' || tag.length === 0) {
+            throw new Error('NotesAPI.prioritize requires tag string');
+        }
+        if (typeof direction !== 'string' || direction.length === 0) {
+            throw new Error('NotesAPI.prioritize requires direction string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.prioritize requires searchQuery string or null');
+        }
+        const body = {
+            tag,
+            direction,
+            search_query: searchQuery,
+        };
+        return this._apiCall(CONFIG.API.NOTES.PRIORITIZE, {
             method: 'POST',
             claimSession: true,
             body: JSON.stringify(body),
