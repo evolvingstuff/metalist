@@ -1,4 +1,13 @@
-from app.services.content_formatting import find_list_style, format_note_content_for_view
+from app.services.content_formatting import find_list_style
+from app.services.content_formatting import format_note_content_for_view as _format_note_content_for_view
+
+
+def format_note_content_for_view(*, content_html: str, tags: str) -> str:
+    return _format_note_content_for_view(
+        content_html=content_html,
+        tags=tags,
+        redact_passwords=False,
+    )
 
 
 def test_format_note_content_for_view_no_matching_tag_keeps_delimiters() -> None:
@@ -151,6 +160,18 @@ def test_format_note_content_for_view_password_meta_applies_other_global_classes
     html = "<div>sekret</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@password @red")
     assert 'meta-credential-value meta-red' in rendered
+
+
+def test_format_note_content_for_view_password_meta_redacts_underlying_value() -> None:
+    html = "<div>sekret</div>"
+    rendered = _format_note_content_for_view(
+        content_html=html,
+        tags="@password",
+        redact_passwords=True,
+    )
+    assert 'data-copy-value="XXXXXX"' in rendered
+    assert ">XXXXXX<" in rendered
+    assert "sekret" not in rendered
 
 
 def test_format_note_content_for_view_email_meta_renders_mailto_link() -> None:

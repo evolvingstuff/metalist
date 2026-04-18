@@ -15,6 +15,14 @@ from app.services.content_cache import get_cached_tags
 from app.services.note_store import store as note_store
 
 
+def _format_note_content_standard(*, content_html: str, tags: str) -> str:
+    return format_note_content_for_view(
+        content_html=content_html,
+        tags=tags,
+        redact_passwords=False,
+    )
+
+
 def highlight_search_terms(html_content: str, search_query: str) -> str:
     """
     Highlight search terms in HTML content while preserving HTML structure.
@@ -86,7 +94,7 @@ def render_read_only_mode(note) -> str:
     if not isinstance(tags, str):
         raise TypeError(f"Note tags must be a string, got {type(tags)}")
     content = strip_comments_from_html(note.content)
-    return format_note_content_for_view(content_html=content, tags=tags)
+    return _format_note_content_standard(content_html=content, tags=tags)
 
 
 def render_editing_mode(note) -> str:
@@ -103,7 +111,7 @@ def render_redacted_mode(note) -> str:
         raise TypeError(f"Note tags must be a string, got {type(tags)}")
 
     content = strip_comments_from_html(note.content)
-    content = format_note_content_for_view(content_html=content, tags=tags)
+    content = _format_note_content_standard(content_html=content, tags=tags)
     # Wrap content in a span with reduced opacity
     return f'<span style="opacity: 0.4; filter: grayscale(50%);">{content}</span>'
 

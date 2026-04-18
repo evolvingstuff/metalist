@@ -34,6 +34,20 @@ function trimToken(token) {
     return token.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
 }
 
+function resolveEffectiveTheme() {
+    const explicitTheme = document.documentElement.getAttribute('data-theme');
+    if (explicitTheme === 'dark' || explicitTheme === 'light') {
+        return explicitTheme;
+    }
+    if (
+        typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+        return 'dark';
+    }
+    return 'light';
+}
+
 function tokenizeQuery(rawQuery) {
     if (typeof rawQuery !== 'string') {
         throw new Error('tokenizeQuery requires rawQuery string');
@@ -269,6 +283,7 @@ class CommandPaletteController {
                 resetAllPreferences: this.resetAllPreferences.bind(this),
                 runMcpClient: this.runMcpClient.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
+                exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
                 openNamespaceSwitcher: this.openNamespaceSwitcher.bind(this),
@@ -938,6 +953,64 @@ class CommandPaletteController {
         }
 
         window.open(mcpClientUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    async exportCurrentViewAsHtml() {
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        const exportResult = await settleResult(async () => {
+            const result = await CommandGate.run('commandPalette.exportCurrentViewAsHtml', async () => {
+                if (ModeContext.isEditing) {
+                    await actionSaveAndExitEditingWithoutRefreshing();
+                }
+
+                const payload = await NotesAPI.exportCurrentViewAsHtml(resolveEffectiveTheme());
+                if (!payload || typeof payload !== 'object') {
+                    throw new Error('HTML export response missing body');
+                }
+                if (!(payload.blob instanceof Blob)) {
+                    throw new Error('HTML export response missing blob');
+                }
+                if (typeof payload.filename !== 'string' || payload.filename.length === 0) {
+                    throw new Error('HTML export response missing filename');
+                }
+                return payload;
+            }, {
+                timeoutMs: 120000,
+            });
+            return result;
+        });
+
+        if (!exportResult.ok) {
+            const error = exportResult.error;
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            console.error('HTML export failed:', error);
+            ErrorHandler.showErrorBanner(
+                `Export as HTML failed: ${message}`,
+                'error',
+                10000,
+                true,
+            );
+            return;
+        }
+
+        const payload = exportResult.value;
+        if (payload === null) {
+            return;
+        }
+
+        const objectUrl = URL.createObjectURL(payload.blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = payload.filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => {
+            URL.revokeObjectURL(objectUrl);
+        }, 0);
     }
 
     async attachFileToCurrentNote() {

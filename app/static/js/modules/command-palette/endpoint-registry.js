@@ -35,6 +35,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
+    const exportCurrentViewAsHtml = requireAction(actions, 'exportCurrentViewAsHtml');
     const openNamespaceSwitcher = requireAction(actions, 'openNamespaceSwitcher');
     const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
     const prioritizeTagToFront = requireAction(actions, 'prioritizeTagToFront');
@@ -185,6 +186,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Edit tag relationships…',
             execute: async () => openOntologyEditor(),
+        },
+        {
+            id: 'action.export_html',
+            kind: 'action',
+            label: 'Export as HTML',
+            execute: async () => exportCurrentViewAsHtml(),
         },
         {
             id: 'action.attach_file_to_current_note',

@@ -77,6 +77,10 @@
       "tags": ["tag", "ontology", "relationships", "synonym", "imply", "graph"]
     },
     {
+      "id": "action.export_html",
+      "tags": ["export", "html", "download", "share", "notes", "current", "view"]
+    },
+    {
       "id": "action.attach_file_to_current_note",
       "tags": ["attach", "file", "files", "upload", "reference", "note", "insert", "attachment"]
     },

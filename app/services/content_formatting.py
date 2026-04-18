@@ -151,11 +151,13 @@ class MetaTagConfig:
     scoped_renderers: Mapping[Tuple[str, int], str]
 
 
-def format_note_content_for_view(*, content_html: str, tags: str) -> str:
+def format_note_content_for_view(*, content_html: str, tags: str, redact_passwords: bool) -> str:
     if not isinstance(content_html, str):
         raise TypeError(f"content_html must be a string, got {type(content_html)}")
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
+    if not isinstance(redact_passwords, bool):
+        raise TypeError(f"redact_passwords must be a bool, got {type(redact_passwords)}")
 
     config = _parse_meta_tags(tags)
     implied_meta = _infer_implied_meta_tags(tags)
@@ -231,6 +233,7 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
                 content_html=output,
                 credential_tag=credential_tag,
                 formatting_tags=config.global_tags,
+                redact_passwords=redact_passwords,
             )
         )
 
@@ -515,16 +518,22 @@ def _render_credential_meta(
     content_html: str,
     credential_tag: str,
     formatting_tags: FrozenSet[str],
+    redact_passwords: bool,
 ) -> str:
     if credential_tag not in _CREDENTIAL_TAGS:
         raise KeyError(f"Unknown credential meta tag: {credential_tag}")
+    if not isinstance(redact_passwords, bool):
+        raise TypeError(f"redact_passwords must be a bool, got {type(redact_passwords)}")
 
     credential_meta = _CREDENTIAL_META[credential_tag]
     label_text = credential_meta["label"]
     icon_html = credential_meta["icon"]
 
     value_text = strip_html(content_html)
-    escaped_value = html.escape(value_text, quote=True)
+    display_text = value_text
+    if credential_tag == "password" and redact_passwords:
+        display_text = "X" * len(value_text)
+    escaped_value = html.escape(display_text, quote=True)
 
     extra_classes = ""
     if formatting_tags:

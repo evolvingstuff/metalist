@@ -772,13 +772,35 @@ export const NotesAPI = {
         });
     },
 
-    async exportNoteAsHtml(noteId) {
-        let url = CONFIG.API.NOTES.EXPORT_HTML(noteId);
-        url += `?client_id=${encodeURIComponent(ModeContext.clientId)}`;
-        
-        return this._apiCall(url, {
-            method: 'GET'
+    async exportCurrentViewAsHtml(theme) {
+        if (theme !== 'dark' && theme !== 'light') {
+            throw new Error("NotesAPI.exportCurrentViewAsHtml requires theme 'dark' or 'light'");
+        }
+
+        const searchQuery = ModeContext.searchQuery;
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string or null');
+        }
+
+        const params = new URLSearchParams();
+        params.set('theme', theme);
+        params.set('search_query', typeof searchQuery === 'string' ? searchQuery : '');
+
+        const response = await fetch(`${CONFIG.API.NOTES.EXPORT_HTML}?${params.toString()}`, {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
         });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`HTML export failed: ${response.status} ${response.statusText}`);
+        }
+
+        return {
+            blob: await response.blob(),
+            filename: extractFilenameFromContentDisposition(
+                response.headers.get('content-disposition')
+            ),
+        };
     },
 
     async pasteNoteSibling(targetNoteId) {

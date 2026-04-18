@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import urllib.parse
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 
 from app.api.transactions import transactional_route
 from app.services.snapshot import build_view_state
@@ -48,6 +50,8 @@ from app.services.search_history import (
     prioritize_blank_search_suggestions,
     record_search_interaction,
 )
+from app.services.html_export import build_notes_export_document
+from app.services.html_export import build_notes_export_filename
 from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
 from app.usecases.prioritize import list_prioritize_tag_suggestions
@@ -365,6 +369,43 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
         content_html=content_html,
     )
     return {"suggestions": suggestions}
+
+
+@router.get("/notes/export-html")
+def export_notes_html(request: Request) -> Response:
+    search_query = request.query_params.get("search_query")
+    if search_query is None:
+        raise HTTPException(status_code=400, detail="search_query query parameter is required")
+    theme = request.query_params.get("theme")
+    if theme is None:
+        raise HTTPException(status_code=400, detail="theme query parameter is required")
+
+    if not isinstance(search_query, str):
+        raise TypeError("search_query query parameter must be a string")
+    if not isinstance(theme, str):
+        raise TypeError("theme query parameter must be a string")
+
+    normalized_search = search_query
+    if normalized_search == "":
+        normalized_search = None
+
+    normalized_theme = theme.strip().lower()
+    if normalized_theme not in {"dark", "light"}:
+        raise HTTPException(status_code=400, detail="theme must be 'light' or 'dark'")
+
+    document = build_notes_export_document(
+        search=normalized_search,
+        theme=normalized_theme,
+    )
+    filename = build_notes_export_filename()
+    quoted_filename = urllib.parse.quote(filename)
+    return Response(
+        content=document,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        },
+    )
 
 
 @router.get("/notes/{note_id}/backlinks")
