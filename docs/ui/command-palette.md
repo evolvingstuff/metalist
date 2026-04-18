@@ -32,6 +32,8 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Delete current namespace…`: opens a destructive confirmation modal for the active non-default namespace. The confirm button is red, the user must type `permanently delete`, and when password protection is enabled they must also re-enter the current password. After submission, the tab moves to a dedicated namespace-removal status page that polls for completion and then offers links to the remaining namespaces.
 - `Attach file…`: opens the native file picker, uploads the selected file, and inserts an embedded file reference token into the current note. If no note is active, it creates a new note first.
 - `Trim unused files`: deletes file rows whose UUIDs are no longer referenced anywhere in note content. This is the only automatic cleanup path for orphaned attachments.
+- `Prioritize tag to front (current view)…`: prompts for one tag token, then stably moves matching root notes to the front of the full active view while preserving relative order inside the matching and non-matching groups. This mutates stored root order through the current view subset, not just the currently rendered DOM.
+- `Prioritize tag to back (current view)…`: same as above, but stably moves matching root notes to the back of the full active view.
 
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).

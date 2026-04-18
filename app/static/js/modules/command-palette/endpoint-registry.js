@@ -37,6 +37,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
     const openNamespaceSwitcher = requireAction(actions, 'openNamespaceSwitcher');
     const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
+    const prioritizeTagToFront = requireAction(actions, 'prioritizeTagToFront');
+    const prioritizeTagToBack = requireAction(actions, 'prioritizeTagToBack');
 
     const defaults = {
         showBacklinks: true,
@@ -195,6 +197,18 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Trim unused files',
             execute: async () => trimUnusedFiles(),
+        },
+        {
+            id: 'action.prioritize_tag_front',
+            kind: 'action',
+            label: 'Prioritize tag to front (current view)…',
+            execute: async () => prioritizeTagToFront(),
+        },
+        {
+            id: 'action.prioritize_tag_back',
+            kind: 'action',
+            label: 'Prioritize tag to back (current view)…',
+            execute: async () => prioritizeTagToBack(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',

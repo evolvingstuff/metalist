@@ -702,6 +702,28 @@ export const NotesAPI = {
         });
     },
 
+    async prioritize(tag, direction, searchQuery) {
+        if (typeof tag !== 'string' || tag.length === 0) {
+            throw new Error('NotesAPI.prioritize requires tag string');
+        }
+        if (typeof direction !== 'string' || direction.length === 0) {
+            throw new Error('NotesAPI.prioritize requires direction string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.prioritize requires searchQuery string or null');
+        }
+        const body = {
+            tag,
+            direction,
+            search_query: searchQuery,
+        };
+        return this._apiCall(CONFIG.API.NOTES.PRIORITIZE, {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async indentNote(noteId, visiblePrevId) {
         if (typeof visiblePrevId !== 'string' || visiblePrevId.length === 0) {
             throw new Error('NotesAPI.indentNote requires visiblePrevId string');

@@ -19,6 +19,7 @@ import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 import { settleResult } from '../async-result.js';
+import { isValidTagToken } from '../tag-token.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -270,6 +271,8 @@ class CommandPaletteController {
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
                 openNamespaceSwitcher: this.openNamespaceSwitcher.bind(this),
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
+                prioritizeTagToFront: this.prioritizeTagToFront.bind(this),
+                prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
             },
         });
 
@@ -1018,6 +1021,90 @@ class CommandPaletteController {
         }
 
         window.alert(`Trimmed ${result.deleted_count} unused file(s).`);
+    }
+
+    _promptForPrioritizeTag(direction) {
+        if (direction !== 'front' && direction !== 'back') {
+            throw new Error("direction must be 'front' or 'back'");
+        }
+        const rawValue = window.prompt(
+            `Enter a tag to prioritize to the ${direction} of the current view.`,
+            '',
+        );
+        if (rawValue === null) {
+            return null;
+        }
+        const tag = rawValue.trim();
+        if (tag === '') {
+            ErrorHandler.showErrorBanner('Enter a tag.', 'error', 8000, true);
+            return null;
+        }
+        if (!isValidTagToken(tag)) {
+            ErrorHandler.showErrorBanner(
+                'That input is not a valid tag token. This action only supports a single tag (no spaces, quotes, regex, or parentheses).',
+                'error',
+                10000,
+                true,
+            );
+            return null;
+        }
+        return tag;
+    }
+
+    async _prioritizeTag(direction) {
+        if (direction !== 'front' && direction !== 'back') {
+            throw new Error("direction must be 'front' or 'back'");
+        }
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        const tag = this._promptForPrioritizeTag(direction);
+        if (tag === null) {
+            return;
+        }
+
+        const result = await CommandGate.run(`commandPalette.prioritize.${direction}`, async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const searchQuery = ModeContext.searchQuery;
+            if (typeof searchQuery !== 'string') {
+                throw new Error('ModeContext.searchQuery must be a string');
+            }
+
+            const payload = await NotesAPI.prioritize(tag, direction, searchQuery);
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Prioritize response missing body');
+            }
+
+            if (payload.status === 'moved') {
+                await actionRefreshAndMaybeSelect({});
+            }
+            return payload;
+        });
+        if (result === null) {
+            return;
+        }
+        if (result.status === 'noop') {
+            if (result.reason === 'no_matches') {
+                ErrorHandler.showInfoBanner(`No visible notes matched tag "${tag}".`, 6000);
+                return;
+            }
+            if (result.reason === 'already_prioritized') {
+                ErrorHandler.showInfoBanner(`Tag "${tag}" is already prioritized to the ${direction}.`, 6000);
+                return;
+            }
+        }
+    }
+
+    async prioritizeTagToFront() {
+        await this._prioritizeTag('front');
+    }
+
+    async prioritizeTagToBack() {
+        await this._prioritizeTag('back');
     }
 
     async resetViewFilters() {

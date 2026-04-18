@@ -17,6 +17,7 @@ from app.usecases.update_content import CmdUpdateContent
 from app.usecases.delete_subtree import CmdDeleteSubtree
 from app.usecases.move import CmdMove
 from app.usecases.move_to_top import CmdMoveToTop
+from app.usecases.prioritize import CmdPrioritize
 from app.usecases.indent import CmdIndent
 from app.usecases.outdent import CmdOutdent
 from app.usecases.collapse import CmdCollapse
@@ -724,6 +725,36 @@ def set_collapsed_in_context_endpoint(body: dict):
     cmd = CmdSetCollapseInContext(
         search_query=normalized_search,
         collapsed=collapsed,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/prioritize")
+@transactional_route
+def prioritize_in_view_endpoint(body: dict):
+    viewport = _require_viewport(body)
+    tag = body["tag"]
+    direction = body["direction"]
+    search_query = body["search_query"]
+
+    if not isinstance(tag, str):
+        raise TypeError("tag must be a string")
+    if not isinstance(direction, str):
+        raise TypeError("direction must be a string")
+
+    normalized_search: str | None = search_query
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search_query must be a string or null")
+
+    cmd = CmdPrioritize(
+        tag=tag,
+        direction=direction,
+        search_query=normalized_search,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
         viewport=viewport,

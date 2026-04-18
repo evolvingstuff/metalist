@@ -85,6 +85,14 @@
       "tags": ["file", "trim", "unused", "orphan", "attachments", "cleanup", "delete"]
     },
     {
+      "id": "action.prioritize_tag_front",
+      "tags": ["prioritize", "priority", "tag", "front", "search", "view", "order", "reorder"]
+    },
+    {
+      "id": "action.prioritize_tag_back",
+      "tags": ["prioritize", "priority", "tag", "back", "search", "view", "order", "reorder"]
+    },
+    {
       "id": "action.open_keyboard_shortcuts_help",
       "tags": ["help", "shortcuts", "keyboard", "commands", "keys", "guide"]
     },
