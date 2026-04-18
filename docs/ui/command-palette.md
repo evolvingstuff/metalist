@@ -26,7 +26,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Restore from backup…`: opens a restore picker, applies the selected backup, then shows a success confirmation with `OK` before reload.
   - Restore also restores the paired file-attachment database, or resets it to empty when the selected backup predates file attachments.
 - `Logout`: revokes the current session and returns to login.
-- `Generate random password…`: opens a utility modal for password generation.
+- `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
 - `Switch or create namespace…`: opens a namespace modal that can select an existing namespace or define a new one, prefill remembered ports from `~/MetaList/namespaces.db`, suggest the next free ports for new namespaces, reject port conflicts, restart an already-running target namespace from the current code, or fork a new `python main.py --namespace ...` process and then open it.
 - `Delete current namespace…`: opens a destructive confirmation modal for the active non-default namespace. The confirm button is red, the user must type `permanently delete`, and when password protection is enabled they must also re-enter the current password. After submission, the tab moves to a dedicated namespace-removal status page that polls for completion and then offers links to the remaining namespaces.

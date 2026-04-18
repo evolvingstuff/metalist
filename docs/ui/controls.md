@@ -23,6 +23,7 @@
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
 
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
+- If the clipboard value came from `Generate random password…`, pasting into an empty note also adds `@password` automatically when that tag is not already present.
 - See `docs/ui/paste-sanitization.md` for the full policy.
 - `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
 - `⌘ + R` avoids adding a synthetic extra blank line when caret is already on an empty line.

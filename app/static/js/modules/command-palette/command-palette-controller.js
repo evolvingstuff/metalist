@@ -1390,24 +1390,7 @@ class CommandPaletteController {
         if (ModeContext.isSearching) {
             ModeContext.setSearching(false);
         }
-
-        const restoreQuery = this._elements.input.value;
-        const restoreIndex = this._previousSelection.selectedIndex;
         this.close();
-
-        const modalClosedHandler = (event) => {
-            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
-            if (!detail || detail.modalName !== 'randomPasswordModal') {
-                return;
-            }
-            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
-            void this.open().then(() => {
-                this._elements.input.value = restoreQuery;
-                this._previousSelection.selectedIndex = restoreIndex;
-                this._render();
-            });
-        };
-        document.addEventListener('metalist:modal-closed', modalClosedHandler);
 
         if (this._randomPasswordModal === null) {
             this._randomPasswordModal = new RandomPasswordModal();
@@ -1422,24 +1405,7 @@ class CommandPaletteController {
         if (ModeContext.isSearching) {
             ModeContext.setSearching(false);
         }
-
-        const restoreQuery = this._elements.input.value;
-        const restoreIndex = this._previousSelection.selectedIndex;
         this.close();
-
-        const modalClosedHandler = (event) => {
-            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
-            if (!detail || detail.modalName !== 'ontologyModal') {
-                return;
-            }
-            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
-            void this.open().then(() => {
-                this._elements.input.value = restoreQuery;
-                this._previousSelection.selectedIndex = restoreIndex;
-                this._render();
-            });
-        };
-        document.addEventListener('metalist:modal-closed', modalClosedHandler);
 
         if (this._ontologyModal === null) {
             this._ontologyModal = new OntologyModal();
@@ -1454,24 +1420,7 @@ class CommandPaletteController {
         if (ModeContext.isSearching) {
             ModeContext.setSearching(false);
         }
-
-        const restoreQuery = this._elements.input.value;
-        const restoreIndex = this._previousSelection.selectedIndex;
         this.close();
-
-        const modalClosedHandler = (event) => {
-            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
-            if (!detail || detail.modalName !== 'help') {
-                return;
-            }
-            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
-            void this.open().then(() => {
-                this._elements.input.value = restoreQuery;
-                this._previousSelection.selectedIndex = restoreIndex;
-                this._render();
-            });
-        };
-        document.addEventListener('metalist:modal-closed', modalClosedHandler);
 
         if (this._helpModal === null) {
             this._helpModal = new HelpModal();
@@ -1516,24 +1465,7 @@ class CommandPaletteController {
         if (ModeContext.isSearching) {
             ModeContext.setSearching(false);
         }
-
-        const restoreQuery = this._elements.input.value;
-        const restoreIndex = this._previousSelection.selectedIndex;
         this.close();
-
-        const modalClosedHandler = (event) => {
-            const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
-            if (!detail || detail.modalName !== 'passwordModal') {
-                return;
-            }
-            document.removeEventListener('metalist:modal-closed', modalClosedHandler);
-            void this.open().then(() => {
-                this._elements.input.value = restoreQuery;
-                this._previousSelection.selectedIndex = restoreIndex;
-                this._render();
-            });
-        };
-        document.addEventListener('metalist:modal-closed', modalClosedHandler);
 
         const passwordModal = new PasswordModal();
         passwordModal.open();

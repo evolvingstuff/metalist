@@ -5,7 +5,9 @@ import {
     generateRandomPassword,
     normalizePasswordCharset,
 } from '../password-generator.js';
+import { rememberGeneratedPasswordCopy } from '../mode-manager/services/password-clipboard-service.js';
 
+const COPY_HINT_DEFAULT = 'Copy to clipboard. Pasting into an empty note will add @password automatically.';
 
 export class RandomPasswordModal extends BaseModal {
     constructor() {
@@ -56,6 +58,10 @@ export class RandomPasswordModal extends BaseModal {
         if (target instanceof HTMLTextAreaElement) {
             return;
         }
+        if (target instanceof HTMLButtonElement) {
+            return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
         this.regeneratePassword();
@@ -72,29 +78,67 @@ export class RandomPasswordModal extends BaseModal {
         const charsetInput = typeof state.charsetInput === 'string' ? state.charsetInput : DEFAULT_PASSWORD_CHARSET;
         const result = typeof state.result === 'string' ? state.result : '';
         const error = typeof state.error === 'string' ? state.error : '';
-        const copyStatus = typeof state.copyStatus === 'string' ? state.copyStatus : '';
+        const copyStatus = typeof state.copyStatus === 'string' && state.copyStatus.length > 0
+            ? state.copyStatus
+            : COPY_HINT_DEFAULT;
 
         modalElement.innerHTML = `
             <div class="modal-content random-password-modal-content">
-                <h3>Random Password Generator Utility</h3>
+                <div class="random-password-modal-header">
+                    <p class="random-password-modal-eyebrow">Utility</p>
+                    <h3>Generate Random Password</h3>
+                    <p class="random-password-modal-description">
+                        Adjust the length or character set, then copy the result into a note when you need it.
+                    </p>
+                </div>
 
-                <div class="form-group">
-                    <label for="password-length-input">Password Length:</label>
-                    <input type="number" id="password-length-input" min="1" step="1">
+                <div class="random-password-modal-top-row">
+                    <div class="form-group random-password-length-group">
+                        <label for="password-length-input">Password length</label>
+                        <input
+                            type="number"
+                            id="password-length-input"
+                            min="1"
+                            max="1024"
+                            step="1"
+                            inputmode="numeric"
+                        >
+                    </div>
+                    <div class="random-password-summary-card" aria-hidden="true">
+                        <span class="random-password-summary-label">Characters</span>
+                        <strong>${lengthValue}</strong>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="password-charset-input">Valid Character Set:</label>
-                    <textarea id="password-charset-input" rows="5"></textarea>
+                    <label for="password-charset-input">Character set</label>
+                    <textarea id="password-charset-input" rows="5" spellcheck="false"></textarea>
+                    <small class="form-help">Line breaks are ignored; every other character can be used.</small>
                 </div>
 
                 <div class="form-group">
-                    <label for="password-result-output">Result:</label>
-                    <input type="text" id="password-result-output" readonly>
+                    <label for="password-result-output">Generated password</label>
+                    <div class="random-password-result-row">
+                        <input
+                            type="text"
+                            id="password-result-output"
+                            readonly
+                            spellcheck="false"
+                            autocomplete="off"
+                        >
+                        <button
+                            type="button"
+                            class="secondary-btn random-password-copy-btn"
+                            id="password-copy-btn"
+                            ${result.length === 0 ? 'disabled' : ''}
+                        >
+                            Copy
+                        </button>
+                    </div>
                     <small id="password-result-copy-hint" class="form-help">${copyStatus}</small>
                 </div>
 
-                <div class="form-actions">
+                <div class="form-actions random-password-modal-actions">
                     <button type="button" class="primary-btn" id="password-regenerate-btn">Regenerate</button>
                     <button type="button" class="secondary-btn" id="password-close-btn">Close</button>
                 </div>
@@ -130,6 +174,13 @@ export class RandomPasswordModal extends BaseModal {
             regenerateButton.onclick = () => this.regeneratePassword();
         }
 
+        const copyButton = document.getElementById('password-copy-btn');
+        if (copyButton instanceof HTMLButtonElement) {
+            copyButton.onclick = async () => {
+                await this.copyResultToClipboard();
+            };
+        }
+
         const closeButton = document.getElementById('password-close-btn');
         if (closeButton instanceof HTMLButtonElement) {
             closeButton.onclick = () => this.close();
@@ -137,8 +188,12 @@ export class RandomPasswordModal extends BaseModal {
 
         const resultOutput = document.getElementById('password-result-output');
         if (resultOutput instanceof HTMLInputElement) {
-            resultOutput.onclick = async () => {
-                await this.copyResultToClipboard();
+            resultOutput.onclick = () => {
+                resultOutput.focus();
+                resultOutput.select();
+            };
+            resultOutput.onfocus = () => {
+                resultOutput.select();
             };
         }
     }
@@ -164,13 +219,15 @@ export class RandomPasswordModal extends BaseModal {
             }
         }
 
+        rememberGeneratedPasswordCopy(value);
         resultOutput.focus();
         resultOutput.select();
+        this.updateModalState({ copyStatus: 'Copied. Pasting into an empty note will add @password.' });
+
         const hint = document.getElementById('password-result-copy-hint');
         if (hint instanceof HTMLElement) {
-            hint.textContent = 'Copied';
+            hint.textContent = 'Copied. Pasting into an empty note will add @password.';
         }
-        this.updateModalState({ copyStatus: 'Copied' });
     }
 
     regeneratePassword() {
@@ -197,30 +254,39 @@ export class RandomPasswordModal extends BaseModal {
             throw new Error('password-result-copy-hint missing');
         }
 
+        const copyButton = document.getElementById('password-copy-btn');
+        if (!(copyButton instanceof HTMLButtonElement)) {
+            throw new Error('password-copy-btn missing');
+        }
+
         const lengthValue = Number.parseInt(lengthInput.value, 10);
         const charsetValue = charsetInput.value;
         if (!Number.isInteger(lengthValue) || lengthValue <= 0) {
             errorOutput.textContent = 'Password length must be a positive integer.';
             resultOutput.value = '';
+            copyButton.disabled = true;
             this.updateModalState({
                 length: lengthValue,
                 charsetInput: charsetValue,
                 result: '',
                 error: 'Password length must be a positive integer.',
-                copyStatus: '',
+                copyStatus: COPY_HINT_DEFAULT,
             });
+            copyHintOutput.textContent = COPY_HINT_DEFAULT;
             return;
         }
         if (lengthValue > 1024) {
             errorOutput.textContent = 'Password length must be 1024 or less.';
             resultOutput.value = '';
+            copyButton.disabled = true;
             this.updateModalState({
                 length: lengthValue,
                 charsetInput: charsetValue,
                 result: '',
                 error: 'Password length must be 1024 or less.',
-                copyStatus: '',
+                copyStatus: COPY_HINT_DEFAULT,
             });
+            copyHintOutput.textContent = COPY_HINT_DEFAULT;
             return;
         }
 
@@ -228,27 +294,30 @@ export class RandomPasswordModal extends BaseModal {
         if (charsetWithoutLineBreaks.length === 0) {
             errorOutput.textContent = 'Character set must not be empty.';
             resultOutput.value = '';
+            copyButton.disabled = true;
             this.updateModalState({
                 length: lengthValue,
                 charsetInput: charsetValue,
                 result: '',
                 error: 'Character set must not be empty.',
-                copyStatus: '',
+                copyStatus: COPY_HINT_DEFAULT,
             });
+            copyHintOutput.textContent = COPY_HINT_DEFAULT;
             return;
         }
 
         const normalizedCharset = normalizePasswordCharset(charsetValue);
         const generated = generateRandomPassword(lengthValue, normalizedCharset, null);
         resultOutput.value = generated;
-        copyHintOutput.textContent = 'Click result to copy';
+        copyButton.disabled = false;
+        copyHintOutput.textContent = COPY_HINT_DEFAULT;
         errorOutput.textContent = '';
         this.updateModalState({
             length: lengthValue,
             charsetInput: charsetValue,
             result: generated,
             error: '',
-            copyStatus: 'Click result to copy',
+            copyStatus: COPY_HINT_DEFAULT,
         });
     }
 }

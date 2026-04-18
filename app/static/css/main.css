@@ -1273,20 +1273,112 @@ body.ontology-modal-open #ontology-modal {
     width: min(760px, 92vw);
 }
 
+.random-password-modal-header {
+    margin-bottom: 18px;
+}
+
+.random-password-modal-eyebrow {
+    margin: 0 0 6px;
+    color: var(--primary-color);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.random-password-modal-description {
+    margin: 8px 0 0;
+    color: #5f6b7a;
+}
+
+.random-password-modal-top-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 160px;
+    gap: 14px;
+    align-items: end;
+}
+
+.random-password-length-group {
+    margin-bottom: 0;
+}
+
+.random-password-summary-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-height: 64px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #f7f9fc;
+    color: var(--text-color);
+}
+
+.random-password-summary-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #6b7280;
+}
+
+.random-password-summary-card strong {
+    font-size: 28px;
+    line-height: 1;
+}
+
 .random-password-modal-content textarea,
 .random-password-modal-content input[type="number"],
 .random-password-modal-content input[type="text"] {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
+.random-password-result-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
 .random-password-modal-content #password-result-output {
     white-space: nowrap;
     overflow-x: auto;
-    cursor: copy;
+    cursor: text;
+    margin: 0;
+}
+
+.random-password-copy-btn {
+    width: auto;
+    min-width: 108px;
+    margin: 0;
+}
+
+.random-password-modal-actions {
+    flex-direction: row;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+.random-password-modal-actions button {
+    width: auto;
+    min-width: 140px;
 }
 
 #password-result-copy-hint:empty {
     display: none;
+}
+
+@media (max-width: 640px) {
+    .random-password-modal-top-row,
+    .random-password-result-row {
+        grid-template-columns: 1fr;
+    }
+
+    .random-password-copy-btn,
+    .random-password-modal-actions button {
+        width: 100%;
+    }
 }
 
 .note.memory-mode {

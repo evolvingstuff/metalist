@@ -32,7 +32,13 @@ import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearC
 import { getDuplicateTabCloneOptions, seedDuplicatedTabNoteHashes } from '../services/tab-duplication-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { syncSearchInputValue } from '../services/search-input-service.js';
-import { normalizeTagBarForNewTag, sanitizeTags, setTagBarValue, syncTagBar } from '../services/tag-bar-service.js';
+import {
+    getTagBarValue,
+    normalizeTagBarForNewTag,
+    sanitizeTags,
+    setTagBarValue,
+    syncTagBar,
+} from '../services/tag-bar-service.js';
 import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { renderLatexHtml } from '../services/latex-render-service.js';
 import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
@@ -40,6 +46,10 @@ import {
     resolveClipboardTrackingAfterPasteEvent,
     shouldAllowBrowserPasteForShortcut,
 } from '../services/clipboard-shortcut-policy-service.js';
+import {
+    addPasswordTag,
+    shouldAutoTagGeneratedPasswordPaste,
+} from '../services/password-clipboard-service.js';
 import {
     estimateDataUrlPayloadBytes,
     getEmbedTargetImageBytes,
@@ -1953,6 +1963,65 @@ function clipboardHasFileUriReference(clipboardData) {
     return false;
 }
 
+function contentElementHasRenderableMedia(contentElement) {
+    if (!(contentElement instanceof HTMLElement)) {
+        throw new Error('contentElementHasRenderableMedia requires contentElement');
+    }
+
+    return Boolean(
+        contentElement.querySelector('img,video,audio,iframe,svg,math,canvas,input,textarea,button,table,hr'),
+    );
+}
+
+function isCurrentEditingNoteEmptyForPasswordAutoTag() {
+    if (!ModeContext.isEditing || typeof ModeContext.currentNoteId !== 'string' || ModeContext.currentNoteId.length === 0) {
+        return false;
+    }
+
+    const noteElement = DOMUtils.getNoteById(ModeContext.currentNoteId);
+    const contentElement = DOMUtils.getNoteContent(noteElement);
+    if (!(contentElement instanceof HTMLElement)) {
+        throw new Error('Current editing note content missing');
+    }
+
+    if (contentElementHasRenderableMedia(contentElement)) {
+        return false;
+    }
+
+    const renderedText = typeof contentElement.textContent === 'string'
+        ? contentElement.textContent.replace(/\u00A0/g, ' ').trim()
+        : '';
+    return renderedText.length === 0;
+}
+
+function maybeApplyPasswordTagForClipboardPaste(clipboardPlainText) {
+    if (typeof clipboardPlainText !== 'string') {
+        throw new Error('maybeApplyPasswordTagForClipboardPaste requires clipboardPlainText string');
+    }
+    if (!ModeContext.isEditing || typeof ModeContext.currentNoteId !== 'string' || ModeContext.currentNoteId.length === 0) {
+        return false;
+    }
+
+    const noteElement = DOMUtils.getNoteById(ModeContext.currentNoteId);
+    const existingTags = getTagBarValue(noteElement);
+    const shouldAutoTag = shouldAutoTagGeneratedPasswordPaste({
+        clipboardPlainText,
+        existingTags,
+        noteIsEmpty: isCurrentEditingNoteEmptyForPasswordAutoTag(),
+    });
+    if (!shouldAutoTag) {
+        return false;
+    }
+
+    const nextTags = addPasswordTag(existingTags);
+    if (nextTags === existingTags) {
+        return false;
+    }
+
+    setTagBarValue(noteElement, nextTags);
+    return true;
+}
+
 function buildClipboardPasteEventSnapshot(html, plainText) {
     if (typeof html !== 'string') {
         throw new Error('buildClipboardPasteEventSnapshot expects html string');
@@ -2673,14 +2742,20 @@ function handlePasteEvent(event) {
 
     // Get HTML from clipboard if available
     const html = event.clipboardData.getData('text/html');
+    const plainText = event.clipboardData.getData('text/plain');
     const hasTrackedNoteClipboardHtml = syncClipboardTrackingFromPasteEventHtml(html);
+    const autoTaggedPasswordPaste = shouldHandleInlinePaste
+        ? maybeApplyPasswordTagForClipboardPaste(plainText)
+        : false;
     
     Logger.logDebug('Paste event detected', {
         hasHtml: !!html,
         htmlLength: html ? html.length : 0,
+        plainTextLength: plainText ? plainText.length : 0,
         imageFileCount: imageFiles.length,
         hasFileUriReference: clipboardContainsFileReference,
-        isEditing: ModeContext.isEditing
+        isEditing: ModeContext.isEditing,
+        autoTaggedPasswordPaste,
     }, Logger.LogCategory.EVENT);
 
     if (
@@ -2719,11 +2794,10 @@ function handlePasteEvent(event) {
 				});
 			}
 		}
-	} else {
+    } else {
         const shouldSanitizeExternalHtml = ModeContext.isEditing && hasEditableTarget && typeof html === 'string' && html.length > 0;
 
         if (shouldSanitizeExternalHtml) {
-            const plainText = event.clipboardData.getData('text/plain');
             const pasteEventSnapshot = buildClipboardPasteEventSnapshot(html, plainText);
             const selectionRange = getSelectionRangeSnapshot();
             event.preventDefault();
@@ -2756,7 +2830,8 @@ function handlePasteEvent(event) {
                 });
         } else {
             Logger.logDebug('External content detected - using browser default paste', {
-                hasHtml: !!html
+                hasHtml: !!html,
+                autoTaggedPasswordPaste,
             }, Logger.LogCategory.EVENT);
 
             if (ModeContext.isEditing && !ModeContext.isDirty) {
