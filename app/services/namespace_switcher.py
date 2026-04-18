@@ -87,9 +87,15 @@ def _resolve_main_launch_command(*, environ: Mapping[str, str]) -> list[str]:
             raise RuntimeError("METALIST_SELF_EXECUTABLE must not be empty")
         entrypoint_path = Path(stripped_entrypoint).expanduser()
         if entrypoint_path.suffix.casefold() == ".py":
+            if entrypoint_path.name == "main.py":
+                namespace_entrypoint = entrypoint_path.with_name("serve_namespace.py")
+                return [sys.executable, str(namespace_entrypoint)]
             return [sys.executable, str(entrypoint_path)]
         return [str(entrypoint_path)]
 
+    namespace_main = _PROJECT_ROOT / "serve_namespace.py"
+    if namespace_main.is_file():
+        return [sys.executable, str(namespace_main)]
     source_main = _PROJECT_ROOT / "main.py"
     if source_main.is_file():
         return [sys.executable, str(source_main)]

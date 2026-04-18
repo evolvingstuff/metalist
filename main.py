@@ -24,6 +24,7 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
+from app.startup_js_sanity import assert_startup_js_sanity
 from app.startup_sanity import assert_startup_sanity
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import NamespaceOpenResult
@@ -49,6 +50,11 @@ _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES = (
 def _load_mcp_client_module():
     # Delay importing mcp_client until after CLI/env namespace selection runs.
     return importlib.import_module("mcp_client")
+
+
+def _run_startup_sanity_gates(*, repo_root: Path) -> None:
+    assert_startup_sanity(repo_root)
+    assert_startup_js_sanity(repo_root)
 
 
 class FilterCheckUpdates(logging.Filter):
@@ -557,7 +563,7 @@ def main(argv: list[str]) -> None:
     # Configure logging to filter noisy polling endpoints
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     _record_self_executable_for_namespace_launch()
-    assert_startup_sanity(Path(__file__).resolve().parent)
+    _run_startup_sanity_gates(repo_root=Path(__file__).resolve().parent)
     original_environ = dict(os.environ)
     cli_args = apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     if _should_open_or_launch_all_namespaces(
@@ -568,6 +574,16 @@ def main(argv: list[str]) -> None:
         launch_results = open_or_launch_all_namespaces(environ=os.environ)
         _print_namespace_bootstrap_results(environ=os.environ, launch_results=launch_results)
         return
+    _run_namespace_server_for_current_env(argv=argv)
+
+
+def run_namespace_server(argv: list[str]) -> None:
+    logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
+    apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
+    _run_namespace_server_for_current_env(argv=argv)
+
+
+def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
     database_runtime_config = resolve_database_runtime_config(
         environ=os.environ,
         argv=argv,

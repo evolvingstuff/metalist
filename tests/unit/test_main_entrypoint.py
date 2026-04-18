@@ -28,6 +28,28 @@ def test_main_entrypoint_has_no_top_level_mcp_client_import() -> None:
             assert node.module != "mcp_client"
 
 
+def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        main_entrypoint,
+        "assert_startup_sanity",
+        lambda repo_root: calls.append(f"python:{repo_root}"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "assert_startup_js_sanity",
+        lambda repo_root: calls.append(f"js:{repo_root}"),
+    )
+
+    main_entrypoint._run_startup_sanity_gates(repo_root=tmp_path)
+
+    assert calls == [
+        f"python:{tmp_path}",
+        f"js:{tmp_path}",
+    ]
+
+
 def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch) -> None:
     calls: list[str] = []
     fake_app_module = ModuleType("app.main")
@@ -116,13 +138,13 @@ def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch
     monkeypatch.setattr(main_entrypoint, "_start_agent_web_sidecar", fake_start_agent_web_sidecar)
     monkeypatch.setattr(main_entrypoint, "_run_main_listener", fake_run_main_listener)
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
-    monkeypatch.setattr(main_entrypoint, "assert_startup_sanity", lambda project_root: calls.append("assert_startup_sanity"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
 
     main_entrypoint.main(argv=[])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
-        "assert_startup_sanity",
+        "_run_startup_sanity_gates",
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "prepare_database_runtime_path",
@@ -199,13 +221,13 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
         lambda **kwargs: calls.append("_run_main_listener"),
     )
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
-    monkeypatch.setattr(main_entrypoint, "assert_startup_sanity", lambda project_root: calls.append("assert_startup_sanity"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
 
     main_entrypoint.main(argv=["--test"])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
-        "assert_startup_sanity",
+        "_run_startup_sanity_gates",
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "resolve_main_server_config",
@@ -256,7 +278,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
         lambda *, environ, launch_results: calls.append("_print_namespace_bootstrap_results"),
     )
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
-    monkeypatch.setattr(main_entrypoint, "assert_startup_sanity", lambda project_root: calls.append("assert_startup_sanity"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
     monkeypatch.setattr(main_entrypoint, "_resolve_current_entrypoint", lambda: "/tmp/main.py")
     monkeypatch.setattr(
         main_entrypoint,
@@ -273,7 +295,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
-        "assert_startup_sanity",
+        "_run_startup_sanity_gates",
         "apply_main_cli_args_to_environ",
         "ensure_default_tls_pair",
         "open_or_launch_all_namespaces",
@@ -287,8 +309,8 @@ def test_main_aborts_before_namespace_bootstrap_when_sanity_fails(monkeypatch) -
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
     monkeypatch.setattr(
         main_entrypoint,
-        "assert_startup_sanity",
-        lambda project_root: (_ for _ in ()).throw(RuntimeError("sanity failed")),
+        "_run_startup_sanity_gates",
+        lambda *, repo_root: (_ for _ in ()).throw(RuntimeError("sanity failed")),
     )
     monkeypatch.setattr(
         main_entrypoint,

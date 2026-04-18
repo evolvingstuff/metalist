@@ -395,7 +395,7 @@ def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
 
     assert launched["command"] == [
         sys.executable,
-        "/tmp/metalist/main.py",
+        "/tmp/metalist/serve_namespace.py",
         "--namespace",
         "work",
         "--port",

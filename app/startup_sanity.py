@@ -619,15 +619,15 @@ def _render_report(violations: list[StartupSanityViolation]) -> str:
 
 
 def assert_startup_sanity(project_root: Path) -> None:
-    print("[startup] Running AST sanity checks...", flush=True)
+    print("[startup] Running Python sanity checks (AST + transaction routes)...", flush=True)
     paths, violations = collect_startup_sanity_violations(project_root)
     if len(violations) == 0:
-        print(f"[startup] AST sanity checks passed ({len(paths)} Python files)", flush=True)
+        print(f"[startup] Python sanity checks passed ({len(paths)} Python files)", flush=True)
         return
 
     shown = violations[:_MAX_VIOLATIONS]
     report = _render_report(shown)
-    print("[startup] AST sanity checks failed", flush=True)
+    print("[startup] Python sanity checks failed", flush=True)
     if len(violations) > _MAX_VIOLATIONS:
         remaining = len(violations) - _MAX_VIOLATIONS
         report += f"(truncated) Remaining: {remaining}\n"
