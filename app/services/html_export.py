@@ -65,6 +65,20 @@ html[data-theme="dark"] .html-export-body .note:not(.editing):not(.memory-select
 """
 
 
+def _indent_block(text: str, spaces: int) -> str:
+    if not isinstance(text, str):
+        raise TypeError(f"text must be a string, got {type(text)}")
+    if not isinstance(spaces, int):
+        raise TypeError(f"spaces must be an int, got {type(spaces)}")
+    if spaces < 0:
+        raise ValueError("spaces must be >= 0")
+    if text == "":
+        return ""
+
+    prefix = " " * spaces
+    return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())
+
+
 def build_notes_export_document(*, search: str | None, theme: str) -> str:
     if search is not None and not isinstance(search, str):
         raise TypeError("search must be a string or null")
@@ -77,20 +91,28 @@ def build_notes_export_document(*, search: str | None, theme: str) -> str:
 
     notes_markup = _render_exported_notes_markup(search=search)
     stylesheet = _load_export_stylesheet()
-    return (
-        "<!DOCTYPE html>"
-        f'<html lang="en" data-theme="{normalized_theme}">'
-        "<head>"
-        '<meta charset="utf-8" />'
-        '<meta name="viewport" content="width=device-width, initial-scale=1" />'
-        "<title>MetaList Export</title>"
-        f"<style>{stylesheet}</style>"
-        "</head>"
-        '<body class="html-export-body">'
-        f'<main id="notes-container">{notes_markup}</main>'
-        "</body>"
-        "</html>"
-    )
+    lines = [
+        "<!DOCTYPE html>",
+        f'<html lang="en" data-theme="{normalized_theme}">',
+        "<head>",
+        '  <meta charset="utf-8" />',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+        "  <title>MetaList Export</title>",
+        "  <style>",
+        _indent_block(stylesheet, 4),
+        "  </style>",
+        "</head>",
+        '<body class="html-export-body">',
+        '  <main id="notes-container">',
+    ]
+    if notes_markup != "":
+        lines.append(_indent_block(notes_markup, 4))
+    lines.extend([
+        "  </main>",
+        "</body>",
+        "</html>",
+    ])
+    return "\n".join(lines)
 
 
 def build_notes_export_filename() -> str:
@@ -143,7 +165,7 @@ def _render_exported_notes_markup(*, search: str | None) -> str:
                 embed_render_context=embed_render_context,
             )
         )
-    return "".join(parts)
+    return "\n".join(parts)
 
 
 def _render_exported_note(
@@ -190,16 +212,25 @@ def _render_exported_note(
 
     children_html = ""
     if children_html_parts:
-        children_html = f'<div class="note-children">{"".join(children_html_parts)}</div>'
+        children_markup = "\n".join(children_html_parts)
+        children_html = (
+            "<div class=\"note-children\">\n"
+            f"{_indent_block(children_markup, 2)}\n"
+            "</div>"
+        )
 
     escaped_note_id = html.escape(note_id, quote=True)
     class_attr = " ".join(classes)
-    return (
-        f'<article class="{class_attr}" id="note-{escaped_note_id}">'
-        f'<div class="note-content">{rendered_content}</div>'
-        f"{children_html}"
-        "</article>"
-    )
+    lines = [
+        f'<article class="{class_attr}" id="note-{escaped_note_id}">',
+        '  <div class="note-content">',
+        _indent_block(rendered_content, 4),
+        "  </div>",
+    ]
+    if children_html != "":
+        lines.append(_indent_block(children_html, 2))
+    lines.append("</article>")
+    return "\n".join(lines)
 
 
 @lru_cache(maxsize=1)

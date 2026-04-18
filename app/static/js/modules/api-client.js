@@ -795,11 +795,33 @@ export const NotesAPI = {
             throw new Error(`HTML export failed: ${response.status} ${response.statusText}`);
         }
 
+        if (response.redirected) {
+            throw new Error('HTML export request was redirected unexpectedly');
+        }
+
+        const exportMarker = response.headers.get('x-metalist-export');
+        if (exportMarker !== 'notes-html-v1') {
+            throw new Error('HTML export response missing export marker');
+        }
+
+        const filename = extractFilenameFromContentDisposition(
+            response.headers.get('content-disposition')
+        );
+        if (typeof filename !== 'string' || filename.length === 0) {
+            throw new Error('HTML export response missing filename');
+        }
+
+        const htmlText = await response.text();
+        if (!htmlText.startsWith('<!DOCTYPE html>')) {
+            throw new Error('HTML export response was not a standalone HTML document');
+        }
+        if (htmlText.includes('id="login-page"') || htmlText.includes('id="main-app"')) {
+            throw new Error('HTML export response included app shell markup');
+        }
+
         return {
-            blob: await response.blob(),
-            filename: extractFilenameFromContentDisposition(
-                response.headers.get('content-disposition')
-            ),
+            blob: new Blob([htmlText], { type: 'text/html' }),
+            filename,
         };
     },
 

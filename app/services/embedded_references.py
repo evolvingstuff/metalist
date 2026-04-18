@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
+from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import format_note_content_for_view
 from app.utils.text_utils import strip_html
 
@@ -320,6 +321,7 @@ def _render_reference_block(
                 reference_note_id=reference_note_id,
                 context=context,
                 static_export=static_export,
+                redact_passwords=redact_passwords,
             )
     elif file_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-file"
@@ -398,17 +400,33 @@ def _render_link_body(
     reference_note_id: str,
     context: EmbedRenderContext,
     static_export: bool,
+    redact_passwords: bool,
 ) -> str:
     escaped_note_id = html.escape(reference_note_id, quote=True)
     record = context.get_note(reference_note_id)
     record_content = record.content
+    record_tags = record.tags
     if not isinstance(record_content, str):
         raise TypeError("linked note content must be a string")
+    if not isinstance(record_tags, str):
+        raise TypeError("linked note tags must be a string")
     preview = _extract_first_line_preview(record_content)
     if preview == "":
         preview = "(empty note)"
+    is_password_preview = (
+        redact_passwords
+        and find_global_credential_tag(record_tags) == "password"
+    )
+    if is_password_preview:
+        preview = "X" * len(preview)
     escaped_preview = html.escape(preview)
     if static_export:
+        if is_password_preview:
+            return (
+                '<span class="note-reference-link note-reference-link-static meta-credential-password">'
+                f'<span class="meta-credential-value">{escaped_preview}</span>'
+                "</span>"
+            )
         return (
             f'<span class="note-reference-link note-reference-link-static">'
             f"{escaped_preview}"

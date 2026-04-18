@@ -143,6 +143,12 @@ def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms.add("@csv")
     return frozenset(terms)
 
+
+def find_global_credential_tag(tags: str) -> str | None:
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    return _find_global_credential_tag(tags)
+
 @dataclass(frozen=True, slots=True)
 class MetaTagConfig:
     global_tags: FrozenSet[str]

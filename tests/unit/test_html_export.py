@@ -73,6 +73,13 @@ def test_build_notes_export_document_expands_collapsed_notes_and_redacts_passwor
     assert '<button class="note-collapse-toggle"' not in html
     assert 'class="note-children"' in html
     assert "filter: blur(4px)" in html
+    assert 'id="login-page"' not in html
+    assert 'id="main-app"' not in html
+    assert 'id="search-input"' not in html
+    assert "\n" in html
+    assert '  <main id="notes-container">' in html
+    assert '    <article class="note" id="note-root">' in html
+    assert '      <div class="note-content">' in html
 
 
 def test_build_notes_export_document_uses_search_scope_and_static_reference_markup(
@@ -127,3 +134,30 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
     assert "download image" not in html
     assert "Image attachment: photo.png" in html
     assert "note-file-reference-link-static" in html
+    assert 'id="login-page"' not in html
+    assert 'id="main-app"' not in html
+
+
+def test_build_notes_export_document_redacts_password_reference_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "a": _Note("a", None, None, "b", False, "<div>[[b]]</div>", ""),
+        "b": _Note("b", None, "a", None, False, "<div>sekret</div>", "@password"),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["a", "b"]},
+    )
+
+    monkeypatch.setattr(export_module, "note_store", store)
+    monkeypatch.setattr(snapshot_module, "note_store", store)
+    monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
+
+    html = build_notes_export_document(search=None, theme="light")
+
+    assert "sekret" not in html
+    assert "XXXXXX" in html
+    assert "note-reference-link-static meta-credential-password" in html
+    assert 'id="login-page"' not in html
+    assert 'id="main-app"' not in html

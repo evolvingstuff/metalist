@@ -404,6 +404,7 @@ def export_notes_html(request: Request) -> Response:
         media_type="text/html",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+            "X-MetaList-Export": "notes-html-v1",
         },
     )
 
