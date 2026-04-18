@@ -11,6 +11,11 @@ let connectivityInterval = null;
 const CONNECTIVITY_CHECK_INTERVAL = 2000; // Check every 2 seconds
 
 export const ConnectivityMonitor = {
+    handleConnectivityFailure(error) {
+        console.log('[ConnectivityMonitor] Connectivity check failed:', error.message);
+        ErrorHandler.handleApiError(error, null);
+    },
+
     
     /**
      * Start monitoring server connectivity
@@ -24,11 +29,15 @@ export const ConnectivityMonitor = {
         console.log('[ConnectivityMonitor] Starting connectivity monitoring');
         
         // Check immediately
-        this.checkConnectivity();
+        void this.checkConnectivity().catch((error) => {
+            this.handleConnectivityFailure(error);
+        });
         
         // Then check periodically
         connectivityInterval = setInterval(() => {
-            this.checkConnectivity();
+            void this.checkConnectivity().catch((error) => {
+                this.handleConnectivityFailure(error);
+            });
         }, CONNECTIVITY_CHECK_INTERVAL);
     },
     
@@ -63,22 +72,13 @@ export const ConnectivityMonitor = {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
 
-        let response;
-        // lint: allow-JS001 rationale="Connectivity monitor expects fetch to fail; it should update UI state and keep running."
-        try {
-            response = await fetch(CONFIG.API.AUTH.STATUS, {
-                method: 'GET',
-                headers: headers,
-                signal: controller.signal
-            });
-        } catch (error) {
+        const response = await fetch(CONFIG.API.AUTH.STATUS, {
+            method: 'GET',
+            headers: headers,
+            signal: controller.signal
+        }).finally(() => {
             clearTimeout(timeoutId);
-            console.log('[ConnectivityMonitor] Connectivity check failed:', error.message);
-            ErrorHandler.handleApiError(error, null);
-            return;
-        }
-
-        clearTimeout(timeoutId);
+        });
 
         if (response.ok) {
             ErrorHandler.handleConnectionRestored();
@@ -93,7 +93,9 @@ export const ConnectivityMonitor = {
      * Force an immediate connectivity check
      */
     checkNow() {
-        this.checkConnectivity();
+        void this.checkConnectivity().catch((error) => {
+            this.handleConnectivityFailure(error);
+        });
     }
 };
 

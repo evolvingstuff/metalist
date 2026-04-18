@@ -2,7 +2,7 @@
 
 The legacy unit/integration suites were removed during the API2
 migration. Current coverage is a mix of Python/unit tests, small JS unit
-tests, sanitycheck, and manual regression passes.
+tests, startup sanity gates, and manual regression passes.
 
 There is targeted JS unit coverage for external HTML paste sanitization:
 

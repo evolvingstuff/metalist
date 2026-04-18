@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from app.startup_js_sanity import assert_startup_js_sanity
+from app.startup_js_sanity import collect_startup_js_sanity_violations
 from app.startup_js_sanity import discover_javascript_source_paths
+from app.startup_js_sanity import discover_typescript_source_paths
 
 
 def _write_file(path: Path, text: str) -> None:
@@ -13,38 +15,16 @@ def _write_file(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _write_shared_sanity_config(tmp_path: Path) -> None:
-    _write_file(
-        tmp_path / "sanitycheck" / "sanitycheck.config.json",
-        """{
-  "exclude_dot_folders": true,
-  "ignore_globs": [],
-  "python": {
-    "allowed_try_callee_prefixes": [],
-    "allowed_exception_names": []
-  },
-  "js": {
-    "allowed_try_callee_names": [],
-    "allowed_try_callee_prefixes": []
-  }
-}
-""",
-    )
-
-
 def test_discover_javascript_source_paths_excludes_vendor_and_tests(tmp_path: Path) -> None:
-    _write_shared_sanity_config(tmp_path)
     included_js = tmp_path / "app" / "static" / "js" / "modules" / "main.js"
-    included_ts = tmp_path / "frontend" / "src" / "widget.ts"
     excluded_vendor = tmp_path / "app" / "static" / "js" / "vendor" / "markdown-it.min.js"
-    excluded_suffix_test = tmp_path / "frontend" / "src" / "widget.test.ts"
+    excluded_suffix_test = tmp_path / "frontend" / "src" / "widget.test.js"
     excluded_dir_test = tmp_path / "tests" / "ui" / "helpers.js"
     excluded_venv = tmp_path / ".venv" / "lib.js"
 
     _write_file(included_js, "console.log('ok');\n")
-    _write_file(included_ts, "export const ok = true;\n")
     _write_file(excluded_vendor, "console.log('vendor');\n")
-    _write_file(excluded_suffix_test, "export const bad = true;\n")
+    _write_file(excluded_suffix_test, "console.log('skip');\n")
     _write_file(excluded_dir_test, "console.log('skip');\n")
     _write_file(excluded_venv, "console.log('skip');\n")
 
@@ -53,55 +33,99 @@ def test_discover_javascript_source_paths_excludes_vendor_and_tests(tmp_path: Pa
 
     assert rel_paths == [
         "app/static/js/modules/main.js",
-        "frontend/src/widget.ts",
     ]
 
 
-def test_assert_startup_js_sanity_runs_eslint_and_reports_count(monkeypatch, tmp_path: Path, capsys) -> None:
-    _write_shared_sanity_config(tmp_path)
-    _write_file(tmp_path / "app" / "static" / "js" / "main.js", "console.log('ok');\n")
+def test_discover_typescript_source_paths_finds_typescript_files(tmp_path: Path) -> None:
     _write_file(tmp_path / "frontend" / "src" / "widget.ts", "export const ok = true;\n")
-    _write_file(tmp_path / "sanitycheck" / "js" / "eslint.config.mjs", "export default [];\n")
+    _write_file(tmp_path / "frontend" / "src" / "widget.tsx", "export const el = <div />;\n")
+    _write_file(tmp_path / "frontend" / "src" / "widget.test.ts", "export const skip = true;\n")
+
+    paths = discover_typescript_source_paths(tmp_path)
+    rel_paths = [path.relative_to(tmp_path).as_posix() for path in paths]
+
+    assert rel_paths == [
+        "frontend/src/widget.ts",
+        "frontend/src/widget.tsx",
+    ]
+
+
+def test_collect_startup_js_sanity_violations_reports_rule_hits(tmp_path: Path) -> None:
     _write_file(
-        tmp_path / "sanitycheck" / "js" / "node_modules" / "eslint" / "bin" / "eslint.js",
-        "console.log('eslint');\n",
+        tmp_path / "app" / "static" / "js" / "main.js",
+        """
+function bad(a = 1, {x = 2}) {
+  const y = foo || bar;
+  try {
+    internalCall();
+  } catch (e) {
+    return 1;
+  }
+}
+""".strip()
+        + "\n",
     )
 
-    commands: list[list[str]] = []
+    _, violations = collect_startup_js_sanity_violations(tmp_path)
+    summaries = {(violation.rule_id, violation.message) for violation in violations}
 
-    class _Completed:
-        returncode = 0
+    assert ("JS002", "default parameters are forbidden") in summaries
+    assert ("JS003", "destructuring defaults are forbidden") in summaries
+    assert ("JS004", "defaulting operator is forbidden") in summaries
+    assert ("JS001", "try block has no allowlisted external call") in summaries
+    assert ("JS001", "catch must not return") in summaries
+    assert ("JS001", "catch must throw (no silent handling)") in summaries
 
-    monkeypatch.setattr("app.startup_js_sanity.shutil.which", lambda name: "/usr/bin/node")
-    monkeypatch.setattr(
-        "app.startup_js_sanity.subprocess.run",
-        lambda command, cwd, check: commands.append(command) or _Completed(),
-    )
+
+def test_assert_startup_js_sanity_passes_and_reports_count(tmp_path: Path, capsys) -> None:
+    _write_file(tmp_path / "app" / "static" / "js" / "main.js", "console.log('ok');\n")
+    _write_file(tmp_path / "frontend" / "src" / "widget.jsx", "const el = <div>{value}</div>;\n")
 
     assert_startup_js_sanity(tmp_path)
 
     captured = capsys.readouterr()
     assert "[startup] Running JS sanity checks..." in captured.out
-    assert "[startup] JS sanity checks passed (2 JS/TS files)" in captured.out
-    assert commands == [
-        [
-            "node",
-            str(tmp_path / "sanitycheck" / "js" / "node_modules" / "eslint" / "bin" / "eslint.js"),
-            "--config",
-            str(tmp_path / "sanitycheck" / "js" / "eslint.config.mjs"),
-            "--",
-            str(tmp_path / "app" / "static" / "js" / "main.js"),
-            str(tmp_path / "frontend" / "src" / "widget.ts"),
-        ]
-    ]
+    assert "[startup] JS sanity checks passed (2 JS/JSX files)" in captured.out
 
 
-def test_assert_startup_js_sanity_raises_when_eslint_is_missing(tmp_path: Path, capsys) -> None:
-    _write_shared_sanity_config(tmp_path)
-    _write_file(tmp_path / "app" / "static" / "js" / "main.js", "console.log('ok');\n")
-    _write_file(tmp_path / "sanitycheck" / "js" / "eslint.config.mjs", "export default [];\n")
+def test_assert_startup_js_sanity_raises_on_parse_error(tmp_path: Path, capsys) -> None:
+    _write_file(tmp_path / "app" / "static" / "js" / "main.js", "const x = ;\n")
 
-    with pytest.raises(RuntimeError, match="run './sanitycheck/install.sh'"):
+    with pytest.raises(RuntimeError, match="JS000 parse error"):
+        assert_startup_js_sanity(tmp_path)
+
+    captured = capsys.readouterr()
+    assert "[startup] Running JS sanity checks..." in captured.out
+    assert "[startup] JS sanity checks failed" in captured.out
+
+
+def test_assert_startup_js_sanity_honors_suppression_comments(tmp_path: Path) -> None:
+    _write_file(
+        tmp_path / "app" / "static" / "js" / "main.js",
+        """
+// lint: allow-JS004 rationale="test suppression"
+const x = a || b;
+/* lint: allow-JS001 rationale="test suppression" */
+try {
+  internalCall();
+} catch (e) {
+  throw e;
+}
+""".strip()
+        + "\n",
+    )
+
+    _, violations = collect_startup_js_sanity_violations(tmp_path)
+    summaries = {(violation.rule_id, violation.message) for violation in violations}
+
+    assert ("JS004", "defaulting operator is forbidden") not in summaries
+    assert ("JS001", "try block has no allowlisted external call") not in summaries
+
+
+def test_assert_startup_js_sanity_raises_on_typescript_files(tmp_path: Path, capsys) -> None:
+    _write_file(tmp_path / "frontend" / "src" / "widget.ts", "export const ok = true;\n")
+
+    with pytest.raises(RuntimeError, match="TypeScript files are not supported"):
         assert_startup_js_sanity(tmp_path)
 
     captured = capsys.readouterr()

@@ -6,31 +6,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-
-_ALLOWED_TRY_CALLEE_PREFIXES = (
-    "requests.",
-    "httpx.",
-    "socket.",
-    "subprocess.",
-    "urllib.",
-)
-_ALLOWED_EXCEPTION_NAMES = (
-    "TimeoutError",
-    "ConnectionError",
-    "OSError",
-)
+from app.startup_sanity_config import PY_ALLOWED_EXCEPTION_NAMES
+from app.startup_sanity_config import PY_ALLOWED_TRY_CALLEE_PREFIXES
+from app.startup_sanity_config import SANITY_PRUNE_NAMES
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _ROUTE_DECORATOR_METHODS = frozenset({"post", "put", "patch", "delete"})
 _MAX_VIOLATIONS = 200
-_PRUNE_NAMES = {
-    "sanitycheck",
-    "node_modules",
-    ".venv",
-    "dist",
-    "build",
-    "coverage",
-    "__pycache__",
-}
 
 
 @dataclass(frozen=True)
@@ -141,7 +122,7 @@ def _try_has_allowlisted_call(try_node: ast.Try) -> bool:
             callee = _dotted_name(sub.func)
             if callee is None:
                 continue
-            for prefix in _ALLOWED_TRY_CALLEE_PREFIXES:
+            for prefix in PY_ALLOWED_TRY_CALLEE_PREFIXES:
                 if callee.startswith(prefix):
                     return True
     return False
@@ -386,7 +367,7 @@ class _StartupSanityChecker(ast.NodeVisitor):
                 if exc_name == "Exception" or exc_name == "BaseException":
                     self._add(node=handler, rule_id="PY001", message=f"forbidden exception type: {exc_name}")
                     continue
-                if exc_name not in _ALLOWED_EXCEPTION_NAMES:
+                if exc_name not in PY_ALLOWED_EXCEPTION_NAMES:
                     self._add(
                         node=handler,
                         rule_id="PY001",
@@ -568,7 +549,7 @@ def discover_python_source_paths(project_root: Path) -> list[Path]:
     for current_root, directory_names, file_names in os.walk(project_root):
         kept_dirs: list[str] = []
         for directory_name in directory_names:
-            if directory_name in _PRUNE_NAMES:
+            if directory_name in SANITY_PRUNE_NAMES:
                 continue
             if directory_name.startswith("."):
                 continue

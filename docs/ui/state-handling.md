@@ -188,7 +188,7 @@ The ModeManager uses `async/await` for readability, but cleanup must be written 
 
 ### Cleanup (No Leaked Busy State)
 
-The sanitycheck rules disallow `try { ... } finally { ... }` without a `catch` in JS, so cleanup should use `.finally(...)`:
+The startup JS sanity rules disallow `try { ... } finally { ... }` without a `catch` in JS, so cleanup should use `.finally(...)`:
 
 ```javascript
 await somePromise.finally(() => {

@@ -55,7 +55,7 @@ Defer backlinks UI; keep minimal rendering only.
 7. Tests.
 Add unit tests for reference parsing/indexing + snapshot hashing.
 Add focused lower-level tests for any non-trivial interaction logic.
-Run `./sanitycheck/run` if present.
+Run the startup sanity gates manually if you need a prelaunch check.
 
 **Success Criteria**
 Embedded note references are parsed from content, cached, and round-trip via `/notes/view` diffs without full refresh.
