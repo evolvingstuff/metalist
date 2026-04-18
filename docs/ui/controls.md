@@ -12,7 +12,7 @@
 | `⌘ + ←` | Outdent note (one level left) |
 | `⌘ + →` | Indent note (one level right) |
 | `⌘ + ↑` | Move current note up (one visible sibling) |
-| `⇧ + ⌘ + ↑` | Move current root note to top of the current view, or move a child note to the top of its siblings |
+| `⇧ + ⌘ + ↑` | Move the selected root note to the top of the current root view (including filtered/search views), or move a child note to the top of its siblings |
 | `⌘ + ↓` | Move current note down (one visible sibling) |
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
@@ -33,6 +33,7 @@
 - `⌘ + J` merges tag bars without duplicates (case-insensitive dedupe; first-seen casing/order wins).
 - `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
+- `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, note copy/cut/paste, and password modal.
 
 ### General Shortcuts

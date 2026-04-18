@@ -7,9 +7,11 @@
 - Entry: installed CLI `metalist` → `main.py:main()`; source-checkout `python main.py` still works, but plain `python main.py` now bootstraps every known namespace from the current checkout and exits after printing the per-namespace URLs.
 - Packaging: `pyproject.toml` packages the `app/` package plus templates/static assets; installed helper commands include `metalist-mcp`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
 - Release workflow: `.github/workflows/publish-pypi.yml` builds the package and publishes it to PyPI via GitHub Trusted Publishing on `v*` tags or manual dispatch.
+- Prelaunch gate: `main.py` runs Python + JS startup sanity checks once in the parent process before any namespace restart/launch work. Python rules live in `app/startup_sanity.py`; JS rules live in `app/startup_js_sanity.py`; shared constants live in `app/startup_sanity_config.py`.
 - Startup bootstrap: `main.py` resolves `--namespace`, positional namespace shorthand (`metalist cla` or `python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so explicit single-namespace launches still expose the right DB path and listener ports at import time.
 - Namespace launch profiles: `app/server_runtime.py` stores remembered per-namespace HTTP / HTTPS / MCP sidecar ports in `~/MetaList/namespaces.db`.
-- Namespace switching/launching: `app/services/namespace_switcher.py` lists known namespaces, suggests conflict-free ports, restarts already-running target namespaces so they pick up current code, relaunches the recorded entrypoint (installed CLI or source script), and writes child logs under `~/MetaList/logs/`.
+- Namespace switching/launching: `app/services/namespace_switcher.py` lists known namespaces, suggests conflict-free ports, restarts already-running target namespaces so they pick up current code, relaunches the recorded entrypoint (installed CLI or source script), auto-evicts stale listeners on the assigned ports, and writes child logs under `~/MetaList/logs/`.
+- Child entrypoint: `serve_namespace.py` is the namespace-serving source entrypoint so child processes do not re-enter the parent orchestration path in `main.py`.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
 - `app/static/js/main.js`: Browser bootstrap; awaits `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` before revealing the app, and sets `document.body.dataset.appReady` for deterministic Cypress startup waits.
 - Startup intro gate: `app/templates/index.html` + `app/static/js/modules/auth.js` can show a login/startup MP4 before revealing login or the app; this is controlled by `STARTUP_ANIMATION_ENABLED` and defaults off.
@@ -37,12 +39,12 @@
 - `app/security/encryption.py`: Crypto facade (AES-GCM, Argon2id, versioned vault metadata + key mgmt helpers).
 - `app/db`: `session.py` (begin_writer/connect_reader/read guard), `schema.py`, `notes_sql.py`, `settings_sql.py`.
 - `app/static` & `app/templates`: Frontend assets and Mako templates.
-- `tests/ui` + Cypress: UI E2E coverage.
-- `tests/unit`: Targeted backend pytest coverage for security-critical behavior (auth vault metadata, login rate limiting, runtime hardening).
+- `tests/unit`: targeted pytest coverage plus Node `.mjs` unit tests for shared frontend logic; there is no current Cypress harness.
 
 ## Design
 - Pattern: usecases (Cmd*) orchestrate services; services encapsulate DB work + undo logging.
 - State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll snapshotted via `tab_state_store` so reopening the app restores the last view.
+- Mutation safety: mutating FastAPI routes are expected to carry `@transactional_route`; startup sanity enforces the decorator ordering in source, and request-scoped write sessions commit once at the end of the wrapped request path.
 - Diff caching: Server caches each `(client, tab, search)` view and the client keeps per-tab note-hash maps so `/notes/view` diff payloads stay scoped to the active tab.
 - Tab switch perf: Client can detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile small diffs.
 - Client busy model: `CommandGate.run(name, asyncFn)` is the single boundary for user-initiated server calls; it is the only code allowed to flip `ModeContext.isLoading`.
@@ -62,10 +64,11 @@
 - Tag suggestion ranking: literal content segment hits can surface connector-separated tags, full multi-segment phrase hits outrank single-segment hits, and surrounding prose punctuation is ignored for content matching.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
-- Cypress harness determinism: `POST /api2/test/reset` clears DB/search-history/cache/tab/auth/sync state, and `cypress/support/commands.js` waits for `body[data-app-ready="true"]` before each spec starts interacting.
+- Test harness boundary: `POST /api2/test/reset` clears DB/search-history/cache/tab/auth/sync state, and `app/static/js/main.js` exposes `body[data-app-ready="true"]` after `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` complete.
 - Reference shortcut: `Cmd/Ctrl+R` copies as embedded reference (`![[UUID]]`) from the last note copied with `Cmd/Ctrl+C` (when no text selection).
 - Join shortcut: `Cmd/Ctrl+J` joins the currently edited note with its next sibling by merging raw editable content and tag-bar strings; tag merge is case-insensitive dedupe (first occurrence preserved); no-op when no next sibling exists.
 - Split shortcut: `Cmd/Ctrl+S` splits the currently edited note at selection/caret into sibling notes and preserves the original tag-bar string across all resulting notes; split normalization trims edge-empty nodes to avoid synthetic leading blank lines; no-op when full-note selection or end-caret would yield fewer than two non-empty segments.
+- Move-to-top shortcut: `Cmd/Ctrl+Shift+Up` is server-driven; a selected root note moves to the top of the current root view (including filtered/search views), while a child note moves to the top of its sibling list.
 - Command palette help action: `Cmd/Ctrl+/` → `Keyboard shortcuts help…` opens the shortcuts modal from palette utilities.
 - Namespace switcher: `Cmd/Ctrl+/` → `Switch or create namespace…` opens a modal backed by `GET /api2/auth/namespaces` and `POST /api2/auth/namespaces/open`; it reuses saved launch profiles for existing namespaces, suggests next-free ports for new namespaces, restarts already-running target namespaces from the current code, and otherwise waits for the freshly spawned instance before returning its URL.
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image pixels still embed as compressed `data:image/...`, while named pasted/dropped image files can either embed inline or be saved as file attachments via a choice modal.
@@ -86,7 +89,7 @@ pip install metalist    # published install
 # or from source:
 # pip install .
 # pip install -e .[dev] for local development
-npm install
+# npm install            # only for Node-based JS unit tests / Mermaid rendering
 metalist
 ```
 
@@ -106,6 +109,7 @@ metalist
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
 - Runtime hardening: `app/services/runtime_hardening.py` (core-dump disable by default; optional strict macOS swap/hibernation checks can fail startup when enabled).
+- Startup sanity: `main._run_startup_sanity_gates(...)` runs Python AST/transaction checks plus the Python tree-sitter JS sanity pass; startup sanity no longer depends on the old `sanitycheck/` folder or Node.
 - DB guard: `app/db/session.py` (begin_writer/connect_reader + post-startup SELECT guard).
 - Undo: `app/services/undo_state.py`.
 - Ontology rules (v1): `app/services/tag_ontology.py` + `app/services/ontology_rules_store.py` (SQLite-backed, cached in memory).

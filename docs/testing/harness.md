@@ -4,10 +4,26 @@ The legacy unit/integration suites were removed during the API2
 migration. Current coverage is a mix of Python/unit tests, small JS unit
 tests, startup sanity gates, and manual regression passes.
 
+Startup sanity is now part of normal `main.py` startup, but it can also be
+run directly without launching namespaces:
+
+- Python + JS prelaunch gate:
+  - `.venv/bin/python -c "from pathlib import Path; import main; main._run_startup_sanity_gates(repo_root=Path.cwd())"`
+- Python-only source audit:
+  - `.venv/bin/python -c "from pathlib import Path; from app.startup_sanity import assert_startup_sanity; assert_startup_sanity(Path.cwd())"`
+- JS-only source audit:
+  - `.venv/bin/python -c "from pathlib import Path; from app.startup_js_sanity import assert_startup_js_sanity; assert_startup_js_sanity(Path.cwd())"`
+
+Those startup sanity checks are pure Python. End users do not need Node to run
+the app.
+
 There is targeted JS unit coverage for external HTML paste sanitization:
 
 - `tests/unit/html_paste_sanitizer_service.test.mjs`
 - Run with: `node --test tests/unit/html_paste_sanitizer_service.test.mjs`
+
+Node is still required for the `.mjs` JS unit tests and Mermaid diagram
+rendering, but not for the startup sanity gate.
 
 For deterministic browser automation, the server still exposes a
 `TEST_MODE`-only reset endpoint: `POST /api2/test/reset`.
