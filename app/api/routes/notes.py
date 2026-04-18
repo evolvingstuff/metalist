@@ -373,6 +373,7 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
 
 @router.get("/notes/export-html")
 def export_notes_html(request: Request) -> Response:
+    token = _require_bearer_token(request)
     search_query = request.query_params.get("search_query")
     if search_query is None:
         raise HTTPException(status_code=400, detail="search_query query parameter is required")
@@ -396,6 +397,7 @@ def export_notes_html(request: Request) -> Response:
     document = build_notes_export_document(
         search=normalized_search,
         theme=normalized_theme,
+        token=token,
     )
     filename = build_notes_export_filename()
     quoted_filename = urllib.parse.quote(filename)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
+from dataclasses import dataclass
 from functools import lru_cache
 import html
 from pathlib import Path
@@ -9,6 +11,7 @@ from app.services.content_formatting import find_list_style
 from app.services.embedded_references import EmbedRenderContext
 from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
+from app.services.file_storage import download_file
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
 from app.services.snapshot import resolve_search_scope
@@ -65,6 +68,17 @@ html[data-theme="dark"] .html-export-body .note:not(.editing):not(.memory-select
 """
 
 
+@dataclass(frozen=True, slots=True)
+class _ExportFileRecord:
+    id: str
+    title: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    thumbnail_kind: str
+    export_data_url: str
+
+
 def _indent_block(text: str, spaces: int) -> str:
     if not isinstance(text, str):
         raise TypeError(f"text must be a string, got {type(text)}")
@@ -79,17 +93,19 @@ def _indent_block(text: str, spaces: int) -> str:
     return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())
 
 
-def build_notes_export_document(*, search: str | None, theme: str) -> str:
+def build_notes_export_document(*, search: str | None, theme: str, token: str) -> str:
     if search is not None and not isinstance(search, str):
         raise TypeError("search must be a string or null")
     if not isinstance(theme, str):
         raise TypeError("theme must be a string")
+    if not isinstance(token, str) or token == "":
+        raise TypeError("token must be a non-empty string")
 
     normalized_theme = theme.strip().lower()
     if normalized_theme not in _VALID_EXPORT_THEMES:
         raise ValueError("theme must be 'light' or 'dark'")
 
-    notes_markup = _render_exported_notes_markup(search=search)
+    notes_markup = _render_exported_notes_markup(search=search, token=token)
     stylesheet = _load_export_stylesheet()
     lines = [
         "<!DOCTYPE html>",
@@ -120,7 +136,7 @@ def build_notes_export_filename() -> str:
     return f"metalist-export-{timestamp}.html"
 
 
-def _render_exported_notes_markup(*, search: str | None) -> str:
+def _render_exported_notes_markup(*, search: str | None, token: str) -> str:
     normalized_search = search
     if normalized_search == "":
         normalized_search = None
@@ -139,11 +155,35 @@ def _render_exported_notes_markup(*, search: str | None) -> str:
     else:
         root_ids = note_store.get_children(None)
 
+    if not isinstance(token, str) or token == "":
+        raise TypeError("token must be a non-empty string")
+
     file_record_cache: dict[str, object] = {}
 
     def _get_file_record(file_id: str) -> object:
         if file_id not in file_record_cache:
-            file_record_cache[file_id] = get_file_reference_record(file_id, token=None)
+            record = get_file_reference_record(file_id, token=token)
+            thumbnail_kind = record.thumbnail_kind
+            if not isinstance(thumbnail_kind, str) or thumbnail_kind == "":
+                raise TypeError("file thumbnail_kind must be a non-empty string")
+
+            export_data_url = ""
+            if thumbnail_kind == "image":
+                downloaded = download_file(file_id, token)
+                export_data_url = _build_file_data_url(
+                    mime_type=downloaded.record.mime_type,
+                    content_bytes=downloaded.content_bytes,
+                )
+
+            file_record_cache[file_id] = _ExportFileRecord(
+                id=record.id,
+                title=record.title,
+                original_filename=record.original_filename,
+                mime_type=record.mime_type,
+                size_bytes=record.size_bytes,
+                thumbnail_kind=thumbnail_kind,
+                export_data_url=export_data_url,
+            )
         return file_record_cache[file_id]
 
     embed_render_context = EmbedRenderContext(
@@ -166,6 +206,16 @@ def _render_exported_notes_markup(*, search: str | None) -> str:
             )
         )
     return "\n".join(parts)
+
+
+def _build_file_data_url(*, mime_type: str, content_bytes: bytes) -> str:
+    if not isinstance(mime_type, str) or mime_type == "":
+        raise TypeError("mime_type must be a non-empty string")
+    if not isinstance(content_bytes, bytes):
+        raise TypeError(f"content_bytes must be bytes, got {type(content_bytes)}")
+
+    encoded = base64.b64encode(content_bytes).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
 
 
 def _render_exported_note(

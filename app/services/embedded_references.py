@@ -507,7 +507,9 @@ def _render_file_body(
     badge_text = html.escape(_format_thumbnail_badge(thumbnail_kind))
     if static_export:
         return _render_static_file_body(
+            record=record,
             escaped_title=escaped_title,
+            escaped_title_attribute=escaped_title_attribute,
             badge_text=badge_text,
             is_embed=is_embed,
             thumbnail_kind=thumbnail_kind,
@@ -540,16 +542,22 @@ def _render_file_body(
 
 def _render_static_file_body(
     *,
+    record: object,
     escaped_title: str,
+    escaped_title_attribute: str,
     badge_text: str,
     is_embed: bool,
     thumbnail_kind: str,
 ) -> str:
     if is_embed and thumbnail_kind == "image":
+        export_data_url = getattr(record, "export_data_url")
+        if not isinstance(export_data_url, str) or export_data_url == "":
+            raise TypeError("static export image file must provide a non-empty export_data_url")
+        escaped_data_url = html.escape(export_data_url, quote=True)
         return (
-            '<div class="note-file-image-embed note-file-image-static" data-preview-state="static">'
+            '<div class="note-file-image-embed note-file-image-static" data-preview-state="loaded">'
             '<div class="note-file-image-preview-frame">'
-            f'<div class="note-file-image-preview-placeholder">Image attachment: {escaped_title}</div>'
+            f'<img class="note-file-image-preview" src="{escaped_data_url}" alt="{escaped_title_attribute}" loading="lazy" decoding="async" />'
             "</div>"
             "</div>"
         )

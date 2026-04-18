@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Dict, List, Optional
@@ -63,7 +64,7 @@ def test_build_notes_export_document_expands_collapsed_notes_and_redacts_passwor
     monkeypatch.setattr(export_module, "note_store", store)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
 
-    html = build_notes_export_document(search=None, theme="light")
+    html = build_notes_export_document(search=None, theme="light", token="token")
 
     assert 'data-theme="light"' in html
     assert "Parent" in html
@@ -123,8 +124,13 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
     monkeypatch.setattr(snapshot_module, "search_index", index)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry({file_id}))
     monkeypatch.setattr(export_module, "get_file_reference_record", lambda file_id, token: file_record)
+    monkeypatch.setattr(
+        export_module,
+        "download_file",
+        lambda file_id, token: SimpleNamespace(record=file_record, content_bytes=b"png-bytes"),
+    )
 
-    html = build_notes_export_document(search="match", theme="dark")
+    html = build_notes_export_document(search="match", theme="dark", token="token")
 
     assert 'data-theme="dark"' in html
     assert "linked first line" in html
@@ -132,8 +138,10 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
     assert "hidden child" not in html
     assert 'class="note-reference-toggle"' not in html
     assert "download image" not in html
-    assert "Image attachment: photo.png" in html
-    assert "note-file-reference-link-static" in html
+    assert "Image attachment: photo.png" not in html
+    assert "note-file-image-static" in html
+    assert 'src="data:image/png;base64,' in html
+    assert base64.b64encode(b"png-bytes").decode("ascii") in html
     assert 'id="login-page"' not in html
     assert 'id="main-app"' not in html
 
@@ -154,7 +162,7 @@ def test_build_notes_export_document_redacts_password_reference_preview(
     monkeypatch.setattr(snapshot_module, "note_store", store)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
 
-    html = build_notes_export_document(search=None, theme="light")
+    html = build_notes_export_document(search=None, theme="light", token="token")
 
     assert "sekret" not in html
     assert "XXXXXX" in html
