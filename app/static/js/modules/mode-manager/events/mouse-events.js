@@ -593,6 +593,17 @@ function handleClick(event) {
         return;
     }
 
+    const rootSortIndicator = event.target.closest('#root-sort-indicator');
+    if (rootSortIndicator) {
+        event.preventDefault();
+        event.stopPropagation();
+        const clearButton = event.target.closest('#root-sort-indicator-clear');
+        if (clearButton) {
+            void CommandPalette.setSortMode('normal');
+        }
+        return;
+    }
+
     const menuButton = event.target.closest('#menu-button');
     if (menuButton) {
         event.preventDefault();

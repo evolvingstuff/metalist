@@ -1556,6 +1556,17 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
     .random-password-modal-actions button {
         width: 100%;
     }
+
+    .controls .root-sort-indicator {
+        top: -12px;
+        max-width: calc(100% - 16px);
+        padding-left: 10px;
+        padding-right: 6px;
+    }
+
+    .controls .root-sort-indicator-label {
+        font-size: 11px;
+    }
 }
 
 .note.memory-mode {
@@ -1607,6 +1618,7 @@ body {
     background: #000000;
     padding: 0.35rem 0.75rem;
     border-radius: 8px;
+    overflow: visible;
 }
 
 #notes-container {
@@ -2665,6 +2677,63 @@ html[data-theme="dark"] .context-menu-item:hover {
     line-height: 1;
     user-select: none;
     pointer-events: none;
+}
+
+.controls .root-sort-indicator {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 14;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: calc(100% - 24px);
+    padding: 6px 8px 6px 12px;
+    border: 1px solid rgba(130, 73, 0, 0.22);
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f5d57a, #ebb75d);
+    color: #2d1b00;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.controls .root-sort-indicator[hidden] {
+    display: none;
+}
+
+.controls .root-sort-indicator-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.controls .root-sort-indicator-clear {
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 999px;
+    padding: 0;
+    background: rgba(45, 27, 0, 0.14);
+    color: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.controls .root-sort-indicator-clear:hover,
+.controls .root-sort-indicator-clear:focus-visible {
+    background: rgba(45, 27, 0, 0.24);
+    outline: none;
 }
 
 .root-date-separator {
@@ -4058,6 +4127,21 @@ html[data-theme="dark"] .menu-button:hover,
 html[data-theme="dark"] .scroll-to-top-button:hover {
     background: rgba(255, 255, 255, 0.16);
     border-color: rgba(255, 255, 255, 0.18);
+}
+
+html[data-theme="dark"] .controls .root-sort-indicator {
+    border-color: rgba(255, 211, 122, 0.22);
+    background: linear-gradient(135deg, #f1c86d, #d99f43);
+    color: #241500;
+}
+
+html[data-theme="dark"] .controls .root-sort-indicator-clear {
+    background: rgba(36, 21, 0, 0.14);
+}
+
+html[data-theme="dark"] .controls .root-sort-indicator-clear:hover,
+html[data-theme="dark"] .controls .root-sort-indicator-clear:focus-visible {
+    background: rgba(36, 21, 0, 0.24);
 }
 
 html[data-theme="dark"] .namespace-switcher-summary,

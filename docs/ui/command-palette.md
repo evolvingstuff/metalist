@@ -21,6 +21,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Modes are `Normal`, `Datetime created`, and `Datetime last updated`.
 - In the datetime modes, root notes are ordered by the newest matching timestamp anywhere in that root subtree, not just on the root note itself.
 - The server returns the ordered root window plus `sortMode`/`rootSortBuckets`; the client inserts day-separator rows between visible roots.
+- When a datetime mode is active, the UI shows a floating dismissible pill above the sticky top bar so the view override is visually obvious and can be cleared in one click.
 - Changing sort mode is treated as a global view-context switch: the tab scroll state resets and undo/redo history is blanked for that tab context.
 
 ## Config

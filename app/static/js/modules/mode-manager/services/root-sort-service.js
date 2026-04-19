@@ -23,6 +23,20 @@ export function isRootReorderLocked(sortMode) {
     return normalizeRootSortMode(sortMode) !== ROOT_SORT_MODES.NORMAL;
 }
 
+export function getRootSortModeIndicatorLabel(sortMode) {
+    const normalized = normalizeRootSortMode(sortMode);
+    if (normalized === ROOT_SORT_MODES.NORMAL) {
+        return '';
+    }
+    if (normalized === ROOT_SORT_MODES.CREATED) {
+        return 'Sorted by datetime created';
+    }
+    if (normalized === ROOT_SORT_MODES.UPDATED) {
+        return 'Sorted by datetime last updated';
+    }
+    throw new Error(`Unsupported root sort mode: ${sortMode}`);
+}
+
 export function buildRootDateSeparatorPlan(rootIds, rootSortBuckets) {
     if (!Array.isArray(rootIds)) {
         throw new Error('rootIds must be an array');

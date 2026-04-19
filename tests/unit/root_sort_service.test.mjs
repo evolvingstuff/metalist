@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     ROOT_SORT_MODES,
     buildRootDateSeparatorPlan,
+    getRootSortModeIndicatorLabel,
     isRootReorderLocked,
 } from '../../app/static/js/modules/mode-manager/services/root-sort-service.js';
 
@@ -29,4 +30,10 @@ test('buildRootDateSeparatorPlan emits one separator per day bucket transition',
         { rootId: 'root-c', bucketKey: '2026-04-18', label: '2026/04/18 - Saturday' },
         { rootId: 'root-d', bucketKey: '2026-04-17', label: '2026/04/17 - Friday' },
     ]);
+});
+
+test('getRootSortModeIndicatorLabel returns dismissible pill text for datetime modes', () => {
+    assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.NORMAL), '');
+    assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.CREATED), 'Sorted by datetime created');
+    assert.equal(getRootSortModeIndicatorLabel(ROOT_SORT_MODES.UPDATED), 'Sorted by datetime last updated');
 });

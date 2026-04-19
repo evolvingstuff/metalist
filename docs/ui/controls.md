@@ -49,6 +49,8 @@
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 
+- When a datetime sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
+
 ### Search Input Behavior
 - Pressing `Enter` while focused in the search input creates a new **root** note.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
