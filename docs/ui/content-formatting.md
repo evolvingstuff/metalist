@@ -96,7 +96,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - For collapsed previews where the first visible content includes an image, the image thumbnail is intentionally larger (about 3x the baseline collapsed height) to keep image context readable.
 
 ## LaTeX meta tags
-- `@LaTeX`: renders the note content as LaTeX in view mode (using KaTeX in the browser).
+- `@LaTeX`: renders the note content as LaTeX on the server in view mode.
+- The server emits final MathML directly, so normal app rendering and HTML export use the same rendered output.
 - Invalid LaTeX shows a red "Invalid LaTeX" badge and the raw content.
 - Inline math uses `$...$`; display math uses `$$...$$`.
 - If no `$` delimiters are present, the entire note is rendered as display math.

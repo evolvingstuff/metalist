@@ -12,6 +12,7 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
+from app.services.latex_rendering import render_latex_to_html
 from app.utils.text_utils import strip_html
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
@@ -117,6 +118,7 @@ _STATUS_META = {
 _JSON_NUMBER_RE = re.compile(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?")
 _LATEX_PLACEHOLDER_PREFIX = "@@MLLATEX["
 _LATEX_PLACEHOLDER_SUFFIX = "]@@"
+_LATEX_PLACEHOLDER_RE = re.compile(r"@@MLLATEX\[([A-Za-z0-9+/=]+)\]@@")
 _PLAIN_URL_RE = re.compile(r"https?://[^\s<]+", re.IGNORECASE)
 _HTML_TAG_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _ANCHOR_START_TAG_RE = re.compile(r"<\s*a\b", re.IGNORECASE)
@@ -195,11 +197,13 @@ def format_note_content_for_view(*, content_html: str, tags: str, redact_passwor
     if renderer_tag == "csv":
         apply_wrappers = False
     if apply_wrappers and config.wrappers_to_consume:
+        preserve_latex_placeholders = renderer_tag == "markdown"
         output = _apply_scoped_meta_tags(
             content_html=output,
             wrappers_to_consume=config.wrappers_to_consume,
             scoped_tags=config.scoped_tags,
             scoped_renderers=config.scoped_renderers,
+            preserve_latex_placeholders=preserve_latex_placeholders,
         )
 
     if renderer_tag is not None:
@@ -681,6 +685,7 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
     raw_text = _extract_plain_text(content_html)
     copy_attr = _copyable_attr(formatting_tags, raw_text)
     rendered_markdown = render_markdown_to_html(raw_text)
+    rendered_markdown = _replace_latex_placeholders(rendered_markdown)
 
     extra_classes = ""
     if formatting_tags:
@@ -699,18 +704,11 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
 
 def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
-    escaped_text = html.escape(raw_text, quote=False)
-    copy_attr = _copyable_attr(formatting_tags, raw_text)
-
-    extra_classes = ""
-    if formatting_tags:
-        extra_classes = _meta_classes_for_tag_names(formatting_tags)
-
-    block_class = "meta-latex"
-    if extra_classes:
-        block_class = f"{block_class} {extra_classes}"
-
-    return f'<div class="{block_class}"{copy_attr}>{escaped_text}</div>'
+    return _render_latex_container(
+        raw_text=raw_text,
+        formatting_tags=formatting_tags,
+        wrapper_tag="div",
+    )
 
 
 def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
@@ -887,6 +885,7 @@ def _render_csv_meta(
                     wrappers_to_consume=cell_wrappers,
                     scoped_tags=effective_scoped_tags,
                     scoped_renderers=cell_scoped_renderers,
+                    preserve_latex_placeholders=False,
                 )
             else:
                 cell_html = html.escape(cell_text, quote=False)
@@ -906,13 +905,18 @@ def _render_scoped_renderer(
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
     render_key: Tuple[str, int] | None,
+    preserve_latex_placeholders: bool,
 ) -> str:
     if render_tag == "latex":
         raw_text = _extract_plain_text(content_html)
-        extra_classes = ""
-        if formatting_tags:
-            extra_classes = _meta_classes_for_tag_names(formatting_tags)
-        return _encode_latex_placeholder(raw_text, extra_classes)
+        rendered_html = _render_latex_container(
+            raw_text=raw_text,
+            formatting_tags=formatting_tags,
+            wrapper_tag="span",
+        )
+        if preserve_latex_placeholders:
+            return _encode_latex_placeholder(rendered_html)
+        return rendered_html
     if render_tag == "csv":
         filtered_wrappers = wrappers_to_consume
         filtered_scoped = scoped_tags
@@ -1135,16 +1139,23 @@ def _wrap_meta_html(
     return f'<{wrapper_tag} class="{class_attr}"{copy_attr}>{inner_html}</{wrapper_tag}>'
 
 
-def _encode_latex_placeholder(raw_text: str, extra_classes: str) -> str:
-    if not isinstance(raw_text, str):
-        raise TypeError("raw_text must be a string")
-    if not isinstance(extra_classes, str):
-        raise TypeError("extra_classes must be a string")
-    payload = {"text": raw_text, "classes": extra_classes}
-    encoded = base64.b64encode(
-        json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    ).decode("ascii")
+def _encode_latex_placeholder(rendered_html: str) -> str:
+    if not isinstance(rendered_html, str):
+        raise TypeError("rendered_html must be a string")
+    encoded = base64.b64encode(rendered_html.encode("utf-8")).decode("ascii")
     return f"{_LATEX_PLACEHOLDER_PREFIX}{encoded}{_LATEX_PLACEHOLDER_SUFFIX}"
+
+
+def _replace_latex_placeholders(html_text: str) -> str:
+    if not isinstance(html_text, str):
+        raise TypeError("html_text must be a string")
+
+    def replace_match(match: re.Match[str]) -> str:
+        encoded_html = match.group(1)
+        decoded_html = base64.b64decode(encoded_html.encode("ascii")).decode("utf-8")
+        return decoded_html
+
+    return _LATEX_PLACEHOLDER_RE.sub(replace_match, html_text)
 
 
 def _parse_meta_tags(tags: str) -> MetaTagConfig:
@@ -1293,6 +1304,7 @@ class _OpenFrame:
     render_tag: str | None
     formatting_tags: FrozenSet[str] | None
     render_key: Tuple[str, int] | None
+    renderer_nested_delimiter_depth: int
 
 
 def _apply_scoped_meta_tags(
@@ -1301,6 +1313,7 @@ def _apply_scoped_meta_tags(
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
+    preserve_latex_placeholders: bool,
 ) -> str:
     parts = re.split(r"(<[^>]+>)", content_html)
     output: List[str] = []
@@ -1318,6 +1331,7 @@ def _apply_scoped_meta_tags(
             scoped_tags=scoped_tags,
             scoped_renderers=scoped_renderers,
             escape_text=False,
+            preserve_latex_placeholders=preserve_latex_placeholders,
         )
 
     for frame in stack:
@@ -1332,6 +1346,7 @@ def _apply_scoped_meta_tags_to_plain_text(
     wrappers_to_consume: FrozenSet[Tuple[str, int]],
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
+    preserve_latex_placeholders: bool,
 ) -> str:
     output: List[str] = []
     stack: List[_OpenFrame] = []
@@ -1343,6 +1358,7 @@ def _apply_scoped_meta_tags_to_plain_text(
         scoped_tags=scoped_tags,
         scoped_renderers=scoped_renderers,
         escape_text=True,
+        preserve_latex_placeholders=preserve_latex_placeholders,
     )
     for frame in stack:
         output[frame.placeholder_index] = frame.opener_text
@@ -1358,6 +1374,7 @@ def _process_text_segment(
     scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     scoped_renderers: Mapping[Tuple[str, int], str],
     escape_text: bool,
+    preserve_latex_placeholders: bool,
 ) -> None:
     index = 0
     while index < len(text):
@@ -1368,36 +1385,43 @@ def _process_text_segment(
                 active_renderer = frame
                 break
         if active_renderer is not None:
+            if active_renderer.render_tag == "latex":
+                index = _process_active_latex_renderer_text(
+                    text=text,
+                    index=index,
+                    output=output,
+                    stack=stack,
+                    active_renderer=active_renderer,
+                    wrappers_to_consume=wrappers_to_consume,
+                    scoped_tags=scoped_tags,
+                    scoped_renderers=scoped_renderers,
+                    escape_text=escape_text,
+                    preserve_latex_placeholders=preserve_latex_placeholders,
+                )
+                continue
             run = 1
             if char in _OPEN_TO_CLOSE or char in _CLOSE_TO_OPEN:
                 run = _count_run(text=text, index=index, char=char)
             if char in _CLOSE_TO_OPEN:
                 if run <= _MAX_DELIMITER_DEPTH:
                     if active_renderer.closer == char and active_renderer.depth == run:
-                        stack.pop()
-                        inner_parts = output[active_renderer.placeholder_index + 1 :]
-                        inner_html = "".join(inner_parts)
-                        formatting_tags = active_renderer.formatting_tags
-                        if formatting_tags is None:
-                            formatting_tags = frozenset()
-                        rendered = _render_scoped_renderer(
-                            render_tag=active_renderer.render_tag,
-                            content_html=inner_html,
-                            formatting_tags=formatting_tags,
+                        _close_active_renderer(
+                            output=output,
+                            stack=stack,
+                            active_renderer=active_renderer,
                             wrappers_to_consume=wrappers_to_consume,
                             scoped_tags=scoped_tags,
                             scoped_renderers=scoped_renderers,
-                            render_key=active_renderer.render_key,
+                            preserve_latex_placeholders=preserve_latex_placeholders,
                         )
-                        del output[active_renderer.placeholder_index :]
-                        output.append(rendered)
                         index += run
                         continue
             segment = text[index : index + run]
-            if escape_text:
-                output.append(html.escape(segment, quote=False))
-            else:
-                output.append(segment)
+            _append_output_segment(
+                output=output,
+                segment=segment,
+                escape_text=escape_text,
+            )
             index += run
             continue
         if char in _OPEN_TO_CLOSE:
@@ -1437,15 +1461,17 @@ def _process_text_segment(
                         render_tag=render_tag,
                         formatting_tags=formatting_tags,
                         render_key=render_key,
+                        renderer_nested_delimiter_depth=0,
                     )
                 )
                 index += run
                 continue
             segment = text[index : index + run]
-            if escape_text:
-                output.append(html.escape(segment, quote=False))
-            else:
-                output.append(segment)
+            _append_output_segment(
+                output=output,
+                segment=segment,
+                escape_text=escape_text,
+            )
             index += run
             continue
 
@@ -1479,18 +1505,127 @@ def _process_text_segment(
                     index += run
                     continue
             segment = text[index : index + run]
-            if escape_text:
-                output.append(html.escape(segment, quote=False))
-            else:
-                output.append(segment)
+            _append_output_segment(
+                output=output,
+                segment=segment,
+                escape_text=escape_text,
+            )
             index += run
             continue
 
-        if escape_text:
-            output.append(html.escape(char, quote=False))
-        else:
-            output.append(char)
+        _append_output_segment(
+            output=output,
+            segment=char,
+            escape_text=escape_text,
+        )
         index += 1
+
+
+def _process_active_latex_renderer_text(
+    *,
+    text: str,
+    index: int,
+    output: List[str],
+    stack: List[_OpenFrame],
+    active_renderer: _OpenFrame,
+    wrappers_to_consume: FrozenSet[Tuple[str, int]],
+    scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str],
+    escape_text: bool,
+    preserve_latex_placeholders: bool,
+) -> int:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int):
+        raise TypeError("index must be an int")
+
+    char = text[index]
+    if char == active_renderer.opener:
+        active_renderer.renderer_nested_delimiter_depth += 1
+        _append_output_segment(
+            output=output,
+            segment=char,
+            escape_text=escape_text,
+        )
+        return index + 1
+
+    if char == active_renderer.closer:
+        if active_renderer.renderer_nested_delimiter_depth > 0:
+            active_renderer.renderer_nested_delimiter_depth -= 1
+            _append_output_segment(
+                output=output,
+                segment=char,
+                escape_text=escape_text,
+            )
+            return index + 1
+        if text.startswith(active_renderer.closer * active_renderer.depth, index):
+            _close_active_renderer(
+                output=output,
+                stack=stack,
+                active_renderer=active_renderer,
+                wrappers_to_consume=wrappers_to_consume,
+                scoped_tags=scoped_tags,
+                scoped_renderers=scoped_renderers,
+                preserve_latex_placeholders=preserve_latex_placeholders,
+            )
+            return index + active_renderer.depth
+        _append_output_segment(
+            output=output,
+            segment=char,
+            escape_text=escape_text,
+        )
+        return index + 1
+
+    _append_output_segment(
+        output=output,
+        segment=char,
+        escape_text=escape_text,
+    )
+    return index + 1
+
+
+def _close_active_renderer(
+    *,
+    output: List[str],
+    stack: List[_OpenFrame],
+    active_renderer: _OpenFrame,
+    wrappers_to_consume: FrozenSet[Tuple[str, int]],
+    scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
+    scoped_renderers: Mapping[Tuple[str, int], str],
+    preserve_latex_placeholders: bool,
+) -> None:
+    stack.pop()
+    inner_parts = output[active_renderer.placeholder_index + 1 :]
+    inner_html = "".join(inner_parts)
+    formatting_tags = active_renderer.formatting_tags
+    if formatting_tags is None:
+        formatting_tags = frozenset()
+    rendered = _render_scoped_renderer(
+        render_tag=active_renderer.render_tag,
+        content_html=inner_html,
+        formatting_tags=formatting_tags,
+        wrappers_to_consume=wrappers_to_consume,
+        scoped_tags=scoped_tags,
+        scoped_renderers=scoped_renderers,
+        render_key=active_renderer.render_key,
+        preserve_latex_placeholders=preserve_latex_placeholders,
+    )
+    del output[active_renderer.placeholder_index :]
+    output.append(rendered)
+
+
+def _append_output_segment(
+    *,
+    output: List[str],
+    segment: str,
+    escape_text: bool,
+) -> None:
+    if not isinstance(segment, str):
+        raise TypeError("segment must be a string")
+    if escape_text:
+        output.append(html.escape(segment, quote=False))
+        return
+    output.append(segment)
 
 
 def _count_run(*, text: str, index: int, char: str) -> int:
@@ -1589,3 +1724,28 @@ def _meta_classes_for_tag_names(tag_names: Set[str] | FrozenSet[str]) -> str:
         css_class = _META_TAG_TO_CLASS[name]
         classes.append(css_class)
     return " ".join(classes)
+
+
+def _render_latex_container(
+    *,
+    raw_text: str,
+    formatting_tags: FrozenSet[str],
+    wrapper_tag: str,
+) -> str:
+    if not isinstance(raw_text, str):
+        raise TypeError("raw_text must be a string")
+    if not isinstance(wrapper_tag, str) or wrapper_tag == "":
+        raise TypeError("wrapper_tag must be a non-empty string")
+
+    copy_attr = _copyable_attr(formatting_tags, raw_text)
+    render_result = render_latex_to_html(raw_text)
+
+    class_names = ["meta-latex"]
+    if render_result.has_error:
+        class_names.append("meta-latex-error")
+
+    if formatting_tags:
+        class_names.append(_meta_classes_for_tag_names(formatting_tags))
+
+    class_attr = " ".join(class_names)
+    return f'<{wrapper_tag} class="{class_attr}"{copy_attr}>{render_result.html}</{wrapper_tag}>'

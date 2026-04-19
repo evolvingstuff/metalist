@@ -54,7 +54,8 @@ Examples (autocorrected while typing):
 - Markdown meta tags:
   - `@markdown` renders note content as Markdown on the server in view mode.
 - LaTeX meta tags:
-  - `@LaTeX` renders note content as LaTeX in view mode (KaTeX).
+  - `@LaTeX` renders note content as LaTeX on the server in view mode.
+  - The server emits final MathML directly; the browser does not finish a second LaTeX rendering pass.
   - Use `$...$` for inline math and `$$...$$` for display math.
   - If no `$` delimiters are present, the entire note is rendered as display math.
   - Scoped LaTeX works with wrappers (e.g. `{{@LaTeX}}` renders only `{{...}}` segments) and can be combined with `@markdown` to render math inside Markdown.

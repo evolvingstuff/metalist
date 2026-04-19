@@ -203,3 +203,32 @@ def test_build_notes_export_document_renders_markdown_meta_server_side(
         in html
     )
     assert "# Title" not in html
+
+
+def test_build_notes_export_document_renders_latex_meta_server_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "root": _Note(
+            "root",
+            None,
+            None,
+            None,
+            False,
+            "<div>\\frac{1}{2}</div>",
+            "@latex",
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root"]},
+    )
+
+    monkeypatch.setattr(export_module, "note_store", store)
+    monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
+
+    html = build_notes_export_document(search=None, theme="dark", token="token")
+
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in html
+    assert "<mfrac>" in html
+    assert "\\frac{1}{2}" not in html

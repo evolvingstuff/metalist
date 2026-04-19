@@ -235,12 +235,58 @@ def test_format_note_content_for_view_markdown_meta_renders_server_side_html() -
     assert "<div># Title</div>" not in rendered
 
 
-def test_format_note_content_for_view_latex_meta_renders_plain_text_container() -> None:
+def test_format_note_content_for_view_latex_meta_renders_server_side_mathml() -> None:
     html = "<div>\\frac{1}{2}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@latex")
     assert 'class="meta-latex"' in rendered
-    assert "\\frac{1}{2}" in rendered
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
+    assert "<mfrac>" in rendered
     assert "<div>\\frac{1}{2}</div>" not in rendered
+
+
+def test_format_note_content_for_view_latex_meta_invalid_input_shows_error() -> None:
+    html = "<div>\\begin{matrix}1&amp;2</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="@latex")
+    assert 'class="meta-latex meta-latex-error"' in rendered
+    assert "Invalid LaTeX" in rendered
+    assert "\\begin{matrix}1&amp;2" in rendered
+
+
+def test_format_note_content_for_view_markdown_with_scoped_latex_renders_server_side() -> None:
+    html = (
+        "<div># Math Test</div>"
+        "<div></div>"
+        "<div>Inline math inside markdown: {{$E = mc^2$}}</div>"
+        "<div></div>"
+        "<div>Display math inside markdown:</div>"
+        "<div>{{$$</div>"
+        "<div>\\int_0^\\infty e^{-x^2}\\,dx=\\frac{\\sqrt{\\pi}}{2}</div>"
+        "<div>$$}}</div>"
+    )
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="@markdown {{@LaTeX}}",
+    )
+    assert "<h1>Math Test</h1>" in rendered
+    assert 'Inline math inside markdown: <span class="meta-latex">' in rendered
+    assert "Display math inside markdown:<br>" in rendered
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
+    assert "<mfrac>" in rendered
+    assert "@@MLLATEX[" not in rendered
+    assert "{{$$" not in rendered
+    assert "$$}}" not in rendered
+
+
+def test_format_note_content_for_view_scoped_latex_renders_server_side_without_markdown() -> None:
+    html = "<div>Standalone expression: {{\\frac{\\text{done}}{\\text{total}}}}</div>"
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="{{@LaTeX}}",
+    )
+    assert 'Standalone expression: <span class="meta-latex">' in rendered
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
+    assert "<mfrac>" in rendered
+    assert "{{\\frac{\\text{done}}{\\text{total}}}}" not in rendered
 
 
 def test_format_note_content_for_view_shell_meta_renders_script_block() -> None:

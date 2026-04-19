@@ -3,7 +3,6 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
-import { renderLatexBlocks } from './latex-render-service.js';
 import { setNoteSearchRedactionState } from './search-redaction-reveal-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
@@ -199,7 +198,6 @@ function applyServerDiffOps(payload) {
         }
     }
 
-    renderLatexBlocks(notesContainer);
     hydrateImageFilePreviews(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
 
@@ -759,7 +757,6 @@ export function applyDifferentialView(payload, options) {
         ModeContext.setRootHash(payload.treeHash);
     }
 
-    renderLatexBlocks(notesContainer);
     hydrateImageFilePreviews(notesContainer);
     ensureAnchorsOpenInNewTabs(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);

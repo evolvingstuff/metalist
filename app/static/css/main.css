@@ -3413,7 +3413,7 @@ body.loading::after {
     overflow-wrap: anywhere;
 }
 
-.meta-latex .katex-display {
+.meta-latex math[display="block"] {
     margin: 0;
 }
 
@@ -3429,23 +3429,21 @@ body.loading::after {
     color: #b3261e;
 }
 
-.meta-latex-pre {
+.meta-latex-code {
+    display: block;
     margin: 6px 0 0 0;
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid rgba(0, 0, 0, 0.12);
     background: #f7f8fa;
     overflow-x: auto;
-}
-
-.meta-latex-code {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 0.9rem;
     line-height: 1.4;
     white-space: pre;
 }
 
-.meta-latex-error .meta-latex-pre {
+.meta-latex-error .meta-latex-code {
     border-color: rgba(211, 47, 47, 0.25);
     background: #fff5f5;
 }
@@ -4088,7 +4086,7 @@ html[data-theme="dark"] .meta-markdown a {
 }
 
 html[data-theme="dark"] .meta-json-pre,
-html[data-theme="dark"] .meta-latex-pre,
+html[data-theme="dark"] .meta-latex-code,
 html[data-theme="dark"] .meta-csv-pre,
 html[data-theme="dark"] .meta-shell-output,
 html[data-theme="dark"] .meta-shell-output-stdout,
@@ -4101,7 +4099,7 @@ html[data-theme="dark"] .meta-csv-table {
 }
 
 html[data-theme="dark"] .meta-json-error .meta-json-pre,
-html[data-theme="dark"] .meta-latex-error .meta-latex-pre,
+html[data-theme="dark"] .meta-latex-error .meta-latex-code,
 html[data-theme="dark"] .meta-csv-error .meta-csv-pre,
 html[data-theme="dark"] .meta-shell-output-stderr {
     background: rgba(127, 29, 29, 0.22);

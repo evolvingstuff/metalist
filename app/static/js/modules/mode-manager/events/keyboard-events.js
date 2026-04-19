@@ -40,7 +40,6 @@ import {
     setTagBarValue,
     syncTagBar,
 } from '../services/tag-bar-service.js';
-import { renderLatexHtml } from '../services/latex-render-service.js';
 import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
 import {
     resolveClipboardTrackingAfterPasteEvent,
@@ -1188,10 +1187,6 @@ async function handleCopyNoteShortcut(event) {
     let renderedHtml = copyResult?.html;
     const renderedPlainText = copyResult?.plain_text;
 
-    if (typeof renderedHtml === 'string') {
-        renderedHtml = renderLatexHtml(renderedHtml);
-    }
-
     if (!renderedHtml && !renderedPlainText) {
         Logger.logDebug('Copy endpoint returned no rendered content', {}, Logger.LogCategory.EVENT);
         return;
@@ -1593,10 +1588,6 @@ async function handleCutNoteShortcut(event) {
         const copyResult = await actionCopyNote();
         let renderedHtml = copyResult?.html;
         const renderedPlainText = copyResult?.plain_text;
-
-        if (typeof renderedHtml === 'string') {
-            renderedHtml = renderLatexHtml(renderedHtml);
-        }
 
         if (renderedHtml || renderedPlainText) {
             if (

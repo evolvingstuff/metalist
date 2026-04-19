@@ -11,7 +11,6 @@
     <link rel="icon" type="image/x-icon" href="/static/img/favicon.ico?v=${asset_version}">
     <link rel="stylesheet" href="/static/css/main.css?v=${asset_version}">
     <link rel="stylesheet" href="/static/css/forms.css?v=${asset_version}">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.css" integrity="sha384-Wsr4Nh3yrvMf2KCebJchRJoVo1gTU6kcP05uRSh5NV3sj9+a8IomuJoQzf3sMq4T" crossorigin="anonymous">
 </head>
 <body>
     ${self.body()}
@@ -20,7 +19,6 @@
             startupAnimationEnabled: ${'true' if startup_animation_enabled else 'false'}
         };
     </script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.js" integrity="sha384-+W9OcrYK2/bD7BmUAk+xeFAyKp0QjyRQUCxeU31dfyTt/FrPsUgaBTLLkVf33qWt" crossorigin="anonymous"></script>
     <script type="module" src="/static/js/main.js?v=${asset_version}"></script>
 </body>
 </html>
