@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 import re
 import time
 from typing import DefaultDict, Dict, List, Optional, Tuple, Set
@@ -15,6 +16,10 @@ from app.services.embedded_references import EmbedRenderContext, render_note_con
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
+from app.services.root_sorting import build_root_sort_buckets
+from app.services.root_sorting import get_root_ids_for_sort_mode
+from app.services.root_sorting import get_root_sort_timestamps
+from app.services.root_sorting import normalize_sort_mode
 from app.services.search_index import search_index
 from app.services.search_query import ParsedSearchQuery, parse_search_query
 from app.services.sync import get_all_locks
@@ -112,7 +117,10 @@ def resolve_search_scope(
     *,
     search: Optional[str],
     editing_note_id: Optional[str],
+    sort_mode: str,
+    ordered_root_ids: Optional[List[str]],
 ) -> SearchScope:
+    normalized_sort_mode = normalize_sort_mode(sort_mode)
     if search is None:
         return SearchScope(
             search_active=False,
@@ -132,7 +140,15 @@ def resolve_search_scope(
             search_root_count_total=0,
         )
 
-    ordered_root_ids = note_store.get_children(None)
+    if ordered_root_ids is None:
+        if normalized_sort_mode == "normal":
+            ordered_root_ids = note_store.get_children(None)
+        else:
+            root_sort_timestamps = get_root_sort_timestamps(normalized_sort_mode)
+            ordered_root_ids = get_root_ids_for_sort_mode(
+                normalized_sort_mode,
+                root_timestamps=root_sort_timestamps,
+            )
     has_positive_terms = False
     if parsed.required_tags:
         has_positive_terms = True
@@ -245,6 +261,7 @@ def build_view_state(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
+    sort_mode: str,
     client_known_note_ids: Optional[Set[str]],
     client_seen_root_ids: Optional[Set[str]],
     anchor_root_id: Optional[str],
@@ -276,9 +293,23 @@ def build_view_state(
         get_file=_get_file_record,
     )
 
+    normalized_sort_mode = normalize_sort_mode(sort_mode)
+    if normalized_sort_mode == "normal":
+        ordered_root_ids = note_store.get_children(None)
+        root_sort_timestamps: Dict[str, datetime] = {}
+    else:
+        root_sort_timestamps = get_root_sort_timestamps(normalized_sort_mode)
+        ordered_root_ids = get_root_ids_for_sort_mode(
+            normalized_sort_mode,
+            root_timestamps=root_sort_timestamps,
+        )
+    root_count_total = len(ordered_root_ids)
+
     search_scope = resolve_search_scope(
         search=search,
         editing_note_id=editing_note_id,
+        sort_mode=normalized_sort_mode,
+        ordered_root_ids=ordered_root_ids,
     )
     search_active = search_scope.search_active
     allowed_note_ids = search_scope.allowed_note_ids
@@ -286,8 +317,6 @@ def build_view_state(
     search_root_count_total = search_scope.search_root_count_total
 
     # Determine root window
-    ordered_root_ids = note_store.get_children(None)
-    root_count_total = len(ordered_root_ids)
     if client_known_note_ids is None:
         client_known_note_ids = set()
 
@@ -318,9 +347,9 @@ def build_view_state(
             anchor_root_id,
         )
         if window_end >= 0:
-            allowed_root_ids = set(search_roots[: window_end + 1])
+            visible_root_ids_ordered = search_roots[: window_end + 1]
         else:
-            allowed_root_ids = set()
+            visible_root_ids_ordered = []
     else:
         root_index_map = {rid: idx for idx, rid in enumerate(ordered_root_ids)}
         seen_root_indices = {
@@ -337,15 +366,15 @@ def build_view_state(
             anchor_root_id,
         )
         if window_end >= 0:
-            allowed_root_ids = set(ordered_root_ids[: window_end + 1])
+            visible_root_ids_ordered = ordered_root_ids[: window_end + 1]
         else:
-            allowed_root_ids = set()
+            visible_root_ids_ordered = []
 
     def traverse(parent_id: Optional[str]) -> None:
-        ids = note_store.get_children(parent_id)
-
         if parent_id is None:
-            ids = [note_id for note_id in ids if note_id in allowed_root_ids]
+            ids = visible_root_ids_ordered
+        else:
+            ids = note_store.get_children(parent_id)
 
         for idx, nid in enumerate(ids):
             is_search_redacted = (
@@ -419,11 +448,22 @@ def build_view_state(
     locks: Dict[str, str] = {
         note_id: owner for note_id, owner in get_all_locks().items() if note_id in visible_ids
     }
+    if None in children_by_parent:
+        visible_root_ids = list(children_by_parent[None])
+    else:
+        visible_root_ids = []
+
     metadata = {
         "editingNoteId": editing_note_id,
         "search": search,
+        "sortMode": normalized_sort_mode,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": search_root_count_total,
+        "rootSortBuckets": build_root_sort_buckets(
+            visible_root_ids,
+            normalized_sort_mode,
+            root_timestamps=root_sort_timestamps,
+        ),
     }
 
     if search_active:
@@ -452,6 +492,7 @@ def build_view_snapshot(
     *,
     editing_note_id: Optional[str],
     search: Optional[str],
+    sort_mode: str,
     client_known_note_ids: Optional[Set[str]],
     client_seen_root_ids: Optional[Set[str]],
     anchor_root_id: Optional[str],
@@ -459,6 +500,7 @@ def build_view_snapshot(
     state = build_view_state(
         editing_note_id=editing_note_id,
         search=search,
+        sort_mode=sort_mode,
         client_known_note_ids=client_known_note_ids,
         client_seen_root_ids=client_seen_root_ids,
         anchor_root_id=anchor_root_id,

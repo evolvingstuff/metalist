@@ -382,7 +382,8 @@ export const NotesAPI = {
     async moveNote(noteId, siblingId, position, newParentId) {
         const body = {
             sibling_id: siblingId,
-            position: position?.toUpperCase()
+            position: position?.toUpperCase(),
+            tab_id: ModeContext.activeTabId,
         };
                                 
         if (newParentId !== undefined) {
@@ -711,6 +712,7 @@ export const NotesAPI = {
         }
         const body = {
             search_query: searchQuery,
+            tab_id: ModeContext.activeTabId,
         };
         return this._apiCall(CONFIG.API.NOTES.MOVE_TO_TOP(noteId), {
             method: 'POST',
@@ -733,6 +735,7 @@ export const NotesAPI = {
             tag,
             direction,
             search_query: searchQuery,
+            tab_id: ModeContext.activeTabId,
         };
         return this._apiCall(CONFIG.API.NOTES.PRIORITIZE, {
             method: 'POST',

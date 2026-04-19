@@ -44,16 +44,18 @@
 ## Design
 - Pattern: usecases (Cmd*) orchestrate services; services encapsulate DB work + undo logging.
 - State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll snapshotted via `tab_state_store` so reopening the app restores the last view.
+- Root sort modes: per-tab server-owned `sortMode` (`normal`, `created`, `updated`) lives in `app/services/tab_state.py`; datetime modes sort/window root notes by the newest matching timestamp anywhere in each root subtree, while the client renders day separators from `snapshot.rootSortBuckets`.
 - Mutation safety: mutating FastAPI routes are expected to carry `@transactional_route`; startup sanity enforces the decorator ordering in source, and request-scoped write sessions commit once at the end of the wrapped request path.
 - Diff caching: Server caches each `(client, tab, search)` view and the client keeps per-tab note-hash maps so `/notes/view` diff payloads stay scoped to the active tab.
 - Tab switch perf: Client can detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile small diffs.
 - Client busy model: `CommandGate.run(name, asyncFn)` is the single boundary for user-initiated server calls; it is the only code allowed to flip `ModeContext.isLoading`.
-- Undo boundaries: client includes an `epoch` in `undoContext` (`tab/search/epoch`); global actions bump the epoch so undo/redo cannot cross those boundaries.
+- Undo boundaries: client includes an `epoch` in `undoContext` (`tab/search/epoch`); global actions bump the epoch so undo/redo cannot cross those boundaries. Sort-mode changes are one of those global boundaries and blank undo/redo for the active tab context.
 - Error handling: fail-fast (internal errors crash; DB rollback triggers immediate process exit; request-validation crash toggle).
 - Auth: Argon2id password verifier protecting the DEK; encrypted settings require `vault_version` + full KDF profile (`kdf_algorithm`, `kdf_memory_cost_kib`, `kdf_parallelism`); `/api2/auth/login` is rate-limited; tokens are short-lived and kept in-memory; token issuance enforces a single active session.
 
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.
+- Root sorting: `POST /api2/notes/tab-state/sort-mode` updates per-tab sort state; subsequent `POST /api2/notes/view` responses echo `sortMode` and `rootSortBuckets`, and the client inserts ephemeral date separators between visible roots for datetime modes.
 - Embedded references: view payload `notes[*].content` can include rendered `![[UUID]]` blocks (view mode only); host note hashes include rendered embed output.
 - File attachments: `POST /api2/files/upload` stores the uploaded file in `*.files.db`, returns a UUID token, and the client inserts `![[UUID]]` into the active note (or a newly created note when none is active).
 - File downloads: rendered file references in view mode call `GET /api2/files/{file_id}/download`; metadata/blob rows are decrypted on demand rather than at startup.
@@ -126,3 +128,4 @@ metalist
 - Search is server-side + indexed: `app/services/search_index.py` (tag postings + trigram postings over `strip_html(content)`), used by `app/services/snapshot.py` to filter `/api2/notes/view`.
   - Query terms: unquoted tokens are tag terms; quoted strings are text terms (see `docs/ui/search-syntax.md` + `docs/ui/search-semantics.md`).
   - Views remain windowed (roots chunked; infinite scroll extends as needed).
+- Root sorting helper: `app/services/root_sorting.py` centralizes sort-mode normalization, subtree-max root timestamps, server-side root ordering, and date-bucket metadata for the client.

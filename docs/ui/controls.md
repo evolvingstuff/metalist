@@ -34,6 +34,7 @@
 - `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
+- In `Datetime created` / `Datetime last updated`, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, note copy/cut/paste, and password modal.
 
 ### General Shortcuts
@@ -52,6 +53,7 @@
 - Pressing `Enter` while focused in the search input creates a new **root** note.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
 - When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
+- Datetime sort modes do not change canonical insertion behavior. New roots are still inserted into the manual root order first, then rendered in datetime order, so a newly created root may appear at the top even if it was canonically inserted under an older selected root.
 
 ### Search Suggestions
 - Suggestions are **tag-only** (no text suggestions).
@@ -98,6 +100,7 @@
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
+> In datetime sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
 
 ### Command Palette Utility Entries
 - Create backup now (if 25 or more backups exist, opens a retention modal asking how many backups to keep, defaulting to 3; finishes with a completion `OK` modal)

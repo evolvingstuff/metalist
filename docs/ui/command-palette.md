@@ -16,6 +16,13 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Selects cycle with `Enter` (and adjust with `←`/`→`).
 - Actions run with `Enter`.
 
+## Sort Order
+- `Sort order` is a per-tab, server-owned view setting. Duplicating a tab inherits its current sort mode.
+- Modes are `Normal`, `Datetime created`, and `Datetime last updated`.
+- In the datetime modes, root notes are ordered by the newest matching timestamp anywhere in that root subtree, not just on the root note itself.
+- The server returns the ordered root window plus `sortMode`/`rootSortBuckets`; the client inserts day-separator rows between visible roots.
+- Changing sort mode is treated as a global view-context switch: the tab scroll state resets and undo/redo history is blanked for that tab context.
+
 ## Config
 - Tag mappings live in `app/static/config/command_palette_tags.json`.
 - Endpoint definitions (behavior/labels) live in code.

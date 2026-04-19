@@ -99,7 +99,7 @@ def test_prioritize_front_reorders_visible_roots_and_records_batch(
     monkeypatch.setattr(
         prioritize_module,
         "resolve_search_scope",
-        lambda *, search, editing_note_id: SearchScope(
+        lambda *, search, editing_note_id, sort_mode, ordered_root_ids: SearchScope(
             search_active=True,
             allowed_note_ids={"root-b", "root-c", "root-d"},
             search_root_ids_ordered=["root-b", "root-c", "root-d"],
@@ -177,7 +177,7 @@ def test_prioritize_back_keeps_match_and_non_match_order_stable(
     monkeypatch.setattr(
         prioritize_module,
         "resolve_search_scope",
-        lambda *, search, editing_note_id: SearchScope(
+        lambda *, search, editing_note_id, sort_mode, ordered_root_ids: SearchScope(
             search_active=True,
             allowed_note_ids={"root-b", "root-c", "root-d", "root-e"},
             search_root_ids_ordered=["root-b", "root-c", "root-d", "root-e"],
@@ -221,7 +221,7 @@ def test_prioritize_noops_when_no_visible_roots_match(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         prioritize_module,
         "resolve_search_scope",
-        lambda *, search, editing_note_id: SearchScope(
+        lambda *, search, editing_note_id, sort_mode, ordered_root_ids: SearchScope(
             search_active=True,
             allowed_note_ids={"root-a", "root-b"},
             search_root_ids_ordered=["root-a", "root-b"],
@@ -271,7 +271,7 @@ def test_prioritize_noops_when_order_is_already_prioritized(
     monkeypatch.setattr(
         prioritize_module,
         "resolve_search_scope",
-        lambda *, search, editing_note_id: SearchScope(
+        lambda *, search, editing_note_id, sort_mode, ordered_root_ids: SearchScope(
             search_active=True,
             allowed_note_ids={"root-b", "root-d", "root-c"},
             search_root_ids_ordered=["root-b", "root-d", "root-c"],
@@ -338,7 +338,7 @@ def test_list_prioritize_tag_suggestions_limits_to_visible_roots(
     monkeypatch.setattr(
         prioritize_module,
         "resolve_search_scope",
-        lambda *, search, editing_note_id: SearchScope(
+        lambda *, search, editing_note_id, sort_mode, ordered_root_ids: SearchScope(
             search_active=True,
             allowed_note_ids={"root-a", "root-b", "root-c"},
             search_root_ids_ordered=["root-a", "root-b", "root-c"],
@@ -370,7 +370,7 @@ def test_list_prioritize_tag_suggestions_filters_by_segment_prefix(
     monkeypatch.setattr(
         prioritize_module,
         "resolve_search_scope",
-        lambda *, search, editing_note_id: SearchScope(
+        lambda *, search, editing_note_id, sort_mode, ordered_root_ids: SearchScope(
             search_active=True,
             allowed_note_ids={"root-a", "root-b", "root-c"},
             search_root_ids_ordered=["root-a", "root-b", "root-c"],

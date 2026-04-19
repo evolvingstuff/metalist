@@ -10,6 +10,7 @@ import { initializeEditSessionCollapseStateFromNoteElement } from '../services/e
 import { clearEditingStateForHiddenFilteredNote } from '../services/filtered-refresh-selection-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
 import { refreshBacklinksPanel } from '../services/backlinks-panel-service.js';
+import { rebuildRootDateSeparators } from '../services/root-date-separator-service.js';
 
 let viewRequestInFlight = false;
 let lastPerfOverlayPayload = null;
@@ -268,6 +269,7 @@ export async function actionRefreshAndMaybeSelect(options) {
         if (!notesContainer) {
             throw new Error('Notes container not found after diff application');
         }
+        rebuildRootDateSeparators(snapshot);
 
         syncTagBar(diffResult.editingNoteElement);
 

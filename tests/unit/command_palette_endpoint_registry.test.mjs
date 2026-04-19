@@ -31,6 +31,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openDeleteCurrentNamespace: noop,
             prioritizeTagToFront: noop,
             prioritizeTagToBack: noop,
+            getSortMode: () => 'normal',
+            setSortMode: noop,
         },
     });
 
@@ -49,4 +51,5 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('action.trim_unused_files'), true);
     assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
     assert.equal(endpointIds.has('action.run_mcp_client'), true);
+    assert.equal(endpointIds.has('view.sort_mode'), true);
 });

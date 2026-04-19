@@ -2667,6 +2667,19 @@ html[data-theme="dark"] .context-menu-item:hover {
     pointer-events: none;
 }
 
+.root-date-separator {
+    margin: 18px 0 10px;
+    padding: 8px 12px;
+    background: #b5b5b5;
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.15;
+    border-radius: 0;
+    user-select: none;
+    pointer-events: none;
+}
+
 .controls .search-input.search-invalid {
     border-color: #f44336;
     box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.25);

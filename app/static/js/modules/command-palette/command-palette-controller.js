@@ -19,6 +19,8 @@ import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
+import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/services/root-sort-service.js';
+import { setTabSortModeOnServer } from '../mode-manager/services/tab-state-service.js';
 import { settleResult } from '../async-result.js';
 import { isValidTagToken } from '../tag-token.js';
 
@@ -290,6 +292,8 @@ class CommandPaletteController {
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
                 prioritizeTagToFront: this.prioritizeTagToFront.bind(this),
                 prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
+                getSortMode: this.getSortMode.bind(this),
+                setSortMode: this.setSortMode.bind(this),
             },
         });
 
@@ -814,8 +818,7 @@ class CommandPaletteController {
             return value ? '[x]' : '[ ]';
         }
         if (endpoint.kind === 'select') {
-            const allowed = endpoint.options.map((o) => o.value);
-            const raw = this._getSelect(endpoint.persistenceKey, allowed, endpoint.defaultValue);
+            const raw = this._getSelectValue(endpoint);
             const option = endpoint.options.find((o) => o.value === raw);
             return option ? option.label : raw;
         }
@@ -876,8 +879,7 @@ class CommandPaletteController {
             return;
         }
         if (endpoint.kind === 'select') {
-            const allowed = endpoint.options.map((o) => o.value);
-            const current = this._getSelect(endpoint.persistenceKey, allowed, endpoint.defaultValue);
+            const current = this._getSelectValue(endpoint);
             const next = endpoint.options.findIndex((o) => o.value === current);
             const index = next >= 0 ? (next + 1) % endpoint.options.length : 0;
             await endpoint.apply(endpoint.options[index].value);
@@ -905,13 +907,27 @@ class CommandPaletteController {
             return;
         }
 
-        const allowed = endpoint.options.map((o) => o.value);
-        const current = this._getSelect(endpoint.persistenceKey, allowed, endpoint.defaultValue);
+        const current = this._getSelectValue(endpoint);
         const currentIndex = endpoint.options.findIndex((o) => o.value === current);
         const baseIndex = currentIndex >= 0 ? currentIndex : 0;
         const nextIndex = ((baseIndex + direction) % endpoint.options.length + endpoint.options.length) % endpoint.options.length;
         await endpoint.apply(endpoint.options[nextIndex].value);
         this._render();
+    }
+
+    _getSelectValue(endpoint) {
+        if (!endpoint || typeof endpoint !== 'object') {
+            throw new Error('_getSelectValue requires endpoint object');
+        }
+        const allowed = endpoint.options.map((o) => o.value);
+        if (typeof endpoint.getValue === 'function') {
+            const raw = endpoint.getValue();
+            if (!allowed.includes(raw)) {
+                throw new Error(`Endpoint ${endpoint.id} returned invalid select value`);
+            }
+            return raw;
+        }
+        return this._getSelect(endpoint.persistenceKey, allowed, endpoint.defaultValue);
     }
 
     async applyPreference(prefKey, value) {
@@ -943,6 +959,45 @@ class CommandPaletteController {
     async resetAllPreferences() {
         this._preferences.clearAll();
         this._applyPreferenceEffectsFromStorage();
+    }
+
+    getSortMode() {
+        return ModeContext.activeTabSortMode;
+    }
+
+    async setSortMode(sortMode) {
+        const normalizedSortMode = normalizeRootSortMode(sortMode);
+        const activeTabId = ModeContext.activeTabId;
+        if (typeof activeTabId !== 'string' || activeTabId.length === 0) {
+            throw new Error('ModeContext.activeTabId must be a non-empty string');
+        }
+
+        const currentSortMode = ModeContext.activeTabSortMode;
+        if (currentSortMode === normalizedSortMode) {
+            return;
+        }
+
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+
+        ModeContext.bumpUndoContextEpoch(`sortMode.${normalizedSortMode}`);
+        const response = await setTabSortModeOnServer(activeTabId, normalizedSortMode);
+        ModeContext.hydrateTabState(response, { emitUpdate: false });
+        ModeContext.clearTabRevealedRedactions(activeTabId);
+        ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
+        ModeContext.updateTabScroll(activeTabId, 0, false);
+        ModeContext.updateTabScrollAnchor(activeTabId, null, false);
+        ModeContext.setRootAnchorId(null);
+
+        ModeContext.beginIgnoreScrollEvents();
+        window.scrollTo(0, 0);
+        ModeContext.endIgnoreScrollEvents();
+
+        await actionRefreshAndMaybeSelect({
+            startedAt: performance.now(),
+            context: `sortMode.${normalizedSortMode}`,
+        });
     }
 
     async runMcpClient() {
@@ -1101,6 +1156,13 @@ class CommandPaletteController {
     async _prioritizeTag(direction) {
         if (direction !== 'front' && direction !== 'back') {
             throw new Error("direction must be 'front' or 'back'");
+        }
+        if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
+            ErrorHandler.showInfoBanner(
+                'Root-note reordering is disabled while sorting by datetime.',
+                5000,
+            );
+            return;
         }
         if (this.isOpen()) {
             this.close();

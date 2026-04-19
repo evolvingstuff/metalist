@@ -20,6 +20,7 @@ class CmdView(QueryCommand):
         return build_view_snapshot(
             editing_note_id=self.editing_note_id,
             search=self.search,
+            sort_mode="normal",
             client_known_note_ids=None,
             client_seen_root_ids=None,
             anchor_root_id=None,

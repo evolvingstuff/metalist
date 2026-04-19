@@ -144,6 +144,8 @@ def _render_exported_notes_markup(*, search: str | None, token: str) -> str:
     search_scope = resolve_search_scope(
         search=normalized_search,
         editing_note_id=None,
+        sort_mode="normal",
+        ordered_root_ids=None,
     )
     allowed_note_ids = search_scope.allowed_note_ids
 

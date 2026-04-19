@@ -1,6 +1,7 @@
 import * as Logger from './mode-logger.js';
 import { CONFIG } from '../config.js';
 import { restoreScrollFromAnchor } from './services/scroll-restoration-service.js';
+import { ROOT_SORT_MODES, normalizeRootSortMode } from './services/root-sort-service.js';
 import { createUuid } from '../uuid.js';
 
 class ModeContext {
@@ -43,7 +44,7 @@ class ModeContext {
         // Tab state management
         this._activeTabId = '0';
         this._tabs = {
-            '0': { searchQuery: '', scrollY: 0, scrollAnchor: null }
+            '0': { searchQuery: '', scrollY: 0, scrollAnchor: null, sortMode: ROOT_SORT_MODES.NORMAL }
         };
         this._tabOrder = ['0'];
         this._tabRootAnchors = Object.create(null);
@@ -1210,11 +1211,27 @@ class ModeContext {
                 throw new Error(`tabOrder references missing tab ${tabId}`);
             }
             const scrollY = typeof entry.scrollY === 'number' && entry.scrollY >= 0 ? entry.scrollY : 0;
+            let anchorRootId = null;
+            if (Object.prototype.hasOwnProperty.call(this._tabRootAnchors, tabId)) {
+                const candidateAnchorRootId = this._tabRootAnchors[tabId];
+                if (candidateAnchorRootId !== null && candidateAnchorRootId !== undefined) {
+                    anchorRootId = candidateAnchorRootId;
+                }
+            }
+            let scrollAnchor = null;
+            if (entry.scrollAnchor !== null && entry.scrollAnchor !== undefined) {
+                scrollAnchor = entry.scrollAnchor;
+            }
+            let sortMode = ROOT_SORT_MODES.NORMAL;
+            if (entry.sortMode !== null && entry.sortMode !== undefined) {
+                sortMode = entry.sortMode;
+            }
             tabs[tabId] = {
                 searchQuery: typeof entry.searchQuery === 'string' ? entry.searchQuery : '',
                 scrollY,
-                anchorRootId: this._tabRootAnchors[tabId] || null,
-                scrollAnchor: entry.scrollAnchor || null,
+                anchorRootId,
+                scrollAnchor,
+                sortMode: normalizeRootSortMode(sortMode),
             };
         }
         return {
@@ -1261,6 +1278,7 @@ class ModeContext {
             if (typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
                 throw new Error(`Invalid scrollY for tab ${tabId}`);
             }
+            const sortMode = normalizeRootSortMode(entry.sortMode);
             if (Object.prototype.hasOwnProperty.call(entry, 'anchorRootId')) {
                 if (
                     entry.anchorRootId !== null
@@ -1276,9 +1294,17 @@ class ModeContext {
             }
             const searchQuery = entry.searchQuery;
             const scrollY = entry.scrollY;
-            const anchorRootId = Object.prototype.hasOwnProperty.call(entry, 'anchorRootId')
-                ? (entry.anchorRootId || null)
-                : (previousRootAnchors[tabId] || null);
+            let anchorRootId = null;
+            if (Object.prototype.hasOwnProperty.call(entry, 'anchorRootId')) {
+                if (entry.anchorRootId !== null && entry.anchorRootId !== undefined) {
+                    anchorRootId = entry.anchorRootId;
+                }
+            } else if (Object.prototype.hasOwnProperty.call(previousRootAnchors, tabId)) {
+                const previousAnchorRootId = previousRootAnchors[tabId];
+                if (previousAnchorRootId !== null && previousAnchorRootId !== undefined) {
+                    anchorRootId = previousAnchorRootId;
+                }
+            }
 
             let scrollAnchor = null;
             if (entry.scrollAnchor && typeof entry.scrollAnchor === 'object') {
@@ -1311,7 +1337,7 @@ class ModeContext {
                 };
             }
 
-            normalized[tabId] = { searchQuery, scrollY, anchorRootId, scrollAnchor };
+            normalized[tabId] = { searchQuery, scrollY, anchorRootId, scrollAnchor, sortMode };
             this._tabRootAnchors[tabId] = anchorRootId;
         }
         if (!normalized[activeTabId]) {
@@ -1540,7 +1566,7 @@ class ModeContext {
         return this;
     }
 
-	getTabScrollPosition(tabId) {
+    getTabScrollPosition(tabId) {
 		const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
 		const entry = this._tabs[targetTabId];
 		if (!entry || typeof entry.scrollY !== 'number' || entry.scrollY < 0) {
@@ -1548,6 +1574,19 @@ class ModeContext {
 		}
 		return entry.scrollY;
 	}
+
+    getTabSortMode(tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        const entry = this._tabs[targetTabId];
+        if (!entry) {
+            throw new Error(`Unknown tabId: ${targetTabId}`);
+        }
+        return normalizeRootSortMode(entry.sortMode);
+    }
+
+    get activeTabSortMode() {
+        return this.getTabSortMode(this._activeTabId);
+    }
 
     get isInitialPageLoad() {
         return this._isInitialPageLoad;

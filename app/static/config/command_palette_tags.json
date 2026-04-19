@@ -17,8 +17,8 @@
       "tags": ["perf", "performance", "overlay", "debug", "metrics", "dev", "ui", "show", "hide", "toggle"]
     },
     {
-      "id": "pref.sort_order",
-      "tags": ["sort", "order", "newest", "oldest", "updated", "view"]
+      "id": "view.sort_mode",
+      "tags": ["sort", "order", "normal", "datetime", "created", "updated", "last", "edit", "view"]
     },
     {
       "id": "pref.theme",
