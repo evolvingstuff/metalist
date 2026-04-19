@@ -17,6 +17,7 @@ from app.db.search_history_session import begin_search_history_writer
 from app.db.search_history_session import connect_search_history_reader
 from app.db.session import begin_writer
 from app.db.settings_sql import fetch_settings
+from app.db.tab_state_sql import fetch_tab_state_row
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
 from app.services.auth_service import AuthService
@@ -24,6 +25,7 @@ from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, get_file_reference_record
 from app.services.search_history import list_recent_search_tags, record_search_interaction
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
+from app.services.tab_state import TabStateStore, tab_state_store
 import app.services.search_history as search_history_module
 
 
@@ -292,5 +294,82 @@ def test_password_transitions_rewrite_search_history_rows(
     finally:
         file_registry.reset()
         clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
+def test_password_transitions_rewrite_tab_state_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        tab_state_store.clear_persisted_state_for_tests()
+        store = tab_state_store
+        initial = store.snapshot()
+        tab_id = initial["activeTabId"]
+        payload = initial["tabs"]
+        payload[tab_id]["searchQuery"] = "focus-tag"
+        payload[tab_id]["scrollY"] = 75
+        payload[tab_id]["anchorRootId"] = "root-77"
+        store.update(
+            active_tab_id=tab_id,
+            tabs=payload,
+            tab_order=initial["tabOrder"],
+        )
+
+        session = SafeSession()
+        try:
+            with SafeSession.allow_reads("tests:auth_vault_metadata:fetch_tab_state_plaintext"):
+                row = fetch_tab_state_row(session.connection())
+            assert row is not None
+            assert row["state_json"] != ""
+            assert "focus-tag" in row["state_json"]
+            assert row["state_encryption_nonce"] is None
+            assert row["state_encryption_tag"] is None
+
+            auth = AuthService(session)
+            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            assert success, message
+
+            with SafeSession.allow_reads("tests:auth_vault_metadata:fetch_tab_state_encrypted"):
+                encrypted_row = fetch_tab_state_row(session.connection())
+            assert encrypted_row is not None
+            assert "focus-tag" not in encrypted_row["state_json"]
+            assert isinstance(encrypted_row["state_encryption_nonce"], bytes)
+            assert isinstance(encrypted_row["state_encryption_tag"], bytes)
+
+            clear_encryption_key()
+            encrypted_store = TabStateStore()
+            with SafeSession.allow_reads("tests:auth_vault_metadata:bootstrap_tab_state_encrypted"):
+                encrypted_store.bootstrap(connection=session.connection())
+            prelogin_snapshot = encrypted_store.snapshot()
+            assert prelogin_snapshot["tabs"][prelogin_snapshot["activeTabId"]]["searchQuery"] == ""
+
+            dek = auth.unwrap_dek_for_password("abcd")
+            set_session_dek(dek)
+            encrypted_store.ensure_decrypted(token="")
+            decrypted_snapshot = encrypted_store.snapshot()
+            assert decrypted_snapshot["tabs"][tab_id]["searchQuery"] == "focus-tag"
+            assert decrypted_snapshot["tabs"][tab_id]["anchorRootId"] == "root-77"
+
+            success, message = auth.remove_password("abcd")
+            assert success, message
+
+            clear_encryption_key()
+
+            with SafeSession.allow_reads("tests:auth_vault_metadata:fetch_tab_state_decrypted"):
+                decrypted_row = fetch_tab_state_row(session.connection())
+            assert decrypted_row is not None
+            assert "focus-tag" in decrypted_row["state_json"]
+            assert decrypted_row["state_encryption_nonce"] is None
+            assert decrypted_row["state_encryption_tag"] is None
+        finally:
+            session.close()
+    finally:
+        clear_encryption_key()
+        tab_state_store.reset()
         set_encryption_required(False)
         SafeSession.use_file_db()

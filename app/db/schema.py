@@ -7,6 +7,7 @@ from sqlite3 import Connection
 NOTES_TABLE = "notes"
 APP_SETTINGS_TABLE = "app_settings"
 ONTOLOGY_RULES_TABLE = "ontology_rules"
+TAB_STATE_TABLE = "tab_state"
 
 _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
@@ -71,6 +72,17 @@ CREATE TABLE IF NOT EXISTS {ONTOLOGY_RULES_TABLE} (
 );
 """
 
+_CREATE_TAB_STATE_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {TAB_STATE_TABLE} (
+    id INTEGER PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    state_encryption_nonce BLOB,
+    state_encryption_tag BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]
@@ -90,6 +102,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_NOTES_TABLE)
     connection.execute(_CREATE_APP_SETTINGS_TABLE)
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)
+    connection.execute(_CREATE_TAB_STATE_TABLE)
     _ensure_columns(
         connection,
         NOTES_TABLE,

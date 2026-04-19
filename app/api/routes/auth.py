@@ -243,6 +243,8 @@ def _reset_runtime_state_after_restore() -> bool:
         prefetched_rows = populate_cache_from_db(session)
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
         auth_cache_state.mark_cache_ready()
+        with SafeSession.allow_reads("auth:backup_restore:tab_state"):
+            tab_state_store.bootstrap(connection=session.connection())
         return False
     finally:
         session.close()
@@ -363,6 +365,7 @@ def login(
 
     set_session_dek(dek)
     ensure_rules_decrypted_and_compiled(token="")
+    tab_state_store.ensure_decrypted(token="")
 
     needs_hydration = auth_cache_state.cache_refresh_needed()
     if not note_store.loaded:

@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
+import json
 import re
 from threading import Lock
 from typing import Dict, List, Optional
 from uuid import uuid4
 
+from app.db.session import begin_writer
+from app.db.tab_state_sql import delete_tab_state_row, fetch_tab_state_row, upsert_tab_state_row
+from app.security.encryption import (
+    get_encryption_service,
+    get_encryption_service_with_token,
+    is_encryption_required,
+)
 from app.services.root_sorting import SORT_MODE_NORMAL, normalize_sort_mode
 
 
@@ -29,43 +38,71 @@ def _is_uuid_string(value: str) -> bool:
 
 
 class TabStateStore:
-    """In-memory tab state cache keyed by the single active client."""
+    """Server-owned tab state with namespace-scoped persistence in SQLite."""
 
     _MAX_TABS = 1000
 
     def __init__(self) -> None:
-        default_tab_id = self._new_tab_id()
         self._lock = Lock()
-        self._active_tab_id = default_tab_id
-        self._tabs: Dict[str, Dict[str, object]] = {
-            default_tab_id: {
-                "searchQuery": "",
-                "scrollY": 0,
-                "scrollAnchor": None,
-                "sortMode": SORT_MODE_NORMAL,
-            }
-        }
-        self._tab_order = [default_tab_id]
-        self._version = 0
+        self._encrypted_state_json: Optional[str] = None
+        self._encrypted_state_nonce: Optional[bytes] = None
+        self._encrypted_state_tag: Optional[bytes] = None
+        self._install_default_state_locked(version=0)
+
+    def bootstrap(self, *, connection) -> None:
+        row = fetch_tab_state_row(connection)
+        with self._lock:
+            if row is None:
+                self._clear_encrypted_state_locked()
+                self._install_default_state_locked(version=0)
+                return
+
+            state_json = row["state_json"]
+            nonce = row["state_encryption_nonce"]
+            tag = row["state_encryption_tag"]
+            if not isinstance(state_json, str):
+                raise TypeError("tab_state.state_json must be a string")
+            if (nonce is None) != (tag is None):
+                raise RuntimeError(
+                    "tab_state row has incomplete encryption metadata: "
+                    f"nonce={nonce is not None} tag={tag is not None}"
+                )
+
+            if nonce is None:
+                snapshot = self._deserialize_snapshot_json(state_json)
+                self._apply_snapshot_locked(snapshot)
+                self._clear_encrypted_state_locked()
+                return
+
+            self._encrypted_state_json = state_json
+            self._encrypted_state_nonce = nonce
+            self._encrypted_state_tag = tag
+            self._install_default_state_locked(version=0)
+            self._try_decrypt_locked(token="", require_success=False)
+
+    def ensure_decrypted(self, *, token: str) -> None:
+        if not isinstance(token, str):
+            raise TypeError("token must be a string")
+        with self._lock:
+            self._try_decrypt_locked(token=token, require_success=True)
 
     def snapshot(self) -> Dict[str, object]:
         with self._lock:
+            self._try_decrypt_locked(token="", require_success=False)
             return self._snapshot_locked()
 
     def reset(self) -> None:
-        default_tab_id = self._new_tab_id()
         with self._lock:
-            self._active_tab_id = default_tab_id
-            self._tabs = {
-                default_tab_id: {
-                    "searchQuery": "",
-                    "scrollY": 0,
-                    "scrollAnchor": None,
-                    "sortMode": SORT_MODE_NORMAL,
-                }
-            }
-            self._tab_order = [default_tab_id]
-            self._version += 1
+            next_version = self._version + 1
+            self._clear_encrypted_state_locked()
+            self._install_default_state_locked(version=next_version)
+
+    def clear_persisted_state_for_tests(self) -> None:
+        with begin_writer() as connection:
+            delete_tab_state_row(connection)
+        with self._lock:
+            self._clear_encrypted_state_locked()
+            self._install_default_state_locked(version=0)
 
     def create_tab(self, *, copy_from_tab_id: str) -> Dict[str, object]:
         if not isinstance(copy_from_tab_id, str) or not copy_from_tab_id:
@@ -74,6 +111,7 @@ class TabStateStore:
             raise ValueError("copyFromTabId must be a UUID string")
 
         with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
             if copy_from_tab_id not in self._tabs:
                 raise ValueError("copyFromTabId must reference an existing tab")
             if len(self._tabs) >= self._MAX_TABS:
@@ -87,6 +125,7 @@ class TabStateStore:
             self._tabs[new_tab_id] = source
             self._tab_order.append(new_tab_id)
             self._version += 1
+            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             snapshot = self._snapshot_locked()
             snapshot["newTabId"] = new_tab_id
             return snapshot
@@ -98,6 +137,7 @@ class TabStateStore:
             raise ValueError("tabId must be a UUID string")
 
         with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
             if tab_id not in self._tabs:
                 raise ValueError("tabId must reference an existing tab")
             if len(self._tabs) <= 1:
@@ -118,6 +158,7 @@ class TabStateStore:
 
             self._tab_order = order
             self._version += 1
+            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked()
 
     def update(
@@ -132,6 +173,7 @@ class TabStateStore:
         if active_tab_id not in normalized_tabs:
             raise ValueError("activeTabId must reference an existing tab")
         with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
             existing_ids = set(self._tabs.keys())
             incoming_ids = set(normalized_tabs.keys())
             if incoming_ids != existing_ids:
@@ -140,10 +182,12 @@ class TabStateStore:
             self._active_tab_id = active_tab_id
             self._tab_order = normalized_order
             self._version += 1
+            self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
             return self._snapshot_locked()
 
     def get_sort_mode(self, *, tab_id: Optional[str]) -> str:
         with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
             if tab_id is None:
                 target_tab_id = self._active_tab_id
             else:
@@ -159,6 +203,7 @@ class TabStateStore:
         normalized_sort_mode = normalize_sort_mode(sort_mode)
 
         with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
             if tab_id not in self._tabs:
                 raise ValueError("tabId must reference an existing tab")
 
@@ -168,11 +213,47 @@ class TabStateStore:
                 entry["sortMode"] = normalized_sort_mode
                 entry["scrollY"] = 0
                 entry["scrollAnchor"] = None
+                entry["anchorRootId"] = None
                 self._version += 1
+                self._persist_locked(connection=None, encryption_service=None, force_plaintext=False)
 
             snapshot = self._snapshot_locked()
             snapshot["changed"] = changed
             return snapshot
+
+    def rewrite_persisted_state(
+        self,
+        *,
+        encryption_service: object | None,
+        force_plaintext: bool,
+        connection,
+    ) -> None:
+        if not isinstance(force_plaintext, bool):
+            raise TypeError("force_plaintext must be a bool")
+        with self._lock:
+            self._try_decrypt_locked(token="", require_success=True)
+            self._persist_locked(
+                connection=connection,
+                encryption_service=encryption_service,
+                force_plaintext=force_plaintext,
+            )
+
+    def _install_default_state_locked(self, *, version: int) -> None:
+        if not isinstance(version, int) or version < 0:
+            raise TypeError("version must be a non-negative int")
+        default_tab_id = self._new_tab_id()
+        self._active_tab_id = default_tab_id
+        self._tabs: Dict[str, Dict[str, object]] = {
+            default_tab_id: {
+                "searchQuery": "",
+                "scrollY": 0,
+                "anchorRootId": None,
+                "scrollAnchor": None,
+                "sortMode": SORT_MODE_NORMAL,
+            }
+        }
+        self._tab_order = [default_tab_id]
+        self._version = version
 
     def _snapshot_locked(self) -> Dict[str, object]:
         return {
@@ -182,8 +263,144 @@ class TabStateStore:
             "version": self._version,
         }
 
+    def _serialize_snapshot_locked(self) -> str:
+        return json.dumps(self._snapshot_locked(), separators=(",", ":"), sort_keys=True)
+
+    def _deserialize_snapshot_json(self, payload: str) -> Dict[str, object]:
+        if not isinstance(payload, str) or payload == "":
+            raise ValueError("tab-state payload must be a non-empty string")
+        parsed = json.loads(payload)
+        if not isinstance(parsed, dict):
+            raise RuntimeError("tab-state JSON payload must be an object")
+        if "activeTabId" not in parsed or "tabs" not in parsed or "tabOrder" not in parsed or "version" not in parsed:
+            raise RuntimeError("tab-state JSON payload missing required keys")
+        active_tab_id = parsed["activeTabId"]
+        tabs = parsed["tabs"]
+        tab_order = parsed["tabOrder"]
+        version = parsed["version"]
+        if not isinstance(active_tab_id, str) or active_tab_id == "":
+            raise RuntimeError("tab-state JSON activeTabId must be a non-empty string")
+        if not isinstance(version, int) or version < 0:
+            raise RuntimeError("tab-state JSON version must be a non-negative integer")
+        if not isinstance(tab_order, list):
+            raise RuntimeError("tab-state JSON tabOrder must be a list")
+        return {
+            "activeTabId": active_tab_id,
+            "tabs": self._normalize_tabs(tabs),
+            "tabOrder": [str(entry) for entry in tab_order],
+            "version": version,
+        }
+
+    def _apply_snapshot_locked(self, snapshot: Dict[str, object]) -> None:
+        if not isinstance(snapshot, dict):
+            raise TypeError("snapshot must be an object")
+        active_tab_id = snapshot["activeTabId"]
+        tabs = snapshot["tabs"]
+        tab_order = snapshot["tabOrder"]
+        version = snapshot["version"]
+        if not isinstance(active_tab_id, str) or active_tab_id == "":
+            raise RuntimeError("snapshot activeTabId must be a non-empty string")
+        if not isinstance(version, int) or version < 0:
+            raise RuntimeError("snapshot version must be a non-negative integer")
+        if not isinstance(tabs, dict):
+            raise RuntimeError("snapshot tabs must be an object")
+        if not isinstance(tab_order, list):
+            raise RuntimeError("snapshot tabOrder must be a list")
+        normalized_tabs = self._normalize_tabs(tabs)
+        normalized_order = self._normalize_tab_order(tab_order, normalized_tabs)
+        if active_tab_id not in normalized_tabs:
+            raise RuntimeError("snapshot activeTabId must reference an existing tab")
+        self._tabs = normalized_tabs
+        self._tab_order = normalized_order
+        self._active_tab_id = active_tab_id
+        self._version = version
+
+    def _try_decrypt_locked(self, *, token: str, require_success: bool) -> None:
+        if self._encrypted_state_json is None:
+            return
+        if self._encrypted_state_nonce is None or self._encrypted_state_tag is None:
+            raise RuntimeError("encrypted tab-state payload missing nonce/tag")
+        service = self._resolve_encryption_service(token=token, explicit_service=None)
+        if service is None:
+            if require_success:
+                raise RuntimeError("tab-state decryption requires an active DEK")
+            return
+        decrypt_fn = getattr(service, "decrypt_from_storage", None)
+        if not callable(decrypt_fn):
+            raise TypeError("encryption service must expose decrypt_from_storage")
+        plaintext = decrypt_fn(
+            self._encrypted_state_json,
+            self._encrypted_state_nonce,
+            self._encrypted_state_tag,
+        )
+        if not isinstance(plaintext, str):
+            raise TypeError("decrypted tab-state payload must be a string")
+        snapshot = self._deserialize_snapshot_json(plaintext)
+        self._apply_snapshot_locked(snapshot)
+        self._clear_encrypted_state_locked()
+
+    def _persist_locked(
+        self,
+        *,
+        connection,
+        encryption_service: object | None,
+        force_plaintext: bool,
+    ) -> None:
+        if not isinstance(force_plaintext, bool):
+            raise TypeError("force_plaintext must be a bool")
+        snapshot_json = self._serialize_snapshot_locked()
+        stored_json = snapshot_json
+        nonce: Optional[bytes] = None
+        tag: Optional[bytes] = None
+
+        if not force_plaintext:
+            service = self._resolve_encryption_service(
+                token="",
+                explicit_service=encryption_service,
+            )
+            if service is not None:
+                encrypt_fn = getattr(service, "encrypt_for_storage", None)
+                if not callable(encrypt_fn):
+                    raise TypeError("encryption service must expose encrypt_for_storage")
+                stored_json, nonce, tag = encrypt_fn(snapshot_json)
+            elif is_encryption_required():
+                raise RuntimeError("tab-state persistence requires an active DEK")
+
+        now = datetime.now(timezone.utc)
+        if connection is not None:
+            upsert_tab_state_row(
+                connection,
+                state_json=stored_json,
+                state_encryption_nonce=nonce,
+                state_encryption_tag=tag,
+                updated_at=now,
+            )
+            return
+        with begin_writer() as writer_connection:
+            upsert_tab_state_row(
+                writer_connection,
+                state_json=stored_json,
+                state_encryption_nonce=nonce,
+                state_encryption_tag=tag,
+                updated_at=now,
+            )
+
+    def _resolve_encryption_service(self, *, token: str, explicit_service: object | None):
+        if explicit_service is not None:
+            dek = getattr(explicit_service, "dek", None)
+            if dek is None:
+                raise RuntimeError("explicit encryption service must have an active DEK")
+            return explicit_service
+        if token:
+            return get_encryption_service_with_token(token)
+        return get_encryption_service()
+
+    def _clear_encrypted_state_locked(self) -> None:
+        self._encrypted_state_json = None
+        self._encrypted_state_nonce = None
+        self._encrypted_state_tag = None
+
     def _new_tab_id(self) -> str:
-        # Version-4 UUID; validated by the normalize path.
         return str(uuid4())
 
     def _normalize_tab_order(self, incoming_order: List[str], tabs: Dict[str, Dict[str, object]]) -> List[str]:
@@ -231,18 +448,49 @@ class TabStateStore:
                 raise ValueError("scrollY must be a non-negative integer")
             normalized_sort_mode = normalize_sort_mode(sort_mode)
 
-            scroll_anchor = value["scrollAnchor"]
+            normalized_anchor_root_id: Optional[str] = None
+            if "anchorRootId" in value:
+                anchor_root_id = value["anchorRootId"]
+            else:
+                anchor_root_id = None
+            if anchor_root_id is not None:
+                if not isinstance(anchor_root_id, str) or anchor_root_id == "":
+                    raise ValueError("anchorRootId must be a non-empty string or null")
+                normalized_anchor_root_id = anchor_root_id
+
             normalized_scroll_anchor: Optional[Dict[str, object]] = None
+            if "scrollAnchor" in value:
+                scroll_anchor = value["scrollAnchor"]
+            else:
+                scroll_anchor = None
             if scroll_anchor is not None:
                 if not isinstance(scroll_anchor, dict):
                     raise ValueError("scrollAnchor must be an object or null")
 
-                anchor_id = scroll_anchor.get("anchorId")
-                anchor_bias = scroll_anchor.get("anchorBias")
-                intra_offset = scroll_anchor.get("intraOffset")
-                belt_prev = scroll_anchor.get("beltPrev")
-                belt_next = scroll_anchor.get("beltNext")
-                anchor_sort_key = scroll_anchor.get("anchorSortKey")
+                if "anchorId" in scroll_anchor:
+                    anchor_id = scroll_anchor["anchorId"]
+                else:
+                    anchor_id = None
+                if "anchorBias" in scroll_anchor:
+                    anchor_bias = scroll_anchor["anchorBias"]
+                else:
+                    anchor_bias = None
+                if "intraOffset" in scroll_anchor:
+                    intra_offset = scroll_anchor["intraOffset"]
+                else:
+                    intra_offset = None
+                if "beltPrev" in scroll_anchor:
+                    belt_prev = scroll_anchor["beltPrev"]
+                else:
+                    belt_prev = None
+                if "beltNext" in scroll_anchor:
+                    belt_next = scroll_anchor["beltNext"]
+                else:
+                    belt_next = None
+                if "anchorSortKey" in scroll_anchor:
+                    anchor_sort_key = scroll_anchor["anchorSortKey"]
+                else:
+                    anchor_sort_key = None
 
                 if not isinstance(anchor_id, str) or not anchor_id:
                     raise ValueError("scrollAnchor.anchorId must be a non-empty string")
@@ -261,7 +509,10 @@ class TabStateStore:
 
                 if not isinstance(anchor_sort_key, dict):
                     raise ValueError("scrollAnchor.anchorSortKey must be an object")
-                dom_index = anchor_sort_key.get("domIndex")
+                if "domIndex" in anchor_sort_key:
+                    dom_index = anchor_sort_key["domIndex"]
+                else:
+                    dom_index = None
                 if not isinstance(dom_index, int) or dom_index < 0:
                     raise ValueError("scrollAnchor.anchorSortKey.domIndex must be a non-negative integer")
 
@@ -276,6 +527,7 @@ class TabStateStore:
             normalized[tab_id] = {
                 "searchQuery": search_query,
                 "scrollY": scroll_y,
+                "anchorRootId": normalized_anchor_root_id,
                 "scrollAnchor": normalized_scroll_anchor,
                 "sortMode": normalized_sort_mode,
             }

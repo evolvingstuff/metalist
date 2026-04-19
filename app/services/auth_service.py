@@ -38,6 +38,7 @@ from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
+from app.services.tab_state import tab_state_store
 from app.security.encryption import set_encryption_required
 
 
@@ -352,6 +353,11 @@ class AuthService:
                 encrypted_search_history_count = encrypt_all_search_history_for_active_dek(
                     encryption_service=self.encryption,
                 )
+                tab_state_store.rewrite_persisted_state(
+                    connection=connection,
+                    encryption_service=self.encryption,
+                    force_plaintext=False,
+                )
         finally:
             maintenance_service.exit_maintenance()
 
@@ -601,6 +607,11 @@ class AuthService:
                 )
                 decrypted_search_history_count = decrypt_all_search_history_for_plaintext(
                     encryption_service=self.encryption,
+                )
+                tab_state_store.rewrite_persisted_state(
+                    connection=connection,
+                    encryption_service=None,
+                    force_plaintext=True,
                 )
                 clear_password_settings(connection)
             self.encryption.clear_keys()

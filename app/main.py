@@ -21,6 +21,7 @@ from app.services import auth_cache_state
 from app.services.integrity import assert_linked_list_integrity
 from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
+from app.services.tab_state import tab_state_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
@@ -124,6 +125,7 @@ with begin_writer() as connection:
     if not settings:
         insert_default_settings(connection)
     bootstrap_ontology_rules_store(connection=connection)
+    tab_state_store.bootstrap(connection=connection)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 file_registry_start = time.perf_counter()

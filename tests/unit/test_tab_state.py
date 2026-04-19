@@ -1,6 +1,27 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+from app.models.database import SafeSession
+from app.security.encryption import set_encryption_required
 from app.services.tab_state import TabStateStore
+
+
+@pytest.fixture(autouse=True)
+def _isolated_memory_db(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        yield
+    finally:
+        set_encryption_required(False)
+        SafeSession.use_file_db()
 
 
 def test_create_tab_copies_sort_mode_from_source_tab() -> None:
@@ -58,3 +79,40 @@ def test_set_sort_mode_is_noop_when_value_matches() -> None:
 
     assert result["changed"] is False
     assert result["tabs"][tab_id]["sortMode"] == "normal"
+
+
+def test_bootstrap_restores_persisted_tab_state(
+) -> None:
+    store = TabStateStore()
+    initial = store.snapshot()
+    tab_id = initial["activeTabId"]
+    payload = initial["tabs"]
+    payload[tab_id]["searchQuery"] = "project-x"
+    payload[tab_id]["scrollY"] = 180
+    payload[tab_id]["anchorRootId"] = "root-1"
+    payload[tab_id]["scrollAnchor"] = {
+        "anchorId": "root-1",
+        "anchorBias": "top",
+        "intraOffset": 12,
+        "beltPrev": ["root-0"],
+        "beltNext": ["root-2"],
+        "anchorSortKey": {"domIndex": 3},
+    }
+    persisted = store.update(
+        active_tab_id=tab_id,
+        tabs=payload,
+        tab_order=initial["tabOrder"],
+    )
+
+    reloaded = TabStateStore()
+    session = SafeSession()
+    try:
+        with SafeSession.allow_reads("tests:tab_state:bootstrap"):
+            reloaded.bootstrap(connection=session.connection())
+    finally:
+        session.close()
+
+    snapshot = reloaded.snapshot()
+    assert snapshot == persisted
+    assert snapshot["tabs"][tab_id]["searchQuery"] == "project-x"
+    assert snapshot["tabs"][tab_id]["anchorRootId"] == "root-1"

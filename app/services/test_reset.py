@@ -37,7 +37,7 @@ def reset_state_for_tests() -> None:
 
     reset_sync_state()
     view_cache.clear()
-    tab_state_store.reset()
+    tab_state_store.clear_persisted_state_for_tests()
     token_service.reset()
 
     prefetched_rows = populate_cache_from_db(None)
