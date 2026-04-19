@@ -35,7 +35,7 @@ export const CONFIG = {
             SET_COLLAPSED_IN_CONTEXT: `${API_NOTES_BASE}/set-collapsed-in-context`,
             DELETE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             COPY: (noteId) => `${API_NOTES_BASE}/${noteId}/copy`,
-            EXPORT_HTML: (noteId) => `${API_NOTES_BASE}/${noteId}/export-html`,
+            EXPORT_HTML: `${API_NOTES_BASE}/export-html`,
             PASTE_SIBLING: (targetNoteId) => `${API_NOTES_BASE}/paste-sibling/${targetNoteId}`,
             PASTE_CHILD: (targetNoteId) => `${API_NOTES_BASE}/paste-child/${targetNoteId}`,
             UNDO: `${API_NOTES_BASE}/undo`,

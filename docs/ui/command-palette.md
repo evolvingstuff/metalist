@@ -25,6 +25,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
   - When file attachments exist, the backup includes the sibling `*.files.db` database as a paired sidecar backup.
 - `Restore from backup…`: opens a restore picker, applies the selected backup, then shows a success confirmation with `OK` before reload.
   - Restore also restores the paired file-attachment database, or resets it to empty when the selected backup predates file attachments.
+- `Export as HTML`: downloads a self-contained HTML file for the current view with inline CSS, the active light/dark theme, all exported notes fully expanded, no command/search chrome, no collapse arrows, and `@password` note values redacted to matching-length `X` characters while keeping the blur styling.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.

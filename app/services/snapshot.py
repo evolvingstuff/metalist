@@ -388,6 +388,8 @@ def build_view_state(
                     content_html=rec.content,
                     tags=rec.tags,
                     context=embed_render_context,
+                    static_export=False,
+                    redact_passwords=False,
                 )
 
             h = _compute_hash(rendered_content, rec.tags, flags, parent_id, prev_id, next_id)
