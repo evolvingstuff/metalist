@@ -40,7 +40,6 @@ import {
     setTagBarValue,
     syncTagBar,
 } from '../services/tag-bar-service.js';
-import { renderMarkdownHtml } from '../services/markdown-render-service.js';
 import { renderLatexHtml } from '../services/latex-render-service.js';
 import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer-service.js';
 import {
@@ -1190,7 +1189,6 @@ async function handleCopyNoteShortcut(event) {
     const renderedPlainText = copyResult?.plain_text;
 
     if (typeof renderedHtml === 'string') {
-        renderedHtml = renderMarkdownHtml(renderedHtml);
         renderedHtml = renderLatexHtml(renderedHtml);
     }
 
@@ -1597,7 +1595,7 @@ async function handleCutNoteShortcut(event) {
         const renderedPlainText = copyResult?.plain_text;
 
         if (typeof renderedHtml === 'string') {
-            renderedHtml = renderMarkdownHtml(renderedHtml);
+            renderedHtml = renderLatexHtml(renderedHtml);
         }
 
         if (renderedHtml || renderedPlainText) {

@@ -215,12 +215,23 @@ def test_format_note_content_for_view_status_meta_strikethrough_wraps_inner_cont
     assert '<div class="meta-status-text"><div class="meta-status-format meta-box-block meta-strikethrough"><div>stuff</div></div></div>' in rendered
 
 
-def test_format_note_content_for_view_markdown_meta_renders_plain_text_container() -> None:
-    html = "<div># Title</div><div>Paragraph</div>"
+def test_format_note_content_for_view_markdown_meta_renders_server_side_html() -> None:
+    html = (
+        "<div># Title</div>"
+        "<div>Paragraph with [link](https://example.com)</div>"
+        "<div>- one</div>"
+        "<div>- two</div>"
+    )
     rendered = format_note_content_for_view(content_html=html, tags="@markdown")
     assert 'class="meta-markdown"' in rendered
-    assert "# Title" in rendered
-    assert "Paragraph" in rendered
+    assert 'data-markdown-rendered="true"' in rendered
+    assert "<h1>Title</h1>" in rendered
+    assert (
+        '<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>'
+        in rendered
+    )
+    assert "<ul><li>one</li><li>two</li></ul>" in rendered
+    assert "# Title" not in rendered
     assert "<div># Title</div>" not in rendered
 
 

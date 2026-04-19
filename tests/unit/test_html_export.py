@@ -169,3 +169,37 @@ def test_build_notes_export_document_redacts_password_reference_preview(
     assert "note-reference-link-static meta-credential-password" in html
     assert 'id="login-page"' not in html
     assert 'id="main-app"' not in html
+
+
+def test_build_notes_export_document_renders_markdown_meta_server_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "root": _Note(
+            "root",
+            None,
+            None,
+            None,
+            False,
+            "<div># Title</div><div>Paragraph with [docs](https://example.com)</div><div>- one</div><div>- two</div>",
+            "@markdown",
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root"]},
+    )
+
+    monkeypatch.setattr(export_module, "note_store", store)
+    monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
+
+    html = build_notes_export_document(search=None, theme="light", token="token")
+
+    assert 'data-markdown-rendered="true"' in html
+    assert "<h1>Title</h1>" in html
+    assert '<ul><li>one</li><li>two</li></ul>' in html
+    assert (
+        '<a href="https://example.com" target="_blank" rel="noopener noreferrer">docs</a>'
+        in html
+    )
+    assert "# Title" not in html

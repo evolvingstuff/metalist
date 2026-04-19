@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
 from app.utils.text_utils import strip_html
+from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
 
 
@@ -678,8 +679,8 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
 
 def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:
     raw_text = _extract_plain_text(content_html)
-    escaped_text = html.escape(raw_text, quote=False)
     copy_attr = _copyable_attr(formatting_tags, raw_text)
+    rendered_markdown = render_markdown_to_html(raw_text)
 
     extra_classes = ""
     if formatting_tags:
@@ -689,7 +690,11 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
     if extra_classes:
         block_class = f"{block_class} {extra_classes}"
 
-    return f'<div class="{block_class}"{copy_attr}>{escaped_text}</div>'
+    return (
+        f'<div class="{block_class}" data-markdown-rendered="true"{copy_attr}>'
+        f"{_linkify_view_links(rendered_markdown)}"
+        "</div>"
+    )
 
 
 def _render_latex_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> str:

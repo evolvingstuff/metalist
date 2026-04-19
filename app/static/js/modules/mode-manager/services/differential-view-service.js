@@ -2,7 +2,7 @@ import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
-import { ensureAnchorsOpenInNewTabs, renderMarkdownBlocks } from './markdown-render-service.js';
+import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
 import { renderLatexBlocks } from './latex-render-service.js';
 import { setNoteSearchRedactionState } from './search-redaction-reveal-service.js';
 
@@ -199,7 +199,6 @@ function applyServerDiffOps(payload) {
         }
     }
 
-    renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
     hydrateImageFilePreviews(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
@@ -760,7 +759,6 @@ export function applyDifferentialView(payload, options) {
         ModeContext.setRootHash(payload.treeHash);
     }
 
-    renderMarkdownBlocks(notesContainer);
     renderLatexBlocks(notesContainer);
     hydrateImageFilePreviews(notesContainer);
     ensureAnchorsOpenInNewTabs(notesContainer);
