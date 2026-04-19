@@ -71,6 +71,7 @@ def test_negative_text_term_redacts_notes_containing_phrase(monkeypatch: pytest.
     state = build_view_state(
         editing_note_id=None,
         search='-"AAB"',
+        sort_mode="normal",
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
@@ -114,6 +115,7 @@ def test_negative_text_term_redacts_forbidden_descendants(monkeypatch: pytest.Mo
     state = build_view_state(
         editing_note_id=None,
         search='"AA" -"AAB"',
+        sort_mode="normal",
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,

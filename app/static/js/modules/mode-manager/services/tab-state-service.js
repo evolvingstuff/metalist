@@ -8,6 +8,7 @@ import { recordScrollInteractionIfEligible } from './search-interaction-service.
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
 const TAB_STATE_DELETE_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_DELETE_TAB;
+const TAB_STATE_SORT_MODE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_SORT_MODE;
 const SCROLL_POLL_INTERVAL_MS = 1000;
 const TAB_STATE_PERSIST_DEBOUNCE_MS = 300;
 
@@ -137,6 +138,40 @@ export async function deleteTabOnServer(tabId) {
         throw new Error('tabId must be a non-empty string');
     }
     const response = await callTabStateApiAt(TAB_STATE_DELETE_TAB_ENDPOINT, 'POST', { tabId });
+    captureServerSignature(response);
+    return response;
+}
+
+function captureUndoContext() {
+    const tabId = ModeContext.activeTabId;
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('ModeContext.activeTabId must be a non-empty string');
+    }
+    const epoch = ModeContext.undoContextEpoch;
+    if (!Number.isInteger(epoch) || epoch < 0) {
+        throw new Error('ModeContext.undoContextEpoch must be a non-negative integer');
+    }
+    const searchQuery = ModeContext.searchQuery;
+    if (searchQuery !== null && typeof searchQuery !== 'string') {
+        throw new Error('ModeContext.searchQuery must be a string or null');
+    }
+    const normalizedSearch = searchQuery === null ? '' : searchQuery;
+    return `tab:${tabId}|search:${normalizedSearch}|epoch:${epoch}`;
+}
+
+export async function setTabSortModeOnServer(tabId, sortMode) {
+    if (typeof tabId !== 'string' || tabId.length === 0) {
+        throw new Error('tabId must be a non-empty string');
+    }
+    if (typeof sortMode !== 'string' || sortMode.length === 0) {
+        throw new Error('sortMode must be a non-empty string');
+    }
+    const response = await callTabStateApiAt(TAB_STATE_SORT_MODE_ENDPOINT, 'POST', {
+        tabId,
+        sortMode,
+        clientId: ModeContext.clientId,
+        undoContext: captureUndoContext(),
+    });
     captureServerSignature(response);
     return response;
 }

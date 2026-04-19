@@ -6,6 +6,8 @@ from threading import Lock
 from typing import Dict, List, Optional
 from uuid import uuid4
 
+from app.services.root_sorting import SORT_MODE_NORMAL, normalize_sort_mode
+
 
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-"
@@ -36,7 +38,12 @@ class TabStateStore:
         self._lock = Lock()
         self._active_tab_id = default_tab_id
         self._tabs: Dict[str, Dict[str, object]] = {
-            default_tab_id: {"searchQuery": "", "scrollY": 0, "scrollAnchor": None}
+            default_tab_id: {
+                "searchQuery": "",
+                "scrollY": 0,
+                "scrollAnchor": None,
+                "sortMode": SORT_MODE_NORMAL,
+            }
         }
         self._tab_order = [default_tab_id]
         self._version = 0
@@ -54,6 +61,7 @@ class TabStateStore:
                     "searchQuery": "",
                     "scrollY": 0,
                     "scrollAnchor": None,
+                    "sortMode": SORT_MODE_NORMAL,
                 }
             }
             self._tab_order = [default_tab_id]
@@ -134,6 +142,38 @@ class TabStateStore:
             self._version += 1
             return self._snapshot_locked()
 
+    def get_sort_mode(self, *, tab_id: Optional[str]) -> str:
+        with self._lock:
+            if tab_id is None:
+                target_tab_id = self._active_tab_id
+            else:
+                target_tab_id = tab_id
+            if target_tab_id not in self._tabs:
+                raise ValueError("tab_id must reference an existing tab")
+            value = self._tabs[target_tab_id]["sortMode"]
+            return normalize_sort_mode(value)
+
+    def set_sort_mode(self, *, tab_id: str, sort_mode: str) -> Dict[str, object]:
+        if not isinstance(tab_id, str) or not tab_id:
+            raise ValueError("tabId must be a non-empty string")
+        normalized_sort_mode = normalize_sort_mode(sort_mode)
+
+        with self._lock:
+            if tab_id not in self._tabs:
+                raise ValueError("tabId must reference an existing tab")
+
+            entry = self._tabs[tab_id]
+            changed = entry["sortMode"] != normalized_sort_mode
+            if changed:
+                entry["sortMode"] = normalized_sort_mode
+                entry["scrollY"] = 0
+                entry["scrollAnchor"] = None
+                self._version += 1
+
+            snapshot = self._snapshot_locked()
+            snapshot["changed"] = changed
+            return snapshot
+
     def _snapshot_locked(self) -> Dict[str, object]:
         return {
             "activeTabId": self._active_tab_id,
@@ -180,14 +220,16 @@ class TabStateStore:
                 raise ValueError("tab ids must be UUID strings")
             if not isinstance(value, dict):
                 raise ValueError("tab payload must be an object")
-            if "searchQuery" not in value or "scrollY" not in value:
+            if "searchQuery" not in value or "scrollY" not in value or "sortMode" not in value:
                 raise ValueError("tab payload missing required keys")
             search_query = value["searchQuery"]
             scroll_y = value["scrollY"]
+            sort_mode = value["sortMode"]
             if not isinstance(search_query, str):
                 raise ValueError("searchQuery must be a string")
             if not isinstance(scroll_y, int) or scroll_y < 0:
                 raise ValueError("scrollY must be a non-negative integer")
+            normalized_sort_mode = normalize_sort_mode(sort_mode)
 
             scroll_anchor = value["scrollAnchor"]
             normalized_scroll_anchor: Optional[Dict[str, object]] = None
@@ -235,6 +277,7 @@ class TabStateStore:
                 "searchQuery": search_query,
                 "scrollY": scroll_y,
                 "scrollAnchor": normalized_scroll_anchor,
+                "sortMode": normalized_sort_mode,
             }
         return normalized
 

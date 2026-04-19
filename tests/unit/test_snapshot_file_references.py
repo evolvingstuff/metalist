@@ -62,6 +62,7 @@ def _state_for(
     return build_view_state(
         editing_note_id=None,
         search=None,
+        sort_mode="normal",
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,

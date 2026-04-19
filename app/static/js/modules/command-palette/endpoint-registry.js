@@ -40,13 +40,14 @@ export function buildCommandPaletteEndpoints(deps) {
     const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
     const prioritizeTagToFront = requireAction(actions, 'prioritizeTagToFront');
     const prioritizeTagToBack = requireAction(actions, 'prioritizeTagToBack');
+    const getSortMode = requireAction(actions, 'getSortMode');
+    const setSortMode = requireAction(actions, 'setSortMode');
 
     const defaults = {
         showBacklinks: true,
         showNoteTags: false,
         showTabUi: false,
         showPerfOverlay: false,
-        sortOrder: 'updated',
         theme: 'system',
     };
 
@@ -84,17 +85,16 @@ export function buildCommandPaletteEndpoints(deps) {
             apply: (next) => applyPreference('pref.show_perf_overlay', next),
         },
         {
-            id: 'pref.sort_order',
+            id: 'view.sort_mode',
             kind: 'select',
             label: 'Sort order',
-            persistenceKey: 'pref.sort_order',
-            defaultValue: defaults.sortOrder,
+            getValue: () => getSortMode(),
             options: [
-                { value: 'newest', label: 'Newest' },
-                { value: 'oldest', label: 'Oldest' },
-                { value: 'updated', label: 'Updated' },
+                { value: 'normal', label: 'Normal' },
+                { value: 'created', label: 'Datetime created' },
+                { value: 'updated', label: 'Datetime last updated' },
             ],
-            apply: (next) => applyPreference('pref.sort_order', next),
+            apply: (next) => setSortMode(next),
         },
         {
             id: 'pref.theme',

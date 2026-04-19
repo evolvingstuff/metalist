@@ -4,8 +4,10 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
+import { ErrorHandler } from '../../error-handler.js';
 import { clearTagBar, getTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
+import { isRootReorderLocked } from '../services/root-sort-service.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
@@ -68,6 +70,33 @@ function scheduleMovedNoteIntoView(noteId) {
             align: 'nearest',
         },
     });
+}
+
+function shouldBlockRootReorder(noteId, contextLabel) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('shouldBlockRootReorder requires noteId string');
+    }
+
+    if (!isRootReorderLocked(ModeContext.activeTabSortMode)) {
+        return false;
+    }
+
+    const noteElement = DOMUtils.getNoteById(noteId);
+    const parentId = typeof noteElement.dataset.parentId === 'string' ? noteElement.dataset.parentId : '';
+    if (parentId.length > 0) {
+        return false;
+    }
+
+    Logger.logNoop('Root reorder blocked by active sort mode', {
+        noteId,
+        context: contextLabel,
+        sortMode: ModeContext.activeTabSortMode,
+    });
+    ErrorHandler.showInfoBanner(
+        'Root-note reordering is disabled while sorting by datetime.',
+        5000,
+    );
+    return true;
 }
 
 function stripEdgeEmptyNodes(fragment) {
@@ -452,6 +481,9 @@ export async function moveNoteUp(noteId) {
     if (!noteId) {
         throw new Error('Cannot move note: noteId is required');
     }
+    if (shouldBlockRootReorder(noteId, 'moveNoteUp')) {
+        return;
+    }
 
     if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
         await actionSaveNote(noteId);
@@ -484,6 +516,9 @@ export async function moveNoteDown(noteId) {
 
     if (!noteId) {
         throw new Error('Cannot move note: noteId is required');
+    }
+    if (shouldBlockRootReorder(noteId, 'moveNoteDown')) {
+        return;
     }
 
     if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
@@ -518,6 +553,9 @@ export async function moveNoteToTop(noteId) {
 
     if (!noteId) {
         throw new Error('Cannot move note to top: noteId is required');
+    }
+    if (shouldBlockRootReorder(noteId, 'moveNoteToTop')) {
+        return;
     }
 
     if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {
@@ -569,6 +607,9 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
 
     if (newParentId !== null && newParentId !== undefined && typeof newParentId !== 'string') {
         throw new Error('Cannot move note: newParentId must be a string, null, or undefined');
+    }
+    if ((newParentId === null || typeof newParentId === 'undefined') && shouldBlockRootReorder(noteId, 'moveNoteToSiblingPosition')) {
+        return;
     }
 
     if (ModeContext.editSessionHasEdits && noteId === ModeContext.currentNoteId) {

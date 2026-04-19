@@ -50,10 +50,13 @@ from app.services.search_history import (
     prioritize_blank_search_suggestions,
     record_search_interaction,
 )
+from app.services.root_sorting import is_root_reorder_locked
+from app.services.root_sorting import normalize_sort_mode
 from app.services.html_export import build_notes_export_document
 from app.services.html_export import build_notes_export_filename
 from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
+from app.services.undo_state import reset_undo_stack
 from app.usecases.prioritize import list_prioritize_tag_suggestions
 
 
@@ -75,6 +78,55 @@ def _require_note_present(note_id: str, *, context: str) -> None:
     raise HTTPException(status_code=404, detail=f"Note not found: {note_id}")
 
 
+def _resolve_tab_sort_mode(tab_id: object) -> str:
+    if tab_id is not None and (not isinstance(tab_id, str) or tab_id == ""):
+        raise TypeError("tabId must be a non-empty string")
+
+    capture = CapturedExceptionContext(ValueError)
+    sort_mode: str | None = None
+    with capture:
+        sort_mode = tab_state_store.get_sort_mode(tab_id=tab_id)
+    if capture.captured_exception is not None:
+        exc = capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if sort_mode is None:
+        raise RuntimeError("tab_state_store.get_sort_mode returned no value")
+    return sort_mode
+
+
+def _block_root_reorder_when_sorted(note_id: str, *, tab_id: object, new_parent_id: object) -> None:
+    sort_mode = _resolve_tab_sort_mode(tab_id)
+    if not is_root_reorder_locked(sort_mode):
+        return
+
+    record = note_store.get_note(note_id)
+    if record.parent_id is not None:
+        return
+    if new_parent_id is not None:
+        return
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Root-note reordering is unavailable while sort order is "
+            f"{normalize_sort_mode(sort_mode)!r}"
+        ),
+    )
+
+
+def _block_root_prioritization_when_sorted(*, tab_id: object) -> None:
+    sort_mode = _resolve_tab_sort_mode(tab_id)
+    if not is_root_reorder_locked(sort_mode):
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Root-note reordering is unavailable while sort order is "
+            f"{normalize_sort_mode(sort_mode)!r}"
+        ),
+    )
+
+
 @router.post("/notes/view")
 @transactional_route
 def view_diff(payload: dict):
@@ -87,6 +139,7 @@ def view_diff(payload: dict):
     client_note_uuid_hashes = payload["clientNoteUuidHashes"]
     anchor_root_id = payload["visibleRootAnchorId"]
 
+    sort_mode = _resolve_tab_sort_mode(tab_id)
     maybe_reset_on_context(client_id, undo_context)
 
     if not isinstance(client_note_uuid_hashes, dict):
@@ -117,6 +170,7 @@ def view_diff(payload: dict):
         "client_id": client_id,
         "tab_id": tab_id,
         "search": normalized_search,
+        "sort_mode": sort_mode,
     }
     cached_state = view_cache.get(**cache_key)
     if not anchor_root_id and cached_state:
@@ -127,6 +181,7 @@ def view_diff(payload: dict):
     state = build_view_state(
         editing_note_id=normalized_editing_note_id,
         search=normalized_search,
+        sort_mode=sort_mode,
         client_known_note_ids=set(client_hashes.keys()),
         client_seen_root_ids=set(),
         anchor_root_id=anchor_root_id,
@@ -173,8 +228,10 @@ def view_diff(payload: dict):
                 "version": VERSION,
                 "currentClientId": client_id,
                 "searchQuery": search,
+                "sortMode": sort_mode,
                 "rootCountTotal": root_count_total,
                 "searchRootCountTotal": search_root_count_total,
+                "rootSortBuckets": state.metadata["rootSortBuckets"],
                 "editingNoteId": normalized_editing_note_id,
             }
             return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -188,8 +245,10 @@ def view_diff(payload: dict):
             "version": VERSION,
             "currentClientId": client_id,
             "searchQuery": search,
+            "sortMode": sort_mode,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
+            "rootSortBuckets": state.metadata["rootSortBuckets"],
             "editingNoteId": normalized_editing_note_id,
         }
         return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -210,8 +269,10 @@ def view_diff(payload: dict):
             "version": VERSION,
             "currentClientId": client_id,
             "searchQuery": search,
+            "sortMode": sort_mode,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
+            "rootSortBuckets": state.metadata["rootSortBuckets"],
             "editingNoteId": normalized_editing_note_id,
         }
         return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -237,8 +298,10 @@ def view_diff(payload: dict):
         "version": VERSION,
         "currentClientId": client_id,
         "searchQuery": search,
+        "sortMode": sort_mode,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": search_root_count_total,
+        "rootSortBuckets": state.metadata["rootSortBuckets"],
         "editingNoteId": normalized_editing_note_id,
     }
     return {"snapshot": response_snapshot, "updateUUID": update_uuid}
@@ -261,6 +324,33 @@ def update_tab_state(payload: dict) -> Dict[str, object]:
         raise HTTPException(status_code=400, detail="tabOrder must be a list")
     tab_order_list = [str(entry) for entry in tab_order]
     return tab_state_store.update(active_tab_id=active_tab_id, tabs=tabs, tab_order=tab_order_list)
+
+
+@router.post("/notes/tab-state/sort-mode")
+@transactional_route
+def update_tab_sort_mode(payload: dict) -> Dict[str, object]:
+    if "tabId" not in payload:
+        raise HTTPException(status_code=400, detail="tabId is required")
+    if "sortMode" not in payload:
+        raise HTTPException(status_code=400, detail="sortMode is required")
+
+    tab_id = payload["tabId"]
+    sort_mode = payload["sortMode"]
+    client_id = payload["clientId"]
+    undo_context = payload["undoContext"]
+
+    capture = CapturedExceptionContext(TypeError, ValueError)
+    response: Dict[str, object] | None = None
+    with capture:
+        response = tab_state_store.set_sort_mode(tab_id=tab_id, sort_mode=sort_mode)
+    if capture.captured_exception is not None:
+        exc = capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if response is None:
+        raise RuntimeError("tab_state_store.set_sort_mode returned no value")
+    if response["changed"] is True:
+        reset_undo_stack(client_id, undo_context)
+    return response
 
 
 @router.post("/notes/tab-state/new-tab")
@@ -429,6 +519,8 @@ def backlinks(request: Request, note_id: str) -> Dict[str, object]:
         search_scope = resolve_search_scope(
             search=normalized_search,
             editing_note_id=None,
+            sort_mode="normal",
+            ordered_root_ids=None,
         )
         source_note_ids = search_scope.allowed_note_ids
 
@@ -660,6 +752,15 @@ def toggle_reference_mode_endpoint(request: Request, note_id: str, body: dict):
 def move_note_endpoint(note_id: str, body: dict):
     viewport = _require_viewport(body)
     _require_note_present(note_id, context="notes.move")
+    if "tab_id" in body:
+        tab_id = body["tab_id"]
+    else:
+        tab_id = None
+    _block_root_reorder_when_sorted(
+        note_id,
+        tab_id=tab_id,
+        new_parent_id=body["new_parent_id"],
+    )
     cmd = CmdMove(
         note_id=note_id,
         sibling_id=body["sibling_id"],
@@ -684,6 +785,16 @@ def move_note_to_top_endpoint(note_id: str, body: dict):
         normalized_search = None
     if normalized_search is not None and not isinstance(normalized_search, str):
         raise TypeError("search_query must be a string or null")
+
+    if "tab_id" in body:
+        tab_id = body["tab_id"]
+    else:
+        tab_id = None
+    _block_root_reorder_when_sorted(
+        note_id,
+        tab_id=tab_id,
+        new_parent_id=None,
+    )
 
     cmd = CmdMoveToTop(
         note_id=note_id,
@@ -806,6 +917,10 @@ def prioritize_in_view_endpoint(body: dict):
     tag = body["tag"]
     direction = body["direction"]
     search_query = body["search_query"]
+    if "tab_id" in body:
+        tab_id = body["tab_id"]
+    else:
+        tab_id = None
 
     if not isinstance(tag, str):
         raise TypeError("tag must be a string")
@@ -817,6 +932,7 @@ def prioritize_in_view_endpoint(body: dict):
         normalized_search = None
     if normalized_search is not None and not isinstance(normalized_search, str):
         raise TypeError("search_query must be a string or null")
+    _block_root_prioritization_when_sorted(tab_id=tab_id)
 
     cmd = CmdPrioritize(
         tag=tag,

@@ -82,6 +82,7 @@ def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyP
     state = build_view_state(
         editing_note_id=None,
         search="asdf",
+        sort_mode="normal",
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
@@ -134,6 +135,7 @@ def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.Mon
     state = build_view_state(
         editing_note_id=None,
         search="asdf",
+        sort_mode="normal",
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
@@ -180,6 +182,7 @@ def test_search_does_not_force_include_nonmatching_editing_root(monkeypatch: pyt
     state = build_view_state(
         editing_note_id="r2",
         search="scratchpad",
+        sort_mode="normal",
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
