@@ -417,12 +417,17 @@ ModeContext = {
 - Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
   aligned with the DOM without spamming requests.
+- The server persists the tab-state snapshot per namespace in the main SQLite DB, so
+  active tab/search/scroll context survives server restarts instead of only browser reloads.
+- If password protection is enabled, that persisted tab-state payload is encrypted at rest;
+  passwordless namespaces keep the same payload in plaintext.
 - **Diff cache isolation**: each tab now owns its own `clientNoteUuidHashes` map inside
   `ModeContext`. Swapping tabs swaps the active hash map so `/notes/view` payloads only
   contain nodes that tab has rendered—prevents the first tab from inheriting the
   thousands of roots you just scrolled past in another tab.
-- With a single interactive client, this global cache keeps persistence simple:
-  new browser windows immediately reuse the stored tabs.
+- With a single interactive client, this namespace-scoped persisted snapshot keeps
+  persistence simple: new browser windows and restarted servers immediately reuse
+  the stored tabs.
 
 ### Event-Driven Tab Switching
 

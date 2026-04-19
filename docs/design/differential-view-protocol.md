@@ -33,7 +33,8 @@
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `undoContext`: a client-computed context boundary (currently tab+search). When this changes, the server clears the undo/redo stack for that client so `Cmd+Z` never crosses tab/search contexts.
 - `tabId`: client-maintained active tab UUID; the server caches one view per `(clientId, tabId, search)` tuple.
-- A companion `/api2/notes/tab-state` + tab create/delete endpoints keep each tab's search + scroll metadata in-memory so reconnects can hydrate the same contexts before the next `/notes/view` call.
+- A companion `/api2/notes/tab-state` + tab create/delete endpoints keep each tab's search + scroll metadata in the namespace SQLite DB so reconnects and server restarts can hydrate the same contexts before the next `/notes/view` call.
+- When the namespace is password-protected, the persisted tab-state payload is encrypted at rest with the active DEK; passwordless namespaces keep the same row in plaintext.
 
 ## Response Shape (Bootstrap)
 ```json

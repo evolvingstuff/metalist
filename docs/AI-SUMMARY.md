@@ -32,7 +32,7 @@
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping, auto-links bare `http(s)` URLs in rendered notes, and normalizes rendered anchors to open in a new tab.
 - `app/services/tag_term_matching.py`: Shared helper for connector-aware, punctuation-tolerant tag suggestion matching/ranking (`-`, `_`, `.`, `/`) used by search suggestions and tag suggestions.
 - `app/services/embedded_references.py`: Resolves note/file UUID references in view mode (embedded notes, note previews, file cards, missing/cycle markers).
-- `app/services/tab_state.py`: Tracks `(client, tab)` search + scroll metadata used by the UI between reloads.
+- `app/services/tab_state.py`: Stores namespace-scoped tab workspace state (`activeTabId`, `tabOrder`, per-tab search/scroll/sort metadata) in the main SQLite DB; rows stay plaintext without a password and are DEK-encrypted at rest when the namespace is password-protected.
 - `app/services/login_rate_limit.py`: In-memory login attempt throttling for `/api2/auth/login`.
 - `app/services/runtime_hardening.py`: Startup hardening (disable core dumps; macOS swap/hibernation enforcement).
 - `app/static/js/modules/mode-manager/services/html-paste-sanitizer-service.js`: Client-side sanitizer for external HTML paste in edit mode (URL/style allowlist + blocked tags + image guardrails).
@@ -43,7 +43,7 @@
 
 ## Design
 - Pattern: usecases (Cmd*) orchestrate services; services encapsulate DB work + undo logging.
-- State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll snapshotted via `tab_state_store` so reopening the app restores the last view.
+- State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll are snapshotted via `tab_state_store` into the namespace DB so reopening the app or restarting the server restores the last view.
 - Root sort modes: per-tab server-owned `sortMode` (`normal`, `created`, `updated`) lives in `app/services/tab_state.py`; datetime modes sort/window root notes by the newest matching timestamp anywhere in each root subtree, while the client renders day separators from `snapshot.rootSortBuckets`.
 - Mutation safety: mutating FastAPI routes are expected to carry `@transactional_route`; startup sanity enforces the decorator ordering in source, and request-scoped write sessions commit once at the end of the wrapped request path.
 - Diff caching: Server caches each `(client, tab, search)` view and the client keeps per-tab note-hash maps so `/notes/view` diff payloads stay scoped to the active tab.
@@ -64,7 +64,7 @@
   - Tag bar grammar (wrappers + /* comments */): `docs/ui/tag-bar.md`.
 - Suggestion behavior: search-bar and tag-bar suggestions are segment-aware for connector-separated tags, collapse case-equivalent tags to one displayed spelling, but actual search filtering remains exact on effective tag terms.
 - Tag suggestion ranking: literal content segment hits can surface connector-separated tags, full multi-segment phrase hits outrank single-segment hits, and surrounding prose punctuation is ignored for content matching.
-- Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ.
+- Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ; the server persists that snapshot per namespace in SQLite and rewrites it between plaintext/encrypted storage when password protection is toggled.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
 - Test harness boundary: `POST /api2/test/reset` clears DB/search-history/cache/tab/auth/sync state, and `app/static/js/main.js` exposes `body[data-app-ready="true"]` after `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` complete.
 - Reference shortcut: `Cmd/Ctrl+R` copies as embedded reference (`![[UUID]]`) from the last note copied with `Cmd/Ctrl+C` (when no text selection).
