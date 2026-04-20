@@ -10,7 +10,7 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Linked-list ordering model for efficient reorders
 - Optional password protection + encryption at rest (AES-GCM)
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
-- Manual namespace backups/restores to local archives, Google Drive, or both with retention controls
+- Manual namespace backups/restores to local archives and/or a user-selected backup folder with retention controls
 
 ## Technology Stack
 
@@ -63,7 +63,7 @@ Database selection:
 - Remembered launch ports are stored per namespace in `~/MetaList/namespaces.db`
 - Launch precedence is: explicit CLI flags > env vars > saved namespace profile > built-in defaults
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use one archive per snapshot with filenames like `work-<timestamp>.metalist-backup.tar.gz`
-- The Backup Settings modal can target local storage, Google Drive, or both; Google Drive connections are namespace-scoped, so different namespaces can use different Google accounts
+- The Backup Settings modal can target local storage, a user-selected folder, or both
 
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
@@ -78,8 +78,6 @@ Useful env flags:
 - default TLS paths: `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`
 - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
 - `MCP_AGENT_PUBLIC_ORIGIN=https://notes.example.com:8765`: public origin for the MCP sidecar redirect when it is exposed behind HTTPS or a separate hostname/port
-- `METALIST_GOOGLE_DRIVE_CLIENT_ID` / `METALIST_GOOGLE_DRIVE_CLIENT_SECRET`: configure Google Drive backup OAuth credentials for this deployment
-- `METALIST_GOOGLE_DRIVE_ROOT_FOLDER_NAME=MetaList Backups`: rename the Google Drive root folder used for uploaded backup archives
 
 ### Remote Access / HTTPS
 Plain LAN or VPN HTTP works with a normal PyCharm run:

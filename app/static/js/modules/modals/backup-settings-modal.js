@@ -33,7 +33,6 @@ export class BackupSettingsModal extends BaseModal {
         super('backupSettingsModal', 'backup-settings-modal');
         this._pendingResolve = null;
         this._closeResult = { action: 'cancel' };
-        this._connectPollGeneration = 0;
     }
 
     _errorMessage(error) {
@@ -47,15 +46,11 @@ export class BackupSettingsModal extends BaseModal {
         return {
             loading: true,
             saving: false,
-            connecting: false,
+            pickingFolder: false,
             localEnabled: true,
-            googleDriveEnabled: false,
+            folderEnabled: false,
+            folderPath: '',
             retentionCountText: '30',
-            googleDriveStatus: 'disconnected',
-            googleDriveAccountEmail: '',
-            googleDriveRootFolderName: '',
-            googleDriveConnected: false,
-            googleDriveAvailable: false,
             statusMessage: '',
             error: '',
         };
@@ -97,7 +92,6 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     onClose() {
-        this._connectPollGeneration += 1;
         const resolve = this._pendingResolve;
         const closeResult = this._closeResult;
         this._pendingResolve = null;
@@ -127,30 +121,17 @@ export class BackupSettingsModal extends BaseModal {
         const state = this.getModalState();
         const loading = Boolean(state.loading);
         const saving = Boolean(state.saving);
-        const connecting = Boolean(state.connecting);
+        const pickingFolder = Boolean(state.pickingFolder);
         const localEnabled = Boolean(state.localEnabled);
-        const googleDriveEnabled = Boolean(state.googleDriveEnabled);
+        const folderEnabled = Boolean(state.folderEnabled);
+        const folderPath = typeof state.folderPath === 'string' ? state.folderPath : '';
         const retentionCountText = typeof state.retentionCountText === 'string' ? state.retentionCountText : '';
-        const googleDriveStatus = typeof state.googleDriveStatus === 'string' ? state.googleDriveStatus : 'disconnected';
-        const googleDriveAccountEmail = typeof state.googleDriveAccountEmail === 'string' ? state.googleDriveAccountEmail : '';
-        const googleDriveRootFolderName = typeof state.googleDriveRootFolderName === 'string' ? state.googleDriveRootFolderName : '';
-        const googleDriveConnected = Boolean(state.googleDriveConnected);
-        const googleDriveAvailable = Boolean(state.googleDriveAvailable);
         const statusMessage = typeof state.statusMessage === 'string' ? state.statusMessage : '';
         const error = typeof state.error === 'string' ? state.error : '';
 
-        const driveStatusText = googleDriveConnected
-            ? `Connected${googleDriveAccountEmail ? ` as ${googleDriveAccountEmail}` : ''}${googleDriveRootFolderName ? ` · Folder: ${googleDriveRootFolderName}` : ''}`
-            : `Status: ${googleDriveStatus}`;
-        const googleDriveHelpText = googleDriveAvailable
-            ? 'Click Connect Google Drive, choose a Google account, and approve access for this namespace.'
-            : 'Google Drive connect is unavailable until this MetaList build is started with a Google Desktop app client ID.';
         let effectiveStatusMessage = statusMessage;
         if (effectiveStatusMessage.length === 0 && loading) {
             effectiveStatusMessage = 'Loading backup settings...';
-        }
-        if (effectiveStatusMessage.length === 0 && connecting) {
-            effectiveStatusMessage = 'Waiting for Google Drive authorization...';
         }
 
         modalElement.innerHTML = `
@@ -163,7 +144,14 @@ export class BackupSettingsModal extends BaseModal {
                 </div>
 
                 <div class="form-group">
-                    <label class="backup-settings-checkbox-row"><input type="checkbox" id="backup-settings-drive-enabled" ${googleDriveEnabled ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}><span>Save backup to Google Drive</span></label>
+                    <label class="backup-settings-checkbox-row"><input type="checkbox" id="backup-settings-folder-enabled" ${folderEnabled ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}><span>Save backup to folder</span></label>
+                    <label for="backup-settings-folder-path">Folder path</label>
+                    <input type="text" id="backup-settings-folder-path" value="${escapeHtml(folderPath)}" placeholder="/Users/you/Backups/MetaList" readonly ${loading || saving || pickingFolder ? 'disabled' : ''}>
+                    <div class="form-actions">
+                        <button type="button" class="secondary-btn" id="backup-settings-folder-pick-btn" ${loading || saving || pickingFolder ? 'disabled' : ''}>${pickingFolder ? 'Choosing...' : 'Choose Folder...'}</button>
+                        <button type="button" class="secondary-btn" id="backup-settings-folder-clear-btn" ${loading || saving || pickingFolder || folderPath.length === 0 ? 'disabled' : ''}>Clear</button>
+                    </div>
+                    <p>Use an absolute path. MetaList will create the folder if needed.</p>
                 </div>
 
                 <div class="form-group">
@@ -171,18 +159,9 @@ export class BackupSettingsModal extends BaseModal {
                     <input type="number" id="backup-settings-retention-count" min="1" step="1" value="${retentionCountText}" ${loading || saving ? 'disabled' : ''}>
                 </div>
 
-                <div class="form-group">
-                    <p><strong>Google Drive:</strong> ${escapeHtml(driveStatusText)}</p>
-                    <p>${escapeHtml(googleDriveHelpText)}</p>
-                    <div class="form-actions">
-                        <button type="button" class="secondary-btn" id="backup-settings-connect-drive-btn" ${loading || saving || connecting || !googleDriveAvailable ? 'disabled' : ''}>${googleDriveConnected ? 'Reconnect Google Drive' : 'Connect Google Drive'}</button>
-                        <button type="button" class="secondary-btn" id="backup-settings-disconnect-drive-btn" ${loading || saving || connecting || !googleDriveConnected ? 'disabled' : ''}>Disconnect</button>
-                    </div>
-                </div>
-
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="backup-settings-run-btn" ${loading || saving || connecting ? 'disabled' : ''}>${saving ? 'Saving...' : 'Back Up Now'}</button>
-                    <button type="button" class="secondary-btn" id="backup-settings-cancel-btn" ${saving || connecting ? 'disabled' : ''}>Cancel</button>
+                    <button type="button" class="primary-btn" id="backup-settings-run-btn" ${loading || saving ? 'disabled' : ''}>${saving ? 'Saving...' : 'Back Up Now'}</button>
+                    <button type="button" class="secondary-btn" id="backup-settings-cancel-btn" ${saving ? 'disabled' : ''}>Cancel</button>
                 </div>
 
                 <p id="backup-settings-status">${escapeHtml(effectiveStatusMessage)}</p>
@@ -212,13 +191,32 @@ export class BackupSettingsModal extends BaseModal {
             };
         }
 
-        const driveCheckbox = document.getElementById('backup-settings-drive-enabled');
-        if (driveCheckbox instanceof HTMLInputElement) {
-            driveCheckbox.onchange = () => {
+        const folderCheckbox = document.getElementById('backup-settings-folder-enabled');
+        if (folderCheckbox instanceof HTMLInputElement) {
+            folderCheckbox.onchange = () => {
                 this.updateModalState({
-                    googleDriveEnabled: driveCheckbox.checked,
+                    folderEnabled: folderCheckbox.checked,
                     error: '',
                 });
+            };
+        }
+
+        const folderPickButton = document.getElementById('backup-settings-folder-pick-btn');
+        if (folderPickButton instanceof HTMLButtonElement) {
+            folderPickButton.onclick = async () => {
+                await this.pickFolderPath();
+            };
+        }
+
+        const folderClearButton = document.getElementById('backup-settings-folder-clear-btn');
+        if (folderClearButton instanceof HTMLButtonElement) {
+            folderClearButton.onclick = () => {
+                this.updateModalState({
+                    folderPath: '',
+                    folderEnabled: false,
+                    error: '',
+                });
+                this.renderModalContent();
             };
         }
 
@@ -229,20 +227,6 @@ export class BackupSettingsModal extends BaseModal {
                     retentionCountText: retentionInput.value,
                     error: '',
                 });
-            };
-        }
-
-        const connectButton = document.getElementById('backup-settings-connect-drive-btn');
-        if (connectButton instanceof HTMLButtonElement) {
-            connectButton.onclick = async () => {
-                await this.connectGoogleDrive();
-            };
-        }
-
-        const disconnectButton = document.getElementById('backup-settings-disconnect-drive-btn');
-        if (disconnectButton instanceof HTMLButtonElement) {
-            disconnectButton.onclick = async () => {
-                await this.disconnectGoogleDrive();
             };
         }
 
@@ -304,28 +288,10 @@ export class BackupSettingsModal extends BaseModal {
         return responseBody;
     }
 
-    _sleep(milliseconds) {
-        if (!Number.isInteger(milliseconds) || milliseconds < 0) {
-            throw new Error('_sleep requires a non-negative integer');
-        }
-        return new Promise((resolve) => {
-            window.setTimeout(resolve, milliseconds);
-        });
-    }
-
-    _buildSettingsPayload() {
-        const state = this.getModalState();
-        return {
-            local_enabled: Boolean(state.localEnabled),
-            google_drive_enabled: Boolean(state.googleDriveEnabled),
-            retention_count: this._parseRetentionCount(),
-        };
-    }
-
     async loadSettings() {
         this.updateModalState({
             loading: true,
-            connecting: false,
+            pickingFolder: false,
             statusMessage: 'Loading backup settings...',
             error: '',
         });
@@ -346,14 +312,11 @@ export class BackupSettingsModal extends BaseModal {
         const payload = settled.payload;
         this.updateModalState({
             loading: false,
+            pickingFolder: false,
             localEnabled: payload.local_enabled,
-            googleDriveEnabled: payload.google_drive_enabled,
+            folderEnabled: payload.folder_enabled,
+            folderPath: typeof payload.folder_path === 'string' ? payload.folder_path : '',
             retentionCountText: String(payload.retention_count),
-            googleDriveStatus: payload.google_drive_status,
-            googleDriveAccountEmail: payload.google_drive_account_email,
-            googleDriveRootFolderName: payload.google_drive_root_folder_name,
-            googleDriveConnected: payload.google_drive_connected,
-            googleDriveAvailable: payload.google_drive_available,
             statusMessage: '',
             error: '',
         });
@@ -373,26 +336,20 @@ export class BackupSettingsModal extends BaseModal {
         return retentionCount;
     }
 
-    async connectGoogleDrive() {
-        const connectPollGeneration = this._connectPollGeneration + 1;
-        this._connectPollGeneration = connectPollGeneration;
+    async pickFolderPath() {
         this.updateModalState({
-            connecting: true,
-            statusMessage: 'Opening Google sign-in...',
+            pickingFolder: true,
+            statusMessage: 'Choose a backup folder...',
             error: '',
         });
         this.renderModalContent();
-        const settled = await this._authRequest(
-            CONFIG.API.BACKUP.GOOGLE_DRIVE.CONNECT_START,
-            'POST',
-            {},
-        ).then(
+        const settled = await this._authRequest(CONFIG.API.BACKUP.FOLDER_PICK, 'POST', {}).then(
             (payload) => ({ ok: true, payload }),
             (error) => ({ ok: false, error }),
         );
         if (!settled.ok) {
             this.updateModalState({
-                connecting: false,
+                pickingFolder: false,
                 statusMessage: '',
                 error: this._errorMessage(settled.error),
             });
@@ -402,156 +359,57 @@ export class BackupSettingsModal extends BaseModal {
         const payload = settled.payload;
         if (!payload || typeof payload !== 'object') {
             this.updateModalState({
-                connecting: false,
+                pickingFolder: false,
                 statusMessage: '',
-                error: 'Connect Google Drive response missing body',
+                error: 'Folder picker response missing body',
             });
             this.renderModalContent();
             return;
         }
-        if (typeof payload.request_id !== 'string' || payload.request_id.length === 0) {
-            this.updateModalState({
-                connecting: false,
-                statusMessage: '',
-                error: 'Connect Google Drive response missing request_id',
-            });
-            this.renderModalContent();
-            return;
-        }
-        if (typeof payload.authorization_url !== 'string' || payload.authorization_url.length === 0) {
-            this.updateModalState({
-                connecting: false,
-                statusMessage: '',
-                error: 'Connect Google Drive response missing authorization_url',
-            });
-            this.renderModalContent();
-            return;
-        }
-        const popup = window.open(payload.authorization_url, 'metalist-google-drive-connect', 'width=640,height=720');
-        if (popup === null) {
-            this.updateModalState({
-                connecting: false,
-                statusMessage: '',
-                error: 'Popup was blocked. Allow popups and try again.',
-            });
-            this.renderModalContent();
-            return;
-        }
-        const pollResult = await this._pollGoogleDriveConnectStatus(payload.request_id, popup, connectPollGeneration);
-        if (this._connectPollGeneration !== connectPollGeneration || !this.isOpen) {
-            return;
-        }
-        if (!pollResult.ok) {
-            this.updateModalState({
-                connecting: false,
-                statusMessage: '',
-                error: this._errorMessage(pollResult.error),
-            });
-            this.renderModalContent();
-            return;
-        }
-        await this.loadSettings();
-    }
-
-    async disconnectGoogleDrive() {
-        this.updateModalState({
-            loading: true,
-            statusMessage: 'Disconnecting Google Drive...',
-            error: '',
-        });
-        this.renderModalContent();
-        const settled = await this._authRequest(CONFIG.API.BACKUP.GOOGLE_DRIVE.DISCONNECT, 'POST', {}).then(
-            () => ({ ok: true }),
-            (error) => ({ ok: false, error }),
-        );
-        if (!settled.ok) {
-            this.updateModalState({
-                loading: false,
-                statusMessage: '',
-                error: this._errorMessage(settled.error),
-            });
-            this.renderModalContent();
-            return;
-        }
-        await this.loadSettings();
-    }
-
-    async _pollGoogleDriveConnectStatus(requestId, popup, connectPollGeneration) {
-        if (typeof requestId !== 'string' || requestId.length === 0) {
-            throw new Error('_pollGoogleDriveConnectStatus requires requestId');
-        }
-        if (!popup || typeof popup !== 'object') {
-            throw new Error('_pollGoogleDriveConnectStatus requires popup window');
-        }
-        let attempt = 0;
-        while (this._connectPollGeneration === connectPollGeneration && this.isOpen) {
-            attempt += 1;
-            const settled = await this._authRequest(
-                CONFIG.API.BACKUP.GOOGLE_DRIVE.CONNECT_STATUS(requestId),
-                'GET',
-                null,
-            ).then(
-                (payload) => ({ ok: true, payload }),
-                (error) => ({ ok: false, error }),
-            );
-            if (!settled.ok) {
-                return { ok: false, error: settled.error };
-            }
-            const payload = settled.payload;
-            if (!payload || typeof payload !== 'object') {
-                return { ok: false, error: new Error('Google Drive connect status response missing body') };
-            }
-            if (typeof payload.status !== 'string' || payload.status.length === 0) {
-                return { ok: false, error: new Error('Google Drive connect status missing status') };
-            }
-            if (typeof payload.message !== 'string') {
-                return { ok: false, error: new Error('Google Drive connect status missing message') };
+        if (payload.selected === true) {
+            if (typeof payload.folder_path !== 'string' || payload.folder_path.length === 0) {
+                this.updateModalState({
+                    pickingFolder: false,
+                    statusMessage: '',
+                    error: 'Folder picker response missing folder path',
+                });
+                this.renderModalContent();
+                return;
             }
             this.updateModalState({
-                statusMessage: payload.message,
+                pickingFolder: false,
+                folderEnabled: true,
+                folderPath: payload.folder_path,
+                statusMessage: '',
                 error: '',
             });
             this.renderModalContent();
-            if (payload.status === 'success') {
-                return { ok: true };
-            }
-            if (payload.status === 'error' || payload.status === 'expired') {
-                return { ok: false, error: new Error(payload.message) };
-            }
-            if (payload.status !== 'pending') {
-                return { ok: false, error: new Error(`Unexpected Google Drive connect status: ${payload.status}`) };
-            }
-            if (attempt >= 600) {
-                return { ok: false, error: new Error('Google Drive authorization timed out. Start again.') };
-            }
-            if (typeof popup.closed === 'boolean' && popup.closed) {
-                this.updateModalState({
-                    statusMessage: 'Browser closed. Waiting for Google Drive result...',
-                    error: '',
-                });
-                this.renderModalContent();
-            }
-            await this._sleep(1000);
+            return;
         }
-        return { ok: false, error: new Error('Google Drive authorization was interrupted.') };
+        this.updateModalState({
+            pickingFolder: false,
+            statusMessage: '',
+            error: '',
+        });
+        this.renderModalContent();
     }
 
     async handleRunBackup() {
         const state = this.getModalState();
         const localEnabled = Boolean(state.localEnabled);
-        const googleDriveEnabled = Boolean(state.googleDriveEnabled);
-        const googleDriveConnected = Boolean(state.googleDriveConnected);
+        const folderEnabled = Boolean(state.folderEnabled);
+        const folderPath = typeof state.folderPath === 'string' ? state.folderPath.trim() : '';
         let retentionCount = 0;
-        if (!localEnabled && !googleDriveEnabled) {
+        if (!localEnabled && !folderEnabled) {
             this.updateModalState({
-                error: 'Enable local, Google Drive, or both before running a backup.',
+                error: 'Enable local or folder backups before running a backup.',
             });
             this.renderModalContent();
             return;
         }
-        if (googleDriveEnabled && !googleDriveConnected) {
+        if (folderEnabled && folderPath.length === 0) {
             this.updateModalState({
-                error: 'Connect Google Drive before enabling Drive backups.',
+                error: 'Folder backups require an absolute folder path.',
             });
             this.renderModalContent();
             return;
@@ -579,7 +437,8 @@ export class BackupSettingsModal extends BaseModal {
 
         const settled = await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'PUT', {
             local_enabled: localEnabled,
-            google_drive_enabled: googleDriveEnabled,
+            folder_enabled: folderEnabled,
+            folder_path: folderPath,
             retention_count: retentionCount,
         }).then(
             () => ({ ok: true }),

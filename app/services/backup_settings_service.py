@@ -6,21 +6,11 @@ import json
 from app.db.backup_settings_sql import fetch_backup_settings_row, upsert_backup_settings_row
 from app.db.session import begin_writer
 from app.models.database import SafeSession
-from app.security.encryption import (
-    get_encryption_service,
-    get_encryption_service_with_token,
-    is_encryption_required,
-)
+from app.security.encryption import get_encryption_service
+from app.security.encryption import get_encryption_service_with_token
+from app.security.encryption import is_encryption_required
 
 
-_GOOGLE_DRIVE_STATUS_DISCONNECTED = "disconnected"
-_GOOGLE_DRIVE_STATUS_CONNECTED = "connected"
-_GOOGLE_DRIVE_STATUS_NEEDS_RECONNECT = "needs_reconnect"
-_GOOGLE_DRIVE_STATUSES = {
-    _GOOGLE_DRIVE_STATUS_DISCONNECTED,
-    _GOOGLE_DRIVE_STATUS_CONNECTED,
-    _GOOGLE_DRIVE_STATUS_NEEDS_RECONNECT,
-}
 _DEFAULT_RETENTION_COUNT = 30
 
 
@@ -28,16 +18,8 @@ def _default_backup_settings() -> dict[str, object]:
     return {
         "retention_count": _DEFAULT_RETENTION_COUNT,
         "local_enabled": True,
-        "google_drive_enabled": False,
-        "google_drive": {
-            "status": _GOOGLE_DRIVE_STATUS_DISCONNECTED,
-            "account_email": "",
-            "access_token": "",
-            "refresh_token": "",
-            "token_expiry": "",
-            "root_folder_id": "",
-            "root_folder_name": "",
-        },
+        "folder_enabled": False,
+        "folder_path": "",
     }
 
 
@@ -68,66 +50,25 @@ def _validate_backup_settings(settings: dict[str, object]) -> dict[str, object]:
     if not isinstance(local_enabled, bool):
         raise RuntimeError("backup settings local_enabled must be a bool")
 
-    if "google_drive_enabled" not in settings:
-        raise RuntimeError("backup settings missing google_drive_enabled")
-    google_drive_enabled = settings["google_drive_enabled"]
-    if not isinstance(google_drive_enabled, bool):
-        raise RuntimeError("backup settings google_drive_enabled must be a bool")
+    folder_enabled = False
+    if "folder_enabled" in settings:
+        folder_enabled = settings["folder_enabled"]
+        if not isinstance(folder_enabled, bool):
+            raise RuntimeError("backup settings folder_enabled must be a bool")
 
-    if "google_drive" not in settings:
-        raise RuntimeError("backup settings missing google_drive")
-    google_drive = settings["google_drive"]
-    if not isinstance(google_drive, dict):
-        raise RuntimeError("backup settings google_drive must be an object")
-
-    required_google_keys = (
-        "status",
-        "account_email",
-        "access_token",
-        "refresh_token",
-        "token_expiry",
-        "root_folder_id",
-        "root_folder_name",
-    )
-    for key in required_google_keys:
-        if key not in google_drive:
-            raise RuntimeError(f"backup settings google_drive missing {key}")
-
-    status = google_drive["status"]
-    if status not in _GOOGLE_DRIVE_STATUSES:
-        raise RuntimeError(f"backup settings google_drive status invalid: {status!r}")
-
-    account_email = google_drive["account_email"]
-    access_token = google_drive["access_token"]
-    refresh_token = google_drive["refresh_token"]
-    token_expiry = google_drive["token_expiry"]
-    root_folder_id = google_drive["root_folder_id"]
-    root_folder_name = google_drive["root_folder_name"]
-    string_values = (
-        ("account_email", account_email),
-        ("access_token", access_token),
-        ("refresh_token", refresh_token),
-        ("token_expiry", token_expiry),
-        ("root_folder_id", root_folder_id),
-        ("root_folder_name", root_folder_name),
-    )
-    for field_name, field_value in string_values:
-        if not isinstance(field_value, str):
-            raise RuntimeError(f"backup settings google_drive {field_name} must be a string")
+    folder_path = ""
+    if "folder_path" in settings:
+        folder_path = settings["folder_path"]
+        if not isinstance(folder_path, str):
+            raise RuntimeError("backup settings folder_path must be a string")
+    if folder_enabled and folder_path == "":
+        raise RuntimeError("backup settings folder_path must be configured when folder_enabled is true")
 
     return {
         "retention_count": retention_count,
         "local_enabled": local_enabled,
-        "google_drive_enabled": google_drive_enabled,
-        "google_drive": {
-            "status": status,
-            "account_email": account_email,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_expiry": token_expiry,
-            "root_folder_id": root_folder_id,
-            "root_folder_name": root_folder_name,
-        },
+        "folder_enabled": folder_enabled,
+        "folder_path": folder_path,
     }
 
 
@@ -211,57 +152,22 @@ def update_backup_settings(
     *,
     token: str,
     local_enabled: bool,
-    google_drive_enabled: bool,
+    folder_enabled: bool,
+    folder_path: str,
     retention_count: int,
 ) -> dict[str, object]:
     if not isinstance(local_enabled, bool):
         raise TypeError("local_enabled must be a bool")
-    if not isinstance(google_drive_enabled, bool):
-        raise TypeError("google_drive_enabled must be a bool")
+    if not isinstance(folder_enabled, bool):
+        raise TypeError("folder_enabled must be a bool")
+    if not isinstance(folder_path, str):
+        raise TypeError("folder_path must be a string")
     if not isinstance(retention_count, int) or retention_count <= 0:
         raise ValueError("retention_count must be a positive integer")
 
     settings = load_backup_settings(token=token)
     settings["local_enabled"] = local_enabled
-    settings["google_drive_enabled"] = google_drive_enabled
+    settings["folder_enabled"] = folder_enabled
+    settings["folder_path"] = folder_path
     settings["retention_count"] = retention_count
-    return save_backup_settings(token=token, settings=settings)
-
-
-def set_google_drive_connection(
-    *,
-    token: str,
-    status: str,
-    account_email: str,
-    access_token: str,
-    refresh_token: str,
-    token_expiry: str,
-    root_folder_id: str,
-    root_folder_name: str,
-) -> dict[str, object]:
-    settings = load_backup_settings(token=token)
-    google_drive = settings["google_drive"]
-    assert isinstance(google_drive, dict)
-    google_drive["status"] = status
-    google_drive["account_email"] = account_email
-    google_drive["access_token"] = access_token
-    google_drive["refresh_token"] = refresh_token
-    google_drive["token_expiry"] = token_expiry
-    google_drive["root_folder_id"] = root_folder_id
-    google_drive["root_folder_name"] = root_folder_name
-    return save_backup_settings(token=token, settings=settings)
-
-
-def clear_google_drive_connection(*, token: str) -> dict[str, object]:
-    settings = load_backup_settings(token=token)
-    google_drive = settings["google_drive"]
-    assert isinstance(google_drive, dict)
-    google_drive["status"] = _GOOGLE_DRIVE_STATUS_DISCONNECTED
-    google_drive["account_email"] = ""
-    google_drive["access_token"] = ""
-    google_drive["refresh_token"] = ""
-    google_drive["token_expiry"] = ""
-    google_drive["root_folder_id"] = ""
-    google_drive["root_folder_name"] = ""
-    settings["google_drive_enabled"] = False
     return save_backup_settings(token=token, settings=settings)

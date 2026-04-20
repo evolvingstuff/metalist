@@ -85,12 +85,7 @@ export const CONFIG = {
             RUN: `${API_BASE}/backup/run`,
             LIST: `${API_BASE}/backup/list`,
             RESTORE: `${API_BASE}/backup/restore`,
-            GOOGLE_DRIVE: {
-                CONNECT_START: `${API_BASE}/backup/google-drive/connect/start`,
-                CONNECT_STATUS: (requestId) => `${API_BASE}/backup/google-drive/connect/status?request_id=${encodeURIComponent(requestId)}`,
-                VALIDATE: `${API_BASE}/backup/google-drive/validate`,
-                DISCONNECT: `${API_BASE}/backup/google-drive/disconnect`,
-            },
+            FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
         },
         MEMORY: {
             BASE: `${API_BASE}/memory`

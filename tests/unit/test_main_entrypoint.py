@@ -237,6 +237,58 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
     ]
 
 
+def test_run_namespace_server_prints_resolved_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app_module = ModuleType("app.main")
+    fake_app_module.app = object()
+    monkeypatch.setitem(sys.modules, "app.main", fake_app_module)
+
+    printed: list[str] = []
+
+    monkeypatch.setattr(
+        main_entrypoint,
+        "resolve_database_runtime_config",
+        lambda *, environ, argv: DatabaseRuntimeConfig(
+            database_path=tmp_path / "default.metalist.db",
+            database_url=f"sqlite:///{tmp_path / 'default.metalist.db'}",
+            namespace="default",
+            test_mode=False,
+        ),
+    )
+    monkeypatch.setattr(main_entrypoint, "prepare_database_runtime_path", lambda *, database_path: None)
+    monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", lambda *, environ: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "resolve_main_server_config",
+        lambda *, environ: MainServerConfig(
+            host="127.0.0.1",
+            port=18000,
+            https_port=None,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile=None,
+            ssl_keyfile=None,
+        ),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "resolve_main_mcp_url",
+        lambda *, environ, host, port: "http://127.0.0.1:18000/api2/mcp",
+    )
+    monkeypatch.setattr(main_entrypoint, "_start_agent_web_sidecar", lambda *, default_mcp_url: None)
+    monkeypatch.setattr(main_entrypoint, "_run_main_listener", lambda **kwargs: None)
+    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
+
+    main_entrypoint._run_namespace_server_for_current_env(argv=[])
+
+    assert any(
+        "MetaList resolved config:" in line and "namespace='default'" in line and "mcp_url=http://127.0.0.1:18000/api2/mcp" in line
+        for line in printed
+    )
+
+
 def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(monkeypatch) -> None:
     calls: list[str] = []
 

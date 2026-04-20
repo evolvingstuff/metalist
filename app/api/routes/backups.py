@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from typing import Annotated
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from app.api.transactions import transactional_route
 from app.config import ACTIVE_NAMESPACE
@@ -18,66 +19,39 @@ from app.services.backup_service import (
     resolve_live_database_path,
     restore_backup_to_paths,
 )
-from app.server_runtime import resolve_namespaced_database_path, resolve_namespaces_directory, validate_namespace
-from app.services.google_drive_service import (
-    delete_google_drive_backup,
-    disconnect_google_drive,
-    download_google_drive_backup,
-    get_google_drive_connect_request_status,
-    get_google_drive_connection_status,
-    is_google_drive_oauth_available,
-    list_google_drive_backups,
-    list_google_drive_backups_for_namespace,
-    start_google_drive_connect_request,
-    upload_google_drive_backup,
-    validate_google_drive_connection,
-)
+from app.server_runtime import resolve_namespaced_database_path
+from app.server_runtime import resolve_namespaces_directory
+from app.server_runtime import validate_namespace
 from app.services.backup_settings_service import (
     load_backup_settings,
     update_backup_settings,
 )
 from app.services.tokens import token_service
 from app.services.maintenance_mode import maintenance_service
-from app.services.exception_capture import CapturedExceptionContext
 from app.api.routes.auth import _reset_runtime_state_after_restore, _schedule_server_restart_after_restore
 
 
 router = APIRouter(prefix="/backup", tags=["backup2"])
+_FOLDER_PATH_REQUIRED_MESSAGE = "Folder backups require an absolute folder path."
 
 
 class BackupSettingsResponse(BaseModel):
     local_enabled: bool
-    google_drive_enabled: bool
+    folder_enabled: bool
+    folder_path: str
     retention_count: int
-    google_drive_status: str
-    google_drive_account_email: str
-    google_drive_root_folder_name: str
-    google_drive_connected: bool
-    google_drive_available: bool
 
 
 class BackupSettingsUpdateRequest(BaseModel):
     local_enabled: bool
-    google_drive_enabled: bool
+    folder_enabled: bool
+    folder_path: str
     retention_count: int = Field(..., gt=0)
 
 
-class GoogleDriveConnectStartResponse(BaseModel):
-    request_id: str
-    authorization_url: str
-
-
-class GoogleDriveConnectStatusResponse(BaseModel):
-    request_id: str
-    status: str
-    message: str
-
-
-class GoogleDriveConnectionResponse(BaseModel):
-    status: str
-    account_email: str
-    root_folder_name: str
-    connected: bool
+class BackupFolderPickResponse(BaseModel):
+    selected: bool
+    folder_path: str
 
 
 class BackupListEntryResponse(BaseModel):
@@ -154,27 +128,14 @@ def _require_auth(token: Annotated[str | None, Depends(_verify_token)]) -> str:
 
 
 def _serialize_settings_response(settings: dict[str, object]) -> BackupSettingsResponse:
-    google_drive = settings["google_drive"]
-    if not isinstance(google_drive, dict):
-        raise RuntimeError("backup settings google_drive must be an object")
-    status = google_drive["status"]
-    account_email = google_drive["account_email"]
-    root_folder_name = google_drive["root_folder_name"]
-    if (
-        not isinstance(status, str)
-        or not isinstance(account_email, str)
-        or not isinstance(root_folder_name, str)
-    ):
-        raise RuntimeError("backup settings google_drive fields must be strings")
+    folder_path = settings["folder_path"]
+    if not isinstance(folder_path, str):
+        raise RuntimeError("backup settings folder_path must be a string")
     return BackupSettingsResponse(
         local_enabled=bool(settings["local_enabled"]),
-        google_drive_enabled=bool(settings["google_drive_enabled"]),
+        folder_enabled=bool(settings["folder_enabled"]),
+        folder_path=folder_path,
         retention_count=int(settings["retention_count"]),
-        google_drive_status=status,
-        google_drive_account_email=account_email,
-        google_drive_root_folder_name=root_folder_name,
-        google_drive_connected=status == "connected",
-        google_drive_available=is_google_drive_oauth_available(),
     )
 
 
@@ -197,6 +158,119 @@ def _serialize_backup_entry(
     )
 
 
+def _normalize_folder_backup_path(*, folder_path: str) -> Path:
+    if not isinstance(folder_path, str):
+        raise TypeError("folder_path must be a string")
+    stripped_folder_path = folder_path.strip()
+    if stripped_folder_path == "":
+        raise HTTPException(status_code=400, detail=_FOLDER_PATH_REQUIRED_MESSAGE)
+    normalized_path = Path(stripped_folder_path).expanduser()
+    if not normalized_path.is_absolute():
+        raise HTTPException(status_code=400, detail=_FOLDER_PATH_REQUIRED_MESSAGE)
+    return normalized_path
+
+
+def _prepare_folder_backup_directory_for_settings(*, folder_enabled: bool, folder_path: str) -> str:
+    if not isinstance(folder_enabled, bool):
+        raise TypeError("folder_enabled must be a bool")
+    if not isinstance(folder_path, str):
+        raise TypeError("folder_path must be a string")
+    normalized_folder_path = folder_path
+    if folder_path != "":
+        normalized_folder_path = str(_normalize_folder_backup_path(folder_path=folder_path))
+    if not folder_enabled:
+        return normalized_folder_path
+    folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
+    folder_directory.mkdir(parents=True, exist_ok=True)
+    if not folder_directory.is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Folder backup path is not a directory: {folder_directory}",
+        )
+    return str(folder_directory)
+
+
+def _run_native_folder_picker_command(*, command: list[str]) -> str | None:
+    if not isinstance(command, list) or len(command) == 0:
+        raise TypeError("command must be a non-empty list")
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+    if completed.returncode == 0:
+        if stdout == "":
+            return None
+        return stdout
+    if completed.returncode == 1 and (stderr == "" or "User canceled" in stderr or "(-128)" in stderr):
+        return None
+    raise RuntimeError(
+        f"Native folder picker failed: exit={completed.returncode} stdout={stdout!r} stderr={stderr!r}"
+    )
+
+
+def _pick_backup_folder_path() -> str | None:
+    if sys.platform == "darwin":
+        osascript_path = shutil.which("osascript")
+        if osascript_path is None:
+            raise RuntimeError("`osascript` is required for the macOS folder picker")
+        return _run_native_folder_picker_command(
+            command=[
+                osascript_path,
+                "-e",
+                'POSIX path of (choose folder with prompt "Choose a backup folder for MetaList")',
+            ]
+        )
+
+    if sys.platform.startswith("linux"):
+        zenity_path = shutil.which("zenity")
+        if zenity_path is not None:
+            return _run_native_folder_picker_command(
+                command=[
+                    zenity_path,
+                    "--file-selection",
+                    "--directory",
+                    "--title=Choose a backup folder for MetaList",
+                ]
+            )
+        kdialog_path = shutil.which("kdialog")
+        if kdialog_path is not None:
+            return _run_native_folder_picker_command(
+                command=[
+                    kdialog_path,
+                    "--getexistingdirectory",
+                    "",
+                    "--title",
+                    "Choose a backup folder for MetaList",
+                ]
+            )
+        raise RuntimeError("No supported Linux folder picker was found (`zenity` or `kdialog`)")
+
+    if sys.platform == "win32":
+        powershell_path = shutil.which("powershell")
+        if powershell_path is None:
+            powershell_path = shutil.which("pwsh")
+        if powershell_path is None:
+            raise RuntimeError("PowerShell is required for the Windows folder picker")
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            "$dialog.Description = 'Choose a backup folder for MetaList'; "
+            "$dialog.ShowNewFolderButton = $true; "
+            "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
+            "Write-Output $dialog.SelectedPath; exit 0 }; "
+            "exit 1"
+        )
+        return _run_native_folder_picker_command(
+            command=[powershell_path, "-NoProfile", "-Command", script]
+        )
+
+    raise RuntimeError(f"Native folder picker is not supported on platform: {sys.platform}")
+
+
 def _local_backup_id(*, namespace: str, filename: str) -> str:
     return f"local::{namespace}::{filename}"
 
@@ -214,11 +288,21 @@ def _parse_local_backup_id(backup_id: str) -> tuple[str, str]:
     return namespace, filename
 
 
-def _derive_active_namespace_from_database_path(database_path: Path) -> str:
-    filename = database_path.name
-    if filename.endswith(".metalist.db"):
-        return validate_namespace(namespace=filename[: -len(".metalist.db")])
-    return validate_namespace(namespace=database_path.stem)
+def _folder_backup_id(*, namespace: str, filename: str) -> str:
+    return f"folder::{namespace}::{filename}"
+
+
+def _parse_folder_backup_id(backup_id: str) -> tuple[str, str]:
+    if not isinstance(backup_id, str) or backup_id == "":
+        raise HTTPException(status_code=400, detail="backup_id must be a non-empty string")
+    parts = backup_id.split("::", 2)
+    if len(parts) != 3 or parts[0] != "folder":
+        raise HTTPException(status_code=400, detail="Invalid folder backup_id")
+    namespace = validate_namespace(namespace=parts[1])
+    filename = parts[2]
+    if filename == "":
+        raise HTTPException(status_code=400, detail="Invalid folder backup_id filename")
+    return namespace, filename
 
 
 def _list_local_backups_across_namespaces() -> list[BackupListEntryResponse]:
@@ -265,88 +349,55 @@ def put_backup_settings(
     payload: BackupSettingsUpdateRequest,
     token: Annotated[str, Depends(_require_auth)],
 ):
+    normalized_folder_path = _prepare_folder_backup_directory_for_settings(
+        folder_enabled=payload.folder_enabled,
+        folder_path=payload.folder_path,
+    )
     settings = update_backup_settings(
         token=token,
         local_enabled=payload.local_enabled,
-        google_drive_enabled=payload.google_drive_enabled,
+        folder_enabled=payload.folder_enabled,
+        folder_path=normalized_folder_path,
         retention_count=payload.retention_count,
     )
     return _serialize_settings_response(settings)
 
 
-@router.post("/google-drive/connect/start", response_model=GoogleDriveConnectStartResponse)
+@router.post("/folder/pick", response_model=BackupFolderPickResponse)
 @transactional_route
-def start_google_drive_connect(
-    token: Annotated[str, Depends(_require_auth)],
-):
-    connect_request = start_google_drive_connect_request(
-        token=token,
-    )
-    return GoogleDriveConnectStartResponse(
-        request_id=connect_request["request_id"],
-        authorization_url=connect_request["authorization_url"],
-    )
-
-
-@router.get("/google-drive/connect/callback", response_class=HTMLResponse)
-def finish_google_drive_connect():
-    return HTMLResponse(
-        content=(
-            "<!doctype html><html><body>"
-            "<p>This callback endpoint is no longer used for Google Drive connect. "
-            "Return to MetaList and start the connection again.</p>"
-            "</body></html>"
-        )
-    )
-
-
-@router.get("/google-drive/connect/status", response_model=GoogleDriveConnectStatusResponse)
-def get_google_drive_connect_status(
-    request_id: str,
-    token: Annotated[str, Depends(_require_auth)],
-):
+def pick_backup_folder(token: Annotated[str, Depends(_require_auth)]):
     del token
-    status = get_google_drive_connect_request_status(request_id=request_id)
-    return GoogleDriveConnectStatusResponse(
-        request_id=status.request_id,
-        status=status.status,
-        message=status.message,
+    selected_folder_path = _pick_backup_folder_path()
+    if selected_folder_path is None:
+        return BackupFolderPickResponse(
+            selected=False,
+            folder_path="",
+        )
+    normalized_folder_path = str(_normalize_folder_backup_path(folder_path=selected_folder_path))
+    return BackupFolderPickResponse(
+        selected=True,
+        folder_path=normalized_folder_path,
     )
-
-
-@router.post("/google-drive/validate", response_model=GoogleDriveConnectionResponse)
-@transactional_route
-def post_google_drive_validate(token: Annotated[str, Depends(_require_auth)]):
-    status = validate_google_drive_connection(token=token)
-    return GoogleDriveConnectionResponse(**status)
-
-
-@router.post("/google-drive/disconnect", response_model=GoogleDriveConnectionResponse)
-@transactional_route
-def post_google_drive_disconnect(token: Annotated[str, Depends(_require_auth)]):
-    disconnect_google_drive(token=token)
-    status = get_google_drive_connection_status(token=token)
-    return GoogleDriveConnectionResponse(**status)
 
 
 @router.get("/list", response_model=BackupListResponse)
 def list_backups(token: Annotated[str, Depends(_require_auth)]):
     backups = _list_local_backups_across_namespaces()
     settings = load_backup_settings(token=token)
-    google_drive = settings["google_drive"]
-    if not isinstance(google_drive, dict):
-        raise RuntimeError("backup settings google_drive must be an object")
-    google_drive_status = google_drive["status"]
-    if not isinstance(google_drive_status, str):
-        raise RuntimeError("backup settings google_drive status must be a string")
-    if google_drive_status == "connected":
-        for backup in list_google_drive_backups(token=token):
+    folder_path = settings["folder_path"]
+    if not isinstance(folder_path, str):
+        raise RuntimeError("backup settings folder_path must be a string")
+    if folder_path != "":
+        folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
+        folder_backups = list_backups_in_directory(folder_directory, database_path=None)
+        for backup in folder_backups:
+            backup_namespace = parse_backup_namespace_from_filename(backup.filename)
             backups.append(
                 _serialize_backup_entry(
-                    backup_id=backup.file_id,
-                    source="google_drive",
+                    backup_id=_folder_backup_id(namespace=backup_namespace, filename=backup.filename),
+                    source="folder",
                     filename=backup.filename,
-                    namespace=backup.namespace,
+                    namespace=backup_namespace,
                     created_at=backup.created_at,
                     size_bytes=backup.size_bytes,
                 )
@@ -359,23 +410,30 @@ def list_backups(token: Annotated[str, Depends(_require_auth)]):
 @transactional_route
 def run_backup(token: Annotated[str, Depends(_require_auth)]):
     database_path = resolve_live_database_path()
-    namespace = _derive_active_namespace_from_database_path(database_path)
     settings = load_backup_settings(token=token)
     local_enabled = settings["local_enabled"]
-    google_drive_enabled = settings["google_drive_enabled"]
+    folder_enabled = settings["folder_enabled"]
+    folder_path = settings["folder_path"]
     retention_count = settings["retention_count"]
-    if not isinstance(local_enabled, bool) or not isinstance(google_drive_enabled, bool):
+    if not isinstance(local_enabled, bool) or not isinstance(folder_enabled, bool):
         raise RuntimeError("backup settings destination flags must be bools")
+    if not isinstance(folder_path, str):
+        raise RuntimeError("backup settings folder_path must be a string")
     if not isinstance(retention_count, int) or retention_count <= 0:
         raise RuntimeError("backup settings retention_count must be a positive integer")
-    if not local_enabled and not google_drive_enabled:
-        raise HTTPException(status_code=400, detail="Enable local, Google Drive, or both before running a backup")
+    if not local_enabled and not folder_enabled:
+        raise HTTPException(status_code=400, detail="Enable local or folder backups before running a backup")
 
     backup_info = None
     archive_path = None
-    cleanup_temp_archive = False
     results: list[BackupRunDestinationResponse] = []
     any_success = False
+    folder_directory = None
+    if folder_enabled:
+        folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
+        folder_directory.mkdir(parents=True, exist_ok=True)
+        if not folder_directory.is_dir():
+            raise RuntimeError(f"Folder backup path is not a directory: {folder_directory}")
 
     if local_enabled:
         backup_directory = resolve_backup_directory_for_database(database_path)
@@ -405,64 +463,41 @@ def run_backup(token: Annotated[str, Depends(_require_auth)]):
             )
         )
 
-    temp_directory_manager = None
-    if google_drive_enabled and archive_path is None:
-        temp_directory_manager = TemporaryDirectory(prefix="metalist-drive-backup-")
-        temp_directory_path = Path(temp_directory_manager.name)
-        backup_info = create_timestamped_backup_for_paths(database_path, temp_directory_path)
-        archive_path = temp_directory_path / backup_info.filename
-        cleanup_temp_archive = True
-
-    if google_drive_enabled:
-        google_drive_capture = CapturedExceptionContext(RuntimeError, ValueError, FileNotFoundError)
-        with google_drive_capture:
+    if folder_enabled:
+        assert folder_directory is not None
+        if archive_path is None:
+            backup_info = create_timestamped_backup_for_paths(database_path, folder_directory)
+            archive_path = folder_directory / backup_info.filename
+        else:
             assert backup_info is not None
-            assert archive_path is not None
-            upload_google_drive_backup(
-                token=token,
-                namespace=namespace,
-                archive_path=str(archive_path),
-            )
-            drive_backups = list_google_drive_backups_for_namespace(token=token, namespace=namespace)
-            drive_delete_count = len(drive_backups) - retention_count
-            deleted_drive_count = 0
-            if drive_delete_count > 0:
-                drive_backups_oldest_first = list(reversed(drive_backups))
-                drive_backups_to_delete = drive_backups_oldest_first[:drive_delete_count]
-                for backup in drive_backups_to_delete:
-                    delete_google_drive_backup(token=token, file_id=backup.file_id)
-                deleted_drive_count = len(drive_backups_to_delete)
-                drive_backups = list_google_drive_backups_for_namespace(token=token, namespace=namespace)
-            any_success = True
-            results.append(
-                BackupRunDestinationResponse(
-                    destination="google_drive",
-                    success=True,
-                    created_filename=backup_info.filename,
-                    deleted_count=deleted_drive_count,
-                    remaining_count=len(drive_backups),
-                    message="Google Drive backup completed",
+            folder_archive_path = folder_directory / backup_info.filename
+            if archive_path != folder_archive_path:
+                shutil.copy2(archive_path, folder_archive_path)
+            archive_path = folder_archive_path
+        current_folder_backups = list_backups_in_directory(folder_directory, database_path=database_path)
+        folder_delete_count = len(current_folder_backups) - retention_count
+        deleted_folder_count = 0
+        if folder_delete_count > 0:
+            deleted_folder_count = len(
+                delete_oldest_backups_in_directory(
+                    folder_directory,
+                    folder_delete_count,
+                    database_path=database_path,
                 )
             )
-        if google_drive_capture.captured_exception is not None:
-            failed_created_filename = ""
-            if backup_info is not None:
-                failed_created_filename = backup_info.filename
-            results.append(
-                BackupRunDestinationResponse(
-                    destination="google_drive",
-                    success=False,
-                    created_filename=failed_created_filename,
-                    deleted_count=0,
-                    remaining_count=0,
-                    message=str(google_drive_capture.captured_exception),
-                )
+        remaining_folder_backups = list_backups_in_directory(folder_directory, database_path=database_path)
+        any_success = True
+        assert backup_info is not None
+        results.append(
+            BackupRunDestinationResponse(
+                destination="folder",
+                success=True,
+                created_filename=backup_info.filename,
+                deleted_count=deleted_folder_count,
+                remaining_count=len(remaining_folder_backups),
+                message=f"Folder backup completed: {folder_directory}",
             )
-
-    if temp_directory_manager is not None:
-        temp_directory_manager.cleanup()
-    if cleanup_temp_archive and archive_path is None:
-        raise RuntimeError("expected archive_path for Google Drive backup")
+        )
 
     if not any_success:
         raise HTTPException(status_code=500, detail="Backup failed for all enabled destinations")
@@ -475,8 +510,8 @@ def restore_backup(
     payload: BackupRestoreRequest,
     token: Annotated[str, Depends(_require_auth)],
 ):
-    if payload.source not in {"local", "google_drive"}:
-        raise HTTPException(status_code=400, detail="source must be local or google_drive")
+    if payload.source not in {"local", "folder"}:
+        raise HTTPException(status_code=400, detail="source must be local or folder")
     backup_namespace = validate_namespace(namespace=payload.backup_namespace)
     target_namespace = validate_namespace(namespace=payload.target_namespace)
     if target_namespace != backup_namespace:
@@ -513,31 +548,32 @@ def restore_backup(
             open_namespace_suggested = False
         else:
             restore_backup_to_paths(backup_path, target_database_path)
-    else:
-        if payload.backup_id == "":
-            raise HTTPException(status_code=400, detail="backup_id must not be empty")
-        with TemporaryDirectory(prefix="metalist-drive-restore-") as temp_directory:
-            temp_backup_path = Path(temp_directory) / payload.backup_filename
-            download_google_drive_backup(
-                token=token,
-                file_id=payload.backup_id,
-                target_path=str(temp_backup_path),
-            )
-            if parse_backup_namespace_from_filename(payload.backup_filename) != backup_namespace:
-                raise HTTPException(status_code=400, detail="backup filename namespace does not match payload")
-            if target_namespace == ACTIVE_NAMESPACE:
-                maintenance_service.enter_maintenance("Restoring backup")
-                try:
-                    restore_backup_to_paths(temp_backup_path, target_database_path)
-                    _reset_runtime_state_after_restore()
-                finally:
-                    maintenance_service.exit_maintenance()
-                _schedule_server_restart_after_restore(delay_seconds=0.5)
-                active_namespace_restarted = True
-                open_namespace_suggested = False
-            else:
-                restore_backup_to_paths(temp_backup_path, target_database_path)
-
+    elif payload.source == "folder":
+        folder_namespace, folder_filename = _parse_folder_backup_id(payload.backup_id)
+        if folder_namespace != backup_namespace:
+            raise HTTPException(status_code=400, detail="folder backup namespace does not match payload")
+        if folder_filename != payload.backup_filename:
+            raise HTTPException(status_code=400, detail="folder backup filename does not match payload")
+        settings = load_backup_settings(token=token)
+        folder_path = settings["folder_path"]
+        if not isinstance(folder_path, str):
+            raise RuntimeError("backup settings folder_path must be a string")
+        folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
+        backup_path = folder_directory / folder_filename
+        if not backup_path.exists():
+            raise HTTPException(status_code=404, detail=f"Backup not found: {folder_filename}")
+        if target_namespace == ACTIVE_NAMESPACE:
+            maintenance_service.enter_maintenance("Restoring backup")
+            try:
+                restore_backup_to_paths(backup_path, target_database_path)
+                _reset_runtime_state_after_restore()
+            finally:
+                maintenance_service.exit_maintenance()
+            _schedule_server_restart_after_restore(delay_seconds=0.5)
+            active_namespace_restarted = True
+            open_namespace_suggested = False
+        else:
+            restore_backup_to_paths(backup_path, target_database_path)
     return BackupRestoreResponse(
         backup_id=payload.backup_id,
         source=payload.source,

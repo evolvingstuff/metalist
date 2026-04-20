@@ -23,6 +23,14 @@ function parseResponseError(responseBody, statusCode) {
 }
 
 
+function backupSourceLabel(source) {
+    if (source === 'folder') {
+        return 'Folder';
+    }
+    return 'Local';
+}
+
+
 export class BackupRestoreModal extends BaseModal {
     constructor() {
         super('backupRestoreModal', 'backup-restore-modal');
@@ -213,7 +221,7 @@ export class BackupRestoreModal extends BaseModal {
             if (typeof backup.size_bytes !== 'number') {
                 throw new Error('Backup entry missing size_bytes');
             }
-            const sourceLabel = backup.source === 'google_drive' ? 'Google Drive' : 'Local';
+            const sourceLabel = backupSourceLabel(backup.source);
             const isSelected = backup.backup_id === selectedBackupId ? 'selected' : '';
             const label = `${sourceLabel} · ${backup.namespace} · ${backup.filename} (${Math.round(backup.size_bytes / 1024)} KB, ${backup.created_at})`;
             return `<option value="${backup.backup_id}" ${isSelected}>${label}</option>`;

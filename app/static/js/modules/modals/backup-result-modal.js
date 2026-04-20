@@ -1,6 +1,19 @@
 import { BaseModal } from './base-modal.js';
 
 
+function _escapeHtml(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+
 function _assertString(value, fieldName) {
     if (typeof value !== 'string') {
         throw new Error(`${fieldName} must be a string`);
@@ -12,6 +25,59 @@ function _assertNonNegativeInteger(value, fieldName) {
     if (!Number.isInteger(value) || value < 0) {
         throw new Error(`${fieldName} must be a non-negative integer`);
     }
+}
+
+
+function _destinationTitle(destination) {
+    if (destination === 'folder') {
+        return 'Selected Folder';
+    }
+    return 'MetaList Folder';
+}
+
+
+function _statusMarkup(success) {
+    if (typeof success !== 'boolean') {
+        throw new Error('_statusMarkup requires boolean success');
+    }
+    if (success) {
+        return `
+            <span class="backup-result-status backup-result-status-success">
+                <span class="backup-result-status-icon" aria-hidden="true">&#10003;</span>
+                Saved
+            </span>
+        `;
+    }
+    return `
+        <span class="backup-result-status backup-result-status-failed">
+            <span class="backup-result-status-icon" aria-hidden="true">&#10005;</span>
+            Failed
+        </span>
+    `;
+}
+
+
+function _detailsText(result) {
+    if (!result || typeof result !== 'object') {
+        throw new Error('_detailsText requires result object');
+    }
+    if (typeof result.message !== 'string') {
+        throw new Error('result.message must be a string');
+    }
+    if (!result.success) {
+        return result.message;
+    }
+    if (result.destination === 'local') {
+        return 'Stored in the app-managed namespace backup folder';
+    }
+    if (result.destination === 'folder') {
+        const prefix = 'Folder backup completed: ';
+        if (result.message.startsWith(prefix)) {
+            return result.message.slice(prefix.length);
+        }
+        return result.message;
+    }
+    return result.message;
 }
 
 
@@ -97,7 +163,7 @@ export class BackupResultModal extends BaseModal {
             throw new Error('BackupResultModal requires results');
         }
 
-        const resultsHtml = state.results.map((result) => {
+        const resultsRowsHtml = state.results.map((result) => {
             if (!result || typeof result !== 'object') {
                 throw new Error('BackupResultModal result entry must be an object');
             }
@@ -110,27 +176,43 @@ export class BackupResultModal extends BaseModal {
             _assertNonNegativeInteger(result.remaining_count, 'remaining_count');
             _assertString(result.message, 'message');
 
-            const title = result.destination === 'google_drive' ? 'Google Drive' : 'Local';
-            const filenameLine = result.created_filename.length > 0
-                ? `<p>Created: <span class="backup-filename">${result.created_filename}</span></p>`
-                : '';
-            const retentionLine = result.success
-                ? `<p>Deleted older backups: <strong>${result.deleted_count}</strong> · Remaining: <strong>${result.remaining_count}</strong></p>`
-                : '';
+            const title = _destinationTitle(result.destination);
+            const detailsText = _detailsText(result);
+            const createdFilename = result.created_filename.length > 0 ? result.created_filename : '-';
+            const deletedCount = result.success ? String(result.deleted_count) : '-';
+            const keptCount = result.success ? String(result.remaining_count) : '-';
             return `
-                <div class="form-group">
-                    <p><strong>${title}</strong> · ${result.success ? 'Success' : 'Failed'}</p>
-                    ${filenameLine}
-                    ${retentionLine}
-                    <p>${result.message}</p>
-                </div>
+                <tr>
+                    <td class="backup-result-destination">${_escapeHtml(title)}</td>
+                    <td>${_statusMarkup(result.success)}</td>
+                    <td><span class="backup-filename">${_escapeHtml(createdFilename)}</span></td>
+                    <td class="backup-result-table-count">${deletedCount}</td>
+                    <td class="backup-result-table-count">${keptCount}</td>
+                    <td class="backup-result-notes">${_escapeHtml(detailsText)}</td>
+                </tr>
             `;
         }).join('');
 
         modalElement.innerHTML = `
             <div class="modal-content backup-result-modal-content">
                 <h3>Backup Result</h3>
-                ${resultsHtml}
+                <div class="backup-result-table-wrapper">
+                    <table class="backup-result-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Destination</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Archive</th>
+                                <th scope="col">Deleted</th>
+                                <th scope="col">Kept Here</th>
+                                <th scope="col">Location / Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${resultsRowsHtml}
+                        </tbody>
+                    </table>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="primary-btn" id="backup-result-ok-btn">OK</button>
                 </div>

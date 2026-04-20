@@ -1268,6 +1268,78 @@ body.ontology-modal-open #ontology-modal {
     width: min(760px, 92vw);
 }
 
+.backup-result-table-wrapper {
+    margin: 20px 0 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+}
+
+.backup-result-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+}
+
+.backup-result-table th,
+.backup-result-table td {
+    padding: 12px 14px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.backup-result-table thead th {
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #666666;
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.backup-result-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.backup-result-destination {
+    font-weight: 600;
+}
+
+.backup-result-table-count {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.backup-result-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.backup-result-status-success {
+    color: #1d6b38;
+    background: rgba(40, 167, 69, 0.14);
+}
+
+.backup-result-status-failed {
+    color: #9f2130;
+    background: rgba(220, 53, 69, 0.14);
+}
+
+.backup-result-status-icon {
+    font-size: 0.95em;
+    line-height: 1;
+}
+
+.backup-result-notes {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 .backup-filename {
     font-family: inherit;
     font-size: inherit;

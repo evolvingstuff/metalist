@@ -40,13 +40,6 @@ def _env_int(name: str, default: int) -> int:
     return int(value)
 
 
-def _env_str(name: str, default: str) -> str:
-    if name not in os.environ:
-        return default
-    value = os.environ[name].strip()
-    return value
-
-
 # Development settings - CRASH SERVER ON ANY ERROR
 CRASH_SERVER_ON_FAIL = _env_flag("CRASH_SERVER_ON_FAIL", True)
 DEV_ENFORCE_INTEGRITY_CHECKS = _env_flag("DEV_ENFORCE_INTEGRITY_CHECKS", False)
@@ -83,18 +76,6 @@ LOGIN_RATE_LIMIT_BLOCK_SECONDS = _env_int("LOGIN_RATE_LIMIT_BLOCK_SECONDS", 300)
 SECURITY_HARDENING_ENABLED = _env_flag("SECURITY_HARDENING_ENABLED", True)
 SECURITY_REQUIRE_ENCRYPTED_SWAP = _env_flag("SECURITY_REQUIRE_ENCRYPTED_SWAP", False)
 SECURITY_REQUIRE_MACOS_NO_HIBERNATION = _env_flag("SECURITY_REQUIRE_MACOS_NO_HIBERNATION", False)
-
-GOOGLE_DRIVE_CLIENT_ID = _env_str(
-    "METALIST_GOOGLE_DRIVE_CLIENT_ID",
-    "",
-)
-GOOGLE_DRIVE_CLIENT_SECRET = _env_str(
-    "METALIST_GOOGLE_DRIVE_CLIENT_SECRET",
-    "",
-)
-GOOGLE_DRIVE_REDIRECT_ORIGIN = _env_str("METALIST_GOOGLE_DRIVE_REDIRECT_ORIGIN", "")
-GOOGLE_DRIVE_ROOT_FOLDER_NAME = _env_str("METALIST_GOOGLE_DRIVE_ROOT_FOLDER_NAME", "MetaList Backups")
-assert GOOGLE_DRIVE_ROOT_FOLDER_NAME != "", "METALIST_GOOGLE_DRIVE_ROOT_FOLDER_NAME must not be empty"
 
 assert KDF_MIN_TIME_COST <= KDF_TIME_COST <= KDF_MAX_TIME_COST
 assert KDF_MIN_MEMORY_COST_KIB <= KDF_MEMORY_COST_KIB <= KDF_MAX_MEMORY_COST_KIB

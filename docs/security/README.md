@@ -281,17 +281,14 @@ Auth:
 - `GET /api2/auth/sessions` - List active session(s)
 
 Backup:
-- `GET /api2/backup/settings` - Read backup destination settings and current Google Drive connection status
-- `PUT /api2/backup/settings` - Update local/Google Drive destination toggles and the per-destination retention count
-- `GET /api2/backup/list` - List available local and connected Google Drive backup snapshots
+- `GET /api2/backup/settings` - Read backup destination settings
+- `PUT /api2/backup/settings` - Update local/folder destination toggles and the per-destination retention count
+- `GET /api2/backup/list` - List available local and configured-folder backup snapshots
 - `POST /api2/backup/run` - Create one versioned workspace archive snapshot and write it to the enabled destination(s)
-- `POST /api2/backup/restore` - Restore the selected local or Google Drive archive snapshot and trigger the usual post-restore runtime reset/restart flow
+- `POST /api2/backup/restore` - Restore the selected local or folder archive snapshot and trigger the usual post-restore runtime reset/restart flow
   - Backup scope follows the active DB path, so namespaced runs use `~/MetaList/namespaces/<namespace>/backups/` and write one versioned archive per snapshot, for example `cla-<timestamp>.metalist-backup.tar.gz`. Legacy `.bak` snapshots remain restorable.
-  - Backup settings and Google Drive tokens are stored per namespace; when namespace encryption is enabled, that settings payload is encrypted at rest too.
-- `POST /api2/backup/google-drive/connect/start` - Start Google Drive Desktop OAuth in the browser
-- `GET /api2/backup/google-drive/connect/status` - Poll connect state for the current in-flight OAuth request
-- `POST /api2/backup/google-drive/validate` - Validate the saved Google Drive connection and refresh folder/account metadata
-- `POST /api2/backup/google-drive/disconnect` - Remove the saved Google Drive connection for the active namespace
+  - Backup settings are stored per namespace; when namespace encryption is enabled, that settings payload is encrypted at rest too.
+- `POST /api2/backup/folder/pick` - Open the native folder picker and return the selected absolute backup path
 
 Notes:
 - `POST /api2/notes/view`
