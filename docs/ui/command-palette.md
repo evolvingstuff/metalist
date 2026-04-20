@@ -29,10 +29,11 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Endpoint definitions (behavior/labels) live in code.
 
 ## Utility Actions
-- `Create backup now`: creates a timestamped SQLite backup in the app backup directory. If total backups are 25 or more, the app opens a retention modal asking how many backups to keep (defaults to 3, with an explicit "Keep all backups" option), then shows a completion modal with `OK`.
-  - When file attachments exist, the backup includes the sibling `*.files.db` database as a paired sidecar backup.
-- `Restore from backup…`: opens a restore picker, applies the selected backup, then shows a success confirmation with `OK` before reload.
-  - Restore also restores the paired file-attachment database, or resets it to empty when the selected backup predates file attachments.
+- `Create backup now`: opens Backup Settings, where the user can choose local, Google Drive, or both, set the retention count, connect/disconnect Google Drive for the current namespace, and then run the backup.
+  - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling file/search-history DBs when present.
+  - The completion modal shows one result row per destination, so a local success and a Google Drive failure are reported separately.
+- `Restore from backup…`: opens a restore picker for local and connected Google Drive snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.
+  - Restore reuses the same archive pipeline for both sources and recreates sibling file/search-history DBs from the archive contents.
 - `Export as HTML`: downloads a self-contained HTML file for the current view with inline CSS, the active light/dark theme, all exported notes fully expanded, no command/search chrome, no collapse arrows, and `@password` note values redacted to matching-length `X` characters while keeping the blur styling.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.

@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
     encrypted_dek BLOB,
     dek_nonce BLOB,
     dek_tag BLOB,
+    backup_settings_json TEXT,
+    backup_settings_encryption_nonce BLOB,
+    backup_settings_encryption_tag BLOB,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -125,6 +128,9 @@ def initialize_schema(connection: Connection) -> None:
             "kdf_algorithm": "TEXT",
             "kdf_memory_cost_kib": "INTEGER",
             "kdf_parallelism": "INTEGER",
+            "backup_settings_json": "TEXT",
+            "backup_settings_encryption_nonce": "BLOB",
+            "backup_settings_encryption_tag": "BLOB",
         },
     )
     connection.execute(_CREATE_NOTES_PARENT_INDEX)

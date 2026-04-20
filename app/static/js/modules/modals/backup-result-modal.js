@@ -1,9 +1,9 @@
 import { BaseModal } from './base-modal.js';
 
 
-function _assertNonEmptyString(value, fieldName) {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new Error(`${fieldName} must be a non-empty string`);
+function _assertString(value, fieldName) {
+    if (typeof value !== 'string') {
+        throw new Error(`${fieldName} must be a string`);
     }
 }
 
@@ -27,9 +27,7 @@ export class BackupResultModal extends BaseModal {
             throw new Error('BackupResultModal requires context before initialization');
         }
         return {
-            createdFilename: this._context.createdFilename,
-            deletedCount: this._context.deletedCount,
-            remainingCount: this._context.remainingCount,
+            results: this._context.results,
         };
     }
 
@@ -58,31 +56,19 @@ export class BackupResultModal extends BaseModal {
         if (this._pendingResolve !== null) {
             throw new Error('BackupResultModal already has a pending promise');
         }
-
         this._context = {
-            createdFilename: context.createdFilename,
-            deletedCount: context.deletedCount,
-            remainingCount: context.remainingCount,
+            results: context.results,
         };
-
         this.open();
-
         return new Promise((resolve) => {
             this._pendingResolve = resolve;
         });
-    }
-
-    onOpen() {
-        if (this._context === null) {
-            throw new Error('BackupResultModal missing open context');
-        }
     }
 
     onClose() {
         const resolve = this._pendingResolve;
         this._pendingResolve = null;
         this._context = null;
-
         if (resolve !== null) {
             resolve();
         }
@@ -107,20 +93,44 @@ export class BackupResultModal extends BaseModal {
         }
 
         const state = this.getModalState();
-        _assertNonEmptyString(state.createdFilename, 'createdFilename');
-        _assertNonNegativeInteger(state.deletedCount, 'deletedCount');
-        _assertNonNegativeInteger(state.remainingCount, 'remainingCount');
+        if (!Array.isArray(state.results) || state.results.length === 0) {
+            throw new Error('BackupResultModal requires results');
+        }
 
-        const retentionMessage = state.deletedCount > 0
-            ? `Removed ${state.deletedCount} older backup(s).`
-            : 'No older backups were removed.';
+        const resultsHtml = state.results.map((result) => {
+            if (!result || typeof result !== 'object') {
+                throw new Error('BackupResultModal result entry must be an object');
+            }
+            _assertString(result.destination, 'destination');
+            if (typeof result.success !== 'boolean') {
+                throw new Error('success must be a boolean');
+            }
+            _assertString(result.created_filename, 'created_filename');
+            _assertNonNegativeInteger(result.deleted_count, 'deleted_count');
+            _assertNonNegativeInteger(result.remaining_count, 'remaining_count');
+            _assertString(result.message, 'message');
+
+            const title = result.destination === 'google_drive' ? 'Google Drive' : 'Local';
+            const filenameLine = result.created_filename.length > 0
+                ? `<p>Created: <span class="backup-filename">${result.created_filename}</span></p>`
+                : '';
+            const retentionLine = result.success
+                ? `<p>Deleted older backups: <strong>${result.deleted_count}</strong> · Remaining: <strong>${result.remaining_count}</strong></p>`
+                : '';
+            return `
+                <div class="form-group">
+                    <p><strong>${title}</strong> · ${result.success ? 'Success' : 'Failed'}</p>
+                    ${filenameLine}
+                    ${retentionLine}
+                    <p>${result.message}</p>
+                </div>
+            `;
+        }).join('');
 
         modalElement.innerHTML = `
             <div class="modal-content backup-result-modal-content">
-                <h3>Backup Complete</h3>
-                <p>Created backup: <span class="backup-filename">${state.createdFilename}</span></p>
-                <p>${retentionMessage}</p>
-                <p>Total backups now: <strong>${state.remainingCount}</strong></p>
+                <h3>Backup Result</h3>
+                ${resultsHtml}
                 <div class="form-actions">
                     <button type="button" class="primary-btn" id="backup-result-ok-btn">OK</button>
                 </div>
@@ -139,8 +149,8 @@ export class BackupResultModal extends BaseModal {
         if (!context || typeof context !== 'object') {
             throw new Error('BackupResultModal context must be an object');
         }
-        _assertNonEmptyString(context.createdFilename, 'createdFilename');
-        _assertNonNegativeInteger(context.deletedCount, 'deletedCount');
-        _assertNonNegativeInteger(context.remainingCount, 'remainingCount');
+        if (!Array.isArray(context.results) || context.results.length === 0) {
+            throw new Error('BackupResultModal context missing results');
+        }
     }
 }

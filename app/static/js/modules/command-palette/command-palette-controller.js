@@ -8,6 +8,7 @@ import { PasswordModal } from '../modals/password-modal.js';
 import { BackupRetentionModal } from '../modals/backup-retention-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
+import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
@@ -240,6 +241,7 @@ class CommandPaletteController {
         this._usage = new UsageStore();
 
         this._ontologyModal = null;
+        this._backupSettingsModal = null;
         this._backupRetentionModal = null;
         this._backupResultModal = null;
         this._backupRestoreModal = null;
@@ -1432,6 +1434,19 @@ class CommandPaletteController {
         await this._backupResultModal.openWithResult(resultContext);
     }
 
+    async _openBackupSettingsModal() {
+        if (this._backupSettingsModal === null) {
+            this._backupSettingsModal = new BackupSettingsModal();
+        }
+        if (this.isOpen()) {
+            this.close();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+        return await this._backupSettingsModal.openForBackup();
+    }
+
     async _maybeDeleteOldestBackupsAfterCreate(createdFilename) {
         if (typeof createdFilename !== 'string' || createdFilename.length === 0) {
             throw new Error('_maybeDeleteOldestBackupsAfterCreate requires createdFilename');
@@ -1501,51 +1516,38 @@ class CommandPaletteController {
     }
 
     async createBackup() {
-        if (this.isOpen()) {
-            this.close();
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
         }
-
-        const createdFilename = await CommandGate.run('commandPalette.createBackup', async () => {
-            if (ModeContext.isEditing) {
-                await actionSaveAndExitEditingWithoutRefreshing();
-            }
-
-            const payload = await this._authRequest(CONFIG.API.AUTH.BACKUP.CREATE, 'POST', null);
-            if (!payload || typeof payload !== 'object') {
-                throw new Error('Backup response missing body');
-            }
-            if (!payload.backup || typeof payload.backup !== 'object') {
-                throw new Error('Backup response missing backup object');
-            }
-            if (typeof payload.backup.filename !== 'string' || payload.backup.filename.length === 0) {
-                throw new Error('Backup response missing filename');
-            }
-
-            return payload.backup.filename;
-        });
-        if (createdFilename === null) {
+        const modalResult = await this._openBackupSettingsModal();
+        if (!modalResult || typeof modalResult !== 'object') {
+            throw new Error('Backup settings modal result missing');
+        }
+        if (modalResult.action !== 'run_backup') {
             return;
         }
-        if (typeof createdFilename !== 'string' || createdFilename.length === 0) {
-            throw new Error('createBackup expected created filename from CommandGate');
-        }
 
-        const retentionResult = await this._maybeDeleteOldestBackupsAfterCreate(createdFilename);
-
-        if (!retentionResult || typeof retentionResult !== 'object') {
-            throw new Error('Retention result missing');
+        const backupResult = await CommandGate.run('commandPalette.createBackup', async () => {
+            const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', {});
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Backup run response missing body');
+            }
+            if (!Array.isArray(payload.results) || payload.results.length === 0) {
+                throw new Error('Backup run response missing results');
+            }
+            return payload.results;
+        }, {
+            timeoutMs: 120000,
+        });
+        if (backupResult === null) {
+            return;
         }
-        if (!Number.isInteger(retentionResult.deletedCount) || retentionResult.deletedCount < 0) {
-            throw new Error('Retention result has invalid deletedCount');
-        }
-        if (!Number.isInteger(retentionResult.remainingCount) || retentionResult.remainingCount < 0) {
-            throw new Error('Retention result has invalid remainingCount');
+        if (!Array.isArray(backupResult) || backupResult.length === 0) {
+            throw new Error('Backup run expected results array from CommandGate');
         }
 
         await this._openBackupResultModal({
-            createdFilename,
-            deletedCount: retentionResult.deletedCount,
-            remainingCount: retentionResult.remainingCount,
+            results: backupResult,
         });
     }
 

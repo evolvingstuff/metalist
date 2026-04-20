@@ -37,6 +37,7 @@ from app.api.routes.memory import router as api2_memory_router
 from app.api.routes.files import router as api2_files_router
 from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.mcp import router as api2_mcp_router
+from app.api.routes.backups import router as api2_backup_router
 from app.api.routes.test import router as api2_test_router
 from app.api.transactions import transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
@@ -232,6 +233,7 @@ app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
 # v2 routers mounted under configured API_PREFIX
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
 app.include_router(api2_auth_router, prefix=API_PREFIX)
+app.include_router(api2_backup_router, prefix=API_PREFIX)
 app.include_router(api2_memory_router, prefix=API_PREFIX)
 app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)

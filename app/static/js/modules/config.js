@@ -80,6 +80,18 @@ export const CONFIG = {
                 }
             }
         },
+        BACKUP: {
+            SETTINGS: `${API_BASE}/backup/settings`,
+            RUN: `${API_BASE}/backup/run`,
+            LIST: `${API_BASE}/backup/list`,
+            RESTORE: `${API_BASE}/backup/restore`,
+            GOOGLE_DRIVE: {
+                CONNECT_START: `${API_BASE}/backup/google-drive/connect/start`,
+                CONNECT_STATUS: (requestId) => `${API_BASE}/backup/google-drive/connect/status?request_id=${encodeURIComponent(requestId)}`,
+                VALIDATE: `${API_BASE}/backup/google-drive/validate`,
+                DISCONNECT: `${API_BASE}/backup/google-drive/disconnect`,
+            },
+        },
         MEMORY: {
             BASE: `${API_BASE}/memory`
         },

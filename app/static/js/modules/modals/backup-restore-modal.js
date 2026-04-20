@@ -27,8 +27,8 @@ export class BackupRestoreModal extends BaseModal {
     constructor() {
         super('backupRestoreModal', 'backup-restore-modal');
         this.apiEndpoints = {
-            list: CONFIG.API.AUTH.BACKUP.LIST,
-            restore: CONFIG.API.AUTH.BACKUP.RESTORE,
+            list: CONFIG.API.BACKUP.LIST,
+            restore: CONFIG.API.BACKUP.RESTORE,
         };
     }
 
@@ -40,8 +40,12 @@ export class BackupRestoreModal extends BaseModal {
             restored: false,
             waitingForServer: false,
             restoredFilename: '',
+            restoredTargetNamespace: '',
+            activeNamespaceRestarted: false,
+            openNamespaceSuggested: false,
             backups: [],
-            selectedFilename: '',
+            selectedBackupId: '',
+            targetNamespaceText: '',
             error: '',
         };
     }
@@ -80,7 +84,7 @@ export class BackupRestoreModal extends BaseModal {
 
         const state = this.getModalState();
         if (event.key === 'Escape') {
-            if (state && state.restored) {
+            if (state && state.restored && Boolean(state.activeNamespaceRestarted)) {
                 event.preventDefault();
                 event.stopPropagation();
                 return;
@@ -90,7 +94,6 @@ export class BackupRestoreModal extends BaseModal {
             this.close();
             return;
         }
-
         this.onKeyDown(event);
     }
 
@@ -104,7 +107,7 @@ export class BackupRestoreModal extends BaseModal {
         event.preventDefault();
         event.stopPropagation();
         const state = this.getModalState();
-        if (state && state.restored) {
+        if (state && state.restored && Boolean(state.activeNamespaceRestarted)) {
             this._beginPostRestoreReconnectAndReload();
             return;
         }
@@ -119,7 +122,8 @@ export class BackupRestoreModal extends BaseModal {
 
         const state = this.getModalState();
         const backups = Array.isArray(state.backups) ? state.backups : [];
-        const selectedFilename = typeof state.selectedFilename === 'string' ? state.selectedFilename : '';
+        const selectedBackupId = typeof state.selectedBackupId === 'string' ? state.selectedBackupId : '';
+        const targetNamespaceText = typeof state.targetNamespaceText === 'string' ? state.targetNamespaceText : '';
         const error = typeof state.error === 'string' ? state.error : '';
         const loading = Boolean(state.loading);
         const restoring = Boolean(state.restoring);
@@ -127,49 +131,81 @@ export class BackupRestoreModal extends BaseModal {
         const restored = Boolean(state.restored);
         const waitingForServer = Boolean(state.waitingForServer);
         const restoredFilename = typeof state.restoredFilename === 'string' ? state.restoredFilename : '';
+        const restoredTargetNamespace = typeof state.restoredTargetNamespace === 'string' ? state.restoredTargetNamespace : '';
+        const activeNamespaceRestarted = Boolean(state.activeNamespaceRestarted);
+        const openNamespaceSuggested = Boolean(state.openNamespaceSuggested);
 
         if (restored) {
-            if (restoredFilename.length === 0) {
-                throw new Error('Backup restore success state missing restoredFilename');
+            if (restoredFilename.length === 0 || restoredTargetNamespace.length === 0) {
+                throw new Error('Backup restore success state missing restored values');
             }
-            if (waitingForServer) {
+            if (activeNamespaceRestarted) {
+                if (waitingForServer) {
+                    modalElement.innerHTML = `
+                        <div class="modal-content backup-restore-modal-content">
+                            <h3>Restore Complete</h3>
+                            <p>Backup restored successfully: <span class="backup-filename">${restoredFilename}</span></p>
+                            <p>Reconnecting to restarted server. You will be redirected automatically.</p>
+                        </div>
+                    `;
+                    return;
+                }
                 modalElement.innerHTML = `
                     <div class="modal-content backup-restore-modal-content">
                         <h3>Restore Complete</h3>
                         <p>Backup restored successfully: <span class="backup-filename">${restoredFilename}</span></p>
-                        <p>Reconnecting to restarted server. You will be redirected automatically.</p>
+                        <p>Click OK to reload the app.</p>
+                        <div class="form-actions">
+                            <button type="button" class="primary-btn" id="backup-restore-success-ok-btn">OK</button>
+                        </div>
                     </div>
                 `;
+                const okButton = document.getElementById('backup-restore-success-ok-btn');
+                if (!(okButton instanceof HTMLButtonElement)) {
+                    throw new Error('backup-restore-success-ok-btn missing');
+                }
+                okButton.onclick = () => this._beginPostRestoreReconnectAndReload();
+                setTimeout(() => okButton.focus(), 50);
                 return;
             }
+
             modalElement.innerHTML = `
                 <div class="modal-content backup-restore-modal-content">
                     <h3>Restore Complete</h3>
                     <p>Backup restored successfully: <span class="backup-filename">${restoredFilename}</span></p>
-                    <p>Click OK to reload the app.</p>
+                    <p>Restored into namespace <strong>${restoredTargetNamespace}</strong>.</p>
+                    <p>${openNamespaceSuggested ? 'Use the namespace switcher to open it.' : 'You can continue using it now.'}</p>
                     <div class="form-actions">
-                        <button type="button" class="primary-btn" id="backup-restore-success-ok-btn">OK</button>
+                        <button type="button" class="primary-btn" id="backup-restore-finish-ok-btn">OK</button>
                     </div>
                 </div>
             `;
-
-            const okButton = document.getElementById('backup-restore-success-ok-btn');
-            if (!(okButton instanceof HTMLButtonElement)) {
-                throw new Error('backup-restore-success-ok-btn missing');
+            const finishButton = document.getElementById('backup-restore-finish-ok-btn');
+            if (!(finishButton instanceof HTMLButtonElement)) {
+                throw new Error('backup-restore-finish-ok-btn missing');
             }
-            okButton.onclick = () => this._beginPostRestoreReconnectAndReload();
-            setTimeout(() => okButton.focus(), 50);
+            finishButton.onclick = () => this.close();
+            setTimeout(() => finishButton.focus(), 50);
             return;
         }
 
+        let selectedBackup = backups.find((backup) => backup.backup_id === selectedBackupId);
+        if (typeof selectedBackup === 'undefined') {
+            selectedBackup = null;
+        }
         const selectSize = backups.length > 1 ? Math.min(backups.length, 8) : 1;
-
         const optionsHtml = backups.map((backup) => {
             if (!backup || typeof backup !== 'object') {
                 throw new Error('Invalid backup list entry');
             }
+            if (typeof backup.backup_id !== 'string' || backup.backup_id.length === 0) {
+                throw new Error('Backup entry missing backup_id');
+            }
             if (typeof backup.filename !== 'string' || backup.filename.length === 0) {
                 throw new Error('Backup entry missing filename');
+            }
+            if (typeof backup.namespace !== 'string' || backup.namespace.length === 0) {
+                throw new Error('Backup entry missing namespace');
             }
             if (typeof backup.created_at !== 'string' || backup.created_at.length === 0) {
                 throw new Error('Backup entry missing created_at');
@@ -177,18 +213,20 @@ export class BackupRestoreModal extends BaseModal {
             if (typeof backup.size_bytes !== 'number') {
                 throw new Error('Backup entry missing size_bytes');
             }
-
-            const isSelected = backup.filename === selectedFilename ? 'selected' : '';
-            const label = `${backup.filename} (${Math.round(backup.size_bytes / 1024)} KB, ${backup.created_at})`;
-            return `<option value="${backup.filename}" ${isSelected}>${label}</option>`;
+            const sourceLabel = backup.source === 'google_drive' ? 'Google Drive' : 'Local';
+            const isSelected = backup.backup_id === selectedBackupId ? 'selected' : '';
+            const label = `${sourceLabel} · ${backup.namespace} · ${backup.filename} (${Math.round(backup.size_bytes / 1024)} KB, ${backup.created_at})`;
+            return `<option value="${backup.backup_id}" ${isSelected}>${label}</option>`;
         }).join('');
+
+        const selectedNamespace = selectedBackup && typeof selectedBackup.namespace === 'string' ? selectedBackup.namespace : '';
 
         modalElement.innerHTML = `
             <div class="modal-content backup-restore-modal-content">
                 <h3>Restore From Backup</h3>
-                <p>Select a backup snapshot and restore the database.</p>
-                <p><strong>Warning:</strong> restore replaces your current data.</p>
-                <p id="backup-modal-confirm-message">${confirming ? `Confirm restore of "${selectedFilename}"?` : ''}</p>
+                <p>Select a backup snapshot and restore the workspace data.</p>
+                <p><strong>Warning:</strong> restore overwrites the target namespace.</p>
+                <p id="backup-modal-confirm-message">${confirming && selectedBackup ? `Confirm restore of "${selectedBackup.filename}" into namespace "${targetNamespaceText}"?` : ''}</p>
 
                 <div class="form-group">
                     <label for="backup-select">Available Backups</label>
@@ -197,12 +235,19 @@ export class BackupRestoreModal extends BaseModal {
                     </select>
                 </div>
 
+                <div class="form-group">
+                    <label for="backup-target-namespace">Target namespace</label>
+                    <input type="text" id="backup-target-namespace" value="${targetNamespaceText}" ${loading || restoring || backups.length === 0 ? 'disabled' : ''}>
+                </div>
+
+                <p>${selectedNamespace ? `Backup namespace: ${selectedNamespace}` : ''}</p>
+
                 <div class="form-actions">
                     <button type="button" class="primary-btn" id="restore-backup-btn" ${loading || restoring || backups.length === 0 ? 'disabled' : ''}>${confirming ? 'Confirm Restore' : 'Restore Selected Backup'}</button>
                     <button type="button" class="secondary-btn" id="close-backup-modal-btn" ${restoring ? 'disabled' : ''}>${confirming ? 'Back' : 'Cancel'}</button>
                 </div>
 
-                <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${restoring ? 'Restoring backup...' : ''}</p>
+                <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${restoring ? ' Restoring backup...' : ''}</p>
                 <p id="backup-modal-error" class="error-message">${error}</p>
             </div>
         `;
@@ -237,8 +282,28 @@ export class BackupRestoreModal extends BaseModal {
         const select = document.getElementById('backup-select');
         if (select instanceof HTMLSelectElement) {
             select.onchange = () => {
+                const backups = this.getModalState().backups;
+                const selectedBackup = Array.isArray(backups)
+                    ? backups.find((backup) => backup.backup_id === select.value) || null
+                    : null;
+                const nextNamespace = selectedBackup && typeof selectedBackup.namespace === 'string'
+                    ? selectedBackup.namespace
+                    : '';
                 this.updateModalState({
-                    selectedFilename: select.value,
+                    selectedBackupId: select.value,
+                    targetNamespaceText: nextNamespace,
+                    confirming: false,
+                    error: '',
+                });
+                this.renderModalContent();
+            };
+        }
+
+        const targetNamespaceInput = document.getElementById('backup-target-namespace');
+        if (targetNamespaceInput instanceof HTMLInputElement) {
+            targetNamespaceInput.oninput = () => {
+                this.updateModalState({
+                    targetNamespaceText: targetNamespaceInput.value,
                     confirming: false,
                     error: '',
                 });
@@ -250,26 +315,21 @@ export class BackupRestoreModal extends BaseModal {
         if (typeof includeContentType !== 'boolean') {
             throw new Error('_buildAuthHeaders requires boolean includeContentType');
         }
-
         const tabId = sessionStorage.getItem('metalist_tab_id');
         if (typeof tabId !== 'string' || tabId.length === 0) {
             throw new Error('metalist_tab_id missing from sessionStorage');
         }
-
         const token = localStorage.getItem('auth_token');
         if (typeof token !== 'string' || token.length === 0) {
             throw new Error('auth_token missing from localStorage');
         }
-
         const headers = {
             Authorization: `Bearer ${token}`,
             'X-Metalist-Tab-Id': tabId,
         };
-
         if (includeContentType) {
             headers['Content-Type'] = 'application/json';
         }
-
         return headers;
     }
 
@@ -296,7 +356,6 @@ export class BackupRestoreModal extends BaseModal {
         if (typeof contentType === 'string' && contentType.includes('application/json')) {
             payload = await response.json();
         }
-
         if (!response.ok) {
             throw new Error(parseResponseError(payload, response.status));
         }
@@ -314,9 +373,13 @@ export class BackupRestoreModal extends BaseModal {
             restored: false,
             waitingForServer: false,
             restoredFilename: '',
+            restoredTargetNamespace: '',
+            activeNamespaceRestarted: false,
+            openNamespaceSuggested: false,
             error: '',
             backups: [],
-            selectedFilename: '',
+            selectedBackupId: '',
+            targetNamespaceText: '',
         });
         this.renderModalContent();
 
@@ -329,25 +392,39 @@ export class BackupRestoreModal extends BaseModal {
         }
 
         const backups = payload.backups;
-        const selectedFilename = backups.length > 0 ? backups[0].filename : '';
+        const firstBackup = backups.length > 0 ? backups[0] : null;
+        const selectedBackupId = firstBackup && typeof firstBackup.backup_id === 'string' ? firstBackup.backup_id : '';
+        const targetNamespaceText = firstBackup && typeof firstBackup.namespace === 'string' ? firstBackup.namespace : '';
         this.updateModalState({
             loading: false,
-            restoring: false,
-            confirming: false,
-            restored: false,
-            waitingForServer: false,
-            restoredFilename: '',
-            error: '',
             backups,
-            selectedFilename,
+            selectedBackupId,
+            targetNamespaceText,
+            error: '',
         });
         this.renderModalContent();
     }
 
     async handleRestore() {
         const state = this.getModalState();
-        if (typeof state.selectedFilename !== 'string' || state.selectedFilename.length === 0) {
+        if (typeof state.selectedBackupId !== 'string' || state.selectedBackupId.length === 0) {
             this.updateModalState({ error: 'Select a backup first.' });
+            this.renderModalContent();
+            return;
+        }
+
+        const backups = Array.isArray(state.backups) ? state.backups : [];
+        let selectedBackup = backups.find((backup) => backup.backup_id === state.selectedBackupId);
+        if (typeof selectedBackup === 'undefined') {
+            selectedBackup = null;
+        }
+        if (selectedBackup === null) {
+            this.updateModalState({ error: 'Selected backup is missing.' });
+            this.renderModalContent();
+            return;
+        }
+        if (typeof state.targetNamespaceText !== 'string' || state.targetNamespaceText.trim().length === 0) {
+            this.updateModalState({ error: 'Target namespace is required.' });
             this.renderModalContent();
             return;
         }
@@ -368,17 +445,31 @@ export class BackupRestoreModal extends BaseModal {
         });
         this.renderModalContent();
 
-        await this._authRequest(this.apiEndpoints.restore, 'POST', {
-            filename: state.selectedFilename,
+        const payload = await this._authRequest(this.apiEndpoints.restore, 'POST', {
+            backup_id: selectedBackup.backup_id,
+            source: selectedBackup.source,
+            backup_filename: selectedBackup.filename,
+            backup_namespace: selectedBackup.namespace,
+            target_namespace: state.targetNamespaceText.trim(),
         });
-        this._markRestoreTransitionActive();
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Restore response missing body');
+        }
+
+        const activeNamespaceRestarted = payload.active_namespace_restarted === true;
+        if (activeNamespaceRestarted) {
+            this._markRestoreTransitionActive();
+        }
         this.updateModalState({
             loading: false,
             restoring: false,
             confirming: false,
             restored: true,
             waitingForServer: false,
-            restoredFilename: state.selectedFilename,
+            restoredFilename: payload.backup_filename,
+            restoredTargetNamespace: payload.target_namespace,
+            activeNamespaceRestarted,
+            openNamespaceSuggested: payload.open_namespace_suggested === true,
             error: '',
         });
         this.renderModalContent();
@@ -391,14 +482,13 @@ export class BackupRestoreModal extends BaseModal {
 
     _beginPostRestoreReconnectAndReload() {
         const state = this.getModalState();
-        if (!state || !state.restored) {
-            throw new Error('Cannot begin post-restore reconnect before restore success');
+        if (!state || !state.restored || !state.activeNamespaceRestarted) {
+            throw new Error('Cannot begin post-restore reconnect before active-namespace restore success');
         }
         if (state.waitingForServer) {
             return;
         }
         this._setReconnectCursor(true);
-
         this.updateModalState({
             waitingForServer: true,
             error: '',

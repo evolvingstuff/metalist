@@ -2,7 +2,8 @@
 
 ## Purpose
 
-This document describes a practical, implementation-oriented plan for adding cloud backups to MetaList, starting with **Google Drive only**.
+This doc
+ument describes a practical, implementation-oriented plan for adding cloud backups to MetaList, starting with **Google Drive only**.
 
 The goal is to ship a backup feature that feels simple for nontechnical users:
 

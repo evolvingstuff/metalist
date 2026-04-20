@@ -27,6 +27,8 @@
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
 - `app/services/search_history.py`: Stores interacted search histories in a sibling `*.search-history.db` SQLite database; blank-search suggestions can reserve the top 3 slots for the highest-scoring recently interacted tags aggregated across persisted queries, case-equivalent tags are collapsed to the most-used spelling, and the stored query/tag payloads encrypt at rest when the namespace is password-protected.
 - `app/services/file_registry.py`: In-memory registry of valid file UUIDs only; startup bootstraps this without hydrating file rows/blobs.
+- `app/services/backup_settings_service.py`: Stores per-namespace backup destination settings, retention count, and Google Drive connection metadata in the namespace DB; when namespace encryption is enabled, that payload is encrypted at rest too.
+- `app/services/google_drive_service.py`: Handles namespace-scoped Google Drive Desktop OAuth (loopback localhost callback + PKCE), token refresh, and Drive upload/list/download/delete for backup archives.
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping, auto-links bare `http(s)` URLs in rendered notes, and normalizes rendered anchors to open in a new tab.
@@ -76,8 +78,11 @@
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image pixels still embed as compressed `data:image/...`, while named pasted/dropped image files can either embed inline or be saved as file attachments via a choice modal.
 - View-mode links: bare pasted `http(s)` text becomes clickable in rendered note HTML, and rendered non-hash anchors open in a new browser tab instead of replacing the MetaList tab.
 - Image file refs in view mode: embedded image attachments render as authenticated previews with a `download image` control; collapsed notes reduce them to a compact thumbnail.
-- Backup/restore: `app/services/backup_service.py` pairs the main notes DB backup with sibling file and search-history DB backups and rebuilds the file registry on restore.
-- Backup/restore scope: backup listing/creation/restore are scoped to the active DB path; namespaces live under `~/MetaList/namespaces/<namespace>/` and back up into `~/MetaList/namespaces/<namespace>/backups/` with filenames like `<timestamp>.<namespace>.metalist.db.bak` and `<timestamp>.<namespace>.metalist.files.db.bak`.
+- Backup/restore: `app/services/backup_service.py` snapshots the notes DB plus sibling file/search-history DBs into one versioned `.tar.gz` archive, validates manifest checksums/format on restore, rebuilds the file registry afterward, and still restores legacy `.bak` snapshots for compatibility.
+- Backup settings: `GET/PUT /api2/backup/settings` stores whether backups go to local, Google Drive, or both, plus the per-destination retention count used after successful writes.
+- Backup run: `POST /api2/backup/run` creates one archive snapshot, writes it to local storage and/or uploads it to Google Drive, and reports per-destination success/failure in the result modal instead of collapsing everything into one destination.
+- Backup/restore scope: backup listing/creation/restore are scoped to the active DB path; namespaces live under `~/MetaList/namespaces/<namespace>/` and back up into `~/MetaList/namespaces/<namespace>/backups/` with filenames like `<namespace>-<timestamp>.metalist-backup.tar.gz`.
+- Google Drive auth/storage: `POST /api2/backup/google-drive/connect/start` launches a browser OAuth flow using a Desktop app client, MetaList completes the callback on a temporary `127.0.0.1:<random-port>` loopback listener, and each namespace stores its own Drive account/tokens/folder metadata separately.
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.

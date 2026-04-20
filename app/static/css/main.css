@@ -171,6 +171,10 @@ html {
     border-left: 4px solid #ff6b81;
 }
 
+.error-message:empty {
+    display: none;
+}
+
 .login-loading {
     margin-top: 24px;
     text-align: left;
