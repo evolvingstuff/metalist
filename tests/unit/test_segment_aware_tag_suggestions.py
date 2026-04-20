@@ -14,6 +14,55 @@ class _EmptyOntology:
     is_empty = True
 
 
+def _build_note_record(
+    *,
+    note_id: str,
+    parent_id: str | None,
+    content: str,
+    tags: str,
+) -> SimpleNamespace:
+    tag_terms = extract_tags_for_search(tags)
+    non_meta_tag_terms = frozenset(term for term in tag_terms if not term.startswith("@"))
+    return SimpleNamespace(
+        id=note_id,
+        parent_id=parent_id,
+        content=content,
+        tag_terms=tag_terms,
+        non_meta_tag_terms=non_meta_tag_terms,
+    )
+
+
+class _FakeHierarchyNoteStore:
+    def __init__(
+        self,
+        *,
+        records: list[SimpleNamespace],
+        inherited_non_meta_by_note: dict[str, frozenset[str]],
+    ) -> None:
+        self._records = {record.id: record for record in records}
+        self._children_by_parent: dict[str | None, list[str]] = {}
+        for record in records:
+            self._children_by_parent.setdefault(record.parent_id, []).append(record.id)
+        self._inherited_non_meta_by_note = dict(inherited_non_meta_by_note)
+
+    def get_inherited_non_meta_tag_terms(self, note_id: str) -> frozenset[str]:
+        return self._inherited_non_meta_by_note.get(note_id, frozenset())
+
+    def list_note_ids(self) -> list[str]:
+        return list(self._records.keys())
+
+    def has_note(self, note_id: str) -> bool:
+        return note_id in self._records
+
+    def get_note(self, note_id: str) -> SimpleNamespace:
+        if note_id not in self._records:
+            raise KeyError(note_id)
+        return self._records[note_id]
+
+    def get_children(self, parent_id: str | None) -> list[str]:
+        return list(self._children_by_parent.get(parent_id, []))
+
+
 def _build_index(tag_rows: list[tuple[str, str]]) -> SearchIndex:
     index = SearchIndex()
     index.rebuild(
@@ -330,3 +379,178 @@ def test_tag_suggestions_include_acronym_content_hits_even_without_anchor_cooccu
 
     assert suggestions[0] == "AVD"
     assert suggestions[1:] == ["databricks", "DBX"]
+
+
+def test_tag_suggestions_include_inherited_context_in_cooccurrence_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "journal projects ML3 productive"),
+            ("n2", "journal projects ML3 search-recency"),
+            ("n3", "journal salmon-nigiri-Ballard-Market"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset({"journal", "projects", "ML3"}),
+        ),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=["@done"],
+        explicit_tags=["@done"],
+        prefix="",
+        content_html="<p>switching my personal stuff over to ML3</p>",
+    )
+
+    assert suggestions[:3] == ["productive", "search-recency", "salmon-nigiri-Ballard-Market"]
+
+
+def test_tag_suggestions_prioritize_exact_content_hit_over_global_noise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "productive"),
+            ("n2", "salmon-nigiri-Ballard-Market"),
+            ("n3", "smart-RAG"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset({"do-stuff"}),
+        ),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=["@done"],
+        explicit_tags=["@done"],
+        prefix="",
+        content_html="<p>productive</p>",
+    )
+
+    assert suggestions[0] == "productive"
+
+
+def test_tag_suggestions_use_local_hierarchy_content_before_global_noise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "search-recency"),
+            ("n2", "sorting-features"),
+            ("n3", "salmon-nigiri-Ballard-Market"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="journal", parent_id=None, content="journal", tags=""),
+            _build_note_record(note_id="projects", parent_id="journal", content="projects", tags=""),
+            _build_note_record(note_id="ml3", parent_id="projects", content="ML3", tags=""),
+            _build_note_record(
+                note_id="current",
+                parent_id="ml3",
+                content="switching my personal stuff over to ML3!",
+                tags="",
+            ),
+            _build_note_record(note_id="sibling-1", parent_id="ml3", content="search recency", tags="search-recency"),
+            _build_note_record(note_id="sibling-2", parent_id="ml3", content="sorting features", tags="sorting-features"),
+            _build_note_record(
+                note_id="elsewhere",
+                parent_id="journal",
+                content="ballard trip",
+                tags="salmon-nigiri-Ballard-Market",
+            ),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=["@done"],
+        explicit_tags=["@done"],
+        prefix="",
+        content_html="<p>switching my personal stuff over to ML3!</p>",
+    )
+
+    assert suggestions[:3] == ["search-recency", "sorting-features", "salmon-nigiri-Ballard-Market"]
+
+
+def test_tag_suggestions_prioritize_descendant_explicit_tag_for_current_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "journal health"),
+            ("n2", "journal health"),
+            ("n3", "journal biology"),
+            ("n4", "journal science"),
+            ("n5", "journal sleep"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="entry", parent_id=None, content="2026-04-19 Sun", tags="journal"),
+            _build_note_record(note_id="sleep-note", parent_id="entry", content="sleep", tags="sleep"),
+            _build_note_record(note_id="diet-note", parent_id="entry", content="diet", tags="diet"),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="entry",
+        anchors=["journal"],
+        explicit_tags=["journal"],
+        prefix="",
+        content_html="<p>2026-04-19 Sun</p>",
+    )
+
+    assert suggestions[0] == "sleep"
+
+
+def test_tag_suggestions_match_connector_segment_prefix_in_saved_note_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="root", parent_id=None, content="root", tags=""),
+            _build_note_record(note_id="n1", parent_id="root", content="alpha", tags="foo-bar-baz"),
+            _build_note_record(note_id="n2", parent_id="root", content="beta", tags="foo-baz"),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="root",
+        anchors=[],
+        explicit_tags=[],
+        prefix="bar",
+        content_html="<p></p>",
+    )
+
+    assert suggestions[0] == "foo-bar-baz"

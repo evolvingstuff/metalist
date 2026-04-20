@@ -99,8 +99,9 @@ Unclosed comments behave like unclosed wrappers:
 - Suggestions appear only while the tag bar input is focused.
 - While typing inside a tag token, matching is segment-aware for connector-separated tags: a prefix can match the start of the whole tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`). Example: `wor` suggests both `workspaces` and `databricks-workspaces`, while `orksp` suggests neither.
 - When the active prefix starts with `@`, matching meta tags are ranked by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
-- After a space, suggestions are ranked by tag co-occurrence.
-- Tags that match phrases in the note content are listed first.
+- Tags that match phrases in the current note content are listed first.
+- After that, suggestions are boosted by nearby hierarchy context: explicit tags and literal content matches from the current note's descendants, nearby sibling subtree, and ancestor note content.
+- Remaining suggestions fall back to other notes whose effective context overlaps the current note's explicit/inherited/inferred non-meta tags, but the emitted non-meta suggestions still come only from explicit tags assigned on those notes.
 - A literal content hit on any connector-separated segment can also surface a tag. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
 - When content-hit strength ties, earlier mentions in the note rank ahead of later mentions.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
