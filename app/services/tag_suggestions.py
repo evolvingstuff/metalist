@@ -194,10 +194,9 @@ def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
     return all_terms, dict(representative_counts)
 
 
-def _build_saved_note_effective_non_meta_tags(
+def _build_saved_note_context_non_meta_tags(
     *,
     note_id: str,
-    ontology,
 ) -> FrozenSet[str]:
     if not _can_iterate_saved_notes():
         return frozenset()
@@ -205,13 +204,7 @@ def _build_saved_note_effective_non_meta_tags(
     record = note_store.get_note(note_id)
     inherited_non_meta = note_store.get_inherited_non_meta_tag_terms(note_id)
     base_tags = frozenset(record.non_meta_tag_terms | inherited_non_meta)
-    if ontology.is_empty:
-        return base_tags
-    inferred = ontology.infer_effective_tags(
-        base_tags=base_tags,
-        plaintext=strip_html(record.content),
-    )
-    return frozenset(tag for tag in inferred if not tag.startswith("@"))
+    return frozenset(tag for tag in base_tags if not tag.startswith("@"))
 
 
 def _list_subtree_note_ids(note_id: str) -> List[str]:
@@ -288,6 +281,7 @@ def _rank_terms_by_local_context(
     *,
     note_id: str,
     candidate_terms: List[str],
+    exact_tag_counts: Dict[str, int],
     cooccurrence_rank: Dict[str, int],
 ) -> List[str]:
     current_record = _get_note_record_or_none(note_id)
@@ -353,6 +347,7 @@ def _rank_terms_by_local_context(
     ranked_terms.sort(
         key=lambda term: (
             -local_scores[term],
+            -_lookup_count(exact_tag_counts, term),
             cooccurrence_rank.get(term, len(cooccurrence_rank)),
             term,
         )
@@ -364,16 +359,15 @@ def _rank_terms_by_context_overlap(
     *,
     note_id: str,
     candidate_terms: List[str],
-    current_effective_tags: FrozenSet[str],
+    current_context_tags: FrozenSet[str],
     exact_tag_counts: Dict[str, int],
 ) -> List[str]:
     if not _can_iterate_saved_notes():
         return []
-    if not current_effective_tags:
+    if not current_context_tags:
         return []
 
-    ontology = get_ontology()
-    current_effective_casefold = {tag.casefold() for tag in current_effective_tags}
+    current_context_casefold = {tag.casefold() for tag in current_context_tags}
     candidate_by_casefold = {term.casefold(): term for term in candidate_terms}
     overlap_max_by_term: Dict[str, int] = {}
     overlap_support_by_term: Counter[str] = Counter()
@@ -385,14 +379,11 @@ def _rank_terms_by_context_overlap(
         if not record.non_meta_tag_terms:
             continue
 
-        other_effective_tags = _build_saved_note_effective_non_meta_tags(
-            note_id=other_note_id,
-            ontology=ontology,
-        )
-        if not other_effective_tags:
+        other_context_tags = _build_saved_note_context_non_meta_tags(note_id=other_note_id)
+        if not other_context_tags:
             continue
-        other_effective_casefold = {tag.casefold() for tag in other_effective_tags}
-        overlap_count = len(current_effective_casefold & other_effective_casefold)
+        other_context_casefold = {tag.casefold() for tag in other_context_tags}
+        overlap_count = len(current_context_casefold & other_context_casefold)
         if overlap_count <= 0:
             continue
 
@@ -448,15 +439,15 @@ def suggest_tags_for_note(
     plaintext = strip_html(content_html)
     ontology = get_ontology()
     if ontology.is_empty:
-        effective_tags = base_tags
+        context_tags = base_tags
     else:
-        effective_tags = ontology.infer_effective_tags(base_tags=base_tags, plaintext=plaintext)
-    inherited_or_inferred_tags = {
-        tag for tag in effective_tags
+        context_tags = ontology.infer_implication_only(base_tags=base_tags)
+    inherited_or_implied_tags = {
+        tag for tag in context_tags
         if not tag.startswith("@") and tag.casefold() not in explicit_tag_casefold_set
     }
     suppressed_casefold = set(explicit_tag_casefold_set)
-    suppressed_casefold.update(tag.casefold() for tag in inherited_or_inferred_tags)
+    suppressed_casefold.update(tag.casefold() for tag in inherited_or_implied_tags)
 
     all_terms, exact_tag_counts = _collect_explicit_tag_statistics()
     has_prefix = prefix != ""
@@ -515,15 +506,13 @@ def suggest_tags_for_note(
     local_first = _rank_terms_by_local_context(
         note_id=note_id,
         candidate_terms=candidate_terms,
+        exact_tag_counts=exact_tag_counts,
         cooccurrence_rank=cooccurrence_rank,
     )
     overlap_first = _rank_terms_by_context_overlap(
         note_id=note_id,
         candidate_terms=candidate_terms,
-        current_effective_tags=frozenset(
-            tag for tag in effective_tags
-            if not tag.startswith("@")
-        ),
+        current_context_tags=frozenset(tag for tag in base_tags if not tag.startswith("@")),
         exact_tag_counts=exact_tag_counts,
     )
 
@@ -553,17 +542,20 @@ def suggest_tags_for_note(
         remaining.append(term)
         seen_terms.add(term)
 
-    hierarchy_only = [term for term in local_first if term not in content_first]
     overlap_only = [
         term for term in overlap_first
-        if term not in content_first and term not in hierarchy_only
+        if term not in content_first
     ]
-    suggestions = content_first + hierarchy_only + overlap_only + remaining
+    hierarchy_only = [
+        term for term in local_first
+        if term not in content_first and term not in overlap_only
+    ]
+    suggestions = content_first + overlap_only + hierarchy_only + remaining
 
     if has_prefix:
         present_suffix: List[str] = []
         preferred_present_terms = _select_preferred_case_variants(
-            terms=inherited_or_inferred_tags,
+            terms=inherited_or_implied_tags,
             exact_tag_counts=exact_tag_counts,
         )
         for term in preferred_present_terms:
