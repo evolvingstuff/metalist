@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from typing import Dict, FrozenSet, Iterable, List, Tuple
 
+from app.config import TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
 from app.services.tag_term_matching import TagContentMatch
+from app.services.tag_term_matching import list_significant_content_match_segments
 from app.services.tag_term_matching import match_tag_term_in_normalized_content
 from app.services.tag_term_matching import normalize_tag_match_text
 from app.services.tag_term_matching import tag_term_matches_prefix
@@ -107,15 +109,60 @@ def _build_cooccurrence_query_anchors(
     return merged
 
 
+def _collect_cooccurrence_candidates(
+    *,
+    all_terms: List[str],
+    candidate_terms: List[str],
+    explicit_anchors: Iterable[str],
+    inherited_non_meta: FrozenSet[str],
+    prefix: str,
+) -> tuple[List[str], Dict[str, int]]:
+    if not candidate_terms:
+        return [], {}
+
+    query_anchors = _build_cooccurrence_query_anchors(
+        explicit_anchors=explicit_anchors,
+        inherited_non_meta=inherited_non_meta,
+    )
+    if not query_anchors and prefix == "":
+        return [], {}
+
+    query = _build_search_query_for_suggestions(
+        anchors=query_anchors,
+        prefix=prefix,
+    )
+    ranked_terms = search_index.suggest_tag_completions(
+        query=query,
+        limit=max(1, len(all_terms)),
+    )
+    candidate_by_casefold = {term.casefold(): term for term in candidate_terms}
+
+    filtered: List[str] = []
+    seen_casefold: set[str] = set()
+    for term in ranked_terms:
+        canonical_term = candidate_by_casefold.get(term.casefold())
+        if canonical_term is None:
+            continue
+        canonical_casefold = canonical_term.casefold()
+        if canonical_casefold in seen_casefold:
+            continue
+        seen_casefold.add(canonical_casefold)
+        filtered.append(canonical_term)
+    return filtered, {term: index for index, term in enumerate(filtered)}
+
+
 def _score_content_match(match: TagContentMatch) -> int:
     if not isinstance(match, TagContentMatch):
         raise TypeError("match must be a TagContentMatch")
+
+    unmatched_segment_count = match.segment_count - match.matched_segment_count
+    assert unmatched_segment_count >= 0
 
     score = 0
     if match.phrase_match:
         score += 1000
     score += match.matched_segment_count * 100
-    score += match.segment_count * 10
+    score -= unmatched_segment_count * 10
     score += max(0, 100 - min(match.first_position, 100))
     score += match.normalized_length
     return score
@@ -413,6 +460,87 @@ def _rank_terms_by_context_overlap(
     return ranked_terms
 
 
+def _content_match_sort_key(
+    *,
+    term: str,
+    content_match_scores: Dict[str, TagContentMatch],
+    exact_tag_counts: Dict[str, int],
+    cooccurrence_rank: Dict[str, int],
+) -> tuple[int, int, int, int, int, int, int, int, str]:
+    match = content_match_scores[term]
+    unmatched_segment_count = match.segment_count - match.matched_segment_count
+    assert unmatched_segment_count >= 0
+    return (
+        -(1 if match.phrase_match else 0),
+        -match.matched_segment_count,
+        unmatched_segment_count,
+        _lookup_count(exact_tag_counts, term),
+        cooccurrence_rank.get(term, len(cooccurrence_rank)),
+        match.first_position,
+        -match.normalized_length,
+        *_suggestion_tiebreak(term),
+    )
+
+
+def _collect_active_content_match_segments(
+    *,
+    explicit_tags: Iterable[str],
+    inherited_non_meta: FrozenSet[str],
+) -> FrozenSet[str]:
+    active_segments: set[str] = set()
+    for tag in explicit_tags:
+        if tag.startswith("@"):
+            continue
+        active_segments.update(list_significant_content_match_segments(tag))
+    for tag in inherited_non_meta:
+        if tag.startswith("@"):
+            continue
+        active_segments.update(list_significant_content_match_segments(tag))
+    return frozenset(active_segments)
+
+
+def _suppress_redundant_content_variant_candidates(
+    *,
+    candidate_terms: List[str],
+    content_match_scores: Dict[str, TagContentMatch],
+    active_segments: FrozenSet[str],
+) -> List[str]:
+    if not active_segments:
+        return candidate_terms
+
+    filtered_terms: List[str] = []
+    for term in candidate_terms:
+        if term not in content_match_scores:
+            filtered_terms.append(term)
+            continue
+        match = content_match_scores[term]
+        if len(match.matched_segments) == 0:
+            filtered_terms.append(term)
+            continue
+        if set(match.matched_segments).issubset(active_segments):
+            continue
+        filtered_terms.append(term)
+    return filtered_terms
+
+
+def _interleave_ranked_terms(
+    *,
+    primary_terms: List[str],
+    secondary_terms: List[str],
+) -> List[str]:
+    interleaved: List[str] = []
+    primary_index = 0
+    secondary_index = 0
+    while primary_index < len(primary_terms) or secondary_index < len(secondary_terms):
+        if primary_index < len(primary_terms):
+            interleaved.append(primary_terms[primary_index])
+            primary_index += 1
+        if secondary_index < len(secondary_terms):
+            interleaved.append(secondary_terms[secondary_index])
+            secondary_index += 1
+    return interleaved
+
+
 def suggest_tags_for_note(
     *,
     note_id: str,
@@ -471,36 +599,36 @@ def suggest_tags_for_note(
         normalized_content=normalized_content,
     )
 
-    cooccurrence_rank: Dict[str, int] = {}
-    cooccurrence: List[str] = []
-    if not _can_iterate_saved_notes():
-        term_count = len(all_terms)
-        if term_count > 0:
-            cooccurrence_query_anchors = _build_cooccurrence_query_anchors(
-                explicit_anchors=anchor_list,
-                inherited_non_meta=inherited_non_meta,
-            )
-            query = _build_search_query_for_suggestions(
-                anchors=cooccurrence_query_anchors,
-                prefix=prefix,
-            )
-            cooccurrence = search_index.suggest_tag_completions(query=query, limit=term_count)
-            cooccurrence = [
-                term for term in cooccurrence
-                if term.casefold() in {candidate.casefold() for candidate in candidate_terms}
-            ]
-            cooccurrence_rank = {term: index for index, term in enumerate(cooccurrence)}
+    if TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS and not has_prefix:
+        active_content_segments = _collect_active_content_match_segments(
+            explicit_tags=explicit_tag_list,
+            inherited_non_meta=inherited_non_meta,
+        )
+        candidate_terms = _suppress_redundant_content_variant_candidates(
+            candidate_terms=candidate_terms,
+            content_match_scores=content_match_scores,
+            active_segments=active_content_segments,
+        )
+        content_match_scores = _collect_content_match_scores(
+            candidate_terms=candidate_terms,
+            normalized_content=normalized_content,
+        )
+
+    cooccurrence, cooccurrence_rank = _collect_cooccurrence_candidates(
+        all_terms=all_terms,
+        candidate_terms=candidate_terms,
+        explicit_anchors=anchor_list,
+        inherited_non_meta=inherited_non_meta,
+        prefix=prefix,
+    )
 
     content_first = list(content_match_scores.keys())
     content_first.sort(
-        key=lambda term: (
-            -(1 if content_match_scores[term].phrase_match else 0),
-            -content_match_scores[term].matched_segment_count,
-            -content_match_scores[term].segment_count,
-            content_match_scores[term].first_position,
-            -content_match_scores[term].normalized_length,
-            cooccurrence_rank.get(term, len(cooccurrence)),
-            term,
+        key=lambda term: _content_match_sort_key(
+            term=term,
+            content_match_scores=content_match_scores,
+            exact_tag_counts=exact_tag_counts,
+            cooccurrence_rank=cooccurrence_rank,
         )
     )
     local_first = _rank_terms_by_local_context(
@@ -516,22 +644,31 @@ def suggest_tags_for_note(
         exact_tag_counts=exact_tag_counts,
     )
 
+    has_direct_anchor_context = len(anchor_set) > 0
+    cooccurrence_only: List[str] = []
+    if has_direct_anchor_context:
+        for term in cooccurrence:
+            if term in content_first:
+                continue
+            cooccurrence_only.append(term)
+
+    hierarchy_only = [
+        term for term in local_first
+        if term not in content_first and term not in cooccurrence_only
+    ]
+    overlap_only = [
+        term for term in overlap_first
+        if term not in content_first and term not in cooccurrence_only and term not in hierarchy_only
+    ]
+
     remaining: List[str] = []
     seen_terms = set(content_first)
-    for term in local_first:
-        if term in seen_terms:
-            continue
-        seen_terms.add(term)
-    for term in overlap_first:
-        if term in seen_terms:
-            continue
-        seen_terms.add(term)
+    seen_terms.update(cooccurrence_only)
+    seen_terms.update(hierarchy_only)
+    seen_terms.update(overlap_only)
+
     for term in cooccurrence:
         if term in seen_terms:
-            continue
-        if term.casefold() in suppressed_casefold:
-            continue
-        if has_prefix and not tag_term_matches_prefix(term=term, prefix=prefix):
             continue
         remaining.append(term)
         seen_terms.add(term)
@@ -542,15 +679,10 @@ def suggest_tags_for_note(
         remaining.append(term)
         seen_terms.add(term)
 
-    overlap_only = [
-        term for term in overlap_first
-        if term not in content_first
-    ]
-    hierarchy_only = [
-        term for term in local_first
-        if term not in content_first and term not in overlap_only
-    ]
-    suggestions = content_first + overlap_only + hierarchy_only + remaining
+    suggestions = _interleave_ranked_terms(
+        primary_terms=content_first,
+        secondary_terms=cooccurrence_only,
+    ) + hierarchy_only + overlap_only + remaining
 
     if has_prefix:
         present_suffix: List[str] = []

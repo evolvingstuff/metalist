@@ -99,17 +99,21 @@ Unclosed comments behave like unclosed wrappers:
 - Suggestions appear only while the tag bar input is focused.
 - While typing inside a tag token, matching is segment-aware for connector-separated tags: a prefix can match the start of the whole tag or the start of any connector-separated segment (`-`, `_`, `.`, `/`). Example: `wor` suggests both `workspaces` and `databricks-workspaces`, while `orksp` suggests neither.
 - When the active prefix starts with `@`, matching meta tags are ranked by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
-- Tags that match phrases in the current note content are listed first.
+- Tags that match phrases in the current note content and the strongest direct co-occurrence hits from the current note's explicit non-meta tags share the top slots together: the strongest content hit appears first, then the strongest co-occurrence hit, then the next content hit, and so on.
+- For blank-prefix suggestions only, if a candidate's literal content match is driven entirely by segments that are already represented in an explicit or inherited tag on the note, that candidate is suppressed as redundant. Example: with `fat.appearance` already present, content-only matches like `fat-loss` or `body-fat` do not crowd out unrelated co-occurrence suggestions such as `overindulging`.
 - After that, suggestions are boosted by nearby hierarchy context: explicit tags and literal content matches from the current note's descendants, nearby sibling subtree, and ancestor note content.
 - Remaining suggestions fall back to other notes whose effective context overlaps the current note's explicit/inherited/inferred non-meta tags, but the emitted non-meta suggestions still come only from explicit tags assigned on those notes.
-- A literal content hit on any connector-separated segment can also surface a tag. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
-- When content-hit strength ties, earlier mentions in the note rank ahead of later mentions.
+- A literal content hit on any connector-separated segment can also surface a tag, but low-signal glue segments like `and`, `of`, `the`, or `up` do not count on their own. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
+- When content matches only part of a connector-separated tag, the most literal candidate wins first: fewer unmatched connector segments rank ahead of more padded tags. Examples: `Z` prefers `Z` over `Y-Z` over `X-Y-Z`, and `Y Z` prefers `Y-Z` over `Z` over `X-Y-Z`.
+- Single-character connector segments are still ignored for lowercase noise like `a-b-test`, but uppercase one-letter segments can still count as meaningful literals.
+- When content-hit strength ties, more specific tags rank ahead of broader/common ones; remaining ties break by earlier mention in the note.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
 - Case-equivalent tags are collapsed in suggestions (for example `Databricks` vs `databricks`), and the most-used spelling is shown.
 - Tags already present explicitly in the current tag bar are never suggested.
 - Tags already present only via inheritance or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward and the ordering reverses so the closest suggestion sits nearest the input.
 - The connector characters used for content matching are configurable via `TAG_SUGGESTION_CONNECTORS` in `app/config.py`.
+- The redundant-content suppression rule is configurable via `TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS` in `app/config.py`.
 
 ## Focus / Tab Behavior
 - `Tab` toggles focus between the note content and the tag bar.

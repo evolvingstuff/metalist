@@ -18,12 +18,33 @@ _CONNECTOR_RE = re.compile(f"[{re.escape(_CONNECTOR_CHARS)}]")
 _MATCH_NOISE_RE = re.compile(r"[^\w@#+%&']+")
 _WHITESPACE_RE = re.compile(r"\s+")
 _NUMERIC_SEGMENT_RE = re.compile(r"^\d+$")
+_LOW_SIGNAL_CONTENT_MATCH_SEGMENTS = frozenset(
+    {
+        "an",
+        "and",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "of",
+        "off",
+        "on",
+        "or",
+        "out",
+        "the",
+        "to",
+        "up",
+        "with",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
 class TagContentMatch:
     phrase_match: bool
     matched_segment_count: int
+    matched_segments: tuple[str, ...]
     segment_count: int
     first_position: int
     normalized_length: int
@@ -60,14 +81,50 @@ def split_tag_term_segments(term: str) -> tuple[str, ...]:
     return tuple(segment for segment in normalized.split(" ") if segment)
 
 
-def _is_significant_content_match_segment(segment: str) -> bool:
+def _split_tag_term_segments_preserving_case(term: str) -> tuple[str, ...]:
+    if not isinstance(term, str):
+        raise TypeError("term must be a string")
+
+    connectors_as_spaces = _CONNECTOR_RE.sub(" ", term)
+    stripped_noise = _MATCH_NOISE_RE.sub(" ", connectors_as_spaces)
+    normalized_whitespace = _WHITESPACE_RE.sub(" ", stripped_noise).strip()
+    if normalized_whitespace == "":
+        return ()
+    return tuple(segment for segment in normalized_whitespace.split(" ") if segment)
+
+
+def _is_significant_content_match_segment(*, segment: str, raw_segment: str) -> bool:
     if not isinstance(segment, str):
         raise TypeError("segment must be a string")
+    if not isinstance(raw_segment, str):
+        raise TypeError("raw_segment must be a string")
     if len(segment) < 2:
-        return False
+        return (
+            len(segment) == 1
+            and raw_segment.isalpha()
+            and raw_segment == raw_segment.upper()
+            and raw_segment != raw_segment.lower()
+        )
     if _NUMERIC_SEGMENT_RE.fullmatch(segment):
         return False
+    if segment in _LOW_SIGNAL_CONTENT_MATCH_SEGMENTS:
+        return False
     return True
+
+
+def list_significant_content_match_segments(term: str) -> tuple[str, ...]:
+    if not isinstance(term, str):
+        raise TypeError("term must be a string")
+
+    raw_segments = _split_tag_term_segments_preserving_case(term)
+    return tuple(
+        raw_segment.casefold()
+        for raw_segment in raw_segments
+        if _is_significant_content_match_segment(
+            segment=raw_segment.casefold(),
+            raw_segment=raw_segment,
+        )
+    )
 
 
 def tag_term_matches_prefix(*, term: str, prefix: str) -> bool:
@@ -94,11 +151,7 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     if not isinstance(normalized_content, str):
         raise TypeError("normalized_content must be a string")
 
-    raw_segments = split_tag_term_segments(term)
-    segments = tuple(
-        segment for segment in raw_segments
-        if _is_significant_content_match_segment(segment)
-    )
+    segments = list_significant_content_match_segments(term)
     if not segments:
         return None
 
@@ -118,10 +171,12 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
                 phrase_position = index
                 break
 
+    matched_segments: list[str] = []
     matched_segment_count = 0
     matched_positions: list[int] = []
-    for segment in set(segments):
+    for segment in dict.fromkeys(segments):
         if segment in token_positions:
+            matched_segments.append(segment)
             matched_segment_count += 1
             matched_positions.append(token_positions[segment])
 
@@ -136,6 +191,7 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     return TagContentMatch(
         phrase_match=phrase_match,
         matched_segment_count=matched_segment_count,
+        matched_segments=tuple(matched_segments),
         segment_count=len(segments),
         first_position=first_position,
         normalized_length=len(phrase),
@@ -144,6 +200,7 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
 
 __all__ = [
     "TagContentMatch",
+    "list_significant_content_match_segments",
     "match_tag_term_in_normalized_content",
     "normalize_tag_match_text",
     "split_tag_term_segments",

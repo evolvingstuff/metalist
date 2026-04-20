@@ -55,6 +55,10 @@ STARTUP_ANIMATION_ENABLED = _env_flag("STARTUP_ANIMATION_ENABLED", False)
 
 # Tag suggestions
 TAG_SUGGESTION_CONNECTORS = "-_/."
+TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS = _env_flag(
+    "TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS",
+    True,
+)
 
 # Authentication configuration
 TOKEN_EXPIRY_MINUTES = 30  # Token expires after 30 minutes of inactivity

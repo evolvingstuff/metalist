@@ -140,6 +140,96 @@ def test_tag_suggestions_promote_specific_multi_segment_content_matches(
     assert suggestions[:3] == ["databricks-workspaces", "databricks", "workspaces"]
 
 
+def test_tag_suggestions_prefer_shorter_partial_connector_match_for_single_segment_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "X-Y-Z"),
+            ("n2", "Y-Z"),
+            ("n3", "Z"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Z</p>",
+    )
+
+    assert suggestions[:3] == ["Z", "Y-Z", "X-Y-Z"]
+
+
+def test_tag_suggestions_prefer_full_connector_phrase_then_literal_suffix_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "X-Y-Z"),
+            ("n2", "Y-Z"),
+            ("n3", "Z"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Y Z</p>",
+    )
+
+    assert suggestions[:3] == ["Y-Z", "Z", "X-Y-Z"]
+
+
+def test_tag_suggestions_apply_same_literal_ordering_for_other_connectors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "X/Y/Z"),
+            ("n2", "Y/Z"),
+            ("n3", "Z"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Y Z</p>",
+    )
+
+    assert suggestions[:3] == ["Y/Z", "Z", "X/Y/Z"]
+
+
 def test_tag_suggestions_include_segment_literal_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -267,6 +357,188 @@ def test_tag_suggestions_ignore_single_character_content_segments(
     )
 
     assert suggestions[0] == "alpha"
+
+
+def test_tag_suggestions_prefer_anchor_cooccurrence_over_low_signal_connector_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "annoyed overindulging"),
+            ("n2", "annoyed overindulging"),
+            ("n3", "annoyed randombook"),
+            ("n4", "Probability-The-Science-of-Uncertainty-and-Data"),
+            ("n5", "Walrus-and-the-Carpenter"),
+            ("n6", "Box-and-Whisker-plots"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="root", parent_id=None, content="root", tags=""),
+            _build_note_record(note_id="current", parent_id="root", content="annoyed and fat", tags=""),
+            _build_note_record(note_id="match-1", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="match-2", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="match-3", parent_id="root", content="match", tags="annoyed randombook"),
+            _build_note_record(
+                note_id="noise-1",
+                parent_id="root",
+                content="noise",
+                tags="Probability-The-Science-of-Uncertainty-and-Data",
+            ),
+            _build_note_record(
+                note_id="noise-2",
+                parent_id="root",
+                content="noise",
+                tags="Walrus-and-the-Carpenter",
+            ),
+            _build_note_record(
+                note_id="noise-3",
+                parent_id="root",
+                content="noise",
+                tags="Box-and-Whisker-plots",
+            ),
+        ],
+        inherited_non_meta_by_note={"current": frozenset({"journal", "projects", "ML3"})},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=["annoyed", "fat.appearance"],
+        explicit_tags=["annoyed", "fat.appearance"],
+        prefix="",
+        content_html="<p>annoyed and fat</p>",
+    )
+
+    assert suggestions[:2] == ["overindulging", "randombook"]
+
+
+def test_tag_suggestions_suppress_redundant_content_variants_after_segment_already_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "annoyed overindulging"),
+            ("n2", "annoyed overindulging"),
+            ("n3", "fat.dietary"),
+            ("n4", "unsaturated-fat"),
+            ("n5", "fat-roll"),
+            ("n6", "monounsaturated-fat"),
+            ("n7", "polyunsaturated-fat"),
+            ("n8", "fat-loss"),
+            ("n9", "body-fat"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="root", parent_id=None, content="root", tags=""),
+            _build_note_record(note_id="current", parent_id="root", content="annoyed and fat", tags=""),
+            _build_note_record(note_id="match-1", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="match-2", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="fat-1", parent_id="root", content="match", tags="fat.dietary"),
+            _build_note_record(note_id="fat-2", parent_id="root", content="match", tags="unsaturated-fat"),
+            _build_note_record(note_id="fat-3", parent_id="root", content="match", tags="fat-roll"),
+            _build_note_record(note_id="fat-4", parent_id="root", content="match", tags="monounsaturated-fat"),
+            _build_note_record(note_id="fat-5", parent_id="root", content="match", tags="polyunsaturated-fat"),
+            _build_note_record(note_id="fat-6", parent_id="root", content="match", tags="fat-loss"),
+            _build_note_record(note_id="fat-7", parent_id="root", content="match", tags="body-fat"),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=["annoyed", "fat.appearance"],
+        explicit_tags=["annoyed", "fat.appearance"],
+        prefix="",
+        content_html="<p>annoyed and fat</p>",
+    )
+
+    assert suggestions == ["overindulging"]
+
+
+def test_tag_suggestions_can_keep_redundant_content_variants_when_config_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "annoyed overindulging"),
+            ("n2", "annoyed overindulging"),
+            ("n3", "fat-loss"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="root", parent_id=None, content="root", tags=""),
+            _build_note_record(note_id="current", parent_id="root", content="annoyed and fat", tags=""),
+            _build_note_record(note_id="match-1", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="match-2", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="fat-1", parent_id="root", content="match", tags="fat-loss"),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS",
+        False,
+    )
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=["annoyed", "fat.appearance"],
+        explicit_tags=["annoyed", "fat.appearance"],
+        prefix="",
+        content_html="<p>annoyed and fat</p>",
+    )
+
+    assert suggestions[:2] == ["fat-loss", "overindulging"]
+
+
+def test_tag_suggestions_interleave_cooccurrence_with_non_redundant_content_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "annoyed overindulging"),
+            ("n2", "annoyed overindulging"),
+            ("n3", "sleep-hygiene"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="root", parent_id=None, content="root", tags=""),
+            _build_note_record(note_id="current", parent_id="root", content="annoyed and sleep and fat", tags=""),
+            _build_note_record(note_id="match-1", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="match-2", parent_id="root", content="match", tags="annoyed overindulging"),
+            _build_note_record(note_id="sleep-1", parent_id="root", content="match", tags="sleep-hygiene"),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=["annoyed", "fat.appearance"],
+        explicit_tags=["annoyed", "fat.appearance"],
+        prefix="",
+        content_html="<p>annoyed and sleep and fat</p>",
+    )
+
+    assert suggestions[:2] == ["sleep-hygiene", "overindulging"]
 
 
 def test_tag_suggestions_collapse_case_equivalent_candidates(
@@ -519,6 +791,53 @@ def test_tag_suggestions_prioritize_exact_content_hit_over_global_noise(
     )
 
     assert suggestions[0] == "productive"
+
+
+def test_tag_suggestions_prefer_specific_content_hit_over_generic_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "proud ML3 VDW2"),
+            ("n2", "proud ML3 running"),
+            ("n3", "proud ML3 running"),
+            ("n4", "proud ML3 bugs"),
+            ("n5", "proud ML3 bugs"),
+            ("n6", "proud ML3 100-up"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="root", parent_id=None, content="root", tags=""),
+            _build_note_record(
+                note_id="current",
+                parent_id="root",
+                content="proud that I got ML3 up and running and fixed bugs for VDW2",
+                tags="",
+            ),
+            _build_note_record(note_id="match-1", parent_id="root", content="match", tags="proud ML3 VDW2"),
+            _build_note_record(note_id="match-2", parent_id="root", content="match", tags="proud ML3 running"),
+            _build_note_record(note_id="match-3", parent_id="root", content="match", tags="proud ML3 running"),
+            _build_note_record(note_id="match-4", parent_id="root", content="match", tags="proud ML3 bugs"),
+            _build_note_record(note_id="match-5", parent_id="root", content="match", tags="proud ML3 bugs"),
+            _build_note_record(note_id="noise", parent_id="root", content="match", tags="proud ML3 100-up"),
+        ],
+        inherited_non_meta_by_note={},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=["proud", "ML3"],
+        explicit_tags=["proud", "ML3"],
+        prefix="",
+        content_html="<p>proud that I got ML3 up and running and fixed bugs for VDW2</p>",
+    )
+
+    assert suggestions[0] == "VDW2"
 
 
 def test_tag_suggestions_use_local_hierarchy_content_before_global_noise(
