@@ -82,6 +82,7 @@
 - Literal segment hits can surface connector-separated tags, but low-signal glue segments like `and`, `of`, `the`, or `up` do not count on their own.
 - For partial connector matches, the most literal candidate is ordered first: fewer unmatched connector segments beat more padded tags like `X-Y-Z`.
 - Lowercase one-letter connector segments still count as noise, but uppercase one-letter segments can match as meaningful literals.
+- For otherwise tied literal content hits, more structured/longer specific tags beat shorter plain words before frequency breaks the tie.
 - Full multi-segment phrase hits rank above single-segment hits, so note content like `databricks workspaces` prefers `databricks-workspaces` over `databricks` or `workspaces`.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes `github`.
 - When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.

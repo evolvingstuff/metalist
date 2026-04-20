@@ -106,7 +106,7 @@ Unclosed comments behave like unclosed wrappers:
 - A literal content hit on any connector-separated segment can also surface a tag, but low-signal glue segments like `and`, `of`, `the`, or `up` do not count on their own. Full multi-segment phrase hits rank above single-segment hits, so content like `databricks workspaces` prefers `databricks-workspaces` over either segment tag alone.
 - When content matches only part of a connector-separated tag, the most literal candidate wins first: fewer unmatched connector segments rank ahead of more padded tags. Examples: `Z` prefers `Z` over `Y-Z` over `X-Y-Z`, and `Y Z` prefers `Y-Z` over `Z` over `X-Y-Z`.
 - Single-character connector segments are still ignored for lowercase noise like `a-b-test`, but uppercase one-letter segments can still count as meaningful literals.
-- When content-hit strength ties, more specific tags rank ahead of broader/common ones; remaining ties break by earlier mention in the note.
+- When content-hit strength ties, more structured/specific tags rank ahead of broader/common ones. Mixed-case tags, digit-bearing tags, connector-separated tags, and then longer literal matches beat shorter plain words before frequency breaks the tie; remaining ties break by earlier mention in the note.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
 - Case-equivalent tags are collapsed in suggestions (for example `Databricks` vs `databricks`), and the most-used spelling is shown.
 - Tags already present explicitly in the current tag bar are never suggested.

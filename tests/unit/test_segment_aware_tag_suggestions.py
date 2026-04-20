@@ -140,6 +140,37 @@ def test_tag_suggestions_promote_specific_multi_segment_content_matches(
     assert suggestions[:3] == ["databricks-workspaces", "databricks", "workspaces"]
 
 
+def test_tag_suggestions_prefer_longer_specific_entity_hit_over_shorter_generic_word(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "CookUnity"),
+            ("n2", "CookUnity"),
+            ("n3", "CookUnity"),
+            ("n4", "meal"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset({"diet"})),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>CookUnity meal</p>",
+    )
+
+    assert suggestions[:2] == ["CookUnity", "meal"]
+
+
 def test_tag_suggestions_prefer_shorter_partial_connector_match_for_single_segment_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
