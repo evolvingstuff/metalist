@@ -17,6 +17,7 @@ if any(char.isspace() for char in _CONNECTOR_CHARS):
 _CONNECTOR_RE = re.compile(f"[{re.escape(_CONNECTOR_CHARS)}]")
 _MATCH_NOISE_RE = re.compile(r"[^\w@#+%&']+")
 _WHITESPACE_RE = re.compile(r"\s+")
+_NUMERIC_SEGMENT_RE = re.compile(r"^\d+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,16 @@ def split_tag_term_segments(term: str) -> tuple[str, ...]:
     return tuple(segment for segment in normalized.split(" ") if segment)
 
 
+def _is_significant_content_match_segment(segment: str) -> bool:
+    if not isinstance(segment, str):
+        raise TypeError("segment must be a string")
+    if len(segment) < 2:
+        return False
+    if _NUMERIC_SEGMENT_RE.fullmatch(segment):
+        return False
+    return True
+
+
 def tag_term_matches_prefix(*, term: str, prefix: str) -> bool:
     if not isinstance(term, str):
         raise TypeError("term must be a string")
@@ -83,7 +94,11 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     if not isinstance(normalized_content, str):
         raise TypeError("normalized_content must be a string")
 
-    segments = split_tag_term_segments(term)
+    raw_segments = split_tag_term_segments(term)
+    segments = tuple(
+        segment for segment in raw_segments
+        if _is_significant_content_match_segment(segment)
+    )
     if not segments:
         return None
 
