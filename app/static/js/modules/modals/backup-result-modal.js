@@ -28,14 +28,6 @@ function _assertNonNegativeInteger(value, fieldName) {
 }
 
 
-function _destinationTitle(destination) {
-    if (destination === 'folder') {
-        return 'Selected Folder';
-    }
-    return 'MetaList Folder';
-}
-
-
 function _statusMarkup(success) {
     if (typeof success !== 'boolean') {
         throw new Error('_statusMarkup requires boolean success');
@@ -66,9 +58,6 @@ function _detailsText(result) {
     }
     if (!result.success) {
         return result.message;
-    }
-    if (result.destination === 'local') {
-        return 'Stored in the app-managed namespace backup folder';
     }
     if (result.destination === 'folder') {
         const prefix = 'Folder backup completed: ';
@@ -168,6 +157,7 @@ export class BackupResultModal extends BaseModal {
                 throw new Error('BackupResultModal result entry must be an object');
             }
             _assertString(result.destination, 'destination');
+            _assertString(result.namespace, 'namespace');
             if (typeof result.success !== 'boolean') {
                 throw new Error('success must be a boolean');
             }
@@ -176,14 +166,13 @@ export class BackupResultModal extends BaseModal {
             _assertNonNegativeInteger(result.remaining_count, 'remaining_count');
             _assertString(result.message, 'message');
 
-            const title = _destinationTitle(result.destination);
             const detailsText = _detailsText(result);
             const createdFilename = result.created_filename.length > 0 ? result.created_filename : '-';
             const deletedCount = result.success ? String(result.deleted_count) : '-';
             const keptCount = result.success ? String(result.remaining_count) : '-';
             return `
                 <tr>
-                    <td class="backup-result-destination">${_escapeHtml(title)}</td>
+                    <td class="backup-result-destination">${_escapeHtml(result.namespace)}</td>
                     <td>${_statusMarkup(result.success)}</td>
                     <td><span class="backup-filename">${_escapeHtml(createdFilename)}</span></td>
                     <td class="backup-result-table-count">${deletedCount}</td>
@@ -200,12 +189,12 @@ export class BackupResultModal extends BaseModal {
                     <table class="backup-result-table">
                         <thead>
                             <tr>
-                                <th scope="col">Destination</th>
+                                <th scope="col">Namespace</th>
                                 <th scope="col">Status</th>
                                 <th scope="col">Archive</th>
                                 <th scope="col">Deleted</th>
                                 <th scope="col">Kept Here</th>
-                                <th scope="col">Location / Notes</th>
+                                <th scope="col">Destination</th>
                             </tr>
                         </thead>
                         <tbody>

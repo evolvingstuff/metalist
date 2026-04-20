@@ -10,7 +10,7 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Linked-list ordering model for efficient reorders
 - Optional password protection + encryption at rest (AES-GCM)
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)
-- Manual namespace backups/restores to local archives and/or a user-selected backup folder with retention controls
+- Manual namespace backups/restores to a user-selected backup folder with retention controls
 
 ## Technology Stack
 
@@ -63,7 +63,7 @@ Database selection:
 - Remembered launch ports are stored per namespace in `~/MetaList/namespaces.db`
 - Launch precedence is: explicit CLI flags > env vars > saved namespace profile > built-in defaults
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use one archive per snapshot with filenames like `work-<timestamp>.metalist-backup.tar.gz`
-- The Backup Settings modal can target local storage, a user-selected folder, or both
+- The Backup Settings modal targets one user-selected backup folder and can include multiple namespaces in a single run
 
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors

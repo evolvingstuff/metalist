@@ -27,7 +27,7 @@
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
 - `app/services/search_history.py`: Stores interacted search histories in a sibling `*.search-history.db` SQLite database; blank-search suggestions can reserve the top 3 slots for the highest-scoring recently interacted tags aggregated across persisted queries, case-equivalent tags are collapsed to the most-used spelling, and the stored query/tag payloads encrypt at rest when the namespace is password-protected.
 - `app/services/file_registry.py`: In-memory registry of valid file UUIDs only; startup bootstraps this without hydrating file rows/blobs.
-- `app/services/backup_settings_service.py`: Stores per-namespace backup destination settings and retention count in the namespace DB; when namespace encryption is enabled, that payload is encrypted at rest too.
+- `app/services/backup_settings_service.py`: Stores the configured backup folder, selected namespaces, and retention count in the namespace DB; when namespace encryption is enabled, that payload is encrypted at rest too.
 - Notes schema: `notes.content` + `notes.tags` are persisted; tags are a space-separated string.
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping, auto-links bare `http(s)` URLs in rendered notes, and normalizes rendered anchors to open in a new tab.
@@ -78,8 +78,8 @@
 - View-mode links: bare pasted `http(s)` text becomes clickable in rendered note HTML, and rendered non-hash anchors open in a new browser tab instead of replacing the MetaList tab.
 - Image file refs in view mode: embedded image attachments render as authenticated previews with a `download image` control; collapsed notes reduce them to a compact thumbnail.
 - Backup/restore: `app/services/backup_service.py` snapshots the notes DB plus sibling file/search-history DBs into one versioned `.tar.gz` archive, validates manifest checksums/format on restore, rebuilds the file registry afterward, and still restores legacy `.bak` snapshots for compatibility.
-- Backup settings: `GET/PUT /api2/backup/settings` stores whether backups go to local storage, a configured folder, or both, plus the per-destination retention count used after successful writes.
-- Backup run: `POST /api2/backup/run` creates one archive snapshot, writes it to local storage and/or the configured folder, and reports per-destination success/failure in the result modal instead of collapsing everything into one destination.
+- Backup settings: `GET/PUT /api2/backup/settings` stores the configured folder path, selected namespaces, and per-namespace retention count for manual runs.
+- Backup run: `POST /api2/backup/run` creates one archive per selected namespace, writes them all into the configured folder, and reports one result row per namespace in the result modal.
 - Backup/restore scope: backup listing/creation/restore are scoped to the active DB path; namespaces live under `~/MetaList/namespaces/<namespace>/` and back up into `~/MetaList/namespaces/<namespace>/backups/` with filenames like `<namespace>-<timestamp>.metalist-backup.tar.gz`.
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.

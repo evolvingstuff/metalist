@@ -29,10 +29,10 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Endpoint definitions (behavior/labels) live in code.
 
 ## Utility Actions
-- `Create backup now`: opens Backup Settings, where the user can choose local storage, a configured folder, or both, set the retention count, and then run the backup.
+- `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, sets the retention count, and then runs the backup.
   - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling file/search-history DBs when present.
-  - The completion modal shows one result row per destination.
-- `Restore from backup…`: opens a restore picker for local and configured-folder snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.
+  - The completion modal shows one result row per namespace.
+- `Restore from backup…`: opens a restore picker for configured-folder snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.
   - Restore reuses the same archive pipeline for both sources and recreates sibling file/search-history DBs from the archive contents.
 - `Export as HTML`: downloads a self-contained HTML file for the current view with inline CSS, the active light/dark theme, all exported notes fully expanded, no command/search chrome, no collapse arrows, and `@password` note values redacted to matching-length `X` characters while keeping the blur styling.
 - `Logout`: revokes the current session and returns to login.

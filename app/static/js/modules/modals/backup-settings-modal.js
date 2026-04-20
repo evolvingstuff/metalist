@@ -47,9 +47,9 @@ export class BackupSettingsModal extends BaseModal {
             loading: true,
             saving: false,
             pickingFolder: false,
-            localEnabled: true,
-            folderEnabled: false,
             folderPath: '',
+            selectedNamespaces: [],
+            availableNamespaces: [],
             retentionCountText: '30',
             statusMessage: '',
             error: '',
@@ -122,12 +122,25 @@ export class BackupSettingsModal extends BaseModal {
         const loading = Boolean(state.loading);
         const saving = Boolean(state.saving);
         const pickingFolder = Boolean(state.pickingFolder);
-        const localEnabled = Boolean(state.localEnabled);
-        const folderEnabled = Boolean(state.folderEnabled);
         const folderPath = typeof state.folderPath === 'string' ? state.folderPath : '';
+        const selectedNamespaces = Array.isArray(state.selectedNamespaces) ? state.selectedNamespaces : [];
+        const availableNamespaces = Array.isArray(state.availableNamespaces) ? state.availableNamespaces : [];
         const retentionCountText = typeof state.retentionCountText === 'string' ? state.retentionCountText : '';
         const statusMessage = typeof state.statusMessage === 'string' ? state.statusMessage : '';
         const error = typeof state.error === 'string' ? state.error : '';
+        const showNamespaceSelection = availableNamespaces.length > 1;
+        const singleNamespaceLabel = availableNamespaces.length > 0 ? availableNamespaces[0] : '';
+        const namespaceSelectionHtml = showNamespaceSelection
+            ? availableNamespaces.map((namespace) => {
+                const checked = selectedNamespaces.includes(namespace);
+                return `
+                    <label class="backup-settings-checkbox-row backup-settings-namespace-row">
+                        <input type="checkbox" data-backup-namespace="${escapeHtml(namespace)}" ${checked ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}>
+                        <span>${escapeHtml(namespace)}</span>
+                    </label>
+                `;
+            }).join('')
+            : `<p class="backup-settings-single-namespace"><strong>Namespace:</strong> ${escapeHtml(singleNamespaceLabel)}</p>`;
 
         let effectiveStatusMessage = statusMessage;
         if (effectiveStatusMessage.length === 0 && loading) {
@@ -136,15 +149,10 @@ export class BackupSettingsModal extends BaseModal {
 
         modalElement.innerHTML = `
             <div class="modal-content backup-retention-modal-content">
-                <h3>Backup Settings</h3>
-                <p>Choose where manual backups should go and how many snapshots to retain per destination.</p>
+                <h3 class="backup-settings-modal-title">Backup Settings</h3>
+                <p>Choose one backup folder and how many snapshots to keep for each selected namespace.</p>
 
                 <div class="form-group">
-                    <label class="backup-settings-checkbox-row"><input type="checkbox" id="backup-settings-local-enabled" ${localEnabled ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}><span>Save local backup</span></label>
-                </div>
-
-                <div class="form-group">
-                    <label class="backup-settings-checkbox-row"><input type="checkbox" id="backup-settings-folder-enabled" ${folderEnabled ? 'checked' : ''} ${loading || saving ? 'disabled' : ''}><span>Save backup to folder</span></label>
                     <label for="backup-settings-folder-path">Folder path</label>
                     <input type="text" id="backup-settings-folder-path" value="${escapeHtml(folderPath)}" placeholder="/Users/you/Backups/MetaList" readonly ${loading || saving || pickingFolder ? 'disabled' : ''}>
                     <div class="form-actions">
@@ -155,7 +163,12 @@ export class BackupSettingsModal extends BaseModal {
                 </div>
 
                 <div class="form-group">
-                    <label for="backup-settings-retention-count">Backups to retain per destination</label>
+                    <label>Namespaces to include</label>
+                    ${namespaceSelectionHtml}
+                </div>
+
+                <div class="form-group">
+                    <label for="backup-settings-retention-count">Backups to retain per namespace</label>
                     <input type="number" id="backup-settings-retention-count" min="1" step="1" value="${retentionCountText}" ${loading || saving ? 'disabled' : ''}>
                 </div>
 
@@ -181,26 +194,6 @@ export class BackupSettingsModal extends BaseModal {
             };
         }
 
-        const localCheckbox = document.getElementById('backup-settings-local-enabled');
-        if (localCheckbox instanceof HTMLInputElement) {
-            localCheckbox.onchange = () => {
-                this.updateModalState({
-                    localEnabled: localCheckbox.checked,
-                    error: '',
-                });
-            };
-        }
-
-        const folderCheckbox = document.getElementById('backup-settings-folder-enabled');
-        if (folderCheckbox instanceof HTMLInputElement) {
-            folderCheckbox.onchange = () => {
-                this.updateModalState({
-                    folderEnabled: folderCheckbox.checked,
-                    error: '',
-                });
-            };
-        }
-
         const folderPickButton = document.getElementById('backup-settings-folder-pick-btn');
         if (folderPickButton instanceof HTMLButtonElement) {
             folderPickButton.onclick = async () => {
@@ -213,12 +206,30 @@ export class BackupSettingsModal extends BaseModal {
             folderClearButton.onclick = () => {
                 this.updateModalState({
                     folderPath: '',
-                    folderEnabled: false,
                     error: '',
                 });
                 this.renderModalContent();
             };
         }
+
+        const namespaceCheckboxes = document.querySelectorAll('[data-backup-namespace]');
+        namespaceCheckboxes.forEach((element) => {
+            if (!(element instanceof HTMLInputElement)) {
+                throw new Error('Namespace checkbox must be an input');
+            }
+            element.onchange = () => {
+                const state = this.getModalState();
+                const availableNamespaces = Array.isArray(state.availableNamespaces) ? state.availableNamespaces : [];
+                const checkedNamespaces = availableNamespaces.filter((candidate) => {
+                    const candidateElement = document.querySelector(`[data-backup-namespace="${CSS.escape(candidate)}"]`);
+                    return candidateElement instanceof HTMLInputElement && candidateElement.checked;
+                });
+                this.updateModalState({
+                    selectedNamespaces: checkedNamespaces,
+                    error: '',
+                });
+            };
+        });
 
         const retentionInput = document.getElementById('backup-settings-retention-count');
         if (retentionInput instanceof HTMLInputElement) {
@@ -310,12 +321,39 @@ export class BackupSettingsModal extends BaseModal {
             return;
         }
         const payload = settled.payload;
+        if (!payload || typeof payload !== 'object') {
+            this.updateModalState({
+                loading: false,
+                statusMessage: '',
+                error: 'Backup settings response missing body',
+            });
+            this.renderModalContent();
+            return;
+        }
+        if (!Array.isArray(payload.selected_namespaces)) {
+            this.updateModalState({
+                loading: false,
+                statusMessage: '',
+                error: 'Backup settings response missing selected_namespaces',
+            });
+            this.renderModalContent();
+            return;
+        }
+        if (!Array.isArray(payload.available_namespaces)) {
+            this.updateModalState({
+                loading: false,
+                statusMessage: '',
+                error: 'Backup settings response missing available_namespaces',
+            });
+            this.renderModalContent();
+            return;
+        }
         this.updateModalState({
             loading: false,
             pickingFolder: false,
-            localEnabled: payload.local_enabled,
-            folderEnabled: payload.folder_enabled,
             folderPath: typeof payload.folder_path === 'string' ? payload.folder_path : '',
+            selectedNamespaces: payload.selected_namespaces,
+            availableNamespaces: payload.available_namespaces,
             retentionCountText: String(payload.retention_count),
             statusMessage: '',
             error: '',
@@ -378,7 +416,6 @@ export class BackupSettingsModal extends BaseModal {
             }
             this.updateModalState({
                 pickingFolder: false,
-                folderEnabled: true,
                 folderPath: payload.folder_path,
                 statusMessage: '',
                 error: '',
@@ -396,20 +433,19 @@ export class BackupSettingsModal extends BaseModal {
 
     async handleRunBackup() {
         const state = this.getModalState();
-        const localEnabled = Boolean(state.localEnabled);
-        const folderEnabled = Boolean(state.folderEnabled);
         const folderPath = typeof state.folderPath === 'string' ? state.folderPath.trim() : '';
+        const selectedNamespaces = Array.isArray(state.selectedNamespaces) ? state.selectedNamespaces : [];
         let retentionCount = 0;
-        if (!localEnabled && !folderEnabled) {
+        if (folderPath.length === 0) {
             this.updateModalState({
-                error: 'Enable local or folder backups before running a backup.',
+                error: 'Choose a backup folder before running a backup.',
             });
             this.renderModalContent();
             return;
         }
-        if (folderEnabled && folderPath.length === 0) {
+        if (selectedNamespaces.length === 0) {
             this.updateModalState({
-                error: 'Folder backups require an absolute folder path.',
+                error: 'Select at least one namespace to back up.',
             });
             this.renderModalContent();
             return;
@@ -436,9 +472,8 @@ export class BackupSettingsModal extends BaseModal {
         this.renderModalContent();
 
         const settled = await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'PUT', {
-            local_enabled: localEnabled,
-            folder_enabled: folderEnabled,
             folder_path: folderPath,
+            selected_namespaces: selectedNamespaces,
             retention_count: retentionCount,
         }).then(
             () => ({ ok: true }),

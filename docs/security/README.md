@@ -282,12 +282,13 @@ Auth:
 
 Backup:
 - `GET /api2/backup/settings` - Read backup destination settings
-- `PUT /api2/backup/settings` - Update local/folder destination toggles and the per-destination retention count
-- `GET /api2/backup/list` - List available local and configured-folder backup snapshots
+- `PUT /api2/backup/settings` - Update the configured backup folder, selected namespaces, and per-namespace retention count
+- `GET /api2/backup/list` - List available configured-folder backup snapshots
 - `POST /api2/backup/run` - Create one versioned workspace archive snapshot and write it to the enabled destination(s)
-- `POST /api2/backup/restore` - Restore the selected local or folder archive snapshot and trigger the usual post-restore runtime reset/restart flow
+- `POST /api2/backup/restore` - Restore the selected folder archive snapshot and trigger the usual post-restore runtime reset/restart flow
   - Backup scope follows the active DB path, so namespaced runs use `~/MetaList/namespaces/<namespace>/backups/` and write one versioned archive per snapshot, for example `cla-<timestamp>.metalist-backup.tar.gz`. Legacy `.bak` snapshots remain restorable.
   - Backup settings are stored per namespace; when namespace encryption is enabled, that settings payload is encrypted at rest too.
+  - Manual backup runs now target one selected folder and can include multiple namespaces in the same run.
 - `POST /api2/backup/folder/pick` - Open the native folder picker and return the selected absolute backup path
 
 Notes:

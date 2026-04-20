@@ -110,7 +110,7 @@
 > In datetime sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
 
 ### Command Palette Utility Entries
-- Create backup now (opens Backup Settings, where you can choose local storage, a backup folder, or both, set retention, and then run the backup)
+- Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup)
 - Restore from backup…
 - Logout
 - Generate random password…

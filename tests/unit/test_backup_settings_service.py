@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.config import ACTIVE_NAMESPACE
 from app.db.session import begin_writer
 from app.db.settings_sql import insert_default_settings
 from app.models.database import SafeSession
@@ -52,10 +53,11 @@ def test_load_backup_settings_backfills_folder_fields_for_legacy_payload(
 
         settings = load_backup_settings(token="")
 
-        assert settings["folder_enabled"] is False
         assert settings["folder_path"] == ""
-        assert settings["local_enabled"] is True
+        assert settings["selected_namespaces"] == [ACTIVE_NAMESPACE]
         assert settings["retention_count"] == 30
+        assert "local_enabled" not in settings
+        assert "folder_enabled" not in settings
         assert "google_drive_enabled" not in settings
         assert "google_drive" not in settings
     finally:

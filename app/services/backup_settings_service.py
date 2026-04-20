@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 
+from app.config import ACTIVE_NAMESPACE
 from app.db.backup_settings_sql import fetch_backup_settings_row, upsert_backup_settings_row
 from app.db.session import begin_writer
 from app.models.database import SafeSession
 from app.security.encryption import get_encryption_service
 from app.security.encryption import get_encryption_service_with_token
 from app.security.encryption import is_encryption_required
+from app.server_runtime import validate_namespace
 
 
 _DEFAULT_RETENTION_COUNT = 30
@@ -17,9 +19,8 @@ _DEFAULT_RETENTION_COUNT = 30
 def _default_backup_settings() -> dict[str, object]:
     return {
         "retention_count": _DEFAULT_RETENTION_COUNT,
-        "local_enabled": True,
-        "folder_enabled": False,
         "folder_path": "",
+        "selected_namespaces": [ACTIVE_NAMESPACE],
     }
 
 
@@ -44,31 +45,34 @@ def _validate_backup_settings(settings: dict[str, object]) -> dict[str, object]:
     if not isinstance(retention_count, int) or retention_count <= 0:
         raise RuntimeError("backup settings retention_count must be a positive integer")
 
-    if "local_enabled" not in settings:
-        raise RuntimeError("backup settings missing local_enabled")
-    local_enabled = settings["local_enabled"]
-    if not isinstance(local_enabled, bool):
-        raise RuntimeError("backup settings local_enabled must be a bool")
-
-    folder_enabled = False
-    if "folder_enabled" in settings:
-        folder_enabled = settings["folder_enabled"]
-        if not isinstance(folder_enabled, bool):
-            raise RuntimeError("backup settings folder_enabled must be a bool")
-
     folder_path = ""
     if "folder_path" in settings:
         folder_path = settings["folder_path"]
         if not isinstance(folder_path, str):
             raise RuntimeError("backup settings folder_path must be a string")
-    if folder_enabled and folder_path == "":
-        raise RuntimeError("backup settings folder_path must be configured when folder_enabled is true")
+
+    selected_namespaces: list[str] = [ACTIVE_NAMESPACE]
+    if "selected_namespaces" in settings:
+        raw_selected_namespaces = settings["selected_namespaces"]
+        if not isinstance(raw_selected_namespaces, list):
+            raise RuntimeError("backup settings selected_namespaces must be a list")
+        if len(raw_selected_namespaces) == 0:
+            raise RuntimeError("backup settings selected_namespaces must not be empty")
+        selected_namespaces = []
+        seen_namespaces: set[str] = set()
+        for raw_namespace in raw_selected_namespaces:
+            if not isinstance(raw_namespace, str):
+                raise RuntimeError("backup settings selected_namespaces entries must be strings")
+            normalized_namespace = validate_namespace(namespace=raw_namespace)
+            if normalized_namespace in seen_namespaces:
+                raise RuntimeError(f"backup settings selected_namespaces duplicate: {normalized_namespace}")
+            seen_namespaces.add(normalized_namespace)
+            selected_namespaces.append(normalized_namespace)
 
     return {
         "retention_count": retention_count,
-        "local_enabled": local_enabled,
-        "folder_enabled": folder_enabled,
         "folder_path": folder_path,
+        "selected_namespaces": selected_namespaces,
     }
 
 
@@ -151,23 +155,19 @@ def save_backup_settings(*, token: str, settings: dict[str, object]) -> dict[str
 def update_backup_settings(
     *,
     token: str,
-    local_enabled: bool,
-    folder_enabled: bool,
     folder_path: str,
+    selected_namespaces: list[str],
     retention_count: int,
 ) -> dict[str, object]:
-    if not isinstance(local_enabled, bool):
-        raise TypeError("local_enabled must be a bool")
-    if not isinstance(folder_enabled, bool):
-        raise TypeError("folder_enabled must be a bool")
     if not isinstance(folder_path, str):
         raise TypeError("folder_path must be a string")
+    if not isinstance(selected_namespaces, list):
+        raise TypeError("selected_namespaces must be a list")
     if not isinstance(retention_count, int) or retention_count <= 0:
         raise ValueError("retention_count must be a positive integer")
 
     settings = load_backup_settings(token=token)
-    settings["local_enabled"] = local_enabled
-    settings["folder_enabled"] = folder_enabled
     settings["folder_path"] = folder_path
+    settings["selected_namespaces"] = selected_namespaces
     settings["retention_count"] = retention_count
     return save_backup_settings(token=token, settings=settings)
