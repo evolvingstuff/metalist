@@ -253,7 +253,10 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
             matched_positions.append(token_positions[segment])
             matched_raw_indexes.append(raw_index)
 
-    required_matched_segment_count = max(1, len(segments) - 1)
+    required_matched_segment_count = max(
+        1,
+        min(len(segments), raw_segment_count - 1),
+    )
     if matched_segment_count < required_matched_segment_count:
         return None
 

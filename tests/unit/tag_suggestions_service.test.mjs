@@ -106,6 +106,10 @@ function installTagSuggestionsDom(t) {
             };
         }
 
+        get scrollHeight() {
+            return this.children.length * 48;
+        }
+
         get className() {
             return Array.from(this._classNames).join(' ');
         }
@@ -315,4 +319,43 @@ test('re-entering the tag bar resets suggestions scroll to top', async (t) => {
 
     assert.equal(container.hidden, false);
     assert.equal(container.scrollTop, 0);
+});
+
+test('upward-opening suggestions start scrolled to the bottom', async (t) => {
+    const { FakeElement } = installTagSuggestionsDom(t);
+    const { NotesAPI } = await import('../../app/static/js/modules/api-client.js');
+    const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
+    const { updateTagSuggestions } = await import('../../app/static/js/modules/mode-manager/services/tag-suggestions-service.js');
+
+    const originalFetchTagSuggestions = NotesAPI.fetchTagSuggestions;
+    const originalEditing = ModeContext._editing;
+    const originalCurrentNoteId = ModeContext._currentNoteId;
+
+    t.after(() => {
+        NotesAPI.fetchTagSuggestions = originalFetchTagSuggestions;
+        ModeContext._editing = originalEditing;
+        ModeContext._currentNoteId = originalCurrentNoteId;
+    });
+
+    NotesAPI.fetchTagSuggestions = async () => ({
+        suggestions: ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta'],
+    });
+    ModeContext._editing = true;
+    ModeContext._currentNoteId = 'note-1';
+
+    const { input, tagBar, container } = buildTagSuggestionsFixture(FakeElement);
+    tagBar._rect = {
+        top: 1080,
+        bottom: 1120,
+        left: 0,
+        right: 400,
+    };
+
+    input.focus();
+    updateTagSuggestions(input);
+    await flushSuggestionWork();
+
+    assert.equal(container.hidden, false);
+    assert.equal(container.classList.contains('is-up'), true);
+    assert.equal(container.scrollTop, container.scrollHeight);
 });

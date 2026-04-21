@@ -40,7 +40,7 @@ def test_match_tag_term_in_normalized_content_keeps_non_prose_uppercase_single_l
     assert match.matched_segments == ("y", "z")
 
 
-def test_match_tag_term_in_normalized_content_requires_all_but_one_significant_segments() -> None:
+def test_match_tag_term_in_normalized_content_requires_near_complete_raw_chunk_coverage() -> None:
     assert match_tag_term_in_normalized_content(
         term="X-Y-Z",
         normalized_content=normalize_tag_match_text("Y"),
@@ -53,6 +53,11 @@ def test_match_tag_term_in_normalized_content_requires_all_but_one_significant_s
 
     assert match is not None
     assert match.matched_segments == ("x", "y")
+
+    assert match_tag_term_in_normalized_content(
+        term="Tree-of-Thoughts",
+        normalized_content=normalize_tag_match_text("misc thoughts"),
+    ) is None
 
 
 def test_match_tag_term_in_normalized_content_tracks_literal_padding_for_ranking() -> None:

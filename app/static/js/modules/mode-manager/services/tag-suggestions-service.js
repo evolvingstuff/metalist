@@ -156,7 +156,11 @@ function renderSuggestions(tagBarInput, suggestions) {
 
     container.hidden = false;
     container.style.display = 'flex';
-    container.scrollTop = 0;
+    if (placement === 'up') {
+        container.scrollTop = container.scrollHeight;
+    } else {
+        container.scrollTop = 0;
+    }
     selectedIndex = placement === 'up' ? ordered.length - 1 : 0;
     updateSelectedSuggestion(container);
 
