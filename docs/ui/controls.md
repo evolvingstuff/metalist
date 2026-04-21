@@ -80,7 +80,8 @@
 - Top suggestions interleave the strongest content matches with the strongest direct co-occurrence hits from the current explicit non-meta tags before the broader hierarchy/context fallbacks.
 - For blank-prefix suggestions, content-hit candidates whose matched segments are already covered by an explicit or inherited tag are suppressed as redundant.
 - Literal segment hits can surface connector-separated tags, but low-signal glue segments like `and`, `no`, `of`, `the`, `to`, or `up` do not count on their own.
-- For partial connector matches, the most literal candidate is ordered first: fewer unmatched connector segments beat more padded tags like `X-Y-Z`.
+- Connector-heavy tags need near-complete literal coverage before they surface from content alone: a tag with `k` significant segments needs at least `k-1` of them in the note text, so `X-Y-Z` can surface for `X Y`, `Y Z`, or `Y X`, but not for `X`, `Y`, or `Z` alone.
+- For partial connector matches, the most literal candidate is ordered first: fewer unmatched connector segments beat more padded tags, and prefix-aligned partials beat suffix-aligned ones when coverage otherwise ties.
 - Lowercase one-letter connector segments still count as noise. Uppercase one-letter segments can still match as meaningful literals for entity-like tags, but prose-like `A` and `I` are treated as noise.
 - For otherwise tied literal content hits, more structured/longer specific tags beat shorter plain words before frequency breaks the tie.
 - Full multi-segment phrase hits rank above single-segment hits, so note content like `databricks workspaces` prefers `databricks-workspaces` over `databricks` or `workspaces`.

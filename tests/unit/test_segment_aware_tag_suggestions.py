@@ -198,7 +198,8 @@ def test_tag_suggestions_prefer_shorter_partial_connector_match_for_single_segme
         content_html="<p>Z</p>",
     )
 
-    assert suggestions[:3] == ["Z", "Y-Z", "X-Y-Z"]
+    assert suggestions[:2] == ["Z", "Y-Z"]
+    assert "X-Y-Z" not in suggestions
 
 
 def test_tag_suggestions_prefer_full_connector_phrase_then_literal_suffix_tag(
@@ -229,6 +230,95 @@ def test_tag_suggestions_prefer_full_connector_phrase_then_literal_suffix_tag(
     )
 
     assert suggestions[:3] == ["Y-Z", "Z", "X-Y-Z"]
+
+
+def test_tag_suggestions_prefer_exact_literal_tag_over_padded_suffix_variant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "back"),
+            ("n2", "back"),
+            ("n3", "back"),
+            ("n4", "n-back"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>back</p>",
+    )
+
+    assert suggestions[:2] == ["back", "n-back"]
+
+
+def test_tag_suggestions_prefer_prefix_aligned_partial_variant_over_suffix_aligned_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "X-Y"),
+            ("n2", "Y-Z"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Y</p>",
+    )
+
+    assert suggestions[:2] == ["Y-Z", "X-Y"]
+
+
+def test_tag_suggestions_allow_reversed_near_complete_multi_chunk_literal_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "X-Y-Z"),
+            ("n2", "Y"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Y X</p>",
+    )
+
+    assert suggestions[:2] == ["Y", "X-Y-Z"]
 
 
 def test_tag_suggestions_apply_same_literal_ordering_for_other_connectors(

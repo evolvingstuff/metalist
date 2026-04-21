@@ -38,3 +38,36 @@ def test_match_tag_term_in_normalized_content_keeps_non_prose_uppercase_single_l
 
     assert match is not None
     assert match.matched_segments == ("y", "z")
+
+
+def test_match_tag_term_in_normalized_content_requires_all_but_one_significant_segments() -> None:
+    assert match_tag_term_in_normalized_content(
+        term="X-Y-Z",
+        normalized_content=normalize_tag_match_text("Y"),
+    ) is None
+
+    match = match_tag_term_in_normalized_content(
+        term="X-Y-Z",
+        normalized_content=normalize_tag_match_text("Y X"),
+    )
+
+    assert match is not None
+    assert match.matched_segments == ("x", "y")
+
+
+def test_match_tag_term_in_normalized_content_tracks_literal_padding_for_ranking() -> None:
+    back_match = match_tag_term_in_normalized_content(
+        term="back",
+        normalized_content=normalize_tag_match_text("back"),
+    )
+    n_back_match = match_tag_term_in_normalized_content(
+        term="n-back",
+        normalized_content=normalize_tag_match_text("back"),
+    )
+
+    assert back_match is not None
+    assert n_back_match is not None
+    assert back_match.raw_segment_count == 1
+    assert back_match.first_matched_raw_segment_index == 0
+    assert n_back_match.raw_segment_count == 2
+    assert n_back_match.first_matched_raw_segment_index == 1

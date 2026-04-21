@@ -62,10 +62,12 @@ class TagContentMatch:
     matched_segment_count: int
     matched_segments: tuple[str, ...]
     segment_count: int
+    raw_segment_count: int
+    first_matched_raw_segment_index: int
     first_position: int
     normalized_length: int
 
-    def sort_key(self) -> tuple[int, int, int, int, int]:
+    def sort_key(self) -> tuple[int, int, int, int, int, int, int]:
         phrase_match_score = 0
         if self.phrase_match:
             phrase_match_score = 1
@@ -73,6 +75,8 @@ class TagContentMatch:
             phrase_match_score,
             self.matched_segment_count,
             self.segment_count,
+            -self.raw_segment_count,
+            -self.first_matched_raw_segment_index,
             -self.first_position,
             self.normalized_length,
         )
@@ -144,6 +148,31 @@ def list_significant_content_match_segments(term: str) -> tuple[str, ...]:
     )
 
 
+def _list_significant_content_match_segments_with_raw_indexes(
+    term: str,
+) -> tuple[tuple[str, ...], tuple[int, ...], int]:
+    if not isinstance(term, str):
+        raise TypeError("term must be a string")
+
+    raw_segments = _split_tag_term_segments_preserving_case(term)
+    significant_segments: list[str] = []
+    significant_raw_indexes: list[int] = []
+    for raw_index, raw_segment in enumerate(raw_segments):
+        normalized_segment = raw_segment.casefold()
+        if not _is_significant_content_match_segment(
+            segment=normalized_segment,
+            raw_segment=raw_segment,
+        ):
+            continue
+        significant_segments.append(normalized_segment)
+        significant_raw_indexes.append(raw_index)
+    return (
+        tuple(significant_segments),
+        tuple(significant_raw_indexes),
+        len(raw_segments),
+    )
+
+
 def tag_term_matches_prefix(*, term: str, prefix: str) -> bool:
     if not isinstance(term, str):
         raise TypeError("term must be a string")
@@ -168,7 +197,9 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     if not isinstance(normalized_content, str):
         raise TypeError("normalized_content must be a string")
 
-    segments = list_significant_content_match_segments(term)
+    segments, segment_raw_indexes, raw_segment_count = _list_significant_content_match_segments_with_raw_indexes(
+        term
+    )
     if not segments:
         return None
 
@@ -191,14 +222,21 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     matched_segments: list[str] = []
     matched_segment_count = 0
     matched_positions: list[int] = []
-    for segment in dict.fromkeys(segments):
+    matched_raw_indexes: list[int] = []
+    for raw_index, segment in zip(segment_raw_indexes, segments):
+        if segment in matched_segments:
+            continue
         if segment in token_positions:
             matched_segments.append(segment)
             matched_segment_count += 1
             matched_positions.append(token_positions[segment])
+            matched_raw_indexes.append(raw_index)
 
-    if not phrase_match and matched_segment_count == 0:
+    required_matched_segment_count = max(1, len(segments) - 1)
+    if matched_segment_count < required_matched_segment_count:
         return None
+
+    assert matched_raw_indexes
 
     first_position = phrase_position
     if not phrase_match:
@@ -210,6 +248,8 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
         matched_segment_count=matched_segment_count,
         matched_segments=tuple(matched_segments),
         segment_count=len(segments),
+        raw_segment_count=raw_segment_count,
+        first_matched_raw_segment_index=min(matched_raw_indexes),
         first_position=first_position,
         normalized_length=len(phrase),
     )

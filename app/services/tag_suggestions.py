@@ -325,6 +325,32 @@ def _collect_content_match_scores(
     return matches
 
 
+def _collect_undercovered_content_overlap_terms(
+    *,
+    candidate_terms: Iterable[str],
+    normalized_content: str,
+) -> FrozenSet[str]:
+    if normalized_content == "":
+        return frozenset()
+
+    content_token_set = frozenset(normalized_content.split())
+    if not content_token_set:
+        return frozenset()
+
+    undercovered_terms: set[str] = set()
+    for term in candidate_terms:
+        segments = tuple(dict.fromkeys(list_significant_content_match_segments(term)))
+        if not segments:
+            continue
+        matched_segment_count = sum(1 for segment in segments if segment in content_token_set)
+        if matched_segment_count <= 0:
+            continue
+        required_matched_segment_count = max(1, len(segments) - 1)
+        if matched_segment_count < required_matched_segment_count:
+            undercovered_terms.add(term)
+    return frozenset(undercovered_terms)
+
+
 def _rank_terms_by_local_context(
     *,
     note_id: str,
@@ -467,7 +493,7 @@ def _content_match_sort_key(
     content_match_scores: Dict[str, TagContentMatch],
     exact_tag_counts: Dict[str, int],
     cooccurrence_rank: Dict[str, int],
-) -> tuple[int, int, int, int, int, int, int, int, int, str]:
+) -> tuple[int, int, int, int, int, int, int, int, int, int, str]:
     match = content_match_scores[term]
     unmatched_segment_count = match.segment_count - match.matched_segment_count
     assert unmatched_segment_count >= 0
@@ -482,10 +508,12 @@ def _content_match_sort_key(
         -(1 if match.phrase_match else 0),
         -match.matched_segment_count,
         unmatched_segment_count,
+        match.raw_segment_count,
+        match.first_matched_raw_segment_index,
         structured_term_penalty,
         match.first_position,
         -match.normalized_length,
-        _lookup_count(exact_tag_counts, term),
+        -_lookup_count(exact_tag_counts, term),
         cooccurrence_rank.get(term, len(cooccurrence_rank)),
         *_suggestion_tiebreak(term),
     )
@@ -607,6 +635,12 @@ def suggest_tags_for_note(
         candidate_terms=candidate_terms,
         normalized_content=normalized_content,
     )
+    undercovered_content_overlap_terms = frozenset()
+    if not has_prefix:
+        undercovered_content_overlap_terms = _collect_undercovered_content_overlap_terms(
+            candidate_terms=candidate_terms,
+            normalized_content=normalized_content,
+        )
 
     if TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS and not has_prefix:
         active_content_segments = _collect_active_content_match_segments(
@@ -684,6 +718,8 @@ def suggest_tags_for_note(
 
     for term in candidate_terms:
         if term in seen_terms:
+            continue
+        if term in undercovered_content_overlap_terms:
             continue
         remaining.append(term)
         seen_terms.add(term)
