@@ -71,7 +71,7 @@ export class HelpModal extends BaseModal {
                 items: [
                     { keys: `${modKey}+/`, description: 'Open menu' },
                     { keys: '?', description: 'Open keyboard shortcuts cheatsheet (idle only)' },
-                    { keys: 'Esc', description: 'Exit search/edit mode or close top modal' },
+                    { keys: 'Esc', description: 'Defocus search, exit edit mode, or close top modal' },
                     { keys: 'Enter', description: 'Create new root note (idle or from search)' },
                     { keys: 'Space', description: 'Toggle collapse on hovered note' },
                     { keys: `${backspaceKey} / ${deleteKey}`, description: 'Delete hovered note (idle)' },

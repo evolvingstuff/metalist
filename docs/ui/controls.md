@@ -53,6 +53,7 @@
 
 ### Search Input Behavior
 - Pressing `Enter` while focused in the search input creates a new **root** note.
+- Pressing `Esc` while focused in the search input blurs the field and dismisses search suggestions, without clearing the current query or search results.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
 - When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
 - Datetime sort modes do not change canonical insertion behavior. New roots are still inserted into the manual root order first, then rendered in datetime order, so a newly created root may appear at the top even if it was canonically inserted under an older selected root.

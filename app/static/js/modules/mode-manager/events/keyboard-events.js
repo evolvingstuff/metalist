@@ -32,7 +32,7 @@ import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '.
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { getDuplicateTabCloneOptions, seedDuplicatedTabNoteHashes } from '../services/tab-duplication-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
-import { syncSearchInputValue } from '../services/search-input-service.js';
+import { blurFocusedSearchInput, syncSearchInputValue } from '../services/search-input-service.js';
 import {
     getTagBarValue,
     normalizeTagBarForNewTag,
@@ -767,6 +767,14 @@ function handleDeleteHoveredNote(event, prefetchedDetails) {
 function handleEscapeKey() {
     if (ModeContext.isSearching === undefined) {
         throw new Error('ModeContext missing isSearching property in handleEscapeKey');
+    }
+
+    if (blurFocusedSearchInput()) {
+        if (ModeContext.isSearching) {
+            actionExitSearchMode();
+        }
+        Logger.logDebug('Search input blurred via Escape key', {}, Logger.LogCategory.EVENT);
+        return;
     }
         
     if (ModeContext.isSearching) {
