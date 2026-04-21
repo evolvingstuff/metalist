@@ -22,22 +22,38 @@ _LOW_SIGNAL_CONTENT_MATCH_SEGMENTS = frozenset(
     {
         "an",
         "and",
+        "as",
         "at",
+        "be",
+        "but",
         "by",
         "for",
         "from",
+        "if",
         "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "no",
+        "nor",
+        "not",
         "of",
         "off",
         "on",
         "or",
         "out",
+        "per",
         "the",
+        "than",
         "to",
+        "too",
         "up",
+        "via",
         "with",
     }
 )
+_LOW_SIGNAL_UPPERCASE_SINGLE_LETTER_SEGMENTS = frozenset({"a", "i"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +120,7 @@ def _is_significant_content_match_segment(*, segment: str, raw_segment: str) -> 
             and raw_segment.isalpha()
             and raw_segment == raw_segment.upper()
             and raw_segment != raw_segment.lower()
+            and segment not in _LOW_SIGNAL_UPPERCASE_SINGLE_LETTER_SEGMENTS
         )
     if _NUMERIC_SEGMENT_RE.fullmatch(segment):
         return False

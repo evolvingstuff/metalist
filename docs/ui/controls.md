@@ -79,9 +79,9 @@
 - Prefix behavior mirrors search suggestions (segment-aware while typing, co-occurrence after a space).
 - Top suggestions interleave the strongest content matches with the strongest direct co-occurrence hits from the current explicit non-meta tags before the broader hierarchy/context fallbacks.
 - For blank-prefix suggestions, content-hit candidates whose matched segments are already covered by an explicit or inherited tag are suppressed as redundant.
-- Literal segment hits can surface connector-separated tags, but low-signal glue segments like `and`, `of`, `the`, or `up` do not count on their own.
+- Literal segment hits can surface connector-separated tags, but low-signal glue segments like `and`, `no`, `of`, `the`, `to`, or `up` do not count on their own.
 - For partial connector matches, the most literal candidate is ordered first: fewer unmatched connector segments beat more padded tags like `X-Y-Z`.
-- Lowercase one-letter connector segments still count as noise, but uppercase one-letter segments can match as meaningful literals.
+- Lowercase one-letter connector segments still count as noise. Uppercase one-letter segments can still match as meaningful literals for entity-like tags, but prose-like `A` and `I` are treated as noise.
 - For otherwise tied literal content hits, more structured/longer specific tags beat shorter plain words before frequency breaks the tie.
 - Full multi-segment phrase hits rank above single-segment hits, so note content like `databricks workspaces` prefers `databricks-workspaces` over `databricks` or `workspaces`.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes `github`.
