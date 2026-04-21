@@ -73,3 +73,18 @@ export function syncSearchInputValue(searchInput, rawSearchQuery) {
     setSearchValidationState(searchInput, analysis);
     return analysis;
 }
+
+export function blurFocusedSearchInput() {
+    const searchInput = document.getElementById('search-input');
+    if (!searchInput) {
+        return false;
+    }
+    if (document.activeElement !== searchInput) {
+        return false;
+    }
+    if (typeof searchInput.blur !== 'function') {
+        throw new Error('search-input must support blur()');
+    }
+    searchInput.blur();
+    return true;
+}
