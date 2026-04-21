@@ -7,6 +7,8 @@
   - When a note is being edited by the current client, the server sends **raw content** so all delimiters remain visible.
   - Otherwise the server sends **rendered view HTML**, which may consume delimiters and wrap regions in styling spans.
   - Embedded note references use `![[UUID]]` and are rendered only in view mode.
+- `⌘ + U` unformats the stored content HTML itself: it removes rich-text wrappers/styles from content while preserving links and images.
+- `⌘ + U` does **not** remove meta tags from the tag bar, so note-level formatting tags still apply again in view mode after render.
 
 ## Embedded Note References
 - Syntax: `![[UUID]]`

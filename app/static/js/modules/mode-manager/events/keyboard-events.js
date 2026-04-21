@@ -16,6 +16,7 @@ import {
     actionPasteNoteChild,
     splitCurrentNoteFromSelection,
     joinCurrentNoteWithNextSibling,
+    unformatCurrentNoteContent,
 } from '../actions/note-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
@@ -79,7 +80,7 @@ const NAVIGATION_KEYS = new Set([
 ]);
 const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const DELETE_KEYS = new Set(['Backspace', 'Delete']);
-const TAG_BAR_META_SHORTCUT_KEYS = new Set(['c', 'x', 'v', 'z', 'y', 'r', 's', 'j', 'p']);
+const TAG_BAR_META_SHORTCUT_KEYS = new Set(['c', 'x', 'v', 'z', 'y', 'r', 's', 'j', 'u', 'p']);
 
 let savedEditingRange = null;
 let savedEditingRangeNoteId = null;
@@ -428,6 +429,8 @@ function handleKeyDown(event) {
             needsServer = true;
         } else if (event.key === 'j' && metaOrCtrl) {
             needsServer = true;
+        } else if (event.key === 'u' && metaOrCtrl) {
+            needsServer = true;
         } else if (event.key === 's' && metaOrCtrl) {
             needsServer = true;
         } else if (event.key === 'c' && metaOrCtrl) {
@@ -549,6 +552,11 @@ function handleKeyDown(event) {
         case 'j':
             if (event.metaKey || event.ctrlKey) {
                 void handleJoinNoteShortcut(event);
+            }
+            break;
+        case 'u':
+            if (event.metaKey || event.ctrlKey) {
+                void handleUnformatNoteShortcut(event);
             }
             break;
         case 'x':
@@ -1542,6 +1550,28 @@ async function handleJoinNoteShortcut(event) {
 
     await CommandGate.run('keyboard.join_note', async () => {
         await joinCurrentNoteWithNextSibling();
+    });
+}
+
+async function handleUnformatNoteShortcut(event) {
+    if (!event) {
+        throw new Error('handleUnformatNoteShortcut called without an event object');
+    }
+
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    await CommandGate.run('keyboard.unformat_note', async () => {
+        await unformatCurrentNoteContent();
     });
 }
 

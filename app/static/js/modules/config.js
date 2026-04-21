@@ -19,6 +19,7 @@ export const CONFIG = {
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
+            UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,
             RUN_SHELL: (noteId) => `${API_NOTES_BASE}/${noteId}/run-shell`,
             RUN_SHELL_STATUS: (noteId, runId) => `${API_NOTES_BASE}/${noteId}/run-shell/${runId}`,
             RUN_SHELL_INPUT: (noteId, runId) => `${API_NOTES_BASE}/${noteId}/run-shell/${runId}/input`,

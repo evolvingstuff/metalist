@@ -69,8 +69,8 @@ export class HelpModal extends BaseModal {
                 category: 'Global and Idle',
                 columnCount: 2,
                 items: [
-                    { keys: `${modKey}+/`, description: 'Open menu' },
-                    { keys: '?', description: 'Open keyboard shortcuts cheatsheet (idle only)' },
+                    { keys: `${modKey}+/`, description: 'Open command palette' },
+                    { keys: '?', description: 'Open keyboard shortcuts help (idle only)' },
                     { keys: 'Esc', description: 'Defocus search, exit edit mode, or close top modal' },
                     { keys: 'Enter', description: 'Create new root note (idle or from search)' },
                     { keys: 'Space', description: 'Toggle collapse on hovered note' },
@@ -100,6 +100,7 @@ export class HelpModal extends BaseModal {
                     { keys: `${modKey}+R`, description: 'Copy embedded reference from last copied note' },
                     { keys: `${modKey}+S`, description: 'Split note at selection or caret' },
                     { keys: `${modKey}+J`, description: 'Join current note with next sibling' },
+                    { keys: `${modKey}+U`, description: 'Unformat note content but keep links and images' },
                     { keys: `${modKey}+P`, description: 'Open password settings' },
                     { keys: `${modKey}+${backspaceKey} / ${modKey}+${deleteKey}`, description: 'Delete selected note' },
                 ]
@@ -150,7 +151,7 @@ export class HelpModal extends BaseModal {
 
         const footnotes = [
             isMac ? 'Use Ctrl instead of Cmd on Windows/Linux.' : 'Shown with Ctrl for this platform.',
-            'Tag-bar focus still honors note-level editing shortcuts.',
+            'Tag-bar focus still honors note-level editing shortcuts, including unformat.',
             'Paste-note shortcuts fall back to normal paste when note clipboard mode is inactive.',
         ];
 

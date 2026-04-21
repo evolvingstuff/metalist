@@ -1,0 +1,28 @@
+from app.services.html_unformatting import unformat_note_content_html
+
+
+def test_unformat_note_content_html_strips_rich_text_wrappers() -> None:
+    html = (
+        '<h1 style="font-size: 48px"><span style="font-family: Papyrus"><strong>Title</strong></span></h1>'
+        '<div><font face="Comic Sans MS">Body copy</font></div>'
+    )
+
+    assert unformat_note_content_html(html) == "Title<br>Body copy"
+
+
+def test_unformat_note_content_html_preserves_links_and_images() -> None:
+    html = (
+        '<div><strong><a href="https://example.com" title="Example" style="color: red">Link <em>text</em></a></strong></div>'
+        '<p><span style="font-size: 32px"><img src="https://example.com/image.png" alt="Example image" width="320"></span></p>'
+    )
+
+    assert unformat_note_content_html(html) == (
+        '<a href="https://example.com" title="Example">Link text</a>'
+        '<br><img src="https://example.com/image.png" alt="Example image" width="320">'
+    )
+
+
+def test_unformat_note_content_html_turns_lists_into_plain_lines() -> None:
+    html = "<ul><li><strong>One</strong></li><li>Two</li></ul><ol><li>Three</li><li>Four</li></ol>"
+
+    assert unformat_note_content_html(html) == "- One<br>- Two<br>1. Three<br>2. Four"

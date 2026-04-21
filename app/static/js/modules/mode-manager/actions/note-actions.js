@@ -915,6 +915,52 @@ export async function joinCurrentNoteWithNextSibling() {
     return true;
 }
 
+export async function unformatCurrentNoteContent() {
+    const currentNoteId = ModeContext.currentNoteId;
+    Logger.logAction('unformatCurrentNoteContent', {
+        currentNoteId,
+        isEditing: ModeContext.isEditing,
+        isDirty: ModeContext.isDirty,
+    });
+
+    if (!ModeContext.isEditing) {
+        Logger.logNoop('Unformat shortcut ignored: not editing');
+        return false;
+    }
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        Logger.logNoop('Unformat shortcut ignored: no active note');
+        return false;
+    }
+
+    if (ModeContext.editSessionHasEdits) {
+        await actionSaveNote(currentNoteId);
+    }
+
+    const response = await NotesAPI.unformatNote(currentNoteId);
+    if (response && response.status === 'noop') {
+        Logger.logNoop('Unformat shortcut ignored: content already plain');
+        return false;
+    }
+
+    ModeContext.markEditSessionHasEdits();
+
+    const startedAt = performance.now();
+    const refreshedContent = await actionRefreshAndMaybeSelect({
+        startedAt,
+        context: 'unformatCurrentNoteContent',
+    });
+    if (typeof refreshedContent === 'string' && ModeContext.currentContent !== refreshedContent) {
+        ModeContext.setCurrentContent(refreshedContent);
+        ModeContext.setLastSavedContent(refreshedContent);
+    }
+
+    if (ModeContext.isDirty) {
+        ModeContext.setDirty(false);
+    }
+
+    return true;
+}
+
 export async function toggleReferenceModeForNote(hostNoteId, referenceNoteId, occurrenceIndex, mode) {
     const startedAt = performance.now();
     Logger.logAction('toggleReferenceModeForNote', {

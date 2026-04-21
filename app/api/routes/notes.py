@@ -35,6 +35,7 @@ from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
 from app.usecases.join_next_sibling import CmdJoinNextSibling
 from app.usecases.toggle_reference_mode import CmdToggleReferenceMode
+from app.usecases.unformat_content import CmdUnformatContent
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.usecases.record_edit_mode import CmdRecordEditMode
@@ -652,6 +653,23 @@ def toggle_todo_done(request: Request, note_id: str, body: dict):
     token = _require_bearer_token(request)
     _require_note_present(note_id, context="notes.toggle-todo")
     cmd = CmdToggleTodoDone(
+        note_id=note_id,
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/unformat")
+@transactional_route
+def unformat_note_content(request: Request, note_id: str, body: dict):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.unformat")
+    cmd = CmdUnformatContent(
         note_id=note_id,
         token=token,
         client_id=client_id,

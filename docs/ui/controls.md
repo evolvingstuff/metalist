@@ -19,6 +19,7 @@
 | `⌘ + J` | Join current note with next sibling (merges content and tags) |
 | `⌘ + R` | Copy as embedded reference for the most recently copied note UUID |
 | `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
+| `⌘ + U` | Unformat current note content (strip rich formatting but keep links and images) |
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note is empty with no tags, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
@@ -33,9 +34,11 @@
 - `⌘ + J` merges tag bars without duplicates (case-insensitive dedupe; first-seen casing/order wins).
 - `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
+- `⌘ + U` rewrites the note's stored content HTML into plain HTML, removing inline/block formatting wrappers while preserving links and images.
+- `⌘ + U` does not remove meta-tags like `@bold`, `@todo`, or any other tag-bar formatting tags.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
 - In `Datetime created` / `Datetime last updated`, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
-- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, note copy/cut/paste, and password modal.
+- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, unformat, note copy/cut/paste, and password modal.
 
 ### General Shortcuts
 | Shortcut | Action |

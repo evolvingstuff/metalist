@@ -293,6 +293,16 @@ export const NotesAPI = {
         });
     },
 
+    async unformatNote(noteId) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.unformatNote requires noteId string');
+        }
+        return this._apiCall(CONFIG.API.NOTES.UNFORMAT(noteId), {
+            method: 'POST',
+            claimSession: true,
+        });
+    },
+
     async runShell(noteId, timeoutSeconds) {
         if (!noteId) {
             throw new Error('runShell requires noteId');
