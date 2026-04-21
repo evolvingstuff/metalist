@@ -16,37 +16,117 @@ from app.services.tag_term_matching import tag_term_matches_prefix
 from app.utils.text_utils import strip_html
 
 
+def _preferred_display_term_sort_key(
+    *,
+    term: str,
+    exact_tag_counts: Dict[str, int],
+) -> Tuple[int, int, str]:
+    return (
+        -_lookup_count(exact_tag_counts, term),
+        *_suggestion_tiebreak(term),
+    )
+
+
+def _choose_preferred_display_term(
+    *,
+    terms: Iterable[str],
+    exact_tag_counts: Dict[str, int],
+) -> str:
+    preferred_term = ""
+    for term in terms:
+        if preferred_term == "":
+            preferred_term = term
+            continue
+        if _preferred_display_term_sort_key(
+            term=term,
+            exact_tag_counts=exact_tag_counts,
+        ) < _preferred_display_term_sort_key(
+            term=preferred_term,
+            exact_tag_counts=exact_tag_counts,
+        ):
+            preferred_term = term
+    if preferred_term == "":
+        raise ValueError("terms must contain at least one tag")
+    return preferred_term
+
+
 def _select_preferred_case_variants(*, terms: Iterable[str], exact_tag_counts: Dict[str, int]) -> List[str]:
-    by_casefold: Dict[str, str] = {}
+    by_casefold: Dict[str, List[str]] = {}
     for term in terms:
         term_casefold = term.casefold()
-        if term_casefold not in by_casefold:
-            by_casefold[term_casefold] = term
+        if term_casefold in by_casefold:
+            if term in by_casefold[term_casefold]:
+                continue
+            by_casefold[term_casefold].append(term)
             continue
-        current = by_casefold[term_casefold]
-        current_count = 0
-        if current in exact_tag_counts:
-            current_count = exact_tag_counts[current]
-        candidate_count = 0
-        if term in exact_tag_counts:
-            candidate_count = exact_tag_counts[term]
-        if candidate_count > current_count:
-            by_casefold[term_casefold] = term
+        by_casefold[term_casefold] = [term]
+    return [
+        _choose_preferred_display_term(
+            terms=variants,
+            exact_tag_counts=exact_tag_counts,
+        )
+        for variants in by_casefold.values()
+    ]
+
+
+def _equivalent_suggestion_group_key(*, term: str, ontology) -> Tuple[str, ...]:
+    if not isinstance(term, str) or not term:
+        raise TypeError("term must be a non-empty string")
+
+    scc_members_by_tag = getattr(ontology, "scc_members_by_tag", {})
+    if not isinstance(scc_members_by_tag, dict) and not hasattr(scc_members_by_tag, "get"):
+        return (term.casefold(),)
+
+    equivalent_terms = scc_members_by_tag.get(term)
+    if not equivalent_terms:
+        return (term.casefold(),)
+
+    normalized_members = tuple(sorted({member.casefold() for member in equivalent_terms}))
+    if not normalized_members:
+        return (term.casefold(),)
+    return normalized_members
+
+
+def _build_equivalent_term_representatives(
+    *,
+    terms: Iterable[str],
+    exact_tag_counts: Dict[str, int],
+    ontology,
+) -> Dict[str, str]:
+    grouped_terms: Dict[Tuple[str, ...], List[str]] = {}
+    for term in terms:
+        group_key = _equivalent_suggestion_group_key(term=term, ontology=ontology)
+        group_terms = grouped_terms.setdefault(group_key, [])
+        if term in group_terms:
             continue
-        if candidate_count < current_count:
+        group_terms.append(term)
+
+    representatives: Dict[str, str] = {}
+    for group_terms in grouped_terms.values():
+        representative = _choose_preferred_display_term(
+            terms=group_terms,
+            exact_tag_counts=exact_tag_counts,
+        )
+        for term in group_terms:
+            representatives[term] = representative
+    return representatives
+
+
+def _collapse_equivalent_suggestions(
+    *,
+    suggestions: Iterable[str],
+    representative_by_term: Dict[str, str],
+) -> List[str]:
+    collapsed: List[str] = []
+    seen_casefold: set[str] = set()
+    for term in suggestions:
+        representative = representative_by_term.get(term, term)
+        representative_casefold = representative.casefold()
+        if representative_casefold in seen_casefold:
             continue
-        current_penalty = 1
-        if current == current.casefold():
-            current_penalty = 0
-        candidate_penalty = 1
-        if term == term.casefold():
-            candidate_penalty = 0
-        if candidate_penalty < current_penalty:
-            by_casefold[term_casefold] = term
-            continue
-        if candidate_penalty == current_penalty and term < current:
-            by_casefold[term_casefold] = term
-    return list(by_casefold.values())
+        seen_casefold.add(representative_casefold)
+        collapsed.append(representative)
+    return collapsed
 
 
 def _sanitize_tag_terms(*, tags: Iterable[str], field_name: str) -> List[str]:
@@ -744,7 +824,15 @@ def suggest_tags_for_note(
         present_suffix.sort()
         suggestions.extend(present_suffix)
 
-    return suggestions
+    representative_by_term = _build_equivalent_term_representatives(
+        terms=list(candidate_terms) + suggestions,
+        exact_tag_counts=exact_tag_counts,
+        ontology=ontology,
+    )
+    return _collapse_equivalent_suggestions(
+        suggestions=suggestions,
+        representative_by_term=representative_by_term,
+    )
 
 
 __all__ = ["suggest_tags_for_note"]

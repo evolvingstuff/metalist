@@ -110,6 +110,7 @@ Unclosed comments behave like unclosed wrappers:
 - When content-hit strength ties, more structured/specific tags rank ahead of broader/common ones. Mixed-case tags, digit-bearing tags, connector-separated tags, and then longer literal matches beat shorter plain words before frequency breaks the tie; remaining ties break by earlier mention in the note.
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
 - Case-equivalent tags are collapsed in suggestions (for example `Databricks` vs `databricks`), and the most-used spelling is shown.
+- Ontology-equivalent tags are also collapsed to one displayed suggestion. The representative is the most-used eligible tag spelling in your notes, but prefix filtering happens first, so typing `emo` can still show `emotion` even if `mood` is the more common synonym overall.
 - Tags already present explicitly in the current tag bar are never suggested.
 - Tags already present only via inheritance or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward and the ordering reverses so the closest suggestion sits nearest the input.

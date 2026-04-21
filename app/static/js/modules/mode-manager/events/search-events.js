@@ -18,12 +18,10 @@ export function handleSearchInput(event) {
             currentValue = event.target.value;
         }
 
-        Logger.logNoop('Search input ignored while request in-flight', {
+        Logger.logDebug('Search input changed while request in-flight; scheduling follow-up execution', {
             value: currentValue,
             activeTab: ModeContext.activeTabId,
-        });
-        event.preventDefault();
-        return;
+        }, Logger.LogCategory.EVENT);
     }
 
     const searchInput = event.target;

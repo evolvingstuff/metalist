@@ -88,6 +88,7 @@
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes `github`.
 - When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
 - Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
+- Ontology-equivalent tags are collapsed the same way: only the most-used eligible synonym is shown, unless the current prefix only matches a less-common synonym variant.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions may render above the tag bar if space below is tight; the ordering reverses so the closest suggestion sits nearest the input.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
