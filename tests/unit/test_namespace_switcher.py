@@ -13,7 +13,9 @@ from app.server_runtime import load_namespace_launch_profile
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import save_namespace_launch_profile
 from app.services.namespace_switcher import build_namespace_catalog
+from app.services.namespace_switcher import build_login_namespace_catalog
 from app.services.namespace_switcher import delete_current_namespace
+from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.namespace_switcher import NamespaceOpenResult
@@ -98,6 +100,30 @@ def test_build_namespace_catalog_includes_existing_database_without_saved_profil
     }
 
 
+def test_build_login_namespace_catalog_returns_plain_namespace_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=8001,
+        https_port=None,
+        mcp_port=8766,
+    )
+
+    catalog = build_login_namespace_catalog(
+        environ={},
+        current_namespace="default",
+    )
+
+    assert catalog == {
+        "current_namespace": "default",
+        "namespaces": ["default", "cla"],
+    }
+
+
 def test_open_or_launch_namespace_rejects_reserved_current_port(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -157,6 +183,56 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
     assert saved_profile.port == 8123
     assert saved_profile.https_port is None
     assert saved_profile.mcp_port == 8766
+
+
+def test_open_login_namespace_uses_catalog_default_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=8001,
+        https_port=None,
+        mcp_port=8766,
+    )
+    opened: list[tuple[str | None, str, int, int | None, int]] = []
+
+    def _fake_open_or_launch_namespace(
+        *,
+        environ,
+        current_namespace,
+        namespace,
+        port,
+        https_port,
+        mcp_port,
+    ) -> NamespaceOpenResult:
+        opened.append((current_namespace, namespace, port, https_port, mcp_port))
+        return NamespaceOpenResult(
+            namespace=namespace,
+            action="opened-running",
+            url=f"http://127.0.0.1:{port}",
+            saved_profile=NamespaceLaunchProfile(
+                namespace=namespace,
+                port=port,
+                https_port=https_port,
+                mcp_port=mcp_port,
+            ),
+            saved_for_next_launch=False,
+            message=f"Opened namespace {namespace}.",
+        )
+
+    monkeypatch.setattr(namespace_switcher, "open_or_launch_namespace", _fake_open_or_launch_namespace)
+
+    result = open_login_namespace(
+        environ={},
+        current_namespace="default",
+        namespace="cla",
+    )
+
+    assert opened == [("default", "cla", 8001, None, 8766)]
+    assert result.url == "http://127.0.0.1:8001"
 
 
 def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(

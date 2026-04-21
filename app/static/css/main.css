@@ -60,10 +60,13 @@ html {
 .login-container {
     position: relative;
     z-index: 1;
+    display: flex;
+    flex-direction: column;
     text-align: left;
     padding: 36px;
     max-width: 440px;
     width: 100%;
+    min-height: 430px;
     margin: 24px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 24px;
@@ -75,14 +78,6 @@ html {
 
 .login-copy {
     margin-bottom: 26px;
-}
-
-.login-eyebrow {
-    margin: 0 0 14px;
-    font-size: 0.82rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: rgba(228, 236, 250, 0.76);
 }
 
 .login-container h1 {
@@ -222,6 +217,80 @@ html {
     margin-top: 8px;
     font-size: 0.85em;
     color: rgba(226, 235, 250, 0.74);
+}
+
+.login-namespace-switcher {
+    margin-top: auto;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.login-namespace-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.76rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(214, 226, 245, 0.58);
+}
+
+.login-namespace-select-wrap {
+    position: relative;
+}
+
+.login-namespace-select-wrap::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    width: 8px;
+    height: 8px;
+    border-right: 1.5px solid rgba(229, 237, 249, 0.6);
+    border-bottom: 1.5px solid rgba(229, 237, 249, 0.6);
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
+}
+
+.login-namespace-select {
+    width: 100%;
+    padding: 10px 40px 10px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(242, 247, 255, 0.84);
+    font-size: 0.94rem;
+    appearance: none;
+    cursor: pointer;
+    transition:
+        border-color 0.18s ease,
+        background 0.18s ease,
+        color 0.18s ease;
+}
+
+.login-namespace-select:hover {
+    border-color: rgba(144, 194, 255, 0.24);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.login-namespace-select:focus {
+    outline: none;
+    border-color: rgba(120, 187, 255, 0.48);
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.12);
+}
+
+.login-namespace-select:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.login-namespace-status {
+    margin: 10px 0 0;
+    font-size: 0.88rem;
+    color: rgba(216, 228, 245, 0.68);
+}
+
+.login-namespace-status[data-state="error"] {
+    color: #ffd8de;
 }
 
 @media (max-width: 640px) {

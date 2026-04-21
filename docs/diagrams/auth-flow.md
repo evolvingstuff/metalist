@@ -12,6 +12,15 @@ sequenceDiagram
     participant Enc as Encryption Service
     participant DB as SQLite DB
     participant Cache as Content Cache
+
+    opt Switch namespace before login
+        Browser->>API: GET /api2/auth/login-namespaces
+        API-->>Browser: {current_namespace, namespaces[]}
+        U->>Browser: Pick another namespace
+        Browser->>API: POST /api2/auth/login-namespaces/open {namespace}
+        API-->>Browser: {url, action}
+        Browser->>Browser: Redirect to target namespace URL
+    end
     
     U->>Browser: Enter password
     Browser->>Browser: Add loading cursor

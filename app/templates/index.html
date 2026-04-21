@@ -20,8 +20,7 @@
     % endif
     <div class="login-container">
         <div class="login-copy">
-            <p class="login-eyebrow">MetaList</p>
-            <h1>MetaList</h1>
+            <h1 id="login-title">MetaList</h1>
             <h2 id="login-subtitle">${'Opening workspace…' if startup_animation_enabled else 'Authentication Required'}</h2>
         </div>
         <div id="startup-splash" class="startup-splash" style="display: ${'flex' if startup_animation_enabled else 'none'};">
@@ -43,6 +42,15 @@
             <div class="login-progress-track">
                 <div id="login-progress-bar" class="login-progress-bar"></div>
             </div>
+        </div>
+        <div id="login-namespace-switcher" class="login-namespace-switcher" hidden>
+            <label class="login-namespace-label" for="login-namespace-select">Namespace</label>
+            <div class="login-namespace-select-wrap">
+                <select id="login-namespace-select" class="login-namespace-select" aria-label="Switch namespace">
+                    <option value="">Loading namespaces…</option>
+                </select>
+            </div>
+            <p id="login-namespace-status" class="login-namespace-status" hidden></p>
         </div>
     </div>
 </div>

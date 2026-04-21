@@ -314,6 +314,66 @@ def open_or_launch_all_namespaces(
     return results
 
 
+def build_login_namespace_catalog(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+) -> dict[str, object]:
+    catalog = build_namespace_catalog(
+        environ=environ,
+        current_namespace=current_namespace,
+    )
+    raw_current_namespace = catalog.get("current_namespace")
+    if not isinstance(raw_current_namespace, str) or raw_current_namespace == "":
+        raise RuntimeError("Namespace catalog missing current_namespace")
+
+    raw_namespaces = catalog.get("namespaces")
+    if not isinstance(raw_namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+
+    namespaces: list[str] = []
+    seen_namespaces: set[str] = set()
+    for entry in raw_namespaces:
+        if not isinstance(entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        namespace = entry.get("namespace")
+        if not isinstance(namespace, str) or namespace == "":
+            raise RuntimeError("Namespace catalog entry missing namespace")
+        if namespace in seen_namespaces:
+            raise RuntimeError(f"Namespace catalog contains duplicate namespace {namespace}")
+        seen_namespaces.add(namespace)
+        namespaces.append(namespace)
+
+    if raw_current_namespace not in seen_namespaces:
+        raise RuntimeError(f"Current namespace {raw_current_namespace} missing from namespace catalog")
+
+    return {
+        "current_namespace": raw_current_namespace,
+        "namespaces": namespaces,
+    }
+
+
+def open_login_namespace(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    namespace: str,
+) -> NamespaceOpenResult:
+    chosen_profile = _resolve_catalog_profile(
+        environ=environ,
+        current_namespace=current_namespace,
+        namespace=namespace,
+    )
+    return open_or_launch_namespace(
+        environ=environ,
+        current_namespace=current_namespace,
+        namespace=chosen_profile.namespace,
+        port=chosen_profile.port,
+        https_port=chosen_profile.https_port,
+        mcp_port=chosen_profile.mcp_port,
+    )
+
+
 def delete_current_namespace(
     *,
     environ: Mapping[str, str],
@@ -1131,6 +1191,20 @@ def _resolve_fallback_profile(
     current_namespace: str,
     fallback_namespace: str,
 ) -> NamespaceLaunchProfile:
+    return _resolve_catalog_profile(
+        environ=environ,
+        current_namespace=current_namespace,
+        namespace=fallback_namespace,
+    )
+
+
+def _resolve_catalog_profile(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    namespace: str,
+) -> NamespaceLaunchProfile:
+    normalized_namespace = validate_namespace(namespace=namespace)
     catalog = build_namespace_catalog(
         environ=environ,
         current_namespace=current_namespace,
@@ -1141,27 +1215,10 @@ def _resolve_fallback_profile(
     for entry in namespaces:
         if not isinstance(entry, dict):
             continue
-        if entry.get("namespace") != fallback_namespace:
+        if entry.get("namespace") != normalized_namespace:
             continue
-        profile = entry.get("default_profile")
-        if not isinstance(profile, dict):
-            raise RuntimeError(f"Namespace {fallback_namespace} is missing a default profile")
-        port = profile.get("port")
-        https_port = profile.get("https_port")
-        mcp_port = profile.get("mcp_port")
-        if not isinstance(port, int):
-            raise RuntimeError(f"Namespace {fallback_namespace} default profile is missing HTTP port")
-        if https_port is not None and not isinstance(https_port, int):
-            raise RuntimeError(f"Namespace {fallback_namespace} default profile has invalid HTTPS port")
-        if not isinstance(mcp_port, int):
-            raise RuntimeError(f"Namespace {fallback_namespace} default profile is missing MCP port")
-        return NamespaceLaunchProfile(
-            namespace=fallback_namespace,
-            port=port,
-            https_port=https_port,
-            mcp_port=mcp_port,
-        )
-    raise RuntimeError(f"Fallback namespace {fallback_namespace} is unavailable")
+        return _catalog_default_profile(entry=entry)
+    raise RuntimeError(f"Namespace {normalized_namespace} is unavailable")
 
 
 def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id: str) -> None:

@@ -56,6 +56,10 @@ export const CONFIG = {
         AUTH: {
             STATUS: `${API_AUTH_BASE}/status`,
             LOGIN: `${API_AUTH_BASE}/login`,
+            LOGIN_NAMESPACES: {
+                LIST: `${API_AUTH_BASE}/login-namespaces`,
+                OPEN: `${API_AUTH_BASE}/login-namespaces/open`,
+            },
             LOGOUT: `${API_AUTH_BASE}/logout`,
             SESSION: `${API_AUTH_BASE}/session`,
             SESSIONS: `${API_AUTH_BASE}/sessions`,

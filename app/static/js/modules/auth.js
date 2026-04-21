@@ -5,10 +5,13 @@ import { CONFIG } from './config.js';
 import { createUuid } from './uuid.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
+import { buildLoginTitle, parseLoginNamespaceCatalog } from './login-namespace-picker.js';
 
 export const Auth = {
     hasPassword: null,
     _forcingLogout: false,
+    _currentNamespace: null,
+    _loginNamespaceRequestId: 0,
     _tabId: null,
     _startupIntroPromise: null,
     _startupIntroResolved: false,
@@ -67,6 +70,7 @@ export const Auth = {
 
         const status = await response.json();
         this.hasPassword = Boolean(status.has_password);
+        this._setCurrentNamespace(status.namespace);
         console.log('[Auth] Status response:', status);
 
         if (this.hasPassword) {
@@ -139,12 +143,134 @@ export const Auth = {
         subtitle.textContent = text;
     },
 
+    _setCurrentNamespace(namespace) {
+        if (typeof namespace !== 'string') {
+            throw new Error('Auth._setCurrentNamespace requires namespace string');
+        }
+        this._currentNamespace = namespace;
+        const title = this._requireElement('login-title');
+        title.textContent = buildLoginTitle(namespace);
+    },
+
     _setStartupMessage(text) {
         if (typeof text !== 'string' || text.length === 0) {
             throw new Error('Auth._setStartupMessage requires text string');
         }
         const startupMessage = this._requireElement('startup-message');
         startupMessage.textContent = text;
+    },
+
+    _setLoginNamespaceStatus(text, state = 'info') {
+        if (typeof text !== 'string') {
+            throw new Error('Auth._setLoginNamespaceStatus requires text string');
+        }
+        if (typeof state !== 'string' || state.length === 0) {
+            throw new Error('Auth._setLoginNamespaceStatus requires state string');
+        }
+        const status = this._requireElement('login-namespace-status');
+        if (text.length === 0) {
+            status.hidden = true;
+            status.textContent = '';
+            status.dataset.state = 'info';
+            this._syncLoginNamespaceVisibility();
+            return;
+        }
+        status.hidden = false;
+        status.textContent = text;
+        status.dataset.state = state;
+        this._syncLoginNamespaceVisibility();
+    },
+
+    _syncLoginNamespaceVisibility() {
+        const switcher = this._requireElement('login-namespace-switcher');
+        const loginForm = this._requireElement('login-form');
+        const loginPage = this._requireElement('login-page');
+        const status = this._requireElement('login-namespace-status');
+        const hasChoices = switcher.dataset.hasChoices === 'true';
+        const shouldShow = (hasChoices || status.hidden === false)
+            && loginPage.style.display !== 'none'
+            && loginForm.style.display !== 'none';
+        switcher.hidden = !shouldShow;
+    },
+
+    _renderLoginNamespacePicker(catalog, disabled = false) {
+        const select = this._requireElement('login-namespace-select');
+        const switcher = this._requireElement('login-namespace-switcher');
+        if (!catalog || typeof catalog !== 'object') {
+            throw new Error('Auth._renderLoginNamespacePicker requires catalog object');
+        }
+        if (!Array.isArray(catalog.namespaces)) {
+            throw new Error('Auth._renderLoginNamespacePicker requires namespaces array');
+        }
+        if (typeof catalog.currentNamespace !== 'string' || catalog.currentNamespace.length === 0) {
+            throw new Error('Auth._renderLoginNamespacePicker requires currentNamespace');
+        }
+
+        const optionsHtml = catalog.namespaces.map((namespace) => {
+            if (typeof namespace !== 'string' || namespace.length === 0) {
+                throw new Error('Auth._renderLoginNamespacePicker requires non-empty namespace strings');
+            }
+            return `<option value="${namespace}">${namespace}</option>`;
+        }).join('');
+
+        if (!catalog.namespaces.includes(catalog.currentNamespace)) {
+            throw new Error(`Current namespace ${catalog.currentNamespace} missing from catalog`);
+        }
+
+        select.innerHTML = optionsHtml;
+        select.value = catalog.currentNamespace;
+        select.disabled = disabled;
+        switcher.dataset.hasChoices = catalog.namespaces.length >= 2 ? 'true' : 'false';
+        this._syncLoginNamespaceVisibility();
+    },
+
+    async _readResponseDetail(response, fallbackPrefix) {
+        if (!(response instanceof Response)) {
+            throw new Error('Auth._readResponseDetail requires Response');
+        }
+        if (typeof fallbackPrefix !== 'string' || fallbackPrefix.length === 0) {
+            throw new Error('Auth._readResponseDetail requires fallbackPrefix string');
+        }
+
+        const responseText = await response.text();
+        if (responseText.length > 0) {
+            const contentType = response.headers.get('content-type');
+            if (typeof contentType === 'string' && contentType.toLowerCase().includes('application/json')) {
+                const payload = JSON.parse(responseText);
+                if (payload && typeof payload === 'object' && typeof payload.detail === 'string' && payload.detail.length > 0) {
+                    return `${fallbackPrefix}: ${payload.detail}`;
+                }
+                if (payload && typeof payload === 'object' && typeof payload.message === 'string' && payload.message.length > 0) {
+                    return `${fallbackPrefix}: ${payload.message}`;
+                }
+            }
+            return `${fallbackPrefix}: ${responseText}`;
+        }
+        return `${fallbackPrefix} (${response.status})`;
+    },
+
+    async _loadLoginNamespaceCatalog() {
+        const requestId = this._loginNamespaceRequestId + 1;
+        this._loginNamespaceRequestId = requestId;
+
+        const select = this._requireElement('login-namespace-select');
+        select.disabled = true;
+        this._setLoginNamespaceStatus('Loading namespaces...');
+
+        const response = await fetch(CONFIG.API.AUTH.LOGIN_NAMESPACES.LIST);
+        if (!response.ok) {
+            throw new Error(await this._readResponseDetail(response, 'Failed to load namespaces'));
+        }
+
+        const payload = parseLoginNamespaceCatalog(await response.json());
+        if (requestId !== this._loginNamespaceRequestId) {
+            return;
+        }
+        if (this._currentNamespace !== payload.currentNamespace) {
+            this._setCurrentNamespace(payload.currentNamespace);
+        }
+        this._renderLoginNamespacePicker(payload, false);
+        this._setLoginNamespaceStatus('');
     },
 
     _clearLoginError() {
@@ -234,6 +360,7 @@ export const Auth = {
         this._setStartupMessage(message);
         this._resetHydrationUI();
         this._clearLoginError();
+        this._syncLoginNamespaceVisibility();
     },
     
     /**
@@ -255,6 +382,11 @@ export const Auth = {
         this._setLoginSubtitle('Authentication Required');
         this._resetHydrationUI();
         this._clearLoginError();
+        this._syncLoginNamespaceVisibility();
+        void this._loadLoginNamespaceCatalog().catch((error) => {
+            const message = error instanceof Error ? error.message : 'Failed to load namespaces';
+            this._setLoginNamespaceStatus(message, 'error');
+        });
 
         setTimeout(() => {
             passwordInput.focus();
@@ -273,6 +405,7 @@ export const Auth = {
         mainApp.style.display = 'block';
         this._resetHydrationUI();
         this._clearLoginError();
+        this._syncLoginNamespaceVisibility();
         passwordInput.value = '';
     },
 
@@ -287,6 +420,7 @@ export const Auth = {
         loadingPanel.style.display = 'block';
         this._setLoginSubtitle('Loading encrypted data…');
         this._clearLoginError();
+        this._syncLoginNamespaceVisibility();
     },
 
     _updateHydrationUI(status) {
@@ -374,6 +508,60 @@ export const Auth = {
             }
             status = await pollResponse.json();
             this._updateHydrationUI(status);
+        }
+    },
+
+    async handleLoginNamespaceChange(event) {
+        if (!(event && event.target instanceof HTMLSelectElement)) {
+            throw new Error('Auth.handleLoginNamespaceChange requires select event');
+        }
+
+        const select = event.target;
+        const namespace = select.value;
+        if (typeof namespace !== 'string' || namespace.length === 0) {
+            throw new Error('Namespace picker selection is required');
+        }
+        if (this._currentNamespace === null) {
+            throw new Error('Current namespace is unavailable');
+        }
+        if (namespace === this._currentNamespace) {
+            return;
+        }
+
+        select.disabled = true;
+        this._setLoginNamespaceStatus(`Opening ${namespace}...`);
+
+        try {
+            const response = await fetch(CONFIG.API.AUTH.LOGIN_NAMESPACES.OPEN, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ namespace }),
+            });
+
+            if (!response.ok) {
+                throw new Error(await this._readResponseDetail(response, 'Failed to open namespace'));
+            }
+
+            const payload = await response.json();
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Namespace open response missing body');
+            }
+            if (typeof payload.url !== 'string' || payload.url.length === 0) {
+                throw new Error('Namespace open response missing url');
+            }
+
+            window.location.assign(payload.url);
+        } catch (error) {
+            select.value = this._currentNamespace;
+            select.disabled = false;
+            if (error instanceof Error) {
+                this._setLoginNamespaceStatus(error.message, 'error');
+                throw error;
+            }
+            this._setLoginNamespaceStatus('Failed to open namespace', 'error');
+            throw new Error('Failed to open namespace');
         }
     },
     
@@ -526,6 +714,13 @@ export const Auth = {
         const loginForm = document.getElementById('login-form');
         if (loginForm) {
             loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+        }
+
+        const namespaceSelect = document.getElementById('login-namespace-select');
+        if (namespaceSelect) {
+            namespaceSelect.addEventListener('change', (event) => {
+                void this.handleLoginNamespaceChange(event);
+            });
         }
         
         // Close modal when clicking outside

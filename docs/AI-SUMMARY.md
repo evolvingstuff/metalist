@@ -14,7 +14,7 @@
 - Child entrypoint: `serve_namespace.py` is the namespace-serving source entrypoint so child processes do not re-enter the parent orchestration path in `main.py`.
 - `app/main.py`: FastAPI wiring, middleware, startup bootstrapping, SSR templates.
 - `app/static/js/main.js`: Browser bootstrap; awaits `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` before revealing the app, and sets `document.body.dataset.appReady` for deterministic Cypress startup waits.
-- Startup intro gate: `app/templates/index.html` + `app/static/js/modules/auth.js` can show a login/startup MP4 before revealing login or the app; this is controlled by `STARTUP_ANIMATION_ENABLED` and defaults off.
+- Startup intro gate: `app/templates/index.html` + `app/static/js/modules/auth.js` can show a login/startup MP4 before revealing login or the app; the login card now shows a single namespace-aware title (`MetaList` for `default`, `MetaList [work]` otherwise) plus a bottom namespace picker that can redirect before authentication; this is controlled by `STARTUP_ANIMATION_ENABLED` and defaults off.
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
   - `app/api/routes/auth.py`
@@ -52,7 +52,7 @@
 - Client busy model: `CommandGate.run(name, asyncFn)` is the single boundary for user-initiated server calls; it is the only code allowed to flip `ModeContext.isLoading`.
 - Undo boundaries: client includes an `epoch` in `undoContext` (`tab/search/epoch`); global actions bump the epoch so undo/redo cannot cross those boundaries. Sort-mode changes are one of those global boundaries and blank undo/redo for the active tab context.
 - Error handling: fail-fast (internal errors crash; DB rollback triggers immediate process exit; request-validation crash toggle).
-- Auth: Argon2id password verifier protecting the DEK; encrypted settings require `vault_version` + full KDF profile (`kdf_algorithm`, `kdf_memory_cost_kib`, `kdf_parallelism`); `/api2/auth/login` is rate-limited; tokens are short-lived and kept in-memory; token issuance enforces a single active session.
+- Auth: Argon2id password verifier protecting the DEK; encrypted settings require `vault_version` + full KDF profile (`kdf_algorithm`, `kdf_memory_cost_kib`, `kdf_parallelism`); `/api2/auth/login` is rate-limited; pre-login namespace selection uses `GET /api2/auth/login-namespaces` + `POST /api2/auth/login-namespaces/open` to redirect into another namespace without widening the authenticated namespace APIs; tokens are short-lived and kept in-memory; token issuance enforces a single active session.
 
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.
@@ -73,6 +73,7 @@
 - Split shortcut: `Cmd/Ctrl+S` splits the currently edited note at selection/caret into sibling notes and preserves the original tag-bar string across all resulting notes; split normalization trims edge-empty nodes to avoid synthetic leading blank lines; no-op when full-note selection or end-caret would yield fewer than two non-empty segments.
 - Move-to-top shortcut: `Cmd/Ctrl+Shift+Up` is server-driven; a selected root note moves to the top of the current root view (including filtered/search views), while a child note moves to the top of its sibling list.
 - Command palette help action: `Cmd/Ctrl+/` → `Keyboard shortcuts help…` opens the shortcuts modal from palette utilities.
+- Login screen namespace switcher: the bottom login picker lists plain namespace names (`default`, `cla`, etc.), immediately redirects through the login-only namespace-open flow, and lands directly in passwordless namespaces because the destination page auto-claims a passwordless session on load.
 - Namespace switcher: `Cmd/Ctrl+/` → `Switch or create namespace…` opens a modal backed by `GET /api2/auth/namespaces` and `POST /api2/auth/namespaces/open`; it reuses saved launch profiles for existing namespaces, suggests next-free ports for new namespaces, restarts already-running target namespaces from the current code, and otherwise waits for the freshly spawned instance before returning its URL.
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image pixels still embed as compressed `data:image/...`, while named pasted/dropped image files can either embed inline or be saved as file attachments via a choice modal.
 - View-mode links: bare pasted `http(s)` text becomes clickable in rendered note HTML, and rendered non-hash anchors open in a new browser tab instead of replacing the MetaList tab.
@@ -104,7 +105,7 @@ metalist
 - Namespace DBs: omitted namespace on a single-namespace launch means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `metalist work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`. Plain source-checkout `python main.py` bootstraps all known namespaces instead of selecting only `default`.
 - Default TLS paths: `~/MetaList/certs/metalist-cert.pem` + `~/MetaList/certs/metalist-key.pem`; `main.py` auto-generates that self-signed pair on first non-test startup unless `METALIST_AUTO_GENERATE_TLS=0`, and `generate-lan-cert.sh` remains an optional manual regeneration path.
 - Launch profile precedence: CLI flags override env vars, which override `~/MetaList/namespaces.db`, which overrides built-in defaults.
-- Namespace UI/runtime bridge: `app/api/routes/auth.py` now exposes namespace catalog + open/launch endpoints; `app/static/js/modules/modals/namespace-switcher-modal.js` is the client modal opened from the command palette.
+- Namespace UI/runtime bridge: `app/api/routes/auth.py` now exposes login-screen namespace list/open endpoints plus the authenticated namespace catalog + open/launch endpoints; `app/static/js/modules/login-namespace-picker.js` formats the login title/picker state and `app/static/js/modules/modals/namespace-switcher-modal.js` remains the command-palette modal.
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Frontend join shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`joinCurrentNoteWithNextSibling`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+J` binding).

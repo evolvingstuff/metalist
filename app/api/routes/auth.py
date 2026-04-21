@@ -28,7 +28,9 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.services.login_rate_limit import login_rate_limiter
 from app.services.maintenance_mode import maintenance_service
 from app.services.namespace_switcher import build_namespace_catalog
+from app.services.namespace_switcher import build_login_namespace_catalog
 from app.services.namespace_switcher import delete_current_namespace
+from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.tokens import token_service
@@ -124,6 +126,22 @@ class BackupRestoreResponse(BaseModel):
     message: str
     reauthentication_required: bool
     password_required: bool
+
+
+class LoginNamespaceCatalogResponse(BaseModel):
+    current_namespace: str
+    namespaces: list[str]
+
+
+class LoginNamespaceOpenRequest(BaseModel):
+    namespace: str
+
+
+class LoginNamespaceOpenResponse(BaseModel):
+    namespace: str
+    action: str
+    url: str
+    message: str
 
 
 _hydration_executor = ThreadPoolExecutor(max_workers=1)
@@ -481,6 +499,44 @@ def auth_status(
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
         "namespace": ACTIVE_NAMESPACE,
     }
+
+
+@router.get("/login-namespaces", response_model=LoginNamespaceCatalogResponse)
+def login_namespace_catalog():
+    payload = build_login_namespace_catalog(
+        environ=os.environ,
+        current_namespace=ACTIVE_NAMESPACE,
+    )
+    return LoginNamespaceCatalogResponse(**payload)
+
+
+@router.post("/login-namespaces/open", response_model=LoginNamespaceOpenResponse)
+@transactional_route
+def open_login_namespace_route(payload: LoginNamespaceOpenRequest):
+    launch_capture = CapturedExceptionContext(
+        RuntimeError,
+        ValueError,
+        TypeError,
+        FileNotFoundError,
+    )
+    result = None
+    with launch_capture:
+        result = open_login_namespace(
+            environ=os.environ,
+            current_namespace=ACTIVE_NAMESPACE,
+            namespace=payload.namespace,
+        )
+    if launch_capture.captured_exception is not None:
+        exc = launch_capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Namespace login open did not return a result")
+    return LoginNamespaceOpenResponse(
+        namespace=result.namespace,
+        action=result.action,
+        url=result.url,
+        message=result.message,
+    )
 
 
 @router.get("/namespaces")
