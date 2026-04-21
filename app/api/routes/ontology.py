@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 import re
 
+from app.api.request_auth import get_request_auth_token
 from app.api.transactions import transactional_route
 from app.services.search_index import search_index
 from app.services.note_store import store as note_store
@@ -23,13 +24,10 @@ from app.utils.text_utils import strip_html
 
 
 def _maybe_bearer_token(request: Request) -> str:
-    if "authorization" not in request.headers:
+    token = get_request_auth_token(request)
+    if token is None:
         return ""
-    authorization = request.headers["authorization"]
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid Authorization header")
-    return parts[1]
+    return token
 
 
 router = APIRouter(prefix="/ontology", tags=["ontology2"])

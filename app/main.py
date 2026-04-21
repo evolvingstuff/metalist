@@ -31,6 +31,7 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.api.request_auth import clear_auth_cookie
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
@@ -545,7 +546,9 @@ async def namespace_deleted_open_page(request: Request):
         return HTMLResponse(str(exc), status_code=400)
     if result is None:
         raise RuntimeError("Namespace launch did not return a result")
-    return RedirectResponse(url=_build_force_reauth_url(url=result.url), status_code=307)
+    response = RedirectResponse(url=_build_force_reauth_url(url=result.url), status_code=307)
+    clear_auth_cookie(response=response)
+    return response
 
 
 @app.get("/locked", response_class=HTMLResponse)

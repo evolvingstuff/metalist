@@ -265,15 +265,21 @@ For fresh imports using `convert-from-legacy.py`:
 
 ## API Endpoints
 
-When password protection is enabled, requests must include:
-- `Authorization: Bearer <token>`
+When password protection is enabled, browser requests use:
+- HttpOnly `metalist_auth` cookie
 - `X-Metalist-Tab-Id: <uuid>` (required by auth/token verification)
+
+Non-browser/manual clients may still send:
+- `Authorization: Bearer <token>`
 
 Auth:
 - `POST /api2/auth/login` - Authenticate and establish session
 - `POST /api2/auth/logout` - Revoke token and clear in-memory keys
 - `POST /api2/auth/session` - Claim passwordless session (only when no password is set)
 - `GET /api2/auth/status` - Poll auth/encryption status
+- `GET /api2/auth/client-state` - Load namespace-scoped client preferences and command-palette usage
+- `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences
+- `PUT /api2/auth/client-state/command-palette-usage` - Persist namespace-scoped command-palette usage history
 - `POST /api2/auth/namespaces/delete-current` - Delete the active non-default namespace after typed confirmation and, when enabled, password re-entry. The tab moves to a dedicated namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory and saved launch profile.
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)

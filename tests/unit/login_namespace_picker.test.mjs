@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    buildLoginNamespaceOpeningCopy,
     buildLoginTitle,
     parseLoginNamespaceCatalog,
+    rewriteNamespaceUrlPreservingCurrentHost,
 } from '../../app/static/js/modules/login-namespace-picker.js';
 
 
@@ -27,4 +29,26 @@ test('parseLoginNamespaceCatalog preserves plain namespace labels', () => {
         currentNamespace: 'default',
         namespaces: ['default', 'cla'],
     });
+});
+
+
+test('buildLoginNamespaceOpeningCopy returns explicit loading text', () => {
+    assert.deepEqual(buildLoginNamespaceOpeningCopy('cla'), {
+        loadingMessage: 'Connecting to cla on its configured port…',
+        loadingTitle: 'Switching namespace…',
+        statusText: 'Opening cla…',
+        subtitle: 'Opening cla…',
+    });
+});
+
+
+test('rewriteNamespaceUrlPreservingCurrentHost swaps only the browser host', () => {
+    const rewritten = rewriteNamespaceUrlPreservingCurrentHost(
+        'http://127.0.0.1:8001/namespace-deleted?job=123',
+        {
+            hostname: '10.0.0.31',
+        },
+    );
+
+    assert.equal(rewritten, 'http://10.0.0.31:8001/namespace-deleted?job=123');
 });

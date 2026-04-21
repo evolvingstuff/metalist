@@ -59,6 +59,7 @@ from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
 from app.services.undo_state import reset_undo_stack
 from app.usecases.prioritize import list_prioritize_tag_suggestions
+from app.api.request_auth import require_request_auth_token
 
 
 logger = logging.getLogger(__name__)
@@ -1022,13 +1023,7 @@ def _require_viewport(body: dict) -> dict:
 
 
 def _require_bearer_token(request: Request) -> str:
-    if "authorization" not in request.headers:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    authorization = request.headers["authorization"]
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid Authorization header")
-    return parts[1]
+    return require_request_auth_token(request)
 
 
 @router.post("/notes/undo")

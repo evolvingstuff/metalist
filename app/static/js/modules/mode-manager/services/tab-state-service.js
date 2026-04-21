@@ -4,6 +4,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { computeScrollAnchor } from './scroll-anchor-service.js';
 import { CommandGate } from './command-gate-service.js';
 import { recordScrollInteractionIfEligible } from './search-interaction-service.js';
+import { buildSessionHeaders } from '../../session-auth.js';
 
 const TAB_STATE_ENDPOINT = CONFIG.API.NOTES.TAB_STATE;
 const TAB_STATE_NEW_TAB_ENDPOINT = CONFIG.API.NOTES.TAB_STATE_NEW_TAB;
@@ -102,19 +103,9 @@ async function callTabStateApiAt(endpoint, method, body) {
     if (typeof endpoint !== 'string' || endpoint.length === 0) {
         throw new Error('tab-state endpoint must be a non-empty string');
     }
-    const headers = { 'Content-Type': 'application/json' };
-    const tabId = sessionStorage.getItem('metalist_tab_id');
-    if (!tabId) {
-        throw new Error('metalist_tab_id missing from sessionStorage');
-    }
-    headers['X-Metalist-Tab-Id'] = tabId;
-    const authToken = localStorage.getItem('auth_token');
-    if (authToken) {
-        headers['Authorization'] = `Bearer ${authToken}`;
-    }
     const response = await fetch(endpoint, {
         method,
-        headers,
+        headers: buildSessionHeaders(true),
         body: body ? JSON.stringify(body) : undefined,
     });
     if (!response.ok) {

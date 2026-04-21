@@ -1,5 +1,6 @@
 import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
+import { buildSessionHeaders } from '../session-auth.js';
 
 
 function parseResponseError(responseBody, statusCode) {
@@ -250,25 +251,7 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     _buildAuthHeaders(includeContentType) {
-        if (typeof includeContentType !== 'boolean') {
-            throw new Error('_buildAuthHeaders requires boolean includeContentType');
-        }
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (typeof tabId !== 'string' || tabId.length === 0) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-        const token = localStorage.getItem('auth_token');
-        if (typeof token !== 'string' || token.length === 0) {
-            throw new Error('auth_token missing from localStorage');
-        }
-        const headers = {
-            Authorization: `Bearer ${token}`,
-            'X-Metalist-Tab-Id': tabId,
-        };
-        if (includeContentType) {
-            headers['Content-Type'] = 'application/json';
-        }
-        return headers;
+        return buildSessionHeaders(includeContentType);
     }
 
     async _authRequest(url, method, payload) {

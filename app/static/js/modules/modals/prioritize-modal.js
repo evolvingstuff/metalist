@@ -1,5 +1,6 @@
 import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
+import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 
 const SUGGESTION_LIMIT = 20;
@@ -456,23 +457,10 @@ export class PrioritizeModal extends BaseModal {
         });
         this.syncSuggestionUi();
 
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (typeof tabId !== 'string' || tabId.length === 0) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-            'Content-Type': 'application/json',
-            'X-Metalist-Tab-Id': tabId,
-        };
-        if (typeof token === 'string' && token.length > 0) {
-            headers.Authorization = `Bearer ${token}`;
-        }
-
         await (async () => {
             const payload = await fetch(CONFIG.API.NOTES.PRIORITIZE_TAG_SUGGESTIONS, {
                 method: 'POST',
-                headers,
+                headers: buildSessionHeaders(true),
                 body: JSON.stringify({
                     query: rawQuery,
                     search_query: this._context.searchQuery,

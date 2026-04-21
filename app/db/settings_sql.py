@@ -47,6 +47,11 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "encrypted_dek": row["encrypted_dek"],
         "dek_nonce": row["dek_nonce"],
         "dek_tag": row["dek_tag"],
+        "backup_settings_json": row["backup_settings_json"],
+        "backup_settings_encryption_nonce": row["backup_settings_encryption_nonce"],
+        "backup_settings_encryption_tag": row["backup_settings_encryption_tag"],
+        "client_preferences_json": row["client_preferences_json"],
+        "command_palette_usage_json": row["command_palette_usage_json"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
     }
@@ -153,6 +158,52 @@ def clear_password_settings(connection: GuardedConnection | sqlite3.Connection) 
         WHERE id = 1
         """,
         (
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_client_preferences_json(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    client_preferences_json: str,
+) -> None:
+    if not isinstance(client_preferences_json, str):
+        raise TypeError("client_preferences_json must be a string")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET client_preferences_json = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            client_preferences_json,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_command_palette_usage_json(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    command_palette_usage_json: str,
+) -> None:
+    if not isinstance(command_palette_usage_json, str):
+        raise TypeError("command_palette_usage_json must be a string")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET command_palette_usage_json = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            command_palette_usage_json,
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
     )

@@ -1,6 +1,6 @@
 # Authentication & Encryption Flow
 
-Complete authentication flow from password entry to token storage with DEK decryption.
+Complete authentication flow from password entry to cookie-backed session establishment with DEK decryption.
 
 ```mermaid
 sequenceDiagram
@@ -51,8 +51,8 @@ sequenceDiagram
         TokenSvc-->>AuthSvc: Plain token string
         
         AuthSvc-->>API: {token, message, hydration_required}
-        API-->>Browser: 200 OK with token + hydration_required
-        Browser->>Browser: localStorage.setItem('auth_token', token)
+        API-->>Browser: 200 OK + Set-Cookie: metalist_auth=<token> + hydration_required
+        Browser->>Browser: Store HttpOnly auth cookie
         alt hydration_required
             Browser->>API: POST /api2/auth/hydrate
             API-->>Browser: 200 {status: running}

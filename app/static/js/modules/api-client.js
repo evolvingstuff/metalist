@@ -4,30 +4,10 @@ import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.
 import { ErrorHandler } from './error-handler.js';
 import { computeScrollAnchor } from './mode-manager/services/scroll-anchor-service.js';
 import { CommandGate } from './mode-manager/services/command-gate-service.js';
+import { buildSessionHeaders } from './session-auth.js';
 
 function buildAuthHeaders(includeContentType) {
-    if (typeof includeContentType !== 'boolean') {
-        throw new Error('buildAuthHeaders requires boolean includeContentType');
-    }
-
-    const tabId = sessionStorage.getItem('metalist_tab_id');
-    if (typeof tabId !== 'string' || tabId.length === 0) {
-        throw new Error('metalist_tab_id missing from sessionStorage');
-    }
-
-    const token = localStorage.getItem('auth_token');
-    if (typeof token !== 'string' || token.length === 0) {
-        throw new Error('auth_token missing from localStorage');
-    }
-
-    const headers = {
-        Authorization: `Bearer ${token}`,
-        'X-Metalist-Tab-Id': tabId,
-    };
-    if (includeContentType) {
-        headers['Content-Type'] = 'application/json';
-    }
-    return headers;
+    return buildSessionHeaders(includeContentType);
 }
 
 function extractFilenameFromContentDisposition(disposition) {
@@ -139,37 +119,15 @@ export const NotesAPI = {
                 });
             }
 
-            // Add auth token if it exists
-            const authToken = localStorage.getItem('auth_token');
-            if (CONFIG.DEBUG.LOG_API_CALLS) {
-                console.log('[API] Auth token from localStorage:', authToken ? 'EXISTS' : 'NOT FOUND');
-            }
-            
             const headers = {
-                'Content-Type': 'application/json',
+                ...buildSessionHeaders(true),
                 ...fetchOptions.headers
             };
 
-            const tabId = sessionStorage.getItem('metalist_tab_id');
-            if (!tabId) {
-                throw new Error('metalist_tab_id missing from sessionStorage');
-            }
-            headers['X-Metalist-Tab-Id'] = tabId;
             if (claimSession) {
                 headers['X-Metalist-Claim'] = '1';
             }
-            
-            if (authToken) {
-                headers['Authorization'] = `Bearer ${authToken}`;
-                if (CONFIG.DEBUG.LOG_API_CALLS) {
-                    console.log('[API] Added Authorization header');
-                }
-            } else {
-                if (CONFIG.DEBUG.LOG_API_CALLS) {
-                    console.log('[API] No auth token, no Authorization header added');
-                }
-            }
-            
+
             if (CONFIG.DEBUG.LOG_API_CALLS) {
                 console.log('[API] Final headers:', headers);
             }

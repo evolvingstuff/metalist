@@ -23,6 +23,7 @@
 - `app/api/middleware/auth.py`: Auth middleware gating routes when a password exists.
 - `app/usecases`: Cmd* application commands (transport-agnostic orchestration).
 - `app/services`: Auth, tokens, cache, sync, undo, integrity, note store, file storage, snapshots, tab state cache.
+- `app/services/client_state_service.py`: Stores namespace-scoped command-palette preferences/usage in `app_settings` so UI preferences travel with the namespace instead of the browser.
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
 - `app/services/search_history.py`: Stores interacted search histories in a sibling `*.search-history.db` SQLite database; blank-search suggestions can reserve the top 3 slots for the highest-scoring recently interacted tags aggregated across persisted queries, case-equivalent tags are collapsed to the most-used spelling, and the stored query/tag payloads encrypt at rest when the namespace is password-protected.
@@ -44,7 +45,7 @@
 
 ## Design
 - Pattern: usecases (Cmd*) orchestrate services; services encapsulate DB work + undo logging.
-- State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll are snapshotted via `tab_state_store` into the namespace DB so reopening the app or restarting the server restores the last view.
+- State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll are snapshotted via `tab_state_store` into the namespace DB so reopening the app or restarting the server restores the last view; command-palette prefs/usage are persisted per namespace in `app_settings` instead of browser `localStorage`.
 - Root sort modes: per-tab server-owned `sortMode` (`normal`, `created`, `updated`) lives in `app/services/tab_state.py`; datetime modes sort/window root notes by the newest matching timestamp anywhere in each root subtree, while the client renders day separators from `snapshot.rootSortBuckets`.
 - Mutation safety: mutating FastAPI routes are expected to carry `@transactional_route`; startup sanity enforces the decorator ordering in source, and request-scoped write sessions commit once at the end of the wrapped request path.
 - Diff caching: Server caches each `(client, tab, search)` view and the client keeps per-tab note-hash maps so `/notes/view` diff payloads stay scoped to the active tab.
@@ -52,7 +53,7 @@
 - Client busy model: `CommandGate.run(name, asyncFn)` is the single boundary for user-initiated server calls; it is the only code allowed to flip `ModeContext.isLoading`.
 - Undo boundaries: client includes an `epoch` in `undoContext` (`tab/search/epoch`); global actions bump the epoch so undo/redo cannot cross those boundaries. Sort-mode changes are one of those global boundaries and blank undo/redo for the active tab context.
 - Error handling: fail-fast (internal errors crash; DB rollback triggers immediate process exit; request-validation crash toggle).
-- Auth: Argon2id password verifier protecting the DEK; encrypted settings require `vault_version` + full KDF profile (`kdf_algorithm`, `kdf_memory_cost_kib`, `kdf_parallelism`); `/api2/auth/login` is rate-limited; pre-login namespace selection uses `GET /api2/auth/login-namespaces` + `POST /api2/auth/login-namespaces/open` to redirect into another namespace without widening the authenticated namespace APIs; tokens are short-lived and kept in-memory; token issuance enforces a single active session.
+- Auth: Argon2id password verifier protecting the DEK; encrypted settings require `vault_version` + full KDF profile (`kdf_algorithm`, `kdf_memory_cost_kib`, `kdf_parallelism`); `/api2/auth/login` is rate-limited; pre-login namespace selection uses `GET /api2/auth/login-namespaces` + `POST /api2/auth/login-namespaces/open` to redirect into another namespace without widening the authenticated namespace APIs; tokens are short-lived and kept in-memory on the server, but the browser now carries them via an HttpOnly `metalist_auth` cookie instead of `localStorage`; token issuance enforces a single active session.
 
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.
@@ -66,6 +67,7 @@
 - Suggestion behavior: search-bar and tag-bar suggestions are segment-aware for connector-separated tags, collapse case-equivalent tags to one displayed spelling, but actual search filtering remains exact on effective tag terms.
 - Tag suggestion ranking: tag-bar suggestions interleave top literal content hits with top direct co-occurrence hits from the current explicit tags, suppress blank-prefix content variants already covered by an explicit/inherited tag segment, treat connector-separated partials literally (`Y-Z` before `X-Y-Z` for `Y Z`), and prefer structured/longer entity hits like `CookUnity` over shorter plain-word hits like `meal` when content-hit strength otherwise ties.
 - Tab persistence: browser boots, `tab-state-service.js` fetches `/api2/notes/tab-state`, hydrates ModeContext, throttles scroll/search changes, and POSTs back when they differ; the server persists that snapshot per namespace in SQLite and rewrites it between plaintext/encrypted storage when password protection is toggled.
+- Client-state persistence: browser boots, `auth.js` reads theme from `/api2/auth/status`, `command-palette-controller.js` loads `/api2/auth/client-state`, migrates any legacy browser `localStorage` palette data once, and persists future palette preference/usage updates back into the namespace DB.
 - Busy gating: keyboard/mouse/search/autosave actions call `CommandGate.run(...)` → server API calls → `actionRefreshAndMaybeSelect()`; background pollers skip ticks while `CommandGate.isBusy()`.
 - Test harness boundary: `POST /api2/test/reset` clears DB/search-history/cache/tab/auth/sync state, and `app/static/js/main.js` exposes `body[data-app-ready="true"]` after `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` complete.
 - Reference shortcut: `Cmd/Ctrl+R` copies as embedded reference (`![[UUID]]`) from the last note copied with `Cmd/Ctrl+C` (when no text selection).

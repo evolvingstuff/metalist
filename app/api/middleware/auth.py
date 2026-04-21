@@ -3,6 +3,7 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from app.api.request_auth import read_request_auth_token
 from app.services.tokens import token_service
 from app.services.auth_service import AuthService
 from app.services.maintenance_mode import maintenance_service
@@ -104,21 +105,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         finally:
             db.close()  # Always close the database connection
 
-        authorization = request.headers.get("authorization")
-        if not authorization:
+        token, error_detail = read_request_auth_token(request)
+        if error_detail is not None:
+            return JSONResponse(status_code=401, content={"detail": error_detail})
+
+        if token is None:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Authentication required"}
             )
-
-        parts = authorization.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid Authorization header"}
-            )
-
-        token = parts[1]
 
         tab_id = request.headers.get("x-metalist-tab-id")
         if not tab_id:

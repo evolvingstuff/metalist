@@ -6,7 +6,7 @@ Production deployment structure showing processes, storage, and security compone
 graph TB
     subgraph "Client Browser"
         WebApp[Web Application]
-        LocalStorage[localStorage<br/>Auth Token]
+        CookieJar[HttpOnly Cookie<br/>metalist_auth]
         SessionStorage[Session State<br/>Tabs, Search]
     end
     
@@ -37,7 +37,7 @@ graph TB
     end
     
     WebApp --> ASGI
-    LocalStorage --> WebApp
+    CookieJar --> WebApp
     SessionStorage --> WebApp
     
     ASGI --> App

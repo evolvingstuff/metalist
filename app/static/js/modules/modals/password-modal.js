@@ -10,6 +10,7 @@
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { CONFIG } from '../config.js';
+import { buildSessionHeaders } from '../session-auth.js';
 
 export class PasswordModal extends BaseModal {
     constructor() {
@@ -44,19 +45,10 @@ export class PasswordModal extends BaseModal {
      */
     async onOpen() {
         await (async () => {
-            const tabId = sessionStorage.getItem('metalist_tab_id');
-            if (!tabId) {
-                throw new Error('metalist_tab_id missing from sessionStorage');
-            }
-
-            const token = localStorage.getItem('auth_token');
-            const headers = { 'X-Metalist-Tab-Id': tabId };
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-
             // Determine which mode we should be in
-            const response = await fetch(this.apiEndpoints.status, { headers });
+            const response = await fetch(this.apiEndpoints.status, {
+                headers: buildSessionHeaders(false),
+            });
             if (!response.ok) {
                 throw new Error(`Password status request failed with ${response.status}`);
             }
@@ -498,23 +490,9 @@ export class PasswordModal extends BaseModal {
                 throw new Error(`Unknown password operation mode: ${mode}`);
         }
         
-        const token = localStorage.getItem('auth_token');
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (!tabId) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-        const headers = {
-            'Content-Type': 'application/json',
-            'X-Metalist-Tab-Id': tabId,
-        };
-        
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
-        
         const response = await fetch(endpoint, {
             method,
-            headers,
+            headers: buildSessionHeaders(true),
             body: JSON.stringify(body)
         });
         

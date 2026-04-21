@@ -1,41 +1,63 @@
-const STORAGE_PREFIX = 'metalist.command_palette.pref.';
+import { persistClientPreferences } from '../client-state-api.js';
 
 export class PreferencesStore {
+    constructor() {
+        this._state = {};
+    }
+
+    replaceAll(rawPreferences) {
+        if (!rawPreferences || typeof rawPreferences !== 'object' || Array.isArray(rawPreferences)) {
+            throw new Error('PreferencesStore.replaceAll requires preferences object');
+        }
+
+        const nextState = {};
+        for (const [key, value] of Object.entries(rawPreferences)) {
+            if (typeof key !== 'string' || key.length === 0) {
+                throw new Error('PreferencesStore.replaceAll requires non-empty string keys');
+            }
+            if (typeof value !== 'string') {
+                throw new Error('PreferencesStore.replaceAll requires string values');
+            }
+            nextState[key] = value;
+        }
+        this._state = nextState;
+    }
+
+    _snapshot() {
+        return { ...this._state };
+    }
+
     getRaw(key) {
         if (typeof key !== 'string' || key.length === 0) {
             throw new Error('PreferencesStore.getRaw requires non-empty key');
         }
-        return localStorage.getItem(`${STORAGE_PREFIX}${key}`);
+        if (!Object.prototype.hasOwnProperty.call(this._state, key)) {
+            return null;
+        }
+        return this._state[key];
     }
 
-    setRaw(key, value) {
+    async setRaw(key, value) {
         if (typeof key !== 'string' || key.length === 0) {
             throw new Error('PreferencesStore.setRaw requires non-empty key');
         }
         if (typeof value !== 'string') {
             throw new Error('PreferencesStore.setRaw requires string value');
         }
-        localStorage.setItem(`${STORAGE_PREFIX}${key}`, value);
+        this._state[key] = value;
+        await persistClientPreferences(this._snapshot());
     }
 
-    remove(key) {
+    async remove(key) {
         if (typeof key !== 'string' || key.length === 0) {
             throw new Error('PreferencesStore.remove requires non-empty key');
         }
-        localStorage.removeItem(`${STORAGE_PREFIX}${key}`);
+        delete this._state[key];
+        await persistClientPreferences(this._snapshot());
     }
 
-    clearAll() {
-        const keysToRemove = [];
-        for (let idx = 0; idx < localStorage.length; idx += 1) {
-            const storageKey = localStorage.key(idx);
-            if (typeof storageKey === 'string' && storageKey.startsWith(STORAGE_PREFIX)) {
-                keysToRemove.push(storageKey);
-            }
-        }
-        for (const storageKey of keysToRemove) {
-            localStorage.removeItem(storageKey);
-        }
+    async clearAll() {
+        this._state = {};
+        await persistClientPreferences(this._snapshot());
     }
 }
-

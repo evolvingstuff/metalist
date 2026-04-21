@@ -1,18 +1,22 @@
-const USAGE_KEY = 'metalist.command_palette.usage.v1';
+import { persistCommandPaletteUsage } from '../client-state-api.js';
 
 function parseUsageState(raw) {
     if (raw === null) {
         return {};
     }
-    if (typeof raw !== 'string') {
-        throw new Error('Usage state must be a string or null');
+    if (typeof raw !== 'string' && (typeof raw !== 'object' || Array.isArray(raw))) {
+        throw new Error('Usage state must be a string, object, or null');
     }
 
     let parsed;
-    try {
-        parsed = JSON.parse(raw);
-    } catch (err) {
-        throw new Error(`Usage state JSON parse failed: ${err}`);
+    if (typeof raw === 'string') {
+        try {
+            parsed = JSON.parse(raw);
+        } catch (err) {
+            throw new Error(`Usage state JSON parse failed: ${err}`);
+        }
+    } else {
+        parsed = raw;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error('Usage state must be an object');
@@ -28,12 +32,19 @@ function serializeUsageState(state) {
 }
 
 export class UsageStore {
-    getUsageSnapshot() {
-        const raw = localStorage.getItem(USAGE_KEY);
-        return parseUsageState(raw);
+    constructor() {
+        this._usageState = {};
     }
 
-    recordUse(endpointId, queryTokens) {
+    replaceAll(rawUsageState) {
+        this._usageState = parseUsageState(rawUsageState);
+    }
+
+    getUsageSnapshot() {
+        return parseUsageState(serializeUsageState(this._usageState));
+    }
+
+    async recordUse(endpointId, queryTokens) {
         if (typeof endpointId !== 'string' || endpointId.length === 0) {
             throw new Error('UsageStore.recordUse requires endpointId string');
         }
@@ -55,7 +66,7 @@ export class UsageStore {
             lastUsedAt: now,
             lastQueryTokens: queryTokens,
         };
-        localStorage.setItem(USAGE_KEY, serializeUsageState(state));
+        this._usageState = state;
+        await persistCommandPaletteUsage(this.getUsageSnapshot());
     }
 }
-

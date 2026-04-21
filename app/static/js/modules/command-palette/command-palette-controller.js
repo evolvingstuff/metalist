@@ -3,6 +3,12 @@ import { actionRefreshAndMaybeSelect, showPerfOverlayFromCache } from '../mode-m
 import { actionSaveAndExitEditingWithoutRefreshing } from '../mode-manager/actions/selection-actions.js';
 import { FilesAPI, NotesAPI } from '../api-client.js';
 import { CONFIG } from '../config.js';
+import {
+    loadClientState,
+    persistClientPreferences,
+    persistCommandPaletteUsage,
+} from '../client-state-api.js';
+import { migrateLegacyClientState } from '../client-state-migration.js';
 import { ErrorHandler } from '../error-handler.js';
 import { PasswordModal } from '../modals/password-modal.js';
 import { BackupRetentionModal } from '../modals/backup-retention-modal.js';
@@ -23,6 +29,7 @@ import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-ma
 import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/services/root-sort-service.js';
 import { setTabSortModeOnServer } from '../mode-manager/services/tab-state-service.js';
 import { settleResult } from '../async-result.js';
+import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
@@ -262,7 +269,14 @@ class CommandPaletteController {
         if (this._initialized) {
             return;
         }
+        const clientState = await migrateLegacyClientState({
+            clientState: await loadClientState(),
+            persistClientPreferencesFn: persistClientPreferences,
+            persistCommandPaletteUsageFn: persistCommandPaletteUsage,
+        });
         this._tagMap = await loadCommandPaletteTagMap();
+        this._preferences.replaceAll(clientState.preferences);
+        this._usage.replaceAll(clientState.command_palette_usage);
 
         this._allTags.clear();
         for (const tags of this._tagMap.values()) {
@@ -872,7 +886,7 @@ class CommandPaletteController {
         if (typeof tokenization.prefix === 'string' && tokenization.prefix.length > 0) {
             usageTokens.push(tokenization.prefix);
         }
-        this._usage.recordUse(endpoint.id, usageTokens);
+        await this._usage.recordUse(endpoint.id, usageTokens);
 
         if (endpoint.kind === 'boolean') {
             const current = this._getBoolean(endpoint.persistenceKey, endpoint.defaultValue);
@@ -937,7 +951,7 @@ class CommandPaletteController {
             throw new Error('applyPreference requires prefKey string');
         }
         if (typeof value === 'boolean') {
-            this._preferences.setRaw(prefKey, value ? 'true' : 'false');
+            await this._preferences.setRaw(prefKey, value ? 'true' : 'false');
             this._applyPreferenceEffectsFromStorage();
             if (prefKey === 'pref.show_perf_overlay' && value) {
                 const hadCache = showPerfOverlayFromCache();
@@ -951,7 +965,7 @@ class CommandPaletteController {
             return;
         }
         if (typeof value === 'string') {
-            this._preferences.setRaw(prefKey, value);
+            await this._preferences.setRaw(prefKey, value);
             this._applyPreferenceEffectsFromStorage();
             return;
         }
@@ -959,7 +973,7 @@ class CommandPaletteController {
     }
 
     async resetAllPreferences() {
-        this._preferences.clearAll();
+        await this._preferences.clearAll();
         this._applyPreferenceEffectsFromStorage();
     }
 
@@ -1305,28 +1319,7 @@ class CommandPaletteController {
     }
 
     _buildAuthHeaders(includeContentType) {
-        if (typeof includeContentType !== 'boolean') {
-            throw new Error('_buildAuthHeaders requires boolean includeContentType');
-        }
-
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (typeof tabId !== 'string' || tabId.length === 0) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-
-        const token = localStorage.getItem('auth_token');
-        if (typeof token !== 'string' || token.length === 0) {
-            throw new Error('auth_token missing from localStorage');
-        }
-
-        const headers = {
-            Authorization: `Bearer ${token}`,
-            'X-Metalist-Tab-Id': tabId,
-        };
-        if (includeContentType) {
-            headers['Content-Type'] = 'application/json';
-        }
-        return headers;
+        return buildSessionHeaders(includeContentType);
     }
 
     async _authRequest(url, method, bodyObject) {
@@ -1367,9 +1360,7 @@ class CommandPaletteController {
     }
 
     _clearSessionState() {
-        localStorage.removeItem('auth_token');
         sessionStorage.removeItem('metalist_client_id');
-        localStorage.removeItem('auth_owner');
     }
 
     _getBackupRetentionPromptThreshold() {
@@ -1557,25 +1548,13 @@ class CommandPaletteController {
                 await actionSaveAndExitEditingWithoutRefreshing();
             }
 
-            const token = localStorage.getItem('auth_token');
-            const tabId = sessionStorage.getItem('metalist_tab_id');
-            if (typeof token === 'string' && token.length > 0 && typeof tabId === 'string' && tabId.length > 0) {
-                await fetch(CONFIG.API.AUTH.LOGOUT, {
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'X-Metalist-Tab-Id': tabId,
-                    },
-                }).finally(() => {
-                    this._clearSessionState();
-                    window.location.reload();
-                });
-                return;
-            }
-
-            this._clearSessionState();
-            window.location.reload();
+            await fetch(CONFIG.API.AUTH.LOGOUT, {
+                method: 'POST',
+                headers: buildSessionHeaders(true),
+            }).finally(() => {
+                this._clearSessionState();
+                window.location.reload();
+            });
         });
         if (result === null) {
             return;

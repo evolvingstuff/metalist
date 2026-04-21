@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
     backup_settings_json TEXT,
     backup_settings_encryption_nonce BLOB,
     backup_settings_encryption_tag BLOB,
+    client_preferences_json TEXT,
+    command_palette_usage_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -131,6 +133,8 @@ def initialize_schema(connection: Connection) -> None:
             "backup_settings_json": "TEXT",
             "backup_settings_encryption_nonce": "BLOB",
             "backup_settings_encryption_tag": "BLOB",
+            "client_preferences_json": "TEXT",
+            "command_palette_usage_json": "TEXT",
         },
     )
     connection.execute(_CREATE_NOTES_PARENT_INDEX)

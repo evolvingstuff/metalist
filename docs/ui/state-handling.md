@@ -419,6 +419,9 @@ ModeContext = {
   aligned with the DOM without spamming requests.
 - The server persists the tab-state snapshot per namespace in the main SQLite DB, so
   active tab/search/scroll context survives server restarts instead of only browser reloads.
+- Command-palette preferences and usage history now follow the same namespace-scoped model:
+  the browser loads them from `/api2/auth/client-state`, persists updates back to the
+  main SQLite DB, and only keeps `sessionStorage` for per-tab ephemeral ids.
 - If password protection is enabled, that persisted tab-state payload is encrypted at rest;
   passwordless namespaces keep the same payload in plaintext.
 - **Diff cache isolation**: each tab now owns its own `clientNoteUuidHashes` map inside

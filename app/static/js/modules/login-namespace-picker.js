@@ -50,3 +50,39 @@ export function parseLoginNamespaceCatalog(payload) {
         namespaces,
     };
 }
+
+
+export function buildLoginNamespaceOpeningCopy(namespace) {
+    if (typeof namespace !== 'string') {
+        throw new Error('buildLoginNamespaceOpeningCopy requires namespace string');
+    }
+    const trimmedNamespace = namespace.trim();
+    if (trimmedNamespace.length === 0) {
+        throw new Error('buildLoginNamespaceOpeningCopy requires non-empty namespace');
+    }
+    return {
+        subtitle: `Opening ${trimmedNamespace}…`,
+        loadingTitle: 'Switching namespace…',
+        loadingMessage: `Connecting to ${trimmedNamespace} on its configured port…`,
+        statusText: `Opening ${trimmedNamespace}…`,
+    };
+}
+
+
+export function rewriteNamespaceUrlPreservingCurrentHost(rawUrl, currentLocation) {
+    if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
+        throw new Error('rewriteNamespaceUrlPreservingCurrentHost requires rawUrl string');
+    }
+    if (!currentLocation || typeof currentLocation !== 'object') {
+        throw new Error('rewriteNamespaceUrlPreservingCurrentHost requires currentLocation object');
+    }
+
+    const hostname = currentLocation.hostname;
+    if (typeof hostname !== 'string' || hostname.length === 0) {
+        throw new Error('rewriteNamespaceUrlPreservingCurrentHost requires currentLocation.hostname');
+    }
+
+    const parsedUrl = new URL(rawUrl);
+    parsedUrl.hostname = hostname;
+    return parsedUrl.toString();
+}

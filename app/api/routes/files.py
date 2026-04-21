@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.transactions import transactional_route
+from app.api.request_auth import require_request_auth_token
 from app.services.file_registry import file_registry
 from app.services.file_storage import create_file, download_file, trim_unused_files
 
@@ -31,13 +32,7 @@ class TrimUnusedFilesResponse(BaseModel):
 
 
 def _require_bearer_token(request: Request) -> str:
-    if "authorization" not in request.headers:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    authorization = request.headers["authorization"]
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid Authorization header")
-    return parts[1]
+    return require_request_auth_token(request)
 
 
 @router.post("/upload", response_model=UploadedFileResponse)

@@ -24,6 +24,7 @@ from app.services.backup_settings_service import (
     load_backup_settings,
     update_backup_settings,
 )
+from app.api.request_auth import get_request_auth_token
 from app.services.tokens import token_service
 from app.services.maintenance_mode import maintenance_service
 from app.api.routes.auth import _reset_runtime_state_after_restore, _schedule_server_restart_after_restore
@@ -107,13 +108,9 @@ def _verify_token(
     request: Request,
     tab_id: Annotated[str, Depends(_require_tab_id)],
 ) -> str | None:
-    authorization = request.headers.get("authorization")
-    if not authorization:
+    token = get_request_auth_token(request)
+    if token is None:
         return None
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
-    token = parts[1]
     if token_service.verify_token_for_tab(token, tab_id):
         return token
     return None

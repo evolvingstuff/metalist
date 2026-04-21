@@ -6,6 +6,8 @@ import {
     validateNamespaceDeletionSubmission,
 } from './delete-namespace-validation.js';
 import { settleResult } from '../async-result.js';
+import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-picker.js';
+import { buildSessionHeaders } from '../session-auth.js';
 
 
 function escapeHtml(value) {
@@ -343,7 +345,11 @@ export class DeleteNamespaceModal extends BaseModal {
             if (!response.redirect_url.includes(response.delete_job_id)) {
                 throw new Error('Namespace delete response missing job redirect state');
             }
-            window.location.replace(response.redirect_url);
+            const redirectUrl = rewriteNamespaceUrlPreservingCurrentHost(
+                response.redirect_url,
+                window.location,
+            );
+            window.location.replace(redirectUrl);
         });
         if (!deleteResult.ok) {
             const error = deleteResult.error;
@@ -358,28 +364,7 @@ export class DeleteNamespaceModal extends BaseModal {
     }
 
     _buildAuthHeaders(includeContentType) {
-        if (typeof includeContentType !== 'boolean') {
-            throw new Error('_buildAuthHeaders requires boolean includeContentType');
-        }
-
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (typeof tabId !== 'string' || tabId.length === 0) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-
-        const token = localStorage.getItem('auth_token');
-        if (typeof token !== 'string' || token.length === 0) {
-            throw new Error('auth_token missing from localStorage');
-        }
-
-        const headers = {
-            Authorization: `Bearer ${token}`,
-            'X-Metalist-Tab-Id': tabId,
-        };
-        if (includeContentType) {
-            headers['Content-Type'] = 'application/json';
-        }
-        return headers;
+        return buildSessionHeaders(includeContentType);
     }
 
     async _authRequest(url, method, bodyObject) {

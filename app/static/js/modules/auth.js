@@ -4,8 +4,14 @@
 import { CONFIG } from './config.js';
 import { createUuid } from './uuid.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
+import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
-import { buildLoginTitle, parseLoginNamespaceCatalog } from './login-namespace-picker.js';
+import {
+    buildLoginNamespaceOpeningCopy,
+    buildLoginTitle,
+    parseLoginNamespaceCatalog,
+    rewriteNamespaceUrlPreservingCurrentHost,
+} from './login-namespace-picker.js';
 
 export const Auth = {
     hasPassword: null,
@@ -26,6 +32,7 @@ export const Auth = {
      */
     async init() {
         this._ensureTabId();
+        clearLegacyAuthStorage();
         this.setupEventListeners();
         if (this._isStartupIntroEnabled()) {
             this._startStartupIntro();
@@ -47,21 +54,12 @@ export const Auth = {
             flagName: 'force_reauth',
         });
         if (forceReauth) {
-            console.log('[Auth] force_reauth requested, clearing local session state');
+            console.log('[Auth] force_reauth requested, clearing session state');
             this.clearSessionState();
         }
 
-        const token = localStorage.getItem('auth_token');
-        console.log('[Auth] Checking status with token:', token ? token.substring(0, 10) + '...' : 'none');
-        const activeOwner = localStorage.getItem('auth_owner');
-        const ownerMismatch = Boolean(token && activeOwner && activeOwner !== this._tabId);
-        const missingOwner = Boolean(token && !activeOwner);
-
         const headers = {};
         headers['X-Metalist-Tab-Id'] = this._tabId;
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
 
         const response = await fetch(CONFIG.API.AUTH.STATUS, { headers });
         if (!response.ok) {
@@ -71,14 +69,11 @@ export const Auth = {
         const status = await response.json();
         this.hasPassword = Boolean(status.has_password);
         this._setCurrentNamespace(status.namespace);
+        this._applyThemePreference(status.client_preferences);
         console.log('[Auth] Status response:', status);
 
         if (this.hasPassword) {
-            if (!status.authenticated || ownerMismatch || missingOwner) {
-                if (token) {
-                    console.log('[Auth] Clearing token for password-protected mismatch');
-                    this.clearSessionState();
-                }
+            if (!status.authenticated) {
                 this.showLoginModal();
                 return false;
             }
@@ -92,11 +87,7 @@ export const Auth = {
             this.showStartupSplash('Opening workspace…', 'Preparing workspace…');
         }
 
-        if (ownerMismatch || missingOwner || !status.authenticated) {
-            if (ownerMismatch || missingOwner) {
-                console.log('[Auth] Passwordless takeover detected, clearing local token');
-                this.clearSessionState();
-            }
+        if (!status.authenticated) {
             await this.claimPasswordlessSession();
         }
 
@@ -118,13 +109,8 @@ export const Auth = {
         }
 
         const data = await response.json();
-        if (!data.token) {
-            throw new Error('Session response missing token');
-        }
-
-        this._setTokenForThisTab(data.token);
         console.log('[Auth] Passwordless session established');
-        return data.token;
+        return data;
     },
 
     _requireElement(id) {
@@ -143,6 +129,14 @@ export const Auth = {
         subtitle.textContent = text;
     },
 
+    _setLoginLoadingTitle(text) {
+        if (typeof text !== 'string' || text.length === 0) {
+            throw new Error('Auth._setLoginLoadingTitle requires text string');
+        }
+        const loadingTitle = this._requireElement('login-loading-title');
+        loadingTitle.textContent = text;
+    },
+
     _setCurrentNamespace(namespace) {
         if (typeof namespace !== 'string') {
             throw new Error('Auth._setCurrentNamespace requires namespace string');
@@ -150,6 +144,15 @@ export const Auth = {
         this._currentNamespace = namespace;
         const title = this._requireElement('login-title');
         title.textContent = buildLoginTitle(namespace);
+    },
+
+    _applyThemePreference(clientPreferences) {
+        const resolvedTheme = resolveStoredThemePreference(clientPreferences);
+        if (resolvedTheme !== null) {
+            document.documentElement.setAttribute('data-theme', resolvedTheme);
+            return;
+        }
+        document.documentElement.removeAttribute('data-theme');
     },
 
     _setStartupMessage(text) {
@@ -283,9 +286,42 @@ export const Auth = {
         const message = this._requireElement('login-loading-message');
         const bar = this._requireElement('login-progress-bar');
         const firstLoad = this._requireElement('login-loading-first');
+        this._setLoginLoadingTitle('Loading encrypted data…');
         message.textContent = '';
         bar.style.width = '0%';
         firstLoad.style.display = 'none';
+    },
+
+    _showLoginLoadingPanel(subtitle, loadingTitle, loadingMessage, progressPercent) {
+        if (typeof subtitle !== 'string' || subtitle.length === 0) {
+            throw new Error('Auth._showLoginLoadingPanel requires subtitle string');
+        }
+        if (typeof loadingTitle !== 'string' || loadingTitle.length === 0) {
+            throw new Error('Auth._showLoginLoadingPanel requires loadingTitle string');
+        }
+        if (typeof loadingMessage !== 'string') {
+            throw new Error('Auth._showLoginLoadingPanel requires loadingMessage string');
+        }
+        if (!Number.isInteger(progressPercent) || progressPercent < 0 || progressPercent > 100) {
+            throw new Error('Auth._showLoginLoadingPanel requires progressPercent integer 0-100');
+        }
+
+        const startupSplash = this._requireElement('startup-splash');
+        const loginForm = this._requireElement('login-form');
+        const loadingPanel = this._requireElement('login-loading');
+        const message = this._requireElement('login-loading-message');
+        const bar = this._requireElement('login-progress-bar');
+
+        this._resetHydrationUI();
+        startupSplash.style.display = 'none';
+        loginForm.style.display = 'none';
+        loadingPanel.style.display = 'block';
+        this._setLoginSubtitle(subtitle);
+        this._setLoginLoadingTitle(loadingTitle);
+        message.textContent = loadingMessage;
+        bar.style.width = `${progressPercent}%`;
+        this._clearLoginError();
+        this._syncLoginNamespaceVisibility();
     },
 
     _startStartupIntro() {
@@ -410,17 +446,12 @@ export const Auth = {
     },
 
     _showHydrationUI() {
-        const startupSplash = this._requireElement('startup-splash');
-        const loginForm = this._requireElement('login-form');
-        const loadingPanel = this._requireElement('login-loading');
-
-        this._resetHydrationUI();
-        startupSplash.style.display = 'none';
-        loginForm.style.display = 'none';
-        loadingPanel.style.display = 'block';
-        this._setLoginSubtitle('Loading encrypted data…');
-        this._clearLoginError();
-        this._syncLoginNamespaceVisibility();
+        this._showLoginLoadingPanel(
+            'Loading encrypted data…',
+            'Loading encrypted data…',
+            '',
+            0,
+        );
     },
 
     _updateHydrationUI(status) {
@@ -470,13 +501,7 @@ export const Auth = {
     async _runHydrationFlow() {
         this._showHydrationUI();
 
-        const token = localStorage.getItem('auth_token');
-        if (!token) {
-            throw new Error('Missing auth token for hydration');
-        }
-
         const headers = {
-            'Authorization': `Bearer ${token}`,
             'X-Metalist-Tab-Id': this._tabId,
         };
 
@@ -528,8 +553,16 @@ export const Auth = {
             return;
         }
 
+        const openingCopy = buildLoginNamespaceOpeningCopy(namespace);
         select.disabled = true;
-        this._setLoginNamespaceStatus(`Opening ${namespace}...`);
+        document.body.classList.add('loading');
+        this._showLoginLoadingPanel(
+            openingCopy.subtitle,
+            openingCopy.loadingTitle,
+            openingCopy.loadingMessage,
+            35,
+        );
+        this._setLoginNamespaceStatus(openingCopy.statusText);
 
         try {
             const response = await fetch(CONFIG.API.AUTH.LOGIN_NAMESPACES.OPEN, {
@@ -552,10 +585,17 @@ export const Auth = {
                 throw new Error('Namespace open response missing url');
             }
 
-            window.location.assign(payload.url);
+            const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(
+                payload.url,
+                window.location,
+            );
+            window.location.assign(navigationUrl);
         } catch (error) {
-            select.value = this._currentNamespace;
-            select.disabled = false;
+            document.body.classList.remove('loading');
+            this.showLoginModal();
+            const restoredSelect = this._requireElement('login-namespace-select');
+            restoredSelect.value = this._currentNamespace;
+            restoredSelect.disabled = false;
             if (error instanceof Error) {
                 this._setLoginNamespaceStatus(error.message, 'error');
                 throw error;
@@ -606,16 +646,6 @@ export const Auth = {
                 if (!data || typeof data !== 'object') {
                     throw new Error('Login response missing body');
                 }
-                if (typeof data.token !== 'string' || data.token.length === 0) {
-                    throw new Error('Login response missing token');
-                }
-
-                this._setTokenForThisTab(data.token);
-                console.log('[Auth] Token stored in localStorage:', data.token.substring(0, 10) + '...');
-
-                const storedToken = localStorage.getItem('auth_token');
-                console.log('[Auth] Token verification - stored correctly:', storedToken === data.token);
-
                 console.log('[Auth] Login successful');
 
                 if (data.hydration_required) {
@@ -661,31 +691,21 @@ export const Auth = {
      * Handle logout
      */
     async logout() {
-        const token = localStorage.getItem('auth_token');
-        
-        if (token) {
-            await fetch(CONFIG.API.AUTH.LOGOUT, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                    'X-Metalist-Tab-Id': this._tabId,
-                }
-            }).finally(() => {
-                this.clearSessionState();
-                window.location.reload();
-            });
-            return;
-        }
-        
-        this.clearSessionState();
-        window.location.reload();
+        await fetch(CONFIG.API.AUTH.LOGOUT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Metalist-Tab-Id': this._tabId,
+            }
+        }).finally(() => {
+            this.clearSessionState();
+            window.location.reload();
+        });
     },
 
     clearSessionState() {
-        localStorage.removeItem('auth_token');
+        clearLegacyAuthStorage();
         sessionStorage.removeItem('metalist_client_id');
-        localStorage.removeItem('auth_owner');
     },
 
     forceLogout(message) {
@@ -740,27 +760,6 @@ export const Auth = {
             }
         });
 
-        window.addEventListener('storage', (event) => {
-            if (!event) {
-                return;
-            }
-
-            if (event.key === 'auth_owner') {
-                const activeOwner = localStorage.getItem('auth_owner');
-                if (!activeOwner) {
-                    this.forceLogout('Session ended.');
-                    return;
-                }
-                if (activeOwner !== this._tabId) {
-                    this.forceLogout('Session moved to another tab.');
-                }
-                return;
-            }
-
-            if (event.key === 'auth_token' && event.newValue === null) {
-                this.forceLogout('Session ended.');
-            }
-        });
     },
 
     _ensureTabId() {
@@ -773,14 +772,6 @@ export const Auth = {
             sessionStorage.setItem('metalist_tab_id', tabId);
         }
         this._tabId = tabId;
-    },
-
-    _setTokenForThisTab(token) {
-        if (!token) {
-            throw new Error('Cannot store empty auth token');
-        }
-        localStorage.setItem('auth_token', token);
-        localStorage.setItem('auth_owner', this._tabId);
     }
 };
 

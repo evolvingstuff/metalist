@@ -6,6 +6,7 @@
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 import { CONFIG } from './config.js';
 import { ErrorHandler } from './error-handler.js';
+import { buildSessionHeaders } from './session-auth.js';
 
 let connectivityInterval = null;
 const CONNECTIVITY_CHECK_INTERVAL = 2000; // Check every 2 seconds
@@ -56,25 +57,12 @@ export const ConnectivityMonitor = {
      * Check server connectivity with a lightweight ping endpoint
      */
     async checkConnectivity() {
-        const authToken = localStorage.getItem('auth_token');
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (!tabId) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-        const headers = {};
-
-        headers['X-Metalist-Tab-Id'] = tabId;
-
-        if (authToken) {
-            headers['Authorization'] = `Bearer ${authToken}`;
-        }
-
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
 
         const response = await fetch(CONFIG.API.AUTH.STATUS, {
             method: 'GET',
-            headers: headers,
+            headers: buildSessionHeaders(false),
             signal: controller.signal
         }).finally(() => {
             clearTimeout(timeoutId);

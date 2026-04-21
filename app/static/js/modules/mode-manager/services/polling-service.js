@@ -2,6 +2,7 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { CONFIG } from '../../config.js';
+import { buildSessionHeaders } from '../../session-auth.js';
 import { CommandGate } from './command-gate-service.js';
 
 let pollingInterval = null;
@@ -52,22 +53,9 @@ export function stopPolling() {
 }
 
 async function refreshTokenOnActivity() {
-    const authToken = localStorage.getItem('auth_token');
-    if (!authToken) {
-        return;
-    }
-
-    const tabId = sessionStorage.getItem('metalist_tab_id');
-    if (!tabId) {
-        throw new Error('metalist_tab_id missing from sessionStorage');
-    }
-
     const response = await fetch(CONFIG.API.AUTH.SESSIONS, {
         method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'X-Metalist-Tab-Id': tabId
-        }
+        headers: buildSessionHeaders(false),
     });
 
     if (response.ok) {
@@ -105,19 +93,9 @@ async function checkConnectivityAndUpdates() {
 }
 
 async function pingAuthStatus() {
-    const authToken = localStorage.getItem('auth_token');
-    const tabId = sessionStorage.getItem('metalist_tab_id');
-    if (!tabId) {
-        throw new Error('metalist_tab_id missing from sessionStorage');
-    }
-    const headers = {
-        'X-Metalist-Tab-Id': tabId,
-        ...(authToken && { 'Authorization': `Bearer ${authToken}` })
-    };
-
     const response = await fetch(CONFIG.API.AUTH.STATUS, {
         method: 'GET',
-        headers
+        headers: buildSessionHeaders(false),
     });
 
     if (response.ok) {

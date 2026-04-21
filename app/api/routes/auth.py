@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from typing import Annotated, Optional
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -48,6 +48,13 @@ from app.security.encryption import (
     set_encryption_required,
     set_session_dek,
 )
+from app.api.request_auth import clear_auth_cookie
+from app.api.request_auth import get_request_auth_token
+from app.api.request_auth import set_auth_cookie
+from app.services.client_state_service import load_client_preferences
+from app.services.client_state_service import load_client_state
+from app.services.client_state_service import save_client_preferences
+from app.services.client_state_service import save_command_palette_usage
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
@@ -58,14 +65,33 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    token: str
     message: str
     hydration_required: bool
 
 
 class SessionResponse(BaseModel):
-    token: str
     message: str
+
+
+class ClientPreferencesResponse(BaseModel):
+    preferences: dict[str, str]
+
+
+class CommandPaletteUsageResponse(BaseModel):
+    command_palette_usage: dict[str, dict[str, object]]
+
+
+class ClientStateResponse(BaseModel):
+    preferences: dict[str, str]
+    command_palette_usage: dict[str, dict[str, object]]
+
+
+class ClientPreferencesUpdateRequest(BaseModel):
+    preferences: dict[str, str]
+
+
+class CommandPaletteUsageUpdateRequest(BaseModel):
+    command_palette_usage: dict[str, dict[str, object]]
 
 
 class HydrationStatusResponse(BaseModel):
@@ -301,13 +327,9 @@ def _verify_token(
     request: Request,
     tab_id: Annotated[str, Depends(_require_tab_id)],
 ) -> Optional[str]:
-    authorization = request.headers.get("authorization")
-    if not authorization:
+    token = get_request_auth_token(request)
+    if token is None:
         return None
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None
-    token = parts[1]
     if token_service.verify_token_for_tab(token, tab_id):
         return token
     return None
@@ -360,6 +382,7 @@ def _optional_int_field(payload: dict[str, object], field_name: str) -> int | No
 @transactional_route
 def login(
     request: Request,
+    response: Response,
     payload: LoginRequest,
     tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
@@ -390,10 +413,10 @@ def login(
         needs_hydration = True
 
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)
+    set_auth_cookie(request=request, response=response, token=token)
     login_rate_limiter.record_success(rate_limit_key)
     clear_all_locks()
     return LoginResponse(
-        token=token,
         message="Login successful",
         hydration_required=needs_hydration,
     )
@@ -401,10 +424,14 @@ def login(
 
 @router.post("/logout")
 @transactional_route
-def logout(token: Annotated[str, Depends(_require_auth)]):
+def logout(
+    response: Response,
+    token: Annotated[str, Depends(_require_auth)],
+):
     token_service.revoke_token(token)
     clear_all_locks()
     clear_encryption_key()
+    clear_auth_cookie(response=response)
     return {"message": "Logout successful"}
 
 
@@ -468,6 +495,7 @@ def restore_from_backup(
 @transactional_route
 def create_passwordless_session(
     request: Request,
+    response: Response,
     tab_id: Annotated[str, Depends(_require_tab_id)],
     db: Annotated[SafeSession, Depends(get_db)],
 ):
@@ -476,8 +504,9 @@ def create_passwordless_session(
         raise HTTPException(status_code=400, detail="Password is set. Use /login instead.")
 
     token = token_service.create_token(_client_info(request), tab_id, dek=None)
+    set_auth_cookie(request=request, response=response, token=token)
     clear_all_locks()
-    return SessionResponse(token=token, message="Session established")
+    return SessionResponse(message="Session established")
 
 
 @router.get("/status")
@@ -498,7 +527,37 @@ def auth_status(
         "kdf_parallelism": settings.kdf_parallelism if settings else None,
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
         "namespace": ACTIVE_NAMESPACE,
+        "client_preferences": load_client_preferences(),
     }
+
+
+@router.get("/client-state", response_model=ClientStateResponse)
+def get_client_state(token: Annotated[str, Depends(_require_auth)]):
+    del token
+    payload = load_client_state()
+    return ClientStateResponse(**payload)
+
+
+@router.put("/client-state/preferences", response_model=ClientPreferencesResponse)
+@transactional_route
+def put_client_preferences(
+    payload: ClientPreferencesUpdateRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    del token
+    normalized = save_client_preferences(preferences=payload.preferences)
+    return ClientPreferencesResponse(preferences=normalized)
+
+
+@router.put("/client-state/command-palette-usage", response_model=CommandPaletteUsageResponse)
+@transactional_route
+def put_command_palette_usage(
+    payload: CommandPaletteUsageUpdateRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    del token
+    normalized = save_command_palette_usage(usage_state=payload.command_palette_usage)
+    return CommandPaletteUsageResponse(command_palette_usage=normalized)
 
 
 @router.get("/login-namespaces", response_model=LoginNamespaceCatalogResponse)

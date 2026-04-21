@@ -1,5 +1,6 @@
 import { BaseModal } from './base-modal.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
+import { buildSessionHeaders } from '../session-auth.js';
 
 const ONTOLOGY_BASE = '/api2/ontology';
 const TAG_LIMIT = 20;
@@ -341,20 +342,7 @@ function renderIncomingAtoms(atoms) {
 }
 
 function buildAuthHeaders() {
-    const tabId = sessionStorage.getItem('metalist_tab_id');
-    if (!tabId) {
-        throw new Error('metalist_tab_id missing from sessionStorage');
-    }
-
-    const authToken = localStorage.getItem('auth_token');
-    const headers = {
-        'Content-Type': 'application/json',
-        'X-Metalist-Tab-Id': tabId,
-    };
-    if (authToken) {
-        headers['Authorization'] = `Bearer ${authToken}`;
-    }
-    return headers;
+    return buildSessionHeaders(true);
 }
 
 async function fetchJson(url, options) {

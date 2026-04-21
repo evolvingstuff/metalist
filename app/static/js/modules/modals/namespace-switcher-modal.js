@@ -3,6 +3,8 @@ import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { ErrorHandler } from '../error-handler.js';
 import { settleResult } from '../async-result.js';
+import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-picker.js';
+import { buildSessionHeaders } from '../session-auth.js';
 import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
 
 
@@ -685,10 +687,14 @@ export class NamespaceSwitcherModal extends BaseModal {
             if (typeof response.url !== 'string' || response.url.length === 0) {
                 throw new Error('Namespace open response missing url');
             }
+            const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(
+                response.url,
+                window.location,
+            );
             if (pendingTab && !pendingTab.closed) {
-                pendingTab.location.replace(response.url);
+                pendingTab.location.replace(navigationUrl);
             } else {
-                window.open(response.url, '_blank', 'noopener,noreferrer');
+                window.open(navigationUrl, '_blank', 'noopener,noreferrer');
             }
             if (typeof response.message === 'string' && response.message.length > 0) {
                 ErrorHandler.showInfoBanner(response.message, 5000);
@@ -725,28 +731,7 @@ export class NamespaceSwitcherModal extends BaseModal {
     }
 
     _buildAuthHeaders(includeContentType) {
-        if (typeof includeContentType !== 'boolean') {
-            throw new Error('_buildAuthHeaders requires boolean includeContentType');
-        }
-
-        const tabId = sessionStorage.getItem('metalist_tab_id');
-        if (typeof tabId !== 'string' || tabId.length === 0) {
-            throw new Error('metalist_tab_id missing from sessionStorage');
-        }
-
-        const token = localStorage.getItem('auth_token');
-        if (typeof token !== 'string' || token.length === 0) {
-            throw new Error('auth_token missing from localStorage');
-        }
-
-        const headers = {
-            Authorization: `Bearer ${token}`,
-            'X-Metalist-Tab-Id': tabId,
-        };
-        if (includeContentType) {
-            headers['Content-Type'] = 'application/json';
-        }
-        return headers;
+        return buildSessionHeaders(includeContentType);
     }
 
     async _authRequest(url, method, bodyObject) {

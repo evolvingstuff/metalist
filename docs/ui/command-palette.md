@@ -27,6 +27,8 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 ## Config
 - Tag mappings live in `app/static/config/command_palette_tags.json`.
 - Endpoint definitions (behavior/labels) live in code.
+- Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
+- On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
 ## Utility Actions
 - `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, sets the retention count, and then runs the backup.
