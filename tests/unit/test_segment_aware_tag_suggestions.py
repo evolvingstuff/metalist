@@ -263,6 +263,67 @@ def test_tag_suggestions_prefer_exact_literal_tag_over_padded_suffix_variant(
     assert suggestions[:2] == ["back", "n-back"]
 
 
+def test_tag_suggestions_promote_full_literal_phrase_match_even_when_it_includes_stopwords(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "kings"),
+            ("n2", "kings"),
+            ("n3", "kings"),
+            ("n4", "no-kings"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Going to the No Kings protest on Sunday</p>",
+    )
+
+    assert suggestions[:2] == ["no-kings", "kings"]
+
+
+def test_tag_suggestions_keep_tighter_single_segment_match_ahead_of_stopword_padded_variant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "kings"),
+            ("n2", "kings"),
+            ("n3", "no-kings"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>Kings game tonight</p>",
+    )
+
+    assert suggestions[:2] == ["kings", "no-kings"]
+
+
 def test_tag_suggestions_prefer_prefix_aligned_partial_variant_over_suffix_aligned_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

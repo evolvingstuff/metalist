@@ -58,20 +58,32 @@ _LOW_SIGNAL_UPPERCASE_SINGLE_LETTER_SEGMENTS = frozenset({"a", "i"})
 
 @dataclass(frozen=True, slots=True)
 class TagContentMatch:
+    raw_phrase_match: bool
     phrase_match: bool
     matched_segment_count: int
     matched_segments: tuple[str, ...]
     segment_count: int
     raw_segment_count: int
     first_matched_raw_segment_index: int
+    raw_phrase_position: int
     first_position: int
     normalized_length: int
 
-    def sort_key(self) -> tuple[int, int, int, int, int, int, int]:
+    def sort_key(self) -> tuple[int, int, int, int, int, int, int, int, int]:
         phrase_match_score = 0
         if self.phrase_match:
             phrase_match_score = 1
+        raw_phrase_match_score = 0
+        raw_phrase_specificity_score = 0
+        raw_phrase_position_score = 0
+        if self.raw_phrase_match:
+            raw_phrase_match_score = 1
+            raw_phrase_specificity_score = self.raw_segment_count
+            raw_phrase_position_score = -self.raw_phrase_position
         return (
+            raw_phrase_match_score,
+            raw_phrase_specificity_score,
+            raw_phrase_position_score,
             phrase_match_score,
             self.matched_segment_count,
             self.segment_count,
@@ -197,18 +209,27 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     if not isinstance(normalized_content, str):
         raise TypeError("normalized_content must be a string")
 
-    segments, segment_raw_indexes, raw_segment_count = _list_significant_content_match_segments_with_raw_indexes(
-        term
-    )
+    raw_segments = split_tag_term_segments(term)
+    segments, segment_raw_indexes, raw_segment_count = _list_significant_content_match_segments_with_raw_indexes(term)
     if not segments:
         return None
 
-    phrase = " ".join(segments)
     content_tokens = normalized_content.split()
     token_positions: dict[str, int] = {}
     for index, token in enumerate(content_tokens):
         if token not in token_positions:
             token_positions[token] = index
+
+    raw_phrase_match = False
+    raw_phrase_position = -1
+    if len(content_tokens) >= len(raw_segments):
+        for index in range(len(content_tokens) - len(raw_segments) + 1):
+            if tuple(content_tokens[index : index + len(raw_segments)]) == raw_segments:
+                raw_phrase_match = True
+                raw_phrase_position = index
+                break
+
+    phrase = " ".join(segments)
 
     phrase_match = False
     phrase_position = -1
@@ -244,12 +265,14 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
         first_position = min(matched_positions)
 
     return TagContentMatch(
+        raw_phrase_match=raw_phrase_match,
         phrase_match=phrase_match,
         matched_segment_count=matched_segment_count,
         matched_segments=tuple(matched_segments),
         segment_count=len(segments),
         raw_segment_count=raw_segment_count,
         first_matched_raw_segment_index=min(matched_raw_indexes),
+        raw_phrase_position=raw_phrase_position,
         first_position=first_position,
         normalized_length=len(phrase),
     )

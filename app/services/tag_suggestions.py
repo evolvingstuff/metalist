@@ -505,12 +505,15 @@ def _content_match_sort_key(
     elif any(char in TAG_SUGGESTION_CONNECTORS for char in term):
         structured_term_penalty = 0
     return (
+        -(1 if match.raw_phrase_match else 0),
+        -match.raw_segment_count if match.raw_phrase_match else match.raw_segment_count,
         -(1 if match.phrase_match else 0),
         -match.matched_segment_count,
         unmatched_segment_count,
+        structured_term_penalty,
+        match.raw_phrase_position if match.raw_phrase_match else len(term),
         match.raw_segment_count,
         match.first_matched_raw_segment_index,
-        structured_term_penalty,
         match.first_position,
         -match.normalized_length,
         -_lookup_count(exact_tag_counts, term),

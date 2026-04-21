@@ -67,7 +67,28 @@ def test_match_tag_term_in_normalized_content_tracks_literal_padding_for_ranking
 
     assert back_match is not None
     assert n_back_match is not None
+    assert back_match.raw_phrase_match is True
+    assert n_back_match.raw_phrase_match is False
     assert back_match.raw_segment_count == 1
     assert back_match.first_matched_raw_segment_index == 0
     assert n_back_match.raw_segment_count == 2
     assert n_back_match.first_matched_raw_segment_index == 1
+
+
+def test_match_tag_term_in_normalized_content_keeps_stopwords_for_full_literal_phrase_match() -> None:
+    match = match_tag_term_in_normalized_content(
+        term="no-kings",
+        normalized_content=normalize_tag_match_text("Going to the No Kings protest on Sunday"),
+    )
+
+    assert match is not None
+    assert match.raw_phrase_match is True
+    assert match.raw_phrase_position >= 0
+    assert match.matched_segments == ("kings",)
+
+
+def test_match_tag_term_in_normalized_content_does_not_match_stopword_only_overlap() -> None:
+    assert match_tag_term_in_normalized_content(
+        term="no-kings",
+        normalized_content=normalize_tag_match_text("No more of that I guess"),
+    ) is None
