@@ -324,6 +324,39 @@ def test_tag_suggestions_keep_tighter_single_segment_match_ahead_of_stopword_pad
     assert suggestions[:2] == ["kings", "no-kings"]
 
 
+def test_tag_suggestions_do_not_surface_three_chunk_tag_from_two_chunk_overlap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "misc"),
+            ("n2", "intrusive-thoughts"),
+            ("n3", "Tree-of-Thoughts"),
+        ]
+    )
+    store = _FakeHierarchyNoteStore(
+        records=[
+            _build_note_record(note_id="parent", parent_id=None, content="parent", tags="misc-thoughts"),
+            _build_note_record(note_id="current", parent_id="parent", content="misc thoughts", tags=""),
+        ],
+        inherited_non_meta_by_note={"current": frozenset({"misc-thoughts"})},
+    )
+
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="current",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>misc thoughts</p>",
+    )
+
+    assert "Tree-of-Thoughts" not in suggestions
+
+
 def test_tag_suggestions_prefer_prefix_aligned_partial_variant_over_suffix_aligned_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
