@@ -321,7 +321,7 @@ test('re-entering the tag bar resets suggestions scroll to top', async (t) => {
     assert.equal(container.scrollTop, 0);
 });
 
-test('upward-opening suggestions start scrolled to the bottom', async (t) => {
+test('upward-opening suggestions keep best suggestion at the top', async (t) => {
     const { FakeElement } = installTagSuggestionsDom(t);
     const { NotesAPI } = await import('../../app/static/js/modules/api-client.js');
     const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
@@ -357,5 +357,10 @@ test('upward-opening suggestions start scrolled to the bottom', async (t) => {
 
     assert.equal(container.hidden, false);
     assert.equal(container.classList.contains('is-up'), true);
-    assert.equal(container.scrollTop, container.scrollHeight);
+    assert.equal(container.scrollTop, 0);
+    assert.deepEqual(
+        container.querySelectorAll('.note-tag-suggestion').map((element) => element.textContent),
+        ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']
+    );
+    assert.equal(container.querySelectorAll('.note-tag-suggestion')[0].classList.contains('is-selected'), true);
 });

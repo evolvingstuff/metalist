@@ -94,7 +94,7 @@
 - Case-equivalent tags are collapsed in the suggestion list, and the most-used spelling is shown.
 - Ontology-equivalent tags are collapsed the same way: only the most-used eligible synonym is shown, unless the current prefix only matches a less-common synonym variant.
 - Tags already present via explicit tags, inheritance, or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
-- Suggestions may render above the tag bar if space below is tight; the ordering reverses so the closest suggestion sits nearest the input.
+- Suggestions may render above the tag bar if space below is tight, but the list still keeps the same best-on-top ordering and initial scroll position.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
 
 ### Mouse Controls

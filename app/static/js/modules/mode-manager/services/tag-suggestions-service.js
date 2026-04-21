@@ -134,11 +134,10 @@ function renderSuggestions(tagBarInput, suggestions) {
         return;
     }
 
-    const placement = positionSuggestions(tagBar, container);
-    const ordered = placement === 'up' ? suggestions.slice().reverse() : suggestions;
+    positionSuggestions(tagBar, container);
 
     container.innerHTML = '';
-    for (const tag of ordered) {
+    for (const tag of suggestions) {
         if (typeof tag !== 'string' || tag.length === 0) {
             throw new Error('Tag suggestions must be non-empty strings');
         }
@@ -156,12 +155,8 @@ function renderSuggestions(tagBarInput, suggestions) {
 
     container.hidden = false;
     container.style.display = 'flex';
-    if (placement === 'up') {
-        container.scrollTop = container.scrollHeight;
-    } else {
-        container.scrollTop = 0;
-    }
-    selectedIndex = placement === 'up' ? ordered.length - 1 : 0;
+    container.scrollTop = 0;
+    selectedIndex = 0;
     updateSelectedSuggestion(container);
 
     activeContainer = container;
