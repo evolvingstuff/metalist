@@ -49,6 +49,10 @@
       "tags": ["password", "protect", "protection", "enable", "disable", "security"]
     },
     {
+      "id": "form.session_timeout",
+      "tags": ["session", "idle", "timeout", "security", "login", "auth", "minutes"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "create", "new", "open", "launch", "select", "ports", "database", "instance", "workspace"]
     },

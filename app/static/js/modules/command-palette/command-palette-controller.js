@@ -11,6 +11,7 @@ import {
 import { migrateLegacyClientState } from '../client-state-migration.js';
 import { ErrorHandler } from '../error-handler.js';
 import { PasswordModal } from '../modals/password-modal.js';
+import { SessionTimeoutModal } from '../modals/session-timeout-modal.js';
 import { BackupRetentionModal } from '../modals/backup-retention-modal.js';
 import { BackupResultModal } from '../modals/backup-result-modal.js';
 import { BackupRestoreModal } from '../modals/backup-restore-modal.js';
@@ -254,6 +255,7 @@ class CommandPaletteController {
         this._backupRestoreModal = null;
         this._randomPasswordModal = null;
         this._helpModal = null;
+        this._sessionTimeoutModal = null;
         this._namespaceSwitcherModal = null;
         this._deleteNamespaceModal = null;
         this._prioritizeModal = null;
@@ -290,6 +292,7 @@ class CommandPaletteController {
             actions: {
                 applyPreference: this.applyPreference.bind(this),
                 openPasswordManager: this.openPasswordManager.bind(this),
+                openSessionTimeoutSettings: this.openSessionTimeoutSettings.bind(this),
                 openOntologyEditor: this.openOntologyEditor.bind(this),
                 createBackup: this.createBackup.bind(this),
                 openBackupRestore: this.openBackupRestore.bind(this),
@@ -1662,6 +1665,21 @@ class CommandPaletteController {
 
         const passwordModal = new PasswordModal();
         passwordModal.open();
+    }
+
+    async openSessionTimeoutSettings() {
+        if (ModeContext.isEditing) {
+            await actionSaveAndExitEditingWithoutRefreshing();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+        this.close();
+
+        if (this._sessionTimeoutModal === null) {
+            this._sessionTimeoutModal = new SessionTimeoutModal();
+        }
+        this._sessionTimeoutModal.open();
     }
 }
 

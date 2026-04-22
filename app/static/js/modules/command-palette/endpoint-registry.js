@@ -22,6 +22,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const actions = deps.actions;
     const applyPreference = requireAction(actions, 'applyPreference');
     const openPasswordManager = requireAction(actions, 'openPasswordManager');
+    const openSessionTimeoutSettings = requireAction(actions, 'openSessionTimeoutSettings');
     const createBackup = requireAction(actions, 'createBackup');
     const openBackupRestore = requireAction(actions, 'openBackupRestore');
     const logout = requireAction(actions, 'logout');
@@ -144,6 +145,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Enable/disable password protection…',
             execute: async () => openPasswordManager(),
+        },
+        {
+            id: 'form.session_timeout',
+            kind: 'form',
+            label: 'Session idle timeout…',
+            execute: async () => openSessionTimeoutSettings(),
         },
         {
             id: 'form.switch_namespace',

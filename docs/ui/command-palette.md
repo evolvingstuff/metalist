@@ -28,6 +28,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Tag mappings live in `app/static/config/command_palette_tags.json`.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
+- Session idle timeout is a namespace-scoped server setting stored in `app_settings` and managed via `/api2/auth/settings/session-timeout`.
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
 ## Utility Actions
@@ -39,6 +40,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Export as HTML`: downloads a self-contained HTML file for the current view with inline CSS, the active light/dark theme, all exported notes fully expanded, no command/search chrome, no collapse arrows, and `@password` note values redacted to matching-length `X` characters while keeping the blur styling.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.
+- `Session idle timeout…`: opens a modal for changing the namespace-scoped inactivity window before reauthentication is required again, or disabling idle timeout entirely.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
 - `Switch or create namespace…`: opens a namespace modal that can select an existing namespace or define a new one, prefill remembered ports from `~/MetaList/namespaces.db`, suggest the next free ports for new namespaces, reject port conflicts, restart an already-running target namespace from the current code, or fork a new `python main.py --namespace ...` process and then open it.
 - `Delete current namespace…`: opens a destructive confirmation modal for the active non-default namespace. The confirm button is red, the user must type `permanently delete`, and when password protection is enabled they must also re-enter the current password. After submission, the tab moves to a dedicated namespace-removal status page that polls for completion and then offers links to the remaining namespaces.

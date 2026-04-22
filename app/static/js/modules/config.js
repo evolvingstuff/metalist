@@ -85,7 +85,8 @@ export const CONFIG = {
                     CREATE: `${API_AUTH_BASE}/settings/password/create`,
                     CHANGE: `${API_AUTH_BASE}/settings/password/change`,
                     REMOVE: `${API_AUTH_BASE}/settings/password/remove`
-                }
+                },
+                SESSION_TIMEOUT: `${API_AUTH_BASE}/settings/session-timeout`,
             }
         },
         BACKUP: {

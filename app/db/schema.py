@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS {APP_SETTINGS_TABLE} (
     backup_settings_encryption_tag BLOB,
     client_preferences_json TEXT,
     command_palette_usage_json TEXT,
+    session_timeout_minutes INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -135,6 +136,7 @@ def initialize_schema(connection: Connection) -> None:
             "backup_settings_encryption_tag": "BLOB",
             "client_preferences_json": "TEXT",
             "command_palette_usage_json": "TEXT",
+            "session_timeout_minutes": "INTEGER",
         },
     )
     connection.execute(_CREATE_NOTES_PARENT_INDEX)

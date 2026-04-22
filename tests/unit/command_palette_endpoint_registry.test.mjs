@@ -13,6 +13,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         actions: {
             applyPreference: noop,
             openPasswordManager: noop,
+            openSessionTimeoutSettings: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,
@@ -42,6 +43,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('form.switch_namespace'), true);
     assert.equal(endpointIds.has('form.delete_current_namespace'), true);
     assert.equal(endpointIds.has('form.restore_backup'), true);
+    assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);

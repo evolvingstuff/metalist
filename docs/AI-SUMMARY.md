@@ -22,7 +22,7 @@
   - `app/api/routes/files.py`
 - `app/api/middleware/auth.py`: Auth middleware gating routes when a password exists.
 - `app/usecases`: Cmd* application commands (transport-agnostic orchestration).
-- `app/services`: Auth, tokens, cache, sync, undo, integrity, note store, file storage, snapshots, tab state cache.
+- `app/services`: Auth, tokens, cache, sync, undo, integrity, note store, file storage, snapshots, tab state cache, session-timeout settings.
 - `app/services/client_state_service.py`: Stores namespace-scoped command-palette preferences/usage in `app_settings` so UI preferences travel with the namespace instead of the browser.
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
@@ -102,7 +102,7 @@ metalist
 ```
 
 ## Quick Ref
-- Config: `app/config.py` (DB path, API prefix, crash-on-fail, token expiry, Argon2id costs).
+- Config: `app/config.py` (DB path, API prefix, crash-on-fail, default token expiry fallback, Argon2id costs). Runtime idle timeout is namespace-scoped in `app_settings`, editable from the command palette, and can be disabled.
 - Startup intro toggle: `STARTUP_ANIMATION_ENABLED=1` enables the login/startup MP4 gate; omitted/off skips the intro and uses the legacy immediate app/login reveal.
 - Namespace DBs: omitted namespace on a single-namespace launch means `default`, so the default DB is `~/MetaList/namespaces/default/default.metalist.db`; `--namespace work`, `metalist work`, or `METALIST_NAMESPACE=work` uses `~/MetaList/namespaces/work/work.metalist.db`, and the related files DB derives as `namespaces/work/work.metalist.files.db`. Plain source-checkout `python main.py` bootstraps all known namespaces instead of selecting only `default`.
 - Default TLS paths: `~/MetaList/certs/metalist-cert.pem` + `~/MetaList/certs/metalist-key.pem`; `main.py` auto-generates that self-signed pair on first non-test startup unless `METALIST_AUTO_GENERATE_TLS=0`, and `generate-lan-cert.sh` remains an optional manual regeneration path.

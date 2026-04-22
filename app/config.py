@@ -54,7 +54,7 @@ TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS = _env_flag(
 )
 
 # Authentication configuration
-TOKEN_EXPIRY_MINUTES = 30  # Token expires after 30 minutes of inactivity
+DEFAULT_TOKEN_EXPIRY_MINUTES = 30  # Default token expiry after inactivity unless overridden in UI
 KDF_TIME_COST = _env_int("KDF_TIME_COST", 3)
 KDF_MIN_TIME_COST = 1
 KDF_MAX_TIME_COST = 10

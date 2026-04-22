@@ -52,6 +52,7 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "backup_settings_encryption_tag": row["backup_settings_encryption_tag"],
         "client_preferences_json": row["client_preferences_json"],
         "command_palette_usage_json": row["command_palette_usage_json"],
+        "session_timeout_minutes": row["session_timeout_minutes"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
     }
@@ -204,6 +205,29 @@ def update_command_palette_usage_json(
         """,
         (
             command_palette_usage_json,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_session_timeout_minutes(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    session_timeout_minutes: int,
+) -> None:
+    if not isinstance(session_timeout_minutes, int):
+        raise TypeError("session_timeout_minutes must be an integer")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET session_timeout_minutes = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            session_timeout_minutes,
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
     )

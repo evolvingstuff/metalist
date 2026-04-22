@@ -43,6 +43,12 @@ from app.services.ontology_rules_store import ensure_rules_decrypted_and_compile
 from app.services.hydration_state import hydration_state
 from app.services.file_registry import file_registry
 from app.services.file_storage import bootstrap_file_registry
+from app.services.session_timeout_service import (
+    MAX_SESSION_TIMEOUT_MINUTES,
+    MIN_SESSION_TIMEOUT_MINUTES,
+    get_session_timeout_minutes,
+    save_session_timeout_minutes,
+)
 from app.security.encryption import (
     clear_encryption_key,
     set_encryption_required,
@@ -117,6 +123,18 @@ class PasswordChangeRequest(BaseModel):
 
 class PasswordRemoveRequest(BaseModel):
     current_password: str
+
+
+class SessionTimeoutResponse(BaseModel):
+    idle_timeout_minutes: int
+
+
+class SessionTimeoutUpdateRequest(BaseModel):
+    idle_timeout_minutes: int = Field(
+        ...,
+        ge=MIN_SESSION_TIMEOUT_MINUTES,
+        le=MAX_SESSION_TIMEOUT_MINUTES,
+    )
 
 
 class BackupFileResponse(BaseModel):
@@ -798,6 +816,32 @@ def remove_password(
     clear_all_locks()
     clear_encryption_key()
     return {"message": message}
+
+
+@router.get("/settings/session-timeout", response_model=SessionTimeoutResponse)
+def get_session_timeout_settings(
+    token: Annotated[str, Depends(_require_auth)],
+):
+    del token
+    return SessionTimeoutResponse(
+        idle_timeout_minutes=get_session_timeout_minutes(),
+    )
+
+
+@router.put("/settings/session-timeout", response_model=SessionTimeoutResponse)
+@transactional_route
+def put_session_timeout_settings(
+    payload: SessionTimeoutUpdateRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    del token
+    timeout_minutes = save_session_timeout_minutes(
+        timeout_minutes=payload.idle_timeout_minutes,
+    )
+    token_service.refresh_active_tokens_for_current_timeout()
+    return SessionTimeoutResponse(
+        idle_timeout_minutes=timeout_minutes,
+    )
 
 
 @router.get("/sessions")
