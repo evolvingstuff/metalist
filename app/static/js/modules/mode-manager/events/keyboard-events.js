@@ -31,7 +31,7 @@ import { CONFIG } from '../../config.js';
 import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
-import { getDuplicateTabCloneOptions, seedDuplicatedTabNoteHashes } from '../services/tab-duplication-service.js';
+import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { blurFocusedSearchInput, focusSearchInputAndSelectAllText, syncSearchInputValue } from '../services/search-input-service.js';
 import {
@@ -3198,24 +3198,21 @@ async function duplicateTabContext(sourceTabId) {
         activeTabId: ModeContext.activeTabId,
         ...getDuplicateTabCloneOptions(sourceHashCount),
     });
-    if (!cloneResult.cloned) {
-        throw new Error('Cannot duplicate tab: source tab DOM is not cached');
-    }
 
     ModeContext.hydrateTabState(response);
     ModeContext.cloneTabRedactedReveals(sourceTabId, newTabId);
 
-    // Only seed the new tab's diff cache if we also cloned its DOM.
-    // If we seed hashes without DOM, the server can legitimately return a
-    // bootstrap payload with an empty `notes` map (hashes match), and the
-    // client would then crash when it needs note payloads to insert nodes.
-    seedDuplicatedTabNoteHashes({
+    // When the source tab DOM is unavailable after a restart, leave the new
+    // tab's diff state empty so the next notes.view round-trip can rebuild it
+    // from the server instead of assuming a cloned DOM exists.
+    finalizeDuplicatedTabClone({
         sourceHashCount,
         sourceTabId,
         newTabId,
         cloneResult,
         cloneTabNoteHashes: (fromTabId, toTabId) => ModeContext.cloneTabNoteHashes(fromTabId, toTabId),
         seedTabNoteHashes: (tabId, noteHashes) => ModeContext.seedTabNoteHashes(tabId, noteHashes),
+        resetTabDiffCache: (tabId, options) => ModeContext.resetTabDiffCache(tabId, options),
     });
     updateSearchContextsList();
 

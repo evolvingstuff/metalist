@@ -126,6 +126,7 @@
 
 ## Client Reconciliation
 - Tab switch optimization: clients may detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile diffs.
+- If a persisted tab is restored after a server restart but its detached DOM cache is gone, tab duplication falls back to an empty client cache and lets the next `/notes/view` round-trip bootstrap the new tab from server state.
 - Bootstrap path: identical to the legacy behavior (diff against `snapshot.structure`, update DOM and hash cache, reset root tracking).
 - Incremental path:
   - Apply `diffOps` in order (remove/move/insert) directly to the DOM.

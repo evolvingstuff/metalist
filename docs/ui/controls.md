@@ -111,6 +111,7 @@
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Short drags act like clicks. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
+| Right-click note | Open the note context menu (`Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`) |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).

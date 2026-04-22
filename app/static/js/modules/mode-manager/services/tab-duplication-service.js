@@ -86,3 +86,37 @@ export function seedDuplicatedTabNoteHashes(options) {
         strategy: 'seed-from-cloned-dom',
     };
 }
+
+export function finalizeDuplicatedTabClone(options) {
+    if (options === null || typeof options !== 'object') {
+        throw new Error('finalizeDuplicatedTabClone requires options object');
+    }
+
+    const {
+        newTabId,
+        cloneResult,
+        resetTabDiffCache,
+    } = options;
+
+    requireTabId('newTabId', newTabId);
+    requireCloneResult(cloneResult);
+
+    if (!cloneResult.cloned) {
+        if (typeof resetTabDiffCache !== 'function') {
+            throw new Error('resetTabDiffCache must be a function');
+        }
+        resetTabDiffCache(newTabId, { preserveRootAnchor: false });
+        return {
+            cloned: false,
+            seeded: false,
+            strategy: 'server-refresh',
+        };
+    }
+
+    const seedResult = seedDuplicatedTabNoteHashes(options);
+    return {
+        cloned: true,
+        seeded: seedResult.seeded,
+        strategy: seedResult.strategy,
+    };
+}
