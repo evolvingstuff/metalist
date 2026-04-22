@@ -32,7 +32,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
 ## Utility Actions
-- `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, sets the retention count, and then runs the backup.
+- `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, sets the retention count, and then runs the backup. Typing `backups` in the palette also matches this action, and the completion modal shows the created archive size per namespace.
   - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling file/search-history DBs when present.
   - The completion modal shows one result row per namespace.
 - `Restore from backup…`: opens a restore picker for configured-folder snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.

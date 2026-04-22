@@ -62,7 +62,7 @@
     },
     {
       "id": "action.create_backup",
-      "tags": ["backup", "save", "database", "sqlite", "snapshot", "safety"]
+      "tags": ["backup", "backups", "save", "database", "sqlite", "snapshot", "safety"]
     },
     {
       "id": "form.restore_backup",

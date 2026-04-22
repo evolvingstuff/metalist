@@ -70,6 +70,7 @@ class BackupRunDestinationResponse(BaseModel):
     destination: str
     success: bool
     created_filename: str
+    size_bytes: int
     deleted_count: int
     remaining_count: int
     message: str
@@ -452,6 +453,7 @@ def run_backup(token: Annotated[str, Depends(_require_auth)]):
                 destination="folder",
                 success=True,
                 created_filename=backup_info.filename,
+                size_bytes=backup_info.size_bytes,
                 deleted_count=deleted_folder_count,
                 remaining_count=len(remaining_folder_backups),
                 message=f"Folder backup completed: {folder_directory}",

@@ -28,6 +28,22 @@ function _assertNonNegativeInteger(value, fieldName) {
 }
 
 
+export function formatBackupSize(sizeBytes) {
+    _assertNonNegativeInteger(sizeBytes, 'sizeBytes');
+
+    if (sizeBytes < 1024) {
+        return `${sizeBytes} B`;
+    }
+    if (sizeBytes < 1024 * 1024) {
+        return `${(sizeBytes / 1024).toFixed(1)} KB`;
+    }
+    if (sizeBytes < 1024 * 1024 * 1024) {
+        return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    return `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+
 function _statusMarkup(success) {
     if (typeof success !== 'boolean') {
         throw new Error('_statusMarkup requires boolean success');
@@ -162,12 +178,14 @@ export class BackupResultModal extends BaseModal {
                 throw new Error('success must be a boolean');
             }
             _assertString(result.created_filename, 'created_filename');
+            _assertNonNegativeInteger(result.size_bytes, 'size_bytes');
             _assertNonNegativeInteger(result.deleted_count, 'deleted_count');
             _assertNonNegativeInteger(result.remaining_count, 'remaining_count');
             _assertString(result.message, 'message');
 
             const detailsText = _detailsText(result);
             const createdFilename = result.created_filename.length > 0 ? result.created_filename : '-';
+            const backupSize = result.success ? formatBackupSize(result.size_bytes) : '-';
             const deletedCount = result.success ? String(result.deleted_count) : '-';
             const keptCount = result.success ? String(result.remaining_count) : '-';
             return `
@@ -175,6 +193,7 @@ export class BackupResultModal extends BaseModal {
                     <td class="backup-result-destination">${_escapeHtml(result.namespace)}</td>
                     <td>${_statusMarkup(result.success)}</td>
                     <td><span class="backup-filename">${_escapeHtml(createdFilename)}</span></td>
+                    <td class="backup-result-table-size">${backupSize}</td>
                     <td class="backup-result-table-count">${deletedCount}</td>
                     <td class="backup-result-table-count">${keptCount}</td>
                     <td class="backup-result-notes">${_escapeHtml(detailsText)}</td>
@@ -192,6 +211,7 @@ export class BackupResultModal extends BaseModal {
                                 <th scope="col">Namespace</th>
                                 <th scope="col">Status</th>
                                 <th scope="col">Archive</th>
+                                <th scope="col">Size</th>
                                 <th scope="col">Deleted</th>
                                 <th scope="col">Kept Here</th>
                                 <th scope="col">Destination</th>

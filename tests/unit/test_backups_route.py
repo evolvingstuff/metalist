@@ -141,8 +141,10 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
     assert response.results[0].destination == "folder"
     assert response.results[0].success is True
     assert response.results[0].created_filename == default_backup.filename
+    assert response.results[0].size_bytes == default_backup.size_bytes
     assert response.results[1].namespace == "work"
     assert response.results[1].created_filename == work_backup.filename
+    assert response.results[1].size_bytes == work_backup.size_bytes
 
 
 def test_run_backup_rejects_when_no_namespaces_are_selected(

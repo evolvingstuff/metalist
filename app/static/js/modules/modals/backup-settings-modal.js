@@ -184,6 +184,28 @@ export class BackupSettingsModal extends BaseModal {
         `;
 
         this.setupFormEventListeners();
+        setTimeout(() => this._focusPreferredControl(), 0);
+    }
+
+    _focusPreferredControl() {
+        const focusCandidateIds = [
+            'backup-settings-retention-count',
+            'backup-settings-folder-pick-btn',
+            'backup-settings-run-btn',
+            'backup-settings-cancel-btn',
+        ];
+
+        for (const candidateId of focusCandidateIds) {
+            const candidate = document.getElementById(candidateId);
+            if (!(candidate instanceof HTMLElement)) {
+                continue;
+            }
+            if (candidate.hasAttribute('disabled')) {
+                continue;
+            }
+            candidate.focus();
+            return;
+        }
     }
 
     setupFormEventListeners() {

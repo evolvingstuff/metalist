@@ -1351,7 +1351,7 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .backup-result-modal-content {
-    width: min(760px, 92vw);
+    width: min(900px, 95vw);
 }
 
 .backup-result-table-wrapper {
@@ -1363,7 +1363,7 @@ body.ontology-modal-open #ontology-modal {
 
 .backup-result-table {
     width: 100%;
-    min-width: 720px;
+    min-width: 860px;
     border-collapse: collapse;
 }
 
@@ -1392,6 +1392,11 @@ body.ontology-modal-open #ontology-modal {
 }
 
 .backup-result-table-count {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.backup-result-table-size {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
