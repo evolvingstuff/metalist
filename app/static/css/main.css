@@ -3073,8 +3073,10 @@ body.loading::after {
 
 #search-contexts-list {
     position: fixed;
-    top: calc(1.5rem - 6px);
+    top: auto;
+    bottom: 10px;
     left: 10px;
+    right: auto;
     z-index: 9999;
     background: rgba(0,0,0,0.7);
     color: #ccc;
