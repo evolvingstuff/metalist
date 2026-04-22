@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    finalizeDuplicatedTabClone,
     getDuplicateTabCloneOptions,
     seedDuplicatedTabNoteHashes,
 } from '../../app/static/js/modules/mode-manager/services/tab-duplication-service.js';
@@ -92,5 +93,42 @@ test('seedDuplicatedTabNoteHashes clones existing cache when source hashes are p
 
     assert.deepEqual(result, { seeded: true, strategy: 'clone-existing-cache' });
     assert.deepEqual(cloneCalls, [{ sourceTabId: 'source-tab', newTabId: 'new-tab' }]);
+    assert.equal(seedCalls, 0);
+});
+
+test('finalizeDuplicatedTabClone falls back to server refresh when source tab DOM is unavailable', () => {
+    const resetCalls = [];
+    let cloneCalls = 0;
+    let seedCalls = 0;
+
+    const result = finalizeDuplicatedTabClone({
+        sourceHashCount: 0,
+        sourceTabId: 'source-tab',
+        newTabId: 'new-tab',
+        cloneResult: {
+            cloned: false,
+            nodeCount: 0,
+        },
+        cloneTabNoteHashes() {
+            cloneCalls += 1;
+            return { cloned: true };
+        },
+        seedTabNoteHashes() {
+            seedCalls += 1;
+        },
+        resetTabDiffCache(tabId, options) {
+            resetCalls.push({ tabId, options });
+        },
+    });
+
+    assert.deepEqual(result, {
+        cloned: false,
+        seeded: false,
+        strategy: 'server-refresh',
+    });
+    assert.deepEqual(resetCalls, [
+        { tabId: 'new-tab', options: { preserveRootAnchor: false } },
+    ]);
+    assert.equal(cloneCalls, 0);
     assert.equal(seedCalls, 0);
 });
