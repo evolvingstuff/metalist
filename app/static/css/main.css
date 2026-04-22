@@ -3869,6 +3869,23 @@ body.loading::after {
     color: #6b7280;
 }
 
+.meta-shell-output-close {
+    margin-left: auto;
+    padding: 4px 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 999px;
+    background: #ffffff;
+    color: #374151;
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.meta-shell-output-close:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
 .meta-shell-output-message {
     margin-bottom: 6px;
     color: #4b5563;
@@ -4420,6 +4437,12 @@ html[data-theme="dark"] .meta-shell-output-send {
     background: rgba(34, 197, 94, 0.16);
     border-color: rgba(34, 197, 94, 0.36);
     color: #86efac;
+}
+
+html[data-theme="dark"] .meta-shell-output-close {
+    background: var(--app-surface-3);
+    border-color: var(--app-border-soft);
+    color: var(--text-color);
 }
 
 html[data-theme="dark"] body.loading::after {

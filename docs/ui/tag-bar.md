@@ -63,6 +63,7 @@ Examples (autocorrected while typing):
   - `@shell` renders note content as a terminal-style script block in view mode.
   - Clicking the block starts a background shell session on the server and updates stdout/stderr inline while the command is still running.
   - A running shell session can accept stdin from an inline input field.
+  - Completed/error/timeout shell feedback can be dismissed with the inline `Close` button in the output header.
   - The transport is cross-platform, but note scripts still need to match the connected server host's shell and OS conventions.
 - JSON meta tags:
   - `@json` pretty-prints note content as JSON; invalid JSON shows an error badge and raw text.
