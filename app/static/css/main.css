@@ -3085,6 +3085,14 @@ body.loading::after {
     font-size: 12px;
     display: none;
     line-height: 1.4;
+    max-width: min(260px, calc(100vw - 16px));
+}
+
+#search-contexts-list.search-contexts-list--bottom-left {
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+    right: auto;
 }
 
 #backlinks-panel {

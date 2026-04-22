@@ -1,5 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { NotesAPI } from '../../api-client.js';
+import { isSearchContextsOverlayBottomLeft } from './search-contexts-overlay-service.js';
 
 let backlinksRequestSerial = 0;
 let lastRenderedKey = null;
@@ -29,6 +30,9 @@ function updateBacklinksPanelTop(panel) {
     }
 
     const fallbackTop = 'calc(1.5rem - 6px)';
+    panel.style.bottom = 'auto';
+    panel.style.left = '10px';
+    panel.style.right = 'auto';
     if (!isTabUiVisible()) {
         panel.style.top = fallbackTop;
         return;
@@ -47,7 +51,30 @@ function updateBacklinksPanelTop(panel) {
     }
 
     const rect = tabList.getBoundingClientRect();
+    if (isSearchContextsOverlayBottomLeft()) {
+        const viewportHeight = window.innerHeight;
+        if (typeof viewportHeight !== 'number' || Number.isNaN(viewportHeight) || viewportHeight <= 0) {
+            throw new Error('window.innerHeight must be a positive number');
+        }
+        const aboveTabListBottom = Math.max(8, Math.round(viewportHeight - rect.top + 8));
+        const alignedLeft = Math.max(8, Math.round(rect.left));
+
+        panel.style.top = 'auto';
+        panel.style.left = `${alignedLeft}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = `${aboveTabListBottom}px`;
+        return;
+    }
+
     panel.style.top = `${Math.round(rect.bottom + 8)}px`;
+}
+
+export function syncBacklinksPanelPlacement() {
+    const panel = document.getElementById('backlinks-panel');
+    if (!(panel instanceof HTMLElement)) {
+        return;
+    }
+    updateBacklinksPanelTop(panel);
 }
 
 function clearPanel(panel) {

@@ -59,6 +59,8 @@ import {
 } from '../services/embedded-image-service.js';
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
 import { attachPickedFileToCurrentNote } from '../services/file-reference-service.js';
+import { syncBacklinksPanelPlacement } from '../services/backlinks-panel-service.js';
+import { updateSearchContextsOverlayPlacement } from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
@@ -224,12 +226,18 @@ export function initKeyboardEvents() {
     document.addEventListener('dragover', handleDragOverEvent, { capture: false });
     document.addEventListener('drop', handleDropEvent, { capture: false });
     window.addEventListener('blur', handleWindowBlur, { capture: false });
+    window.addEventListener('resize', handleSearchContextsViewportChange, { passive: true });
         
     Logger.logInit('Keyboard events handler');
     
     // Initialize search contexts list on startup
     updateSearchContextsList();
     updateReferenceBackButtonState();
+}
+
+function handleSearchContextsViewportChange() {
+    updateSearchContextsOverlayPlacement();
+    syncBacklinksPanelPlacement();
 }
 
 function markSystemClipboardAsTrusted() {
@@ -2980,6 +2988,7 @@ export function updateSearchContextsList() {
         } else {
             searchContextsList.style.display = 'none';
         }
+        updateSearchContextsOverlayPlacement();
         
         // Add click handlers to each tab context item
         searchContextsList.querySelectorAll('.tab-context-item').forEach(item => {
@@ -3044,8 +3053,10 @@ export function updateSearchContextsList() {
         
     } else {
         searchContextsList.style.display = 'none';
+        updateSearchContextsOverlayPlacement();
     }
 
+    syncBacklinksPanelPlacement();
     updateReferenceBackButtonState();
 }
 

@@ -25,13 +25,14 @@ import { PrioritizeModal } from '../modals/prioritize-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
-import { refreshBacklinksPanel, invalidateBacklinksPanelCache } from '../mode-manager/services/backlinks-panel-service.js';
+import { refreshBacklinksPanel, invalidateBacklinksPanelCache, syncBacklinksPanelPlacement } from '../mode-manager/services/backlinks-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/services/root-sort-service.js';
 import { setTabSortModeOnServer } from '../mode-manager/services/tab-state-service.js';
 import { settleResult } from '../async-result.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
+import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
@@ -452,8 +453,10 @@ class CommandPaletteController {
             } else {
                 searchContextsList.style.display = 'none';
             }
+            updateSearchContextsOverlayPlacement();
         }
 
+        syncBacklinksPanelPlacement();
         invalidateBacklinksPanelCache();
         void refreshBacklinksPanel({ force: true });
     }
