@@ -413,7 +413,7 @@ ModeContext = {
 - Tab IDs are server-assigned UUIDs and a `tabOrder` array defines display order.
 - The UI can reorder tabs by mutating `tabOrder` (e.g. via per-tab ↑/↓ controls) and
   persisting the updated snapshot back to `/api2/notes/tab-state`.
-- New tabs are created by duplicating a source tab so the new tab inherits its search/scroll state.
+- New tabs are created by duplicating a source tab so the new tab inherits its search/scroll state, then the search field is focused and its duplicated query text is fully selected so it can be replaced immediately.
 - Creating/deleting tabs uses dedicated endpoints so the server remains the source of truth.
 - Scroll/search changes are throttled (≈1 Hz) and POSTed back so the cache stays
   aligned with the DOM without spamming requests.

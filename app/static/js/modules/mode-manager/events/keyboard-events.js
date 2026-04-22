@@ -33,7 +33,7 @@ import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '.
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { getDuplicateTabCloneOptions, seedDuplicatedTabNoteHashes } from '../services/tab-duplication-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
-import { blurFocusedSearchInput, syncSearchInputValue } from '../services/search-input-service.js';
+import { blurFocusedSearchInput, focusSearchInputAndSelectAllText, syncSearchInputValue } from '../services/search-input-service.js';
 import {
     getTagBarValue,
     normalizeTagBarForNewTag,
@@ -3219,14 +3219,15 @@ async function duplicateTabContext(sourceTabId) {
     });
     updateSearchContextsList();
 
-	if (CONFIG.TABS.CREATE_AND_SWITCH) {
+    if (CONFIG.TABS.CREATE_AND_SWITCH) {
         const switchOptions = {};
 
-	        await switchToTabContext(newTabId, switchOptions);
-	        return newTabId;
-	    }
+        await switchToTabContext(newTabId, switchOptions);
+        focusSearchInputAndSelectAllText();
+        return newTabId;
+    }
 
-	    return newTabId;
+    return newTabId;
 }
 
 export async function openReferenceInNewTab(referenceNoteId) {

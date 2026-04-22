@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { blurFocusedSearchInput } from '../../app/static/js/modules/mode-manager/services/search-input-service.js';
+import {
+    blurFocusedSearchInput,
+    focusSearchInputAndSelectAllText,
+} from '../../app/static/js/modules/mode-manager/services/search-input-service.js';
 
 test('blurFocusedSearchInput blurs the active search input', (t) => {
     const originalDocument = globalThis.document;
@@ -57,4 +60,53 @@ test('blurFocusedSearchInput is a no-op when search input is not focused', (t) =
 
     assert.equal(blurFocusedSearchInput(), false);
     assert.equal(blurCount, 0);
+});
+
+test('focusSearchInputAndSelectAllText focuses the search input and selects the full query', (t) => {
+    const originalDocument = globalThis.document;
+
+    const selectionCalls = [];
+    const focusCalls = [];
+    const searchInput = {
+        value: 'project alpha',
+        focus(options) {
+            focusCalls.push(options);
+        },
+        setSelectionRange(start, end) {
+            selectionCalls.push({ start, end });
+        },
+    };
+
+    globalThis.document = {
+        getElementById(id) {
+            if (id === 'search-input') {
+                return searchInput;
+            }
+            return null;
+        },
+    };
+
+    t.after(() => {
+        globalThis.document = originalDocument;
+    });
+
+    assert.equal(focusSearchInputAndSelectAllText(), true);
+    assert.deepEqual(focusCalls, [{ preventScroll: true }]);
+    assert.deepEqual(selectionCalls, [{ start: 0, end: 'project alpha'.length }]);
+});
+
+test('focusSearchInputAndSelectAllText is a no-op when search input is missing', (t) => {
+    const originalDocument = globalThis.document;
+
+    globalThis.document = {
+        getElementById() {
+            return null;
+        },
+    };
+
+    t.after(() => {
+        globalThis.document = originalDocument;
+    });
+
+    assert.equal(focusSearchInputAndSelectAllText(), false);
 });

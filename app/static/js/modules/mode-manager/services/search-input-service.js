@@ -88,3 +88,23 @@ export function blurFocusedSearchInput() {
     searchInput.blur();
     return true;
 }
+
+export function focusSearchInputAndSelectAllText() {
+    const searchInput = document.getElementById('search-input');
+    if (!searchInput) {
+        return false;
+    }
+    if (typeof searchInput.value !== 'string') {
+        throw new Error('search-input must expose string value');
+    }
+    if (typeof searchInput.focus !== 'function') {
+        throw new Error('search-input must support focus()');
+    }
+    if (typeof searchInput.setSelectionRange !== 'function') {
+        throw new Error('search-input must support setSelectionRange()');
+    }
+
+    searchInput.focus({ preventScroll: true });
+    searchInput.setSelectionRange(0, searchInput.value.length);
+    return true;
+}
