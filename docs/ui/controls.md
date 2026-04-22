@@ -53,7 +53,7 @@
 | `⌘ + Y` | Redo |
 
 - When a datetime sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
-- On narrow windows, the memory/search contexts overlay automatically moves to the lower-left when its default top placement would overlap the centered search controls. The backlinks panel follows that move so the two overlays stay grouped.
+- The memory/search contexts overlay is pinned to the lower-left on all screen sizes. The backlinks panel follows that placement so the two overlays stay grouped.
 
 ### Search Input Behavior
 - Pressing `Enter` while focused in the search input creates a new **root** note.
