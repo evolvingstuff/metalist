@@ -1,7 +1,17 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { actionExitSearchMode } from '../actions/search-actions.js';
-import { actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
+import {
+    actionSaveAndExitEditingWithoutRefreshing,
+    actionSelectNote,
+    actionSwitchNotes,
+} from '../actions/selection-actions.js';
+import {
+    createChildNote,
+    createNote,
+    deleteNote,
+    moveNoteToTop,
+} from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
@@ -153,6 +163,101 @@ function showTagContextMenu(event, tag, source) {
     });
 }
 
+function resolveContextNoteElement(element) {
+    if (!(element instanceof HTMLElement)) {
+        return null;
+    }
+
+    const noteElement = element.closest('.note');
+    if (!(noteElement instanceof HTMLElement)) {
+        return null;
+    }
+    if (noteElement.classList.contains('locked')) {
+        return null;
+    }
+    if (noteElement.classList.contains('search-redacted')) {
+        return null;
+    }
+    const noteId = noteElement.dataset.noteId;
+    if (typeof noteId !== 'string' || noteId.trim() === '') {
+        throw new Error('Context-menu note element missing data-note-id');
+    }
+    return noteElement;
+}
+
+async function focusNoteForContextAction(noteId) {
+    if (typeof noteId !== 'string' || noteId.trim() === '') {
+        throw new Error('focusNoteForContextAction requires noteId');
+    }
+
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
+    if (ModeContext.isEditing) {
+        if (ModeContext.currentNoteId === noteId) {
+            return;
+        }
+        await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+        return;
+    }
+
+    await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+}
+
+function showNoteContextMenu(event, noteId) {
+    if (typeof noteId !== 'string' || noteId.trim() === '') {
+        return;
+    }
+    if (!event) {
+        throw new Error('showNoteContextMenu called without event');
+    }
+    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+        throw new Error('Context menu event missing coordinates');
+    }
+
+    const context = { kind: 'note', noteId };
+    const items = buildContextMenuItems(context, {
+        onAddSiblingNote: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.add_sibling', async () => {
+                await focusNoteForContextAction(targetNoteId);
+                await createNote();
+            });
+        },
+        onAddChildNote: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.add_child', async () => {
+                await focusNoteForContextAction(targetNoteId);
+                await createChildNote();
+            });
+        },
+        onDeleteNote: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.delete', async () => {
+                await focusNoteForContextAction(targetNoteId);
+                await deleteNote(targetNoteId);
+            });
+        },
+        onMoveNoteToTop: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.move_to_top', async () => {
+                await focusNoteForContextAction(targetNoteId);
+                await moveNoteToTop(targetNoteId);
+            });
+        },
+    });
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    showContextMenu({
+        items,
+        position: { x: event.clientX, y: event.clientY },
+        onClose: null,
+    });
+}
+
 function handleContextMenu(event) {
     if (!event) {
         throw new Error('handleContextMenu called without event');
@@ -171,8 +276,8 @@ function handleContextMenu(event) {
         const tagInfo = resolveTagFromInput(event, tagBarInput, findTagAtIndexInTagBar);
         if (tagInfo && typeof tagInfo.text === 'string') {
             showTagContextMenu(event, tagInfo.text, 'tag-bar');
+            return;
         }
-        return;
     }
 
     const searchInput = element.closest('#search-input');
@@ -181,6 +286,12 @@ function handleContextMenu(event) {
         if (tagInfo && typeof tagInfo.tag === 'string') {
             showTagContextMenu(event, tagInfo.tag, 'search');
         }
+        return;
+    }
+
+    const noteElement = resolveContextNoteElement(element);
+    if (noteElement) {
+        showNoteContextMenu(event, noteElement.dataset.noteId);
     }
 }
 
