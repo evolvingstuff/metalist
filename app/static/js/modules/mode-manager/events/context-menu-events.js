@@ -6,6 +6,7 @@ import {
     actionSelectNote,
     actionSwitchNotes,
 } from '../actions/selection-actions.js';
+import { actionSaveNote } from '../actions/content-actions.js';
 import {
     createChildNote,
     createNote,
@@ -13,6 +14,7 @@ import {
     moveNoteToTop,
 } from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
+import { prepareMoveNoteToTopContextAction } from '../services/note-context-menu-action-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
 import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
@@ -238,7 +240,12 @@ function showNoteContextMenu(event, noteId) {
         },
         onMoveNoteToTop: (targetNoteId) => {
             void CommandGate.run('contextMenu.note.move_to_top', async () => {
-                await focusNoteForContextAction(targetNoteId);
+                await prepareMoveNoteToTopContextAction({
+                    targetNoteId,
+                    modeContext: ModeContext,
+                    exitSearchModeFn: actionExitSearchMode,
+                    saveActiveNoteFn: actionSaveNote,
+                });
                 await moveNoteToTop(targetNoteId);
             });
         },
