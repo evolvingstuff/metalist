@@ -10,23 +10,6 @@ import pytest
 from app.services import shell_session_service
 
 
-class _FakeStdin:
-    def __init__(self) -> None:
-        self.writes: list[str] = []
-        self.flush_count = 0
-        self.closed = False
-
-    def write(self, text: str) -> int:
-        self.writes.append(text)
-        return len(text)
-
-    def flush(self) -> None:
-        self.flush_count += 1
-
-    def close(self) -> None:
-        self.closed = True
-
-
 class _BlockingPopen:
     def __init__(
         self,
@@ -36,7 +19,7 @@ class _BlockingPopen:
         stderr_text: str,
         returncode: int,
     ) -> None:
-        self.stdin = _FakeStdin()
+        self.stdin = None
         self.stdout = io.StringIO(stdout_text)
         self.stderr = io.StringIO(stderr_text)
         self._wait_event = wait_event
@@ -64,7 +47,7 @@ class _BlockingPopen:
 
 class _ImmediateTimeoutPopen:
     def __init__(self, *, stdout_text: str, stderr_text: str) -> None:
-        self.stdin = _FakeStdin()
+        self.stdin = None
         self.stdout = io.StringIO(stdout_text)
         self.stderr = io.StringIO(stderr_text)
         self.kill_called = False
@@ -110,7 +93,7 @@ def test_resolve_shell_command_prefers_login_shell_for_bash(monkeypatch: pytest.
     assert command == ["/bin/bash", "-lc", "echo hello"]
 
 
-def test_shell_session_streams_output_and_accepts_input(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shell_session_streams_output_without_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     wait_event = threading.Event()
     fake_process = _BlockingPopen(
         wait_event=wait_event,
@@ -119,36 +102,28 @@ def test_shell_session_streams_output_and_accepts_input(monkeypatch: pytest.Monk
         returncode=0,
     )
     service = shell_session_service.ShellSessionService()
+    popen_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(shell_session_service, "_resolve_shell_command", lambda *, script_text: ["fake-shell"])
     monkeypatch.setattr(
         shell_session_service.subprocess,
         "Popen",
-        lambda *args, **kwargs: fake_process,
+        lambda *args, **kwargs: popen_calls.append(kwargs) or fake_process,
     )
 
     started = service.start_run(note_id="note-1", script_text="echo hello", timeout_seconds=0)
     run_id = started["runId"]
     assert isinstance(run_id, str) and run_id != ""
+    assert len(popen_calls) == 1
+    assert popen_calls[0]["stdin"] is subprocess.DEVNULL
 
     running = _wait_for_status(service, note_id="note-1", run_id=run_id, expected_status="running")
     assert running["stdout"] == "hello from stdout\n"
     assert running["stderr"] == "warning on stderr\n"
-    assert running["acceptsInput"] is True
-
-    service.write_input(
-        note_id="note-1",
-        run_id=run_id,
-        text="continue",
-        append_newline=True,
-    )
-    assert fake_process.stdin.writes == ["continue\n"]
-    assert fake_process.stdin.flush_count == 1
 
     wait_event.set()
     completed = _wait_for_status(service, note_id="note-1", run_id=run_id, expected_status="success")
     assert completed["exitCode"] == 0
-    assert completed["acceptsInput"] is False
 
 
 def test_shell_session_marks_timeout_and_kills_process(monkeypatch: pytest.MonkeyPatch) -> None:

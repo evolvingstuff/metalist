@@ -22,7 +22,6 @@ export const CONFIG = {
             UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,
             RUN_SHELL: (noteId) => `${API_NOTES_BASE}/${noteId}/run-shell`,
             RUN_SHELL_STATUS: (noteId, runId) => `${API_NOTES_BASE}/${noteId}/run-shell/${runId}`,
-            RUN_SHELL_INPUT: (noteId, runId) => `${API_NOTES_BASE}/${noteId}/run-shell/${runId}/input`,
             JOIN_NEXT: (noteId) => `${API_NOTES_BASE}/${noteId}/join-next`,
             REFERENCE_MODE: (noteId) => `${API_NOTES_BASE}/${noteId}/reference-mode`,
             MOVE: (noteId) => `${API_NOTES_BASE}/${noteId}/move`,

@@ -1,8 +1,5 @@
 export const SHELL_SELECTOR = '.meta-shell';
 export const SHELL_OUTPUT_SELECTOR = '.meta-shell-output';
-export const SHELL_INPUT_ROW_SELECTOR = '.meta-shell-output-input-row';
-export const SHELL_INPUT_SELECTOR = '.meta-shell-output-input';
-export const SHELL_SEND_SELECTOR = '.meta-shell-output-send';
 export const SHELL_CLOSE_SELECTOR = '.meta-shell-output-close';
 export const SHELL_RUNNING_CLASS = 'meta-shell-running';
 
@@ -43,15 +40,12 @@ export function dismissShellOutput(outputElement, shellElement) {
     outputElement.remove();
 }
 
-export function ensureShellOutputStructure(outputElement, noteId, onSubmitInput) {
+export function ensureShellOutputStructure(outputElement, noteId) {
     if (!(outputElement instanceof HTMLElement)) {
         throw new Error('ensureShellOutputStructure requires outputElement');
     }
     if (typeof noteId !== 'string' || noteId === '') {
         throw new Error('ensureShellOutputStructure requires noteId');
-    }
-    if (typeof onSubmitInput !== 'function') {
-        throw new Error('ensureShellOutputStructure requires onSubmitInput callback');
     }
     outputElement.dataset.noteId = noteId;
 
@@ -119,41 +113,6 @@ export function ensureShellOutputStructure(outputElement, noteId, onSubmitInput)
         emptyRow.className = 'meta-shell-output-empty';
         outputElement.appendChild(emptyRow);
     }
-
-    let inputRow = outputElement.querySelector(SHELL_INPUT_ROW_SELECTOR);
-    if (!(inputRow instanceof HTMLElement)) {
-        inputRow = document.createElement('div');
-        inputRow.className = 'meta-shell-output-input-row';
-
-        const inputElement = document.createElement('input');
-        inputElement.className = 'meta-shell-output-input';
-        inputElement.type = 'text';
-        inputElement.placeholder = 'Send input to running shell';
-        inputElement.autocomplete = 'off';
-        inputElement.spellcheck = false;
-        inputElement.addEventListener('keydown', (event) => {
-            if (event.key !== 'Enter') {
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            void onSubmitInput(outputElement);
-        });
-
-        const sendButton = document.createElement('button');
-        sendButton.className = 'meta-shell-output-send';
-        sendButton.type = 'button';
-        sendButton.textContent = 'Send';
-        sendButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void onSubmitInput(outputElement);
-        });
-
-        inputRow.appendChild(inputElement);
-        inputRow.appendChild(sendButton);
-        outputElement.appendChild(inputRow);
-    }
 }
 
 function formatShellDuration(durationMs) {
@@ -188,7 +147,6 @@ export function renderShellSnapshot(outputElement, shellElement, result) {
     const stderrText = result.stderr;
     const durationMs = result.durationMs;
     const errorMessage = result.errorMessage;
-    const acceptsInput = result.acceptsInput;
 
     if (typeof runId !== 'string') {
         throw new Error('Shell result runId must be a string');
@@ -211,9 +169,6 @@ export function renderShellSnapshot(outputElement, shellElement, result) {
     if (typeof errorMessage !== 'string') {
         throw new Error('Shell result errorMessage must be a string');
     }
-    if (typeof acceptsInput !== 'boolean') {
-        throw new Error('Shell result acceptsInput must be a boolean');
-    }
 
     const noteId = outputElement.dataset.noteId;
     if (typeof noteId !== 'string' || noteId === '') {
@@ -231,9 +186,6 @@ export function renderShellSnapshot(outputElement, shellElement, result) {
     const stdoutBlock = outputElement.querySelector('.meta-shell-output-stdout');
     const stderrBlock = outputElement.querySelector('.meta-shell-output-stderr');
     const emptyRow = outputElement.querySelector('.meta-shell-output-empty');
-    const inputRow = outputElement.querySelector(SHELL_INPUT_ROW_SELECTOR);
-    const inputElement = outputElement.querySelector(SHELL_INPUT_SELECTOR);
-    const sendButton = outputElement.querySelector(SHELL_SEND_SELECTOR);
 
     if (!(header instanceof HTMLElement)) {
         throw new Error('Shell output header missing');
@@ -258,15 +210,6 @@ export function renderShellSnapshot(outputElement, shellElement, result) {
     }
     if (!(emptyRow instanceof HTMLElement)) {
         throw new Error('Shell output empty row missing');
-    }
-    if (!(inputRow instanceof HTMLElement)) {
-        throw new Error('Shell output input row missing');
-    }
-    if (!(inputElement instanceof HTMLInputElement)) {
-        throw new Error('Shell output input element missing');
-    }
-    if (!(sendButton instanceof HTMLButtonElement)) {
-        throw new Error('Shell output send button missing');
     }
 
     statusBadge.className = 'meta-shell-output-status';
@@ -319,10 +262,6 @@ export function renderShellSnapshot(outputElement, shellElement, result) {
         emptyRow.textContent = '';
     }
 
-    inputRow.style.display = acceptsInput ? '' : 'none';
-    inputElement.disabled = !acceptsInput;
-    sendButton.disabled = !acceptsInput;
-
     if (status === 'running') {
         shellElement.classList.add(SHELL_RUNNING_CLASS);
     } else {
@@ -359,6 +298,5 @@ export function renderShellError(outputElement, shellElement, error) {
         stderr: '',
         durationMs: 0,
         errorMessage: message,
-        acceptsInput: false,
     });
 }

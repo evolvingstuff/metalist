@@ -3922,42 +3922,6 @@ body.loading::after {
     font-style: italic;
 }
 
-.meta-shell-output-input-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.meta-shell-output-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 8px 10px;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    border-radius: 6px;
-    background: #ffffff;
-    color: #111827;
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-    font-size: 0.82rem;
-}
-
-.meta-shell-output-send {
-    flex: 0 0 auto;
-    padding: 8px 12px;
-    border: 1px solid rgba(25, 135, 84, 0.5);
-    border-radius: 6px;
-    background: #e8f5ec;
-    color: #166534;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.meta-shell-output-send:disabled,
-.meta-shell-output-input:disabled {
-    opacity: 0.65;
-    cursor: default;
-}
-
 
 /* Error Banner Styles */
 .error-banner {
@@ -4425,18 +4389,6 @@ html[data-theme="dark"] .meta-shell-output-message,
 html[data-theme="dark"] .json-null,
 html[data-theme="dark"] .json-punct {
     color: var(--app-text-muted);
-}
-
-html[data-theme="dark"] .meta-shell-output-input {
-    background: var(--app-surface-3);
-    border-color: var(--app-border-soft);
-    color: var(--text-color);
-}
-
-html[data-theme="dark"] .meta-shell-output-send {
-    background: rgba(34, 197, 94, 0.16);
-    border-color: rgba(34, 197, 94, 0.36);
-    color: #86efac;
 }
 
 html[data-theme="dark"] .meta-shell-output-close {

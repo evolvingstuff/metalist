@@ -28,7 +28,6 @@ from app.usecases.set_collapse_bulk import CmdSetCollapseBulk
 from app.usecases.set_collapse_in_context import CmdSetCollapseInContext
 from app.usecases.copy_note import CmdCopyNote
 from app.usecases.toggle_todo_done import CmdToggleTodoDone
-from app.usecases.run_shell import CmdRunShellInput
 from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
@@ -707,27 +706,6 @@ def run_shell_status_endpoint(note_id: str, run_id: str) -> Dict[str, object]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:
         raise RuntimeError("Shell status command did not return a result")
-    return result
-
-
-@router.post("/notes/{note_id}/run-shell/{run_id}/input")
-@transactional_route
-def run_shell_input_endpoint(note_id: str, run_id: str, body: dict) -> Dict[str, object]:
-    run_capture = CapturedExceptionContext(RuntimeError, TypeError, ValueError)
-    result: Dict[str, object] | None = None
-    with run_capture:
-        cmd = CmdRunShellInput(
-            note_id=note_id,
-            run_id=run_id,
-            text=body["text"],
-            append_newline=body["appendNewline"],
-        )
-        result = cmd.execute()
-    if run_capture.captured_exception is not None:
-        exc = run_capture.captured_exception
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if result is None:
-        raise RuntimeError("Shell input command did not return a result")
     return result
 
 

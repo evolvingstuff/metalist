@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, sendShellInput, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -14,12 +14,8 @@ import { resolveVerticalSiblingDropDestination, shouldActivateMoveDrag } from '.
 import { resolveNonContentNoteSelectionTarget } from '../services/note-click-target-service.js';
 import {
     SHELL_CLOSE_SELECTOR,
-    SHELL_INPUT_ROW_SELECTOR,
-    SHELL_INPUT_SELECTOR,
-    SHELL_OUTPUT_SELECTOR,
     SHELL_RUNNING_CLASS,
     SHELL_SELECTOR,
-    SHELL_SEND_SELECTOR,
     ensureShellOutputElement,
     ensureShellOutputStructure,
     renderShellError,
@@ -64,9 +60,6 @@ export function initMouseEvents() {
 function isShellInteractiveTarget(target) {
     if (!(target instanceof Element)) {
         return false;
-    }
-    if (target.closest(SHELL_INPUT_ROW_SELECTOR)) {
-        return true;
     }
     return target.closest(SHELL_CLOSE_SELECTOR) !== null;
 }
@@ -1352,67 +1345,6 @@ function delayShellPoll() {
     });
 }
 
-async function submitShellInput(outputElement) {
-    if (!(outputElement instanceof HTMLElement)) {
-        throw new Error('submitShellInput requires outputElement');
-    }
-    const noteId = outputElement.dataset.noteId;
-    const runId = outputElement.dataset.runId;
-    const status = outputElement.dataset.status;
-    const inputElement = outputElement.querySelector(SHELL_INPUT_SELECTOR);
-    const sendButton = outputElement.querySelector(SHELL_SEND_SELECTOR);
-
-    if (!(inputElement instanceof HTMLInputElement)) {
-        throw new Error('Shell output input element missing');
-    }
-    if (!(sendButton instanceof HTMLButtonElement)) {
-        throw new Error('Shell output send button missing');
-    }
-    if (typeof noteId !== 'string' || noteId === '') {
-        throw new Error('Shell output missing noteId');
-    }
-    if (typeof runId !== 'string' || runId === '') {
-        throw new Error('Shell output missing runId');
-    }
-    if (status !== 'running') {
-        return;
-    }
-
-    const text = inputElement.value;
-    if (text === '') {
-        return;
-    }
-
-    inputElement.disabled = true;
-    sendButton.disabled = true;
-    const snapshot = await sendShellInput(noteId, runId, text, true).finally(() => {
-        if (outputElement.dataset.status === 'running') {
-            inputElement.disabled = false;
-            sendButton.disabled = false;
-        }
-    });
-    inputElement.value = '';
-    const shellElement = outputElement.closest(SHELL_SELECTOR);
-    if (!(shellElement instanceof HTMLElement)) {
-        throw new Error('Shell output missing parent shell element');
-    }
-    renderShellSnapshot(outputElement, shellElement, snapshot);
-    inputElement.focus();
-}
-
-function handleShellInputSubmission(outputElement) {
-    if (!(outputElement instanceof HTMLElement)) {
-        throw new Error('handleShellInputSubmission requires outputElement');
-    }
-    void submitShellInput(outputElement).catch((error) => {
-        const shellElement = outputElement.closest(SHELL_SELECTOR);
-        if (!(shellElement instanceof HTMLElement)) {
-            throw error;
-        }
-        renderShellError(outputElement, shellElement, error);
-    });
-}
-
 async function runShellSession(shellElement, outputElement, noteId) {
     if (!(shellElement instanceof HTMLElement)) {
         throw new Error('runShellSession requires shellElement');
@@ -1425,7 +1357,7 @@ async function runShellSession(shellElement, outputElement, noteId) {
     }
 
     let snapshot = await runShellNote(noteId, SHELL_RUN_TIMEOUT_SECONDS);
-    ensureShellOutputStructure(outputElement, noteId, handleShellInputSubmission);
+    ensureShellOutputStructure(outputElement, noteId);
     renderShellSnapshot(outputElement, shellElement, snapshot);
     const runId = snapshot.runId;
     if (typeof runId !== 'string' || runId === '') {
@@ -1483,7 +1415,7 @@ function handleShellRunClick(event) {
     event.stopPropagation();
 
     const outputElement = ensureShellOutputElement(shellElement);
-    ensureShellOutputStructure(outputElement, noteId, handleShellInputSubmission);
+    ensureShellOutputStructure(outputElement, noteId);
     renderShellSnapshot(outputElement, shellElement, {
         runId: '',
         status: 'running',
@@ -1492,7 +1424,6 @@ function handleShellRunClick(event) {
         stderr: '',
         durationMs: 0,
         errorMessage: '',
-        acceptsInput: false,
     });
 
     void runShellSession(shellElement, outputElement, noteId).catch((error) => {

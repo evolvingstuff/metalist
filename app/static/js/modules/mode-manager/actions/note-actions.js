@@ -276,23 +276,6 @@ export async function getShellRun(noteId, runId) {
     return NotesAPI.getShellRun(noteId, runId);
 }
 
-export async function sendShellInput(noteId, runId, text, appendNewline) {
-    if (!noteId) {
-        throw new Error('Cannot send shell input: noteId is required');
-    }
-    if (!runId) {
-        throw new Error('Cannot send shell input: runId is required');
-    }
-    if (typeof text !== 'string') {
-        throw new Error('Cannot send shell input: text must be a string');
-    }
-    if (typeof appendNewline !== 'boolean') {
-        throw new Error('Cannot send shell input: appendNewline must be a boolean');
-    }
-
-    return NotesAPI.sendShellInput(noteId, runId, text, appendNewline);
-}
-
 export async function deleteNote(noteId) {
     let startedAt = performance.now();
 

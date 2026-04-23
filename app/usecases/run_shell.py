@@ -20,7 +20,6 @@ def _invalid_shell_response(*, error_message: str) -> Dict[str, object]:
         "stderr": "",
         "durationMs": 0,
         "errorMessage": error_message,
-        "acceptsInput": False,
     }
 
 
@@ -48,6 +47,7 @@ class CmdRunShellStart(QueryCommand):
             timeout_seconds=self.timeout_seconds,
         )
 
+
 @dataclass
 class CmdRunShellStatus(QueryCommand):
     note_id: str
@@ -60,23 +60,4 @@ class CmdRunShellStatus(QueryCommand):
         return shell_session_service.get_snapshot(
             note_id=self.note_id,
             run_id=self.run_id,
-        )
-
-
-@dataclass
-class CmdRunShellInput(QueryCommand):
-    note_id: str
-    run_id: str
-    text: str
-    append_newline: bool
-
-    def describe(self) -> str:
-        return f"CmdRunShellInput(note={self.note_id}, run={self.run_id})"
-
-    def execute(self) -> Dict[str, object]:
-        return shell_session_service.write_input(
-            note_id=self.note_id,
-            run_id=self.run_id,
-            text=self.text,
-            append_newline=self.append_newline,
         )

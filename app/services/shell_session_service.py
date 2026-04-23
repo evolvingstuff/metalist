@@ -73,12 +73,6 @@ class _ShellRunRecord:
                 duration_ms = int((time.monotonic() - self.started_at_monotonic) * 1000)
             else:
                 duration_ms = int((self.finished_at_monotonic - self.started_at_monotonic) * 1000)
-            stdin_stream = self.process.stdin
-            accepts_input = bool(
-                self.status == _STATUS_RUNNING
-                and stdin_stream is not None
-                and not stdin_stream.closed
-            )
             return {
                 "runId": self.run_id,
                 "status": self.status,
@@ -87,7 +81,6 @@ class _ShellRunRecord:
                 "stderr": "".join(self.stderr_chunks),
                 "durationMs": max(duration_ms, 0),
                 "errorMessage": self.error_message,
-                "acceptsInput": accepts_input,
             }
 
 
@@ -109,7 +102,7 @@ class ShellSessionService:
         started_at = time.monotonic()
         process = subprocess.Popen(
             command,
-            stdin=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -122,8 +115,6 @@ class ShellSessionService:
             raise RuntimeError("Shell process stdout stream is unavailable")
         if process.stderr is None:
             raise RuntimeError("Shell process stderr stream is unavailable")
-        if process.stdin is None:
-            raise RuntimeError("Shell process stdin stream is unavailable")
 
         run_id = str(uuid.uuid4())
         record = _ShellRunRecord(
@@ -174,35 +165,6 @@ class ShellSessionService:
     def get_snapshot(self, *, note_id: str, run_id: str) -> Dict[str, object]:
         record = self._require_run(note_id=note_id, run_id=run_id)
         self._prune_completed_runs(now=time.monotonic())
-        return record.snapshot()
-
-    def write_input(
-        self,
-        *,
-        note_id: str,
-        run_id: str,
-        text: str,
-        append_newline: bool,
-    ) -> Dict[str, object]:
-        if not isinstance(text, str):
-            raise TypeError("text must be a string")
-        if not isinstance(append_newline, bool):
-            raise TypeError("append_newline must be a boolean")
-
-        record = self._require_run(note_id=note_id, run_id=run_id)
-        payload = text
-        if append_newline:
-            payload = f"{payload}\n"
-
-        with record.lock:
-            if record.status != _STATUS_RUNNING:
-                raise RuntimeError(f"Shell run is no longer active: {run_id}")
-            stdin_stream = record.process.stdin
-            if stdin_stream is None or stdin_stream.closed:
-                raise RuntimeError(f"Shell run stdin is unavailable: {run_id}")
-            stdin_stream.write(payload)
-            stdin_stream.flush()
-
         return record.snapshot()
 
     def _require_run(self, *, note_id: str, run_id: str) -> _ShellRunRecord:

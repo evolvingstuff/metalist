@@ -17,7 +17,6 @@ function installShellOutputDom(t) {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalElement = globalThis.Element;
     const originalHTMLButtonElement = globalThis.HTMLButtonElement;
-    const originalHTMLInputElement = globalThis.HTMLInputElement;
 
     class FakeClassList {
         constructor(owner) {
@@ -157,12 +156,6 @@ function installShellOutputDom(t) {
         }
     }
 
-    class FakeHTMLInputElement extends FakeHTMLElement {
-        constructor() {
-            super('input');
-        }
-    }
-
     class FakeHTMLButtonElement extends FakeHTMLElement {
         constructor() {
             super('button');
@@ -172,15 +165,11 @@ function installShellOutputDom(t) {
     globalThis.HTMLElement = FakeHTMLElement;
     globalThis.Element = FakeHTMLElement;
     globalThis.HTMLButtonElement = FakeHTMLButtonElement;
-    globalThis.HTMLInputElement = FakeHTMLInputElement;
     globalThis.document = {
         createElement(tagName) {
             const normalized = String(tagName).toLowerCase();
             if (normalized === 'button') {
                 return new FakeHTMLButtonElement();
-            }
-            if (normalized === 'input') {
-                return new FakeHTMLInputElement();
             }
             return new FakeHTMLElement(tagName);
         },
@@ -191,7 +180,6 @@ function installShellOutputDom(t) {
         globalThis.HTMLElement = originalHTMLElement;
         globalThis.Element = originalElement;
         globalThis.HTMLButtonElement = originalHTMLButtonElement;
-        globalThis.HTMLInputElement = originalHTMLInputElement;
     });
 }
 
@@ -222,7 +210,7 @@ test('renderShellSnapshot hides the close button while a shell run is active', a
     shellElement.className = 'meta-shell';
 
     const outputElement = ensureShellOutputElement(shellElement);
-    ensureShellOutputStructure(outputElement, 'note-1', async () => {});
+    ensureShellOutputStructure(outputElement, 'note-1');
     renderShellSnapshot(outputElement, shellElement, {
         runId: 'run-1',
         status: 'running',
@@ -231,13 +219,30 @@ test('renderShellSnapshot hides the close button while a shell run is active', a
         stderr: '',
         durationMs: 0,
         errorMessage: '',
-        acceptsInput: false,
     });
 
     const closeButton = outputElement.querySelector(SHELL_CLOSE_SELECTOR);
     assert.ok(closeButton instanceof globalThis.HTMLButtonElement);
     assert.equal(closeButton.hidden, true);
     assert.equal(closeButton.disabled, true);
+});
+
+test('ensureShellOutputStructure does not render shell input controls', async (t) => {
+    installShellOutputDom(t);
+    const {
+        ensureShellOutputElement,
+        ensureShellOutputStructure,
+    } = await import('../../app/static/js/modules/mode-manager/services/shell-output-service.js');
+
+    const shellElement = document.createElement('div');
+    shellElement.className = 'meta-shell';
+
+    const outputElement = ensureShellOutputElement(shellElement);
+    ensureShellOutputStructure(outputElement, 'note-1');
+
+    assert.equal(outputElement.querySelector('.meta-shell-output-input-row'), null);
+    assert.equal(outputElement.querySelector('.meta-shell-output-input'), null);
+    assert.equal(outputElement.querySelector('.meta-shell-output-send'), null);
 });
 
 test('completed shell feedback can be dismissed from the output header', async (t) => {
@@ -254,7 +259,7 @@ test('completed shell feedback can be dismissed from the output header', async (
     shellElement.className = 'meta-shell';
 
     const outputElement = ensureShellOutputElement(shellElement);
-    ensureShellOutputStructure(outputElement, 'note-1', async () => {});
+    ensureShellOutputStructure(outputElement, 'note-1');
     renderShellSnapshot(outputElement, shellElement, {
         runId: 'run-1',
         status: 'success',
@@ -263,7 +268,6 @@ test('completed shell feedback can be dismissed from the output header', async (
         stderr: '',
         durationMs: 1000,
         errorMessage: '',
-        acceptsInput: false,
     });
 
     const closeButton = outputElement.querySelector(SHELL_CLOSE_SELECTOR);
