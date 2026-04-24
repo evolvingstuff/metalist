@@ -21,6 +21,7 @@ from app.security.encryption import (
     is_encryption_required,
 )
 from app.services.search_index import search_index
+from app.services.tag_term_matching import tag_term_matches_prefix
 
 SEARCH_HISTORY_DECAY_FACTOR = 0.98
 SEARCH_HISTORY_PRIORITY_SLOTS = 3
@@ -152,7 +153,7 @@ def normalize_search_history_query(query: str) -> NormalizedSearchHistoryQuery |
 
 
 def record_search_interaction(*, query: str, interaction_type: str, token: str) -> bool:
-    if interaction_type not in {"scroll", "edit", "command"}:
+    if interaction_type not in {"search", "tag", "scroll", "edit", "command"}:
         raise ValueError(f"Unsupported interaction_type: {interaction_type}")
     if not isinstance(token, str) or token == "":
         raise ValueError("token must be a non-empty string")
@@ -340,19 +341,89 @@ def prioritize_blank_search_suggestions(
     recent_tags: list[str],
     priority_slots: int,
 ) -> list[str]:
+    return _merge_prioritized_search_suggestions(
+        base_suggestions=base_suggestions,
+        priority_tags=recent_tags,
+        priority_slots=priority_slots,
+    )
+
+
+def is_first_search_tag_suggestion_context(query: str) -> bool:
+    return _extract_first_search_tag_prefix(query) is not None
+
+
+def prioritize_first_search_tag_suggestions(
+    *,
+    query: str,
+    base_suggestions: list[str],
+    recent_tags: list[str],
+    priority_slots: int,
+) -> list[str]:
+    prefix = _extract_first_search_tag_prefix(query)
+    if prefix is None:
+        return _merge_prioritized_search_suggestions(
+            base_suggestions=base_suggestions,
+            priority_tags=[],
+            priority_slots=priority_slots,
+        )
+
+    prefix_casefold = prefix.casefold()
+    matching_recent_tags = [
+        tag
+        for tag in recent_tags
+        if prefix == ""
+        or (tag.casefold() != prefix_casefold and tag_term_matches_prefix(term=tag, prefix=prefix))
+    ]
+    return _merge_prioritized_search_suggestions(
+        base_suggestions=base_suggestions,
+        priority_tags=matching_recent_tags,
+        priority_slots=priority_slots,
+    )
+
+
+def _extract_first_search_tag_prefix(query: str) -> str | None:
+    if not isinstance(query, str):
+        raise TypeError(f"query must be a string, got {type(query)}")
+
+    if query.strip() == "":
+        return ""
+
+    text = query.lstrip()
+    if text[-1].isspace():
+        return None
+    if any(char.isspace() for char in text):
+        return None
+
+    if text[0] in ("+", "-"):
+        text = text[1:]
+        if text == "":
+            return None
+
+    if text[0] in ('"', "'"):
+        return None
+
+    return text
+
+
+def _merge_prioritized_search_suggestions(
+    *,
+    base_suggestions: list[str],
+    priority_tags: list[str],
+    priority_slots: int,
+) -> list[str]:
     if not isinstance(base_suggestions, list):
         raise TypeError("base_suggestions must be a list")
-    if not isinstance(recent_tags, list):
-        raise TypeError("recent_tags must be a list")
+    if not isinstance(priority_tags, list):
+        raise TypeError("priority_tags must be a list")
     if not isinstance(priority_slots, int) or priority_slots < 0:
         raise ValueError("priority_slots must be a non-negative integer")
 
     prioritized: list[str] = []
     seen_casefold: set[str] = set()
 
-    for tag in recent_tags:
+    for tag in priority_tags:
         if not isinstance(tag, str) or tag == "":
-            raise TypeError("recent_tags entries must be non-empty strings")
+            raise TypeError("priority_tags entries must be non-empty strings")
         tag_casefold = tag.casefold()
         if tag_casefold in seen_casefold:
             continue

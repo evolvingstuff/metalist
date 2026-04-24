@@ -46,8 +46,9 @@ from app.services.tab_state import tab_state_store
 from app.services.backlinks import list_backlinks_for_note
 from app.services.undo_state import maybe_reset_on_context
 from app.services.search_history import (
+    is_first_search_tag_suggestion_context,
     list_recent_search_tags,
-    prioritize_blank_search_suggestions,
+    prioritize_first_search_tag_suggestions,
     record_search_interaction,
 )
 from app.services.root_sorting import is_root_reorder_locked
@@ -65,6 +66,8 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
+RECENT_SEARCH_TAG_CANDIDATE_LIMIT = 50
+RECENT_SEARCH_TAG_PRIORITY_SLOTS = 3
 
 
 def _require_note_present(note_id: str, *, context: str) -> None:
@@ -379,13 +382,14 @@ def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
     if not isinstance(query, str):
         raise TypeError("query must be a string")
     suggestions = search_index.suggest_tag_completions(query=query, limit=20)
-    if query.strip() == "":
+    if is_first_search_tag_suggestion_context(query):
         token = _require_bearer_token(request)
-        recent_tags = list_recent_search_tags(limit=3, token=token)
-        suggestions = prioritize_blank_search_suggestions(
+        recent_tags = list_recent_search_tags(limit=RECENT_SEARCH_TAG_CANDIDATE_LIMIT, token=token)
+        suggestions = prioritize_first_search_tag_suggestions(
+            query=query,
             base_suggestions=suggestions,
             recent_tags=recent_tags,
-            priority_slots=3,
+            priority_slots=RECENT_SEARCH_TAG_PRIORITY_SLOTS,
         )
     return {"suggestions": suggestions}
 

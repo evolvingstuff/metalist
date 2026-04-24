@@ -13,9 +13,11 @@ from app.db.search_history_session import (
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
 from app.services.search_history import (
+    is_first_search_tag_suggestion_context,
     list_recent_search_tags,
     normalize_search_history_query,
     prioritize_blank_search_suggestions,
+    prioritize_first_search_tag_suggestions,
     record_search_interaction,
 )
 from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
@@ -79,7 +81,7 @@ def test_record_search_interaction_uses_event_decay_and_returns_recent_tags(
         )
         monkeypatch.setattr(search_history_module, "search_index", index)
 
-        assert record_search_interaction(query="journal", interaction_type="edit", token="token") is True
+        assert record_search_interaction(query="journal", interaction_type="search", token="token") is True
         assert record_search_interaction(query="exercise", interaction_type="command", token="token") is True
 
         recent_tags = list_recent_search_tags(limit=3, token="token")
@@ -145,6 +147,64 @@ def test_list_recent_search_tags_aggregates_recent_frequency_across_queries(
         SafeSession.use_file_db()
 
 
+def test_repeated_direct_search_promotes_tag_for_blank_and_first_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        with begin_search_history_writer() as connection:
+            connection.execute("DELETE FROM search_interaction_history")
+        index = _build_index(
+            [
+                SearchRecord(
+                    note_id="n1",
+                    content_text="Scratchpad",
+                    tags="scratchpad",
+                    tag_terms=extract_tags_for_search("scratchpad"),
+                ),
+                SearchRecord(
+                    note_id="n2",
+                    content_text="Shopping",
+                    tags="shopping",
+                    tag_terms=extract_tags_for_search("shopping"),
+                ),
+                SearchRecord(
+                    note_id="n3",
+                    content_text="Sleep",
+                    tags="sleep",
+                    tag_terms=extract_tags_for_search("sleep"),
+                ),
+            ]
+        )
+        monkeypatch.setattr(search_history_module, "search_index", index)
+
+        assert record_search_interaction(query="shopping", interaction_type="search", token="token") is True
+        assert record_search_interaction(query="sleep", interaction_type="search", token="token") is True
+        for _ in range(5):
+            assert record_search_interaction(query="scratchpad", interaction_type="search", token="token") is True
+
+        recent_tags = list_recent_search_tags(limit=50, token="token")
+        assert recent_tags[0] == "scratchpad"
+        assert prioritize_blank_search_suggestions(
+            base_suggestions=["shopping", "sleep", "scratchpad"],
+            recent_tags=recent_tags,
+            priority_slots=3,
+        )[0] == "scratchpad"
+        assert prioritize_first_search_tag_suggestions(
+            query="s",
+            base_suggestions=["shopping", "sleep", "scratchpad"],
+            recent_tags=recent_tags,
+            priority_slots=3,
+        )[0] == "scratchpad"
+    finally:
+        clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
 def test_prioritize_blank_search_suggestions_reserves_top_slots() -> None:
     merged = prioritize_blank_search_suggestions(
         base_suggestions=["alpha", "beta", "gamma"],
@@ -161,6 +221,57 @@ def test_prioritize_blank_search_suggestions_collapses_case_equivalent_terms() -
         priority_slots=3,
     )
     assert merged == ["Databricks", "todo", "alpha"]
+
+
+def test_first_search_tag_context_only_matches_blank_or_single_tag_prefix() -> None:
+    assert is_first_search_tag_suggestion_context("")
+    assert is_first_search_tag_suggestion_context("jo")
+    assert is_first_search_tag_suggestion_context("+jo")
+    assert is_first_search_tag_suggestion_context("-jo")
+    assert not is_first_search_tag_suggestion_context("+")
+    assert not is_first_search_tag_suggestion_context("journal ")
+    assert not is_first_search_tag_suggestion_context("journal exercise")
+    assert not is_first_search_tag_suggestion_context('"journal"')
+
+
+def test_prioritize_first_search_tag_suggestions_filters_recent_tags_by_prefix() -> None:
+    merged = prioritize_first_search_tag_suggestions(
+        query="ju",
+        base_suggestions=["jupyter", "junior", "juice"],
+        recent_tags=["todo", "junior", "jupyter", "journal"],
+        priority_slots=3,
+    )
+    assert merged == ["junior", "jupyter", "juice"]
+
+
+def test_prioritize_first_search_tag_suggestions_uses_connector_segment_prefix() -> None:
+    merged = prioritize_first_search_tag_suggestions(
+        query="wor",
+        base_suggestions=["workspaces", "workflow", "databricks-workspaces"],
+        recent_tags=["databricks-workspaces", "later"],
+        priority_slots=3,
+    )
+    assert merged == ["databricks-workspaces", "workspaces", "workflow"]
+
+
+def test_prioritize_first_search_tag_suggestions_keeps_multi_term_ranking() -> None:
+    merged = prioritize_first_search_tag_suggestions(
+        query="journal ex",
+        base_suggestions=["exercise", "exams"],
+        recent_tags=["exams"],
+        priority_slots=3,
+    )
+    assert merged == ["exercise", "exams"]
+
+
+def test_prioritize_first_search_tag_suggestions_excludes_exact_current_prefix() -> None:
+    merged = prioritize_first_search_tag_suggestions(
+        query="journal",
+        base_suggestions=["journalism", "job"],
+        recent_tags=["journal", "journalism"],
+        priority_slots=3,
+    )
+    assert merged == ["journalism", "job"]
 
 
 def test_list_recent_search_tags_canonicalizes_case_equivalent_terms(
