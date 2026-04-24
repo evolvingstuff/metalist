@@ -47,6 +47,10 @@ import {
     shouldAllowBrowserPasteForShortcut,
 } from '../services/clipboard-shortcut-policy-service.js';
 import {
+    writeRenderedNotePromiseToSystemClipboard,
+    writeRenderedNoteToSystemClipboard,
+} from '../services/note-clipboard-write-service.js';
+import {
     addPasswordTag,
     shouldAutoTagGeneratedPasswordPaste,
 } from '../services/password-clipboard-service.js';
@@ -1189,9 +1193,14 @@ async function handleCopyNoteShortcut(event) {
     // No text selected - do note copy
     event.preventDefault();
 
-    const copyResult = await CommandGate.run('keyboard.copy_note', async () => {
+    const copyResultPromise = CommandGate.run('keyboard.copy_note', async () => {
         return await actionCopyNote();
     });
+    const clipboardResult = await writeRenderedNotePromiseToSystemClipboard({
+        renderedNotePromise: copyResultPromise,
+        logger: Logger,
+    });
+    const copyResult = clipboardResult.renderedNote;
     if (copyResult === null) {
         return;
     }
@@ -1208,52 +1217,13 @@ async function handleCopyNoteShortcut(event) {
         noteId: ModeContext.currentNoteId
     }, Logger.LogCategory.EVENT);
 
-    let renderedHtml = copyResult?.html;
-    const renderedPlainText = copyResult?.plain_text;
-
-    if (!renderedHtml && !renderedPlainText) {
+    if (!copyResult?.html && !copyResult?.plain_text) {
         Logger.logDebug('Copy endpoint returned no rendered content', {}, Logger.LogCategory.EVENT);
         return;
     }
 
-    if (renderedHtml && navigator.clipboard && navigator.clipboard.write) {
-        const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
-        const plainTextBlob = new Blob([
-            renderedPlainText ?? ''
-        ], { type: 'text/plain' });
-
-        const clipboardItem = new ClipboardItem({
-            'text/html': htmlBlob,
-            'text/plain': plainTextBlob
-        });
-
-        await navigator.clipboard.write([clipboardItem]).catch((clipboardError) => {
-            Logger.logDebug('Error copying rendered content to system clipboard', {
-                error: clipboardError.message
-            }, Logger.LogCategory.EVENT);
-        });
-        return;
-    }
-
-    if (renderedPlainText && navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(renderedPlainText).catch((clipboardError) => {
-            Logger.logDebug('Error copying rendered content to system clipboard', {
-                error: clipboardError.message
-            }, Logger.LogCategory.EVENT);
-        });
-        return;
-    }
-
-    if (renderedPlainText) {
-        const textarea = document.createElement('textarea');
-        textarea.value = renderedPlainText;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        Logger.logDebug('Rendered text copied to system clipboard via legacy fallback', {}, Logger.LogCategory.EVENT);
+    if (!clipboardResult.didWrite) {
+        Logger.logDebug('Unable to write rendered note content to system clipboard', {}, Logger.LogCategory.EVENT);
     }
 }
 
@@ -1632,30 +1602,15 @@ async function handleCutNoteShortcut(event) {
 
     const cutResult = await CommandGate.run('keyboard.cut_note', async () => {
         const copyResult = await actionCopyNote();
-        let renderedHtml = copyResult?.html;
+        const renderedHtml = copyResult?.html;
         const renderedPlainText = copyResult?.plain_text;
 
         if (renderedHtml || renderedPlainText) {
-            if (
-                renderedHtml
-                && typeof ClipboardItem !== 'undefined'
-                && navigator.clipboard
-                && typeof navigator.clipboard.write === 'function'
-            ) {
-                const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
-                const plainText = typeof renderedPlainText === 'string' ? renderedPlainText : '';
-                const plainTextBlob = new Blob([
-                    plainText,
-                ], { type: 'text/plain' });
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/html': htmlBlob,
-                        'text/plain': plainTextBlob,
-                    })
-                ]);
-            } else if (typeof renderedPlainText === 'string' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                await navigator.clipboard.writeText(renderedPlainText);
-            }
+            await writeRenderedNoteToSystemClipboard({
+                renderedHtml,
+                renderedPlainText,
+                logger: Logger,
+            });
         }
 
         await deleteNote(currentNoteId);
