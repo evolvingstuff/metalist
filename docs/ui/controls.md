@@ -47,6 +47,7 @@
 | `Enter` | Add new note at top (when not editing) |
 | `Space` | Toggle collapse/expand hovered note |
 | `⌘ + /` | Open command palette |
+| `Tab` | Focus the search input and select its full query (view mode only) |
 | `?` | Open keyboard shortcuts help (idle mode) |
 | `M` | Open memory/search contexts (idle mode) |
 | `⌘ + ;` | Open tag relationships editor |
