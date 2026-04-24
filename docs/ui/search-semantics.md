@@ -29,10 +29,10 @@ Ontology rules also add **inferred tags** before search matching:
 
 ### Search Suggestions
 - Search-bar tag suggestions are segment-aware for connector-separated tags.
-- For a blank query only, the top 3 suggestion slots can be promoted from the active namespace's highest-scoring recently interacted tags.
+- For a blank query or the first tag prefix in a query, the top 3 suggestion slots can be promoted from the active namespace's highest-scoring recently interacted matching tags.
 - Case-equivalent tags are collapsed in suggestions, and the most-used spelling is shown.
-- That history stores ordered positive tag-query sequences, credits only after a qualifying interaction against that active result set, decays on each newly credited interaction rather than over wall-clock time, and then aggregates those decayed query scores at the tag level when ranking blank-query suggestions.
-- Qualifying interactions include server-backed note actions performed while the executed search is active, plus qualifying scroll persistence.
+- That history stores ordered positive tag-query sequences, credits successful non-empty searches with matches, credits newly added non-meta note tags, decays on each newly credited interaction rather than over wall-clock time, and then aggregates those decayed query scores at the tag level when ranking recent-tag suggestions.
+- Qualifying interactions also include server-backed note actions performed while the executed search is active, plus qualifying scroll persistence.
 - A typed prefix can match either the start of the full tag or the start of any connector-separated segment.
   - Example: `wor` suggests `workspaces` and `databricks-workspaces`.
   - Example: `orksp` suggests neither.

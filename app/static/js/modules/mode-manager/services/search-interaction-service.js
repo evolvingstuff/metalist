@@ -137,6 +137,32 @@ export async function recordScrollInteractionIfEligible() {
     );
 }
 
+export async function recordSearchExecutionInteractionIfEligible(query) {
+    if (typeof query !== 'string') {
+        throw new Error('recordSearchExecutionInteractionIfEligible requires query string');
+    }
+    if (query.trim() === '') {
+        return false;
+    }
+    const searchRootCountTotal = ModeContext.searchRootCountTotal;
+    if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
+        throw new Error('ModeContext.searchRootCountTotal must be a non-negative integer');
+    }
+    if (searchRootCountTotal === 0) {
+        return false;
+    }
+    const executedQuery = getExecutedQueryForActiveTab();
+    if (executedQuery !== query) {
+        return false;
+    }
+    return NotesAPI.recordSearchInteraction(query, 'search').then((response) => {
+        if (!response || typeof response !== 'object') {
+            throw new Error('Search execution interaction response missing');
+        }
+        return response.credited === true;
+    });
+}
+
 export async function recordCommandInteractionIfEligible() {
     const query = beginPendingInteraction({ requireScrollThreshold: false });
     if (query === null) {
