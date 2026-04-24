@@ -110,6 +110,27 @@ function hideSuggestions() {
     selectedIndex = -1;
 }
 
+export function hideSearchSuggestionsForSearchContextHover(options) {
+    if (!options || typeof options !== 'object') {
+        throw new Error('hideSearchSuggestionsForSearchContextHover requires options');
+    }
+    const { isSearching, noteId } = options;
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('hideSearchSuggestionsForSearchContextHover requires noteId');
+    }
+    if (!isSearching) {
+        return false;
+    }
+
+    const container = getSearchSuggestionsContainer();
+    if (container.hidden) {
+        return false;
+    }
+
+    hideSuggestions();
+    return true;
+}
+
 function applySuggestion(searchInput, suggestion) {
     if (!searchInput || typeof searchInput.value !== 'string') {
         throw new Error('applySuggestion requires searchInput element');

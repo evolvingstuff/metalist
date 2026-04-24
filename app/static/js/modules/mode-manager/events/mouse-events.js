@@ -6,6 +6,7 @@ import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-a
 import { DOMUtils } from '../../dom-utils.js'; 
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { updateTagSuggestions } from '../services/tag-suggestions-service.js';
+import { hideSearchSuggestionsForSearchContextHover } from '../services/search-suggestions-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
@@ -1633,10 +1634,15 @@ function handleMouseOver(event) {
     }
 
     ModeContext.setHoveredNoteId(noteId);
+    const didHideSearchSuggestions = hideSearchSuggestionsForSearchContextHover({
+        isSearching: ModeContext.isSearching,
+        noteId,
+    });
 
     Logger.logDebug('Pointer entered note', {
         noteId,
-        isEditing: ModeContext.isEditing
+        isEditing: ModeContext.isEditing,
+        didHideSearchSuggestions,
     }, Logger.LogCategory.EVENT);
 }
 
