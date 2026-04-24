@@ -4,6 +4,7 @@ High-level flow: if the currently edited note is dirty, save first so the copied
 
 Related behavior: Cmd+X (cut note when no selection) uses the same copy flow and then deletes the note (undoable via delete-subtree undo).
 Related behavior: Cmd+R uses the copied note UUID from this flow (`note_id` in copy response) to copy as embedded reference (`![[UUID]]`) while editing.
+Related behavior: Cmd+V into a target note with no visible content and no children replaces that target with the copied root note, while preserving/merging the target's context tags with the copied root tags using case-insensitive dedupe.
 
 ```mermaid
 sequenceDiagram
@@ -25,6 +26,7 @@ sequenceDiagram
         Browser-->>Browser: system clipboard updated
     else No text selected
         Client->>Client: treat as "copy note"
+        Client->>Browser: start promised text/html + text/plain clipboard write
 
         alt Note is dirty
             Client->>API: PUT /api2/notes/{id} {clientId, content}
@@ -43,6 +45,7 @@ sequenceDiagram
         Copy->>Store: read subtree
         Copy-->>Server: clipboard payload + copied note_id
         Server-->>API: 200 OK
-        API-->>Client: clipboard updated (+ copied UUID for Cmd+R)
+        API-->>Client: clipboard payload resolves promised system write (+ copied UUID for Cmd+R)
+        Client-->>Browser: system clipboard receives rendered HTML + tab-indented plain text
     end
 ```

@@ -1,6 +1,6 @@
-import html
 import re
-from typing import Any, Dict, Optional
+from html.parser import HTMLParser
+from typing import Any, Dict, List, Optional
 from types import SimpleNamespace
 import uuid
 from datetime import datetime, timezone
@@ -384,7 +384,7 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
             margin: 2px 0;
             background: white;
         """
-        html_parts.append(f'<div style="{note_style}">{content}</div>')
+        html_parts.append(f'<div class="note-content" style="{note_style}">{content}</div>')
         
         # Close the table cell if indented
         if depth > 0:
@@ -415,9 +415,172 @@ def note_data_to_html(note_data: Dict[str, Any]) -> str:
     return html
 
 
+_CLIPBOARD_IGNORE_TAGS = {"script", "style", "noscript"}
+_CLIPBOARD_BLOCK_TAGS = {
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "div",
+    "dl",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "tbody",
+    "tfoot",
+    "thead",
+    "tr",
+    "ul",
+}
+_CLIPBOARD_CELL_TAGS = {"td", "th"}
+
+
+class _ClipboardPlainTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._lines: List[str] = []
+        self._current_line = ""
+        self._ignore_depth = 0
+        self._list_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        del attrs
+        normalized = tag.lower()
+        if normalized in _CLIPBOARD_IGNORE_TAGS:
+            self._ignore_depth += 1
+            return
+        if self._ignore_depth > 0:
+            return
+        if normalized == "br":
+            self._flush_line()
+            return
+        if normalized in {"ul", "ol"}:
+            self._start_block()
+            self._list_depth += 1
+            return
+        if normalized == "li":
+            self._start_block()
+            marker_indent = "\t" * max(1, self._list_depth)
+            self._current_line += f"{marker_indent}- "
+            return
+        if normalized in _CLIPBOARD_BLOCK_TAGS:
+            self._start_block()
+            return
+        if normalized in _CLIPBOARD_CELL_TAGS:
+            self._append_space()
+
+    def handle_startendtag(self, tag: str, attrs: Any) -> None:
+        del attrs
+        normalized = tag.lower()
+        if self._ignore_depth > 0:
+            return
+        if normalized == "br":
+            self._flush_line()
+            return
+        if normalized in _CLIPBOARD_BLOCK_TAGS:
+            self._start_block()
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.lower()
+        if normalized in _CLIPBOARD_IGNORE_TAGS:
+            if self._ignore_depth > 0:
+                self._ignore_depth -= 1
+            return
+        if self._ignore_depth > 0:
+            return
+        if normalized == "li":
+            self._flush_line()
+            return
+        if normalized in {"ul", "ol"}:
+            if self._list_depth <= 0:
+                raise RuntimeError("Clipboard HTML parser list depth underflow")
+            self._list_depth -= 1
+            self._start_block()
+            return
+        if normalized in _CLIPBOARD_BLOCK_TAGS:
+            self._flush_line()
+            return
+        if normalized in _CLIPBOARD_CELL_TAGS:
+            self._append_space()
+
+    def handle_data(self, data: str) -> None:
+        if self._ignore_depth > 0:
+            return
+        self._current_line += data
+
+    def get_lines(self) -> List[str]:
+        self._flush_line()
+        return list(self._lines)
+
+    def _start_block(self) -> None:
+        if self._current_line_is_empty_or_list_marker():
+            return
+        self._flush_line()
+
+    def _flush_line(self) -> None:
+        raw_line = self._current_line
+        self._current_line = ""
+        normalized_line = _normalize_clipboard_plain_text_line(raw_line)
+        if normalized_line:
+            self._lines.append(normalized_line)
+
+    def _append_space(self) -> None:
+        if self._current_line and not self._current_line.endswith((" ", "\t")):
+            self._current_line += " "
+
+    def _current_line_is_empty_or_list_marker(self) -> bool:
+        normalized = _normalize_clipboard_plain_text_line(self._current_line)
+        if normalized == "":
+            return True
+        list_marker = ("\t" * max(1, self._list_depth)) + "-"
+        return normalized.rstrip() == list_marker
+
+
+def _normalize_clipboard_plain_text_line(raw_line: str) -> str:
+    if not isinstance(raw_line, str):
+        raise TypeError(f"raw_line must be a string: {type(raw_line)}")
+    leading_tabs_match = re.match(r"^\t*", raw_line)
+    assert leading_tabs_match is not None
+    leading_tabs = leading_tabs_match.group(0)
+    body = raw_line[len(leading_tabs):]
+    collapsed_body = re.sub(r"[ \t\r\f\v]+", " ", body).strip()
+    if collapsed_body == "" or collapsed_body == "-":
+        return ""
+    return f"{leading_tabs}{collapsed_body}"
+
+
+def _html_to_clipboard_plain_text_lines(content_html: str) -> List[str]:
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string: {type(content_html)}")
+    if content_html == "":
+        return []
+
+    parser = _ClipboardPlainTextParser()
+    parser.feed(content_html)
+    parser.close()
+    return parser.get_lines()
+
+
 def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
     """
-    Convert serialized note data to plain text with 4-space indentation.
+    Convert serialized note data to plain text with tab indentation.
     
     Args:
         note_data: Dictionary containing note content and children
@@ -428,21 +591,16 @@ def note_data_to_plain_text(note_data: Dict[str, Any]) -> str:
     def render_note_text(note: Dict[str, Any], depth: int) -> list[str]:
         """Recursively render a note and its children as plain text"""
         lines = []
-        indent = "    " * depth  # 4 spaces per level
+        indent = "\t" * depth
         
         # Get content and strip HTML tags
         if "content" not in note:
             raise RuntimeError(f"note_data missing required key: content | note={note}")
         content = str(note["content"]).strip()
         if content:
-            # Strip HTML tags but preserve text
-            plain_content = re.sub(r'<[^>]+>', '', content)
-            # Convert HTML entities
-            plain_content = html.unescape(plain_content)
-            # Handle line breaks
-            plain_content = plain_content.replace('\n', f'\n{indent}')
-            
-            lines.append(f"{indent}{plain_content}")
+            plain_content_lines = _html_to_clipboard_plain_text_lines(content)
+            for plain_content_line in plain_content_lines:
+                lines.append(f"{indent}{plain_content_line}")
         
         # Add children with increased depth
         if "children" not in note:

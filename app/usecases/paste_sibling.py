@@ -10,6 +10,7 @@ from app.services.search_index import search_index
 from app.services.sync import get_clipboard, generate_new_uuid
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import _collect_subtree_ids
+from app.usecases.join_next_sibling import _merge_note_tags
 from app.usecases.search_context_tags import ensure_tags_match_search_query
 from app.usecases.update_content import apply_update_content
 from app.services.undo_state import record_paste, record_paste_into
@@ -40,8 +41,6 @@ def _is_empty_target_note(target: NodeRecord) -> bool:
     if not isinstance(target, NodeRecord):
         raise TypeError(f"target must be a NodeRecord, got {type(target)}")
     if strip_html(target.content) != "":
-        return False
-    if target.tags.strip() != "":
         return False
     if store.children(target.id):
         return False
@@ -209,6 +208,8 @@ class CmdPasteSibling(QueryCommand):
             tags = root_snapshot["tags"]
             if not isinstance(tags, str):
                 raise ValueError("Clipboard root tags must be a string")
+            if target.tags.strip() != "":
+                tags = _merge_note_tags(target.tags, tags)
 
             if _should_force_root_match(target.parent_id, self.search_query):
                 if not isinstance(self.search_query, str):
