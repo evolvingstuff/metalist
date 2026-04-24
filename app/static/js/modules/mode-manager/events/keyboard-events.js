@@ -34,6 +34,7 @@ import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearC
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
 import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { blurFocusedSearchInput, focusSearchInputAndSelectAllText, syncSearchInputValue } from '../services/search-input-service.js';
+import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
 import {
     getTagBarValue,
     normalizeTagBarForNewTag,
@@ -473,6 +474,8 @@ function handleKeyDown(event) {
         case 'Tab':
             if (ModeContext.isEditing) {
                 handleToggleTagBarFocusShortcut(event);
+            } else {
+                handleViewModeSearchFocusShortcut(event);
             }
             break;
         case 'Escape':
@@ -600,6 +603,38 @@ function handleKeyDown(event) {
             break;
                 
     }
+}
+
+function handleViewModeSearchFocusShortcut(event) {
+    if (!event) {
+        throw new Error('handleViewModeSearchFocusShortcut called without an event object');
+    }
+
+    const modalStack = Array.isArray(ModeContext.modalStack) ? ModeContext.modalStack : [];
+    const shouldFocusSearch = shouldFocusSearchInputForViewModeTab({
+        key: event.key,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        isEditing: ModeContext.isEditing,
+        isSearching: ModeContext.isSearching,
+        isLoading: ModeContext.isLoading,
+        modalStack,
+    });
+
+    if (!shouldFocusSearch) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    void actionEnterSearchMode();
+    const didFocus = focusSearchInputAndSelectAllText();
+    Logger.logDebug('Search input focused via view-mode Tab shortcut', {
+        didFocus,
+    }, Logger.LogCategory.EVENT);
 }
 
 function handleToggleTagBarFocusShortcut(event) {
