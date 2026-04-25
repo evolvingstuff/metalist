@@ -45,18 +45,30 @@ async function importSearchSuggestionsService() {
     return await import('../../app/static/js/modules/mode-manager/services/search-suggestions-service.js');
 }
 
-test('hides visible search suggestions when a note is hovered during search mode', async (t) => {
-    const container = {
+function createSuggestionsContainer(overrides) {
+    return {
         hidden: false,
         style: { display: 'flex' },
         innerHTML: '<button class="search-suggestion">work</button>',
+        getBoundingClientRect() {
+            return {
+                top: 40,
+                bottom: 140,
+            };
+        },
+        ...overrides,
     };
+}
+
+test('hides visible search suggestions when a note is hovered beyond the suggestion buffer during search mode', async (t) => {
+    const container = createSuggestionsContainer({});
     installSuggestionsContainer(t, container);
     const { hideSearchSuggestionsForSearchContextHover } = await importSearchSuggestionsService();
 
     const didHide = hideSearchSuggestionsForSearchContextHover({
         isSearching: true,
         noteId: 'note-1',
+        pointerClientY: 166,
     });
 
     assert.equal(didHide, true);
@@ -65,18 +77,49 @@ test('hides visible search suggestions when a note is hovered during search mode
     assert.equal(container.innerHTML, '');
 });
 
+test('keeps search suggestions open when note hover is within the suggestion vertical range', async (t) => {
+    const container = createSuggestionsContainer({});
+    installSuggestionsContainer(t, container);
+    const { hideSearchSuggestionsForSearchContextHover } = await importSearchSuggestionsService();
+
+    const didHide = hideSearchSuggestionsForSearchContextHover({
+        isSearching: true,
+        noteId: 'note-1',
+        pointerClientY: 100,
+    });
+
+    assert.equal(didHide, false);
+    assert.equal(container.hidden, false);
+    assert.equal(container.style.display, 'flex');
+    assert.equal(container.innerHTML, '<button class="search-suggestion">work</button>');
+});
+
+test('keeps search suggestions open when note hover is within the bottom buffer', async (t) => {
+    const container = createSuggestionsContainer({});
+    installSuggestionsContainer(t, container);
+    const { hideSearchSuggestionsForSearchContextHover } = await importSearchSuggestionsService();
+
+    const didHide = hideSearchSuggestionsForSearchContextHover({
+        isSearching: true,
+        noteId: 'note-1',
+        pointerClientY: 165,
+    });
+
+    assert.equal(didHide, false);
+    assert.equal(container.hidden, false);
+    assert.equal(container.style.display, 'flex');
+    assert.equal(container.innerHTML, '<button class="search-suggestion">work</button>');
+});
+
 test('does not hide search suggestions for note hover outside search mode', async (t) => {
-    const container = {
-        hidden: false,
-        style: { display: 'flex' },
-        innerHTML: '<button class="search-suggestion">work</button>',
-    };
+    const container = createSuggestionsContainer({});
     installSuggestionsContainer(t, container);
     const { hideSearchSuggestionsForSearchContextHover } = await importSearchSuggestionsService();
 
     const didHide = hideSearchSuggestionsForSearchContextHover({
         isSearching: false,
         noteId: 'note-1',
+        pointerClientY: 166,
     });
 
     assert.equal(didHide, false);
@@ -86,17 +129,18 @@ test('does not hide search suggestions for note hover outside search mode', asyn
 });
 
 test('does not re-hide search suggestions that are already hidden', async (t) => {
-    const container = {
+    const container = createSuggestionsContainer({
         hidden: true,
         style: { display: 'none' },
         innerHTML: '',
-    };
+    });
     installSuggestionsContainer(t, container);
     const { hideSearchSuggestionsForSearchContextHover } = await importSearchSuggestionsService();
 
     const didHide = hideSearchSuggestionsForSearchContextHover({
         isSearching: true,
         noteId: 'note-1',
+        pointerClientY: 166,
     });
 
     assert.equal(didHide, false);
