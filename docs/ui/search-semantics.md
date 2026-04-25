@@ -38,6 +38,11 @@ Ontology rules also add **inferred tags** before search matching:
   - Example: `orksp` suggests neither.
 - This affects suggestions only; actual tag search matching remains exact against effective tag terms.
 
+### Creating Notes From Search
+- New notes created while a positive tag search is active are initialized with the required tag terms needed to keep the note visible in that search context.
+- If an existing case-equivalent tag spelling is already common in the namespace, that spelling is used for the new note. Example: searching `ml3` adds `ML3` when existing notes use `ML3`.
+- If the new note already inherits a case-equivalent non-meta tag from an ancestor, the inherited tag is treated as satisfying the search and is not duplicated.
+
 ### Text Terms (quoted)
 - Required text: `"some text"` or `'some text'`
 - Forbidden text: `-"some text"` or `-'some text'`

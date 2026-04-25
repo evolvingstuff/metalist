@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from app.services.search_index import extract_tags_for_search
+from app.services.search_index import extract_tags_for_search, search_index
 from app.services.search_query import parse_search_query
 from app.services.search_text import build_searchable_text_casefold
 from app.services.store import store
+from app.services.tag_case import (
+    build_preferred_tag_case_map,
+    dedupe_tag_terms_by_casefold,
+    prefer_existing_tag_case,
+)
 
 
 def compute_inherited_non_meta_tag_terms(parent_id: str | None) -> set[str]:
@@ -39,15 +44,24 @@ def ensure_tags_match_search_query(
 
     inherited_non_meta = compute_inherited_non_meta_tag_terms(parent_id)
     explicit_terms = extract_tags_for_search(tags)
+    inherited_non_meta_casefold = {term.casefold() for term in inherited_non_meta}
+    explicit_terms_casefold = {term.casefold() for term in explicit_terms}
+    preferred_by_casefold = build_preferred_tag_case_map(search_index.list_tag_frequencies())
 
     additions: list[str] = []
-    for term in sorted(parsed.required_tags):
+    required_tag_terms = dedupe_tag_terms_by_casefold(
+        [
+            prefer_existing_tag_case(term, preferred_by_casefold)
+            for term in sorted(parsed.required_tags)
+        ]
+    )
+    for term in required_tag_terms:
         if term.startswith("@"):
-            if term in explicit_terms:
+            if term.casefold() in explicit_terms_casefold:
                 continue
             additions.append(term)
             continue
-        if term in inherited_non_meta or term in explicit_terms:
+        if term.casefold() in inherited_non_meta_casefold or term.casefold() in explicit_terms_casefold:
             continue
         additions.append(term)
 

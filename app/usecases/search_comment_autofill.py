@@ -4,9 +4,14 @@ from typing import Optional, Sequence
 
 from app.services.search_query import parse_search_query
 from app.services.content_formatting import list_known_meta_tag_terms
-from app.services.search_index import extract_tags_for_search
+from app.services.search_index import extract_tags_for_search, search_index
 from app.services.search_text import build_searchable_text_casefold
 from app.services.store import store
+from app.services.tag_case import (
+    build_preferred_tag_case_map,
+    dedupe_tag_terms_by_casefold,
+    prefer_existing_tag_case,
+)
 
 
 def _is_ascii_printable(text: str) -> bool:
@@ -58,7 +63,12 @@ def _extract_positive_tag_terms(search_query: Optional[str]) -> tuple[str, ...]:
     parsed = parse_search_query(search_query)
     if not parsed.required_tags:
         return ()
-    return tuple(sorted(parsed.required_tags))
+    preferred_by_casefold = build_preferred_tag_case_map(search_index.list_tag_frequencies())
+    preferred_terms = [
+        prefer_existing_tag_case(term, preferred_by_casefold)
+        for term in sorted(parsed.required_tags)
+    ]
+    return tuple(dedupe_tag_terms_by_casefold(preferred_terms))
 
 
 def compute_initial_tags_for_new_note(
@@ -80,20 +90,20 @@ def compute_initial_tags_for_new_note(
 
     filtered_tag_terms = required_tag_terms
     if parent_id is not None and required_tag_terms:
-        inherited_non_meta: set[str] = set()
+        inherited_non_meta_casefold: set[str] = set()
         current_id = parent_id
         while current_id is not None:
             ancestor = store.get(current_id)
             for term in extract_tags_for_search(ancestor.tags):
                 if term.startswith("@"):
                     continue
-                inherited_non_meta.add(term)
+                inherited_non_meta_casefold.add(term.casefold())
             current_id = ancestor.parent_id
 
         filtered_tag_terms = tuple(
             term
             for term in required_tag_terms
-            if term.startswith("@") or term not in inherited_non_meta
+            if term.startswith("@") or term.casefold() not in inherited_non_meta_casefold
         )
 
     tags_tokens: list[str] = []
