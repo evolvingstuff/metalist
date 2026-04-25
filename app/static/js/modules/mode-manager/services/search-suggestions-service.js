@@ -3,6 +3,7 @@ import { analyzeSearchQueryInput } from './search-syntax-service.js';
 import { syncSearchInputValue } from './search-input-service.js';
 
 const SUGGESTION_DEBOUNCE_MS = 50;
+const HOVER_DISMISS_BOTTOM_BUFFER_PX = 25;
 let pendingTimer = null;
 let requestSerial = 0;
 let selectedIndex = -1;
@@ -114,9 +115,12 @@ export function hideSearchSuggestionsForSearchContextHover(options) {
     if (!options || typeof options !== 'object') {
         throw new Error('hideSearchSuggestionsForSearchContextHover requires options');
     }
-    const { isSearching, noteId } = options;
+    const { isSearching, noteId, pointerClientY } = options;
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('hideSearchSuggestionsForSearchContextHover requires noteId');
+    }
+    if (!Number.isFinite(pointerClientY)) {
+        throw new Error('hideSearchSuggestionsForSearchContextHover requires pointerClientY');
     }
     if (!isSearching) {
         return false;
@@ -124,6 +128,17 @@ export function hideSearchSuggestionsForSearchContextHover(options) {
 
     const container = getSearchSuggestionsContainer();
     if (container.hidden) {
+        return false;
+    }
+    if (typeof container.getBoundingClientRect !== 'function') {
+        throw new Error('search-suggestions must support getBoundingClientRect()');
+    }
+
+    const suggestionsRect = container.getBoundingClientRect();
+    if (!suggestionsRect || typeof suggestionsRect.bottom !== 'number') {
+        throw new Error('search-suggestions rect missing bottom');
+    }
+    if (pointerClientY <= suggestionsRect.bottom + HOVER_DISMISS_BOTTOM_BUFFER_PX) {
         return false;
     }
 

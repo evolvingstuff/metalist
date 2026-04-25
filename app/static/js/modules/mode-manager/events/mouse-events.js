@@ -1637,6 +1637,7 @@ function handleMouseOver(event) {
     const didHideSearchSuggestions = hideSearchSuggestionsForSearchContextHover({
         isSearching: ModeContext.isSearching,
         noteId,
+        pointerClientY: event.clientY,
     });
 
     Logger.logDebug('Pointer entered note', {
