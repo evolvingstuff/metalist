@@ -1838,7 +1838,7 @@ body {
 
 #notes-container:has(.note.editing) .note:not(.editing):not(.editing .note) > .note-content,
 #notes-container:has(.note.editing) .note:not(.editing):not(.editing .note) > .note-collapse-toggle {
-    filter: blur(0.65px);
+    filter: blur(0.45px);
     opacity: 0.94;
     transition: filter 120ms ease, opacity 120ms ease;
 }
