@@ -1836,6 +1836,13 @@ body {
     border-color: #b0b0b0;
 }
 
+#notes-container:has(.note.editing) .note:not(.editing) > .note-content,
+#notes-container:has(.note.editing) .note:not(.editing) > .note-collapse-toggle {
+    filter: blur(0.65px);
+    opacity: 0.94;
+    transition: filter 120ms ease, opacity 120ms ease;
+}
+
 .note-collapse-toggle {
     position: absolute;
     top: 5px;
