@@ -15,6 +15,14 @@ let selectedIndex = -1;
 let activeContainer = null;
 let activeInput = null;
 let initialized = false;
+let activeRequestController = null;
+
+function abortActiveRequest() {
+    if (activeRequestController) {
+        activeRequestController.abort();
+        activeRequestController = null;
+    }
+}
 
 function cancelPendingRequests() {
     if (pendingTimer) {
@@ -22,6 +30,7 @@ function cancelPendingRequests() {
         pendingTimer = null;
     }
     requestSerial += 1;
+    abortActiveRequest();
 }
 
 function getTagSuggestionsContainer(tagBarInput) {
@@ -191,6 +200,7 @@ export function updateTagSuggestions(tagBarInput) {
     if (pendingTimer) {
         clearTimeout(pendingTimer);
     }
+    abortActiveRequest();
 
     const requestId = ++requestSerial;
     pendingTimer = setTimeout(async () => {
@@ -211,13 +221,27 @@ export function updateTagSuggestions(tagBarInput) {
         }
 
         const contentHtml = DOMUtils.getNoteContentHTML(noteElement);
+        const requestController = new AbortController();
+        activeRequestController = requestController;
         const response = await NotesAPI.fetchTagSuggestions(
             noteId,
             context.anchors,
             context.explicitTags,
             context.prefix,
-            contentHtml
-        );
+            contentHtml,
+            requestController.signal
+        ).catch((error) => {
+            if (error && error.name === 'AbortError') {
+                return null;
+            }
+            throw error;
+        });
+        if (activeRequestController === requestController) {
+            activeRequestController = null;
+        }
+        if (response === null) {
+            return;
+        }
         if (!response || typeof response !== 'object') {
             throw new Error('Tag suggestions response missing');
         }

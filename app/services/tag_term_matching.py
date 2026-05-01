@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import re
 
 from app.config import TAG_SUGGESTION_CONNECTORS
@@ -94,6 +95,12 @@ class TagContentMatch:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class NormalizedContentMatchContext:
+    tokens: tuple[str, ...]
+    token_positions: dict[str, int]
+
+
 def normalize_tag_match_text(text: str) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
@@ -107,6 +114,11 @@ def split_tag_term_segments(term: str) -> tuple[str, ...]:
     if not isinstance(term, str):
         raise TypeError("term must be a string")
 
+    return _split_tag_term_segments_cached(term)
+
+
+@lru_cache(maxsize=32768)
+def _split_tag_term_segments_cached(term: str) -> tuple[str, ...]:
     normalized = normalize_tag_match_text(term)
     if normalized == "":
         return ()
@@ -117,6 +129,11 @@ def _split_tag_term_segments_preserving_case(term: str) -> tuple[str, ...]:
     if not isinstance(term, str):
         raise TypeError("term must be a string")
 
+    return _split_tag_term_segments_preserving_case_cached(term)
+
+
+@lru_cache(maxsize=32768)
+def _split_tag_term_segments_preserving_case_cached(term: str) -> tuple[str, ...]:
     connectors_as_spaces = _CONNECTOR_RE.sub(" ", term)
     stripped_noise = _MATCH_NOISE_RE.sub(" ", connectors_as_spaces)
     normalized_whitespace = _WHITESPACE_RE.sub(" ", stripped_noise).strip()
@@ -149,6 +166,11 @@ def list_significant_content_match_segments(term: str) -> tuple[str, ...]:
     if not isinstance(term, str):
         raise TypeError("term must be a string")
 
+    return _list_significant_content_match_segments_cached(term)
+
+
+@lru_cache(maxsize=32768)
+def _list_significant_content_match_segments_cached(term: str) -> tuple[str, ...]:
     raw_segments = _split_tag_term_segments_preserving_case(term)
     return tuple(
         raw_segment.casefold()
@@ -166,6 +188,13 @@ def _list_significant_content_match_segments_with_raw_indexes(
     if not isinstance(term, str):
         raise TypeError("term must be a string")
 
+    return _list_significant_content_match_segments_with_raw_indexes_cached(term)
+
+
+@lru_cache(maxsize=32768)
+def _list_significant_content_match_segments_with_raw_indexes_cached(
+    term: str,
+) -> tuple[tuple[str, ...], tuple[int, ...], int]:
     raw_segments = _split_tag_term_segments_preserving_case(term)
     significant_segments: list[str] = []
     significant_raw_indexes: list[int] = []
@@ -203,28 +232,38 @@ def tag_term_matches_prefix(*, term: str, prefix: str) -> bool:
     return False
 
 
-def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) -> TagContentMatch | None:
-    if not isinstance(term, str):
-        raise TypeError("term must be a string")
+def build_normalized_content_match_context(*, normalized_content: str) -> NormalizedContentMatchContext:
     if not isinstance(normalized_content, str):
         raise TypeError("normalized_content must be a string")
+
+    content_tokens = tuple(normalized_content.split())
+    token_positions: dict[str, int] = {}
+    for index, token in enumerate(content_tokens):
+        if token not in token_positions:
+            token_positions[token] = index
+    return NormalizedContentMatchContext(tokens=content_tokens, token_positions=token_positions)
+
+
+def match_tag_term_in_content_match_context(
+    *,
+    term: str,
+    context: NormalizedContentMatchContext,
+) -> TagContentMatch | None:
+    if not isinstance(term, str):
+        raise TypeError("term must be a string")
+    if not isinstance(context, NormalizedContentMatchContext):
+        raise TypeError("context must be a NormalizedContentMatchContext")
 
     raw_segments = split_tag_term_segments(term)
     segments, segment_raw_indexes, raw_segment_count = _list_significant_content_match_segments_with_raw_indexes(term)
     if not segments:
         return None
 
-    content_tokens = normalized_content.split()
-    token_positions: dict[str, int] = {}
-    for index, token in enumerate(content_tokens):
-        if token not in token_positions:
-            token_positions[token] = index
-
     raw_phrase_match = False
     raw_phrase_position = -1
-    if len(content_tokens) >= len(raw_segments):
-        for index in range(len(content_tokens) - len(raw_segments) + 1):
-            if tuple(content_tokens[index : index + len(raw_segments)]) == raw_segments:
+    if len(context.tokens) >= len(raw_segments):
+        for index in range(len(context.tokens) - len(raw_segments) + 1):
+            if context.tokens[index : index + len(raw_segments)] == raw_segments:
                 raw_phrase_match = True
                 raw_phrase_position = index
                 break
@@ -233,9 +272,9 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
 
     phrase_match = False
     phrase_position = -1
-    if len(content_tokens) >= len(segments):
-        for index in range(len(content_tokens) - len(segments) + 1):
-            if tuple(content_tokens[index : index + len(segments)]) == segments:
+    if len(context.tokens) >= len(segments):
+        for index in range(len(context.tokens) - len(segments) + 1):
+            if context.tokens[index : index + len(segments)] == segments:
                 phrase_match = True
                 phrase_position = index
                 break
@@ -247,10 +286,10 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     for raw_index, segment in zip(segment_raw_indexes, segments):
         if segment in matched_segments:
             continue
-        if segment in token_positions:
+        if segment in context.token_positions:
             matched_segments.append(segment)
             matched_segment_count += 1
-            matched_positions.append(token_positions[segment])
+            matched_positions.append(context.token_positions[segment])
             matched_raw_indexes.append(raw_index)
 
     required_matched_segment_count = max(
@@ -281,7 +320,17 @@ def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) 
     )
 
 
+def match_tag_term_in_normalized_content(*, term: str, normalized_content: str) -> TagContentMatch | None:
+    if not isinstance(term, str):
+        raise TypeError("term must be a string")
+    context = build_normalized_content_match_context(normalized_content=normalized_content)
+    return match_tag_term_in_content_match_context(term=term, context=context)
+
+
 __all__ = [
+    "build_normalized_content_match_context",
+    "match_tag_term_in_content_match_context",
+    "NormalizedContentMatchContext",
     "TagContentMatch",
     "list_significant_content_match_segments",
     "match_tag_term_in_normalized_content",

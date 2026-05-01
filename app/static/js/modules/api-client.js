@@ -179,6 +179,9 @@ export const NotesAPI = {
                                                 
             return data;
         } catch (error) {
+            if (error && error.name === 'AbortError') {
+                throw error;
+            }
             console.error(' [API] Error:', error);
             
             // Handle network errors (when fetch throws)
@@ -565,7 +568,7 @@ export const NotesAPI = {
         });
     },
 
-    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml) {
+    async fetchTagSuggestions(noteId, anchors, explicitTags, prefix, contentHtml, signal) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.fetchTagSuggestions requires noteId string');
         }
@@ -581,6 +584,9 @@ export const NotesAPI = {
         if (typeof contentHtml !== 'string') {
             throw new Error('NotesAPI.fetchTagSuggestions requires contentHtml string');
         }
+        if (typeof signal !== 'undefined' && (signal === null || typeof signal !== 'object')) {
+            throw new Error('NotesAPI.fetchTagSuggestions requires signal object when provided');
+        }
         const payload = {
             note_id: noteId,
             anchors: anchors,
@@ -588,10 +594,14 @@ export const NotesAPI = {
             prefix: prefix,
             content_html: contentHtml
         };
-        return this._apiCall(CONFIG.API.NOTES.TAG_SUGGESTIONS, {
+        const options = {
             method: 'POST',
             body: JSON.stringify(payload)
-        });
+        };
+        if (typeof signal !== 'undefined') {
+            options.signal = signal;
+        }
+        return this._apiCall(CONFIG.API.NOTES.TAG_SUGGESTIONS, options);
     },
 
     async fetchBacklinks(noteId, searchQuery) {

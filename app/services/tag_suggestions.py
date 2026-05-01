@@ -9,8 +9,9 @@ from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
 from app.services.tag_term_matching import TagContentMatch
+from app.services.tag_term_matching import build_normalized_content_match_context
 from app.services.tag_term_matching import list_significant_content_match_segments
-from app.services.tag_term_matching import match_tag_term_in_normalized_content
+from app.services.tag_term_matching import match_tag_term_in_content_match_context
 from app.services.tag_term_matching import normalize_tag_match_text
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.utils.text_utils import strip_html
@@ -396,9 +397,10 @@ def _collect_content_match_scores(
     if normalized_content == "":
         return {}
 
+    context = build_normalized_content_match_context(normalized_content=normalized_content)
     matches: Dict[str, TagContentMatch] = {}
     for term in candidate_terms:
-        match = match_tag_term_in_normalized_content(term=term, normalized_content=normalized_content)
+        match = match_tag_term_in_content_match_context(term=term, context=context)
         if match is None:
             continue
         matches[term] = match

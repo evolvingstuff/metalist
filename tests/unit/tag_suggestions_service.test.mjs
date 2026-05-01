@@ -364,3 +364,63 @@ test('upward-opening suggestions keep best suggestion at the top', async (t) => 
     );
     assert.equal(container.querySelectorAll('.note-tag-suggestion')[0].classList.contains('is-selected'), true);
 });
+
+test('starting a new tag suggestion request aborts the previous in-flight request', async (t) => {
+    const { FakeElement } = installTagSuggestionsDom(t);
+    const { NotesAPI } = await import('../../app/static/js/modules/api-client.js');
+    const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
+    const { updateTagSuggestions } = await import('../../app/static/js/modules/mode-manager/services/tag-suggestions-service.js');
+
+    const originalFetchTagSuggestions = NotesAPI.fetchTagSuggestions;
+    const originalEditing = ModeContext._editing;
+    const originalCurrentNoteId = ModeContext._currentNoteId;
+
+    t.after(() => {
+        NotesAPI.fetchTagSuggestions = originalFetchTagSuggestions;
+        ModeContext._editing = originalEditing;
+        ModeContext._currentNoteId = originalCurrentNoteId;
+    });
+
+    const requests = [];
+    NotesAPI.fetchTagSuggestions = async (_noteId, _anchors, _explicitTags, _prefix, _contentHtml, signal) => {
+        assert.equal(typeof signal, 'object');
+        assert.equal(typeof signal.aborted, 'boolean');
+        return new Promise((resolve, reject) => {
+            requests.push({ signal, resolve });
+            signal.addEventListener('abort', () => {
+                const error = new Error('aborted');
+                error.name = 'AbortError';
+                reject(error);
+            });
+        });
+    };
+    ModeContext._editing = true;
+    ModeContext._currentNoteId = 'note-1';
+
+    const { input, container } = buildTagSuggestionsFixture(FakeElement);
+
+    input.focus();
+    updateTagSuggestions(input);
+    await flushSuggestionWork();
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].signal.aborted, false);
+
+    input.value = 'scratchpad-next';
+    input.selectionStart = input.value.length;
+    input.selectionEnd = input.value.length;
+    updateTagSuggestions(input);
+
+    assert.equal(requests[0].signal.aborted, true);
+
+    await flushSuggestionWork();
+    assert.equal(requests.length, 2);
+    requests[1].resolve({ suggestions: ['scratchpad-next'] });
+    await flushSuggestionWork();
+
+    assert.equal(container.hidden, false);
+    assert.deepEqual(
+        container.querySelectorAll('.note-tag-suggestion').map((element) => element.textContent),
+        ['scratchpad-next']
+    );
+});
