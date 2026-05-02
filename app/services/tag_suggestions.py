@@ -700,6 +700,7 @@ def suggest_tags_for_note(
     explicit_tags: Iterable[str],
     prefix: str,
     content_html: str,
+    limit: int,
 ) -> List[str]:
     if not isinstance(note_id, str) or not note_id:
         raise TypeError("note_id must be a non-empty string")
@@ -707,6 +708,8 @@ def suggest_tags_for_note(
         raise TypeError("prefix must be a string")
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
+    if not isinstance(limit, int) or limit <= 0:
+        raise TypeError("limit must be a positive integer")
 
     anchor_list = _sanitize_tag_terms(tags=anchors, field_name="anchors")
     explicit_tag_list = _sanitize_tag_terms(tags=explicit_tags, field_name="explicit_tags")
@@ -734,7 +737,7 @@ def suggest_tags_for_note(
 
     if has_prefix and prefix.startswith("@"):
         meta_query = _build_search_query_for_suggestions(anchors=anchor_list, prefix=prefix)
-        meta_suggestions = search_index.suggest_tag_completions(query=meta_query, limit=100)
+        meta_suggestions = search_index.suggest_tag_completions(query=meta_query, limit=limit)
         return meta_suggestions
 
     normalized_content = normalize_tag_match_text(plaintext)
@@ -863,10 +866,11 @@ def suggest_tags_for_note(
         exact_tag_counts=exact_tag_counts,
         ontology=ontology,
     )
-    return _collapse_equivalent_suggestions(
+    collapsed_suggestions = _collapse_equivalent_suggestions(
         suggestions=suggestions,
         representative_by_term=representative_by_term,
     )
+    return collapsed_suggestions[:limit]
 
 
 __all__ = ["suggest_tags_for_note"]

@@ -103,6 +103,10 @@ def _build_ontology(*, text: str):
     )
 
 
+def _suggest_tags_for_note(**kwargs):
+    return tag_suggestions_module.suggest_tags_for_note(limit=20, **kwargs)
+
+
 def test_search_completion_matches_connector_separated_segments() -> None:
     index = _build_index(
         [
@@ -138,7 +142,7 @@ def test_tag_suggestions_promote_specific_multi_segment_content_matches(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -177,7 +181,7 @@ def test_tag_suggestions_prune_impossible_content_matches_before_phrase_scan(
         counting_matcher,
     )
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -216,7 +220,7 @@ def test_tag_suggestions_use_search_index_statistics_without_scanning_note_store
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -247,7 +251,7 @@ def test_tag_suggestions_prefer_longer_specific_entity_hit_over_shorter_generic_
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -277,7 +281,7 @@ def test_tag_suggestions_prefer_shorter_partial_connector_match_for_single_segme
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -308,7 +312,7 @@ def test_tag_suggestions_prefer_full_connector_phrase_then_literal_suffix_tag(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -339,7 +343,7 @@ def test_tag_suggestions_prefer_exact_literal_tag_over_padded_suffix_variant(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -370,7 +374,7 @@ def test_tag_suggestions_promote_full_literal_phrase_match_even_when_it_includes
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -400,7 +404,7 @@ def test_tag_suggestions_keep_tighter_single_segment_match_ahead_of_stopword_pad
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -433,7 +437,7 @@ def test_tag_suggestions_do_not_surface_three_chunk_tag_from_two_chunk_overlap(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=[],
         explicit_tags=[],
@@ -462,7 +466,7 @@ def test_tag_suggestions_prefer_prefix_aligned_partial_variant_over_suffix_align
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -491,7 +495,7 @@ def test_tag_suggestions_allow_reversed_near_complete_multi_chunk_literal_match(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -521,7 +525,7 @@ def test_tag_suggestions_apply_same_literal_ordering_for_other_connectors(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -550,7 +554,7 @@ def test_tag_suggestions_include_segment_literal_matches(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -559,7 +563,7 @@ def test_tag_suggestions_include_segment_literal_matches(
     )
 
     assert suggestions[:2] == ["workspaces", "databricks-workspaces"]
-    assert tag_suggestions_module.suggest_tags_for_note(
+    assert _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -587,7 +591,7 @@ def test_tag_suggestions_promote_content_matches_wrapped_in_punctuation(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -619,7 +623,7 @@ def test_tag_suggestions_ignore_numeric_only_content_segments(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -650,7 +654,7 @@ def test_tag_suggestions_ignore_single_character_content_segments(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -707,7 +711,7 @@ def test_tag_suggestions_prefer_anchor_cooccurrence_over_low_signal_connector_hi
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["annoyed", "fat.appearance"],
         explicit_tags=["annoyed", "fat.appearance"],
@@ -755,7 +759,7 @@ def test_tag_suggestions_suppress_redundant_content_variants_after_segment_alrea
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["annoyed", "fat.appearance"],
         explicit_tags=["annoyed", "fat.appearance"],
@@ -796,7 +800,7 @@ def test_tag_suggestions_can_keep_redundant_content_variants_when_config_disable
         False,
     )
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["annoyed", "fat.appearance"],
         explicit_tags=["annoyed", "fat.appearance"],
@@ -832,7 +836,7 @@ def test_tag_suggestions_interleave_cooccurrence_with_non_redundant_content_hits
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["annoyed", "fat.appearance"],
         explicit_tags=["annoyed", "fat.appearance"],
@@ -862,7 +866,7 @@ def test_tag_suggestions_collapse_case_equivalent_candidates(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -896,7 +900,7 @@ def test_tag_suggestions_collapse_synonym_candidates_to_most_used_tag(
     )
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=[],
         explicit_tags=[],
@@ -929,7 +933,7 @@ def test_tag_suggestions_keep_prefix_matching_synonym_variant(
     )
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=[],
         explicit_tags=[],
@@ -957,7 +961,7 @@ def test_tag_suggestions_do_not_repeat_current_explicit_tag(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=["Pandoc"],
@@ -990,7 +994,7 @@ def test_tag_suggestions_rank_meta_tags_by_frequency(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -1019,7 +1023,7 @@ def test_tag_suggestions_prefer_earlier_content_hits_when_scores_tie(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=[],
         explicit_tags=[],
@@ -1050,7 +1054,7 @@ def test_tag_suggestions_include_literal_content_hits_even_without_anchor_cooccu
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=["diagram"],
         explicit_tags=["diagram"],
@@ -1081,7 +1085,7 @@ def test_tag_suggestions_include_acronym_content_hits_even_without_anchor_cooccu
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=["LinuxVM"],
         explicit_tags=["LinuxVM"],
@@ -1117,7 +1121,7 @@ def test_tag_suggestions_include_inherited_context_in_cooccurrence_ranking(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=["@done"],
         explicit_tags=["@done"],
@@ -1149,7 +1153,7 @@ def test_tag_suggestions_prioritize_exact_content_hit_over_global_noise(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="note-1",
         anchors=["@done"],
         explicit_tags=["@done"],
@@ -1196,7 +1200,7 @@ def test_tag_suggestions_prefer_specific_content_hit_over_generic_words(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["proud", "ML3"],
         explicit_tags=["proud", "ML3"],
@@ -1244,7 +1248,7 @@ def test_tag_suggestions_use_local_hierarchy_content_before_global_noise(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["@done"],
         explicit_tags=["@done"],
@@ -1280,7 +1284,7 @@ def test_tag_suggestions_prioritize_descendant_explicit_tag_for_current_entry(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", index)
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="entry",
         anchors=["journal"],
         explicit_tags=["journal"],
@@ -1307,7 +1311,7 @@ def test_tag_suggestions_match_connector_segment_prefix_in_saved_note_catalog(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="root",
         anchors=[],
         explicit_tags=[],
@@ -1338,7 +1342,7 @@ def test_tag_suggestions_break_local_ties_by_global_frequency_not_alphabetically
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["@done"],
         explicit_tags=["@done"],
@@ -1365,7 +1369,7 @@ def test_tag_suggestions_do_not_suppress_literal_tag_due_to_matcher_inference(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _MatcherButNoImplicationOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=[],
         explicit_tags=[],
@@ -1402,7 +1406,7 @@ def test_tag_suggestions_rank_full_context_overlap_before_partial_overlap(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=[],
         explicit_tags=[],
@@ -1435,7 +1439,7 @@ def test_tag_suggestions_use_current_anchor_in_overlap_tiering(
     monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
     monkeypatch.setattr(tag_suggestions_module, "search_index", _build_index([]))
 
-    suggestions = tag_suggestions_module.suggest_tags_for_note(
+    suggestions = _suggest_tags_for_note(
         note_id="current",
         anchors=["bad-decision"],
         explicit_tags=["bad-decision"],

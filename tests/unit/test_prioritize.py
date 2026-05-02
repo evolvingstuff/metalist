@@ -450,3 +450,93 @@ def test_prioritize_tag_suggestions_route_normalizes_empty_search_query(
         "limit": 20,
     }
     assert result == {"suggestions": ["foo"]}
+
+
+def test_search_suggestions_route_uses_configured_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(notes_route, "MAX_SEARCH_SUGGESTIONS", 7)
+    monkeypatch.setattr(
+        notes_route.search_index,
+        "suggest_tag_completions",
+        lambda *, query, limit: captured.update(query=query, limit=limit) or ["foo"],
+    )
+
+    result = notes_route.search_suggestions(None, {"query": "foo bar"})
+
+    assert captured == {
+        "query": "foo bar",
+        "limit": 7,
+    }
+    assert result == {"suggestions": ["foo"]}
+
+
+def test_prioritize_tag_suggestions_route_uses_configured_tag_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(notes_route, "MAX_TAG_SUGGESTIONS", 6)
+    monkeypatch.setattr(
+        notes_route,
+        "list_prioritize_tag_suggestions",
+        lambda *, search_query, query, limit: captured.update(
+            search_query=search_query,
+            query=query,
+            limit=limit,
+        ) or ["foo"],
+    )
+
+    result = notes_route.prioritize_tag_suggestions(
+        {
+            "query": "fo",
+            "search_query": "active",
+        }
+    )
+
+    assert captured == {
+        "search_query": "active",
+        "query": "fo",
+        "limit": 6,
+    }
+    assert result == {"suggestions": ["foo"]}
+
+
+def test_note_tag_suggestions_route_uses_configured_tag_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(notes_route, "MAX_TAG_SUGGESTIONS", 5)
+    monkeypatch.setattr(notes_route, "_require_note_present", lambda note_id, *, context: None)
+    monkeypatch.setattr(
+        notes_route,
+        "suggest_tags_for_note",
+        lambda *, note_id, anchors, explicit_tags, prefix, content_html, limit: captured.update(
+            note_id=note_id,
+            anchors=anchors,
+            explicit_tags=explicit_tags,
+            prefix=prefix,
+            content_html=content_html,
+            limit=limit,
+        ) or ["foo"],
+    )
+
+    result = notes_route.tag_suggestions(
+        {
+            "note_id": "note-1",
+            "anchors": ["alpha"],
+            "explicit_tags": ["alpha"],
+            "prefix": "f",
+            "content_html": "<p>foo</p>",
+        }
+    )
+
+    assert captured == {
+        "note_id": "note-1",
+        "anchors": ["alpha"],
+        "explicit_tags": ["alpha"],
+        "prefix": "f",
+        "content_html": "<p>foo</p>",
+        "limit": 5,
+    }
+    assert result == {"suggestions": ["foo"]}

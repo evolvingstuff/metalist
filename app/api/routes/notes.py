@@ -39,6 +39,8 @@ from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.usecases.record_edit_mode import CmdRecordEditMode
 from app.services.sync import get_current_sync_uuid
+from app.config import MAX_SEARCH_SUGGESTIONS
+from app.config import MAX_TAG_SUGGESTIONS
 from app.config import VERSION
 from app.services.view_cache import view_cache
 from app.services.view_diff import generate_diff_ops
@@ -381,7 +383,7 @@ def search_suggestions(request: Request, payload: dict) -> Dict[str, object]:
     query = payload["query"]
     if not isinstance(query, str):
         raise TypeError("query must be a string")
-    suggestions = search_index.suggest_tag_completions(query=query, limit=20)
+    suggestions = search_index.suggest_tag_completions(query=query, limit=MAX_SEARCH_SUGGESTIONS)
     if is_first_search_tag_suggestion_context(query):
         token = _require_bearer_token(request)
         recent_tags = list_recent_search_tags(limit=RECENT_SEARCH_TAG_CANDIDATE_LIMIT, token=token)
@@ -411,7 +413,7 @@ def prioritize_tag_suggestions(payload: dict) -> Dict[str, object]:
     suggestions = list_prioritize_tag_suggestions(
         search_query=normalized_search,
         query=query,
-        limit=20,
+        limit=MAX_TAG_SUGGESTIONS,
     )
     return {"suggestions": suggestions}
 
@@ -462,6 +464,7 @@ def tag_suggestions(payload: dict) -> Dict[str, object]:
         explicit_tags=explicit_tags,
         prefix=prefix,
         content_html=content_html,
+        limit=MAX_TAG_SUGGESTIONS,
     )
     return {"suggestions": suggestions}
 

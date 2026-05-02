@@ -36,6 +36,7 @@ Ontology rules also add **inferred tags** before search matching:
 - A typed prefix can match either the start of the full tag or the start of any connector-separated segment.
   - Example: `wor` suggests `workspaces` and `databricks-workspaces`.
   - Example: `orksp` suggests neither.
+- The server returns at most `MAX_SEARCH_SUGGESTIONS` suggestions; the default is 20.
 - This affects suggestions only; actual tag search matching remains exact against effective tag terms.
 
 ### Creating Notes From Search

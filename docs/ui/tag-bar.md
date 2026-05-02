@@ -114,6 +114,7 @@ Unclosed comments behave like unclosed wrappers:
 - Tags already present explicitly in the current tag bar are never suggested.
 - Tags already present only via inheritance or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward but keeps the same best-on-top ordering and initial scroll position.
+- The server returns at most `MAX_TAG_SUGGESTIONS` note tag suggestions; the default is 20.
 - The connector characters used for content matching are configurable via `TAG_SUGGESTION_CONNECTORS` in `app/config.py`.
 - The redundant-content suppression rule is configurable via `TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS` in `app/config.py`.
 
