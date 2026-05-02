@@ -13,6 +13,7 @@ from app.services.tag_term_matching import build_normalized_content_match_contex
 from app.services.tag_term_matching import list_significant_content_match_segments
 from app.services.tag_term_matching import match_tag_term_in_content_match_context
 from app.services.tag_term_matching import normalize_tag_match_text
+from app.services.tag_term_matching import split_tag_term_segments
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.utils.text_utils import strip_html
 
@@ -285,16 +286,29 @@ def _lookup_count(counts: Dict[str, int], term: str) -> int:
 
 
 def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
-    if not _can_iterate_saved_notes():
-        exact_tag_counts = search_index.list_tag_frequencies()
-        all_terms = list(search_index.list_non_meta_tag_suggestion_terms())
+    exact_tag_counts = search_index.list_tag_frequencies()
+    if exact_tag_counts and (not _can_iterate_saved_notes() or getattr(note_store, "loaded", False)):
+        preferred_terms = _select_preferred_case_variants(
+            terms=exact_tag_counts.keys(),
+            exact_tag_counts=exact_tag_counts,
+        )
+        representative_by_casefold = {term.casefold(): term for term in preferred_terms}
+        representative_counts: Counter[str] = Counter()
+        for term, count in exact_tag_counts.items():
+            representative = representative_by_casefold[term.casefold()]
+            representative_counts[representative] += count
+
+        all_terms = list(representative_counts.keys())
         all_terms.sort(
             key=lambda term: (
-                -_lookup_count(exact_tag_counts, term),
+                -representative_counts[term],
                 *_suggestion_tiebreak(term),
             )
         )
-        return all_terms, exact_tag_counts
+        return all_terms, dict(representative_counts)
+
+    if not _can_iterate_saved_notes():
+        return [], {}
 
     exact_tag_counts: Counter[str] = Counter()
     for note_id in _list_saved_note_ids():
@@ -398,13 +412,29 @@ def _collect_content_match_scores(
         return {}
 
     context = build_normalized_content_match_context(normalized_content=normalized_content)
+    content_token_set = frozenset(context.token_positions.keys())
     matches: Dict[str, TagContentMatch] = {}
     for term in candidate_terms:
+        if not _term_has_required_content_overlap(
+            term=term,
+            content_token_set=content_token_set,
+        ):
+            continue
         match = match_tag_term_in_content_match_context(term=term, context=context)
         if match is None:
             continue
         matches[term] = match
     return matches
+
+
+def _term_has_required_content_overlap(*, term: str, content_token_set: FrozenSet[str]) -> bool:
+    segments = tuple(dict.fromkeys(list_significant_content_match_segments(term)))
+    if not segments:
+        return False
+    raw_segment_count = len(split_tag_term_segments(term))
+    required_matched_segment_count = max(1, min(len(segments), raw_segment_count - 1))
+    matched_segment_count = sum(1 for segment in segments if segment in content_token_set)
+    return matched_segment_count >= required_matched_segment_count
 
 
 def _collect_undercovered_content_overlap_terms(
@@ -737,10 +767,12 @@ def suggest_tags_for_note(
             content_match_scores=content_match_scores,
             active_segments=active_content_segments,
         )
-        content_match_scores = _collect_content_match_scores(
-            candidate_terms=candidate_terms,
-            normalized_content=normalized_content,
-        )
+        candidate_term_set = set(candidate_terms)
+        content_match_scores = {
+            term: match
+            for term, match in content_match_scores.items()
+            if term in candidate_term_set
+        }
 
     cooccurrence, cooccurrence_rank = _collect_cooccurrence_candidates(
         all_terms=all_terms,

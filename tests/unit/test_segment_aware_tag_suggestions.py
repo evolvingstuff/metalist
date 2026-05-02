@@ -149,6 +149,84 @@ def test_tag_suggestions_promote_specific_multi_segment_content_matches(
     assert suggestions[:3] == ["databricks-workspaces", "databricks", "workspaces"]
 
 
+def test_tag_suggestions_prune_impossible_content_matches_before_phrase_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag_rows = [(f"noise-{index}", f"unrelated-{index}") for index in range(500)]
+    tag_rows.append(("target", "databricks-workspaces"))
+    index = _build_index(tag_rows)
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    original_matcher = tag_suggestions_module.match_tag_term_in_content_match_context
+    matched_terms: list[str] = []
+
+    def counting_matcher(*, term, context):
+        matched_terms.append(term)
+        return original_matcher(term=term, context=context)
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "match_tag_term_in_content_match_context",
+        counting_matcher,
+    )
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>databricks workspaces</p>",
+    )
+
+    assert suggestions[0] == "databricks-workspaces"
+    assert matched_terms == ["databricks-workspaces"]
+
+
+def test_tag_suggestions_use_search_index_statistics_without_scanning_note_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "alpha"),
+            ("n2", "alpha"),
+            ("n3", "beta"),
+        ]
+    )
+
+    def list_note_ids():
+        raise AssertionError("tag suggestions should reuse search_index tag statistics")
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            loaded=True,
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset(),
+            list_note_ids=list_note_ids,
+            get_note=lambda _note_id: None,
+        ),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = tag_suggestions_module.suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>alpha</p>",
+    )
+
+    assert suggestions[:2] == ["alpha", "beta"]
+
+
 def test_tag_suggestions_prefer_longer_specific_entity_hit_over_shorter_generic_word(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
