@@ -30,6 +30,7 @@
   - Omit entries the client does not currently have rendered.
   - The cache is **tab-scoped**.
   - When a new search query is executed, the client should clear this cache first so the server does not suppress payloads for nodes that are about to be inserted.
+  - After deleting a note, the client removes that note/subtree from this cache before refreshing so the next `/notes/view` request can stay incremental.
 - `search` and `editingNoteId` are passed through for server-side rendering/flagging.
 - `undoContext`: a client-computed context boundary (currently tab+search). When this changes, the server clears the undo/redo stack for that client so `Cmd+Z` never crosses tab/search contexts.
 - `tabId`: client-maintained active tab UUID; the server caches one view per `(clientId, tabId, search)` tuple.
@@ -120,6 +121,7 @@
   - `insert`: create a new note at `toIndex` under `parentId` (payload supplied via `snapshot.notes`).
   - `move`: reparent/reorder an existing note under `parentId`.
 - `notes` remains sparse and only includes nodes whose hash changed or newly inserted nodes.
+- If the client still reports a note id that is gone from the current view but was present in the server's cached prior view, the server treats it as a normal deletion and returns a `remove` diff instead of forcing a full snapshot.
 - `lockDiffs` only lists locks that changed since the cached view. `locks` still contains the full visible lock map for reference.
 - `rootIds` keeps infinite-scroll metrics in sync without re-sending the full structure array.
 - The server stores the newly generated view in-memory per `(clientId, tabId, search)` so subsequent requests can stay incremental.

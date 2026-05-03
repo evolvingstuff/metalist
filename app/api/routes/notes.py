@@ -197,7 +197,17 @@ def view_diff(payload: dict):
     root_count_total = state.metadata["rootCountTotal"]
     search_root_count_total = state.metadata["searchRootCountTotal"]
 
-    extra_client_ids = set(client_hashes.keys()) - set(state.hash_by_id.keys())
+    client_note_ids = set(client_hashes.keys())
+    current_note_ids = set(state.hash_by_id.keys())
+    if cached_state is None:
+        cached_note_ids = set()
+    else:
+        cached_note_ids = set(cached_state.hash_by_id.keys())
+    extra_client_ids = _unknown_client_note_ids(
+        client_note_ids=client_note_ids,
+        current_note_ids=current_note_ids,
+        cached_note_ids=cached_note_ids,
+    )
     force_full_snapshot = bool(extra_client_ids)
     if force_full_snapshot:
         logger.info(
@@ -548,6 +558,16 @@ def _compute_lock_diff(previous: Dict[str, str], current: Dict[str, str]) -> Dic
         if note_id not in current:
             diff[note_id] = ""
     return diff
+
+
+def _unknown_client_note_ids(
+    *,
+    client_note_ids: set[str],
+    current_note_ids: set[str],
+    cached_note_ids: set[str],
+) -> set[str]:
+    stale_deleted_ids = client_note_ids - current_note_ids
+    return stale_deleted_ids - cached_note_ids
 
 
 # Stub endpoints for the rest of the notes API (501 Not Implemented)

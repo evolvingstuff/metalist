@@ -14,6 +14,8 @@ Exception:
 - Drop inputs while busy (no queueing/coalescing/replay).
 - Maintain a watchdog timer that throws if a command never finishes.
 
+The loading state immediately blocks overlapping input, but the visible full-screen loading overlay is delayed by `CONFIG.LOADING.SPINNER_DELAY` so fast commands do not flash a pause indicator.
+
 ## Why
 - Keyboard/mouse handlers globally ignore input when `ModeContext.isLoading` is true.
 - Before `CommandGate`, multiple async paths flipped `isLoading` manually; any missed `setLoading(false)` could hard-freeze the UI.

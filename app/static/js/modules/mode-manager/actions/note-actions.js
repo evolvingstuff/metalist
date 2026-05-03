@@ -72,6 +72,28 @@ function scheduleMovedNoteIntoView(noteId) {
     });
 }
 
+function removeCachedHashesForDomSubtree(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('removeCachedHashesForDomSubtree requires noteId string');
+    }
+
+    const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+    if (!noteElement) {
+        ModeContext.removeNoteHash(noteId);
+        return;
+    }
+
+    ModeContext.removeNoteHash(noteId);
+    const descendantElements = noteElement.querySelectorAll('[data-note-id]');
+    descendantElements.forEach((element) => {
+        const descendantId = element.dataset.noteId;
+        if (typeof descendantId !== 'string' || descendantId.length === 0) {
+            throw new Error('Deleted subtree descendant missing note id');
+        }
+        ModeContext.removeNoteHash(descendantId);
+    });
+}
+
 function shouldBlockRootReorder(noteId, contextLabel) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('shouldBlockRootReorder requires noteId string');
@@ -277,9 +299,7 @@ export async function getShellRun(noteId, runId) {
 }
 
 export async function deleteNote(noteId) {
-    let startedAt = performance.now();
-
-    let t1 = performance.now();
+    const startedAt = performance.now();
 
     Logger.logAction('deleteNote', {
         noteId,
@@ -305,28 +325,19 @@ export async function deleteNote(noteId) {
     if (ModeContext.currentContent !== null) {
         ModeContext.setCurrentContent(null);
     }
-        
-	    if (ModeContext.isDirty) {
-	        ModeContext.setDirty(false);
-	    }
 
-	    let t2 = performance.now();
+    if (ModeContext.isDirty) {
+        ModeContext.setDirty(false);
+    }
 
-	    await NotesAPI.deleteNote(noteId);
+    await NotesAPI.deleteNote(noteId);
+    removeCachedHashesForDomSubtree(noteId);
 
-	    let t3 = performance.now()
-
-    await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'deleteNote'});
-
-    let t4 = performance.now();
-    console.log(`DEBUGZ: deleteNote t2 - t1 ${(t2-t1)} ms`)
-    console.log(`DEBUGZ: deleteNote t3 - t2 ${(t3-t2)} ms`)
-    console.log(`DEBUGZ: deleteNote t4 - t3 ${(t4-t3)} ms`)
-    console.log(`DEBUGZ: deleteNote t4 - t1 ${(t4-t1)} ms`)
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'deleteNote' });
 }
 
 export async function deleteNoteOutsideEdit(noteId) {
-    let startedAt = performance.now();
+    const startedAt = performance.now();
 
     Logger.logAction('deleteNoteOutsideEdit', {
         noteId,
@@ -343,18 +354,19 @@ export async function deleteNoteOutsideEdit(noteId) {
         throw new Error(`Programming error: deleteNoteOutsideEdit called while editing note ${ModeContext.currentNoteId}`);
     }
 
-		await NotesAPI.deleteNote(noteId);
+    await NotesAPI.deleteNote(noteId);
+    removeCachedHashesForDomSubtree(noteId);
 
-		if (ModeContext.currentNoteId === noteId) {
-			ModeContext.setCurrentNoteId(null);
-		}
+    if (ModeContext.currentNoteId === noteId) {
+        ModeContext.setCurrentNoteId(null);
+    }
 
-		if (ModeContext.currentContent !== null) {
-			ModeContext.setCurrentContent(null);
-		}
+    if (ModeContext.currentContent !== null) {
+        ModeContext.setCurrentContent(null);
+    }
 
-			await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'deleteNoteOutsideEdit'});
-	}
+    await actionRefreshAndMaybeSelect({ startedAt, context: 'deleteNoteOutsideEdit' });
+}
 
 export async function createNote() {
     const currentNoteId = ModeContext.isEditing ? ModeContext.currentNoteId : null;
@@ -406,7 +418,10 @@ async function createNoteWithPlacement(placeAtTop) {
     if (ModeContext.isEditing) {
         await actionSwitchNotes(newNoteId, caretOptions);
     } else {
-        await actionSelectNote(newNoteId, caretOptions);
+        await actionSelectNote(newNoteId, {
+            ...caretOptions,
+            recordEditModeTransition: false,
+        });
     }
 
     if (placeAtTop) {
@@ -447,7 +462,10 @@ export async function createChildNote() {
     if (ModeContext.isEditing) {
         return await actionSwitchNotes(newNoteId, caretOptions);
     } else {
-        return await actionSelectNote(newNoteId, caretOptions);
+        return await actionSelectNote(newNoteId, {
+            ...caretOptions,
+            recordEditModeTransition: false,
+        });
     }
 }
 

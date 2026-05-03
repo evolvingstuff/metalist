@@ -128,7 +128,7 @@ export const CONFIG = {
         
         ARTIFICIAL_DELAY: 0,
 
-        SPINNER_DELAY: 500,
+        SPINNER_DELAY: 1000,
 
         BLOCK_ACTIONS: true
     },

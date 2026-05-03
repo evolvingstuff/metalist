@@ -41,14 +41,21 @@ function getNoteElementIfPresent(noteId) {
 }
 
 export async function actionSelectNote(noteId, options) {
-	if (options === null || typeof options !== 'object') {
-		throw new Error('actionSelectNote requires options object');
-	}
-	if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
-		throw new Error('actionSelectNote requires options.initialCaretVisibility');
-	}
-	const initialCaretVisibility = options.initialCaretVisibility;
-	let startedAt = performance.now();
+    if (options === null || typeof options !== 'object') {
+        throw new Error('actionSelectNote requires options object');
+    }
+    if (!Object.prototype.hasOwnProperty.call(options, 'initialCaretVisibility')) {
+        throw new Error('actionSelectNote requires options.initialCaretVisibility');
+    }
+    const initialCaretVisibility = options.initialCaretVisibility;
+    if (
+        Object.prototype.hasOwnProperty.call(options, 'recordEditModeTransition')
+        && typeof options.recordEditModeTransition !== 'boolean'
+    ) {
+        throw new Error('actionSelectNote options.recordEditModeTransition must be boolean when provided');
+    }
+    const shouldRecordEditModeTransition = options.recordEditModeTransition !== false;
+    const startedAt = performance.now();
     Logger.logAction('selectNote', { 
         noteId, 
         currentNoteId: ModeContext.currentNoteId 
@@ -58,7 +65,7 @@ export async function actionSelectNote(noteId, options) {
         throw new Error('Cannot select note: noteId is required');
     }
 
-	if (ModeContext.isEditing) {
+    if (ModeContext.isEditing) {
         if (ModeContext.currentNoteId === noteId) {
             Logger.logDebug('Note already selected, skipping', { noteId });
             return; 
@@ -77,8 +84,10 @@ export async function actionSelectNote(noteId, options) {
         ModeContext.markCaretVisible();
     }
 
-    const interactionQuery = beginEditInteractionForActiveQuery();
-    await recordEditModeTransitionWithInteraction(null, noteId, interactionQuery);
+    if (shouldRecordEditModeTransition) {
+        const interactionQuery = beginEditInteractionForActiveQuery();
+        await recordEditModeTransitionWithInteraction(null, noteId, interactionQuery);
+    }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
 
