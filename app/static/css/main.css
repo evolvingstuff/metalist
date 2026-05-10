@@ -1700,6 +1700,32 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
     color: rgba(229, 235, 243, 0.34);
 }
 
+.alphabetize-root-notes-modal-content {
+    width: min(560px, 94vw);
+    overflow: visible;
+    max-height: none;
+}
+
+.alphabetize-root-notes-warning {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(220, 53, 69, 0.28);
+    background: rgba(220, 53, 69, 0.08);
+    color: var(--text-primary);
+}
+
+.alphabetize-root-notes-warning p {
+    margin: 0;
+    line-height: 1.45;
+}
+
+.alphabetize-root-notes-actions {
+    margin-top: 18px;
+}
+
 #password-result-copy-hint:empty {
     display: none;
 }

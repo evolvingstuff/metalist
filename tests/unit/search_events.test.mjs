@@ -36,6 +36,21 @@ function installSearchEventsDom(t) {
         hidden: true,
         textContent: '',
     };
+    const notesContainer = {
+        childNodes: [{ nodeType: 1 }],
+        get firstChild() {
+            return this.childNodes.length > 0 ? this.childNodes[0] : null;
+        },
+        replaceChildren() {
+            this.childNodes = [];
+        },
+        removeChild(node) {
+            const index = this.childNodes.indexOf(node);
+            if (index >= 0) {
+                this.childNodes.splice(index, 1);
+            }
+        },
+    };
 
     globalThis.document = {
         activeElement: null,
@@ -52,6 +67,9 @@ function installSearchEventsDom(t) {
             if (id === 'search-validation-message') {
                 return searchValidationMessage;
             }
+            if (id === 'notes-container') {
+                return notesContainer;
+            }
             return null;
         },
         addEventListener() {},
@@ -67,7 +85,7 @@ function installSearchEventsDom(t) {
     globalThis.HTMLElement = class FakeHTMLElement {};
     globalThis.HTMLButtonElement = class FakeHTMLButtonElement extends globalThis.HTMLElement {};
 
-    return () => {
+    const restore = () => {
         globalThis.document = originalDocument;
         globalThis.window = originalWindow;
         globalThis.sessionStorage = originalSessionStorage;
@@ -75,6 +93,8 @@ function installSearchEventsDom(t) {
         globalThis.HTMLElement = originalHTMLElement;
         globalThis.HTMLButtonElement = originalHTMLButtonElement;
     };
+    restore.notesContainer = notesContainer;
+    return restore;
 }
 
 function createSearchInput(value) {
@@ -118,4 +138,34 @@ test('handleSearchInput updates search query even while loading', async (t) => {
     });
 
     assert.equal(ModeContext.searchQuery, 'ML3');
+});
+
+test('fresh search input clears same-query render cache and active DOM', async (t) => {
+    const restoreDom = installSearchEventsDom(t);
+
+    const [{ resetActiveTabForSearchExecution }, { ModeContextInstance: ModeContext }] = await Promise.all([
+        import('../../app/static/js/modules/mode-manager/events/search-events.js'),
+        import('../../app/static/js/modules/mode-manager/mode-context.js'),
+    ]);
+    const tabId = ModeContext.activeTabId;
+
+    t.after(() => {
+        ModeContext.clearTabViewCache(tabId);
+        restoreDom();
+    });
+
+    ModeContext.clearTabViewCache(tabId);
+    ModeContext.setExecutedSearchQuery('journal', tabId);
+    ModeContext.seedTabNoteHashes(tabId, new Map([
+        ['root-a', 'hash-a'],
+        ['root-b', 'hash-b'],
+    ]));
+
+    resetActiveTabForSearchExecution('journal', { isFreshSearchInput: false });
+    assert.equal(ModeContext.getTabNoteHashCount(tabId), 2);
+    assert.equal(restoreDom.notesContainer.childNodes.length, 1);
+
+    resetActiveTabForSearchExecution('journal', { isFreshSearchInput: true });
+    assert.equal(ModeContext.getTabNoteHashCount(tabId), 0);
+    assert.equal(restoreDom.notesContainer.childNodes.length, 0);
 });

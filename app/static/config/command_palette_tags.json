@@ -101,6 +101,14 @@
       "tags": ["prioritize", "priority", "tag", "back", "search", "view", "order", "reorder"]
     },
     {
+      "id": "action.alphabetize_root_notes_asc",
+      "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "asc", "ascending", "a", "z", "journal", "order", "reorder"]
+    },
+    {
+      "id": "action.alphabetize_root_notes_desc",
+      "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "desc", "descending", "z", "a", "journal", "order", "reorder"]
+    },
+    {
       "id": "action.open_keyboard_shortcuts_help",
       "tags": ["help", "shortcuts", "keyboard", "commands", "keys", "guide"]
     },

@@ -164,11 +164,18 @@ class ModeContext {
         return this;
     }
 
-    clearActiveTabDiffCacheForSearchExecution(executedQuery) {
+    clearActiveTabDiffCacheForSearchExecution(executedQuery, options) {
         const tabId = this._activeTabId;
         const normalized = typeof executedQuery === 'string' ? executedQuery : '';
+        if (typeof options === 'undefined') {
+            options = {};
+        }
+        if (options === null || typeof options !== 'object') {
+            throw new Error('clearActiveTabDiffCacheForSearchExecution options must be an object');
+        }
+        const forceClear = options.forceClear === true;
         const previousExecuted = this.getExecutedSearchQuery(tabId);
-        if (previousExecuted === normalized) {
+        if (!forceClear && previousExecuted === normalized) {
             return this;
         }
         this.clearTabRevealedRedactions(tabId);
