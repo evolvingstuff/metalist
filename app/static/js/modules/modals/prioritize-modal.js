@@ -276,13 +276,13 @@ export class PrioritizeModal extends BaseModal {
         const showSuggestions = isDropdownOpen;
         const title = direction === 'front' ? 'Prioritize Tag To Front' : 'Prioritize Tag To Back';
         const description = direction === 'front'
-            ? 'Move matching root notes to the front of the current view while preserving internal order.'
-            : 'Move matching root notes to the back of the current view while preserving internal order.';
+            ? 'Move all root notes matching this tag to the front of the global root order.'
+            : 'Move all root notes matching this tag to the back of the global root order.';
 
         modalElement.innerHTML = `
             <div class="modal-content prioritize-modal-content">
                 <div class="prioritize-modal-header">
-                    <p class="prioritize-modal-eyebrow">Current View</p>
+                    <p class="prioritize-modal-eyebrow">Global Root Order</p>
                     <h3>${title}</h3>
                     <p class="prioritize-modal-description">${description}</p>
                 </div>
@@ -314,9 +314,15 @@ export class PrioritizeModal extends BaseModal {
                     </div>
                 </div>
 
+                <div class="alphabetize-root-notes-warning">
+                    <p>This permanently rearranges stored root note order across all searches.</p>
+                    <p>Cmd+Z cannot undo this action. The undo/redo queue will be cleared.</p>
+                    <p>Your current search will stay active after the reorder refreshes.</p>
+                </div>
+
                 <div class="form-actions prioritize-modal-actions">
                     <button type="button" class="secondary-btn" id="prioritize-modal-cancel-btn">Cancel</button>
-                    <button type="button" class="primary-btn" id="prioritize-modal-submit-btn">Apply</button>
+                    <button type="button" class="danger-btn" id="prioritize-modal-submit-btn">Apply Global Reorder</button>
                 </div>
 
                 <p id="prioritize-modal-error" class="error-message">${escapeHtml(error)}</p>
@@ -329,7 +335,7 @@ export class PrioritizeModal extends BaseModal {
 
     renderSuggestionsHtml({ suggestions, selectedIndex, loadingSuggestions }) {
         if (loadingSuggestions && suggestions.length === 0) {
-            return '<div class="prioritize-modal-suggestion prioritize-modal-suggestion-status">Loading tags from the current view…</div>';
+            return '<div class="prioritize-modal-suggestion prioritize-modal-suggestion-status">Loading tags from all root notes…</div>';
         }
         if (suggestions.length === 0) {
             return '';

@@ -1,5 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
+import { CONFIG } from '../../config.js';
 
 const WATCHDOG_TIMEOUT_MS = 15000;
 
@@ -77,6 +78,9 @@ export const CommandGate = {
         }
 
         ModeContext.setLoading(true);
+        if (resolvedOptions !== null && resolvedOptions.showLoadingImmediately === true) {
+            document.body.classList.add(CONFIG.CLASSES.LOADING);
+        }
         busy = true;
         busyName = name;
         busyStartedAt = performance.now();

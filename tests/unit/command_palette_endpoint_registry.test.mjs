@@ -32,6 +32,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openDeleteCurrentNamespace: noop,
             prioritizeTagToFront: noop,
             prioritizeTagToBack: noop,
+            alphabetizeRootNotesAsc: noop,
+            alphabetizeRootNotesDesc: noop,
             getSortMode: () => 'normal',
             setSortMode: noop,
         },
@@ -51,6 +53,16 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('action.attach_file_to_current_note'), true);
     assert.equal(attachFileEndpoint.label, 'Attach file…');
     assert.equal(endpointIds.has('action.trim_unused_files'), true);
+    assert.equal(endpointIds.has('action.prioritize_tag_front'), true);
+    assert.equal(endpointIds.has('action.prioritize_tag_back'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.prioritize_tag_front').label,
+        'Prioritize tag to front (global)…',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.prioritize_tag_back').label,
+        'Prioritize tag to back (global)…',
+    );
     assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
     assert.equal(endpointIds.has('action.run_mcp_client'), true);
     assert.equal(endpointIds.has('view.sort_mode'), true);

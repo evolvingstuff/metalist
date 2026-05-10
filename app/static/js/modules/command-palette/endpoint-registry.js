@@ -217,13 +217,13 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'action.prioritize_tag_front',
             kind: 'action',
-            label: 'Prioritize tag to front (current view)…',
+            label: 'Prioritize tag to front (global)…',
             execute: async () => prioritizeTagToFront(),
         },
         {
             id: 'action.prioritize_tag_back',
             kind: 'action',
-            label: 'Prioritize tag to back (current view)…',
+            label: 'Prioritize tag to back (global)…',
             execute: async () => prioritizeTagToBack(),
         },
         {

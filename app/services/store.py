@@ -118,6 +118,9 @@ class _AdapterStore:
         )
         _note_store.update_metadata_from_db(row, rebuild=False)
 
+    def bulk_update_metadata(self, notes: Iterable[SimpleNamespace], *, rebuild: bool) -> None:
+        _note_store.bulk_update_metadata(notes, rebuild=rebuild)
+
     def set_collapsed(self, note_id: str, collapsed: bool) -> None:
         _note_store.set_collapsed(note_id, bool(collapsed))
 

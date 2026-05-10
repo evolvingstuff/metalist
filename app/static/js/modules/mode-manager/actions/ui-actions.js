@@ -184,6 +184,12 @@ export async function actionRefreshAndMaybeSelect(options) {
     const requestTabId = ModeContext.activeTabId;
     const requestSearchQuery = ModeContext.searchQuery;
     const requireExecution = options.requireExecution === true;
+    const resetViewCacheBeforeFetch = options.resetViewCacheBeforeFetch === true;
+    const scrollToTopAfterRender = options.scrollToTopAfterRender === true;
+
+    if (resetViewCacheBeforeFetch) {
+        ModeContext.resetTabDiffCache(requestTabId, { preserveRootAnchor: false });
+    }
 
     if (viewRequestInFlight) {
         if (!requireExecution) {
@@ -365,6 +371,10 @@ export async function actionRefreshAndMaybeSelect(options) {
             rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
 
         await refreshBacklinksPanel({});
+        if (scrollToTopAfterRender) {
+            window.scrollTo(0, 0);
+            ModeContext.updateActiveTabScroll(0);
+        }
 
         return result;
     })().finally(() => {

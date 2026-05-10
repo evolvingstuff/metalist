@@ -1193,6 +1193,9 @@ class CommandPaletteController {
         if (this.isOpen()) {
             this.close();
         }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
 
         const searchQuery = ModeContext.searchQuery;
         if (typeof searchQuery !== 'string') {
@@ -1231,16 +1234,24 @@ class CommandPaletteController {
             }
 
             if (payload.status === 'moved') {
-                await actionRefreshAndMaybeSelect({});
+                ModeContext.bumpUndoContextEpoch(`prioritize.${direction}`);
+                await actionRefreshAndMaybeSelect({
+                    resetViewCacheBeforeFetch: true,
+                    scrollToTopAfterRender: direction === 'front',
+                    context: `prioritize.${direction}`,
+                });
             }
             return payload;
+        }, {
+            showLoadingImmediately: true,
+            timeoutMs: 120000,
         });
         if (result === null) {
             return;
         }
         if (result.status === 'noop') {
             if (result.reason === 'no_matches') {
-                ErrorHandler.showInfoBanner(`No visible notes matched tag "${tag}".`, 6000);
+                ErrorHandler.showInfoBanner(`No root notes matched tag "${tag}".`, 6000);
                 return;
             }
             if (result.reason === 'already_prioritized') {
@@ -1271,6 +1282,9 @@ class CommandPaletteController {
         }
         if (this.isOpen()) {
             this.close();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
         }
 
         const searchQuery = ModeContext.searchQuery;

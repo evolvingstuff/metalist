@@ -2,19 +2,22 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import DefaultDict
 from typing import Dict, List, Optional
 
+from app.db.notes_sql import update_links as db_update_links
+from app.db.session import begin_writer
 from app.services.search_index import extract_tags_for_search
 from app.services.search_index import search_index
-from app.services.snapshot import resolve_search_scope
 from app.services.store import store
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.services.sync import generate_new_uuid
 from app.services.tag_ontology import is_valid_tag_token
-from app.services.undo_state import record_move_batch
+from app.services.undo_state import reset_undo_stack
 from app.usecases.base import QueryCommand
-from app.usecases.move import _assert_neighbors, _neighbors, apply_move
+from app.usecases.move import _assert_neighbors, _neighbors
 
 
 def _normalize_direction(direction: str) -> str:
@@ -37,62 +40,107 @@ def _normalize_tag(tag: str) -> str:
     return normalized
 
 
-def _resolve_visible_root_ids(search_query: Optional[str]) -> List[str]:
+def _validate_legacy_search_query(search_query: Optional[str]) -> None:
     if search_query is not None and not isinstance(search_query, str):
         raise TypeError(f"search_query must be a string or None, got {type(search_query)}")
-
-    normalized_search = search_query
-    if isinstance(normalized_search, str) and normalized_search.strip() == "":
-        normalized_search = None
-
-    if normalized_search is None:
-        return store.children(None)
-
-    search_scope = resolve_search_scope(
-        search=normalized_search,
-        editing_note_id=None,
-        sort_mode="normal",
-        ordered_root_ids=None,
-    )
-    if not search_scope.search_active or search_scope.search_root_ids_ordered is None:
-        return store.children(None)
-    return list(search_scope.search_root_ids_ordered)
 
 
 def _build_target_root_ids(
     *,
     ordered_root_ids: List[str],
-    visible_root_ids: List[str],
     matching_root_ids: List[str],
     direction: str,
 ) -> List[str]:
-    visible_root_id_set = set(visible_root_ids)
-    if len(visible_root_id_set) != len(visible_root_ids):
-        raise RuntimeError("Visible root ids must be unique")
+    ordered_root_id_set = set(ordered_root_ids)
+    if len(ordered_root_id_set) != len(ordered_root_ids):
+        raise RuntimeError("Root ids must be unique")
 
     matching_root_id_set = set(matching_root_ids)
+    if len(matching_root_id_set) != len(matching_root_ids):
+        raise RuntimeError("Matching root ids must be unique")
+    if not matching_root_id_set.issubset(ordered_root_id_set):
+        raise RuntimeError("Matching root ids must be a subset of ordered root ids")
+
     non_matching_root_ids = [
-        root_id for root_id in visible_root_ids if root_id not in matching_root_id_set
+        root_id for root_id in ordered_root_ids if root_id not in matching_root_id_set
     ]
     if direction == "front":
-        desired_visible_root_ids = matching_root_ids + non_matching_root_ids
-    else:
-        desired_visible_root_ids = non_matching_root_ids + matching_root_ids
+        return matching_root_ids + non_matching_root_ids
+    return non_matching_root_ids + matching_root_ids
 
-    desired_index = 0
-    target_root_ids: List[str] = []
-    for root_id in ordered_root_ids:
-        if root_id in visible_root_id_set:
-            if desired_index >= len(desired_visible_root_ids):
-                raise RuntimeError("Desired visible root ids exhausted during root order reconstruction")
-            target_root_ids.append(desired_visible_root_ids[desired_index])
-            desired_index += 1
+
+def _build_root_order_updates(
+    *,
+    target_root_ids: List[str],
+    updated_at: datetime,
+) -> tuple[List[SimpleNamespace], int]:
+    if len(set(target_root_ids)) != len(target_root_ids):
+        raise RuntimeError("Target root ids must be unique")
+
+    updates: List[SimpleNamespace] = []
+    changed_count = 0
+    for index, note_id in enumerate(target_root_ids):
+        if index > 0:
+            prev_id = target_root_ids[index - 1]
         else:
-            target_root_ids.append(root_id)
+            prev_id = None
+        if index + 1 < len(target_root_ids):
+            next_id = target_root_ids[index + 1]
+        else:
+            next_id = None
 
-    if desired_index != len(desired_visible_root_ids):
-        raise RuntimeError("Desired visible root ids overflowed root order reconstruction")
-    return target_root_ids
+        before_parent, before_prev, before_next = _neighbors(note_id)
+        if before_parent is not None:
+            raise RuntimeError(
+                "Prioritize only supports root notes in v1: "
+                f"note_id={note_id} parent_id={before_parent}"
+            )
+        link_changed = before_prev != prev_id
+        if before_next != next_id:
+            link_changed = True
+        if link_changed:
+            changed_count += 1
+            updates.append(
+                SimpleNamespace(
+                    id=note_id,
+                    parent_id=None,
+                    prev_id=prev_id,
+                    next_id=next_id,
+                    updated_at=updated_at,
+                )
+            )
+        else:
+            updates.append(
+                SimpleNamespace(
+                    id=note_id,
+                    parent_id=None,
+                    prev_id=prev_id,
+                    next_id=next_id,
+                )
+            )
+    return updates, changed_count
+
+
+def _apply_root_order_updates(updates: List[SimpleNamespace]) -> None:
+    if not updates:
+        return
+
+    with begin_writer() as connection:
+        for update in updates:
+            if not hasattr(update, "updated_at"):
+                continue
+            db_update_links(
+                connection,
+                update.id,
+                parent_id=update.parent_id,
+                prev_id=update.prev_id,
+                next_id=update.next_id,
+                updated_at=update.updated_at,
+            )
+
+    store.bulk_update_metadata(updates, rebuild=True)
+    for update in updates:
+        _assert_neighbors(update.id, update.parent_id, update.prev_id, update.next_id)
 
 
 def list_prioritize_tag_suggestions(
@@ -106,8 +154,9 @@ def list_prioritize_tag_suggestions(
     if not isinstance(limit, int) or limit <= 0:
         raise TypeError("limit must be a positive integer")
 
+    _validate_legacy_search_query(search_query)
     normalized_prefix = query.strip()
-    visible_root_ids = _resolve_visible_root_ids(search_query)
+    ordered_root_ids = store.children(None)
 
     total_counts: DefaultDict[str, int] = defaultdict(int)
     representative_counts: DefaultDict[str, Dict[str, int]] = defaultdict(dict)
@@ -115,7 +164,7 @@ def list_prioritize_tag_suggestions(
     first_seen_indices: Dict[str, int] = {}
     next_index = 0
 
-    for root_id in visible_root_ids:
+    for root_id in ordered_root_ids:
         record = store.get(root_id)
         if not isinstance(record.tags, str):
             raise RuntimeError(f"Note tags must be a string | note_id={root_id}")
@@ -177,12 +226,12 @@ class CmdPrioritize(QueryCommand):
     def execute(self) -> Dict[str, object]:
         normalized_tag = _normalize_tag(self.tag)
         normalized_direction = _normalize_direction(self.direction)
+        _validate_legacy_search_query(self.search_query)
 
         ordered_root_ids = store.children(None)
-        visible_root_ids = _resolve_visible_root_ids(self.search_query)
         matching_note_ids = set(search_index.query_note_ids(normalized_tag))
         matching_root_ids = [
-            root_id for root_id in visible_root_ids if root_id in matching_note_ids
+            root_id for root_id in ordered_root_ids if root_id in matching_note_ids
         ]
 
         if len(matching_root_ids) == 0:
@@ -190,12 +239,11 @@ class CmdPrioritize(QueryCommand):
                 "status": "noop",
                 "reason": "no_matches",
                 "matchedRootCount": 0,
-                "visibleRootCount": len(visible_root_ids),
+                "rootCount": len(ordered_root_ids),
             }
 
         target_root_ids = _build_target_root_ids(
             ordered_root_ids=ordered_root_ids,
-            visible_root_ids=visible_root_ids,
             matching_root_ids=matching_root_ids,
             direction=normalized_direction,
         )
@@ -204,84 +252,32 @@ class CmdPrioritize(QueryCommand):
                 "status": "noop",
                 "reason": "already_prioritized",
                 "matchedRootCount": len(matching_root_ids),
-                "visibleRootCount": len(visible_root_ids),
+                "rootCount": len(ordered_root_ids),
             }
 
-        simulated_root_ids = list(ordered_root_ids)
-        move_ops: List[Dict[str, object]] = []
+        updates, moved_root_count = _build_root_order_updates(
+            target_root_ids=target_root_ids,
+            updated_at=datetime.now(timezone.utc),
+        )
 
-        for target_index, note_id in enumerate(target_root_ids):
-            current_index = simulated_root_ids.index(note_id)
-            if current_index == target_index:
-                continue
-
-            before_parent, before_prev, before_next = _neighbors(note_id)
-            if before_parent is not None:
-                raise RuntimeError(
-                    "Prioritize only supports root notes in v1: "
-                    f"note_id={note_id} parent_id={before_parent}"
-                )
-
-            record = store.get(note_id)
-            if not isinstance(record.tags, str):
-                raise RuntimeError(f"Note tags must be a string | note_id={note_id}")
-            tags = record.tags
-
-            simulated_without = simulated_root_ids[:current_index] + simulated_root_ids[current_index + 1:]
-            if target_index == 0:
-                dest_prev = None
-            else:
-                dest_prev = simulated_without[target_index - 1]
-            if target_index >= len(simulated_without):
-                dest_next = None
-            else:
-                dest_next = simulated_without[target_index]
-
-            apply_move(note_id, None, dest_prev, dest_next)
-            _assert_neighbors(note_id, None, dest_prev, dest_next)
-
-            move_ops.append(
-                {
-                    "note_id": note_id,
-                    "before_parent": before_parent,
-                    "before_prev": before_prev,
-                    "before_next": before_next,
-                    "before_tags": tags,
-                    "after_parent": None,
-                    "after_prev": dest_prev,
-                    "after_next": dest_next,
-                    "after_tags": tags,
-                }
-            )
-
-            simulated_root_ids = list(simulated_without)
-            simulated_root_ids.insert(target_index, note_id)
-
-        if simulated_root_ids != target_root_ids:
-            raise RuntimeError(
-                "Prioritize failed to realize target order: "
-                f"actual={simulated_root_ids} target={target_root_ids}"
-            )
-
-        if len(move_ops) == 0:
+        if moved_root_count == 0:
             return {
                 "status": "noop",
                 "reason": "already_prioritized",
                 "matchedRootCount": len(matching_root_ids),
-                "visibleRootCount": len(visible_root_ids),
+                "rootCount": len(ordered_root_ids),
             }
 
-        record_move_batch(
+        _apply_root_order_updates(updates)
+        reset_undo_stack(
             self.client_id,
             self.undo_context,
-            move_ops=move_ops,
-            viewport=self.viewport,
         )
 
         return {
             "status": "moved",
-            "movedRootCount": len(move_ops),
+            "movedRootCount": len(matching_root_ids),
             "matchedRootCount": len(matching_root_ids),
-            "visibleRootCount": len(visible_root_ids),
+            "rootCount": len(ordered_root_ids),
             "updateUUID": generate_new_uuid(),
         }
