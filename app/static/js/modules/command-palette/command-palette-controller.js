@@ -22,6 +22,7 @@ import { HelpModal } from '../modals/help-modal.js';
 import { NamespaceSwitcherModal } from '../modals/namespace-switcher-modal.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
 import { PrioritizeModal } from '../modals/prioritize-modal.js';
+import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -260,6 +261,7 @@ class CommandPaletteController {
         this._namespaceSwitcherModal = null;
         this._deleteNamespaceModal = null;
         this._prioritizeModal = null;
+        this._alphabetizeRootNotesModal = null;
 
         this._elements = null;
 
@@ -312,6 +314,8 @@ class CommandPaletteController {
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
                 prioritizeTagToFront: this.prioritizeTagToFront.bind(this),
                 prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
+                alphabetizeRootNotesAsc: this.alphabetizeRootNotesAsc.bind(this),
+                alphabetizeRootNotesDesc: this.alphabetizeRootNotesDesc.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
             },
@@ -1252,6 +1256,78 @@ class CommandPaletteController {
 
     async prioritizeTagToBack() {
         await this._prioritizeTag('back');
+    }
+
+    async _alphabetizeRootNotes(direction) {
+        if (direction !== 'asc' && direction !== 'desc') {
+            throw new Error("direction must be 'asc' or 'desc'");
+        }
+        if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
+            ErrorHandler.showInfoBanner(
+                'Root-note reordering is disabled while sorting by datetime.',
+                5000,
+            );
+            return;
+        }
+        if (this.isOpen()) {
+            this.close();
+        }
+
+        const searchQuery = ModeContext.searchQuery;
+        if (typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string');
+        }
+
+        if (this._alphabetizeRootNotesModal === null) {
+            this._alphabetizeRootNotesModal = new AlphabetizeRootNotesModal();
+        }
+
+        const confirmed = await this._alphabetizeRootNotesModal.openForDirection({
+            direction,
+            searchQuery,
+        });
+        if (!confirmed) {
+            return;
+        }
+
+        const result = await CommandGate.run(`commandPalette.alphabetizeRootNotes.${direction}`, async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const payload = await NotesAPI.alphabetizeRootNotes(direction, searchQuery);
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Alphabetize root notes response missing body');
+            }
+
+            if (payload.status === 'moved') {
+                ModeContext.bumpUndoContextEpoch(`alphabetizeRootNotes.${direction}`);
+                await actionRefreshAndMaybeSelect({});
+            }
+            return payload;
+        });
+        if (result === null) {
+            return;
+        }
+        if (result.status === 'noop') {
+            if (result.reason === 'not_enough_roots') {
+                ErrorHandler.showInfoBanner('There are not enough visible root notes to alphabetize.', 6000);
+                return;
+            }
+            if (result.reason === 'already_alphabetized') {
+                const directionLabel = direction === 'asc' ? 'A-Z' : 'Z-A';
+                ErrorHandler.showInfoBanner(`Visible root notes are already alphabetized ${directionLabel}.`, 6000);
+                return;
+            }
+        }
+    }
+
+    async alphabetizeRootNotesAsc() {
+        await this._alphabetizeRootNotes('asc');
+    }
+
+    async alphabetizeRootNotesDesc() {
+        await this._alphabetizeRootNotes('desc');
     }
 
     async resetViewFilters() {

@@ -10,6 +10,24 @@ import { CommandGate } from '../services/command-gate-service.js';
 import { scheduleDebouncedSearchExecution } from '../services/search-debounce-service.js';
 import { primeActiveSearchInteractionState, recordSearchExecutionInteractionIfEligible } from '../services/search-interaction-service.js';
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
+import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
+
+export function resetActiveTabForSearchExecution(searchQuery, options) {
+    if (typeof searchQuery !== 'string') {
+        throw new Error('resetActiveTabForSearchExecution requires searchQuery string');
+    }
+    if (options === null || typeof options !== 'object') {
+        throw new Error('resetActiveTabForSearchExecution requires options object');
+    }
+    const isFreshSearchInput = options.isFreshSearchInput === true;
+    ModeContext.clearActiveTabDiffCacheForSearchExecution(searchQuery, {
+        forceClear: isFreshSearchInput,
+    });
+    if (isFreshSearchInput) {
+        clearActiveNotesDom();
+        clearCachedNotesDomForTab(ModeContext.activeTabId);
+    }
+}
 
 export function handleSearchInput(event) {
     if (ModeContext.isLoading) {
@@ -39,6 +57,9 @@ export function handleSearchInput(event) {
         length: analysis.normalizedText.length,
         isComplete: analysis.isComplete,
     }, Logger.LogCategory.EVENT);
+
+    const previousSearchQuery = ModeContext.searchQuery;
+    const isFreshSearchInput = previousSearchQuery !== analysis.normalizedText;
 
     // Update context immediately for UI responsiveness
     ModeContext.setSearchQuery(analysis.normalizedText);
@@ -71,7 +92,7 @@ export function handleSearchInput(event) {
 
         void CommandGate.run('search.execute', async () => {
             Logger.logAction('executeSearch', { searchQuery: currentSearch });
-            ModeContext.clearActiveTabDiffCacheForSearchExecution(currentSearch);
+            resetActiveTabForSearchExecution(currentSearch, { isFreshSearchInput });
             ModeContext.resetRootTracking({ clear: true });
             window.scrollTo(0, 0);
             ModeContext.updateActiveTabScroll(0);

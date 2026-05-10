@@ -41,6 +41,8 @@ export function buildCommandPaletteEndpoints(deps) {
     const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
     const prioritizeTagToFront = requireAction(actions, 'prioritizeTagToFront');
     const prioritizeTagToBack = requireAction(actions, 'prioritizeTagToBack');
+    const alphabetizeRootNotesAsc = requireAction(actions, 'alphabetizeRootNotesAsc');
+    const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
 
@@ -223,6 +225,18 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Prioritize tag to back (current view)…',
             execute: async () => prioritizeTagToBack(),
+        },
+        {
+            id: 'action.alphabetize_root_notes_asc',
+            kind: 'action',
+            label: 'Alphabetize root notes A-Z (current view)…',
+            execute: async () => alphabetizeRootNotesAsc(),
+        },
+        {
+            id: 'action.alphabetize_root_notes_desc',
+            kind: 'action',
+            label: 'Alphabetize root notes Z-A (current view)…',
+            execute: async () => alphabetizeRootNotesDesc(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',

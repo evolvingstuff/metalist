@@ -48,6 +48,8 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Trim unused files`: deletes file rows whose UUIDs are no longer referenced anywhere in note content. This is the only automatic cleanup path for orphaned attachments.
 - `Prioritize tag to front (current view)…`: opens a modal with single-tag input and suggestions limited to tags present on root notes in the active view. Applying it stably moves matching root notes to the front of the full active view while preserving relative order inside the matching and non-matching groups. This mutates stored root order through the current view subset, not just the currently rendered DOM.
 - `Prioritize tag to back (current view)…`: same as above, but stably moves matching root notes to the back of the full active view.
+- `Alphabetize root notes A-Z (current view)…`: after confirmation, permanently rearranges only root-level notes in the active search context by root-note content. Hidden roots and child notes are not reordered. Cmd+Z cannot undo this action; the undo/redo queue is cleared like a view-context switch.
+- `Alphabetize root notes Z-A (current view)…`: same as A-Z, but descending by root-note content.
 
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).

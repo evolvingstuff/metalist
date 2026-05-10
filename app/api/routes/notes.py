@@ -20,6 +20,7 @@ from app.usecases.delete_subtree import CmdDeleteSubtree
 from app.usecases.move import CmdMove
 from app.usecases.move_to_top import CmdMoveToTop
 from app.usecases.prioritize import CmdPrioritize
+from app.usecases.alphabetize_root_notes import CmdAlphabetizeRootNotes
 from app.usecases.indent import CmdIndent
 from app.usecases.outdent import CmdOutdent
 from app.usecases.collapse import CmdCollapse
@@ -179,7 +180,7 @@ def view_diff(payload: dict):
         "sort_mode": sort_mode,
     }
     cached_state = view_cache.get(**cache_key)
-    if not anchor_root_id and cached_state:
+    if not anchor_root_id and cached_state and client_hashes:
         last_roots = list(cached_state.children_by_parent.get(None, []))
         if last_roots:
             anchor_root_id = last_roots[-1]
@@ -960,6 +961,37 @@ def prioritize_in_view_endpoint(body: dict):
 
     cmd = CmdPrioritize(
         tag=tag,
+        direction=direction,
+        search_query=normalized_search,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/alphabetize-root-notes")
+@transactional_route
+def alphabetize_root_notes_endpoint(body: dict):
+    viewport = _require_viewport(body)
+    direction = body["direction"]
+    search_query = body["search_query"]
+    if "tab_id" in body:
+        tab_id = body["tab_id"]
+    else:
+        tab_id = None
+
+    if not isinstance(direction, str):
+        raise TypeError("direction must be a string")
+
+    normalized_search: str | None = search_query
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search_query must be a string or null")
+    _block_root_prioritization_when_sorted(tab_id=tab_id)
+
+    cmd = CmdAlphabetizeRootNotes(
         direction=direction,
         search_query=normalized_search,
         client_id=body["clientId"],

@@ -699,6 +699,25 @@ export const NotesAPI = {
         });
     },
 
+    async alphabetizeRootNotes(direction, searchQuery) {
+        if (typeof direction !== 'string' || direction.length === 0) {
+            throw new Error('NotesAPI.alphabetizeRootNotes requires direction string');
+        }
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.alphabetizeRootNotes requires searchQuery string or null');
+        }
+        const body = {
+            direction,
+            search_query: searchQuery,
+            tab_id: ModeContext.activeTabId,
+        };
+        return this._apiCall(CONFIG.API.NOTES.ALPHABETIZE_ROOT_NOTES, {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async indentNote(noteId, visiblePrevId) {
         if (typeof visiblePrevId !== 'string' || visiblePrevId.length === 0) {
             throw new Error('NotesAPI.indentNote requires visiblePrevId string');
