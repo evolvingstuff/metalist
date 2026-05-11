@@ -133,7 +133,7 @@ def _build_https_namespace_url(*, host: str, result: NamespaceOpenResult) -> str
 
 
 def _build_mcp_namespace_url(*, environ: dict[str, str], result: NamespaceOpenResult) -> str:
-    if not _env_flag_from_mapping(environ=environ, name="MCP_AGENT_WEB_ENABLED", default=True):
+    if not _env_flag_from_mapping(environ=environ, name="MCP_AGENT_WEB_ENABLED", default=False):
         return "disabled"
     mcp_port = result.saved_profile.mcp_port
     if not isinstance(mcp_port, int):
@@ -352,12 +352,12 @@ def _evict_processes_listening_on_port(*, port: int) -> None:
 
 
 def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
-    mcp_client = _load_mcp_client_module()
-    enabled = _env_flag("MCP_AGENT_WEB_ENABLED", True)
+    enabled = _env_flag("MCP_AGENT_WEB_ENABLED", False)
     if not enabled:
-        print("Agent web app sidecar disabled (MCP_AGENT_WEB_ENABLED=0)")
+        print("Agent web app sidecar disabled (set MCP_AGENT_WEB_ENABLED=1 to enable)")
         return
 
+    mcp_client = _load_mcp_client_module()
     if "MCP_AGENT_WEB_HOST" in os.environ:
         host = os.environ["MCP_AGENT_WEB_HOST"]
     else:
