@@ -605,10 +605,11 @@ def _content_match_sort_key(
     content_match_scores: Dict[str, TagContentMatch],
     exact_tag_counts: Dict[str, int],
     cooccurrence_rank: Dict[str, int],
-) -> tuple[int, int, int, int, int, int, int, int, int, int, str]:
+) -> tuple[object, ...]:
     match = content_match_scores[term]
     unmatched_segment_count = match.segment_count - match.matched_segment_count
     assert unmatched_segment_count >= 0
+    tag_frequency = _lookup_count(exact_tag_counts, term)
     structured_term_penalty = 1
     if term != term.casefold():
         structured_term_penalty = 0
@@ -623,12 +624,12 @@ def _content_match_sort_key(
         -match.matched_segment_count,
         unmatched_segment_count,
         structured_term_penalty,
-        match.raw_phrase_position if match.raw_phrase_match else len(term),
-        match.raw_segment_count,
         match.first_matched_raw_segment_index,
         match.first_position,
+        -tag_frequency,
+        match.raw_phrase_position if match.raw_phrase_match else len(term),
+        match.raw_segment_count,
         -match.normalized_length,
-        -_lookup_count(exact_tag_counts, term),
         cooccurrence_rank.get(term, len(cooccurrence_rank)),
         *_suggestion_tiebreak(term),
     )

@@ -400,7 +400,7 @@ def test_print_namespace_bootstrap_results_shows_http_https_and_mcp_urls(monkeyp
     monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
 
     main_entrypoint._print_namespace_bootstrap_results(
-        environ={},
+        environ={"MCP_AGENT_WEB_ENABLED": "1"},
         launch_results=[
             NamespaceOpenResult(
                 namespace="default",
@@ -437,6 +437,66 @@ def test_print_namespace_bootstrap_results_shows_http_https_and_mcp_urls(monkeyp
         "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443\thttp://127.0.0.1:8765",
         "cla\trestarted\thttp://127.0.0.1:8001\tdisabled\thttp://127.0.0.1:8766",
     ]
+
+
+def test_print_namespace_bootstrap_results_disables_mcp_urls_by_default(monkeypatch) -> None:
+    printed: list[str] = []
+
+    monkeypatch.setattr(
+        main_entrypoint,
+        "resolve_main_server_config",
+        lambda *, environ: MainServerConfig(
+            host="0.0.0.0",
+            port=8000,
+            https_port=8443,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile=None,
+            ssl_keyfile=None,
+        ),
+    )
+    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
+
+    main_entrypoint._print_namespace_bootstrap_results(
+        environ={},
+        launch_results=[
+            NamespaceOpenResult(
+                namespace="default",
+                action="launched",
+                url="http://127.0.0.1:8000",
+                saved_profile=NamespaceLaunchProfile(
+                    namespace="default",
+                    port=8000,
+                    https_port=8443,
+                    mcp_port=8765,
+                ),
+                saved_for_next_launch=False,
+                message="Started namespace default.",
+            ),
+        ],
+    )
+
+    assert printed == [
+        "MetaList namespace bootstrap:",
+        "namespace\taction\thttp\thttps\tmcp",
+        "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443\tdisabled",
+    ]
+
+
+def test_start_agent_web_sidecar_disabled_by_default_without_loading_client(monkeypatch) -> None:
+    printed: list[str] = []
+
+    monkeypatch.delenv("MCP_AGENT_WEB_ENABLED", raising=False)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_load_mcp_client_module",
+        lambda: (_ for _ in ()).throw(AssertionError("disabled sidecar must not load mcp client")),
+    )
+    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
+
+    main_entrypoint._start_agent_web_sidecar(default_mcp_url="http://127.0.0.1:8000/api2/mcp")
+
+    assert printed == ["Agent web app sidecar disabled (set MCP_AGENT_WEB_ENABLED=1 to enable)"]
 
 
 def test_find_listening_pids_for_port_returns_unique_listener_pids(monkeypatch) -> None:

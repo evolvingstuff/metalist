@@ -26,10 +26,10 @@ python mcp_client.py web --port 8765 --mcp-url http://127.0.0.1:8000/api2/mcp
 
 Auto-start behavior:
 - Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved/default profiles, prints their URLs, and exits.
-- `python main.py work` or `python main.py --namespace work` starts one main app process and also launches that namespace's agent web app sidecar.
+- `python main.py work` or `python main.py --namespace work` starts one main app process. The namespace's agent web app sidecar is disabled by default; set `MCP_AGENT_WEB_ENABLED=1` to launch it.
 - The auto-started sidecar now points at the resolved MCP URL for that MetaList process, so changing the main HTTP port does not require a manual MCP URL override.
 - Namespace launch profiles live in `~/MetaList/namespaces.db`, so after a first explicit run you can use `python main.py work` and the sidecar will reuse the saved ports for `work`.
-- Use `python main.py --mcp-port 8766 ...` when you want a second MetaList instance to auto-start its own sidecar without reusing `8765`.
+- Use `python main.py --mcp-port 8766 ...` with `MCP_AGENT_WEB_ENABLED=1` when you want a second MetaList instance to auto-start its own sidecar without reusing `8765`.
 - Standalone `mcp_client.py` remains URL-driven, not namespace-driven: point it at the server URL you want, and that server's process namespace determines the data it can see.
 
 ## Readiness

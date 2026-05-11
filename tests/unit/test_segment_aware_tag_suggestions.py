@@ -354,6 +354,67 @@ def test_tag_suggestions_prefer_exact_literal_tag_over_padded_suffix_variant(
     assert suggestions[:2] == ["back", "n-back"]
 
 
+def test_tag_suggestions_prefer_prefix_aligned_dot_tag_over_suffix_hyphen_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("suffix", "Z-A"),
+            ("prefix", "A.B"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>A</p>",
+    )
+
+    assert suggestions[:2] == ["A.B", "Z-A"]
+
+
+def test_tag_suggestions_use_frequency_before_literal_length_for_equivalent_connector_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag_rows = [(f"appearance-{index}", "fat.appearance") for index in range(470)]
+    tag_rows.extend(
+        [
+            ("brown", "brown-fat"),
+            ("roll", "fat-roll"),
+            ("feeling", "off-feeling"),
+        ]
+    )
+    index = _build_index(tag_rows)
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="fat",
+        content_html="<p>feeling fat</p>",
+    )
+
+    assert suggestions[:3] == ["fat.appearance", "fat-roll", "brown-fat"]
+
+
 def test_tag_suggestions_promote_full_literal_phrase_match_even_when_it_includes_stopwords(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

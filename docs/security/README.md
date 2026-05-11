@@ -216,7 +216,7 @@ writes).
 - Login rate limiting already prefers the first `x-forwarded-for` hop, so when you deploy behind a trusted proxy you still get client-IP-based throttling.
 - Namespace selection is independent of listener ports. Use `--namespace` / `METALIST_NAMESPACE` for DB selection and `--port` / `METALIST_PORT` for listener selection.
 - Listener precedence is explicit CLI flags > env vars > saved namespace profile in `~/MetaList/namespaces.db` > built-in defaults.
-- The MCP sidecar redirect now supports a public override via `MCP_AGENT_PUBLIC_ORIGIN=https://host:port`. If you are not exposing the sidecar remotely, disable it with `MCP_AGENT_WEB_ENABLED=0`.
+- The MCP sidecar redirect now supports a public override via `MCP_AGENT_PUBLIC_ORIGIN=https://host:port`. The sidecar is disabled by default; enable it explicitly with `MCP_AGENT_WEB_ENABLED=1` only when needed.
 - When `main.py` auto-starts the MCP sidecar, its default MCP URL now follows the resolved MetaList HTTP port for that process.
 - If multiple MetaList processes auto-start sidecars on the same machine, use `--mcp-port` or `MCP_AGENT_WEB_PORT` to avoid sidecar port collisions.
 
