@@ -718,6 +718,21 @@ export const NotesAPI = {
         });
     },
 
+    async resetUpdatedAtToCreatedAt(searchQuery) {
+        if (searchQuery !== null && typeof searchQuery !== 'string') {
+            throw new Error('NotesAPI.resetUpdatedAtToCreatedAt requires searchQuery string or null');
+        }
+        const body = {
+            search_query: searchQuery,
+            tab_id: ModeContext.activeTabId,
+        };
+        return this._apiCall(CONFIG.API.NOTES.RESET_UPDATED_AT_TO_CREATED_AT, {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify(body),
+        });
+    },
+
     async indentNote(noteId, visiblePrevId) {
         if (typeof visiblePrevId !== 'string' || visiblePrevId.length === 0) {
             throw new Error('NotesAPI.indentNote requires visiblePrevId string');

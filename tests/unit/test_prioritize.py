@@ -75,12 +75,12 @@ def _install_root_reorder_fakes(
     ) -> None:
         assert connection is not None
         assert updates["parent_id"] is None
-        assert "updated_at" in updates
+        assert "updated_at" not in updates
         update_calls.append((note_id, updates["prev_id"], updates["next_id"]))
 
     monkeypatch.setattr(module, "_neighbors", fake_neighbors)
     monkeypatch.setattr(module, "begin_writer", fake_begin_writer)
-    monkeypatch.setattr(module, "db_update_links", fake_db_update_links)
+    monkeypatch.setattr(module, "db_update_links_preserving_updated_at", fake_db_update_links)
     monkeypatch.setattr(module, "_assert_neighbors", lambda *args: None)
     return update_calls
 

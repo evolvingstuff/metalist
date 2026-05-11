@@ -2,6 +2,7 @@ export const ROOT_SORT_MODES = Object.freeze({
     NORMAL: 'normal',
     CREATED: 'created',
     UPDATED: 'updated',
+    ALPHABETICAL: 'alphabetical',
 });
 
 export function normalizeRootSortMode(sortMode) {
@@ -13,6 +14,7 @@ export function normalizeRootSortMode(sortMode) {
         normalized !== ROOT_SORT_MODES.NORMAL
         && normalized !== ROOT_SORT_MODES.CREATED
         && normalized !== ROOT_SORT_MODES.UPDATED
+        && normalized !== ROOT_SORT_MODES.ALPHABETICAL
     ) {
         throw new Error(`Unsupported root sort mode: ${sortMode}`);
     }
@@ -34,7 +36,21 @@ export function getRootSortModeIndicatorLabel(sortMode) {
     if (normalized === ROOT_SORT_MODES.UPDATED) {
         return 'Sorted by datetime last updated';
     }
+    if (normalized === ROOT_SORT_MODES.ALPHABETICAL) {
+        return 'Sorted alphabetically';
+    }
     throw new Error(`Unsupported root sort mode: ${sortMode}`);
+}
+
+export function isRootDateBucketSortMode(sortMode) {
+    const normalized = normalizeRootSortMode(sortMode);
+    if (normalized === ROOT_SORT_MODES.CREATED) {
+        return true;
+    }
+    if (normalized === ROOT_SORT_MODES.UPDATED) {
+        return true;
+    }
+    return false;
 }
 
 export function buildRootDateSeparatorPlan(rootIds, rootSortBuckets) {

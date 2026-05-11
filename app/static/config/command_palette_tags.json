@@ -17,8 +17,20 @@
       "tags": ["perf", "performance", "overlay", "debug", "metrics", "dev", "ui", "show", "hide", "toggle"]
     },
     {
-      "id": "view.sort_mode",
-      "tags": ["sort", "order", "normal", "datetime", "created", "updated", "last", "edit", "view"]
+      "id": "view.sort_mode.normal",
+      "tags": ["sort", "order", "normal", "manual", "default", "view"]
+    },
+    {
+      "id": "view.sort_mode.created",
+      "tags": ["sort", "order", "datetime", "date", "time", "created", "creation", "view"]
+    },
+    {
+      "id": "view.sort_mode.updated",
+      "tags": ["sort", "order", "datetime", "date", "time", "updated", "last", "modified", "edit", "view"]
+    },
+    {
+      "id": "view.sort_mode.alphabetical",
+      "tags": ["sort", "order", "alphabetical", "alphabetic", "alpha", "content", "a", "z", "view"]
     },
     {
       "id": "pref.theme",
@@ -107,6 +119,10 @@
     {
       "id": "action.alphabetize_root_notes_desc",
       "tags": ["alphabetize", "alphabetical", "alpha", "sort", "content", "root", "notes", "current", "view", "search", "desc", "descending", "z", "a", "journal", "order", "reorder"]
+    },
+    {
+      "id": "action.reset_updated_at_to_created_at",
+      "tags": ["repair", "fix", "restore", "set", "reset", "updated", "created", "updated_at", "created_at", "timestamp", "timestamps", "time", "date", "dates", "last", "modified", "edited", "edit", "root", "notes", "current", "view", "search", "journal"]
     },
     {
       "id": "action.open_keyboard_shortcuts_help",

@@ -43,6 +43,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const prioritizeTagToBack = requireAction(actions, 'prioritizeTagToBack');
     const alphabetizeRootNotesAsc = requireAction(actions, 'alphabetizeRootNotesAsc');
     const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
+    const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
 
@@ -53,6 +54,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showPerfOverlay: false,
         theme: 'system',
     };
+    const sortModeActionValue = (sortMode) => (getSortMode() === sortMode ? 'Current' : '↵');
 
     return [
         {
@@ -88,16 +90,36 @@ export function buildCommandPaletteEndpoints(deps) {
             apply: (next) => applyPreference('pref.show_perf_overlay', next),
         },
         {
-            id: 'view.sort_mode',
-            kind: 'select',
-            label: 'Sort order',
-            getValue: () => getSortMode(),
-            options: [
-                { value: 'normal', label: 'Normal' },
-                { value: 'created', label: 'Datetime created' },
-                { value: 'updated', label: 'Datetime last updated' },
-            ],
-            apply: (next) => setSortMode(next),
+            id: 'view.sort_mode.normal',
+            kind: 'action',
+            label: 'Sort order: Normal',
+            getValue: () => sortModeActionValue('normal'),
+            closeOnExecute: true,
+            execute: async () => setSortMode('normal'),
+        },
+        {
+            id: 'view.sort_mode.created',
+            kind: 'action',
+            label: 'Sort order: Datetime created',
+            getValue: () => sortModeActionValue('created'),
+            closeOnExecute: true,
+            execute: async () => setSortMode('created'),
+        },
+        {
+            id: 'view.sort_mode.updated',
+            kind: 'action',
+            label: 'Sort order: Datetime last updated',
+            getValue: () => sortModeActionValue('updated'),
+            closeOnExecute: true,
+            execute: async () => setSortMode('updated'),
+        },
+        {
+            id: 'view.sort_mode.alphabetical',
+            kind: 'action',
+            label: 'Sort order: Alphabetical',
+            getValue: () => sortModeActionValue('alphabetical'),
+            closeOnExecute: true,
+            execute: async () => setSortMode('alphabetical'),
         },
         {
             id: 'pref.theme',
@@ -116,18 +138,21 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'action.expand_all',
             kind: 'action',
             label: 'Expand all collapsed notes (current view)',
+            closeOnExecute: true,
             execute: async () => expandAll(),
         },
         {
             id: 'action.collapse_all',
             kind: 'action',
             label: 'Collapse all notes (current view)',
+            closeOnExecute: true,
             execute: async () => collapseAll(),
         },
         {
             id: 'action.reset_view_filters',
             kind: 'action',
             label: 'Reset current view filters',
+            closeOnExecute: true,
             execute: async () => resetViewFilters(),
         },
         {
@@ -206,37 +231,50 @@ export function buildCommandPaletteEndpoints(deps) {
             id: 'action.attach_file_to_current_note',
             kind: 'action',
             label: 'Attach file…',
+            closeOnExecute: true,
             execute: async () => attachFileToCurrentNote(),
         },
         {
             id: 'action.trim_unused_files',
             kind: 'action',
             label: 'Trim unused files',
+            closeOnExecute: true,
             execute: async () => trimUnusedFiles(),
         },
         {
             id: 'action.prioritize_tag_front',
             kind: 'action',
             label: 'Prioritize tag to front (global)…',
+            closeOnExecute: true,
             execute: async () => prioritizeTagToFront(),
         },
         {
             id: 'action.prioritize_tag_back',
             kind: 'action',
             label: 'Prioritize tag to back (global)…',
+            closeOnExecute: true,
             execute: async () => prioritizeTagToBack(),
         },
         {
             id: 'action.alphabetize_root_notes_asc',
             kind: 'action',
             label: 'Alphabetize root notes A-Z (current view)…',
+            closeOnExecute: true,
             execute: async () => alphabetizeRootNotesAsc(),
         },
         {
             id: 'action.alphabetize_root_notes_desc',
             kind: 'action',
             label: 'Alphabetize root notes Z-A (current view)…',
+            closeOnExecute: true,
             execute: async () => alphabetizeRootNotesDesc(),
+        },
+        {
+            id: 'action.reset_updated_at_to_created_at',
+            kind: 'action',
+            label: 'Repair: reset updated time to created time (current view)…',
+            closeOnExecute: true,
+            execute: async () => resetUpdatedAtToCreatedAt(),
         },
         {
             id: 'action.open_keyboard_shortcuts_help',

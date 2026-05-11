@@ -186,6 +186,71 @@ def update_links(
     conn.execute(sql, tuple(values))
 
 
+def update_links_preserving_updated_at(
+    connection: GuardedConnection | sqlite3.Connection,
+    note_id: str,
+    **updates: Any,
+) -> None:
+    fields: list[str] = []
+    values: list = []
+
+    for key in updates:
+        if key not in _LINK_FIELDS:
+            raise ValueError(f"update_links_preserving_updated_at received unexpected field: {key}")
+
+    if "parent_id" in updates:
+        fields.append("parent_id = ?")
+        values.append(updates["parent_id"])
+    if "prev_id" in updates:
+        fields.append("prev_id = ?")
+        values.append(updates["prev_id"])
+    if "next_id" in updates:
+        fields.append("next_id = ?")
+        values.append(updates["next_id"])
+    if "is_collapsed" in updates:
+        is_collapsed = updates["is_collapsed"]
+        if not isinstance(is_collapsed, bool):
+            raise TypeError("update_links_preserving_updated_at is_collapsed must be a bool")
+        fields.append("is_collapsed = ?")
+        values.append(int(is_collapsed))
+
+    if len(fields) == 0:
+        raise ValueError("update_links_preserving_updated_at requires at least one link field")
+
+    values.append(note_id)
+
+    conn = _conn(connection)
+    sql = f"UPDATE {NOTES_TABLE} SET " + ", ".join(fields) + " WHERE id = ?"
+    conn.execute(sql, tuple(values))
+
+
+def reset_updated_at_to_created_at(
+    connection: GuardedConnection | sqlite3.Connection,
+    note_ids: list[str],
+) -> int:
+    if not isinstance(note_ids, list):
+        raise TypeError("note_ids must be a list")
+    if len(note_ids) == 0:
+        return 0
+
+    conn = _conn(connection)
+    changed_count = 0
+    for note_id in note_ids:
+        if not isinstance(note_id, str) or note_id == "":
+            raise ValueError("note_ids entries must be non-empty strings")
+        cursor = conn.execute(
+            f"""
+            UPDATE {NOTES_TABLE}
+            SET updated_at = created_at
+            WHERE id = ?
+              AND updated_at != created_at
+            """,
+            (note_id,),
+        )
+        changed_count += cursor.rowcount
+    return changed_count
+
+
 def update_note_fields(
     connection: GuardedConnection | sqlite3.Connection,
     note_id: str,

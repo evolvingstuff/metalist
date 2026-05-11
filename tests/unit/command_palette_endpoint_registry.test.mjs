@@ -34,6 +34,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             prioritizeTagToBack: noop,
             alphabetizeRootNotesAsc: noop,
             alphabetizeRootNotesDesc: noop,
+            resetUpdatedAtToCreatedAt: noop,
             getSortMode: () => 'normal',
             setSortMode: noop,
         },
@@ -65,5 +66,38 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     );
     assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
     assert.equal(endpointIds.has('action.run_mcp_client'), true);
-    assert.equal(endpointIds.has('view.sort_mode'), true);
+    assert.equal(endpointIds.has('view.sort_mode'), false);
+    assert.equal(endpointIds.has('view.sort_mode.normal'), true);
+    assert.equal(endpointIds.has('view.sort_mode.created'), true);
+    assert.equal(endpointIds.has('view.sort_mode.updated'), true);
+    assert.equal(endpointIds.has('view.sort_mode.alphabetical'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.alphabetical').label,
+        'Sort order: Alphabetical',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.normal').getValue(),
+        'Current',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.alphabetical').getValue(),
+        '↵',
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'view.sort_mode.alphabetical').closeOnExecute,
+        true,
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.alphabetize_root_notes_asc').closeOnExecute,
+        true,
+    );
+    assert.equal(endpointIds.has('action.reset_updated_at_to_created_at'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.reset_updated_at_to_created_at').closeOnExecute,
+        true,
+    );
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.open_keyboard_shortcuts_help').closeOnExecute,
+        undefined,
+    );
 });

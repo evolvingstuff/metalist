@@ -4,12 +4,15 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from app.services.note_store import store as note_store
+from app.utils.text_utils import strip_html
 
 
 SORT_MODE_NORMAL = "normal"
 SORT_MODE_CREATED = "created"
 SORT_MODE_UPDATED = "updated"
-SORT_MODES = frozenset({SORT_MODE_NORMAL, SORT_MODE_CREATED, SORT_MODE_UPDATED})
+SORT_MODE_ALPHABETICAL = "alphabetical"
+SORT_MODES = frozenset({SORT_MODE_NORMAL, SORT_MODE_CREATED, SORT_MODE_UPDATED, SORT_MODE_ALPHABETICAL})
+TIMESTAMP_SORT_MODES = frozenset({SORT_MODE_CREATED, SORT_MODE_UPDATED})
 
 
 def normalize_sort_mode(sort_mode: object) -> str:
@@ -23,6 +26,10 @@ def normalize_sort_mode(sort_mode: object) -> str:
 
 def is_root_reorder_locked(sort_mode: object) -> bool:
     return normalize_sort_mode(sort_mode) != SORT_MODE_NORMAL
+
+
+def is_timestamp_sort_mode(sort_mode: object) -> bool:
+    return normalize_sort_mode(sort_mode) in TIMESTAMP_SORT_MODES
 
 
 def _get_note_timestamp(note_id: str, sort_mode: str) -> datetime:
@@ -61,10 +68,18 @@ def _get_root_subtree_timestamp(root_id: str, sort_mode: str) -> datetime:
     return newest_timestamp
 
 
+def _get_root_content_sort_key(note_id: str) -> tuple[str, str, int]:
+    record = note_store.get_note(note_id)
+    if not isinstance(record.content, str):
+        raise RuntimeError(f"Root note {note_id} is missing string content for alphabetical sort")
+    text_content = strip_html(record.content).strip()
+    return text_content.casefold(), text_content, len(text_content)
+
+
 def get_root_sort_timestamps(sort_mode: object) -> Dict[str, datetime]:
     normalized = normalize_sort_mode(sort_mode)
     canonical_root_ids = note_store.get_children(None)
-    if normalized == SORT_MODE_NORMAL:
+    if normalized not in TIMESTAMP_SORT_MODES:
         return {}
 
     root_timestamps: Dict[str, datetime] = {}
@@ -82,6 +97,13 @@ def get_root_ids_for_sort_mode(
     canonical_root_ids = note_store.get_children(None)
     if normalized == SORT_MODE_NORMAL:
         return canonical_root_ids
+    if normalized == SORT_MODE_ALPHABETICAL:
+        decorated_alpha = []
+        for canonical_index, root_id in enumerate(canonical_root_ids):
+            content_key = _get_root_content_sort_key(root_id)
+            decorated_alpha.append((root_id, content_key, canonical_index))
+        decorated_alpha.sort(key=lambda item: (item[1], item[2]))
+        return [root_id for root_id, _, _ in decorated_alpha]
 
     decorated = []
     for canonical_index, root_id in enumerate(canonical_root_ids):
@@ -101,7 +123,7 @@ def build_root_sort_buckets(
     root_timestamps: Dict[str, datetime],
 ) -> Dict[str, Dict[str, str]]:
     normalized = normalize_sort_mode(sort_mode)
-    if normalized == SORT_MODE_NORMAL:
+    if normalized not in TIMESTAMP_SORT_MODES:
         return {}
 
     buckets: Dict[str, Dict[str, str]] = {}

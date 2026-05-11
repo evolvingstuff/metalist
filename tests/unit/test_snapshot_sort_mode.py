@@ -167,3 +167,62 @@ def test_build_view_state_uses_newest_updated_timestamp_in_root_subtree(
         "root-stale": {"key": "2026-04-19", "label": "2026/04/19 - Sunday"},
         "root-fresh": {"key": "2026-04-18", "label": "2026/04/18 - Saturday"},
     }
+
+
+def test_build_view_state_sorts_roots_alphabetically_by_root_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 4, 18, 20, 0, tzinfo=timezone.utc)
+    notes = {
+        "root-zebra": _Note(
+            id="root-zebra",
+            parent_id=None,
+            prev_id=None,
+            next_id="root-apple",
+            is_collapsed=False,
+            content="<div>Zebra</div>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+        "root-apple": _Note(
+            id="root-apple",
+            parent_id=None,
+            prev_id="root-zebra",
+            next_id="root-banana",
+            is_collapsed=False,
+            content="<div>apple</div>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+        "root-banana": _Note(
+            id="root-banana",
+            parent_id=None,
+            prev_id="root-apple",
+            next_id=None,
+            is_collapsed=False,
+            content="<div>Banana</div>",
+            tags="",
+            created_at=now,
+            updated_at=now,
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root-zebra", "root-apple", "root-banana"]},
+    )
+    _patch_fake_store(monkeypatch, store)
+
+    state = build_view_state(
+        editing_note_id=None,
+        search=None,
+        sort_mode="alphabetical",
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+    )
+
+    assert state.children_by_parent[None] == ["root-apple", "root-banana", "root-zebra"]
+    assert state.metadata["sortMode"] == "alphabetical"
+    assert state.metadata["rootSortBuckets"] == {}

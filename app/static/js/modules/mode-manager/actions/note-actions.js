@@ -115,7 +115,7 @@ function shouldBlockRootReorder(noteId, contextLabel) {
         sortMode: ModeContext.activeTabSortMode,
     });
     ErrorHandler.showInfoBanner(
-        'Root-note reordering is disabled while sorting by datetime.',
+        'Root-note reordering is disabled while a sort order is active.',
         5000,
     );
     return true;

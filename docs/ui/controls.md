@@ -38,7 +38,7 @@
 - `⌘ + U` rewrites the note's stored content HTML into plain HTML, removing inline/block formatting wrappers while preserving links and images.
 - `⌘ + U` does not remove meta-tags like `@bold`, `@todo`, or any other tag-bar formatting tags.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
-- In `Datetime created` / `Datetime last updated`, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
+- In any non-normal sort order, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, unformat, note copy/cut/paste, and password modal.
 
 ### General Shortcuts
@@ -54,7 +54,7 @@
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 
-- When a datetime sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
+- When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
 - The memory/search contexts overlay is pinned to the lower-left on all screen sizes. The backlinks panel follows that placement so the two overlays stay grouped.
 
 ### Search Input Behavior
@@ -62,7 +62,7 @@
 - Pressing `Esc` while focused in the search input blurs the field and dismisses search suggestions, without clearing the current query or search results.
 - If the search query contains required tag terms (unquoted tokens like `asdf`), the new root note is created with those tags in its tag bar.
 - When creating a child (`⇧ + ⌘ + Enter`) or sibling (`⌘ + Enter`) note under a note that already provides the required **non-meta** tags via inheritance, the new note is **not** redundantly tagged.
-- Datetime sort modes do not change canonical insertion behavior. New roots are still inserted into the manual root order first, then rendered in datetime order, so a newly created root may appear at the top even if it was canonically inserted under an older selected root.
+- Sort modes do not change canonical insertion behavior. New roots are still inserted into the manual root order first, then rendered in the active sort order.
 
 ### Search Suggestions
 - Suggestions are **tag-only** (no text suggestions).
@@ -119,7 +119,7 @@
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
-> In datetime sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
+> In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
 
 ### Command Palette Utility Entries
 - Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)

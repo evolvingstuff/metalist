@@ -81,6 +81,17 @@ def test_set_sort_mode_is_noop_when_value_matches() -> None:
     assert result["tabs"][tab_id]["sortMode"] == "normal"
 
 
+def test_set_sort_mode_accepts_alphabetical() -> None:
+    store = TabStateStore()
+    snapshot = store.snapshot()
+    tab_id = snapshot["activeTabId"]
+
+    result = store.set_sort_mode(tab_id=tab_id, sort_mode="alphabetical")
+
+    assert result["changed"] is True
+    assert result["tabs"][tab_id]["sortMode"] == "alphabetical"
+
+
 def test_bootstrap_restores_persisted_tab_state(
 ) -> None:
     store = TabStateStore()

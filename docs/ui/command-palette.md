@@ -18,10 +18,11 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 
 ## Sort Order
 - `Sort order` is a per-tab, server-owned view setting. Duplicating a tab inherits its current sort mode.
-- Modes are `Normal`, `Datetime created`, and `Datetime last updated`.
+- Modes are exposed as distinct actions: `Sort order: Normal`, `Sort order: Datetime created`, `Sort order: Datetime last updated`, and `Sort order: Alphabetical`.
 - In the datetime modes, root notes are ordered by the newest matching timestamp anywhere in that root subtree, not just on the root note itself.
+- In alphabetical mode, root notes are ordered by root-note content without rewriting the stored manual order.
 - The server returns the ordered root window plus `sortMode`/`rootSortBuckets`; the client inserts day-separator rows between visible roots.
-- When a datetime mode is active, the UI shows a floating dismissible pill above the sticky top bar so the view override is visually obvious and can be cleared in one click.
+- When a non-normal sort mode is active, the UI shows a floating dismissible pill above the sticky top bar so the view override is visually obvious and can be cleared in one click.
 - Changing sort mode is treated as a global view-context switch: the tab scroll state resets and undo/redo history is blanked for that tab context.
 
 ## Config
@@ -50,6 +51,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Prioritize tag to back (global)…`: same as above, but stably moves all matching root notes to the back of the global root order.
 - `Alphabetize root notes A-Z (current view)…`: after confirmation, permanently rearranges only root-level notes in the active search context by root-note content. Hidden roots and child notes are not reordered. Cmd+Z cannot undo this action; the undo/redo queue is cleared like a view-context switch.
 - `Alphabetize root notes Z-A (current view)…`: same as A-Z, but descending by root-note content.
+- `Repair: reset updated time to created time (current view)…`: after confirmation, resets every note inside each matching root subtree in the active search context so `updated_at = created_at`. Notes outside the current view are not changed. Cmd+Z cannot undo this action; the undo/redo queue is cleared.
 
 ## Collapse/Expand All
 "(current view)" means the full active search context (not just rendered DOM).

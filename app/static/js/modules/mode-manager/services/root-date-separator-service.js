@@ -1,4 +1,4 @@
-import { ROOT_SORT_MODES, buildRootDateSeparatorPlan, normalizeRootSortMode } from './root-sort-service.js';
+import { buildRootDateSeparatorPlan, isRootDateBucketSortMode, normalizeRootSortMode } from './root-sort-service.js';
 
 const SEPARATOR_SELECTOR = '.root-date-separator';
 
@@ -25,7 +25,7 @@ export function rebuildRootDateSeparators(snapshot) {
     }
 
     const sortMode = normalizeRootSortMode(snapshot.sortMode);
-    if (sortMode === ROOT_SORT_MODES.NORMAL) {
+    if (!isRootDateBucketSortMode(sortMode)) {
         return;
     }
 

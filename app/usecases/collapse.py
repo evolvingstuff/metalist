@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Dict
 import os
 
@@ -10,7 +9,7 @@ from app.services.store import store
 from app.services.sync import generate_new_uuid
 
 from app.db.session import begin_writer
-from app.db.notes_sql import update_links as db_update_links
+from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
 
 
 def apply_set_collapse_bulk(note_ids: list[str], collapsed: bool) -> None:
@@ -20,10 +19,9 @@ def apply_set_collapse_bulk(note_ids: list[str], collapsed: bool) -> None:
         if not isinstance(note_id, str) or not note_id:
             raise TypeError("note_ids must contain non-empty strings")
 
-    now = datetime.now(timezone.utc)
     with begin_writer() as connection:
         for note_id in note_ids:
-            db_update_links(connection, note_id, is_collapsed=bool(collapsed), updated_at=now)
+            db_update_links_preserving_updated_at(connection, note_id, is_collapsed=bool(collapsed))
     for note_id in note_ids:
         store.set_collapsed(note_id, bool(collapsed))
 

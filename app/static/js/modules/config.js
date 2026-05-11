@@ -28,6 +28,7 @@ export const CONFIG = {
             MOVE_TO_TOP: (noteId) => `${API_NOTES_BASE}/${noteId}/move-to-top`,
             PRIORITIZE: `${API_NOTES_BASE}/prioritize`,
             ALPHABETIZE_ROOT_NOTES: `${API_NOTES_BASE}/alphabetize-root-notes`,
+            RESET_UPDATED_AT_TO_CREATED_AT: `${API_NOTES_BASE}/reset-updated-at-to-created-at`,
             INDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/indent`,
             OUTDENT: (noteId) => `${API_NOTES_BASE}/${noteId}/outdent`,
             COLLAPSE: (noteId) => `${API_NOTES_BASE}/${noteId}/collapse`,

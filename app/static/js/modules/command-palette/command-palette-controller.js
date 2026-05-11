@@ -23,6 +23,7 @@ import { NamespaceSwitcherModal } from '../modals/namespace-switcher-modal.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
 import { PrioritizeModal } from '../modals/prioritize-modal.js';
 import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-modal.js';
+import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -262,6 +263,7 @@ class CommandPaletteController {
         this._deleteNamespaceModal = null;
         this._prioritizeModal = null;
         this._alphabetizeRootNotesModal = null;
+        this._resetUpdatedAtModal = null;
 
         this._elements = null;
 
@@ -316,6 +318,7 @@ class CommandPaletteController {
                 prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
                 alphabetizeRootNotesAsc: this.alphabetizeRootNotesAsc.bind(this),
                 alphabetizeRootNotesDesc: this.alphabetizeRootNotesDesc.bind(this),
+                resetUpdatedAtToCreatedAt: this.resetUpdatedAtToCreatedAt.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
             },
@@ -849,6 +852,13 @@ class CommandPaletteController {
             return option ? option.label : raw;
         }
         if (endpoint.kind === 'action') {
+            if (typeof endpoint.getValue === 'function') {
+                const value = endpoint.getValue();
+                if (typeof value !== 'string') {
+                    throw new Error(`Endpoint ${endpoint.id} returned invalid action value`);
+                }
+                return value;
+            }
             return '↵';
         }
         if (endpoint.kind === 'form') {
@@ -913,8 +923,13 @@ class CommandPaletteController {
             return;
         }
         if (typeof endpoint.execute === 'function') {
+            if (endpoint.closeOnExecute === true && this._isOpen) {
+                this.close();
+            }
             await endpoint.execute();
-            this._render();
+            if (this._isOpen) {
+                this._render();
+            }
         }
     }
 
@@ -1185,7 +1200,7 @@ class CommandPaletteController {
         }
         if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
             ErrorHandler.showInfoBanner(
-                'Root-note reordering is disabled while sorting by datetime.',
+                'Root-note reordering is disabled while a sort order is active.',
                 5000,
             );
             return;
@@ -1275,7 +1290,7 @@ class CommandPaletteController {
         }
         if (isRootReorderLocked(ModeContext.activeTabSortMode)) {
             ErrorHandler.showInfoBanner(
-                'Root-note reordering is disabled while sorting by datetime.',
+                'Root-note reordering is disabled while a sort order is active.',
                 5000,
             );
             return;
@@ -1342,6 +1357,67 @@ class CommandPaletteController {
 
     async alphabetizeRootNotesDesc() {
         await this._alphabetizeRootNotes('desc');
+    }
+
+    async resetUpdatedAtToCreatedAt() {
+        if (this.isOpen()) {
+            this.close();
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+
+        const searchQuery = ModeContext.searchQuery;
+        if (typeof searchQuery !== 'string') {
+            throw new Error('ModeContext.searchQuery must be a string');
+        }
+
+        if (this._resetUpdatedAtModal === null) {
+            this._resetUpdatedAtModal = new ResetUpdatedAtModal();
+        }
+
+        const confirmed = await this._resetUpdatedAtModal.openForSearchContext({
+            searchQuery,
+        });
+        if (!confirmed) {
+            return;
+        }
+
+        const result = await CommandGate.run('commandPalette.resetUpdatedAtToCreatedAt', async () => {
+            if (ModeContext.isEditing) {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            }
+
+            const payload = await NotesAPI.resetUpdatedAtToCreatedAt(searchQuery);
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('Reset updated-at response missing body');
+            }
+
+            if (payload.status === 'updated') {
+                ModeContext.bumpUndoContextEpoch('resetUpdatedAtToCreatedAt');
+                await actionRefreshAndMaybeSelect({
+                    resetViewCacheBeforeFetch: true,
+                    context: 'resetUpdatedAtToCreatedAt',
+                });
+            }
+            return payload;
+        });
+        if (result === null) {
+            return;
+        }
+        if (result.status === 'noop') {
+            if (result.reason === 'no_roots') {
+                ErrorHandler.showInfoBanner('There are no root notes in the current view.', 6000);
+                return;
+            }
+            if (result.reason === 'already_reset') {
+                ErrorHandler.showInfoBanner('Root updated times already match created times in the current view.', 6000);
+                return;
+            }
+        }
+        if (result.status === 'updated') {
+            ErrorHandler.showInfoBanner(`Reset updated time on ${result.changedNoteCount} note(s).`, 6000);
+        }
     }
 
     async resetViewFilters() {

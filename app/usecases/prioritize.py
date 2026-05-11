@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import DefaultDict
 from typing import Dict, List, Optional
 
-from app.db.notes_sql import update_links as db_update_links
+from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
 from app.db.session import begin_writer
 from app.services.search_index import extract_tags_for_search
 from app.services.search_index import search_index
@@ -72,7 +71,6 @@ def _build_target_root_ids(
 def _build_root_order_updates(
     *,
     target_root_ids: List[str],
-    updated_at: datetime,
 ) -> tuple[List[SimpleNamespace], int]:
     if len(set(target_root_ids)) != len(target_root_ids):
         raise RuntimeError("Target root ids must be unique")
@@ -106,7 +104,7 @@ def _build_root_order_updates(
                     parent_id=None,
                     prev_id=prev_id,
                     next_id=next_id,
-                    updated_at=updated_at,
+                    link_changed=True,
                 )
             )
         else:
@@ -116,6 +114,7 @@ def _build_root_order_updates(
                     parent_id=None,
                     prev_id=prev_id,
                     next_id=next_id,
+                    link_changed=False,
                 )
             )
     return updates, changed_count
@@ -127,15 +126,14 @@ def _apply_root_order_updates(updates: List[SimpleNamespace]) -> None:
 
     with begin_writer() as connection:
         for update in updates:
-            if not hasattr(update, "updated_at"):
+            if update.link_changed is not True:
                 continue
-            db_update_links(
+            db_update_links_preserving_updated_at(
                 connection,
                 update.id,
                 parent_id=update.parent_id,
                 prev_id=update.prev_id,
                 next_id=update.next_id,
-                updated_at=update.updated_at,
             )
 
     store.bulk_update_metadata(updates, rebuild=True)
@@ -257,7 +255,6 @@ class CmdPrioritize(QueryCommand):
 
         updates, moved_root_count = _build_root_order_updates(
             target_root_ids=target_root_ids,
-            updated_at=datetime.now(timezone.utc),
         )
 
         if moved_root_count == 0:

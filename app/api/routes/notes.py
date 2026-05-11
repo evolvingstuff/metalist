@@ -21,6 +21,7 @@ from app.usecases.move import CmdMove
 from app.usecases.move_to_top import CmdMoveToTop
 from app.usecases.prioritize import CmdPrioritize
 from app.usecases.alphabetize_root_notes import CmdAlphabetizeRootNotes
+from app.usecases.reset_updated_at import CmdResetUpdatedAtToCreatedAt
 from app.usecases.indent import CmdIndent
 from app.usecases.outdent import CmdOutdent
 from app.usecases.collapse import CmdCollapse
@@ -993,6 +994,27 @@ def alphabetize_root_notes_endpoint(body: dict):
 
     cmd = CmdAlphabetizeRootNotes(
         direction=direction,
+        search_query=normalized_search,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/reset-updated-at-to-created-at")
+@transactional_route
+def reset_updated_at_to_created_at_endpoint(body: dict):
+    viewport = _require_viewport(body)
+    search_query = body["search_query"]
+
+    normalized_search: str | None = search_query
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search_query must be a string or null")
+
+    cmd = CmdResetUpdatedAtToCreatedAt(
         search_query=normalized_search,
         client_id=body["clientId"],
         undo_context=body["undoContext"],
