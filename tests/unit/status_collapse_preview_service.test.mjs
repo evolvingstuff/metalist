@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { extractCollapsedStatusPreviewFromHtml } from '../../app/static/js/modules/mode-manager/services/status-collapse-preview-service.js';
+import {
+    extractCollapsedStatusPreviewFromHtml,
+    syncCollapsedStatusPreview,
+} from '../../app/static/js/modules/mode-manager/services/status-collapse-preview-service.js';
 
 test('extractCollapsedStatusPreviewFromHtml keeps single-line status notes uncollapsed', () => {
     const preview = extractCollapsedStatusPreviewFromHtml('foo');
@@ -55,4 +58,25 @@ test('extractCollapsedStatusPreviewFromHtml skips blank lines and decodes basic 
         previewText: 'foo & bar',
         hasAdditionalLines: true,
     });
+});
+
+test('syncCollapsedStatusPreview ignores status rows inside embedded references', () => {
+    const nestedStatusText = {
+        innerHTML: '<div>child status</div><div>details</div>',
+        textContent: 'child statusdetails',
+        children: [{ tagName: 'DIV' }, { tagName: 'DIV' }],
+    };
+    const contentElement = {
+        querySelector(selector) {
+            assert.equal(selector, ':scope > .meta-status > .meta-status-text');
+            return null;
+        },
+        nestedStatusText,
+    };
+
+    const previewState = syncCollapsedStatusPreview(contentElement, true);
+
+    assert.equal(previewState, null);
+    assert.equal(nestedStatusText.innerHTML, '<div>child status</div><div>details</div>');
+    assert.equal(nestedStatusText.textContent, 'child statusdetails');
 });

@@ -13,6 +13,7 @@
   - Note targets:
     - `![[UUID]]` renders the referenced note as an embedded block (with descendants).
     - `[[UUID]]` renders a compact link-style block showing only the referenced note's first line.
+    - when the host note is collapsed, link-mode note references stay visible as a single compact row showing the preview text.
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.

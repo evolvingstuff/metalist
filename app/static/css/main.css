@@ -2244,6 +2244,38 @@ body {
     border-radius: 6px;
 }
 
+.note.collapsed:not(.editing) .note-content:has(.note-reference-note.note-reference-link-mode) {
+    max-height: none;
+    display: block;
+    line-height: 1.25;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-note.note-reference-link-mode {
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    min-width: 0;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-note.note-reference-link-mode .note-reference-toggle {
+    display: none;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-note.note-reference-link-mode .note-reference-content {
+    width: 100%;
+    min-width: 0;
+}
+
+.note.collapsed:not(.editing) .note-reference-block.note-reference-note.note-reference-link-mode .note-reference-link {
+    display: block;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .note.collapsed:not(.editing) .note-content:has(.note-reference-file:not(.note-reference-file-image)) {
     max-height: none;
     display: block;
@@ -3513,18 +3545,18 @@ body.loading::after {
     display: inline-block;
 }
 
-.note.collapsed:not(.editing) .note-content .meta-status {
+.note.collapsed:not(.editing) > .note-content > .meta-status {
     display: flex;
     align-items: center;
     gap: 8px;
     max-width: 100%;
 }
 
-.note.collapsed:not(.editing) .note-content .meta-status-toggle {
+.note.collapsed:not(.editing) > .note-content > .meta-status > .meta-status-toggle {
     flex: 0 0 auto;
 }
 
-.note.collapsed:not(.editing) .note-content .meta-status-text {
+.note.collapsed:not(.editing) > .note-content > .meta-status > .meta-status-text {
     display: block;
     flex: 1 1 auto;
     min-width: 0;

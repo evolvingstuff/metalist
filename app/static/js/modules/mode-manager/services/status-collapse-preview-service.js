@@ -1,4 +1,4 @@
-const STATUS_CONTENT_SELECTOR = '.meta-status-text';
+const STATUS_CONTENT_SELECTOR = ':scope > .meta-status > .meta-status-text';
 const FIRST_LINE_BOUNDARY_RE = /<br\s*\/?>|<\/?(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer|main)\b[^>]*>\s*|\n/gi;
 const HTML_TAG_RE = /<[^>]+>/g;
 const WHITESPACE_RE = /\s+/g;
