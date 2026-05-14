@@ -31,6 +31,9 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.diagnostics import configure_process_diagnostics
+from app.services.diagnostics import start_asyncio_diagnostics
+from app.services.diagnostics import track_request
 from app.api.request_auth import clear_auth_cookie
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
@@ -85,7 +88,26 @@ class InterceptHandler(logging.Handler):
 
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
+
+def _resolve_diagnostics_namespace(*, namespace: str | None) -> str:
+    if namespace is None:
+        return "default"
+    if namespace == "":
+        raise RuntimeError("Active namespace must not be empty")
+    return namespace
+
+
+configure_process_diagnostics(
+    namespace=_resolve_diagnostics_namespace(namespace=ACTIVE_NAMESPACE),
+    enabled=not TEST_MODE,
+)
+
 app = FastAPI()
+
+
+@app.on_event("startup")
+async def start_diagnostics_watchdogs():
+    start_asyncio_diagnostics(enabled=not TEST_MODE)
 
 # CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
 @app.exception_handler(RequestValidationError)
@@ -294,7 +316,20 @@ async def log_requests(request: Request, call_next):
         )
 
     start = time.perf_counter()
-    response = await call_next(request)
+    if request.client is None:
+        raise RuntimeError("Request is missing client metadata")
+    client_host = request.client.host
+    request_tracker = track_request(
+        request_id=request_id,
+        method=request.method,
+        path=path,
+        query=request.url.query,
+        client=client_host,
+        user_agent=request.headers.get("user-agent", "-"),
+        started_at=start,
+    )
+    with request_tracker:
+        response = await call_next(request)
 
     duration_ms = (time.perf_counter() - start) * 1000
     size = response.headers.get("content-length", "-")

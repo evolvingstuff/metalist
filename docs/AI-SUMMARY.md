@@ -37,6 +37,7 @@
 - `app/services/tab_state.py`: Stores namespace-scoped tab workspace state (`activeTabId`, `tabOrder`, per-tab search/scroll/sort metadata) in the main SQLite DB; rows stay plaintext without a password and are DEK-encrypted at rest when the namespace is password-protected.
 - `app/services/login_rate_limit.py`: In-memory login attempt throttling for `/api2/auth/login`.
 - `app/services/runtime_hardening.py`: Startup hardening (disable core dumps; macOS swap/hibernation enforcement).
+- `app/services/diagnostics.py`: Runtime diagnostics for persistent namespace server logs, fatal fault logs, unhandled process/thread/asyncio exceptions, slow in-flight requests, event-loop stalls, on-demand thread dumps via `SIGUSR1`, bounded recycling for direct append logs, and fail-fast startup log disk bounds.
 - `app/static/js/modules/mode-manager/services/html-paste-sanitizer-service.js`: Client-side sanitizer for external HTML paste in edit mode (URL/style allowlist + blocked tags + image guardrails).
 - `app/security/encryption.py`: Crypto facade (AES-GCM, Argon2id, versioned vault metadata + key mgmt helpers).
 - `app/db`: `session.py` (begin_writer/connect_reader/read guard), `schema.py`, `notes_sql.py`, `settings_sql.py`.
@@ -122,6 +123,7 @@ metalist
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
 - Runtime hardening: `app/services/runtime_hardening.py` (core-dump disable by default; optional strict macOS swap/hibernation checks can fail startup when enabled).
+- Runtime diagnostics: `app/services/diagnostics.py` writes `~/MetaList/logs/<namespace>-server.log` and `~/MetaList/logs/<namespace>-server.fault.log`; Loguru logs rotate at 25 MB / 14 days, direct append logs (`namespace-*.log`, `namespace-delete-*.log`, `*-server.fault.log`) are compacted to a bounded tail when oversized, and startup crashes if managed logs remain outside the per-file cap or the logs directory exceeds 512 MB.
 - Startup sanity: `main._run_startup_sanity_gates(...)` runs Python AST/transaction checks plus the Python tree-sitter JS sanity pass; startup sanity no longer depends on the old `sanitycheck/` folder or Node.
 - DB guard: `app/db/session.py` (begin_writer/connect_reader + post-startup SELECT guard).
 - Undo: `app/services/undo_state.py`.

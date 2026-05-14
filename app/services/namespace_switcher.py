@@ -27,6 +27,7 @@ from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_runtime_logs_directory
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
+from app.services.diagnostics import recycle_direct_append_log_file
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import create_namespace_deletion_job
 
@@ -1053,6 +1054,7 @@ def _launch_namespace_process(
     logs_directory = resolve_runtime_logs_directory()
     logs_directory.mkdir(parents=True, exist_ok=True)
     log_path = logs_directory / f"namespace-{chosen_profile.namespace}.log"
+    recycle_direct_append_log_file(path=log_path)
     log_handle = open(log_path, "ab")
     try:
         subprocess.Popen(
@@ -1244,6 +1246,7 @@ def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id
     logs_directory = resolve_runtime_logs_directory()
     logs_directory.mkdir(parents=True, exist_ok=True)
     log_path = logs_directory / f"namespace-delete-{normalized_namespace}.log"
+    recycle_direct_append_log_file(path=log_path)
     log_handle = open(log_path, "ab")
     try:
         subprocess.Popen(
