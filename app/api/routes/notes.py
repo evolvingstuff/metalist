@@ -34,7 +34,7 @@ from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 from app.usecases.paste_sibling import CmdPasteSibling
 from app.usecases.paste_child import CmdPasteChild
-from app.usecases.join_next_sibling import CmdJoinNextSibling
+from app.usecases.split_note import CmdSplitNote
 from app.usecases.toggle_reference_mode import CmdToggleReferenceMode
 from app.usecases.unformat_content import CmdUnformatContent
 from app.usecases.undo import CmdUndo
@@ -674,6 +674,27 @@ def save_note(request: Request, note_id: str, body: dict):
     return cmd.execute()
 
 
+@router.post("/notes/{note_id}/split")
+@transactional_route
+def split_note(request: Request, note_id: str, body: dict):
+    client_id = body["clientId"]
+    segments = body["segments"]
+    tags = body["tags"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.split")
+    cmd = CmdSplitNote(
+        note_id=note_id,
+        segments=segments,
+        tags=tags,
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
 @router.post("/notes/{note_id}/toggle-todo")
 @transactional_route
 def toggle_todo_done(request: Request, note_id: str, body: dict):
@@ -736,22 +757,6 @@ def run_shell_status_endpoint(note_id: str, run_id: str) -> Dict[str, object]:
     if result is None:
         raise RuntimeError("Shell status command did not return a result")
     return result
-
-
-@router.post("/notes/{note_id}/join-next")
-@transactional_route
-def join_next_endpoint(request: Request, note_id: str, body: dict):
-    viewport = _require_viewport(body)
-    token = _require_bearer_token(request)
-    _require_note_present(note_id, context="notes.join-next")
-    cmd = CmdJoinNextSibling(
-        note_id=note_id,
-        token=token,
-        client_id=body["clientId"],
-        undo_context=body["undoContext"],
-        viewport=viewport,
-    )
-    return cmd.execute()
 
 
 @router.post("/notes/{note_id}/reference-mode")

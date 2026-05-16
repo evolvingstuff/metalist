@@ -10,11 +10,29 @@ from app.services.search_index import search_index
 from app.services.sync import get_clipboard, generate_new_uuid
 from app.usecases.create_note import apply_insert_note
 from app.usecases.delete_subtree import _collect_subtree_ids
-from app.usecases.join_next_sibling import _merge_note_tags
 from app.usecases.search_context_tags import ensure_tags_match_search_query
 from app.usecases.update_content import apply_update_content
+from app.services.content_formatting import _tokenize_tag_bar
 from app.services.undo_state import record_paste, record_paste_into
 from app.utils.text_utils import strip_html
+
+
+def _merge_note_tags(current_tags: str, next_tags: str) -> str:
+    if not isinstance(current_tags, str):
+        raise TypeError("current_tags must be a string")
+    if not isinstance(next_tags, str):
+        raise TypeError("next_tags must be a string")
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for source in (current_tags, next_tags):
+        for token in _tokenize_tag_bar(source):
+            dedupe_key = token.casefold()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            merged.append(token)
+    return " ".join(merged)
 
 
 def _note_has_positive_matching_ancestor(parent_id: Optional[str], positive_matches: set[str]) -> bool:

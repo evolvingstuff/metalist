@@ -247,6 +247,28 @@ export const NotesAPI = {
         }); 
     },
 
+    async splitNote(noteId, segments, tags) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.splitNote requires noteId string');
+        }
+        if (!Array.isArray(segments) || segments.length < 2) {
+            throw new Error('NotesAPI.splitNote requires at least two segments');
+        }
+        for (const segment of segments) {
+            if (typeof segment !== 'string') {
+                throw new Error('NotesAPI.splitNote segments must be strings');
+            }
+        }
+        if (typeof tags !== 'string') {
+            throw new Error('NotesAPI.splitNote requires tags string');
+        }
+        return this._apiCall(CONFIG.API.NOTES.SPLIT(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ segments, tags }),
+        });
+    },
+
     async toggleTodo(noteId) {
         return this._apiCall(CONFIG.API.NOTES.TOGGLE_TODO(noteId), {
             method: 'POST',
@@ -289,16 +311,6 @@ export const NotesAPI = {
 
         return this._apiCall(CONFIG.API.NOTES.RUN_SHELL_STATUS(noteId, runId), {
             method: 'GET',
-        });
-    },
-
-    async joinNextSibling(noteId) {
-        if (typeof noteId !== 'string' || noteId.length === 0) {
-            throw new Error('NotesAPI.joinNextSibling requires noteId string');
-        }
-        return this._apiCall(CONFIG.API.NOTES.JOIN_NEXT(noteId), {
-            method: 'POST',
-            claimSession: true,
         });
     },
 

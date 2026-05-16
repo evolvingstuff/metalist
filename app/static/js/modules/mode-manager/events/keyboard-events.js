@@ -15,7 +15,6 @@ import {
     actionPasteNoteSibling,
     actionPasteNoteChild,
     splitCurrentNoteFromSelection,
-    joinCurrentNoteWithNextSibling,
     unformatCurrentNoteContent,
 } from '../actions/note-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
@@ -440,8 +439,6 @@ function handleKeyDown(event) {
 	            needsServer = true;
         } else if (event.key === 'v' && metaOrCtrl) {
             needsServer = true;
-        } else if (event.key === 'j' && metaOrCtrl) {
-            needsServer = true;
         } else if (event.key === 'u' && metaOrCtrl) {
             needsServer = true;
         } else if (event.key === 's' && metaOrCtrl) {
@@ -562,11 +559,6 @@ function handleKeyDown(event) {
         case 's':
             if (event.metaKey || event.ctrlKey) {
                 void handleSplitNoteShortcut(event);
-            }
-            break;
-        case 'j':
-            if (event.metaKey || event.ctrlKey) {
-                void handleJoinNoteShortcut(event);
             }
             break;
         case 'u':
@@ -1541,28 +1533,6 @@ async function handleSplitNoteShortcut(event) {
 
     await CommandGate.run('keyboard.split_note', async () => {
         await splitCurrentNoteFromSelection();
-    });
-}
-
-async function handleJoinNoteShortcut(event) {
-    if (!event) {
-        throw new Error('handleJoinNoteShortcut called without an event object');
-    }
-
-    if (!ModeContext.isEditing) {
-        return;
-    }
-
-    const currentNoteId = ModeContext.currentNoteId;
-    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
-        return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    await CommandGate.run('keyboard.join_note', async () => {
-        await joinCurrentNoteWithNextSibling();
     });
 }
 

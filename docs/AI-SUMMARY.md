@@ -74,8 +74,7 @@
 - Test harness boundary: `POST /api2/test/reset` clears DB/search-history/cache/tab/auth/sync state, and `app/static/js/main.js` exposes `body[data-app-ready="true"]` after `Auth.init()`, `ModeManager.init()`, and `CommandPalette.init()` complete.
 - Reference shortcut: `Cmd/Ctrl+R` copies as embedded reference (`![[UUID]]`) from the last note copied with `Cmd/Ctrl+C` (when no text selection).
 - Note clipboard: `Cmd/Ctrl+C` with no text selection stores the note subtree server-side and writes promised `text/html` + tab-indented `text/plain` to the system clipboard; `Cmd/Ctrl+V` into an empty target note replaces that target, preserving/merging its context tags with copied root tags via case-insensitive dedupe.
-- Join shortcut: `Cmd/Ctrl+J` joins the currently edited note with its next sibling by merging raw editable content and tag-bar strings; tag merge is case-insensitive dedupe (first occurrence preserved); no-op when no next sibling exists.
-- Split shortcut: `Cmd/Ctrl+S` splits the currently edited note at selection/caret into sibling notes and preserves the original tag-bar string across all resulting notes; split normalization trims edge-empty nodes to avoid synthetic leading blank lines; no-op when full-note selection or end-caret would yield fewer than two non-empty segments.
+- Split shortcut: `Cmd/Ctrl+S` sends one server-side split command for the currently edited note, records one undo/redo step, and preserves the original tag-bar string across all resulting notes; caret at the front creates a blank note above, caret at the end creates a blank note below, split normalization trims edge-empty nodes, and full-note selection remains a no-op.
 - Move-to-top shortcut: `Cmd/Ctrl+Shift+Up` is server-driven; a selected root note moves to the top of the current root view (including filtered/search views), while a child note moves to the top of its sibling list.
 - Command palette help action: `Cmd/Ctrl+/` → `Keyboard shortcuts help…` opens the shortcuts modal from palette utilities.
 - Login screen namespace switcher: the bottom login picker lists plain namespace names (`default`, `cla`, etc.), immediately redirects through the login-only namespace-open flow, and lands directly in passwordless namespaces because the destination page auto-claims a passwordless session on load.
@@ -116,7 +115,6 @@ metalist
 - Namespace UI/runtime bridge: `app/api/routes/auth.py` now exposes login-screen namespace list/open endpoints plus the authenticated namespace catalog + open/launch endpoints; `app/static/js/modules/login-namespace-picker.js` formats the login title/picker state and `app/static/js/modules/modals/namespace-switcher-modal.js` remains the command-palette modal.
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
-- Frontend join shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`joinCurrentNoteWithNextSibling`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+J` binding).
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
 - File store: `app/services/file_storage.py` + `app/services/file_registry.py`.
 - Search history store: `app/services/search_history.py` + `app/db/search_history_session.py`.

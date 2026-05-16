@@ -8,6 +8,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { clearTagBar, getTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
+import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
@@ -235,16 +236,12 @@ function buildSplitSegmentsFromSelection(contentElement) {
         ? [beforeRange, afterRange]
         : [beforeRange, range.cloneRange(), afterRange];
 
-    const segments = [];
+    const normalizedSegments = [];
     for (const candidateRange of candidateRanges) {
-        const normalized = normalizeRangeToSplitSegment(candidateRange);
-        if (!normalized.hasText) {
-            continue;
-        }
-        segments.push(normalized.html);
+        normalizedSegments.push(normalizeRangeToSplitSegment(candidateRange));
     }
 
-    return segments;
+    return selectSplitSegmentHtmls(normalizedSegments, range.collapsed);
 }
 
 export async function toggleTodoDone(noteId) {
@@ -833,23 +830,7 @@ export async function splitCurrentNoteFromSelection() {
 
     ModeContext.markEditSessionHasEdits();
     const tags = getTagBarValue(noteElement);
-    await NotesAPI.saveNote(currentNoteId, splitSegments[0], tags);
-
-    let anchorNoteId = currentNoteId;
-    let index = 1;
-    while (index < splitSegments.length) {
-        const createResponse = await NotesAPI.createSibling(anchorNoteId, ModeContext.searchQuery);
-        const createdNoteId = createResponse && typeof createResponse.id === 'string'
-            ? createResponse.id
-            : '';
-        if (createdNoteId.length === 0) {
-            throw new Error('Split sibling creation response missing id');
-        }
-
-        await NotesAPI.saveNote(createdNoteId, splitSegments[index], tags);
-        anchorNoteId = createdNoteId;
-        index += 1;
-    }
+    await NotesAPI.splitNote(currentNoteId, splitSegments, tags);
 
     const startedAt = performance.now();
     const refreshedContent = await actionRefreshAndMaybeSelect({
@@ -864,54 +845,6 @@ export async function splitCurrentNoteFromSelection() {
         ModeContext.setDirty(false);
     }
     ModeContext.setLastSavedContent(splitSegments[0]);
-
-    return true;
-}
-
-export async function joinCurrentNoteWithNextSibling() {
-    const currentNoteId = ModeContext.currentNoteId;
-    Logger.logAction('joinCurrentNoteWithNextSibling', {
-        currentNoteId,
-        isEditing: ModeContext.isEditing,
-        isDirty: ModeContext.isDirty,
-    });
-
-    if (!ModeContext.isEditing) {
-        Logger.logNoop('Join shortcut ignored: not editing');
-        return false;
-    }
-    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
-        Logger.logNoop('Join shortcut ignored: no active note');
-        return false;
-    }
-
-    if (ModeContext.editSessionHasEdits) {
-        await actionSaveNote(currentNoteId);
-    }
-
-    const response = await NotesAPI.joinNextSibling(currentNoteId);
-    if (response && response.status === 'noop') {
-        Logger.logNoop('Join shortcut ignored: no joinable next sibling', {
-            currentNoteId,
-        });
-        return false;
-    }
-
-    ModeContext.markEditSessionHasEdits();
-
-    const startedAt = performance.now();
-    const refreshedContent = await actionRefreshAndMaybeSelect({
-        startedAt,
-        context: 'joinCurrentNoteWithNextSibling',
-    });
-    if (typeof refreshedContent === 'string' && ModeContext.currentContent !== refreshedContent) {
-        ModeContext.setCurrentContent(refreshedContent);
-        ModeContext.setLastSavedContent(refreshedContent);
-    }
-
-    if (ModeContext.isDirty) {
-        ModeContext.setDirty(false);
-    }
 
     return true;
 }

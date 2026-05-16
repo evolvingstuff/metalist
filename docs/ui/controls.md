@@ -16,7 +16,6 @@
 | `⌘ + ↓` | Move current note down (one visible sibling) |
 | `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
-| `⌘ + J` | Join current note with next sibling (merges content and tags) |
 | `⌘ + R` | Copy as embedded reference for the most recently copied note UUID |
 | `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
 | `⌘ + U` | Unformat current note content (strip rich formatting but keep links and images) |
@@ -31,15 +30,15 @@
 - `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
 - `⌘ + R` avoids adding a synthetic extra blank line when caret is already on an empty line.
 - See `docs/ui/references.md` for full reference behavior.
-- `⌘ + J` no-ops when there is no next sibling beneath the current note.
-- `⌘ + J` merges tag bars without duplicates (case-insensitive dedupe; first-seen casing/order wins).
-- `⌘ + S` no-ops when the entire note is selected, when the caret is at the end, or when split would produce fewer than two non-empty segments.
+- `⌘ + S` splits the current editing note at the caret or selection; a caret at the front creates a blank note above, and a caret at the end creates a blank note below.
+- `⌘ + S` no-ops when the entire note is selected or when split would produce no content segment.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
+- `⌘ + S` records the full split as one undo/redo step.
 - `⌘ + U` rewrites the note's stored content HTML into plain HTML, removing inline/block formatting wrappers while preserving links and images.
 - `⌘ + U` does not remove meta-tags like `@bold`, `@todo`, or any other tag-bar formatting tags.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
 - In any non-normal sort order, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
-- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, join, split, unformat, note copy/cut/paste, and password modal.
+- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, note copy/cut/paste, and password modal.
 
 ### General Shortcuts
 | Shortcut | Action |

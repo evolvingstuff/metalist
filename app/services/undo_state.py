@@ -39,7 +39,7 @@ def _summarize_op(op: dict) -> str:
             )
         return f"edit_mode({before}->{after})"
 
-    if op_type in {"update_content", "move", "collapse", "paste_into", "join_next"}:
+    if op_type in {"update_content", "move", "collapse", "paste_into", "split_note"}:
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
             raise RuntimeError(f"Undo op {op_type}.note_id must be a non-empty string | op={op}")
@@ -192,7 +192,7 @@ def _compute_focus_note_id(op: dict, *, direction: str) -> str:
         raise RuntimeError(f"Redo op missing required key: type | op={op}")
     op_type = op["type"]
 
-    if op_type in {"update_content", "move", "collapse", "paste_into", "join_next"}:
+    if op_type in {"update_content", "move", "collapse", "paste_into", "split_note"}:
         if "note_id" not in op:
             raise RuntimeError(f"Undo op missing required key: note_id | op={op}")
         note_id = op["note_id"]
@@ -626,7 +626,7 @@ def record_paste_into(
     ctx.redo.clear()
 
 
-def record_join_next(
+def record_split_note(
     client_id: str,
     undo_context: str,
     *,
@@ -635,7 +635,7 @@ def record_join_next(
     before_tags: str,
     after_content: str,
     after_tags: str,
-    deleted_records: List[NodeRecord],
+    inserted_records: List[NodeRecord],
     viewport: Dict[str, object],
 ) -> None:
     if not isinstance(note_id, str) or not note_id:
@@ -648,26 +648,26 @@ def record_join_next(
         raise TypeError("after_content must be a string")
     if not isinstance(after_tags, str):
         raise TypeError("after_tags must be a string")
-    if not isinstance(deleted_records, list):
-        raise TypeError("deleted_records must be a list")
-    if len(deleted_records) == 0:
-        raise ValueError("deleted_records must be non-empty")
-    for record in deleted_records:
+    if not isinstance(inserted_records, list):
+        raise TypeError("inserted_records must be a list")
+    if len(inserted_records) == 0:
+        raise ValueError("inserted_records must be non-empty")
+    for record in inserted_records:
         if not isinstance(record, NodeRecord):
-            raise TypeError("deleted_records entries must be NodeRecord objects")
+            raise TypeError("inserted_records entries must be NodeRecord objects")
 
     maybe_reset_on_context(client_id, undo_context)
     ctx = _ctx(client_id)
     normalized_viewport = _normalize_viewport_snapshot(viewport)
     view_anchor_root_id = _anchor_root_id(normalized_viewport)
     ctx.history.append({
-        "type": "join_next",
+        "type": "split_note",
         "note_id": note_id,
         "before_content": before_content,
         "before_tags": before_tags,
         "after_content": after_content,
         "after_tags": after_tags,
-        "deleted_records": deleted_records,
+        "inserted_records": inserted_records,
         "viewport": normalized_viewport,
         "viewAnchorRootId": view_anchor_root_id,
     })
@@ -962,21 +962,24 @@ def undo(client_id: str, token: str) -> Optional[Dict[str, object]]:
 
         ctx.redo.append(op)
         generate_new_uuid()
-    elif op_type == "join_next":
+    elif op_type == "split_note":
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
-            raise RuntimeError(f"Undo op join_next.note_id must be a non-empty string | op={op}")
+            raise RuntimeError(f"Undo op split_note.note_id must be a non-empty string | op={op}")
         before_content = op["before_content"]
         before_tags = op["before_tags"]
         if not isinstance(before_content, str):
-            raise RuntimeError(f"Undo op join_next.before_content must be a string | op={op}")
+            raise RuntimeError(f"Undo op split_note.before_content must be a string | op={op}")
         if not isinstance(before_tags, str):
-            raise RuntimeError(f"Undo op join_next.before_tags must be a string | op={op}")
-        deleted_records = op["deleted_records"]
-        if not isinstance(deleted_records, list) or len(deleted_records) == 0:
-            raise RuntimeError(f"Undo op join_next.deleted_records must be a non-empty list | op={op}")
+            raise RuntimeError(f"Undo op split_note.before_tags must be a string | op={op}")
+        inserted_records = op["inserted_records"]
+        if not isinstance(inserted_records, list) or len(inserted_records) == 0:
+            raise RuntimeError(f"Undo op split_note.inserted_records must be a non-empty list | op={op}")
 
-        apply_restore_records(deleted_records, token)
+        for record in reversed(inserted_records):
+            if not isinstance(record, NodeRecord):
+                raise RuntimeError(f"Undo op split_note.inserted_records must contain NodeRecords | op={op}")
+            apply_delete_subtree(record.id)
         apply_update_content(note_id, before_content, before_tags, token)
 
         ctx.redo.append(op)
@@ -1182,25 +1185,22 @@ def redo(client_id: str, token: str) -> Optional[Dict[str, object]]:
             apply_restore_records(inserted_records, token)
         ctx.history.append(op)
         generate_new_uuid()
-    elif op_type == "join_next":
+    elif op_type == "split_note":
         note_id = op["note_id"]
         if not isinstance(note_id, str) or not note_id:
-            raise RuntimeError(f"Redo op join_next.note_id must be a non-empty string | op={op}")
+            raise RuntimeError(f"Redo op split_note.note_id must be a non-empty string | op={op}")
         after_content = op["after_content"]
         after_tags = op["after_tags"]
         if not isinstance(after_content, str):
-            raise RuntimeError(f"Redo op join_next.after_content must be a string | op={op}")
+            raise RuntimeError(f"Redo op split_note.after_content must be a string | op={op}")
         if not isinstance(after_tags, str):
-            raise RuntimeError(f"Redo op join_next.after_tags must be a string | op={op}")
-        deleted_records = op["deleted_records"]
-        if not isinstance(deleted_records, list) or len(deleted_records) == 0:
-            raise RuntimeError(f"Redo op join_next.deleted_records must be a non-empty list | op={op}")
-        deleted_root_id = deleted_records[0].id
-        if not isinstance(deleted_root_id, str) or not deleted_root_id:
-            raise RuntimeError(f"Redo op join_next.deleted_records[0].id must be a non-empty string | op={op}")
+            raise RuntimeError(f"Redo op split_note.after_tags must be a string | op={op}")
+        inserted_records = op["inserted_records"]
+        if not isinstance(inserted_records, list) or len(inserted_records) == 0:
+            raise RuntimeError(f"Redo op split_note.inserted_records must be a non-empty list | op={op}")
 
         apply_update_content(note_id, after_content, after_tags, token)
-        apply_delete_subtree(deleted_root_id)
+        apply_restore_records(inserted_records, token)
 
         ctx.history.append(op)
         generate_new_uuid()
