@@ -24,9 +24,10 @@
 5. Otherwise read `text/html` from clipboard.
 6. Parse with `DOMParser`.
 7. Walk DOM and sanitize nodes/attributes/styles/URLs.
-8. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
-9. Insert sanitized HTML into current selection.
-10. If no usable HTML remains, fallback to `text/plain`.
+8. Convert meaningful literal CR/LF text-node breaks from clipboard HTML into `<br>` nodes, while ignoring formatting-only indentation whitespace.
+9. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
+10. Insert sanitized HTML into current selection.
+11. If no usable HTML remains, fallback to `text/plain`.
 
 ## Security Policy
 
@@ -79,6 +80,7 @@
 - Text styles: `white-space`, `font-weight`, `font-style`, `text-decoration`, `text-decoration-line`, `vertical-align`
 - Block indentation styles (block tags only): `margin-left`, `padding-left`, `text-indent`
 - Image box styles (`img` only): `width`, `height`, `max-width`, `max-height`
+- Meaningful literal CR/LF inside pasted HTML text nodes is preserved as line breaks, for sources such as YouTube descriptions that put visible structure in raw newlines instead of block tags.
 
 ### Rejected
 - Any style containing dangerous payloads (`url(...)`, `expression(...)`, `@import`, encoded entity escapes, angle-bracket/backtick payload chars, etc.).

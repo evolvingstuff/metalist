@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { CONFIG } from '../../app/static/js/modules/config.js';
 import {
+    splitMeaningfulTextLineBreaks,
     sanitizePastedImageSourceUrl,
     sanitizeStyleAttributeValue,
     sanitizeUrlAttributeValue,
@@ -62,4 +63,20 @@ test('sanitizeStyleAttributeValue strips unsafe styles and disallowed properties
 test('sanitizeStyleAttributeValue removes encoded entity payloads', () => {
     const value = sanitizeStyleAttributeValue('margin-left: &#x31;2px;', 'div');
     assert.equal(value, null);
+});
+
+test('splitMeaningfulTextLineBreaks preserves YouTube literal timestamp newlines', () => {
+    const parts = splitMeaningfulTextLineBreaks('\n\nTimestamps:\n(0:00) - Intro\r\n(0:18) - Rule');
+    assert.deepEqual(parts, [
+        '',
+        '',
+        'Timestamps:',
+        '(0:00) - Intro',
+        '(0:18) - Rule',
+    ]);
+});
+
+test('splitMeaningfulTextLineBreaks ignores formatting-only HTML whitespace', () => {
+    const parts = splitMeaningfulTextLineBreaks('\n    \n  ');
+    assert.equal(parts, null);
 });

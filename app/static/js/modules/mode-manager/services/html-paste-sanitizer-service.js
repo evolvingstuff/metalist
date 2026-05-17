@@ -5,6 +5,7 @@ import {
 } from './embedded-image-service.js';
 
 const ELEMENT_NODE = 1;
+const TEXT_NODE = 3;
 const COMMENT_NODE = 8;
 
 const BLOCKED_TAGS = new Set([
@@ -74,6 +75,7 @@ const META_HINT_PATTERN = /\b(?:op|edited|top\s+\d+%?\s+commenter)\b/i;
 const SCORE_HINT_PATTERN = /^\d+(?:\.\d+)?k?$/i;
 const AVATAR_CLAMP_PX = 48;
 const TREE_WALKER_SHOW_ELEMENT_AND_TEXT = 0x1 | 0x4;
+const TREE_WALKER_SHOW_TEXT = 0x4;
 const AVATAR_FORWARD_SCAN_NODE_LIMIT = 140;
 const AVATAR_BACKWARD_SCAN_NODE_LIMIT = 40;
 
@@ -1032,6 +1034,98 @@ function sanitizeTree(rootNode, imageSourceFrequencyMap) {
     }
 }
 
+export function splitMeaningfulTextLineBreaks(rawText) {
+    if (typeof rawText !== 'string') {
+        throw new Error('splitMeaningfulTextLineBreaks expects rawText string');
+    }
+    if (!/[\r\n]/.test(rawText)) {
+        return null;
+    }
+    if (rawText.trim().length === 0) {
+        return null;
+    }
+
+    return rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+}
+
+function replaceTextNodeWithLineBreaks(documentRoot, textNode, parts) {
+    if (!documentRoot) {
+        throw new Error('replaceTextNodeWithLineBreaks expects documentRoot');
+    }
+    if (!textNode || textNode.nodeType !== TEXT_NODE) {
+        throw new Error('replaceTextNodeWithLineBreaks expects text node');
+    }
+    if (!Array.isArray(parts)) {
+        throw new Error('replaceTextNodeWithLineBreaks expects parts array');
+    }
+
+    const parent = textNode.parentNode;
+    if (!parent) {
+        throw new Error('Cannot replace detached text node with line breaks');
+    }
+
+    const fragment = documentRoot.createDocumentFragment();
+    let i = 0;
+    while (i < parts.length) {
+        if (i > 0) {
+            fragment.appendChild(documentRoot.createElement('br'));
+        }
+
+        const part = parts[i];
+        if (typeof part !== 'string') {
+            throw new Error('replaceTextNodeWithLineBreaks expects string parts');
+        }
+        if (part.length > 0) {
+            fragment.appendChild(documentRoot.createTextNode(part));
+        }
+        i += 1;
+    }
+
+    parent.replaceChild(fragment, textNode);
+}
+
+function preserveLiteralTextLineBreaks(rootNode) {
+    if (!rootNode) {
+        throw new Error('preserveLiteralTextLineBreaks expects rootNode');
+    }
+    if (!(rootNode instanceof Element)) {
+        throw new Error('preserveLiteralTextLineBreaks expects DOM Element rootNode');
+    }
+
+    const documentRoot = rootNode.ownerDocument;
+    if (!documentRoot) {
+        throw new Error('preserveLiteralTextLineBreaks requires ownerDocument');
+    }
+    if (typeof documentRoot.createTreeWalker !== 'function') {
+        throw new Error('preserveLiteralTextLineBreaks requires document.createTreeWalker');
+    }
+
+    const walker = documentRoot.createTreeWalker(rootNode, TREE_WALKER_SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) {
+        const textNode = walker.currentNode;
+        if (!textNode || textNode.nodeType !== TEXT_NODE) {
+            throw new Error('preserveLiteralTextLineBreaks encountered non-text node');
+        }
+        textNodes.push(textNode);
+    }
+
+    let i = 0;
+    while (i < textNodes.length) {
+        const textNode = textNodes[i];
+        const rawText = textNode.textContent;
+        if (typeof rawText !== 'string') {
+            throw new Error('preserveLiteralTextLineBreaks expects textContent string');
+        }
+
+        const parts = splitMeaningfulTextLineBreaks(rawText);
+        if (parts !== null) {
+            replaceTextNodeWithLineBreaks(documentRoot, textNode, parts);
+        }
+        i += 1;
+    }
+}
+
 async function recompressEmbeddedDataImageElements(rootNode) {
     if (!rootNode) {
         throw new Error('recompressEmbeddedDataImageElements expects rootNode');
@@ -1095,6 +1189,7 @@ export async function sanitizeExternalClipboardHtml(rawHtml) {
 
     const imageSourceFrequencyMap = buildImageSourceFrequencyMap(parsed.body);
     sanitizeTree(parsed.body, imageSourceFrequencyMap);
+    preserveLiteralTextLineBreaks(parsed.body);
     await recompressEmbeddedDataImageElements(parsed.body);
     return parsed.body.innerHTML;
 }
