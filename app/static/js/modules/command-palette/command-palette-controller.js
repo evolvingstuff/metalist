@@ -36,6 +36,7 @@ import { buildSessionHeaders } from '../session-auth.js';
 import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 
+import { shouldActivateCommandPaletteRowClick } from './click-activation-service.js';
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
 import { loadCommandPaletteTagMap } from './tag-config-loader.js';
@@ -745,6 +746,12 @@ class CommandPaletteController {
             row.appendChild(value);
 
             row.addEventListener('click', async () => {
+                if (!shouldActivateCommandPaletteRowClick({
+                    row,
+                    selection: window.getSelection(),
+                })) {
+                    return;
+                }
                 this._previousSelection.selectedIndex = idx;
                 await this._activateSelected();
             });
@@ -1205,11 +1212,9 @@ class CommandPaletteController {
             );
             return;
         }
-        if (this.isOpen()) {
-            this.close();
-        }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
+        const isReady = await this._prepareForModalOpen(`commandPalette.prioritize.${direction}`);
+        if (!isReady) {
+            return;
         }
 
         const searchQuery = ModeContext.searchQuery;
@@ -1295,11 +1300,9 @@ class CommandPaletteController {
             );
             return;
         }
-        if (this.isOpen()) {
-            this.close();
-        }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
+        const isReady = await this._prepareForModalOpen(`commandPalette.alphabetizeRootNotes.${direction}`);
+        if (!isReady) {
+            return;
         }
 
         const searchQuery = ModeContext.searchQuery;
@@ -1360,11 +1363,9 @@ class CommandPaletteController {
     }
 
     async resetUpdatedAtToCreatedAt() {
-        if (this.isOpen()) {
-            this.close();
-        }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
+        const isReady = await this._prepareForModalOpen('commandPalette.resetUpdatedAtToCreatedAt');
+        if (!isReady) {
+            return;
         }
 
         const searchQuery = ModeContext.searchQuery;
@@ -1551,6 +1552,27 @@ class CommandPaletteController {
         return suggestedKeepCount;
     }
 
+    async _prepareForModalOpen(commandName) {
+        if (typeof commandName !== 'string' || commandName.length === 0) {
+            throw new Error('_prepareForModalOpen requires commandName');
+        }
+        if (ModeContext.isEditing) {
+            const result = await CommandGate.run(`${commandName}.exitEditing`, async () => {
+                await actionSaveAndExitEditingWithoutRefreshing();
+            });
+            if (result === null) {
+                return false;
+            }
+        }
+        if (ModeContext.isSearching) {
+            ModeContext.setSearching(false);
+        }
+        if (this.isOpen()) {
+            this.close();
+        }
+        return true;
+    }
+
     async _listBackupsForRetentionPrompt() {
         const payload = await this._authRequest(CONFIG.API.AUTH.BACKUP.LIST, 'GET', null);
         if (!payload || typeof payload !== 'object') {
@@ -1569,12 +1591,9 @@ class CommandPaletteController {
         if (this._backupRetentionModal === null) {
             this._backupRetentionModal = new BackupRetentionModal();
         }
-
-        if (this.isOpen()) {
-            this.close();
-        }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
+        const isReady = await this._prepareForModalOpen('commandPalette.backupRetention');
+        if (!isReady) {
+            return null;
         }
 
         return await this._backupRetentionModal.openForBackup(retentionContext);
@@ -1587,11 +1606,9 @@ class CommandPaletteController {
         if (this._backupResultModal === null) {
             this._backupResultModal = new BackupResultModal();
         }
-        if (this.isOpen()) {
-            this.close();
-        }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
+        const isReady = await this._prepareForModalOpen('commandPalette.backupResult');
+        if (!isReady) {
+            return;
         }
 
         await this._backupResultModal.openWithResult(resultContext);
@@ -1601,11 +1618,9 @@ class CommandPaletteController {
         if (this._backupSettingsModal === null) {
             this._backupSettingsModal = new BackupSettingsModal();
         }
-        if (this.isOpen()) {
-            this.close();
-        }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
+        const isReady = await this._prepareForModalOpen('commandPalette.backupSettings');
+        if (!isReady) {
+            return null;
         }
         return await this._backupSettingsModal.openForBackup();
     }
@@ -1631,6 +1646,12 @@ class CommandPaletteController {
             backupCount,
             suggestedKeepCount,
         });
+        if (modalResult === null) {
+            return {
+                deletedCount: 0,
+                remainingCount: backupCount,
+            };
+        }
         if (!modalResult || typeof modalResult !== 'object') {
             throw new Error('Retention modal result missing');
         }
@@ -1679,10 +1700,10 @@ class CommandPaletteController {
     }
 
     async createBackup() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        }
         const modalResult = await this._openBackupSettingsModal();
+        if (modalResult === null) {
+            return;
+        }
         if (!modalResult || typeof modalResult !== 'object') {
             throw new Error('Backup settings modal result missing');
         }
@@ -1734,13 +1755,10 @@ class CommandPaletteController {
     }
 
     async openBackupRestore() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openBackupRestore');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._backupRestoreModal === null) {
             this._backupRestoreModal = new BackupRestoreModal();
@@ -1749,13 +1767,10 @@ class CommandPaletteController {
     }
 
     async openRandomPasswordGenerator() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openRandomPasswordGenerator');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._randomPasswordModal === null) {
             this._randomPasswordModal = new RandomPasswordModal();
@@ -1764,13 +1779,10 @@ class CommandPaletteController {
     }
 
     async openOntologyEditor() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openOntologyEditor');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._ontologyModal === null) {
             this._ontologyModal = new OntologyModal();
@@ -1779,13 +1791,10 @@ class CommandPaletteController {
     }
 
     async openKeyboardShortcutsHelp() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openKeyboardShortcutsHelp');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._helpModal === null) {
             this._helpModal = new HelpModal();
@@ -1794,13 +1803,10 @@ class CommandPaletteController {
     }
 
     async openNamespaceSwitcher() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openNamespaceSwitcher');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._namespaceSwitcherModal === null) {
             this._namespaceSwitcherModal = new NamespaceSwitcherModal();
@@ -1809,13 +1815,10 @@ class CommandPaletteController {
     }
 
     async openDeleteCurrentNamespace() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openDeleteCurrentNamespace');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._deleteNamespaceModal === null) {
             this._deleteNamespaceModal = new DeleteNamespaceModal();
@@ -1824,26 +1827,20 @@ class CommandPaletteController {
     }
 
     async openPasswordManager() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openPasswordManager');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         const passwordModal = new PasswordModal();
         passwordModal.open();
     }
 
     async openSessionTimeoutSettings() {
-        if (ModeContext.isEditing) {
-            await actionSaveAndExitEditingWithoutRefreshing();
+        const isReady = await this._prepareForModalOpen('commandPalette.openSessionTimeoutSettings');
+        if (!isReady) {
+            return;
         }
-        if (ModeContext.isSearching) {
-            ModeContext.setSearching(false);
-        }
-        this.close();
 
         if (this._sessionTimeoutModal === null) {
             this._sessionTimeoutModal = new SessionTimeoutModal();
