@@ -74,7 +74,7 @@ export function promptForImageFileInsertMode(options) {
     if (activeDialog !== null) {
         throw new Error('Image file insert choice modal is already open');
     }
-    if (ensureModalStack().length > 0) {
+    if (ModeContext.modalStack.length > 0) {
         throw new Error('Cannot open image file insert choice modal while another modal is open');
     }
 
