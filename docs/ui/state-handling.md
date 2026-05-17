@@ -58,9 +58,10 @@ User Interaction → Event Handler → Action
 
 3. **State (ModeContext)**:
    - Store the application state
-   - Provide getters and setters
+   - Provide getters and setters for state fields
    - Validate state invariants
    - Notify listeners of changes
+   - Reject same-value writes in setters so redundant state transitions fail loudly
 
 ### Validation Strategy
 
@@ -74,7 +75,8 @@ The system follows a "fail-fast" approach to error handling at multiple levels:
 Key invariants and validation rules include:
 - If editing mode is active, a currentNoteId must be set
 - If editing mode is not active, no currentNoteId should be set
-- Setting a state flag to its current value is considered a programming error
+- Setting any ModeContext state property to its current value is considered a programming error
+- Expected duplicate inputs must be checked before calling the setter, with an inline comment explaining why the duplicate can happen
 
 #### Redundancy Checks vs. NOOP Pattern
 
@@ -87,7 +89,7 @@ The ModeManager implements two distinct approaches to handle potentially redunda
      throw new Error(`Redundant state change: editing is already ${value}`);
    }
    ```
-   These catch programming errors where code accidentally tries to set state to its current value.
+   These catch programming errors where code accidentally tries to set state to its current value. This applies to scalar fields, tab scroll state, root anchors, clipboard state, connection state, and modal stack mutations.
 
 2. **NOOP Pattern (in event handlers)**:
    ```javascript
@@ -98,6 +100,8 @@ The ModeManager implements two distinct approaches to handle potentially redunda
    }
    ```
    This handles expected user behaviors like clicking the same note twice.
+
+   When a caller checks before setting, the comment next to that check should explain the specific legitimate duplicate path, such as repeated browser input events, polling that observes an unchanged scroll position, or a server response that echoes the current version.
 
 This dual approach ensures:
 - Programming errors fail fast and visibly (with errors)

@@ -107,7 +107,10 @@ async function handlePoll() {
     const { visible, past } = collectRootVisibility();
     if (visible.length > 0) {
         const anchorId = visible[visible.length - 1];
-        ModeContext.setRootAnchorId(anchorId);
+        // Visibility checks run repeatedly while the same root remains the viewport anchor.
+        if (ModeContext.getRootAnchorId() !== anchorId) {
+            ModeContext.setRootAnchorId(anchorId);
+        }
     }
 
     const changed = ModeContext.markRootsAsSeen([...visible, ...past]);

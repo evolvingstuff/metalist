@@ -250,7 +250,14 @@ export async function actionRefreshAndMaybeSelect(options) {
 
         updateSearchResultsCount(snapshot, requestTabId);
         updateRootSortIndicator(snapshot);
-        ModeContext.setRootCountTotals(snapshot.rootCountTotal, snapshot.searchRootCountTotal, requestTabId);
+        const previousRootCountTotals = ModeContext.getRootCountTotals(requestTabId);
+        // Incremental notes.view refreshes can return the same totals when only note content changed.
+        if (
+            previousRootCountTotals.rootCountTotal !== snapshot.rootCountTotal
+            || previousRootCountTotals.searchRootCountTotal !== snapshot.searchRootCountTotal
+        ) {
+            ModeContext.setRootCountTotals(snapshot.rootCountTotal, snapshot.searchRootCountTotal, requestTabId);
+        }
         const rootNotesKnown = ModeContext.knownRootCount;
         const rootNotesSeen = ModeContext.seenRootCount;
         const updatedNotesCount = snapshot.notes && typeof snapshot.notes === 'object'
@@ -373,7 +380,10 @@ export async function actionRefreshAndMaybeSelect(options) {
         await refreshBacklinksPanel({});
         if (scrollToTopAfterRender) {
             window.scrollTo(0, 0);
-            ModeContext.updateActiveTabScroll(0);
+            // Callers can request top scroll while the active tab is already at top.
+            if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== 0) {
+                ModeContext.updateActiveTabScroll(0);
+            }
         }
 
         return result;

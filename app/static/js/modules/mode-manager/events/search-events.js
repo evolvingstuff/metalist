@@ -61,8 +61,10 @@ export function handleSearchInput(event) {
     const previousSearchQuery = ModeContext.searchQuery;
     const isFreshSearchInput = previousSearchQuery !== analysis.normalizedText;
 
-    // Update context immediately for UI responsiveness
-    ModeContext.setSearchQuery(analysis.normalizedText);
+    // Browser input events can re-fire with the same normalized value during autofill/composition.
+    if (isFreshSearchInput) {
+        ModeContext.setSearchQuery(analysis.normalizedText);
+    }
 
     // Update search contexts list display
     updateSearchContextsList();
@@ -95,9 +97,18 @@ export function handleSearchInput(event) {
             resetActiveTabForSearchExecution(currentSearch, { isFreshSearchInput });
             ModeContext.resetRootTracking({ clear: true });
             window.scrollTo(0, 0);
-            ModeContext.updateActiveTabScroll(0);
-            ModeContext.updateActiveTabScrollAnchor(null, true);
-            ModeContext.setRootAnchorId(null);
+            // A fresh search can start while the tab is already at the top.
+            if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== 0) {
+                ModeContext.updateActiveTabScroll(0);
+            }
+            // updateActiveTabScroll clears the scroll anchor; repeated top searches leave it null.
+            if (ModeContext.getTabScrollAnchor(ModeContext.activeTabId) !== null) {
+                ModeContext.updateActiveTabScrollAnchor(null, true);
+            }
+            // resetRootTracking clears the root anchor before the new search renders.
+            if (ModeContext.getRootAnchorId() !== null) {
+                ModeContext.setRootAnchorId(null);
+            }
             // Refresh the view with the search query (let errors crash)
             await actionRefreshAndMaybeSelect({});
             await recordSearchExecutionInteractionIfEligible(currentSearch);
@@ -138,12 +149,18 @@ export async function initializeSearchEvents() {
 
     // Always sync the input field to the active tab query.
     const analysis = syncSearchInputValue(searchInput, activeTabQuery);
-    ModeContext.setSearchQuery(analysis.normalizedText);
+    // Tab-state hydration already seeds ModeContext.searchQuery for the active tab.
+    if (ModeContext.searchQuery !== analysis.normalizedText) {
+        ModeContext.setSearchQuery(analysis.normalizedText);
+    }
 
     const initialQueryLogValue = analysis.normalizedText.length > 0 ? analysis.normalizedText : 'none';
     Logger.logAction('initialPageLoad', { searchQuery: initialQueryLogValue });
 
-    ModeContext.setExecutedSearchQuery(analysis.normalizedText);
+    // The default executed query is empty, so initial empty searches do not need a setter call.
+    if (ModeContext.getExecutedSearchQuery() !== analysis.normalizedText) {
+        ModeContext.setExecutedSearchQuery(analysis.normalizedText);
+    }
     const initResult = await CommandGate.run('search.init_view', async () => {
         await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'init search' });
         ModeContext.restoreScrollForActiveTab();

@@ -193,7 +193,10 @@ function restoreScrollReference(reference) {
 function syncLocalScrollState() {
     const tabId = ModeContext.activeTabId;
     const scrollY = Math.max(0, Math.round(window.scrollY));
-    ModeContext.updateTabScroll(tabId, scrollY, false);
+    // Revealing redacted search content can preserve the same scroll Y after layout correction.
+    if (ModeContext.getTabScrollPosition(tabId) !== scrollY) {
+        ModeContext.updateTabScroll(tabId, scrollY, false);
+    }
     ModeContext.updateTabScrollAnchor(tabId, computeScrollAnchor({ anchorBias: 'auto' }), false);
 }
 

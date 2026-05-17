@@ -826,6 +826,7 @@ function handleClick(event) {
                     isEditing: true
                 }, Logger.LogCategory.EVENT);
             } else {
+                // Clicking again in the selected note should only reveal the caret once.
                 if (ModeContext.isCaretHidden && ModeContext.currentNoteId === noteId) {
                     DOMUtils.revealCaret(noteElement);
                     ModeContext.markCaretVisible();
@@ -918,6 +919,7 @@ function handleClick(event) {
                 isEditing: true
             }, Logger.LogCategory.EVENT);
         } else {
+            // Clicking again in the selected note shell should only reveal the caret once.
             if (ModeContext.isCaretHidden && ModeContext.currentNoteId === noteId) {
                 DOMUtils.revealCaret(noteElement);
                 ModeContext.markCaretVisible();

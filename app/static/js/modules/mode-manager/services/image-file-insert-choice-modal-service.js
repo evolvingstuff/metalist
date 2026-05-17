@@ -5,30 +5,15 @@ const MODAL_ID = 'image-file-insert-choice-modal';
 
 let activeDialog = null;
 
-function ensureModalStack() {
-    if (!ModeContext.modalStack) {
-        ModeContext.modalStack = [];
-    }
-    if (!Array.isArray(ModeContext.modalStack)) {
-        throw new Error('ModeContext.modalStack must be an array');
-    }
-    return ModeContext.modalStack;
-}
-
 function addModalToStack() {
-    const stack = ensureModalStack();
-    if (stack.includes(MODAL_NAME)) {
+    if (ModeContext.modalStack.includes(MODAL_NAME)) {
         throw new Error('Image file insert choice modal already present in modal stack');
     }
-    stack.push(MODAL_NAME);
+    ModeContext.pushModal(MODAL_NAME);
 }
 
 function removeModalFromStack() {
-    const stack = ensureModalStack();
-    const index = stack.lastIndexOf(MODAL_NAME);
-    if (index >= 0) {
-        stack.splice(index, 1);
-    }
+    ModeContext.removeModal(MODAL_NAME);
 }
 
 function ensureModalElement() {

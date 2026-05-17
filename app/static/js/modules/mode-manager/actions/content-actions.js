@@ -47,7 +47,10 @@ export async function actionSaveNote(noteId) {
     const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
 
     if (ModeContext.isDirty) {
-        ModeContext.setLastSavedContent(contentHTML);
+        // A save can be triggered for tag-only changes after content was already captured.
+        if (ModeContext.lastSavedContent !== contentHTML) {
+            ModeContext.setLastSavedContent(contentHTML);
+        }
         ModeContext.setDirty(false);
     }
     if (tagsChanged) {
@@ -97,7 +100,10 @@ export async function actionSaveNoteOnIdle(noteId) {
 
     const response = await NotesAPI.saveNote(noteId, contentHTML, tags);
 
-    ModeContext.setLastSavedContent(contentHTML);
+    // Idle autosave can race with a manual save that already stored this content.
+    if (ModeContext.lastSavedContent !== contentHTML) {
+        ModeContext.setLastSavedContent(contentHTML);
+    }
     ModeContext.setDirty(false);
     setTagBarValue(noteElement, tags);
 

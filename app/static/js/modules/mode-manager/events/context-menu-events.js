@@ -107,7 +107,7 @@ async function openOntologyModalWithFocus(tag) {
     }
 
     if (Array.isArray(ModeContext.modalStack) && ModeContext.modalStack.length > 0) {
-        const topModal = ModeContext.modalStack[ModeContext.modalStack.length - 1];
+        const topModal = ModeContext.topModal;
         if (topModal !== 'ontologyModal') {
             return;
         }
