@@ -41,7 +41,7 @@ export class ResetUpdatedAtModal extends BaseModal {
             throw new Error('Cannot open timestamp repair confirmation while application is loading');
         }
         if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
-            const topModal = ModeContext.modalStack[ModeContext.modalStack.length - 1];
+            const topModal = ModeContext.topModal;
             throw new Error(`Cannot open timestamp repair confirmation while ${topModal} is open`);
         }
     }

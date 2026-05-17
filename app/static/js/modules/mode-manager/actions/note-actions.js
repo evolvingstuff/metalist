@@ -14,6 +14,13 @@ import { actionSaveNote } from './content-actions.js';
 import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
+function hideCaretAfterProgrammaticEdit() {
+    // Repeated structural commands can run while the caret is already hidden from the first command.
+    if (!ModeContext.isCaretHidden) {
+        ModeContext.markCaretHidden();
+    }
+}
+
 function getFirstTextNode(fragment) {
     const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null);
     return walker.nextNode();
@@ -490,7 +497,7 @@ export async function moveNoteUp(noteId) {
 		await NotesAPI.moveNoteUp(noteId);
 
     if (ModeContext.isEditing) {
-        ModeContext.markCaretHidden();
+        hideCaretAfterProgrammaticEdit();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'moveNoteUp'});
@@ -526,7 +533,7 @@ export async function moveNoteDown(noteId) {
 		await NotesAPI.moveNoteDown(noteId);
 
     if (ModeContext.isEditing) {
-        ModeContext.markCaretHidden();
+        hideCaretAfterProgrammaticEdit();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'moveNoteDown'});
@@ -563,7 +570,7 @@ export async function moveNoteToTop(noteId) {
     await NotesAPI.moveNoteToTop(noteId, ModeContext.searchQuery);
 
     if (ModeContext.isEditing) {
-        ModeContext.markCaretHidden();
+        hideCaretAfterProgrammaticEdit();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({
@@ -617,7 +624,7 @@ export async function moveNoteToSiblingPosition(noteId, siblingId, position, new
     await NotesAPI.moveNote(noteId, siblingId, normalizedPosition, newParentId);
 
     if (ModeContext.isEditing) {
-        ModeContext.markCaretHidden();
+        hideCaretAfterProgrammaticEdit();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({
@@ -670,7 +677,7 @@ export async function indentNote(noteId) {
     await NotesAPI.indentNote(noteId, visiblePrevId);
 
     if (ModeContext.isEditing) {
-        ModeContext.markCaretHidden();
+        hideCaretAfterProgrammaticEdit();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'indentNote'});
@@ -701,7 +708,7 @@ export async function outdentNote(noteId) {
     await NotesAPI.outdentNote(noteId, ModeContext.searchQuery);
 
     if (ModeContext.isEditing) {
-        ModeContext.markCaretHidden();
+        hideCaretAfterProgrammaticEdit();
     }
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt, context: 'outdentNote'});
@@ -844,7 +851,10 @@ export async function splitCurrentNoteFromSelection() {
     if (ModeContext.isDirty) {
         ModeContext.setDirty(false);
     }
-    ModeContext.setLastSavedContent(splitSegments[0]);
+    // Split refresh can leave the first segment equal to the content already marked saved.
+    if (ModeContext.lastSavedContent !== splitSegments[0]) {
+        ModeContext.setLastSavedContent(splitSegments[0]);
+    }
 
     return true;
 }
@@ -885,7 +895,10 @@ export async function unformatCurrentNoteContent() {
     });
     if (typeof refreshedContent === 'string' && ModeContext.currentContent !== refreshedContent) {
         ModeContext.setCurrentContent(refreshedContent);
-        ModeContext.setLastSavedContent(refreshedContent);
+        // Unformat refresh can return content already saved by a pre-operation save.
+        if (ModeContext.lastSavedContent !== refreshedContent) {
+            ModeContext.setLastSavedContent(refreshedContent);
+        }
     }
 
     if (ModeContext.isDirty) {

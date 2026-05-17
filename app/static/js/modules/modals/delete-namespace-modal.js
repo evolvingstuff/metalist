@@ -84,7 +84,7 @@ export class DeleteNamespaceModal extends BaseModal {
     }
 
     handleKeyDown(event) {
-        const topModal = ModeContext.modalStack?.[ModeContext.modalStack.length - 1];
+        const topModal = ModeContext.topModal;
         if (topModal !== this.modalName) {
             return;
         }

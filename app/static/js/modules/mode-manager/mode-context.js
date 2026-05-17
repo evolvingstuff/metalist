@@ -84,6 +84,13 @@ class ModeContext {
         this._tabStateUpdateHook = null;
         this._tabStateVersion = 0;
         this._ignoreScrollEventsDepth = 0;
+        this._modalStack = [];
+    }
+
+    _assertStateChanged(property, currentValue, nextValue) {
+        if (Object.is(currentValue, nextValue)) {
+            throw new Error(`Redundant state change: ${property} is already ${nextValue}`);
+        }
     }
 
     _ensureTabContainers(tabId) {
@@ -127,9 +134,24 @@ class ModeContext {
         if (!Number.isInteger(searchRootCountTotal) || searchRootCountTotal < 0) {
             throw new Error('searchRootCountTotal must be a non-negative integer');
         }
+        if (
+            this._tabRootCountTotals[tabId] === rootCountTotal
+            && this._tabSearchRootCountTotals[tabId] === searchRootCountTotal
+        ) {
+            throw new Error(`Redundant state change: root count totals are already ${rootCountTotal}/${searchRootCountTotal} for tab ${tabId}`);
+        }
         this._tabRootCountTotals[tabId] = rootCountTotal;
         this._tabSearchRootCountTotals[tabId] = searchRootCountTotal;
         return this;
+    }
+
+    getRootCountTotals(tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        this._ensureTabContainers(targetTabId);
+        return {
+            rootCountTotal: this._tabRootCountTotals[targetTabId],
+            searchRootCountTotal: this._tabSearchRootCountTotals[targetTabId],
+        };
     }
 
     get rootCountTotal() {
@@ -160,6 +182,7 @@ class ModeContext {
         const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
         this._ensureTabContainers(targetTabId);
         const normalized = typeof query === 'string' ? query : '';
+        this._assertStateChanged('executedSearchQuery', this._tabExecutedSearchQuery[targetTabId], normalized);
         this._tabExecutedSearchQuery[targetTabId] = normalized;
         return this;
     }
@@ -180,7 +203,10 @@ class ModeContext {
         }
         this.clearTabRevealedRedactions(tabId);
         this.resetTabDiffCache(tabId, { preserveRootAnchor: false });
-        this.setExecutedSearchQuery(normalized, tabId);
+        // A forced cache clear can preserve the same executed query while discarding stale hashes.
+        if (previousExecuted !== normalized) {
+            this.setExecutedSearchQuery(normalized, tabId);
+        }
         return this;
     }
 
@@ -526,13 +552,11 @@ class ModeContext {
     }
 
     setEditing(value) {
-                
-        if (this._editing === value) {
-            throw new Error(`Redundant state change: editing is already ${value}`);
-        }
-                
+        const normalized = Boolean(value);
+        this._assertStateChanged('editing', this._editing, normalized);
+
         const oldValue = this._editing;
-        this._editing = Boolean(value);
+        this._editing = normalized;
 
         this.resetEditSessionState({ startedCollapsed: false });
         if (!this._editing) {
@@ -596,13 +620,11 @@ class ModeContext {
     }
 
     setSearching(value) {
-                
-        if (this._searching === value) {
-            throw new Error(`Redundant state change: searching is already ${value}`);
-        }
-                
+        const normalized = Boolean(value);
+        this._assertStateChanged('searching', this._searching, normalized);
+
         const oldValue = this._searching;
-        this._searching = Boolean(value);
+        this._searching = normalized;
                 
         if (oldValue !== this._searching) {
             this._notifyListeners('searching', this._searching);
@@ -625,9 +647,7 @@ class ModeContext {
     setActive(value) {
                 
         const normalized = Boolean(value);
-        if (this._active === normalized) {
-            throw new Error(`Redundant state change: active is already ${normalized}`);
-        }
+        this._assertStateChanged('active', this._active, normalized);
 
         this._active = normalized;
         this._notifyListeners('active', this._active);
@@ -641,9 +661,7 @@ class ModeContext {
     setDirty(value) {
         const normalized = Boolean(value);
 
-        if (this._dirty === normalized) {
-            throw new Error(`Redundant state change: dirty is already ${normalized}`);
-        }
+        this._assertStateChanged('dirty', this._dirty, normalized);
 
         this._dirty = normalized;
         if (this._dirty && this._editing) {
@@ -658,12 +676,10 @@ class ModeContext {
     }
 
     setLoading(value) {
-                
-        if (this._loading === value) {
-            throw new Error(`Redundant state change: loading is already ${value}`);
-        }
+        const normalized = Boolean(value);
+        this._assertStateChanged('loading', this._loading, normalized);
         
-        this._loading = Boolean(value);
+        this._loading = normalized;
 
         if (this._loading) {
             this._loadingStartedAt = performance.now();
@@ -715,10 +731,7 @@ class ModeContext {
     }
 
     setCurrentNoteId(noteId) {
-                
-        if (this._currentNoteId === noteId) {
-            throw new Error(`Redundant state change: currentNoteId is already ${noteId}`);
-        }
+        this._assertStateChanged('currentNoteId', this._currentNoteId, noteId);
                 
         this._currentNoteId = noteId;
         this._notifyListeners('currentNoteId', noteId);
@@ -735,9 +748,7 @@ class ModeContext {
 			normalized = null;
 		}
 
-        if (this._hoveredNoteId === normalized) {
-            throw new Error(`Redundant state change: hoveredNoteId is already ${normalized}`);
-        }
+        this._assertStateChanged('hoveredNoteId', this._hoveredNoteId, normalized);
 
         this._hoveredNoteId = normalized;
         this._notifyListeners('hoveredNoteId', this._hoveredNoteId);
@@ -749,11 +760,13 @@ class ModeContext {
     }
 
     markCaretHidden() {
+        this._assertStateChanged('caretHidden', this._caretHidden, true);
         this._caretHidden = true;
         return this;
     }
 
     markCaretVisible() {
+        this._assertStateChanged('caretHidden', this._caretHidden, false);
         this._caretHidden = false;
         return this;
     }
@@ -763,6 +776,7 @@ class ModeContext {
     }
 
     setLastSavedContent(content) {
+        this._assertStateChanged('lastSavedContent', this._lastSavedContent, content);
         this._lastSavedContent = content;
         return this;
     }
@@ -772,6 +786,7 @@ class ModeContext {
     }
 
     setCursorOffset(offset) {
+        this._assertStateChanged('cursorOffset', this._cursorOffset, offset);
         this._cursorOffset = offset;
         return this;
     }
@@ -782,9 +797,7 @@ class ModeContext {
 
     setCurrentContent(content) {
                 
-        if (this._currentContent === content) {
-            throw new Error(`Redundant state change: currentContent is already set to the same value`);
-        }
+        this._assertStateChanged('currentContent', this._currentContent, content);
                 
         this._currentContent = content;
         if (content === null) {
@@ -802,6 +815,13 @@ class ModeContext {
     }
 
 	setKeyPressed(key, metaKey, shiftKey) {
+        if (
+            this._lastKeyPressed === key
+            && this._metaKeyPressed === Boolean(metaKey)
+            && this._shiftKeyPressed === Boolean(shiftKey)
+        ) {
+            throw new Error(`Redundant state change: keyInfo is already ${key}`);
+        }
 		this._lastKeyPressed = key;
 		this._metaKeyPressed = Boolean(metaKey);
 		this._shiftKeyPressed = Boolean(shiftKey);
@@ -817,6 +837,7 @@ class ModeContext {
     }
 
 	setClickTarget(target, coordinates) {
+        this._assertStateChanged('clickTarget', this._lastClickTarget, target);
 		this._lastClickTarget = target;
 		if (coordinates) {
 			this._coordinates = coordinates;
@@ -833,6 +854,7 @@ class ModeContext {
     }
 
     resetCoordinates() {
+        this._assertStateChanged('coordinates', this._coordinates, null);
         this._coordinates = null;
         return this;
     }
@@ -901,18 +923,9 @@ class ModeContext {
 
     setClipboardNoteId(noteId) {
         
-        if (noteId === null) {
-            Logger.logAction('Clearing clipboard note ID');
-            this._clipboardNoteId = null;
-            this._notifyListeners('clipboardNoteId', null);
-            return this;
-        }
-
-        if (this._clipboardNoteId === noteId) {
-            throw new Error(`Redundant state change: clipboardNoteId is already ${noteId}`);
-        }
+        this._assertStateChanged('clipboardNoteId', this._clipboardNoteId, noteId);
         
-        Logger.logAction(`Setting clipboard note ID to: ${noteId}`);
+        Logger.logAction(noteId === null ? 'Clearing clipboard note ID' : `Setting clipboard note ID to: ${noteId}`);
         this._clipboardNoteId = noteId;
         this._notifyListeners('clipboardNoteId', noteId);
         return this;
@@ -927,9 +940,7 @@ class ModeContext {
             throw new Error(`Invalid clipboard mode: ${mode}. Must be 'system' or 'note'`);
         }
         
-        if (this._clipboardMode === mode) {
-            throw new Error(`Redundant state change: clipboardMode is already ${mode}`);
-        }
+        this._assertStateChanged('clipboardMode', this._clipboardMode, mode);
         
         Logger.logAction(`Setting clipboard mode to: ${mode}`);
         this._clipboardMode = mode;
@@ -941,21 +952,18 @@ class ModeContext {
     }
 
 		setSearchQuery(query) {
-				// Don't trigger redundancy check for search as it's expected to change frequently
-				const oldQuery = this._searchQuery;
-				let normalized = query;
-				if (typeof normalized !== 'string') {
-					normalized = '';
-				}
-				this._searchQuery = normalized;
-        
-        if (oldQuery !== this._searchQuery) {
-            // Update current tab's search query and save tab state
-            const entry = this._ensureTabEntry(this._activeTabId);
-            entry.searchQuery = this._searchQuery;
-            this._notifyListeners('searchQuery', this._searchQuery);
-            this._emitTabStateMutation('searchQuery');
+        let normalized = query;
+        if (typeof normalized !== 'string') {
+            normalized = '';
         }
+        this._assertStateChanged('searchQuery', this._searchQuery, normalized);
+        this._searchQuery = normalized;
+
+        // Update current tab's search query and save tab state
+        const entry = this._ensureTabEntry(this._activeTabId);
+        entry.searchQuery = this._searchQuery;
+        this._notifyListeners('searchQuery', this._searchQuery);
+        this._emitTabStateMutation('searchQuery');
         
         return this;
     }
@@ -1057,6 +1065,9 @@ class ModeContext {
     }
 
     clearSeenRoots() {
+        if (this._getActiveSeenRoots().size === 0) {
+            throw new Error('Redundant state change: seen roots are already empty');
+        }
         this._getActiveSeenRoots().clear();
         return this;
     }
@@ -1108,11 +1119,9 @@ class ModeContext {
 
     setRootAnchorId(anchorId) {
         const tabId = this._activeTabId;
-        if (typeof anchorId !== 'string' || !anchorId) {
-            this._tabRootAnchors[tabId] = null;
-            return this;
-        }
-        this._tabRootAnchors[tabId] = anchorId;
+        const normalized = typeof anchorId === 'string' && anchorId.length > 0 ? anchorId : null;
+        this._assertStateChanged('rootAnchorId', this._tabRootAnchors[tabId], normalized);
+        this._tabRootAnchors[tabId] = normalized;
         return this;
     }
 
@@ -1175,22 +1184,24 @@ class ModeContext {
     }
 
     get tabs() {
-        return this._tabs;
+        return Object.freeze({ ...this._tabs });
     }
 
     get tabOrder() {
-        return this._tabOrder;
+        return Object.freeze(this._tabOrder.slice());
     }
 
     setTabStateUpdateHook(callback) {
         if (callback && typeof callback !== 'function') {
             throw new Error('tab state update hook must be a function');
         }
+        this._assertStateChanged('tabStateUpdateHook', this._tabStateUpdateHook, callback);
         this._tabStateUpdateHook = callback;
         return this;
     }
 
     clearTabStateUpdateHook() {
+        this._assertStateChanged('tabStateUpdateHook', this._tabStateUpdateHook, null);
         this._tabStateUpdateHook = null;
         return this;
     }
@@ -1199,6 +1210,7 @@ class ModeContext {
         if (typeof version !== 'number' || Number.isNaN(version)) {
             throw new Error('tab state version must be a number');
         }
+        this._assertStateChanged('tabStateVersion', this._tabStateVersion, version);
         this._tabStateVersion = version;
         return this;
     }
@@ -1415,9 +1427,7 @@ class ModeContext {
 			throw new Error('scrollY must be a non-negative number');
 		}
         const entry = this._ensureTabEntry(tabId);
-        if (entry.scrollY === scrollY) {
-            return this;
-        }
+        this._assertStateChanged('tabScrollY', entry.scrollY, scrollY);
         entry.scrollY = scrollY;
         entry.scrollAnchor = null;
         if (emit) {
@@ -1441,6 +1451,7 @@ class ModeContext {
 		if (scrollAnchor !== null && typeof scrollAnchor !== 'object') {
 			throw new Error('scrollAnchor must be an object or null');
 		}
+        this._assertStateChanged('tabScrollAnchor', entry.scrollAnchor, scrollAnchor);
         entry.scrollAnchor = scrollAnchor;
         if (emit) {
             this._emitTabStateMutation('scrollAnchor');
@@ -1543,6 +1554,9 @@ class ModeContext {
             });
             return this;
         }
+        if (this._activeTabId === tabId && !force) {
+            throw new Error(`Redundant state change: activeTabId is already ${tabId}`);
+        }
 
         // Save current scroll position to current tab
         const currentEntry = this._ensureTabEntry(this._activeTabId);
@@ -1560,7 +1574,10 @@ class ModeContext {
         const newQuery = targetEntry.searchQuery;
         console.log('Setting search query from tab', tabId, 'query:', newQuery);
         this._searchQuery = newQuery;
-        this.setExecutedSearchQuery(this._searchQuery, tabId);
+        // Switching tabs can land on a tab whose executed query already matches its saved query.
+        if (this.getExecutedSearchQuery(tabId) !== this._searchQuery) {
+            this.setExecutedSearchQuery(this._searchQuery, tabId);
+        }
         this._notifyInfiniteScrollTabSwitch();
 
         // Notify listeners of changes
@@ -1600,6 +1617,7 @@ class ModeContext {
     }
 
     markInitialPageLoadComplete() {
+        this._assertStateChanged('isInitialPageLoad', this._isInitialPageLoad, false);
         this._isInitialPageLoad = false;
         return this;
     }
@@ -1651,6 +1669,7 @@ class ModeContext {
     }
 
     setLastUpdateUUID(uuid) {
+        this._assertStateChanged('lastUpdateUUID', this._lastUpdateUUID, uuid);
         this._lastUpdateUUID = uuid;
         return this;
     }
@@ -1665,9 +1684,7 @@ class ModeContext {
             throw new Error('connected must be a boolean');
         }
         
-        if (this._isConnected === connected) {
-            throw new Error(`Redundant state change: isConnected is already ${connected}`);
-        }
+        this._assertStateChanged('isConnected', this._isConnected, connected);
         
         Logger.logAction(`Connection state changed: ${connected ? 'connected' : 'disconnected'}`);
         this._isConnected = connected;
@@ -1685,9 +1702,7 @@ class ModeContext {
             throw new Error('visible must be a boolean');
         }
         
-        if (this._connectionErrorBannerVisible === visible) {
-            throw new Error(`Redundant state change: connectionErrorBannerVisible is already ${visible}`);
-        }
+        this._assertStateChanged('connectionErrorBannerVisible', this._connectionErrorBannerVisible, visible);
         
         this._connectionErrorBannerVisible = visible;
         return this;
@@ -1702,9 +1717,7 @@ class ModeContext {
             throw new Error('active must be a boolean');
         }
         
-        if (this._userActivity === active) {
-            throw new Error(`Redundant state change: userActivity is already ${active}`);
-        }
+        this._assertStateChanged('userActivity', this._userActivity, active);
         
         this._userActivity = active;
         return this;
@@ -1712,6 +1725,42 @@ class ModeContext {
     
     get userActivity() {
         return this._userActivity;
+    }
+
+    get modalStack() {
+        return Object.freeze(this._modalStack.slice());
+    }
+
+    get topModal() {
+        if (this._modalStack.length === 0) {
+            return null;
+        }
+        return this._modalStack[this._modalStack.length - 1];
+    }
+
+    pushModal(modalName) {
+        if (typeof modalName !== 'string' || modalName.length === 0) {
+            throw new Error('modalName must be a non-empty string');
+        }
+        if (this.topModal === modalName) {
+            throw new Error(`Redundant state change: modalStack already has ${modalName} on top`);
+        }
+        this._modalStack.push(modalName);
+        this._notifyListeners('modalStack', this.modalStack);
+        return this;
+    }
+
+    removeModal(modalName) {
+        if (typeof modalName !== 'string' || modalName.length === 0) {
+            throw new Error('modalName must be a non-empty string');
+        }
+        const index = this._modalStack.indexOf(modalName);
+        if (index === -1) {
+            throw new Error(`Redundant state change: modalStack does not contain ${modalName}`);
+        }
+        this._modalStack.splice(index, 1);
+        this._notifyListeners('modalStack', this.modalStack);
+        return this;
     }
 }
 

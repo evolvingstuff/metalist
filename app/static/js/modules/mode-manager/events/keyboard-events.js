@@ -246,6 +246,7 @@ function handleSearchContextsViewportChange() {
 
 function markSystemClipboardAsTrusted() {
     noteClipboardRequiresBrowserValidation = false;
+    // System clipboard writes can happen repeatedly while the clipboard mode is already system.
     if (ModeContext.clipboardMode !== 'system') {
         ModeContext.setClipboardMode('system');
     }
@@ -253,6 +254,7 @@ function markSystemClipboardAsTrusted() {
 
 function markNoteClipboardAsTrusted() {
     noteClipboardRequiresBrowserValidation = false;
+    // Note clipboard writes can refresh clipboard contents without changing clipboard mode.
     if (ModeContext.clipboardMode !== 'note') {
         ModeContext.setClipboardMode('note');
     }
@@ -283,6 +285,7 @@ function syncClipboardTrackingFromPasteEventHtml(clipboardHtml) {
         clipboardHtml,
     });
     noteClipboardRequiresBrowserValidation = resolved.noteClipboardRequiresBrowserValidation;
+    // Browser paste validation can confirm the existing clipboard mode.
     if (ModeContext.clipboardMode !== resolved.clipboardMode) {
         ModeContext.setClipboardMode(resolved.clipboardMode);
     }
@@ -357,7 +360,15 @@ function handleKeyDown(event) {
         metaOrCtrl = true;
     }
 
-    ModeContext.setKeyPressed(event.key, metaOrCtrl, event.shiftKey);
+    const previousKeyInfo = ModeContext.keyInfo;
+    // Key-repeat and modifier-only sequences can produce identical key snapshots.
+    if (
+        previousKeyInfo.key !== event.key
+        || previousKeyInfo.meta !== metaOrCtrl
+        || previousKeyInfo.shift !== Boolean(event.shiftKey)
+    ) {
+        ModeContext.setKeyPressed(event.key, metaOrCtrl, event.shiftKey);
+    }
 
     Logger.logDebug('Key pressed', {
         key: event.key,
@@ -373,7 +384,7 @@ function handleKeyDown(event) {
             if (isOntologyModalShortcut(event)) {
                 event.preventDefault();
                 event.stopPropagation();
-                const topModal = ModeContext.modalStack[ModeContext.modalStack.length - 1];
+                const topModal = ModeContext.topModal;
                 if (topModal === 'ontologyModal') {
                     void openOntologyModalFromShortcut();
                 }
@@ -723,6 +734,7 @@ function handleToggleTagBarFocusShortcut(event) {
 }
 
 function revealCaretForCurrentNote() {
+    // Most keystrokes happen after the caret is already visible; collapsed-note edit mode is the exception.
     if (!ModeContext.isEditing || !ModeContext.isCaretHidden) {
         return;
     }
@@ -1235,6 +1247,7 @@ async function handleCopyNoteShortcut(event) {
 
     const copiedNoteId = copyResult?.note_id;
     if (typeof copiedNoteId === 'string' && copiedNoteId.length > 0) {
+        // Copying the same note again should refresh system clipboard data without changing note clipboard state.
         if (ModeContext.clipboardNoteId !== copiedNoteId) {
             ModeContext.setClipboardNoteId(copiedNoteId);
         }
@@ -3075,7 +3088,10 @@ export async function switchToTabContext(tabId, options) {
 
 function snapshotActiveTabScrollState() {
     const currentScroll = Math.max(0, Math.round(window.scrollY));
-    ModeContext.updateActiveTabScroll(currentScroll);
+    // Multiple tab commands can snapshot without an intervening scroll event.
+    if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== currentScroll) {
+        ModeContext.updateActiveTabScroll(currentScroll);
+    }
     ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
 }
 
@@ -3222,16 +3238,28 @@ async function runReferenceSearchInActiveTab(referenceNoteId, context) {
     }
 
     const normalizedReferenceId = syncSearchInputValue(searchInput, referenceNoteId).normalizedText;
-    ModeContext.setSearchQuery(normalizedReferenceId);
+    // Opening the same reference from the same tab can leave the search query unchanged.
+    if (ModeContext.searchQuery !== normalizedReferenceId) {
+        ModeContext.setSearchQuery(normalizedReferenceId);
+    }
     updateSearchContextsList();
 
     await actionEnterSearchMode();
     ModeContext.clearActiveTabDiffCacheForSearchExecution(normalizedReferenceId);
     ModeContext.resetRootTracking({ clear: true });
     window.scrollTo(0, 0);
-    ModeContext.updateActiveTabScroll(0);
-    ModeContext.updateActiveTabScrollAnchor(null, true);
-    ModeContext.setRootAnchorId(null);
+    // Reference navigation can run while the active tab is already scrolled to top.
+    if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== 0) {
+        ModeContext.updateActiveTabScroll(0);
+    }
+    // updateActiveTabScroll and resetRootTracking leave anchors null.
+    if (ModeContext.getTabScrollAnchor(ModeContext.activeTabId) !== null) {
+        ModeContext.updateActiveTabScrollAnchor(null, true);
+    }
+    // resetRootTracking clears the root anchor for the reference search.
+    if (ModeContext.getRootAnchorId() !== null) {
+        ModeContext.setRootAnchorId(null);
+    }
     const startedAt = performance.now();
     const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
     await actionRefreshAndMaybeSelect({
@@ -3282,7 +3310,10 @@ async function moveTabContext(tabId, delta) {
     }
 
     const currentScroll = Math.max(0, Math.round(window.scrollY));
-    ModeContext.updateActiveTabScroll(currentScroll);
+    // Reordering tabs can be requested without the page moving first.
+    if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== currentScroll) {
+        ModeContext.updateActiveTabScroll(currentScroll);
+    }
     ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
 
     ModeContext.moveTabInOrder(tabId, delta);
@@ -3416,7 +3447,10 @@ function syncSearchInputField() {
 
 async function persistCurrentTabState() {
     const currentScroll = Math.max(0, Math.round(window.scrollY));
-    ModeContext.updateActiveTabScroll(currentScroll);
+    // Explicit tab-state persists may follow a scroll watcher that already stored this Y.
+    if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== currentScroll) {
+        ModeContext.updateActiveTabScroll(currentScroll);
+    }
     ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
     await persistTabStateSnapshot();
 }

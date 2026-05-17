@@ -171,7 +171,10 @@ export const NotesAPI = {
             
             // Extract and store update UUID if present
             if (data && data.updateUUID) {
-                ModeContext.setLastUpdateUUID(data.updateUUID);
+                // Polling can return the same update UUID when nothing changed server-side.
+                if (ModeContext.lastUpdateUUID !== data.updateUUID) {
+                    ModeContext.setLastUpdateUUID(data.updateUUID);
+                }
                 if (CONFIG.DEBUG.LOG_API_CALLS) {
                     console.log(' [API] Updated sync UUID:', data.updateUUID);
                 }

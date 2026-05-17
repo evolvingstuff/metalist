@@ -22,10 +22,18 @@ let scrollPollId = null;
 const lastPersistedScrollByTab = Object.create(null);
 let pendingPersistTimeout = null;
 
+function setTabStateVersionFromServer(version) {
+    const normalizedVersion = typeof version === 'number' ? version : 0;
+    // The server can echo an unchanged tab-state version for no-op persistence responses.
+    if (ModeContext.tabStateVersion !== normalizedVersion) {
+        ModeContext.setTabStateVersion(normalizedVersion);
+    }
+}
+
 export async function initializeTabStateService() {
     const serverState = await fetchTabState();
     ModeContext.hydrateTabState(serverState, { emitUpdate: false });
-    ModeContext.setTabStateVersion(typeof serverState.version === 'number' ? serverState.version : 0);
+    setTabStateVersionFromServer(serverState.version);
     lastSignature = serializeState(canonicalizeState(serverState));
     ModeContext.setTabStateUpdateHook(handleTabStateMutation);
     startScrollWatcher();
@@ -40,7 +48,7 @@ export async function persistTabStateSnapshot() {
         return;
     }
     const response = await callTabStateApi('POST', snapshot);
-    ModeContext.setTabStateVersion(typeof response.version === 'number' ? response.version : 0);
+    setTabStateVersionFromServer(response.version);
     lastSignature = serializeState(canonicalizeState(response));
 }
 
@@ -81,7 +89,7 @@ function captureServerSignature(state) {
     if (!state || typeof state !== 'object') {
         throw new Error('tab-state response missing payload');
     }
-    ModeContext.setTabStateVersion(typeof state.version === 'number' ? state.version : 0);
+    setTabStateVersionFromServer(state.version);
     lastSignature = serializeState(canonicalizeState(state));
 }
 
@@ -194,7 +202,10 @@ function handleScrollEvent() {
         if (current !== lastScrollY) {
             lastScrollY = current;
             const effectiveTabId = pendingTabId ? pendingTabId : ModeContext.activeTabId;
-            ModeContext.updateTabScroll(effectiveTabId, current, true);
+            // A programmatic restore can update ModeContext before the browser scroll event lands.
+            if (ModeContext.getTabScrollPosition(effectiveTabId) !== current) {
+                ModeContext.updateTabScroll(effectiveTabId, current, true);
+            }
         }
         pendingTabId = null;
     });
@@ -226,8 +237,10 @@ async function pollPersistScroll() {
     if (typeof previous === 'number' && previous === current) {
         return;
     }
-    // Update local state first so the snapshot reflects latest scroll
-    ModeContext.updateActiveTabScroll(current);
+    // Scroll polling can hit the same Y after another scroll listener already stored it.
+    if (ModeContext.getTabScrollPosition(tabId) !== current) {
+        ModeContext.updateActiveTabScroll(current);
+    }
     ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
     await recordScrollInteractionIfEligible();
     await persistTabStateSnapshot();

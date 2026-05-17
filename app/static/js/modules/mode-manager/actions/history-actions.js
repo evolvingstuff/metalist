@@ -24,7 +24,10 @@ function applyScrollRestore(scrollRestore, contextLabel) {
         throw new Error(`${contextLabel} scrollRestore.scrollAnchor must be an object or null`);
     }
 
-    ModeContext.updateActiveTabScroll(scrollY);
+    // History navigation can restore to the same scroll position already held by the active tab.
+    if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== scrollY) {
+        ModeContext.updateActiveTabScroll(scrollY);
+    }
     ModeContext.updateActiveTabScrollAnchor(scrollAnchor, true);
 
     const viewAnchorRootId = typeof scrollRestore.viewAnchorRootId === 'string' && scrollRestore.viewAnchorRootId.length > 0
@@ -85,7 +88,10 @@ function _applyHistorySelectionState({
             ModeContext.resetEditSessionState({ startedCollapsed: false });
         }
 
-        ModeContext.markCaretVisible();
+        // Undo/redo can keep editing the same visible note while only content changes.
+        if (ModeContext.isCaretHidden) {
+            ModeContext.markCaretVisible();
+        }
         return;
     }
 

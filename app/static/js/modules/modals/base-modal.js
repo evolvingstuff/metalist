@@ -109,8 +109,8 @@ export class BaseModal {
         }
         
         // Check if another modal is already open (unless we support stacking)
-        if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
-            errors.push(`Cannot open modal while ${ModeContext.modalStack[ModeContext.modalStack.length - 1]} is open`);
+        if (ModeContext.modalStack.length > 0) {
+            errors.push(`Cannot open modal while ${ModeContext.topModal} is open`);
         }
         
         if (errors.length > 0) {
@@ -122,22 +122,14 @@ export class BaseModal {
      * Add this modal to the modal stack
      */
     addToModalStack() {
-        if (!ModeContext.modalStack) {
-            ModeContext.modalStack = [];
-        }
-        ModeContext.modalStack.push(this.modalName);
+        ModeContext.pushModal(this.modalName);
     }
     
     /**
      * Remove this modal from the modal stack
      */
     removeFromModalStack() {
-        if (ModeContext.modalStack) {
-            const index = ModeContext.modalStack.indexOf(this.modalName);
-            if (index > -1) {
-                ModeContext.modalStack.splice(index, 1);
-            }
-        }
+        ModeContext.removeModal(this.modalName);
     }
     
     /**
@@ -234,7 +226,7 @@ export class BaseModal {
      */
     handleKeyDown(event) {
         // Only handle events if this is the top modal
-        const topModal = ModeContext.modalStack?.[ModeContext.modalStack.length - 1];
+        const topModal = ModeContext.topModal;
         if (topModal !== this.modalName) {
             return;
         }

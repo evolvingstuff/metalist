@@ -5,7 +5,7 @@
 import { ModeContextInstance as ModeContext } from './mode-manager/mode-context.js';
 
 function markUserActivity() {
-    // Only set to true if it's currently false to avoid redundant state changes
+    // Activity events fire continuously; one true flag covers all activity until polling consumes it.
     if (!ModeContext.userActivity) {
         ModeContext.setUserActivity(true);
     }

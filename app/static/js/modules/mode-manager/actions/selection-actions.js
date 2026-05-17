@@ -40,6 +40,20 @@ function getNoteElementIfPresent(noteId) {
     return document.querySelector(`[data-note-id="${noteId}"]`);
 }
 
+function applyInitialCaretVisibility(initialCaretVisibility) {
+    if (initialCaretVisibility === 'hidden') {
+        // Entering edit mode starts visible, but collapsed-note editing intentionally hides it.
+        if (!ModeContext.isCaretHidden) {
+            ModeContext.markCaretHidden();
+        }
+        return;
+    }
+    // Selecting an ordinary note usually keeps the default visible caret from setEditing(true).
+    if (ModeContext.isCaretHidden) {
+        ModeContext.markCaretVisible();
+    }
+}
+
 export async function actionSelectNote(noteId, options) {
     if (options === null || typeof options !== 'object') {
         throw new Error('actionSelectNote requires options object');
@@ -78,11 +92,7 @@ export async function actionSelectNote(noteId, options) {
 
     ModeContext.setEditing(true);
 
-    if (initialCaretVisibility === 'hidden') {
-        ModeContext.markCaretHidden();
-    } else {
-        ModeContext.markCaretVisible();
-    }
+    applyInitialCaretVisibility(initialCaretVisibility);
 
     if (shouldRecordEditModeTransition) {
         const interactionQuery = beginEditInteractionForActiveQuery();
@@ -253,11 +263,7 @@ export async function actionSwitchNotes(newNoteId, options) {
     ModeContext.setCurrentNoteId(newNoteId);
     ModeContext.resetEditSessionState({ startedCollapsed: false });
 
-    if (initialCaretVisibility === 'hidden') {
-        ModeContext.markCaretHidden();
-    } else {
-        ModeContext.markCaretVisible();
-    }
+    applyInitialCaretVisibility(initialCaretVisibility);
 
     const newContent = await actionRefreshAndMaybeSelect({startedAt: startedAt});
     

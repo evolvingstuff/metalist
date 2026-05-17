@@ -227,16 +227,6 @@ function computeSuggestedTags(matches, committedTokens, prefix, usageSnapshot) {
     return suggestions.slice(0, 10).map((s) => s.tag);
 }
 
-function ensureModalStack() {
-    if (!ModeContext.modalStack) {
-        ModeContext.modalStack = [];
-    }
-    if (!Array.isArray(ModeContext.modalStack)) {
-        throw new Error('ModeContext.modalStack must be an array');
-    }
-    return ModeContext.modalStack;
-}
-
 class CommandPaletteController {
     constructor() {
         this._initialized = false;
@@ -550,8 +540,7 @@ class CommandPaletteController {
         this._previousActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         this._previousScrollY = Math.max(0, Math.round(window.scrollY));
 
-        const modalStack = ensureModalStack();
-        modalStack.push('commandPalette');
+        ModeContext.pushModal('commandPalette');
 
         const { modal, input } = this._elements;
         modal.style.display = 'block';
@@ -582,11 +571,7 @@ class CommandPaletteController {
         input.removeEventListener('input', this._handleInput);
         modal.removeEventListener('click', this._handleClick);
 
-        const modalStack = ensureModalStack();
-        const idx = modalStack.lastIndexOf('commandPalette');
-        if (idx >= 0) {
-            modalStack.splice(idx, 1);
-        }
+        ModeContext.removeModal('commandPalette');
 
         if (typeof this._previousScrollY === 'number') {
             window.scrollTo(0, this._previousScrollY);
@@ -1034,9 +1019,18 @@ class CommandPaletteController {
         ModeContext.hydrateTabState(response, { emitUpdate: false });
         ModeContext.clearTabRevealedRedactions(activeTabId);
         ModeContext.resetTabDiffCache(activeTabId, { preserveRootAnchor: false });
-        ModeContext.updateTabScroll(activeTabId, 0, false);
-        ModeContext.updateTabScrollAnchor(activeTabId, null, false);
-        ModeContext.setRootAnchorId(null);
+        // Sort-mode changes often run while the view is already positioned at top.
+        if (ModeContext.getTabScrollPosition(activeTabId) !== 0) {
+            ModeContext.updateTabScroll(activeTabId, 0, false);
+        }
+        // updateTabScroll and resetTabDiffCache both clear anchors for the sorted view.
+        if (ModeContext.getTabScrollAnchor(activeTabId) !== null) {
+            ModeContext.updateTabScrollAnchor(activeTabId, null, false);
+        }
+        // resetTabDiffCache clears the root anchor unless preserveRootAnchor is set.
+        if (ModeContext.getRootAnchorId() !== null) {
+            ModeContext.setRootAnchorId(null);
+        }
 
         ModeContext.beginIgnoreScrollEvents();
         window.scrollTo(0, 0);
@@ -1434,13 +1428,25 @@ class CommandPaletteController {
                 throw new Error('search-input missing from DOM');
             }
             const analysis = syncSearchInputValue(searchInput, '');
-            ModeContext.setSearchQuery(analysis.normalizedText);
+            // Reset can be invoked when filters are already clear.
+            if (ModeContext.searchQuery !== analysis.normalizedText) {
+                ModeContext.setSearchQuery(analysis.normalizedText);
+            }
             ModeContext.clearActiveTabDiffCacheForSearchExecution(analysis.normalizedText);
             ModeContext.resetRootTracking({ clear: true });
             window.scrollTo(0, 0);
-            ModeContext.updateActiveTabScroll(0);
-            ModeContext.updateActiveTabScrollAnchor(null, true);
-            ModeContext.setRootAnchorId(null);
+            // Reset can be invoked from an already-top unfiltered view.
+            if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== 0) {
+                ModeContext.updateActiveTabScroll(0);
+            }
+            // updateActiveTabScroll and resetRootTracking leave anchors null.
+            if (ModeContext.getTabScrollAnchor(ModeContext.activeTabId) !== null) {
+                ModeContext.updateActiveTabScrollAnchor(null, true);
+            }
+            // resetRootTracking clears the root anchor before refresh.
+            if (ModeContext.getRootAnchorId() !== null) {
+                ModeContext.setRootAnchorId(null);
+            }
 
             await actionRefreshAndMaybeSelect({});
         });

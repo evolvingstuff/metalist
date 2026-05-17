@@ -42,7 +42,7 @@ export class AlphabetizeRootNotesModal extends BaseModal {
             throw new Error('Cannot open alphabetize confirmation while application is loading');
         }
         if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
-            const topModal = ModeContext.modalStack[ModeContext.modalStack.length - 1];
+            const topModal = ModeContext.topModal;
             throw new Error(`Cannot open alphabetize confirmation while ${topModal} is open`);
         }
     }
