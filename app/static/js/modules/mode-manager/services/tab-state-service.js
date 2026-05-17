@@ -1,7 +1,7 @@
 import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { ErrorHandler } from '../../error-handler.js';
-import { computeScrollAnchor } from './scroll-anchor-service.js';
+import { areScrollAnchorsEqual, computeScrollAnchor } from './scroll-anchor-service.js';
 import { CommandGate } from './command-gate-service.js';
 import { recordScrollInteractionIfEligible } from './search-interaction-service.js';
 import { buildSessionHeaders } from '../../session-auth.js';
@@ -241,7 +241,11 @@ async function pollPersistScroll() {
     if (ModeContext.getTabScrollPosition(tabId) !== current) {
         ModeContext.updateActiveTabScroll(current);
     }
-    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+    const nextScrollAnchor = computeScrollAnchor({ anchorBias: 'auto' });
+    // Polling can run when the view has no root notes, so computed and stored anchors are both null.
+    if (!areScrollAnchorsEqual(ModeContext.getTabScrollAnchor(tabId), nextScrollAnchor)) {
+        ModeContext.updateActiveTabScrollAnchor(nextScrollAnchor, true);
+    }
     await recordScrollInteractionIfEligible();
     await persistTabStateSnapshot();
     lastPersistedScrollByTab[tabId] = current;
