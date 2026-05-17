@@ -31,7 +31,7 @@ import { ErrorHandler } from '../../error-handler.js';
 import { persistTabStateSnapshot, createTabOnServer, deleteTabOnServer } from '../services/tab-state-service.js';
 import { cacheNotesDomForTab, restoreNotesDomForTab, cloneNotesDomForTab, clearCachedNotesDomForTab, clearActiveNotesDom } from '../services/tab-dom-cache-service.js';
 import { finalizeDuplicatedTabClone, getDuplicateTabCloneOptions } from '../services/tab-duplication-service.js';
-import { computeScrollAnchor } from '../services/scroll-anchor-service.js';
+import { areScrollAnchorsEqual, computeScrollAnchor } from '../services/scroll-anchor-service.js';
 import { blurFocusedSearchInput, focusSearchInputAndSelectAllText, syncSearchInputValue } from '../services/search-input-service.js';
 import { shouldFocusSearchInputForViewModeTab } from '../services/view-mode-search-shortcut-service.js';
 import {
@@ -3092,7 +3092,11 @@ function snapshotActiveTabScrollState() {
     if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== currentScroll) {
         ModeContext.updateActiveTabScroll(currentScroll);
     }
-    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+    const nextScrollAnchor = computeScrollAnchor({ anchorBias: 'auto' });
+    // Tab commands can snapshot a view with no root anchor, leaving both anchors null.
+    if (!areScrollAnchorsEqual(ModeContext.getTabScrollAnchor(ModeContext.activeTabId), nextScrollAnchor)) {
+        ModeContext.updateActiveTabScrollAnchor(nextScrollAnchor, true);
+    }
 }
 
 async function duplicateTabContext(sourceTabId) {
@@ -3314,7 +3318,11 @@ async function moveTabContext(tabId, delta) {
     if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== currentScroll) {
         ModeContext.updateActiveTabScroll(currentScroll);
     }
-    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+    const nextScrollAnchor = computeScrollAnchor({ anchorBias: 'auto' });
+    // Reordering tabs can snapshot a view with no root anchor, leaving both anchors null.
+    if (!areScrollAnchorsEqual(ModeContext.getTabScrollAnchor(ModeContext.activeTabId), nextScrollAnchor)) {
+        ModeContext.updateActiveTabScrollAnchor(nextScrollAnchor, true);
+    }
 
     ModeContext.moveTabInOrder(tabId, delta);
     updateSearchContextsList();
@@ -3451,6 +3459,10 @@ async function persistCurrentTabState() {
     if (ModeContext.getTabScrollPosition(ModeContext.activeTabId) !== currentScroll) {
         ModeContext.updateActiveTabScroll(currentScroll);
     }
-    ModeContext.updateActiveTabScrollAnchor(computeScrollAnchor({ anchorBias: 'auto' }), true);
+    const nextScrollAnchor = computeScrollAnchor({ anchorBias: 'auto' });
+    // Explicit tab-state persists can run when the stored anchor already matches the DOM anchor.
+    if (!areScrollAnchorsEqual(ModeContext.getTabScrollAnchor(ModeContext.activeTabId), nextScrollAnchor)) {
+        ModeContext.updateActiveTabScrollAnchor(nextScrollAnchor, true);
+    }
     await persistTabStateSnapshot();
 }

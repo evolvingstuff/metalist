@@ -1,5 +1,5 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
-import { computeScrollAnchor } from './scroll-anchor-service.js';
+import { areScrollAnchorsEqual, computeScrollAnchor } from './scroll-anchor-service.js';
 
 function getNoteElementById(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
@@ -197,7 +197,11 @@ function syncLocalScrollState() {
     if (ModeContext.getTabScrollPosition(tabId) !== scrollY) {
         ModeContext.updateTabScroll(tabId, scrollY, false);
     }
-    ModeContext.updateTabScrollAnchor(tabId, computeScrollAnchor({ anchorBias: 'auto' }), false);
+    const nextScrollAnchor = computeScrollAnchor({ anchorBias: 'auto' });
+    // Redaction reveal can preserve the same anchor after correcting layout around hidden content.
+    if (!areScrollAnchorsEqual(ModeContext.getTabScrollAnchor(tabId), nextScrollAnchor)) {
+        ModeContext.updateTabScrollAnchor(tabId, nextScrollAnchor, false);
+    }
 }
 
 export function syncSearchRedactionState(noteElement) {

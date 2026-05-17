@@ -2,6 +2,49 @@ const DEFAULT_BELT_SIZE = 4;
 
 const ROOT_PARENT_SENTINELS = new Set(['', 'null', 'undefined', 'none']);
 
+function arraysMatch(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right)) {
+        throw new Error('arraysMatch requires arrays');
+    }
+    if (left.length !== right.length) {
+        return false;
+    }
+    let index = 0;
+    while (index < left.length) {
+        if (left[index] !== right[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+export function areScrollAnchorsEqual(left, right) {
+    if (left === right) {
+        return true;
+    }
+    if (left === null || right === null) {
+        return false;
+    }
+    if (typeof left !== 'object' || typeof right !== 'object') {
+        throw new Error('scroll anchors must be objects or null');
+    }
+    if (!left.anchorSortKey || typeof left.anchorSortKey !== 'object') {
+        throw new Error('left scroll anchor missing anchorSortKey');
+    }
+    if (!right.anchorSortKey || typeof right.anchorSortKey !== 'object') {
+        throw new Error('right scroll anchor missing anchorSortKey');
+    }
+    return (
+        left.anchorId === right.anchorId
+        && left.anchorBias === right.anchorBias
+        && left.intraOffset === right.intraOffset
+        && left.anchorSortKey.domIndex === right.anchorSortKey.domIndex
+        && arraysMatch(left.beltPrev, right.beltPrev)
+        && arraysMatch(left.beltNext, right.beltNext)
+    );
+}
+
 function clampNumber(value, min, max) {
     if (typeof value !== 'number' || Number.isNaN(value)) {
         throw new Error('clampNumber requires a number');
