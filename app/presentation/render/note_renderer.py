@@ -9,6 +9,8 @@ import re
 import logging
 
 from app.services.content_formatting import format_note_content_for_view
+from app.services.embedded_references import collapsed_preview_source_has_media
+from app.services.embedded_references import extract_collapsed_preview_source_html
 from app.utils.text_utils import strip_html
 from app.services.content_cache import get_cached_content
 from app.services.content_cache import get_cached_tags
@@ -95,6 +97,15 @@ def render_read_only_mode(note) -> str:
         raise TypeError(f"Note tags must be a string, got {type(tags)}")
     content = strip_comments_from_html(note.content)
     return _format_note_content_standard(content_html=content, tags=tags)
+
+
+def render_collapsed_read_only_mode(note) -> str:
+    tags = getattr(note, "tags", None)
+    if not isinstance(tags, str):
+        raise TypeError(f"Note tags must be a string, got {type(tags)}")
+    preview_content = extract_collapsed_preview_source_html(note.content)
+    preview_content = strip_comments_from_html(preview_content)
+    return _format_note_content_standard(content_html=preview_content, tags=tags)
 
 
 def render_editing_mode(note) -> str:
@@ -316,8 +327,23 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
 
     for note_id in child_ids:
         record = note_store.get_note(note_id)
-        children = _build_tree_from_store(note_id, editing_note_id, allowed_root_ids)
         is_editing = note_id == editing_note_id
+        record_child_ids = note_store.get_children(note_id)
+        has_children = bool(record_child_ids)
+        if bool(record.is_collapsed) and not is_editing:
+            children = []
+        else:
+            children = _build_tree_from_store(note_id, editing_note_id, allowed_root_ids)
+        collapsed_preview_source = extract_collapsed_preview_source_html(record.content)
+        content_is_collapsible = False
+        if collapsed_preview_source != "":
+            if collapsed_preview_source_has_media(record.content):
+                content_is_collapsible = True
+            elif collapsed_preview_source != record.content.strip():
+                content_is_collapsible = True
+        is_collapsible = has_children
+        if content_is_collapsible:
+            is_collapsible = True
 
         parent_id_value = record.parent_id
         if parent_id_value is None:
@@ -325,6 +351,8 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
 
         if is_editing:
             rendered = render_editing_mode(record)
+        elif bool(record.is_collapsed):
+            rendered = render_collapsed_read_only_mode(record)
         else:
             rendered = render_read_only_mode(record)
         if is_editing and (not rendered or not rendered.strip()):
@@ -341,6 +369,8 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
                 'flags': {
                     'isEditing': is_editing,
                     'isCollapsed': bool(record.is_collapsed),
+                    'hasChildren': has_children,
+                    'isCollapsible': is_collapsible,
                 },
             }
         )
@@ -362,7 +392,8 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
         notes = [note for note in notes if note.id in allowed_root_ids]
 
     for note in notes:
-        children = _build_tree_from_db(db_manager, db, note.id, editing_note_id, allowed_root_ids)
+        child_rows = db_manager.get_ordered_child_list(db, note.id)
+        has_children = bool(child_rows)
 
         decrypted_content = get_cached_content(note.id)
 
@@ -377,11 +408,29 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
                 self.is_collapsed = getattr(original_note, 'is_collapsed', False)
 
         decrypted_note = DecryptedNote(note, decrypted_content)
+        is_editing = note.id == editing_note_id
+        if bool(getattr(note, 'is_collapsed', False)) and not is_editing:
+            children = []
+        else:
+            children = _build_tree_from_db(db_manager, db, note.id, editing_note_id, allowed_root_ids)
+        collapsed_preview_source = extract_collapsed_preview_source_html(decrypted_content)
+        content_is_collapsible = False
+        if collapsed_preview_source != "":
+            if collapsed_preview_source_has_media(decrypted_content):
+                content_is_collapsible = True
+            elif collapsed_preview_source != decrypted_content.strip():
+                content_is_collapsible = True
+        is_collapsible = has_children
+        if content_is_collapsible:
+            is_collapsible = True
+
         parent_id_value = note.parent_id
         if parent_id_value is None:
             parent_id_value = ''
-        if note.id == editing_note_id:
+        if is_editing:
             rendered_content = render_editing_mode(decrypted_note)
+        elif bool(getattr(note, 'is_collapsed', False)):
+            rendered_content = render_collapsed_read_only_mode(decrypted_note)
         else:
             rendered_content = render_read_only_mode(decrypted_note)
         if note.id == editing_note_id and (not rendered_content or not rendered_content.strip()):
@@ -398,6 +447,8 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
                 'flags': {
                     'isEditing': note.id == editing_note_id,
                     'isCollapsed': bool(getattr(note, 'is_collapsed', False)),
+                    'hasChildren': has_children,
+                    'isCollapsible': is_collapsible,
                 },
             }
         )

@@ -12,7 +12,12 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Set
 from loguru import logger
 
 from app.services.content_formatting import find_list_style
-from app.services.embedded_references import EmbedRenderContext, render_note_content_with_embeds
+from app.services.embedded_references import collapsed_preview_source_has_image_file_embed
+from app.services.embedded_references import collapsed_preview_source_has_media
+from app.services.embedded_references import EmbedRenderContext
+from app.services.embedded_references import extract_collapsed_preview_source_html
+from app.services.embedded_references import render_collapsed_note_content_with_embeds
+from app.services.embedded_references import render_note_content_with_embeds
 from app.services.file_registry import file_registry
 from app.services.file_storage import get_file_reference_record
 from app.services.note_store import store as note_store
@@ -385,6 +390,24 @@ def build_view_state(
             )
             children_by_parent[parent_id].append(nid)
             rec = note_store.get_note(nid)
+            assert isinstance(rec.content, str)
+            assert isinstance(rec.tags, str)
+            collapsed_preview_source = extract_collapsed_preview_source_html(rec.content)
+            content_is_collapsible = False
+            if collapsed_preview_source != "":
+                if collapsed_preview_source_has_media(rec.content):
+                    content_is_collapsible = True
+                elif collapsed_preview_source_has_image_file_embed(
+                    content_html=rec.content,
+                    context=embed_render_context,
+                ):
+                    content_is_collapsible = True
+                elif collapsed_preview_source != rec.content.strip():
+                    content_is_collapsible = True
+            has_children = bool(note_store.get_children(rec.id))
+            is_collapsible = has_children
+            if content_is_collapsible:
+                is_collapsible = True
             if idx > 0:
                 prev_id = ids[idx - 1]
             else:
@@ -396,7 +419,8 @@ def build_view_state(
             flags = {
                 "isCollapsed": bool(rec.is_collapsed),
                 "isEditing": bool(editing_note_id == rec.id),
-                "hasChildren": bool(note_store.get_children(rec.id)),
+                "hasChildren": has_children,
+                "isCollapsible": is_collapsible,
                 "memoryMode": False,
                 "memorySelected": False,
                 "searchRedacted": bool(is_search_redacted),
@@ -406,20 +430,28 @@ def build_view_state(
             # If a descendant is being edited, force ancestors open so the editing note remains visible.
             if rec.id in force_uncollapsed_ids:
                 flags["isCollapsed"] = False
-            assert isinstance(rec.content, str)
-            assert isinstance(rec.tags, str)
 
             is_editing = bool(flags["isEditing"])
             rendered_content = rec.content
             if not is_editing:
-                rendered_content = render_note_content_with_embeds(
-                    note_id=rec.id,
-                    content_html=rec.content,
-                    tags=rec.tags,
-                    context=embed_render_context,
-                    static_export=False,
-                    redact_passwords=False,
-                )
+                if flags["isCollapsed"]:
+                    rendered_content = render_collapsed_note_content_with_embeds(
+                        note_id=rec.id,
+                        content_html=rec.content,
+                        tags=rec.tags,
+                        context=embed_render_context,
+                        static_export=False,
+                        redact_passwords=False,
+                    )
+                else:
+                    rendered_content = render_note_content_with_embeds(
+                        note_id=rec.id,
+                        content_html=rec.content,
+                        tags=rec.tags,
+                        context=embed_render_context,
+                        static_export=False,
+                        redact_passwords=False,
+                    )
 
             h = _compute_hash(rendered_content, rec.tags, flags, parent_id, prev_id, next_id)
             structure.append({
@@ -436,9 +468,7 @@ def build_view_state(
                 "hash": h,
             }
             hash_by_id[rec.id] = h
-            if search_active:
-                traverse(rec.id)
-            elif rec.id in force_uncollapsed_ids:
+            if rec.id in force_uncollapsed_ids:
                 traverse(rec.id)
             elif not flags["isCollapsed"] or flags["isEditing"]:
                 traverse(rec.id)

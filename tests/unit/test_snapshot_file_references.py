@@ -155,3 +155,39 @@ def test_embed_image_file_reference_renders_preview_with_download_link(monkeypat
     assert "note-file-image-preview" in rendered
     assert "download image" in rendered
     assert "note-file-reference-badge" not in rendered
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+
+
+def test_collapsed_image_file_reference_preview_skips_leading_blank_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    file_id = "a9df9c6a-9adf-475b-a842-35091be558b9"
+    notes = {
+        "a": _Note(
+            "a",
+            None,
+            None,
+            None,
+            True,
+            f"<div><br></div><div>![[{file_id}]]</div><div>trailing text</div>",
+            "",
+        ),
+    }
+    file_record = SimpleNamespace(
+        id=file_id,
+        title="photo.png",
+        original_filename="photo.png",
+        mime_type="image/png",
+        size_bytes=8_192,
+        thumbnail_kind="image",
+    )
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        file_ids={file_id},
+        file_record=file_record,
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "note-file-image-preview" in rendered
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+    assert "trailing text" not in rendered

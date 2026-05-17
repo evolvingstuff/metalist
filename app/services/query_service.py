@@ -266,6 +266,8 @@ def _normalize_flags(flags: Dict[str, object]) -> Dict[str, object]:
     normalized = dict(flags)
     normalized['isCollapsed'] = bool(flags.get('isCollapsed', False))
     normalized['isEditing'] = bool(flags.get('isEditing', False))
+    normalized['hasChildren'] = bool(flags.get('hasChildren', False))
+    normalized['isCollapsible'] = bool(flags.get('isCollapsible', normalized['hasChildren']))
     normalized['memoryMode'] = bool(flags.get('memoryMode', False))
     normalized['memorySelected'] = bool(flags.get('memorySelected', False))
     return normalized

@@ -1965,10 +1965,6 @@ body {
     display: inline;
 }
 
-.note.collapsed:not(.editing) .note-children {
-    display: none;
-}
-
 .note.collapsed:not(.editing) .note-content img {
     height: 4.5em !important;
     width: 7.5em !important;

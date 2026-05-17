@@ -14,6 +14,47 @@ _HTML_TOKEN_SPLIT_RE = re.compile(r"(<[^>]+>)")
 _FIRST_LINE_BOUNDARY_RE = re.compile(
     r"(?i)<br\s*/?>|</(?:div|p|li|h[1-6]|pre|blockquote|ul|ol|table|tr|td|th|section|article|header|footer)>\s*|\n"
 )
+_TEXT_LINE_SPLIT_RE = re.compile(r"(\r\n|\r|\n)")
+_HTML_TAG_NAME_RE = re.compile(r"^<\s*/?\s*([a-zA-Z][a-zA-Z0-9:-]*)")
+_HTML_CLOSING_TAG_NAME_RE = re.compile(r"^<\s*/\s*([a-zA-Z][a-zA-Z0-9:-]*)")
+_COLLAPSED_PREVIEW_BLOCK_TAGS = {
+    "article",
+    "blockquote",
+    "div",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "li",
+    "main",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "tr",
+    "ul",
+}
+_COLLAPSED_PREVIEW_MEDIA_TAGS = {
+    "audio",
+    "canvas",
+    "embed",
+    "iframe",
+    "img",
+    "math",
+    "object",
+    "svg",
+    "video",
+}
 _REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -129,6 +170,89 @@ def render_note_content_with_embeds(
         tags=tags,
         redact_passwords=redact_passwords,
     )
+
+
+def render_collapsed_note_content_with_embeds(
+    *,
+    note_id: str,
+    content_html: str,
+    tags: str,
+    context: EmbedRenderContext,
+    static_export: bool,
+    redact_passwords: bool,
+) -> str:
+    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    return render_note_content_with_embeds(
+        note_id=note_id,
+        content_html=preview_source_html,
+        tags=tags,
+        context=context,
+        static_export=static_export,
+        redact_passwords=redact_passwords,
+    )
+
+
+def extract_collapsed_preview_source_html(content_html: str) -> str:
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+    if content_html == "":
+        return ""
+
+    fragment_parts: List[str] = []
+    for part in _HTML_TOKEN_SPLIT_RE.split(content_html):
+        if part == "":
+            continue
+        if _is_html_segment(part):
+            fragment_parts.append(part)
+            if _is_collapsed_preview_line_boundary_tag(part):
+                if _fragment_has_collapsed_preview_content(fragment_parts):
+                    return "".join(fragment_parts).strip()
+                fragment_parts = []
+            continue
+
+        for text_part in _TEXT_LINE_SPLIT_RE.split(part):
+            if text_part == "":
+                continue
+            if _TEXT_LINE_SPLIT_RE.fullmatch(text_part):
+                if _fragment_has_collapsed_preview_content(fragment_parts):
+                    return "".join(fragment_parts).strip()
+                fragment_parts = []
+                continue
+            fragment_parts.append(text_part)
+
+    if _fragment_has_collapsed_preview_content(fragment_parts):
+        return "".join(fragment_parts).strip()
+    return ""
+
+
+def collapsed_preview_source_has_media(content_html: str) -> bool:
+    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    if preview_source_html == "":
+        return False
+    return _fragment_has_media_tag(preview_source_html)
+
+
+def collapsed_preview_source_has_image_file_embed(
+    *,
+    content_html: str,
+    context: EmbedRenderContext,
+) -> bool:
+    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    if preview_source_html == "":
+        return False
+    tokens = collect_reference_tokens_from_html(preview_source_html)
+    for token in tokens:
+        if not token.is_embed:
+            continue
+        if not context.has_file(token.note_id):
+            continue
+        record = context.get_file(token.note_id)
+        thumbnail_kind = getattr(record, "thumbnail_kind")
+        if not isinstance(thumbnail_kind, str):
+            raise TypeError("file thumbnail_kind must be a string")
+        if thumbnail_kind == "image":
+            return True
+    return False
 
 
 def _replace_reference_tokens_in_html(
@@ -655,6 +779,61 @@ def _strip_reference_tokens(text: str) -> str:
     without_refs = _REFERENCE_TOKEN_RE.sub(" ", text)
     normalized = _WHITESPACE_RE.sub(" ", without_refs)
     return normalized.strip()
+
+
+def _is_collapsed_preview_line_boundary_tag(tag_html: str) -> bool:
+    if not isinstance(tag_html, str):
+        raise TypeError("tag_html must be a string")
+    tag_name = _extract_html_tag_name(tag_html)
+    if tag_name == "br":
+        return True
+    closing_tag_name = _extract_html_closing_tag_name(tag_html)
+    if closing_tag_name in _COLLAPSED_PREVIEW_BLOCK_TAGS:
+        return True
+    return False
+
+
+def _fragment_has_collapsed_preview_content(fragment_parts: List[str]) -> bool:
+    if not isinstance(fragment_parts, list):
+        raise TypeError("fragment_parts must be a list")
+    fragment_html = "".join(fragment_parts)
+    if fragment_html == "":
+        return False
+    if _fragment_has_media_tag(fragment_html):
+        return True
+
+    text = strip_html(fragment_html)
+    if _REFERENCE_TOKEN_RE.search(text):
+        return True
+    return _strip_reference_tokens(text) != ""
+
+
+def _fragment_has_media_tag(fragment_html: str) -> bool:
+    if not isinstance(fragment_html, str):
+        raise TypeError("fragment_html must be a string")
+    for tag_match in re.finditer(r"<[^>]+>", fragment_html):
+        tag_name = _extract_html_tag_name(tag_match.group(0))
+        if tag_name in _COLLAPSED_PREVIEW_MEDIA_TAGS:
+            return True
+    return False
+
+
+def _extract_html_tag_name(tag_html: str) -> str:
+    if not isinstance(tag_html, str):
+        raise TypeError("tag_html must be a string")
+    match = _HTML_TAG_NAME_RE.match(tag_html)
+    if not match:
+        return ""
+    return match.group(1).lower()
+
+
+def _extract_html_closing_tag_name(tag_html: str) -> str:
+    if not isinstance(tag_html, str):
+        raise TypeError("tag_html must be a string")
+    match = _HTML_CLOSING_TAG_NAME_RE.match(tag_html)
+    if not match:
+        return ""
+    return match.group(1).lower()
 
 
 def _format_thumbnail_badge(thumbnail_kind: str) -> str:

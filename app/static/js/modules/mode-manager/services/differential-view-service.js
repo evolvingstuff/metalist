@@ -302,6 +302,7 @@ function createNoteElement(noteId) {
     noteElement.dataset.parentId = '';
     noteElement.dataset.isCollapsed = 'false';
     noteElement.dataset.hasChildren = 'false';
+    noteElement.dataset.isCollapsible = 'false';
     noteElement.dataset.noteTags = '';
     noteElement.dataset.searchRedacted = 'false';
 
@@ -633,6 +634,14 @@ export function applyDifferentialView(payload, options) {
                 noteData
                 && noteData.flags
                 && typeof noteData.flags === 'object'
+                && Object.prototype.hasOwnProperty.call(noteData.flags, 'isCollapsible')
+            ) {
+                noteElement.dataset.isCollapsible = Boolean(noteData.flags.isCollapsible).toString();
+            }
+            if (
+                noteData
+                && noteData.flags
+                && typeof noteData.flags === 'object'
                 && Object.prototype.hasOwnProperty.call(noteData.flags, 'searchRedacted')
             ) {
                 setNoteSearchRedactionState(noteElement, Boolean(noteData.flags.searchRedacted));
@@ -692,6 +701,9 @@ export function applyDifferentialView(payload, options) {
         noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
         if (Object.prototype.hasOwnProperty.call(flags, 'hasChildren')) {
             noteElement.dataset.hasChildren = Boolean(flags.hasChildren).toString();
+        }
+        if (Object.prototype.hasOwnProperty.call(flags, 'isCollapsible')) {
+            noteElement.dataset.isCollapsible = Boolean(flags.isCollapsible).toString();
         }
 
         noteElement.classList.add(CONFIG.CLASSES.NOTE);
@@ -905,6 +917,9 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
     if (Object.prototype.hasOwnProperty.call(flags, 'hasChildren')) {
         noteElement.dataset.hasChildren = Boolean(flags.hasChildren).toString();
+    }
+    if (Object.prototype.hasOwnProperty.call(flags, 'isCollapsible')) {
+        noteElement.dataset.isCollapsible = Boolean(flags.isCollapsible).toString();
     }
 
     noteElement.classList.add(CONFIG.CLASSES.NOTE);

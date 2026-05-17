@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+import app.services.snapshot as snapshot_module
+import pytest
+
+from app.services.embedded_references import extract_collapsed_preview_source_html
+from app.services.snapshot import build_view_state
+
+
+@dataclass
+class _Note:
+    id: str
+    parent_id: Optional[str]
+    prev_id: Optional[str]
+    next_id: Optional[str]
+    is_collapsed: bool
+    content: str
+    tags: str
+
+
+class _FakeNoteStore:
+    def __init__(self, *, notes: Dict[str, _Note], children_by_parent: Dict[Optional[str], List[str]]):
+        self._notes = notes
+        self._children_by_parent = children_by_parent
+
+    def has_note(self, note_id: str) -> bool:
+        return note_id in self._notes
+
+    def get_note(self, note_id: str) -> _Note:
+        return self._notes[note_id]
+
+    def get_children(self, parent_id: Optional[str]) -> List[str]:
+        if parent_id in self._children_by_parent:
+            return list(self._children_by_parent[parent_id])
+        return []
+
+
+def _state_for(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    notes: Dict[str, _Note],
+    children_by_parent: Dict[Optional[str], List[str]],
+):
+    store = _FakeNoteStore(notes=notes, children_by_parent=children_by_parent)
+    monkeypatch.setattr(snapshot_module, "note_store", store)
+    monkeypatch.setattr(snapshot_module, "get_all_locks", lambda: {})
+    return build_view_state(
+        editing_note_id=None,
+        search=None,
+        sort_mode="normal",
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+    )
+
+
+def test_extract_collapsed_preview_source_skips_leading_blank_lines() -> None:
+    content = "<div><br></div><div>\u00a0</div><div>Yep, this is real</div><div>Hidden later</div>"
+
+    preview = extract_collapsed_preview_source_html(content)
+
+    assert preview == "<div>Yep, this is real</div>"
+
+
+def test_extract_collapsed_preview_source_keeps_first_image_line() -> None:
+    content = '<div><br></div><div><img src="data:image/png;base64,abc" alt="A"></div><div>Hidden later</div>'
+
+    preview = extract_collapsed_preview_source_html(content)
+
+    assert '<img src="data:image/png;base64,abc" alt="A">' in preview
+    assert "Hidden later" not in preview
+
+
+def test_inline_image_note_is_collapsible_even_when_image_is_entire_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note(
+            "a",
+            None,
+            None,
+            None,
+            False,
+            '<div><img src="data:image/png;base64,abc" alt="A"></div>',
+            "",
+        ),
+    }
+
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+
+
+def test_inline_image_first_note_is_collapsible_with_following_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note(
+            "a",
+            None,
+            None,
+            None,
+            False,
+            '<div><img src="data:image/png;base64,abc" alt="A"></div><div>arbitrary text after image</div>',
+            "",
+        ),
+    }
+
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+
+
+def test_collapsed_snapshot_sends_first_meaningful_line_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note(
+            "a",
+            None,
+            None,
+            None,
+            True,
+            "\n\nTimestamps:\n(0:00) - Intro\n(0:18) - Next",
+            "",
+        ),
+    }
+
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+
+    rendered = state.payloads["a"]["content"]
+    assert rendered == "Timestamps:"
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+    assert "(0:00)" not in rendered
+
+
+def test_blank_collapsed_note_without_children_is_not_collapsible(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, True, "<div><br></div>", ""),
+    }
+
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+
+    assert state.payloads["a"]["content"] == ""
+    assert state.payloads["a"]["flags"]["isCollapsible"] is False
+
+
+def test_blank_collapsed_note_with_children_is_collapsible(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, True, "<div><br></div>", ""),
+        "b": _Note("b", "a", None, None, False, "child", ""),
+    }
+
+    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"], "a": ["b"]})
+
+    assert state.payloads["a"]["flags"]["hasChildren"] is True
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+    assert "b" not in state.payloads
