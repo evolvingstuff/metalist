@@ -83,6 +83,9 @@ function validateMenuItems(items) {
         if (typeof item.onSelect !== 'function') {
             throw new Error(`Context menu item ${index} missing onSelect handler`);
         }
+        if (item.separated !== undefined && typeof item.separated !== 'boolean') {
+            throw new Error(`Context menu item ${index} separated must be boolean when provided`);
+        }
     });
 }
 
@@ -135,6 +138,9 @@ function renderMenuItems(menu, items) {
         button.textContent = item.label;
         button.dataset.index = String(index);
         button.setAttribute('role', 'menuitem');
+        if (item.separated === true) {
+            button.classList.add('is-separated');
+        }
         if (!item.enabled) {
             button.disabled = true;
             button.classList.add('is-disabled');

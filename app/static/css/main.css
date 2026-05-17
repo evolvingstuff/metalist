@@ -2204,6 +2204,46 @@ body {
     border-radius: 4px;
 }
 
+.image-zoom-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: rgba(15, 23, 42, 0.86);
+}
+
+.image-zoom-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.image-zoom-close {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.72);
+    color: #ffffff;
+    cursor: pointer;
+    font: 28px/1 Arial, sans-serif;
+}
+
+.image-zoom-close:hover,
+.image-zoom-close:focus-visible {
+    background: rgba(30, 41, 59, 0.96);
+    outline: 2px solid rgba(255, 255, 255, 0.42);
+    outline-offset: 2px;
+}
+
 .note-file-reference-header {
     display: flex;
     align-items: center;
@@ -2856,6 +2896,8 @@ body {
     position: fixed;
     z-index: 500;
     min-width: 200px;
+    width: max-content;
+    max-width: min(320px, calc(100vw - 16px));
     padding: 6px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
@@ -2880,10 +2922,17 @@ body {
     font-size: 13px;
     font-family: inherit;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .context-menu-item:hover {
     background: rgba(0, 0, 0, 0.06);
+}
+
+.context-menu-item.is-separated {
+    margin-top: 6px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 12px;
 }
 
 html[data-theme="dark"] .context-menu-item:hover {

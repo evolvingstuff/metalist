@@ -115,10 +115,12 @@
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Short drags act like clicks. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
 | Right-click note | Open the note context menu (`Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`) |
+| Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
+> Saved-file image actions are available in view mode on rendered image previews; edit mode only contains the raw UUID token for those files.
 
 ### Command Palette Utility Entries
 - Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)

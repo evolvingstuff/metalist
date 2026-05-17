@@ -42,6 +42,10 @@ function buildNoteContextItems(context, handlers) {
     const onAddChildNote = handlers.onAddChildNote;
     const onDeleteNote = handlers.onDeleteNote;
     const onMoveNoteToTop = handlers.onMoveNoteToTop;
+    const onCopyImage = handlers.onCopyImage;
+    const onSaveImage = handlers.onSaveImage;
+    const onZoomImage = handlers.onZoomImage;
+    const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
     if (typeof onAddSiblingNote !== 'function') {
         throw new Error('Note context missing onAddSiblingNote handler');
     }
@@ -55,13 +59,62 @@ function buildNoteContextItems(context, handlers) {
         throw new Error('Note context missing onMoveNoteToTop handler');
     }
 
-    return [
-        {
-            id: 'add-sibling-note',
-            label: 'Add Sibling Note',
-            enabled: true,
-            onSelect: () => onAddSiblingNote(noteId),
-        },
+    const items = [];
+    const imageContext = context.imageContext;
+    if (imageContext !== null && typeof imageContext === 'object') {
+        if (typeof onCopyImage !== 'function') {
+            throw new Error('Image note context missing onCopyImage handler');
+        }
+        if (typeof onSaveImage !== 'function') {
+            throw new Error('Image note context missing onSaveImage handler');
+        }
+        if (typeof onZoomImage !== 'function') {
+            throw new Error('Image note context missing onZoomImage handler');
+        }
+        if (typeof onOpenImageInNewTab !== 'function') {
+            throw new Error('Image note context missing onOpenImageInNewTab handler');
+        }
+
+        items.push(
+            {
+                id: 'copy-image',
+                label: 'Copy Image',
+                enabled: true,
+                onSelect: () => onCopyImage(imageContext),
+            },
+            {
+                id: 'save-image',
+                label: 'Save Image',
+                enabled: true,
+                onSelect: () => onSaveImage(imageContext),
+            },
+            {
+                id: 'zoom-image',
+                label: 'Zoom Image',
+                enabled: true,
+                onSelect: () => onZoomImage(imageContext),
+            },
+            {
+                id: 'open-image-new-tab',
+                label: 'Open Image in New Tab',
+                enabled: true,
+                onSelect: () => onOpenImageInNewTab(imageContext),
+            },
+        );
+    }
+
+    const addSiblingItem = {
+        id: 'add-sibling-note',
+        label: 'Add Sibling Note',
+        enabled: true,
+        onSelect: () => onAddSiblingNote(noteId),
+    };
+    if (items.length > 0) {
+        addSiblingItem.separated = true;
+    }
+
+    items.push(
+        addSiblingItem,
         {
             id: 'add-child-note',
             label: 'Add Child Note',
@@ -80,7 +133,8 @@ function buildNoteContextItems(context, handlers) {
             enabled: true,
             onSelect: () => onMoveNoteToTop(noteId),
         },
-    ];
+    );
+    return items;
 }
 
 export function buildContextMenuItems(context, handlers) {

@@ -15,6 +15,13 @@ import {
 } from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { prepareMoveNoteToTopContextAction } from '../services/note-context-menu-action-service.js';
+import {
+    copyImageFromContext,
+    openImageInNewTabFromContext,
+    resolveImageContextFromElement,
+    saveImageFromContext,
+    zoomImageFromContext,
+} from '../services/image-context-menu-action-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
 import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
@@ -207,7 +214,7 @@ async function focusNoteForContextAction(noteId) {
     await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
 }
 
-function showNoteContextMenu(event, noteId) {
+function showNoteContextMenu(event, noteId, imageContext) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
     }
@@ -218,8 +225,28 @@ function showNoteContextMenu(event, noteId) {
         throw new Error('Context menu event missing coordinates');
     }
 
-    const context = { kind: 'note', noteId };
+    const context = { kind: 'note', noteId, imageContext };
     const items = buildContextMenuItems(context, {
+        onCopyImage: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.copy', async () => {
+                await copyImageFromContext(targetImageContext);
+            });
+        },
+        onSaveImage: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.save', async () => {
+                await saveImageFromContext(targetImageContext);
+            });
+        },
+        onZoomImage: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.zoom', async () => {
+                await zoomImageFromContext(targetImageContext);
+            });
+        },
+        onOpenImageInNewTab: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.open_new_tab', async () => {
+                await openImageInNewTabFromContext(targetImageContext);
+            });
+        },
         onAddSiblingNote: (targetNoteId) => {
             void CommandGate.run('contextMenu.note.add_sibling', async () => {
                 await focusNoteForContextAction(targetNoteId);
@@ -298,7 +325,8 @@ function handleContextMenu(event) {
 
     const noteElement = resolveContextNoteElement(element);
     if (noteElement) {
-        showNoteContextMenu(event, noteElement.dataset.noteId);
+        const imageContext = resolveImageContextFromElement(element);
+        showNoteContextMenu(event, noteElement.dataset.noteId, imageContext);
     }
 }
 

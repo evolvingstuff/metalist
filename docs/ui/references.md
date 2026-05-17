@@ -17,6 +17,7 @@
   - File targets:
     - non-image files render a file card/link row with a deterministic type badge (`PDF`, `IMG`, `VID`, `TXT`, etc.) and the file title.
     - embedded image files (`![[UUID]]`) render an authenticated image preview with a `download image` control beneath it.
+    - right-clicking the rendered image preview also offers image actions (`Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab`).
     - link-mode image files (`[[UUID]]`) keep the generic compact file card/link row.
     - clicking the rendered file reference downloads the decrypted file from the server.
     - when the host note is collapsed, non-image file references stay visible as a single compact row showing the badge and a truncated title.
@@ -32,6 +33,7 @@
   - Clicking a link-mode reference opens UUID search for that note (it does not enter edit mode on the target note).
 - **Edit mode**:
   - Tokens remain literal raw text (`![[UUID]]` or `[[UUID]]`).
+  - Saved-file image actions are not available from the raw token; they are available once the token renders as an image preview in view mode.
 
 ## File Attachment Workflow
 - `Attach file…` in the command palette opens the native file picker.
