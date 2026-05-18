@@ -135,6 +135,13 @@ metalist
 - `app/services/`: Reusable capabilities (DB/cache/auth/note_store/integrity). No APIRouter or route wiring.
 - `app/presentation/`: Templates + renderers for server-side views.
 
+## Runtime Storage Contract
+- MetaList is memory-first after startup/hydration: SQLite is persistence, not the runtime read path.
+- Startup or post-login hydration loads required namespace data from SQLite, decrypts it if needed, and populates service-owned in-memory stores/caches.
+- Normal app reads must use in-memory stores/caches. View rendering and `/api2/notes/view` must not perform SQLite reads.
+- Mutations update in-memory state and write encrypted-at-rest rows to SQLite. SQLite is effectively write-only after startup for normal runtime behavior.
+- New persisted namespace features should follow the same pattern: schema + load-all bootstrap + service cache + write-through encrypted persistence; do not add runtime DB lookup paths.
+
 ## Gotchas / Open Issues
 - Removing the `app/services/store.py` adapter and calling `NoteStore` directly from all usecases still exposes referential integrity issues in some undo flows (delete/move). Adapter remains; revisit with tighter invariants + targeted tests.
 - Search is server-side + indexed: `app/services/search_index.py` (tag postings + trigram postings over `strip_html(content)`), used by `app/services/snapshot.py` to filter `/api2/notes/view`.
