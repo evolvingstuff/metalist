@@ -154,6 +154,13 @@ def find_global_credential_tag(tags: str) -> str | None:
         raise TypeError(f"tags must be a string, got {type(tags)}")
     return _find_global_credential_tag(tags)
 
+
+def find_consumed_content_wrapper_keys(tags: str) -> FrozenSet[Tuple[str, int]]:
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+    return _parse_meta_tags(tags).wrappers_to_consume
+
+
 @dataclass(frozen=True, slots=True)
 class MetaTagConfig:
     global_tags: FrozenSet[str]

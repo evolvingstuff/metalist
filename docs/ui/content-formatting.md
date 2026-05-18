@@ -36,6 +36,7 @@
   - Depth 1–3 is supported (e.g. `{{{...}}}`).
 - Wrappers in content are **only consumed/hidden** in view mode when there is a matching *scoped wrapper tag* in the tag bar.
 - If there is **no matching scoped wrapper tag**, wrappers are treated as literal text and remain visible even out of edit mode.
+- When a matching `[[...]]` scoped wrapper tag is active, that wrapper is treated as formatting syntax instead of a UUID link reference. `![[UUID]]` still renders as an embedded reference.
 
 Scoped wrapper tags do not need to be meta tags:
 - Example: tag bar `[foo]` causes all `[...]` regions in the note to render without the brackets in view mode.

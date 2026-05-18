@@ -117,6 +117,33 @@ def test_link_reference_missing_uuid_shows_missing_marker_without_toggle(
     assert "note-reference-toggle" not in rendered
 
 
+def test_scoped_double_square_latex_is_not_treated_as_link_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "a": _Note(
+            "a",
+            None,
+            None,
+            None,
+            False,
+            "<div>enqueue is [[$O(N)$]]</div>",
+            "[[@LaTeX]]",
+        ),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+    )
+
+    rendered = state.payloads["a"]["content"]
+    assert "Missing reference: $O(N)$" not in rendered
+    assert "note-embed-missing" not in rendered
+    assert 'class="meta-latex"' in rendered
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">' in rendered
+
+
 def test_embed_reference_cycle_shows_cycle_marker_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         "a": _Note("a", None, None, None, False, "<div>![[b]]</div>", ""),

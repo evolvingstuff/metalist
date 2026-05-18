@@ -3,8 +3,9 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, FrozenSet, List, Optional, Tuple
 
+from app.services.content_formatting import find_consumed_content_wrapper_keys
 from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import format_note_content_for_view
 from app.utils.text_utils import strip_html
@@ -160,6 +161,7 @@ def render_note_content_with_embeds(
     content_with_embeds = _replace_reference_tokens_in_html(
         host_note_id=note_id,
         content_html=content_html,
+        tags=tags,
         context=context,
         ancestry=(note_id,),
         static_export=static_export,
@@ -259,6 +261,7 @@ def _replace_reference_tokens_in_html(
     *,
     host_note_id: str,
     content_html: str,
+    tags: str,
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     static_export: bool,
@@ -267,6 +270,7 @@ def _replace_reference_tokens_in_html(
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     output: List[str] = []
     occurrence_index = 0
+    ignored_link_wrapper_keys = _ignored_link_wrapper_keys_for_tags(tags)
     for part in parts:
         if _is_html_segment(part):
             output.append(part)
@@ -277,6 +281,7 @@ def _replace_reference_tokens_in_html(
             context=context,
             ancestry=ancestry,
             occurrence_start=occurrence_index,
+            ignored_link_wrapper_keys=ignored_link_wrapper_keys,
             static_export=static_export,
             redact_passwords=redact_passwords,
         )
@@ -292,6 +297,7 @@ def _replace_reference_tokens_in_text(
     context: EmbedRenderContext,
     ancestry: Tuple[str, ...],
     occurrence_start: int,
+    ignored_link_wrapper_keys: FrozenSet[Tuple[str, int]],
     static_export: bool,
     redact_passwords: bool,
 ) -> tuple[str, int]:
@@ -306,6 +312,17 @@ def _replace_reference_tokens_in_text(
         if token_start is None:
             output.append(text[index:])
             break
+
+        ignored_wrapper_depth = _ignored_scoped_square_wrapper_depth_at(
+            text=text,
+            index=token_start,
+            ignored_link_wrapper_keys=ignored_link_wrapper_keys,
+            is_embed=is_embed,
+        )
+        if ignored_wrapper_depth > 0:
+            output.append(text[index : token_start + ignored_wrapper_depth])
+            index = token_start + ignored_wrapper_depth
+            continue
 
         output.append(text[index:token_start])
         end = text.find("]]", token_start + token_open_length)
@@ -719,6 +736,7 @@ def _render_embedded_note_node(
     rendered_content = _replace_reference_tokens_in_html(
         host_note_id=note_id,
         content_html=record_content,
+        tags=record_tags,
         context=context,
         ancestry=ancestry,
         static_export=static_export,
@@ -758,6 +776,37 @@ def _render_embedded_note_node(
         f"{children_html}"
         "</div>"
     )
+
+
+def _ignored_link_wrapper_keys_for_tags(tags: str) -> FrozenSet[Tuple[str, int]]:
+    consumed_wrapper_keys = find_consumed_content_wrapper_keys(tags)
+    return frozenset(
+        key
+        for key in consumed_wrapper_keys
+        if key[0] == "[" and key[1] >= 2
+    )
+
+
+def _ignored_scoped_square_wrapper_depth_at(
+    *,
+    text: str,
+    index: int,
+    ignored_link_wrapper_keys: FrozenSet[Tuple[str, int]],
+    is_embed: bool,
+) -> int:
+    if is_embed:
+        return 0
+    for depth in sorted((key[1] for key in ignored_link_wrapper_keys), reverse=True):
+        opener = "[" * depth
+        if not text.startswith(opener, index):
+            continue
+        if index + depth < len(text) and text[index + depth] == "[":
+            continue
+        closer = "]" * depth
+        if text.find(closer, index + depth) == -1:
+            continue
+        return depth
+    return 0
 
 
 def _extract_first_line_preview(content_html: str) -> str:
