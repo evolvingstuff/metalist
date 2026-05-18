@@ -777,31 +777,36 @@ export async function expandNote(noteId) {
     await setNoteCollapse(noteId, false);
 }
 
-export async function actionCopyNote() {
+export async function actionCopyNoteById(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('Cannot copy note: noteId is required');
+    }
+
     ModeContext._requestStartedAt = performance.now();
 
-    const currentNoteId = ModeContext.currentNoteId;
-    
     Logger.logAction('actionCopyNote', { 
-        currentNoteId,
+        currentNoteId: ModeContext.currentNoteId,
+        targetNoteId: noteId,
         isEditing: ModeContext.isEditing,
         isDirty: ModeContext.isDirty
     });
 
+    if (ModeContext.currentNoteId === noteId && ModeContext.editSessionHasEdits) {
+        await actionSaveNote(noteId);
+    }
+
+    const response = await NotesAPI.copyNote(noteId);
+
+    return response;
+}
+
+export async function actionCopyNote() {
+    const currentNoteId = ModeContext.currentNoteId;
     if (!currentNoteId) {
         throw new Error('Cannot copy note: no note selected');
     }
 
-    // Save the note first if it's dirty to ensure we copy the current edited content
-    if (ModeContext.editSessionHasEdits) {
-        await actionSaveNote(currentNoteId);
-    }
-
-    // Call the server to serialize the note tree to clipboard
-    const response = await NotesAPI.copyNote(currentNoteId);
-
-    // No need to store clipboard state client-side anymore
-    return response;
+    return await actionCopyNoteById(currentNoteId);
 }
 
 export async function splitCurrentNoteFromSelection() {

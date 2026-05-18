@@ -2917,6 +2917,9 @@ body {
 }
 
 .context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     width: 100%;
     border: none;
     background: transparent;
@@ -2928,6 +2931,22 @@ body {
     font-family: inherit;
     cursor: pointer;
     white-space: nowrap;
+}
+
+.context-menu-item-icon {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    opacity: 0.72;
+}
+
+.context-menu-item-label {
+    min-width: 0;
 }
 
 .context-menu-item:hover {

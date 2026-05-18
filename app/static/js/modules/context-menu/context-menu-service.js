@@ -1,4 +1,80 @@
 const MENU_PADDING_PX = 8;
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+const CONTEXT_MENU_ICONS = {
+    add_child: [
+        'M6 4h8',
+        'M10 8V2',
+        'M6 18h12',
+        'M12 14v8',
+        'M4 10v4c0 2.2 1.8 4 4 4h4',
+    ],
+    add_sibling: [
+        'M12 4v8',
+        'M8 8h8',
+        'M5 18h14',
+    ],
+    arrow_top: [
+        'M12 20V5',
+        'M6 11l6-6 6 6',
+        'M5 4h14',
+    ],
+    copy: [
+        'M8 8h10v12H8z',
+        'M6 16H4V4h10v2',
+    ],
+    download: [
+        'M12 4v10',
+        'M7 10l5 5 5-5',
+        'M5 20h14',
+    ],
+    external: [
+        'M14 4h6v6',
+        'M10 14 20 4',
+        'M18 13v7H4V6h7',
+    ],
+    image: [
+        'M4 6h16v12H4z',
+        'M8 10h.01',
+        'M4 16l4-4 3 3 3-4 6 5',
+    ],
+    link: [
+        'M9 12a3 3 0 0 1 3-3h3',
+        'M15 12a3 3 0 0 1-3 3H9',
+        'M8 8H7a4 4 0 0 0 0 8h1',
+        'M16 8h1a4 4 0 0 1 0 8h-1',
+    ],
+    link_child: [
+        'M9 8h4a3 3 0 0 1 0 6H9',
+        'M8 11h6',
+        'M6 4v10c0 2.2 1.8 4 4 4h4',
+        'M14 16l2 2-2 2',
+    ],
+    paste: [
+        'M8 5h8',
+        'M9 3h6v4H9z',
+        'M6 6h12v14H6z',
+    ],
+    paste_child: [
+        'M8 5h8',
+        'M9 3h6v4H9z',
+        'M6 6h12v9H6z',
+        'M10 19h8',
+        'M14 15v8',
+    ],
+    trash: [
+        'M5 7h14',
+        'M9 7V4h6v3',
+        'M8 10v9',
+        'M12 10v9',
+        'M16 10v9',
+    ],
+    zoom: [
+        'M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z',
+        'M15 15l5 5',
+        'M10 7v6',
+        'M7 10h6',
+    ],
+};
 
 let menuElement = null;
 let activeItems = [];
@@ -27,7 +103,7 @@ function handleMenuClick(event) {
         throw new Error('handleMenuClick called without event');
     }
     const target = event.target;
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof Element)) {
         return;
     }
 
@@ -86,6 +162,9 @@ function validateMenuItems(items) {
         if (item.separated !== undefined && typeof item.separated !== 'boolean') {
             throw new Error(`Context menu item ${index} separated must be boolean when provided`);
         }
+        if (item.icon !== undefined && typeof item.icon !== 'string') {
+            throw new Error(`Context menu item ${index} icon must be string when provided`);
+        }
     });
 }
 
@@ -135,9 +214,19 @@ function renderMenuItems(menu, items) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'context-menu-item';
-        button.textContent = item.label;
         button.dataset.index = String(index);
         button.setAttribute('role', 'menuitem');
+
+        const icon = createMenuIcon(item.icon);
+        if (icon) {
+            button.appendChild(icon);
+        }
+
+        const label = document.createElement('span');
+        label.className = 'context-menu-item-label';
+        label.textContent = item.label;
+        button.appendChild(label);
+
         if (item.separated === true) {
             button.classList.add('is-separated');
         }
@@ -147,6 +236,29 @@ function renderMenuItems(menu, items) {
         }
         menu.appendChild(button);
     });
+}
+
+function createMenuIcon(iconName) {
+    if (typeof iconName !== 'string' || iconName.length === 0) {
+        return null;
+    }
+    const paths = CONTEXT_MENU_ICONS[iconName];
+    if (!Array.isArray(paths)) {
+        throw new Error(`Unknown context menu icon: ${iconName}`);
+    }
+
+    const svg = document.createElementNS(SVG_NAMESPACE, 'svg');
+    svg.classList.add('context-menu-item-icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+
+    paths.forEach((pathData) => {
+        const path = document.createElementNS(SVG_NAMESPACE, 'path');
+        path.setAttribute('d', pathData);
+        svg.appendChild(path);
+    });
+    return svg;
 }
 
 function isContextMenuOpen() {
@@ -161,7 +273,7 @@ function handleGlobalMouseDown(event) {
         throw new Error('handleGlobalMouseDown called without event');
     }
     const target = event.target;
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof Element)) {
         hideContextMenu();
         return;
     }
@@ -184,7 +296,7 @@ function handleGlobalContextMenu(event) {
         throw new Error('handleGlobalContextMenu called without event');
     }
     const target = event.target;
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof Element)) {
         hideContextMenu();
         return;
     }

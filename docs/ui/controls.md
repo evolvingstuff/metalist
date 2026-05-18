@@ -22,12 +22,13 @@
 | `⌘ + X` | Cut selection (default), or cut whole note when no selection |
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note has no visible content and no children, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
+| `⇧ + ⌘ + R` | Paste embedded reference from the most recently copied note UUID as a new child note |
 
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
 - When note paste replaces an empty target, the target keeps its search-context tags and merges in copied root tags with case-insensitive dedupe.
 - If the clipboard value came from `Generate random password…`, pasting into an empty note also adds `@password` automatically when that tag is not already present.
 - See `docs/ui/paste-sanitization.md` for the full policy.
-- `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token.
+- `⌘ + R` inserts the reference token on its own line; if the caret is mid-line, the line is split around the inserted token. `⇧ + ⌘ + R` creates a child note first, then inserts the reference token there.
 - `⌘ + R` avoids adding a synthetic extra blank line when caret is already on an empty line.
 - See `docs/ui/references.md` for full reference behavior.
 - `⌘ + S` splits the current editing note at the caret or selection; a caret at the front creates a blank note above, and a caret at the end creates a blank note below.
@@ -114,7 +115,8 @@
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Short drags act like clicks. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
-| Right-click note | Open the note context menu (`Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`) |
+| Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`). Paste actions appear only when a note has been copied. |
+| Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note` |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 

@@ -8,6 +8,9 @@ import {
 } from '../actions/selection-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
 import {
+    actionCopyNoteById,
+    actionPasteNoteChild,
+    actionPasteNoteSibling,
     createChildNote,
     createNote,
     deleteNote,
@@ -15,6 +18,8 @@ import {
 } from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { prepareMoveNoteToTopContextAction } from '../services/note-context-menu-action-service.js';
+import { writeRenderedNoteToSystemClipboard } from '../services/note-clipboard-write-service.js';
+import { insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
 import {
     copyImageFromContext,
     openImageInNewTabFromContext,
@@ -214,7 +219,125 @@ async function focusNoteForContextAction(noteId) {
     await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
 }
 
-function showNoteContextMenu(event, noteId, imageContext) {
+function resolveSelectedTextRangeForNote(noteElement) {
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error('resolveSelectedTextRangeForNote requires note element');
+    }
+
+    const noteContent = noteElement.querySelector('.note-content');
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error('Context-menu note missing content element');
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        return null;
+    }
+    if (selection.toString().length === 0) {
+        return null;
+    }
+    if (!noteContent.contains(selection.anchorNode) || !noteContent.contains(selection.focusNode)) {
+        return null;
+    }
+
+    return selection.getRangeAt(0).cloneRange();
+}
+
+async function copySelectedTextRange(selectedTextRange) {
+    if (!(selectedTextRange instanceof Range)) {
+        throw new Error('copySelectedTextRange requires Range');
+    }
+
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable');
+    }
+    selection.removeAllRanges();
+    selection.addRange(selectedTextRange.cloneRange());
+
+    const copied = document.execCommand('copy');
+    if (copied) {
+        if (ModeContext.clipboardMode !== 'system') {
+            ModeContext.setClipboardMode('system');
+        }
+        return;
+    }
+
+    const selectedText = selectedTextRange.toString();
+    const clipboard = navigator.clipboard;
+    if (!clipboard || typeof clipboard.writeText !== 'function') {
+        throw new Error('Unable to copy selected text: Clipboard API unavailable');
+    }
+    await clipboard.writeText(selectedText);
+    if (ModeContext.clipboardMode !== 'system') {
+        ModeContext.setClipboardMode('system');
+    }
+}
+
+function markContextMenuNoteClipboard(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('markContextMenuNoteClipboard requires noteId');
+    }
+    if (ModeContext.clipboardMode !== 'note') {
+        ModeContext.setClipboardMode('note');
+    }
+    if (ModeContext.clipboardNoteId !== noteId) {
+        ModeContext.setClipboardNoteId(noteId);
+    }
+}
+
+async function copyNoteFromContextMenu(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('copyNoteFromContextMenu requires noteId');
+    }
+
+    const copyResult = await actionCopyNoteById(noteId);
+    const renderedHtml = copyResult?.html;
+    const renderedPlainText = copyResult?.plain_text;
+    if (renderedHtml || renderedPlainText) {
+        await writeRenderedNoteToSystemClipboard({
+            renderedHtml,
+            renderedPlainText,
+            logger: Logger,
+        });
+    }
+
+    const copiedNoteId = copyResult?.note_id;
+    markContextMenuNoteClipboard(
+        typeof copiedNoteId === 'string' && copiedNoteId.length > 0 ? copiedNoteId : noteId,
+    );
+}
+
+async function pasteReferenceFromContextMenu(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('pasteReferenceFromContextMenu requires noteId');
+    }
+
+    const referenceNoteId = ModeContext.clipboardNoteId;
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('Cannot paste reference: no copied note UUID available');
+    }
+
+    await focusNoteForContextAction(noteId);
+    insertReferenceTokenIntoActiveEditor(`![[${referenceNoteId}]]`);
+}
+
+async function pasteReferenceAsChildFromContextMenu(noteId) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('pasteReferenceAsChildFromContextMenu requires noteId');
+    }
+
+    const referenceNoteId = ModeContext.clipboardNoteId;
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
+        throw new Error('Cannot paste reference as child: no copied note UUID available');
+    }
+
+    await focusNoteForContextAction(noteId);
+    await createChildNote();
+    insertReferenceTokenIntoActiveEditor(`![[${referenceNoteId}]]`);
+}
+
+function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
     }
@@ -225,8 +348,52 @@ function showNoteContextMenu(event, noteId, imageContext) {
         throw new Error('Context menu event missing coordinates');
     }
 
-    const context = { kind: 'note', noteId, imageContext };
+    const hasSelectedText = selectedTextRange instanceof Range;
+    const hasNoteClipboard = (
+        ModeContext.clipboardMode === 'note'
+        && typeof ModeContext.clipboardNoteId === 'string'
+        && ModeContext.clipboardNoteId.length > 0
+    );
+    const context = {
+        kind: 'note',
+        noteId,
+        imageContext,
+        hasSelectedText,
+        hasNoteClipboard,
+    };
     const items = buildContextMenuItems(context, {
+        onCopySelection: () => {
+            void CommandGate.run('contextMenu.selection.copy', async () => {
+                await copySelectedTextRange(selectedTextRange);
+            });
+        },
+        onCopyNote: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.copy', async () => {
+                await copyNoteFromContextMenu(targetNoteId);
+            });
+        },
+        onPasteNote: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.paste', async () => {
+                await focusNoteForContextAction(targetNoteId);
+                await actionPasteNoteSibling();
+            });
+        },
+        onPasteNoteChild: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.paste_child', async () => {
+                await focusNoteForContextAction(targetNoteId);
+                await actionPasteNoteChild();
+            });
+        },
+        onPasteReference: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.paste_reference', async () => {
+                await pasteReferenceFromContextMenu(targetNoteId);
+            });
+        },
+        onPasteReferenceChild: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.paste_reference_child', async () => {
+                await pasteReferenceAsChildFromContextMenu(targetNoteId);
+            });
+        },
         onCopyImage: (targetImageContext) => {
             void CommandGate.run('contextMenu.image.copy', async () => {
                 await copyImageFromContext(targetImageContext);
@@ -326,7 +493,8 @@ function handleContextMenu(event) {
     const noteElement = resolveContextNoteElement(element);
     if (noteElement) {
         const imageContext = resolveImageContextFromElement(element);
-        showNoteContextMenu(event, noteElement.dataset.noteId, imageContext);
+        const selectedTextRange = resolveSelectedTextRangeForNote(noteElement);
+        showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, selectedTextRange);
     }
 }
 

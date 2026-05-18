@@ -62,7 +62,7 @@ import {
     imageBlobToEmbeddedDataUrl,
 } from '../services/embedded-image-service.js';
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
-import { attachPickedFileToCurrentNote } from '../services/file-reference-service.js';
+import { attachPickedFileToCurrentNote, insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
 import { syncBacklinksPanelPlacement } from '../services/backlinks-panel-service.js';
 import { updateSearchContextsOverlayPlacement } from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
@@ -1500,6 +1500,14 @@ function handleInsertEmbedReferenceShortcut(event) {
         Logger.logNoop('Reference shortcut ignored: no copied note UUID available', {
             isEditing: ModeContext.isEditing,
             currentNoteId,
+        });
+        return;
+    }
+
+    if (event.shiftKey) {
+        void CommandGate.run('keyboard.paste_reference_child', async () => {
+            await createChildNote();
+            insertReferenceTokenIntoActiveEditor(`![[${referenceNoteId}]]`);
         });
         return;
     }

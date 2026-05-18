@@ -217,27 +217,27 @@ function insertPlainTextAtCurrentSelection(text) {
     captureSelectionSnapshot();
 }
 
-function insertReferenceTokenIntoActiveEditor(referenceToken) {
+export function insertReferenceTokenIntoActiveEditor(referenceToken) {
     if (typeof referenceToken !== 'string' || referenceToken.length === 0) {
         throw new Error('insertReferenceTokenIntoActiveEditor requires referenceToken');
     }
 
     if (!ModeContext.isEditing) {
-        throw new Error('Attach file requires an actively edited note');
+        throw new Error('Reference insertion requires an actively edited note');
     }
 
     const activeNoteId = getActiveNoteId();
     const currentNoteId = ModeContext.currentNoteId;
     if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
-        throw new Error('Attach file requires current note id');
+        throw new Error('Reference insertion requires current note id');
     }
     if (activeNoteId !== currentNoteId) {
-        throw new Error('Active editable note mismatch while attaching file');
+        throw new Error('Active editable note mismatch while inserting reference');
     }
 
     const contentElement = getActiveEditable();
     if (!(contentElement instanceof HTMLElement)) {
-        throw new Error('Attach file requires an active editable content element');
+        throw new Error('Reference insertion requires an active editable content element');
     }
 
     contentElement.focus();

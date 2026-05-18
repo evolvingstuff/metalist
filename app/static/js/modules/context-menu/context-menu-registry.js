@@ -19,6 +19,7 @@ function buildTagContextItems(context, handlers) {
         {
             id: 'edit-tag-relationships',
             label: 'Edit Tag Relationships',
+            icon: 'link',
             enabled: true,
             onSelect: () => onEditTagRelationships(tag),
         },
@@ -42,6 +43,12 @@ function buildNoteContextItems(context, handlers) {
     const onAddChildNote = handlers.onAddChildNote;
     const onDeleteNote = handlers.onDeleteNote;
     const onMoveNoteToTop = handlers.onMoveNoteToTop;
+    const onCopySelection = handlers.onCopySelection;
+    const onCopyNote = handlers.onCopyNote;
+    const onPasteNote = handlers.onPasteNote;
+    const onPasteNoteChild = handlers.onPasteNoteChild;
+    const onPasteReference = handlers.onPasteReference;
+    const onPasteReferenceChild = handlers.onPasteReferenceChild;
     const onCopyImage = handlers.onCopyImage;
     const onSaveImage = handlers.onSaveImage;
     const onZoomImage = handlers.onZoomImage;
@@ -57,6 +64,24 @@ function buildNoteContextItems(context, handlers) {
     }
     if (typeof onMoveNoteToTop !== 'function') {
         throw new Error('Note context missing onMoveNoteToTop handler');
+    }
+    if (typeof onCopySelection !== 'function') {
+        throw new Error('Note context missing onCopySelection handler');
+    }
+    if (typeof onCopyNote !== 'function') {
+        throw new Error('Note context missing onCopyNote handler');
+    }
+    if (typeof onPasteNote !== 'function') {
+        throw new Error('Note context missing onPasteNote handler');
+    }
+    if (typeof onPasteNoteChild !== 'function') {
+        throw new Error('Note context missing onPasteNoteChild handler');
+    }
+    if (typeof onPasteReference !== 'function') {
+        throw new Error('Note context missing onPasteReference handler');
+    }
+    if (typeof onPasteReferenceChild !== 'function') {
+        throw new Error('Note context missing onPasteReferenceChild handler');
     }
 
     const items = [];
@@ -79,26 +104,83 @@ function buildNoteContextItems(context, handlers) {
             {
                 id: 'copy-image',
                 label: 'Copy Image',
+                icon: 'image',
                 enabled: true,
                 onSelect: () => onCopyImage(imageContext),
             },
             {
                 id: 'save-image',
                 label: 'Save Image',
+                icon: 'download',
                 enabled: true,
                 onSelect: () => onSaveImage(imageContext),
             },
             {
                 id: 'zoom-image',
                 label: 'Zoom Image',
+                icon: 'zoom',
                 enabled: true,
                 onSelect: () => onZoomImage(imageContext),
             },
             {
                 id: 'open-image-new-tab',
                 label: 'Open Image in New Tab',
+                icon: 'external',
                 enabled: true,
                 onSelect: () => onOpenImageInNewTab(imageContext),
+            },
+        );
+    }
+
+    const hasSelectedText = context.hasSelectedText === true;
+    const hasNoteClipboard = context.hasNoteClipboard === true;
+    const copyItem = {
+        id: hasSelectedText ? 'copy-selection' : 'copy-note',
+        label: hasSelectedText ? 'Copy' : 'Copy Note',
+        icon: 'copy',
+        enabled: true,
+        onSelect: () => {
+            if (hasSelectedText) {
+                onCopySelection(noteId);
+                return;
+            }
+            onCopyNote(noteId);
+        },
+    };
+    if (items.length > 0) {
+        copyItem.separated = true;
+    }
+    items.push(copyItem);
+
+    if (hasNoteClipboard) {
+        items.push(
+            {
+                id: 'paste-note',
+                label: 'Paste Sibling Note',
+                icon: 'paste',
+                enabled: true,
+                onSelect: () => onPasteNote(noteId),
+            },
+            {
+                id: 'paste-note-child',
+                label: 'Paste Child Note',
+                icon: 'paste_child',
+                enabled: true,
+                onSelect: () => onPasteNoteChild(noteId),
+            },
+            {
+                id: 'paste-reference',
+                label: 'Paste Sibling Reference',
+                icon: 'link',
+                enabled: true,
+                onSelect: () => onPasteReference(noteId),
+            },
+            {
+                id: 'paste-reference-child',
+                label: 'Paste Child Reference',
+                icon: 'link_child',
+                enabled: true,
+                onSelect: () => onPasteReferenceChild(noteId),
             },
         );
     }
@@ -106,30 +188,30 @@ function buildNoteContextItems(context, handlers) {
     const addSiblingItem = {
         id: 'add-sibling-note',
         label: 'Add Sibling Note',
+        icon: 'add_sibling',
         enabled: true,
         onSelect: () => onAddSiblingNote(noteId),
     };
-    if (items.length > 0) {
-        addSiblingItem.separated = true;
-    }
-
     items.push(
         addSiblingItem,
         {
             id: 'add-child-note',
             label: 'Add Child Note',
+            icon: 'add_child',
             enabled: true,
             onSelect: () => onAddChildNote(noteId),
         },
         {
             id: 'delete-note',
             label: 'Delete Note',
+            icon: 'trash',
             enabled: true,
             onSelect: () => onDeleteNote(noteId),
         },
         {
             id: 'move-note-to-top',
             label: 'Move Note to Top',
+            icon: 'arrow_top',
             enabled: true,
             onSelect: () => onMoveNoteToTop(noteId),
         },
