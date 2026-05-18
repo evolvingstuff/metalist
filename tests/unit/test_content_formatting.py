@@ -1,3 +1,9 @@
+from datetime import datetime, timedelta, timezone
+import sqlite3
+
+from app.db.link_titles_sql import insert_link_title_row
+from app.db.schema import initialize_schema
+from app.services.link_titles import link_title_store
 from app.services.content_formatting import find_list_style
 from app.services.content_formatting import format_note_content_for_view as _format_note_content_for_view
 
@@ -30,6 +36,126 @@ def test_format_note_content_for_view_autolinks_plain_http_url_without_trailing_
     rendered = format_note_content_for_view(content_html=html, tags="")
     assert (
         '<a href="https://google.com" target="_blank" rel="noopener noreferrer">https://google.com</a>.'
+        in rendered
+    )
+
+
+def test_format_note_content_for_view_renders_cached_standalone_link_title() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    initialize_schema(connection)
+    now = datetime.now(timezone.utc)
+    insert_link_title_row(
+        connection,
+        url="https://www.youtube.com/watch?v=abc123",
+        url_encryption_nonce=None,
+        url_encryption_tag=None,
+        title="A Useful Video",
+        title_encryption_nonce=None,
+        title_encryption_tag=None,
+        status="ok",
+        last_error_kind=None,
+        last_checked_at=now,
+        last_success_at=now,
+        last_failure_at=None,
+        next_check_after=None,
+        failure_count=0,
+        created_at=now,
+        updated_at=now,
+    )
+    link_title_store.bootstrap(connection=connection)
+    try:
+        rendered = format_note_content_for_view(
+            content_html="<div>https://www.youtube.com/watch?v=abc123</div>",
+            tags="",
+        )
+    finally:
+        link_title_store.reset()
+        connection.close()
+
+    assert 'class="link-title"' in rendered
+    assert '<span class="link-title-text">A Useful Video</span>' in rendered
+    assert '<span class="link-title-domain"> · youtube.com</span>' in rendered
+    assert 'href="https://www.youtube.com/watch?v=abc123"' in rendered
+
+
+def test_format_note_content_for_view_does_not_title_inline_link() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    initialize_schema(connection)
+    now = datetime.now(timezone.utc)
+    insert_link_title_row(
+        connection,
+        url="https://example.com/article",
+        url_encryption_nonce=None,
+        url_encryption_tag=None,
+        title="Article Title",
+        title_encryption_nonce=None,
+        title_encryption_tag=None,
+        status="ok",
+        last_error_kind=None,
+        last_checked_at=now,
+        last_success_at=now,
+        last_failure_at=None,
+        next_check_after=None,
+        failure_count=0,
+        created_at=now,
+        updated_at=now,
+    )
+    link_title_store.bootstrap(connection=connection)
+    try:
+        rendered = format_note_content_for_view(
+            content_html="<div>Read https://example.com/article later</div>",
+            tags="",
+        )
+    finally:
+        link_title_store.reset()
+        connection.close()
+
+    assert "Article Title" not in rendered
+    assert (
+        '<a href="https://example.com/article" target="_blank" rel="noopener noreferrer">https://example.com/article</a>'
+        in rendered
+    )
+
+
+def test_format_note_content_for_view_explains_failed_standalone_link_title() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    initialize_schema(connection)
+    now = datetime.now(timezone.utc) + timedelta(days=1)
+    insert_link_title_row(
+        connection,
+        url="https://www.youtube.com/watch?v=abc123",
+        url_encryption_nonce=None,
+        url_encryption_tag=None,
+        title=None,
+        title_encryption_nonce=None,
+        title_encryption_tag=None,
+        status="failed",
+        last_error_kind="timeout",
+        last_checked_at=now,
+        last_success_at=None,
+        last_failure_at=now,
+        next_check_after=now + timedelta(days=7),
+        failure_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+    link_title_store.bootstrap(connection=connection)
+    try:
+        rendered = format_note_content_for_view(
+            content_html="<div>https://www.youtube.com/watch?v=abc123</div>",
+            tags="",
+        )
+    finally:
+        link_title_store.reset()
+        connection.close()
+
+    assert "A Useful Video" not in rendered
+    assert 'title="Link title lookup failed: timeout; retry after ' in rendered
+    assert (
+        '<a href="https://www.youtube.com/watch?v=abc123"'
         in rendered
     )
 

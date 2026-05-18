@@ -2063,6 +2063,15 @@ body {
     cursor: text;
 }
 
+.link-title {
+    display: inline;
+}
+
+.link-title-domain {
+    color: #777;
+    font-size: 0.88em;
+}
+
 /* Embedded note references (![[UUID]]) */
 .note-reference-block {
     display: flex;
@@ -4442,6 +4451,10 @@ html[data-theme="dark"] .meta-status-toggle {
 
 html[data-theme="dark"] .meta-credential-label,
 html[data-theme="dark"] .meta-email-label {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .link-title-domain {
     color: var(--app-text-muted);
 }
 

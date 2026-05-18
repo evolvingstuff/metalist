@@ -34,6 +34,7 @@ from app.services.search_history import (
     decrypt_all_search_history_for_plaintext,
     encrypt_all_search_history_for_active_dek,
 )
+from app.services.link_titles import rewrite_persisted_link_titles
 from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
@@ -353,6 +354,12 @@ class AuthService:
                 encrypted_search_history_count = encrypt_all_search_history_for_active_dek(
                     encryption_service=self.encryption,
                 )
+                with SafeSession.allow_reads("auth:set_password:fetch_link_titles"):
+                    encrypted_link_title_count = rewrite_persisted_link_titles(
+                        connection=connection,
+                        encryption_service=self.encryption,
+                        force_plaintext=False,
+                    )
                 tab_state_store.rewrite_persisted_state(
                     connection=connection,
                     encryption_service=self.encryption,
@@ -371,7 +378,8 @@ class AuthService:
             True,
             "Password set successfully. "
             f"Encrypted {encrypted_count} notes, {encrypted_rule_count} ontology rules, "
-            f"{encrypted_file_count} files, and {encrypted_search_history_count} search histories.",
+            f"{encrypted_file_count} files, {encrypted_search_history_count} search histories, "
+            f"and {encrypted_link_title_count} link titles.",
         )
 
     def change_password(
@@ -608,6 +616,12 @@ class AuthService:
                 decrypted_search_history_count = decrypt_all_search_history_for_plaintext(
                     encryption_service=self.encryption,
                 )
+                with SafeSession.allow_reads("auth:remove_password:fetch_link_titles"):
+                    decrypted_link_title_count = rewrite_persisted_link_titles(
+                        connection=connection,
+                        encryption_service=self.encryption,
+                        force_plaintext=True,
+                    )
                 tab_state_store.rewrite_persisted_state(
                     connection=connection,
                     encryption_service=None,
@@ -634,5 +648,6 @@ class AuthService:
             True,
             "Password removed successfully. "
             f"Decrypted {decrypted_count} notes, {decrypted_rule_count} ontology rules, "
-            f"{decrypted_file_count} files, and {decrypted_search_history_count} search histories.",
+            f"{decrypted_file_count} files, {decrypted_search_history_count} search histories, "
+            f"and {decrypted_link_title_count} link titles.",
         )

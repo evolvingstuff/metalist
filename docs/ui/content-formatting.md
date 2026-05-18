@@ -23,6 +23,10 @@
 
 ## Links In View Mode
 - Bare `http://...` and `https://...` text in rendered note content is auto-linked in view mode.
+- Standalone bare URLs can render as compact cached title links (`title · domain`) when the server already has a successful title fetch for that URL.
+- Unknown, failed, unsupported, or inline URLs render as raw URL links exactly as before. Failed standalone lookups can expose their status/retry timing through the browser's normal hover tooltip.
+- Title fetches are server-side background work; note rendering never waits on network I/O, and edit mode always shows the original stored URL.
+- Title extraction is generic HTML metadata parsing (`og:title`, `twitter:title`, `meta name=title`, `itemprop=name`, and `<title>`). It does not use domain-specific APIs.
 - Existing rendered anchors are normalized to open in a new browser tab.
 - Internal hash-style anchors used by MetaList note-reference UI are left unchanged so in-app reference navigation still works.
 

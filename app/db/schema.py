@@ -8,6 +8,7 @@ NOTES_TABLE = "notes"
 APP_SETTINGS_TABLE = "app_settings"
 ONTOLOGY_RULES_TABLE = "ontology_rules"
 TAB_STATE_TABLE = "tab_state"
+LINK_TITLES_TABLE = "link_titles"
 
 _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
@@ -89,6 +90,27 @@ CREATE TABLE IF NOT EXISTS {TAB_STATE_TABLE} (
 );
 """
 
+_CREATE_LINK_TITLES_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {LINK_TITLES_TABLE} (
+    id INTEGER PRIMARY KEY,
+    url TEXT NOT NULL,
+    url_encryption_nonce BLOB,
+    url_encryption_tag BLOB,
+    title TEXT,
+    title_encryption_nonce BLOB,
+    title_encryption_tag BLOB,
+    status TEXT NOT NULL,
+    last_error_kind TEXT,
+    last_checked_at TEXT NOT NULL,
+    last_success_at TEXT,
+    last_failure_at TEXT,
+    next_check_after TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]
@@ -109,6 +131,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_APP_SETTINGS_TABLE)
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)
     connection.execute(_CREATE_TAB_STATE_TABLE)
+    connection.execute(_CREATE_LINK_TITLES_TABLE)
     _ensure_columns(
         connection,
         NOTES_TABLE,

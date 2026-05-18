@@ -16,6 +16,8 @@ from app.services.latex_rendering import render_latex_to_html
 from app.utils.text_utils import strip_html
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
+from app.services.link_titles import display_domain_for_url
+from app.services.link_titles import link_title_store
 
 
 _OPEN_TO_CLOSE = {
@@ -328,13 +330,47 @@ def _autolink_plain_urls_in_text(text: str) -> str:
             continue
         output.append(text[cursor:match.start()])
         href_value = html.escape(html.unescape(link_text), quote=True)
-        output.append(
-            f'<a href="{href_value}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
-        )
+        output.append(_render_plain_url_anchor(text=text, link_text=link_text, href_value=href_value))
         output.append(trailing_suffix)
         cursor = match.end()
     output.append(text[cursor:])
     return "".join(output)
+
+
+def _render_plain_url_anchor(*, text: str, link_text: str, href_value: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(link_text, str) or link_text == "":
+        raise TypeError("link_text must be a non-empty string")
+    if not isinstance(href_value, str) or href_value == "":
+        raise TypeError("href_value must be a non-empty string")
+
+    stripped = text.strip()
+    if stripped != link_text:
+        return f'<a href="{href_value}" target="_blank" rel="noopener noreferrer">{link_text}</a>'
+
+    title = link_title_store.get_ok_title(link_text)
+    if title is None:
+        link_title_store.maybe_enqueue_fetch(link_text)
+        diagnostic = link_title_store.get_diagnostic(link_text)
+        diagnostic_title_attr = ""
+        if diagnostic is not None:
+            escaped_diagnostic = html.escape(diagnostic.message, quote=True)
+            diagnostic_title_attr = f' title="{escaped_diagnostic}"'
+        return (
+            f'<a href="{href_value}"{diagnostic_title_attr} '
+            f'target="_blank" rel="noopener noreferrer">{link_text}</a>'
+        )
+
+    escaped_title = html.escape(title)
+    escaped_domain = html.escape(display_domain_for_url(link_text))
+    return (
+        f'<a class="link-title" href="{href_value}" title="{href_value}" '
+        'target="_blank" rel="noopener noreferrer">'
+        f'<span class="link-title-text">{escaped_title}</span>'
+        f'<span class="link-title-domain"> · {escaped_domain}</span>'
+        "</a>"
+    )
 
 
 def _split_trailing_url_punctuation(raw_url: str) -> Tuple[str, str]:
