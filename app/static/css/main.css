@@ -3810,6 +3810,14 @@ body.loading::after {
     overflow-wrap: anywhere;
 }
 
+.meta-latex-inline {
+    display: inline;
+    margin: 0;
+    overflow-x: visible;
+    line-height: inherit;
+    overflow-wrap: normal;
+}
+
 .meta-latex math[display="block"] {
     margin: 0;
 }

@@ -364,7 +364,7 @@ def test_format_note_content_for_view_markdown_meta_renders_server_side_html() -
 def test_format_note_content_for_view_latex_meta_renders_server_side_mathml() -> None:
     html = "<div>\\frac{1}{2}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@latex")
-    assert 'class="meta-latex"' in rendered
+    assert 'class="meta-latex meta-latex-display"' in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
     assert "<div>\\frac{1}{2}</div>" not in rendered
@@ -394,7 +394,7 @@ def test_format_note_content_for_view_markdown_with_scoped_latex_renders_server_
         tags="@markdown {{@LaTeX}}",
     )
     assert "<h1>Math Test</h1>" in rendered
-    assert 'Inline math inside markdown: <span class="meta-latex">' in rendered
+    assert 'Inline math inside markdown: <span class="meta-latex meta-latex-inline">' in rendered
     assert "Display math inside markdown:<br>" in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
@@ -403,13 +403,30 @@ def test_format_note_content_for_view_markdown_with_scoped_latex_renders_server_
     assert "$$}}" not in rendered
 
 
+def test_format_note_content_for_view_markdown_list_scoped_latex_stays_inline() -> None:
+    html = (
+        "<div>Where:</div>"
+        "<div>- [[$r$]] = interest rate</div>"
+        "<div>- [[$\\delta$]] = depreciation/maintenance</div>"
+    )
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="@markdown [[@LaTeX]]",
+    )
+    assert "<ul>" in rendered
+    assert '<span class="meta-latex meta-latex-inline">' in rendered
+    assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">' in rendered
+    assert "[[$r$]]" not in rendered
+    assert "[[$\\delta$]]" not in rendered
+
+
 def test_format_note_content_for_view_scoped_latex_renders_server_side_without_markdown() -> None:
     html = "<div>Standalone expression: {{\\frac{\\text{done}}{\\text{total}}}}</div>"
     rendered = format_note_content_for_view(
         content_html=html,
         tags="{{@LaTeX}}",
     )
-    assert 'Standalone expression: <span class="meta-latex">' in rendered
+    assert 'Standalone expression: <span class="meta-latex meta-latex-display">' in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in rendered
     assert "<mfrac>" in rendered
     assert "{{\\frac{\\text{done}}{\\text{total}}}}" not in rendered

@@ -140,7 +140,7 @@ def test_scoped_double_square_latex_is_not_treated_as_link_reference(
     rendered = state.payloads["a"]["content"]
     assert "Missing reference: $O(N)$" not in rendered
     assert "note-embed-missing" not in rendered
-    assert 'class="meta-latex"' in rendered
+    assert 'class="meta-latex meta-latex-inline"' in rendered
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="inline">' in rendered
 
 

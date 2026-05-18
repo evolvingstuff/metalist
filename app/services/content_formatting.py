@@ -1786,6 +1786,10 @@ def _render_latex_container(
     class_names = ["meta-latex"]
     if render_result.has_error:
         class_names.append("meta-latex-error")
+    elif wrapper_tag == "span" and 'display="block"' not in render_result.html:
+        class_names.append("meta-latex-inline")
+    else:
+        class_names.append("meta-latex-display")
 
     if formatting_tags:
         class_names.append(_meta_classes_for_tag_names(formatting_tags))
