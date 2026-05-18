@@ -4,6 +4,60 @@ const NOTE_SELECTOR = '.note';
 const NOTE_CONTENT_SELECTOR = '.note-content';
 const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
+const MULTILINE_HEIGHT_TOLERANCE = 1.35;
+
+function parsePixelValue(value) {
+    if (typeof value !== 'string') {
+        throw new Error('parsePixelValue requires a string');
+    }
+    if (!value.endsWith('px')) {
+        return null;
+    }
+    const numeric = Number.parseFloat(value);
+    if (!Number.isFinite(numeric)) {
+        throw new Error(`Invalid CSS pixel value: ${value}`);
+    }
+    return numeric;
+}
+
+function resolveLineHeightPx(contentElement) {
+    if (!contentElement) {
+        throw new Error('resolveLineHeightPx requires content element');
+    }
+    if (!globalThis.window || typeof globalThis.window.getComputedStyle !== 'function') {
+        throw new Error('window.getComputedStyle is required for collapse affordance measurement');
+    }
+
+    const styles = globalThis.window.getComputedStyle(contentElement);
+    const lineHeight = parsePixelValue(styles.lineHeight);
+    if (lineHeight !== null) {
+        return lineHeight;
+    }
+
+    const fontSize = parsePixelValue(styles.fontSize);
+    if (fontSize === null) {
+        throw new Error(`Cannot resolve collapse line height from font-size: ${styles.fontSize}`);
+    }
+    return fontSize * 1.2;
+}
+
+export function doesRenderedContentNeedCollapse(contentElement) {
+    if (!contentElement) {
+        throw new Error('doesRenderedContentNeedCollapse requires content element');
+    }
+
+    const lineHeightPx = resolveLineHeightPx(contentElement);
+    const rect = contentElement.getBoundingClientRect();
+    if (!rect || typeof rect.height !== 'number') {
+        throw new Error('content element must provide a bounding rect height');
+    }
+    if (typeof contentElement.scrollHeight !== 'number') {
+        throw new Error('content element must provide scrollHeight');
+    }
+
+    const measuredHeight = Math.max(rect.height, contentElement.scrollHeight);
+    return measuredHeight > lineHeightPx * MULTILINE_HEIGHT_TOLERANCE;
+}
 
 export function resolveCanCollapseFromDataset(dataset) {
     if (!dataset) {
@@ -45,7 +99,17 @@ export function updateCollapseAffordanceForNote(noteElement) {
     }
 
     const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
-    const canCollapse = resolveCanCollapseFromDataset(noteElement.dataset);
+    const isSearchRedacted = noteElement.dataset.searchRedacted === 'true';
+    const serverCanCollapse = resolveCanCollapseFromDataset(noteElement.dataset);
+    const wasCollapsed = noteElement.classList.contains('collapsed');
+    if (wasCollapsed) {
+        noteElement.classList.remove('collapsed');
+    }
+    const renderedContentNeedsCollapse = doesRenderedContentNeedCollapse(contentElement);
+    if (wasCollapsed) {
+        noteElement.classList.add('collapsed');
+    }
+    const canCollapse = !isSearchRedacted && (serverCanCollapse || renderedContentNeedsCollapse);
 
     noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
     const shouldApplyCollapsedClass = isCollapsed && canCollapse;

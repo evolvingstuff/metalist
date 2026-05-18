@@ -123,7 +123,7 @@
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
 > Saved-file image actions are available in view mode on rendered image previews; edit mode only contains the raw UUID token for those files.
-> Collapse arrows reflect the server-provided `isCollapsible` flag.
+> Collapse arrows reflect the server-provided `isCollapsible` flag, plus a browser-side promotion when rendered note content visibly wraps beyond one line.
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
 
 ### Command Palette Utility Entries
