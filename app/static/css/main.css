@@ -1955,6 +1955,9 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 .rhs-heatmap-cell[data-level="3"] { background: #888888; }
 .rhs-heatmap-cell[data-level="4"] { background: #555555; }
 .rhs-heatmap-cell[data-level="5"] { background: #111111; }
+.rhs-heatmap-cell.rhs-heatmap-cell-inactive {
+    cursor: default;
+}
 .rhs-heatmap-cell.is-selected {
     outline: 2px solid #111827;
     outline-offset: 1px;

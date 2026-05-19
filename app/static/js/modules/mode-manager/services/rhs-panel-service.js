@@ -158,22 +158,31 @@ function renderActivity(container) {
         const monthStart = getVisibleMonthStart(visibleMonth);
         const monthEnd = getMonthEnd(monthStart);
         const visibleMonthEnd = monthEnd <= activityPayload.rangeEnd ? monthEnd : activityPayload.rangeEnd;
-        const monthDates = enumerateIsoDates(monthStart, visibleMonthEnd);
+        const renderedMonthEnd = getRenderedMonthEnd(visibleMonthEnd, monthEnd);
+        const monthDates = enumerateIsoDates(monthStart, renderedMonthEnd);
         for (const isoDate of monthDates) {
+            const isSelectableDate = isoDate <= visibleMonthEnd;
             const count = Number.isInteger(buckets[isoDate]) ? buckets[isoDate] : 0;
             const cell = document.createElement('button');
             cell.type = 'button';
             cell.className = 'rhs-heatmap-cell';
-            cell.dataset.date = isoDate;
             cell.dataset.count = String(count);
             cell.dataset.month = visibleMonth;
             cell.dataset.level = String(getCountLevel(count, maxCount));
             cell.style.backgroundColor = getHeatColor(count, maxCount);
-            cell.setAttribute('aria-label', `${isoDate}, ${count} ${metric}`);
-            if (selectedStart && selectedEnd && isoDate >= selectedStart && isoDate <= selectedEnd) {
-                cell.classList.add('is-selected');
+            if (isSelectableDate) {
+                cell.dataset.date = isoDate;
+                cell.setAttribute('aria-label', `${isoDate}, ${count} ${metric}`);
+                if (selectedStart && selectedEnd && isoDate >= selectedStart && isoDate <= selectedEnd) {
+                    cell.classList.add('is-selected');
+                }
+                wireCell(cell);
+            } else {
+                cell.classList.add('rhs-heatmap-cell-inactive');
+                cell.disabled = true;
+                cell.setAttribute('aria-hidden', 'true');
+                cell.tabIndex = -1;
             }
-            wireCell(cell);
             grid.appendChild(cell);
         }
         stack.appendChild(grid);
@@ -194,9 +203,19 @@ function renderActivity(container) {
     }
 
     function getVisibleMonthStart(visibleMonth) {
-        const monthStart = `${visibleMonth}-01`;
-        return monthStart >= activityPayload.rangeStart ? monthStart : activityPayload.rangeStart;
+        return `${visibleMonth}-01`;
     }
+}
+
+function getRenderedMonthEnd(visibleMonthEnd, monthEnd) {
+    if (typeof visibleMonthEnd !== 'string' || visibleMonthEnd.length !== 10) {
+        throw new Error('getRenderedMonthEnd requires visibleMonthEnd ISO date');
+    }
+    if (typeof monthEnd !== 'string' || monthEnd.length !== 10) {
+        throw new Error('getRenderedMonthEnd requires monthEnd ISO date');
+    }
+    const weekEnd = getWeekEnd(visibleMonthEnd);
+    return weekEnd <= monthEnd ? weekEnd : monthEnd;
 }
 
 function buildMetricButton(nextMetric, label) {
@@ -680,7 +699,7 @@ function buildMonthOutlinePath(monthCells, gridRect) {
     if (!(grid instanceof HTMLElement)) {
         throw new Error('Heatmap cell parent must be an element');
     }
-    const allCells = Array.from(grid.querySelectorAll('.rhs-heatmap-cell[data-date]'));
+    const allCells = Array.from(grid.querySelectorAll('.rhs-heatmap-cell[data-month]'));
     if (allCells.length === 0) {
         throw new Error('Heatmap outline requires rendered day cells');
     }
@@ -773,6 +792,17 @@ function getMonthEnd(isoDate) {
     const monthIndex = Number(isoDate.slice(5, 7)) - 1;
     const endDate = new Date(Date.UTC(year, monthIndex + 1, 0));
     return endDate.toISOString().slice(0, 10);
+}
+
+function getWeekEnd(isoDate) {
+    if (typeof isoDate !== 'string' || isoDate.length !== 10) {
+        throw new Error('getWeekEnd requires ISO date');
+    }
+    const date = new Date(`${isoDate}T00:00:00Z`);
+    const dayOfWeek = date.getUTCDay();
+    const daysUntilSaturday = 6 - dayOfWeek;
+    date.setUTCDate(date.getUTCDate() + daysUntilSaturday);
+    return date.toISOString().slice(0, 10);
 }
 
 function renderInspector(container, noteElement, titleText) {

@@ -21,9 +21,9 @@
 - Calendar scroll position is persisted per tab.
 - The calendar starts pinned to newest activity for fresh/default state.
 - The heatmap uses current search context, so searching `journal` shows activity for visible `journal` results only.
+- Each visible month keeps the calendar-shaped outline; boundary months render inactive days before the first active day, and the newest partial week is padded with inactive cells so the outline stays contiguous.
 
 ## Right-Click Controls
 - Right-click the left lane to show/hide tabs.
 - Right-click the right lane to show/hide the calendar view.
 - `Cmd/Ctrl+/` also exposes `Toggle tabs` and `Toggle calendar view`.
-
