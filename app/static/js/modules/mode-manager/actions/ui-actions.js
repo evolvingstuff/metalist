@@ -13,7 +13,7 @@ import { refreshBacklinksPanel } from '../services/backlinks-panel-service.js';
 import { rebuildRootDateSeparators } from '../services/root-date-separator-service.js';
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
 import { updateDateFilterIndicator } from '../services/date-filter-indicator-service.js';
-import { refreshRhsActivity, renderRhsPanel } from '../services/rhs-panel-service.js';
+import { refreshRhsActivity, scheduleRhsActivityRefresh } from '../services/rhs-panel-service.js';
 
 let viewRequestInFlight = false;
 let lastPerfOverlayPayload = null;
@@ -289,7 +289,6 @@ export async function actionRefreshAndMaybeSelect(options) {
             throw new Error('Notes container not found after diff application');
         }
         rebuildRootDateSeparators(snapshot);
-        renderRhsPanel();
 
         syncTagBar(diffResult.editingNoteElement);
 
@@ -383,7 +382,11 @@ export async function actionRefreshAndMaybeSelect(options) {
             rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
 
         await refreshBacklinksPanel({});
-        await refreshRhsActivity({ preserveScroll: context === 'dateFilter' });
+        if (context === 'dateFilter') {
+            await refreshRhsActivity({ preserveScroll: true });
+        } else {
+            scheduleRhsActivityRefresh({ preserveScroll: false });
+        }
         if (scrollToTopAfterRender) {
             window.scrollTo(0, 0);
             // Callers can request top scroll while the active tab is already at top.

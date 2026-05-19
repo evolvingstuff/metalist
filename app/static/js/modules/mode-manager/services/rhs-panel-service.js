@@ -17,6 +17,10 @@ let shouldScrollToNewest = true;
 let pointerListenersAttached = false;
 let panelScrollListenerAttached = false;
 let tooltipElement = null;
+let pendingRefreshTimeout = null;
+let latestRefreshRequestId = 0;
+
+const ACTIVITY_REFRESH_DEBOUNCE_MS = 75;
 
 export function initializeRhsPanel() {
     if (initialized) {
@@ -33,19 +37,39 @@ export function initializeRhsPanel() {
         if (property === 'activeTab') {
             metric = ModeContext.activeTabCalendarMetric;
             shouldScrollToNewest = ModeContext.activeTabCalendarScrollState.pinnedToNewest;
-            void refreshRhsActivity({ preserveScroll: false });
+            scheduleRhsActivityRefresh({ preserveScroll: false });
         }
         if (property === 'searchQuery') {
-            void refreshRhsActivity({ preserveScroll: false });
+            scheduleRhsActivityRefresh({ preserveScroll: false });
         }
     });
     renderRhsPanel();
-    void refreshRhsActivity({ preserveScroll: false });
+    scheduleRhsActivityRefresh({ preserveScroll: false });
+}
+
+export function scheduleRhsActivityRefresh(options) {
+    if (!options || typeof options !== 'object') {
+        throw new Error('scheduleRhsActivityRefresh requires an options object');
+    }
+    if (!document.body.classList.contains('pref-show-rhs-panel')) {
+        return;
+    }
+    if (pendingRefreshTimeout !== null) {
+        window.clearTimeout(pendingRefreshTimeout);
+    }
+    pendingRefreshTimeout = window.setTimeout(() => {
+        pendingRefreshTimeout = null;
+        void refreshRhsActivity(options);
+    }, ACTIVITY_REFRESH_DEBOUNCE_MS);
 }
 
 export async function refreshRhsActivity(options) {
     if (!options || typeof options !== 'object') {
         throw new Error('refreshRhsActivity requires an options object');
+    }
+    if (pendingRefreshTimeout !== null) {
+        window.clearTimeout(pendingRefreshTimeout);
+        pendingRefreshTimeout = null;
     }
     const preserveScroll = options.preserveScroll === true;
     if (!document.body.classList.contains('pref-show-rhs-panel')) {
@@ -55,7 +79,16 @@ export async function refreshRhsActivity(options) {
     metric = ModeContext.activeTabCalendarMetric;
     const activeTabId = ModeContext.activeTabId;
     const searchQuery = typeof ModeContext.searchQuery === 'string' ? ModeContext.searchQuery : '';
-    activityPayload = await NotesAPI.fetchActivity(searchQuery, metric, activeTabId);
+    const requestId = latestRefreshRequestId + 1;
+    latestRefreshRequestId = requestId;
+    const nextActivityPayload = await NotesAPI.fetchActivity(searchQuery, metric, activeTabId);
+    if (requestId !== latestRefreshRequestId) {
+        return;
+    }
+    if (activeTabId !== ModeContext.activeTabId) {
+        return;
+    }
+    activityPayload = nextActivityPayload;
     shouldScrollToNewest = !preserveScroll && ModeContext.activeTabCalendarScrollState.pinnedToNewest;
     renderRhsPanel();
     if (preserveScroll) {
