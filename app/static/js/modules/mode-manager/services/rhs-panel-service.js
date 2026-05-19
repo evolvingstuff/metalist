@@ -79,8 +79,8 @@ function renderActivity(container) {
 
     const toggle = document.createElement('div');
     toggle.className = 'rhs-metric-toggle';
-    toggle.appendChild(buildMetricButton(DATE_FILTER_METRICS.UPDATED, 'Updated'));
     toggle.appendChild(buildMetricButton(DATE_FILTER_METRICS.CREATED, 'Created'));
+    toggle.appendChild(buildMetricButton(DATE_FILTER_METRICS.UPDATED, 'Updated'));
     container.appendChild(toggle);
 
     if (!activityPayload) {
