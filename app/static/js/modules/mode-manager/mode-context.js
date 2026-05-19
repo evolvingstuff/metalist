@@ -1,6 +1,11 @@
 import * as Logger from './mode-logger.js';
 import { CONFIG } from '../config.js';
 import { restoreScrollFromAnchor } from './services/scroll-restoration-service.js';
+import {
+    DATE_FILTER_METRICS,
+    normalizeDateFilter,
+    normalizeDateFilterMetric,
+} from './services/date-filter-service.js';
 import { ROOT_SORT_MODES, normalizeRootSortMode } from './services/root-sort-service.js';
 import { createUuid } from '../uuid.js';
 
@@ -44,7 +49,16 @@ class ModeContext {
         // Tab state management
         this._activeTabId = '0';
         this._tabs = {
-            '0': { searchQuery: '', scrollY: 0, scrollAnchor: null, sortMode: ROOT_SORT_MODES.NORMAL }
+            '0': {
+                searchQuery: '',
+                scrollY: 0,
+                scrollAnchor: null,
+                sortMode: ROOT_SORT_MODES.NORMAL,
+                dateFilter: null,
+                calendarMetric: DATE_FILTER_METRICS.CREATED,
+                calendarScrollTop: 0,
+                calendarScrollPinnedToNewest: true,
+            }
         };
         this._tabOrder = ['0'];
         this._tabRootAnchors = Object.create(null);
@@ -1251,6 +1265,12 @@ class ModeContext {
                 anchorRootId,
                 scrollAnchor,
                 sortMode: normalizeRootSortMode(sortMode),
+                dateFilter: normalizeDateFilter(
+                    Object.prototype.hasOwnProperty.call(entry, 'dateFilter') ? entry.dateFilter : null
+                ),
+                calendarMetric: this._normalizeTabCalendarMetric(entry),
+                calendarScrollTop: this._normalizeTabCalendarScrollTop(entry),
+                calendarScrollPinnedToNewest: this._normalizeTabCalendarScrollPinnedToNewest(entry),
             };
         }
         return {
@@ -1298,6 +1318,12 @@ class ModeContext {
                 throw new Error(`Invalid scrollY for tab ${tabId}`);
             }
             const sortMode = normalizeRootSortMode(entry.sortMode);
+            const dateFilter = normalizeDateFilter(
+                Object.prototype.hasOwnProperty.call(entry, 'dateFilter') ? entry.dateFilter : null
+            );
+            const calendarMetric = this._normalizeTabCalendarMetric(entry);
+            const calendarScrollTop = this._normalizeTabCalendarScrollTop(entry);
+            const calendarScrollPinnedToNewest = this._normalizeTabCalendarScrollPinnedToNewest(entry);
             if (Object.prototype.hasOwnProperty.call(entry, 'anchorRootId')) {
                 if (
                     entry.anchorRootId !== null
@@ -1356,7 +1382,17 @@ class ModeContext {
                 };
             }
 
-            normalized[tabId] = { searchQuery, scrollY, anchorRootId, scrollAnchor, sortMode };
+            normalized[tabId] = {
+                searchQuery,
+                scrollY,
+                anchorRootId,
+                scrollAnchor,
+                sortMode,
+                dateFilter,
+                calendarMetric,
+                calendarScrollTop,
+                calendarScrollPinnedToNewest,
+            };
             this._tabRootAnchors[tabId] = anchorRootId;
         }
         if (!normalized[activeTabId]) {
@@ -1606,6 +1642,120 @@ class ModeContext {
             throw new Error(`Unknown tabId: ${targetTabId}`);
         }
         return normalizeRootSortMode(entry.sortMode);
+    }
+
+    getTabDateFilter(tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        const entry = this._tabs[targetTabId];
+        if (!entry) {
+            throw new Error(`Unknown tabId: ${targetTabId}`);
+        }
+        if (!Object.prototype.hasOwnProperty.call(entry, 'dateFilter')) {
+            return normalizeDateFilter(null);
+        }
+        return normalizeDateFilter(entry.dateFilter);
+    }
+
+    _normalizeTabCalendarMetric(entry) {
+        if (!entry || typeof entry !== 'object') {
+            throw new Error('_normalizeTabCalendarMetric requires tab entry');
+        }
+        if (!Object.prototype.hasOwnProperty.call(entry, 'calendarMetric')) {
+            return DATE_FILTER_METRICS.CREATED;
+        }
+        return normalizeDateFilterMetric(entry.calendarMetric);
+    }
+
+    _normalizeTabCalendarScrollTop(entry) {
+        if (!entry || typeof entry !== 'object') {
+            throw new Error('_normalizeTabCalendarScrollTop requires tab entry');
+        }
+        if (!Object.prototype.hasOwnProperty.call(entry, 'calendarScrollTop')) {
+            return 0;
+        }
+        const value = entry.calendarScrollTop;
+        if (!Number.isInteger(value) || value < 0) {
+            throw new Error('calendarScrollTop must be a non-negative integer');
+        }
+        return value;
+    }
+
+    _normalizeTabCalendarScrollPinnedToNewest(entry) {
+        if (!entry || typeof entry !== 'object') {
+            throw new Error('_normalizeTabCalendarScrollPinnedToNewest requires tab entry');
+        }
+        if (!Object.prototype.hasOwnProperty.call(entry, 'calendarScrollPinnedToNewest')) {
+            return true;
+        }
+        const value = entry.calendarScrollPinnedToNewest;
+        if (typeof value !== 'boolean') {
+            throw new Error('calendarScrollPinnedToNewest must be a boolean');
+        }
+        return value;
+    }
+
+    getTabCalendarMetric(tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        const entry = this._tabs[targetTabId];
+        if (!entry) {
+            throw new Error(`Unknown tabId: ${targetTabId}`);
+        }
+        return this._normalizeTabCalendarMetric(entry);
+    }
+
+    get activeTabCalendarMetric() {
+        return this.getTabCalendarMetric(this._activeTabId);
+    }
+
+    updateActiveTabCalendarMetric(metric) {
+        const entry = this._ensureTabEntry(this._activeTabId);
+        const normalizedMetric = normalizeDateFilterMetric(metric);
+        this._assertStateChanged('calendarMetric', this._normalizeTabCalendarMetric(entry), normalizedMetric);
+        entry.calendarMetric = normalizedMetric;
+        entry.calendarScrollTop = 0;
+        entry.calendarScrollPinnedToNewest = true;
+        this._emitTabStateMutation('calendarMetric');
+        return this;
+    }
+
+    getTabCalendarScrollState(tabId) {
+        const targetTabId = typeof tabId === 'string' && tabId.length > 0 ? tabId : this._activeTabId;
+        const entry = this._tabs[targetTabId];
+        if (!entry) {
+            throw new Error(`Unknown tabId: ${targetTabId}`);
+        }
+        return {
+            scrollTop: this._normalizeTabCalendarScrollTop(entry),
+            pinnedToNewest: this._normalizeTabCalendarScrollPinnedToNewest(entry),
+        };
+    }
+
+    get activeTabCalendarScrollState() {
+        return this.getTabCalendarScrollState(this._activeTabId);
+    }
+
+    updateActiveTabCalendarScroll(scrollTop, pinnedToNewest) {
+        if (!Number.isInteger(scrollTop) || scrollTop < 0) {
+            throw new Error('calendar scrollTop must be a non-negative integer');
+        }
+        if (typeof pinnedToNewest !== 'boolean') {
+            throw new Error('calendar pinnedToNewest must be a boolean');
+        }
+        const entry = this._ensureTabEntry(this._activeTabId);
+        if (
+            this._normalizeTabCalendarScrollTop(entry) === scrollTop
+            && this._normalizeTabCalendarScrollPinnedToNewest(entry) === pinnedToNewest
+        ) {
+            return this;
+        }
+        entry.calendarScrollTop = scrollTop;
+        entry.calendarScrollPinnedToNewest = pinnedToNewest;
+        this._emitTabStateMutation('calendarScroll');
+        return this;
+    }
+
+    get activeTabDateFilter() {
+        return this.getTabDateFilter(this._activeTabId);
     }
 
     get activeTabSortMode() {

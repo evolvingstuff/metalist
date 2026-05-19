@@ -55,6 +55,7 @@
 | `⌘ + Y` | Redo |
 
 - When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
+- The right-side activity calendar defaults to `Created`, with `Updated` available as the second metric. Clicking a day or dragging across days applies a date filter for the active tab; editing the search input clears that date filter.
 - The memory/search contexts overlay is pinned to the lower-left on all screen sizes. The backlinks panel follows that placement so the two overlays stay grouped.
 
 ### Search Input Behavior
@@ -119,6 +120,8 @@
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note` |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
+| Right-click left lane | Toggle tabs visibility |
+| Right-click right lane | Toggle calendar view visibility |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
@@ -127,6 +130,8 @@
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
 
 ### Command Palette Utility Entries
+- Toggle tabs
+- Toggle calendar view
 - Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
 - Restore from backup…
 - Logout

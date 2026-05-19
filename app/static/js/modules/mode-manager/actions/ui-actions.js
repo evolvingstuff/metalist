@@ -12,6 +12,8 @@ import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.j
 import { refreshBacklinksPanel } from '../services/backlinks-panel-service.js';
 import { rebuildRootDateSeparators } from '../services/root-date-separator-service.js';
 import { updateRootSortIndicator } from '../services/root-sort-indicator-service.js';
+import { updateDateFilterIndicator } from '../services/date-filter-indicator-service.js';
+import { refreshRhsActivity, renderRhsPanel } from '../services/rhs-panel-service.js';
 
 let viewRequestInFlight = false;
 let lastPerfOverlayPayload = null;
@@ -160,8 +162,9 @@ function updateSearchResultsCount(snapshot, tabId) {
         throw new Error('snapshot.searchQuery must be a string');
     }
 
+    const hasDateFilter = snapshot.dateFilter !== null && typeof snapshot.dateFilter === 'object';
     const isSearching = searchQuery.trim().length > 0;
-    const total = isSearching ? searchRootCountTotal : rootCountTotal;
+    const total = isSearching || hasDateFilter ? searchRootCountTotal : rootCountTotal;
     el.textContent = `${total}`;
 }
 
@@ -250,6 +253,7 @@ export async function actionRefreshAndMaybeSelect(options) {
 
         updateSearchResultsCount(snapshot, requestTabId);
         updateRootSortIndicator(snapshot);
+        updateDateFilterIndicator();
         const previousRootCountTotals = ModeContext.getRootCountTotals(requestTabId);
         // Incremental notes.view refreshes can return the same totals when only note content changed.
         if (
@@ -285,6 +289,7 @@ export async function actionRefreshAndMaybeSelect(options) {
             throw new Error('Notes container not found after diff application');
         }
         rebuildRootDateSeparators(snapshot);
+        renderRhsPanel();
 
         syncTagBar(diffResult.editingNoteElement);
 
@@ -378,6 +383,7 @@ export async function actionRefreshAndMaybeSelect(options) {
             rootNotesKnown, rootNotesSeen, updatedNotesCount, context, vdom_ops);
 
         await refreshBacklinksPanel({});
+        await refreshRhsActivity({ preserveScroll: context === 'dateFilter' });
         if (scrollToTopAfterRender) {
             window.scrollTo(0, 0);
             // Callers can request top scroll while the active tab is already at top.

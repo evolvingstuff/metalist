@@ -11,6 +11,7 @@ import { scheduleDebouncedSearchExecution } from '../services/search-debounce-se
 import { primeActiveSearchInteractionState, recordSearchExecutionInteractionIfEligible } from '../services/search-interaction-service.js';
 import { initializeSearchSuggestions, updateSearchSuggestions } from '../services/search-suggestions-service.js';
 import { clearActiveNotesDom, clearCachedNotesDomForTab } from '../services/tab-dom-cache-service.js';
+import { clearActiveDateFilterForSearchInput } from '../services/date-filter-indicator-service.js';
 
 export function resetActiveTabForSearchExecution(searchQuery, options) {
     if (typeof searchQuery !== 'string') {
@@ -62,8 +63,12 @@ export function handleSearchInput(event) {
     const isFreshSearchInput = previousSearchQuery !== analysis.normalizedText;
 
     // Browser input events can re-fire with the same normalized value during autofill/composition.
+    let dateFilterClearPromise = null;
     if (isFreshSearchInput) {
         ModeContext.setSearchQuery(analysis.normalizedText);
+        if (ModeContext.activeTabDateFilter !== null) {
+            dateFilterClearPromise = clearActiveDateFilterForSearchInput();
+        }
     }
 
     // Update search contexts list display
@@ -94,6 +99,9 @@ export function handleSearchInput(event) {
 
         void CommandGate.run('search.execute', async () => {
             Logger.logAction('executeSearch', { searchQuery: currentSearch });
+            if (dateFilterClearPromise !== null) {
+                await dateFilterClearPromise;
+            }
             resetActiveTabForSearchExecution(currentSearch, { isFreshSearchInput });
             ModeContext.resetRootTracking({ clear: true });
             window.scrollTo(0, 0);

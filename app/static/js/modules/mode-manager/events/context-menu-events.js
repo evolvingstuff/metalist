@@ -33,6 +33,7 @@ import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
 import { getInputCaretIndexFromPoint } from '../../context-menu/input-caret-service.js';
 import { buildContextMenuItems } from '../../context-menu/context-menu-registry.js';
 import { initContextMenuService, showContextMenu } from '../../context-menu/context-menu-service.js';
+import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 
 const ontologyModal = new OntologyModal();
 
@@ -175,6 +176,99 @@ function showTagContextMenu(event, tag, source) {
         position: { x: event.clientX, y: event.clientY },
         onClose: null,
     });
+}
+
+function showPreferenceContextMenu(event, itemId, itemLabel, preferenceKey, nextValue) {
+    if (!event) {
+        throw new Error('showPreferenceContextMenu called without event');
+    }
+    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+        throw new Error('Context menu event missing coordinates');
+    }
+    if (typeof itemId !== 'string' || itemId.trim() === '') {
+        throw new Error('showPreferenceContextMenu requires itemId');
+    }
+    if (typeof itemLabel !== 'string' || itemLabel.trim() === '') {
+        throw new Error('showPreferenceContextMenu requires itemLabel');
+    }
+    if (typeof preferenceKey !== 'string' || preferenceKey.trim() === '') {
+        throw new Error('showPreferenceContextMenu requires preferenceKey');
+    }
+    if (typeof nextValue !== 'boolean') {
+        throw new Error('showPreferenceContextMenu requires boolean nextValue');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    showContextMenu({
+        items: [
+            {
+                id: itemId,
+                label: itemLabel,
+                enabled: true,
+                onSelect: () => {
+                    void CommandPalette.applyPreference(preferenceKey, nextValue);
+                },
+            },
+        ],
+        position: { x: event.clientX, y: event.clientY },
+        onClose: null,
+    });
+}
+
+function showCalendarRailContextMenu(event) {
+    const isCalendarVisible = document.body.classList.contains('pref-show-rhs-panel');
+    const itemLabel = isCalendarVisible ? 'Hide Calendar View' : 'Show Calendar View';
+    showPreferenceContextMenu(
+        event,
+        'toggle-calendar-view',
+        itemLabel,
+        'pref.show_rhs_panel',
+        !isCalendarVisible,
+    );
+}
+
+function showTabsRailContextMenu(event) {
+    const areTabsVisible = document.body.classList.contains('pref-show-tab-ui');
+    const itemLabel = areTabsVisible ? 'Hide Tabs' : 'Show Tabs';
+    showPreferenceContextMenu(
+        event,
+        'toggle-tabs',
+        itemLabel,
+        'pref.show_tab_ui',
+        !areTabsVisible,
+    );
+}
+
+function readCssPixelVariable(name) {
+    if (typeof name !== 'string' || name.trim() === '') {
+        throw new Error('readCssPixelVariable requires name');
+    }
+    const rawValue = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const parsed = Number.parseFloat(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`CSS variable ${name} must be a non-negative pixel value`);
+    }
+    return parsed;
+}
+
+function isInRightRail(event) {
+    if (typeof event.clientX !== 'number') {
+        throw new Error('Context menu event missing clientX');
+    }
+    const edge = readCssPixelVariable('--side-rail-edge');
+    const width = readCssPixelVariable('--side-rail-width');
+    return event.clientX >= window.innerWidth - edge - width;
+}
+
+function isInLeftTabRail(event) {
+    if (typeof event.clientX !== 'number') {
+        throw new Error('Context menu event missing clientX');
+    }
+    const edge = readCssPixelVariable('--side-rail-edge');
+    const width = readCssPixelVariable('--side-rail-width');
+    return event.clientX <= edge + width;
 }
 
 function resolveContextNoteElement(element) {
@@ -467,8 +561,30 @@ function handleContextMenu(event) {
         return;
     }
 
+    if (isInRightRail(event)) {
+        showCalendarRailContextMenu(event);
+        return;
+    }
+
+    if (isInLeftTabRail(event)) {
+        showTabsRailContextMenu(event);
+        return;
+    }
+
     const element = resolveEventElement(event.target);
     if (!element) {
+        return;
+    }
+
+    const rhsPanel = element.closest('#rhs-panel');
+    if (rhsPanel) {
+        showCalendarRailContextMenu(event);
+        return;
+    }
+
+    const tabsPanel = element.closest('#search-contexts-list');
+    if (tabsPanel) {
+        showTabsRailContextMenu(event);
         return;
     }
 

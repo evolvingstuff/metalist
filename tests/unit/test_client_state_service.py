@@ -50,6 +50,7 @@ def test_save_client_preferences_round_trips_through_app_settings(
 
     expected_preferences = {
         "pref.show_note_tags": "true",
+        "pref.show_rhs_panel": "false",
         "pref.theme": "dark",
     }
 

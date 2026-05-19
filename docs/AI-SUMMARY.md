@@ -35,7 +35,8 @@
 - `app/services/link_titles.py`: Memory-first cache + bounded background fetcher for compact standalone URL titles. Text fields (`url`, `title`) persist encrypted-at-rest in the main DB `link_titles` table when namespace encryption is enabled; runtime rendering only reads the in-memory cache. Early failed/no-title lookups retry on short adaptive backoff before settling into longer refresh intervals.
 - `app/services/tag_term_matching.py`: Shared helper for connector-aware, punctuation-tolerant tag suggestion matching/ranking (`-`, `_`, `.`, `/`) used by search suggestions and tag suggestions.
 - `app/services/embedded_references.py`: Resolves note/file UUID references in view mode (embedded notes, note previews, file cards, missing/cycle markers).
-- `app/services/tab_state.py`: Stores namespace-scoped tab workspace state (`activeTabId`, `tabOrder`, per-tab search/scroll/sort metadata) in the main SQLite DB; rows stay plaintext without a password and are DEK-encrypted at rest when the namespace is password-protected.
+- `app/services/tab_state.py`: Stores namespace-scoped tab workspace state (`activeTabId`, `tabOrder`, per-tab search/scroll/sort/date-filter/calendar metadata) in the main SQLite DB; rows stay plaintext without a password and are DEK-encrypted at rest when the namespace is password-protected.
+- `app/services/date_filtering.py`: Normalizes date filters/metrics, evaluates note created/updated dates, and builds activity-calendar buckets from in-memory note records.
 - `app/services/login_rate_limit.py`: In-memory login attempt throttling for `/api2/auth/login`.
 - `app/services/runtime_hardening.py`: Startup hardening (disable core dumps; macOS swap/hibernation enforcement).
 - `app/services/diagnostics.py`: Runtime diagnostics for persistent namespace server logs, fatal fault logs, unhandled process/thread/asyncio exceptions, slow in-flight requests, event-loop stalls, on-demand thread dumps via `SIGUSR1`, bounded recycling for direct append logs, and fail-fast startup log disk bounds.
@@ -49,6 +50,7 @@
 - Pattern: usecases (Cmd*) orchestrate services; services encapsulate DB work + undo logging.
 - State: Notes stored as parent/prev/next pointers; decrypted cache is preloaded; sync UUIDs/locks managed in `app/services/sync.py`; active tabs/search/scroll are snapshotted via `tab_state_store` into the namespace DB so reopening the app or restarting the server restores the last view; command-palette prefs/usage are persisted per namespace in `app_settings` instead of browser `localStorage`.
 - Root sort modes: per-tab server-owned `sortMode` (`normal`, `created`, `updated`, `alphabetical`) lives in `app/services/tab_state.py`; datetime modes sort/window root notes by the newest matching timestamp anywhere in each root subtree, alphabetical mode sorts by root content, and the client renders day separators from `snapshot.rootSortBuckets` only for datetime modes.
+- Date filtering: per-tab server-owned `dateFilter` constrains the current view by created/updated local dates without adding date syntax to the search box. The RHS activity calendar has per-tab `calendarMetric` and calendar scroll state; `created` is the default metric.
 - Mutation safety: mutating FastAPI routes are expected to carry `@transactional_route`; startup sanity enforces the decorator ordering in source, and request-scoped write sessions commit once at the end of the wrapped request path.
 - Diff caching: Server caches each `(client, tab, search)` view and the client keeps per-tab note-hash maps so `/notes/view` diff payloads stay scoped to the active tab.
 - Tab switch perf: Client can detach/cache the `#notes-container` subtree per tab and restore it instantly on return, then call `/notes/view` to reconcile small diffs.
@@ -60,6 +62,7 @@
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.
 - Root sorting: `POST /api2/notes/tab-state/sort-mode` updates per-tab sort state; subsequent `POST /api2/notes/view` responses echo `sortMode` and `rootSortBuckets`, and the client inserts ephemeral date separators between visible roots for datetime modes.
+- Date filtering/calendar: `POST /api2/notes/tab-state/date-filter` sets or clears per-tab date ranges; `POST /api2/notes/activity` returns created/updated date buckets for the current search context. The RHS calendar renders those buckets, click/drag selects date filters, search input changes clear date filters, and right-clicking the right lane toggles the calendar view.
 - Embedded references: view payload `notes[*].content` can include rendered `![[UUID]]` blocks (view mode only); host note hashes include rendered embed output.
 - File attachments: `POST /api2/files/upload` stores the uploaded file in `*.files.db`, returns a UUID token, and the client inserts `![[UUID]]` into the active note (or a newly created note when none is active).
 - File downloads: rendered file references in view mode call `GET /api2/files/{file_id}/download`; metadata/blob rows are decrypted on demand rather than at startup.
@@ -78,6 +81,7 @@
 - Split shortcut: `Cmd/Ctrl+S` sends one server-side split command for the currently edited note, records one undo/redo step, and preserves the original tag-bar string across all resulting notes; caret at the front creates a blank note above, caret at the end creates a blank note below, split normalization trims edge-empty nodes, and full-note selection remains a no-op.
 - Move-to-top shortcut: `Cmd/Ctrl+Shift+Up` is server-driven; a selected root note moves to the top of the current root view (including filtered/search views), while a child note moves to the top of its sibling list.
 - Command palette help action: `Cmd/Ctrl+/` → `Keyboard shortcuts help…` opens the shortcuts modal from palette utilities.
+- Calendar/tabs visibility: `Cmd/Ctrl+/` exposes `Toggle tabs` and `Toggle calendar view`; right-clicking the left/right lanes provides the same visibility toggles.
 - Login screen namespace switcher: the bottom login picker lists plain namespace names (`default`, `cla`, etc.), immediately redirects through the login-only namespace-open flow, and lands directly in passwordless namespaces because the destination page auto-claims a passwordless session on load.
 - Namespace switcher: `Cmd/Ctrl+/` → `Switch or create namespace…` opens a modal backed by `GET /api2/auth/namespaces` and `POST /api2/auth/namespaces/open`; it reuses saved launch profiles for existing namespaces, suggests next-free ports for new namespaces, restarts already-running target namespaces from the current code, and otherwise waits for the freshly spawned instance before returning its URL.
 - External paste/drop: `keyboard-events` routes non-note clipboard HTML through `sanitizeAndInsertExternalPaste()`; clipboard image pixels still embed as compressed `data:image/...`, while named pasted/dropped image files can either embed inline or be saved as file attachments via a choice modal.
@@ -147,5 +151,6 @@ metalist
 - Removing the `app/services/store.py` adapter and calling `NoteStore` directly from all usecases still exposes referential integrity issues in some undo flows (delete/move). Adapter remains; revisit with tighter invariants + targeted tests.
 - Search is server-side + indexed: `app/services/search_index.py` (tag postings + trigram postings over `strip_html(content)`), used by `app/services/snapshot.py` to filter `/api2/notes/view`.
   - Query terms: unquoted tokens are tag terms; quoted strings are text terms (see `docs/ui/search-syntax.md` + `docs/ui/search-semantics.md`).
+  - Date constraints live outside search syntax; use the RHS activity calendar/date-filter state instead.
   - Views remain windowed (roots chunked; infinite scroll extends as needed).
 - Root sorting helper: `app/services/root_sorting.py` centralizes sort-mode normalization, subtree-max root timestamps, server-side root ordering, and date-bucket metadata for the client.
