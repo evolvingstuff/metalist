@@ -1919,10 +1919,11 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 .rhs-heatmap-cell::after {
     content: "";
     position: absolute;
-    inset: -1px;
+    inset: 0;
     border: 1px solid #ffffff;
-    border-radius: 3px;
-    box-shadow: 0 0 0 3px #111827;
+    border-radius: 2px;
+    background: rgba(16, 185, 129, 0.72);
+    box-shadow: 0 0 0 3px #059669;
     opacity: 0;
     pointer-events: none;
     transition: opacity 900ms ease;
@@ -1930,10 +1931,15 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 
 .rhs-heatmap-cell:hover,
 .rhs-heatmap-cell:focus-visible {
-    border-color: #111827;
-    outline: 2px solid rgba(17, 24, 39, 0.92);
+    border-color: #ecfdf5;
+    outline: 2px solid #059669;
     outline-offset: 1px;
     z-index: 5;
+}
+
+.rhs-heatmap-cell:hover::after,
+.rhs-heatmap-cell:focus-visible::after {
+    opacity: 1;
 }
 
 .rhs-heatmap-month-outline-layer {

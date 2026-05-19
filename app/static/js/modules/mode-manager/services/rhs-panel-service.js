@@ -676,10 +676,6 @@ function showDateTooltipForCell(isoDate, cell) {
     if (!(cell instanceof HTMLElement)) {
         throw new Error('Heatmap date tooltip requires a cell element');
     }
-    const panel = document.getElementById('rhs-panel');
-    if (!(panel instanceof HTMLElement)) {
-        throw new Error('Heatmap date tooltip requires RHS panel element');
-    }
     if (!isRhsPanelVisible()) {
         hideDateTooltip();
         return;
@@ -696,13 +692,11 @@ function showDateTooltipForCell(isoDate, cell) {
     tooltip.hidden = false;
     tooltip.classList.remove('is-visible');
     const tooltipRect = tooltip.getBoundingClientRect();
-    const panelRect = panel.getBoundingClientRect();
     const centeredLeft = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
     const aboveTop = rect.top - tooltipRect.height - 6;
-    const minLeft = Math.max(DATE_TOOLTIP_EDGE_MARGIN_PX, panelRect.left + DATE_TOOLTIP_EDGE_MARGIN_PX);
+    const minLeft = DATE_TOOLTIP_EDGE_MARGIN_PX;
     const viewportMaxLeft = window.innerWidth - DATE_TOOLTIP_EDGE_MARGIN_PX - tooltipRect.width;
-    const panelMaxLeft = panelRect.right - DATE_TOOLTIP_EDGE_MARGIN_PX - tooltipRect.width;
-    const maxLeft = Math.max(minLeft, Math.min(viewportMaxLeft, panelMaxLeft));
+    const maxLeft = Math.max(minLeft, viewportMaxLeft);
     const belowTop = rect.bottom + 6;
     const top = aboveTop < DATE_TOOLTIP_TOP_COLLISION_Y_PX ? belowTop : aboveTop;
     tooltip.style.left = `${Math.min(Math.max(minLeft, centeredLeft), maxLeft)}px`;
