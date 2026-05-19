@@ -32,6 +32,24 @@ export function shouldActivateMoveDrag({ dx, dy }) {
     return distanceSq >= MOVE_DRAG_DISTANCE_ACTIVATION_SQ;
 }
 
+export function updateMoveDragGestureState(previousState, movement) {
+    if (previousState === null || typeof previousState !== 'object') {
+        throw new Error('updateMoveDragGestureState requires previousState object');
+    }
+    if (typeof previousState.dragActive !== 'boolean') {
+        throw new Error('updateMoveDragGestureState requires previousState.dragActive boolean');
+    }
+    if (typeof previousState.hasCrossedActivationThreshold !== 'boolean') {
+        throw new Error('updateMoveDragGestureState requires previousState.hasCrossedActivationThreshold boolean');
+    }
+
+    const dragActive = shouldActivateMoveDrag(movement);
+    return {
+        dragActive,
+        hasCrossedActivationThreshold: previousState.hasCrossedActivationThreshold || dragActive,
+    };
+}
+
 export function resolveVerticalSiblingDropDestination(args) {
     if (args === null || typeof args !== 'object') {
         throw new Error('resolveVerticalSiblingDropDestination requires args object');

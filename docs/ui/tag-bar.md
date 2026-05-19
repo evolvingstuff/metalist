@@ -49,8 +49,9 @@ Examples (autocorrected while typing):
 - Email meta tags:
   - `@email` renders a view-only "Email:" row with a mailto link.
 - Status meta tags:
-  - `@todo` renders an unchecked box icon; clicking the icon toggles the tag to `@done`.
-  - `@done` renders a checked box icon; clicking the icon toggles the tag to `@todo`.
+  - `@todo` renders an unchecked box icon; pressing the icon toggles the tag to `@done` on mouse down.
+  - `@done` renders a checked box icon; pressing the icon toggles the tag to `@todo` on mouse down.
+  - If another note is being edited, pressing a status icon saves and exits that edit session before toggling, without selecting the toggled note for editing.
 - Markdown meta tags:
   - `@markdown` renders note content as Markdown on the server in view mode.
 - LaTeX meta tags:

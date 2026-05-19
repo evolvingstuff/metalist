@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     resolveVerticalSiblingDropDestination,
     shouldActivateMoveDrag,
+    updateMoveDragGestureState,
 } from '../../app/static/js/modules/mode-manager/services/note-drag-service.js';
 
 test('shouldActivateMoveDrag activates after modest vertical movement', () => {
@@ -19,6 +20,23 @@ test('shouldActivateMoveDrag stays inactive for tiny motion within the note body
 test('shouldActivateMoveDrag still activates for large non-vertical drags', () => {
     const active = shouldActivateMoveDrag({ dx: 20, dy: 0 });
     assert.equal(active, true);
+});
+
+test('updateMoveDragGestureState remembers a returned drag gesture for click suppression', () => {
+    const activated = updateMoveDragGestureState(
+        { dragActive: false, hasCrossedActivationThreshold: false },
+        { dx: 0, dy: 10 },
+    );
+    assert.deepEqual(activated, {
+        dragActive: true,
+        hasCrossedActivationThreshold: true,
+    });
+
+    const returnedNearOrigin = updateMoveDragGestureState(activated, { dx: 1, dy: 1 });
+    assert.deepEqual(returnedNearOrigin, {
+        dragActive: false,
+        hasCrossedActivationThreshold: true,
+    });
 });
 
 test('resolveVerticalSiblingDropDestination moves to the top slot when dropped above the first sibling midpoint', () => {

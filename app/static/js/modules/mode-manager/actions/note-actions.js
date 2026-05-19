@@ -10,8 +10,9 @@ import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
+import { exitEditingBeforeTodoToggle } from '../services/todo-toggle-editing-service.js';
 import { actionSaveNote } from './content-actions.js';
-import { actionSwitchNotes, actionSelectNote } from './selection-actions.js';
+import { actionSaveAndExitEditingWithoutRefreshing, actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
 
 function hideCaretAfterProgrammaticEdit() {
@@ -264,9 +265,12 @@ export async function toggleTodoDone(noteId) {
         throw new Error('Cannot toggle todo/done: noteId is required');
     }
 
-    if (ModeContext.isEditing) {
-        throw new Error(`toggleTodoDone called while editing note ${ModeContext.currentNoteId}`);
-    }
+    await exitEditingBeforeTodoToggle({
+        modeContext: ModeContext,
+        noteId,
+        saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+        logDebugFn: Logger.logDebug,
+    });
 
     await NotesAPI.toggleTodo(noteId);
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });

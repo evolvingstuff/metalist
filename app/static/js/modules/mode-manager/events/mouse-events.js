@@ -11,7 +11,7 @@ import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
-import { resolveVerticalSiblingDropDestination, shouldActivateMoveDrag } from '../services/note-drag-service.js';
+import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
 import { resolveNonContentNoteSelectionTarget } from '../services/note-click-target-service.js';
 import {
     SHELL_CLOSE_SELECTOR,
@@ -30,6 +30,7 @@ let selectionDragContext = null;
 let ignoreClickAfterSelectionDrag = null;
 let moveDragContext = null;
 let ignoreClickAfterMoveDrag = null;
+let ignoreClickAfterMouseDownAction = null;
 
 const MOVE_DRAG_COMMIT_THRESHOLD_PX = 20;
 const MOVE_DRAG_COMMIT_THRESHOLD_SQ = MOVE_DRAG_COMMIT_THRESHOLD_PX * MOVE_DRAG_COMMIT_THRESHOLD_PX;
@@ -46,6 +47,7 @@ const copyFeedbackTimers = new WeakMap();
 export function initMouseEvents() {
         
     document.addEventListener('mousedown', handleCollapseToggleMouseDown, { capture: true });
+    document.addEventListener('mousedown', handleImmediateMouseDown, { capture: true });
     document.addEventListener('mousedown', handleMoveDragMouseDown, { capture: true });
     document.addEventListener('mousemove', handleMoveDragMouseMove, { capture: true });
     document.addEventListener('mouseup', handleMoveDragMouseUp, { capture: true });
@@ -63,6 +65,270 @@ function isShellInteractiveTarget(target) {
         return false;
     }
     return target.closest(SHELL_CLOSE_SELECTOR) !== null;
+}
+
+function stopImmediatePropagationIfAvailable(event) {
+    if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+        return;
+    }
+    event.stopPropagation();
+}
+
+function rememberMouseDownHandledClick(target, reason) {
+    if (!(target instanceof Node)) {
+        throw new Error('rememberMouseDownHandledClick requires target node');
+    }
+    if (typeof reason !== 'string' || reason.length === 0) {
+        throw new Error('rememberMouseDownHandledClick requires reason');
+    }
+    ignoreClickAfterMouseDownAction = {
+        target,
+        reason,
+        ignoreUntil: performance.now() + 500,
+    };
+}
+
+function isRelatedToMouseDownTarget(clickTarget, mouseDownTarget) {
+    if (!(clickTarget instanceof Node) || !(mouseDownTarget instanceof Node)) {
+        return false;
+    }
+    if (clickTarget === mouseDownTarget) {
+        return true;
+    }
+    if (clickTarget.contains(mouseDownTarget)) {
+        return true;
+    }
+    if (mouseDownTarget.contains(clickTarget)) {
+        return true;
+    }
+    return false;
+}
+
+function consumeClickAfterMouseDownAction(event) {
+    if (!ignoreClickAfterMouseDownAction) {
+        return false;
+    }
+    if (performance.now() > ignoreClickAfterMouseDownAction.ignoreUntil) {
+        ignoreClickAfterMouseDownAction = null;
+        return false;
+    }
+    if (!isRelatedToMouseDownTarget(event.target, ignoreClickAfterMouseDownAction.target)) {
+        return false;
+    }
+
+    Logger.logNoop('Click ignored after mousedown action', {
+        reason: ignoreClickAfterMouseDownAction.reason,
+    });
+    ignoreClickAfterMouseDownAction = null;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function isMouseDownOutsideEditExclusion(target) {
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    return target.closest(
+        [
+            '.modal',
+            '#context-menu',
+            '#rich-text-toolbar',
+            '#file-reference-input',
+            '.note-tag-bar',
+            '#search-contexts-list',
+            '#backlinks-panel',
+            '#root-sort-indicator',
+            '#menu-button',
+            '.add-note',
+            '#trash-can',
+            '.note-collapse-toggle',
+            '.note-reference-toggle',
+            '.note-reference-link',
+            '.note-file-reference-link',
+            '.note-file-image-download-link',
+            '#reference-back-button',
+            '.backlink-item',
+            CREDENTIAL_VALUE_SELECTOR,
+            EMAIL_VALUE_SELECTOR,
+            COPYABLE_SELECTOR,
+            SHELL_SELECTOR,
+            SHELL_CLOSE_SELECTOR,
+        ].join(',')
+    ) !== null;
+}
+
+function handleSearchFieldMouseDown(event, searchField) {
+    if (!searchField) {
+        return false;
+    }
+
+    let shouldEnterSearch = false;
+    if (ModeContext.isEditing) {
+        shouldEnterSearch = true;
+    }
+    if (!ModeContext.isSearching) {
+        shouldEnterSearch = true;
+    }
+    if (!shouldEnterSearch) {
+        return false;
+    }
+
+    void CommandGate.run('mouse.enter_search_mode', async () => {
+        await actionEnterSearchMode();
+    });
+
+    rememberMouseDownHandledClick(searchField, 'search_field');
+    Logger.logDebug('Mouse down in search field', {}, Logger.LogCategory.EVENT);
+    return true;
+}
+
+function handleNoteShellMouseDown(event, noteElement) {
+    if (!noteElement) {
+        return false;
+    }
+
+    if (!ModeContext.isConnected) {
+        return false;
+    }
+    if (ModeContext.isLoading) {
+        return false;
+    }
+
+    if (noteElement.classList.contains('locked')) {
+        Logger.logNoop('Mousedown on locked note shell ignored', {
+            noteId: noteElement.dataset.noteId,
+            reason: 'note_locked',
+        });
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
+
+    const noteId = noteElement.dataset.noteId;
+    if (!noteId) {
+        throw new Error('Note shell mousedown target missing data-note-id attribute');
+    }
+
+    if (noteElement.classList.contains('search-redacted')) {
+        const revealResult = revealRedactedNoteWithScrollPreservation(noteId);
+        Logger.logAction('reveal search-redacted note', {
+            noteId,
+            result: revealResult.reason,
+            revealedCount: revealResult.revealedCount,
+            scopeNoteId: revealResult.scopeNoteId,
+        });
+        rememberMouseDownHandledClick(noteElement, 'redacted_note_shell');
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
+
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
+    if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+        if (ModeContext.currentNoteId) {
+            void CommandGate.run('mouse.switch_note', async () => {
+                await actionSwitchNotes(noteId, { initialCaretVisibility: 'hidden' });
+            });
+        } else {
+            void CommandGate.run('mouse.select_note', async () => {
+                await actionSelectNote(noteId, { initialCaretVisibility: 'hidden' });
+            });
+        }
+
+        Logger.logDebug('Mouse down in note shell - selecting note', {
+            noteId,
+            isEditing: true,
+        }, Logger.LogCategory.EVENT);
+    } else if (ModeContext.isCaretHidden && ModeContext.currentNoteId === noteId) {
+        DOMUtils.revealCaret(noteElement);
+        ModeContext.markCaretVisible();
+    }
+
+    rememberMouseDownHandledClick(noteElement, 'note_shell');
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function handleOutsideMouseDown(event) {
+    if (event.target.closest('.note-content') || resolveNonContentNoteSelectionTarget(event.target)) {
+        return false;
+    }
+    if (isMouseDownOutsideEditExclusion(event.target)) {
+        return false;
+    }
+
+    let handled = false;
+    if (ModeContext.isEditing) {
+        void CommandGate.run('mouse.deselect', async () => {
+            await actionDeselectNote();
+        });
+        Logger.logDebug('Mouse down outside any note - exiting edit mode', {
+            isEditing: false,
+            currentNoteId: null,
+        }, Logger.LogCategory.EVENT);
+        handled = true;
+    }
+
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+        handled = true;
+    }
+
+    if (handled) {
+        rememberMouseDownHandledClick(event.target, 'outside_note');
+    }
+    return handled;
+}
+
+function handleImmediateMouseDown(event) {
+    if (!event) {
+        throw new Error('handleImmediateMouseDown called without an event object');
+    }
+    if (typeof event.button !== 'number') {
+        throw new Error(`Invalid MouseEvent: missing button (type: ${event.type})`);
+    }
+    if (event.button !== 0) {
+        return;
+    }
+    if (!event.target) {
+        throw new Error('Immediate mousedown missing target element');
+    }
+    if (!(event.target instanceof Element)) {
+        return;
+    }
+
+    if (event.target.closest('.modal') || event.target.closest('#context-menu') || isShellInteractiveTarget(event.target)) {
+        return;
+    }
+
+    if (ModeContext.isLoading) {
+        return;
+    }
+
+    const todoToggle = event.target.closest(STATUS_TOGGLE_SELECTOR);
+    if (todoToggle && handleTodoToggleClick(event)) {
+        rememberMouseDownHandledClick(todoToggle, 'todo_toggle');
+        stopImmediatePropagationIfAvailable(event);
+        return;
+    }
+
+    const searchField = event.target.closest('#search-input');
+    if (handleSearchFieldMouseDown(event, searchField)) {
+        return;
+    }
+
+    const noteShellSelectionTarget = resolveNonContentNoteSelectionTarget(event.target);
+    if (handleNoteShellMouseDown(event, noteShellSelectionTarget)) {
+        return;
+    }
+
+    handleOutsideMouseDown(event);
 }
 
 function handleSelectionDragMouseDown(event) {
@@ -141,6 +407,10 @@ function handleMoveDragMouseDown(event) {
         moveDragContext = null;
         return;
     }
+    if (event.target instanceof Element && event.target.closest(STATUS_TOGGLE_SELECTOR)) {
+        moveDragContext = null;
+        return;
+    }
 
     if (ModeContext.isLoading) {
         moveDragContext = null;
@@ -182,6 +452,7 @@ function handleMoveDragMouseDown(event) {
         startX: event.clientX,
         startY: event.clientY,
         dragActive: false,
+        hasCrossedActivationThreshold: false,
     };
 }
 
@@ -199,7 +470,15 @@ function handleMoveDragMouseMove(event) {
 
     const dx = event.clientX - context.startX;
     const dy = event.clientY - context.startY;
-    const shouldBeActive = shouldActivateMoveDrag({ dx, dy });
+    const nextGestureState = updateMoveDragGestureState(
+        {
+            dragActive: context.dragActive,
+            hasCrossedActivationThreshold: context.hasCrossedActivationThreshold,
+        },
+        { dx, dy },
+    );
+    const shouldBeActive = nextGestureState.dragActive;
+    context.hasCrossedActivationThreshold = nextGestureState.hasCrossedActivationThreshold;
 
     if (shouldBeActive && !context.dragActive) {
         context.dragActive = true;
@@ -339,6 +618,14 @@ function handleMoveDragMouseUp(event) {
     const dx = event.clientX - context.startX;
     const dy = event.clientY - context.startY;
     const distanceSq = dx * dx + dy * dy;
+    if (context.hasCrossedActivationThreshold) {
+        ignoreClickAfterMoveDrag = {
+            ignoreUntil: performance.now() + 500,
+        };
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
     if (distanceSq < MOVE_DRAG_COMMIT_THRESHOLD_SQ) {
         return;
     }
@@ -346,13 +633,6 @@ function handleMoveDragMouseUp(event) {
     if (ModeContext.isEditing) {
         return;
     }
-
-    ignoreClickAfterMoveDrag = {
-        ignoreUntil: performance.now() + 500,
-    };
-
-    event.preventDefault();
-    event.stopPropagation();
 
     const direction = resolveDragDirection(dx, dy);
 
@@ -521,6 +801,10 @@ function handleClick(event) {
         return;
     }
     if (isShellInteractiveTarget(event.target)) {
+        return;
+    }
+
+    if (consumeClickAfterMouseDownAction(event)) {
         return;
     }
 
@@ -1191,10 +1475,6 @@ function handleTodoToggleClick(event) {
 
     const toggleElement = event.target.closest(STATUS_TOGGLE_SELECTOR);
     if (!toggleElement) {
-        return false;
-    }
-
-    if (ModeContext.isEditing) {
         return false;
     }
 
