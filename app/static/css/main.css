@@ -1916,6 +1916,18 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     touch-action: none;
 }
 
+.rhs-heatmap-cell::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border: 1px solid #ffffff;
+    border-radius: 3px;
+    box-shadow: 0 0 0 3px #111827;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 900ms ease;
+}
+
 .rhs-heatmap-cell:hover,
 .rhs-heatmap-cell:focus-visible {
     border-color: #111827;
@@ -1971,9 +1983,11 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 }
 
 .rhs-heatmap-cell.is-note-hovered-date {
-    border-color: #ffffff;
-    box-shadow: 0 0 0 3px #111827;
     z-index: 6;
+}
+
+.rhs-heatmap-cell.is-note-hovered-date::after {
+    opacity: 1;
 }
 
 .rhs-heatmap-spacer {

@@ -22,6 +22,7 @@
 - The calendar starts pinned to newest activity for fresh/default state.
 - The heatmap uses current search context, so searching `journal` shows activity for visible `journal` results only.
 - Each visible month keeps the calendar-shaped outline; boundary months render inactive days before the first active day, and the newest partial week is padded with inactive cells so the outline stays contiguous.
+- Hovering notes scrolls the matching date into view immediately, while the date tooltip and calendar-cell hover ring delay/fade in to avoid peripheral flashes during quick mouse movement.
 
 ## Right-Click Controls
 - Right-click the left lane to show/hide tabs.

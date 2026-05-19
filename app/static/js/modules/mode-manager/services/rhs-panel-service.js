@@ -22,10 +22,16 @@ let latestRefreshRequestId = 0;
 let pendingTooltipTimeout = null;
 let pendingTooltipSignature = null;
 let pendingTooltipHideTimeout = null;
+let pendingHoveredDateHighlightTimeout = null;
+let pendingHoveredDateHighlightSignature = null;
+let pendingHoveredDateHighlightClearTimeout = null;
 
 const ACTIVITY_REFRESH_DEBOUNCE_MS = 75;
 const NOTE_HOVER_TOOLTIP_DELAY_MS = 800;
+const NOTE_HOVER_HIGHLIGHT_CLEAR_GRACE_MS = 150;
 const TOOLTIP_FADE_MS = 900;
+const DATE_TOOLTIP_EDGE_MARGIN_PX = 4;
+const DATE_TOOLTIP_TOP_COLLISION_Y_PX = 96;
 
 export function initializeRhsPanel() {
     if (initialized) {
@@ -379,16 +385,14 @@ function updateDragPreview() {
 }
 
 function updateHoveredNoteDateHighlight() {
-    const cells = document.querySelectorAll('.rhs-heatmap-cell[data-date]');
-    for (const cell of cells) {
-        cell.classList.remove('is-note-hovered-date');
-    }
     if (!isRhsPanelVisible()) {
+        scheduleHoveredNoteDateHighlightClear();
         hideDateTooltip();
         return;
     }
     const hoveredNoteId = ModeContext.hoveredNoteId;
     if (hoveredNoteId === null) {
+        scheduleHoveredNoteDateHighlightClear();
         hideDateTooltip();
         return;
     }
@@ -397,6 +401,8 @@ function updateHoveredNoteDateHighlight() {
     }
     const noteElement = document.querySelector(`.note[data-note-id="${hoveredNoteId}"]`);
     if (!(noteElement instanceof HTMLElement)) {
+        scheduleHoveredNoteDateHighlightClear();
+        hideDateTooltip();
         return;
     }
     const metadata = parseMetadata(noteElement);
@@ -407,12 +413,83 @@ function updateHoveredNoteDateHighlight() {
     const isoDate = timestamp.slice(0, 10);
     const matchingCell = document.querySelector(`.rhs-heatmap-cell[data-date="${isoDate}"]`);
     if (matchingCell instanceof HTMLElement) {
-        matchingCell.classList.add('is-note-hovered-date');
         scrollHeatmapCellIntoView(matchingCell);
+        scheduleHoveredNoteDateHighlight(isoDate, matchingCell);
         scheduleDateTooltipForCell(isoDate, matchingCell);
         return;
     }
+    scheduleHoveredNoteDateHighlightClear();
     hideDateTooltip();
+}
+
+function scheduleHoveredNoteDateHighlight(isoDate, cell) {
+    if (typeof isoDate !== 'string' || isoDate.length === 0) {
+        throw new Error('Delayed heatmap date highlight requires an ISO date');
+    }
+    if (!(cell instanceof HTMLElement)) {
+        throw new Error('Delayed heatmap date highlight requires a cell element');
+    }
+    clearPendingHoveredDateHighlightClear();
+    const signature = `${isoDate}:${cell.dataset.date}`;
+    if (pendingHoveredDateHighlightTimeout !== null && pendingHoveredDateHighlightSignature === signature) {
+        return;
+    }
+    clearPendingHoveredDateHighlight();
+    const highlightedCells = document.querySelectorAll('.rhs-heatmap-cell.is-note-hovered-date');
+    for (const highlightedCell of highlightedCells) {
+        if (highlightedCell !== cell) {
+            highlightedCell.classList.remove('is-note-hovered-date');
+        }
+    }
+    if (cell.classList.contains('is-note-hovered-date')) {
+        return;
+    }
+    pendingHoveredDateHighlightSignature = signature;
+    pendingHoveredDateHighlightTimeout = window.setTimeout(() => {
+        pendingHoveredDateHighlightTimeout = null;
+        pendingHoveredDateHighlightSignature = null;
+        if (!isRhsPanelVisible()) {
+            return;
+        }
+        if (cell.dataset.date !== isoDate) {
+            return;
+        }
+        cell.classList.add('is-note-hovered-date');
+    }, NOTE_HOVER_TOOLTIP_DELAY_MS);
+}
+
+function scheduleHoveredNoteDateHighlightClear() {
+    if (pendingHoveredDateHighlightClearTimeout !== null) {
+        return;
+    }
+    pendingHoveredDateHighlightClearTimeout = window.setTimeout(() => {
+        pendingHoveredDateHighlightClearTimeout = null;
+        clearHoveredNoteDateHighlight();
+    }, NOTE_HOVER_HIGHLIGHT_CLEAR_GRACE_MS);
+}
+
+function clearHoveredNoteDateHighlight() {
+    clearPendingHoveredDateHighlight();
+    clearPendingHoveredDateHighlightClear();
+    const cells = document.querySelectorAll('.rhs-heatmap-cell[data-date]');
+    for (const cell of cells) {
+        cell.classList.remove('is-note-hovered-date');
+    }
+}
+
+function clearPendingHoveredDateHighlight() {
+    if (pendingHoveredDateHighlightTimeout !== null) {
+        window.clearTimeout(pendingHoveredDateHighlightTimeout);
+        pendingHoveredDateHighlightTimeout = null;
+    }
+    pendingHoveredDateHighlightSignature = null;
+}
+
+function clearPendingHoveredDateHighlightClear() {
+    if (pendingHoveredDateHighlightClearTimeout !== null) {
+        window.clearTimeout(pendingHoveredDateHighlightClearTimeout);
+        pendingHoveredDateHighlightClearTimeout = null;
+    }
 }
 
 function isRhsPanelVisible() {
@@ -599,6 +676,10 @@ function showDateTooltipForCell(isoDate, cell) {
     if (!(cell instanceof HTMLElement)) {
         throw new Error('Heatmap date tooltip requires a cell element');
     }
+    const panel = document.getElementById('rhs-panel');
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('Heatmap date tooltip requires RHS panel element');
+    }
     if (!isRhsPanelVisible()) {
         hideDateTooltip();
         return;
@@ -615,10 +696,17 @@ function showDateTooltipForCell(isoDate, cell) {
     tooltip.hidden = false;
     tooltip.classList.remove('is-visible');
     const tooltipRect = tooltip.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
     const centeredLeft = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
     const aboveTop = rect.top - tooltipRect.height - 6;
-    tooltip.style.left = `${Math.max(4, centeredLeft)}px`;
-    tooltip.style.top = `${Math.max(4, aboveTop)}px`;
+    const minLeft = Math.max(DATE_TOOLTIP_EDGE_MARGIN_PX, panelRect.left + DATE_TOOLTIP_EDGE_MARGIN_PX);
+    const viewportMaxLeft = window.innerWidth - DATE_TOOLTIP_EDGE_MARGIN_PX - tooltipRect.width;
+    const panelMaxLeft = panelRect.right - DATE_TOOLTIP_EDGE_MARGIN_PX - tooltipRect.width;
+    const maxLeft = Math.max(minLeft, Math.min(viewportMaxLeft, panelMaxLeft));
+    const belowTop = rect.bottom + 6;
+    const top = aboveTop < DATE_TOOLTIP_TOP_COLLISION_Y_PX ? belowTop : aboveTop;
+    tooltip.style.left = `${Math.min(Math.max(minLeft, centeredLeft), maxLeft)}px`;
+    tooltip.style.top = `${Math.max(DATE_TOOLTIP_EDGE_MARGIN_PX, top)}px`;
     showDateTooltipElement(tooltip);
 }
 
