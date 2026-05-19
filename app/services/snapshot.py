@@ -263,11 +263,11 @@ def build_activity_summary(
         ordered_root_ids=ordered_root_ids,
     )
     if search_scope.search_active:
-        if search_scope.search_root_ids_ordered is None:
-            raise RuntimeError("active search scope missing search_root_ids_ordered")
-        candidate_ids = set(search_scope.search_root_ids_ordered)
+        if search_scope.matched_note_ids is None:
+            raise RuntimeError("active search scope missing matched_note_ids")
+        candidate_ids = set(search_scope.matched_note_ids)
     else:
-        candidate_ids = set(ordered_root_ids)
+        candidate_ids = set(note_store.list_note_ids())
     records = [note_store.get_note(note_id) for note_id in candidate_ids if note_store.has_note(note_id)]
     return build_activity_buckets(records=records, metric=normalized_metric, end_date=None)
 

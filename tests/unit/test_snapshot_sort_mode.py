@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
+from app.services.search_index import SearchIndex, SearchRecord, extract_tags_for_search
 from app.services.snapshot import build_activity_summary, build_view_state
 
 
@@ -52,6 +53,26 @@ def _patch_fake_store(monkeypatch: pytest.MonkeyPatch, store: _FakeNoteStore) ->
     monkeypatch.setattr(snapshot, "note_store", store)
     monkeypatch.setattr(snapshot, "get_all_locks", lambda: {})
     monkeypatch.setattr(root_sorting, "note_store", store)
+
+
+def _patch_fake_search_index(monkeypatch: pytest.MonkeyPatch, notes: Dict[str, _Note]) -> None:
+    import app.services.snapshot as snapshot
+
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id=note.id,
+                content_text=note.content,
+                tags=note.tags,
+                tag_terms=extract_tags_for_search(note.tags),
+            )
+            for note in notes.values()
+        ],
+        progress_update=lambda _: None,
+        progress_interval=1000,
+    )
+    monkeypatch.setattr(snapshot, "search_index", index)
 
 
 def test_build_view_state_uses_newest_created_timestamp_in_root_subtree(
@@ -301,7 +322,7 @@ def test_build_view_state_filters_by_updated_date_range(
     assert state.metadata["searchRootCountTotal"] == 1
 
 
-def test_activity_summary_includes_old_created_and_updated_result_roots(
+def test_activity_summary_includes_created_and_updated_dates_for_all_notes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     notes = {
@@ -349,10 +370,64 @@ def test_activity_summary_includes_old_created_and_updated_result_roots(
     updated = build_activity_summary(search=None, sort_mode="normal", metric="updated")
 
     assert created["rangeStart"] == "2019-01-05"
-    assert created["rangeEnd"] == "2026-05-18"
-    assert created["buckets"] == {"2019-01-05": 1, "2026-05-18": 1}
-    assert created["total"] == 2
+    assert created["rangeEnd"] == "2026-05-19"
+    assert created["buckets"] == {"2019-01-05": 1, "2026-05-18": 1, "2026-05-19": 1}
+    assert created["total"] == 3
     assert updated["rangeStart"] == "2020-02-06"
-    assert updated["rangeEnd"] == "2026-05-18"
-    assert updated["buckets"] == {"2020-02-06": 1, "2026-05-18": 1}
+    assert updated["rangeEnd"] == "2026-05-19"
+    assert updated["buckets"] == {"2020-02-06": 1, "2026-05-18": 1, "2026-05-19": 1}
+    assert updated["total"] == 3
+
+
+def test_activity_summary_counts_matching_child_notes_in_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "journal-root": _Note(
+            id="journal-root",
+            parent_id=None,
+            prev_id=None,
+            next_id="plain-root",
+            is_collapsed=False,
+            content="<div>2026.05 - May</div>",
+            tags="journal",
+            created_at=datetime(2025, 1, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2025, 1, 1, 20, 0, tzinfo=timezone.utc),
+        ),
+        "journal-child": _Note(
+            id="journal-child",
+            parent_id="journal-root",
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<div>2026.05.19 - Tues: Palantir meeting</div>",
+            tags="journal",
+            created_at=datetime(2026, 5, 19, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 20, 20, 0, tzinfo=timezone.utc),
+        ),
+        "plain-root": _Note(
+            id="plain-root",
+            parent_id=None,
+            prev_id="journal-root",
+            next_id=None,
+            is_collapsed=False,
+            content="<div>plain</div>",
+            tags="",
+            created_at=datetime(2026, 5, 21, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 22, 20, 0, tzinfo=timezone.utc),
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["journal-root", "plain-root"], "journal-root": ["journal-child"]},
+    )
+    _patch_fake_store(monkeypatch, store)
+    _patch_fake_search_index(monkeypatch, notes)
+
+    created = build_activity_summary(search="journal", sort_mode="normal", metric="created")
+    updated = build_activity_summary(search="journal", sort_mode="normal", metric="updated")
+
+    assert created["buckets"] == {"2025-01-01": 1, "2026-05-19": 1}
+    assert created["total"] == 2
+    assert updated["buckets"] == {"2025-01-01": 1, "2026-05-20": 1}
     assert updated["total"] == 2
