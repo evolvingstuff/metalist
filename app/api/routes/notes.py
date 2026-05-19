@@ -8,6 +8,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from app.api.transactions import transactional_route
+from app.services.date_filtering import date_filter_signature
+from app.services.date_filtering import normalize_date_filter_metric
+from app.services.snapshot import build_activity_summary
 from app.services.snapshot import build_view_state
 from app.services.snapshot import resolve_search_scope
 from app.services.note_store import store as note_store
@@ -102,6 +105,20 @@ def _resolve_tab_sort_mode(tab_id: object) -> str:
     return sort_mode
 
 
+def _resolve_tab_date_filter(tab_id: object) -> dict[str, str] | None:
+    if tab_id is not None and (not isinstance(tab_id, str) or tab_id == ""):
+        raise TypeError("tabId must be a non-empty string")
+
+    capture = CapturedExceptionContext(ValueError)
+    date_filter: dict[str, str] | None = None
+    with capture:
+        date_filter = tab_state_store.get_date_filter(tab_id=tab_id)
+    if capture.captured_exception is not None:
+        exc = capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return date_filter
+
+
 def _block_root_reorder_when_sorted(note_id: str, *, tab_id: object, new_parent_id: object) -> None:
     sort_mode = _resolve_tab_sort_mode(tab_id)
     if not is_root_reorder_locked(sort_mode):
@@ -148,6 +165,7 @@ def view_diff(payload: dict):
     anchor_root_id = payload["visibleRootAnchorId"]
 
     sort_mode = _resolve_tab_sort_mode(tab_id)
+    date_filter = _resolve_tab_date_filter(tab_id)
     maybe_reset_on_context(client_id, undo_context)
 
     if not isinstance(client_note_uuid_hashes, dict):
@@ -179,6 +197,7 @@ def view_diff(payload: dict):
         "tab_id": tab_id,
         "search": normalized_search,
         "sort_mode": sort_mode,
+        "date_filter": date_filter_signature(date_filter),
     }
     cached_state = view_cache.get(**cache_key)
     if not anchor_root_id and cached_state and client_hashes:
@@ -193,6 +212,7 @@ def view_diff(payload: dict):
         client_known_note_ids=set(client_hashes.keys()),
         client_seen_root_ids=set(),
         anchor_root_id=anchor_root_id,
+        date_filter=date_filter,
     )
     update_uuid = get_current_sync_uuid()
     root_ids = list(state.children_by_parent.get(None, []))
@@ -247,6 +267,7 @@ def view_diff(payload: dict):
                 "currentClientId": client_id,
                 "searchQuery": search,
                 "sortMode": sort_mode,
+                "dateFilter": date_filter,
                 "rootCountTotal": root_count_total,
                 "searchRootCountTotal": search_root_count_total,
                 "rootSortBuckets": state.metadata["rootSortBuckets"],
@@ -264,6 +285,7 @@ def view_diff(payload: dict):
             "currentClientId": client_id,
             "searchQuery": search,
             "sortMode": sort_mode,
+            "dateFilter": date_filter,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
             "rootSortBuckets": state.metadata["rootSortBuckets"],
@@ -288,6 +310,7 @@ def view_diff(payload: dict):
             "currentClientId": client_id,
             "searchQuery": search,
             "sortMode": sort_mode,
+            "dateFilter": date_filter,
             "rootCountTotal": root_count_total,
             "searchRootCountTotal": search_root_count_total,
             "rootSortBuckets": state.metadata["rootSortBuckets"],
@@ -317,6 +340,7 @@ def view_diff(payload: dict):
         "currentClientId": client_id,
         "searchQuery": search,
         "sortMode": sort_mode,
+        "dateFilter": date_filter,
         "rootCountTotal": root_count_total,
         "searchRootCountTotal": search_root_count_total,
         "rootSortBuckets": state.metadata["rootSortBuckets"],
@@ -369,6 +393,55 @@ def update_tab_sort_mode(payload: dict) -> Dict[str, object]:
     if response["changed"] is True:
         reset_undo_stack(client_id, undo_context)
     return response
+
+
+@router.post("/notes/tab-state/date-filter")
+@transactional_route
+def update_tab_date_filter(payload: dict) -> Dict[str, object]:
+    if "tabId" not in payload:
+        raise HTTPException(status_code=400, detail="tabId is required")
+    if "dateFilter" not in payload:
+        raise HTTPException(status_code=400, detail="dateFilter is required")
+
+    tab_id = payload["tabId"]
+    date_filter = payload["dateFilter"]
+    client_id = payload["clientId"]
+    undo_context = payload["undoContext"]
+
+    capture = CapturedExceptionContext(TypeError, ValueError)
+    response: Dict[str, object] | None = None
+    with capture:
+        response = tab_state_store.set_date_filter(tab_id=tab_id, date_filter=date_filter)
+    if capture.captured_exception is not None:
+        exc = capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if response is None:
+        raise RuntimeError("tab_state_store.set_date_filter returned no value")
+    if response["changed"] is True:
+        reset_undo_stack(client_id, undo_context)
+    return response
+
+
+@router.post("/notes/activity")
+@transactional_route
+def notes_activity(payload: dict) -> Dict[str, object]:
+    if "tabId" not in payload:
+        raise HTTPException(status_code=400, detail="tabId is required")
+    if "search" not in payload:
+        raise HTTPException(status_code=400, detail="search is required")
+    if "metric" not in payload:
+        raise HTTPException(status_code=400, detail="metric is required")
+
+    tab_id = payload["tabId"]
+    search = payload["search"]
+    metric = normalize_date_filter_metric(payload["metric"])
+    sort_mode = _resolve_tab_sort_mode(tab_id)
+    normalized_search = search
+    if isinstance(normalized_search, str) and normalized_search == "":
+        normalized_search = None
+    if normalized_search is not None and not isinstance(normalized_search, str):
+        raise TypeError("search must be a string or null")
+    return build_activity_summary(search=normalized_search, sort_mode=sort_mode, metric=metric)
 
 
 @router.post("/notes/tab-state/new-tab")

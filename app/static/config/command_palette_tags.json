@@ -10,7 +10,11 @@
     },
     {
       "id": "pref.show_tab_ui",
-      "tags": ["tabs", "tab", "contexts", "search", "ui", "view", "show", "hide", "toggle"]
+      "tags": ["tabs", "tab", "contexts", "search", "view", "show", "hide", "toggle"]
+    },
+    {
+      "id": "pref.show_rhs_panel",
+      "tags": ["calendar", "calender", "heatmap", "activity", "right", "view", "show", "hide", "toggle"]
     },
     {
       "id": "pref.show_perf_overlay",

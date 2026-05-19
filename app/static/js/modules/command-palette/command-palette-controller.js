@@ -28,6 +28,7 @@ import { syncSearchInputValue } from '../mode-manager/services/search-input-serv
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
 import { refreshBacklinksPanel, invalidateBacklinksPanelCache, syncBacklinksPanelPlacement } from '../mode-manager/services/backlinks-panel-service.js';
+import { refreshRhsActivity, renderRhsPanel } from '../mode-manager/services/rhs-panel-service.js';
 import { attachPickedFileToCurrentNote, pickFileForAttachment } from '../mode-manager/services/file-reference-service.js';
 import { isRootReorderLocked, normalizeRootSortMode } from '../mode-manager/services/root-sort-service.js';
 import { setTabSortModeOnServer } from '../mode-manager/services/tab-state-service.js';
@@ -421,6 +422,9 @@ class CommandPaletteController {
         const showTabUi = this._getBoolean('pref.show_tab_ui', false);
         document.body.classList.toggle('pref-show-tab-ui', showTabUi);
 
+        const showRhsPanel = this._getBoolean('pref.show_rhs_panel', true);
+        document.body.classList.toggle('pref-show-rhs-panel', showRhsPanel);
+
         const showPerfOverlay = this._getBoolean('pref.show_perf_overlay', false);
         document.body.classList.toggle('pref-show-perf-overlay', showPerfOverlay);
         if (!showPerfOverlay) {
@@ -457,6 +461,8 @@ class CommandPaletteController {
         syncBacklinksPanelPlacement();
         invalidateBacklinksPanelCache();
         void refreshBacklinksPanel({ force: true });
+        renderRhsPanel();
+        void refreshRhsActivity({ preserveScroll: false });
     }
 
     _getBoolean(key, defaultValue) {

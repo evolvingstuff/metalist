@@ -688,6 +688,9 @@ export function applyDifferentialView(payload, options) {
                 throw new Error(`Note ${noteId} payload tags must be a string`);
             }
             noteElement.dataset.noteTags = noteData.tags;
+            if (noteData.metadata && typeof noteData.metadata === 'object') {
+                noteElement.dataset.noteMetadata = JSON.stringify(noteData.metadata);
+            }
             syncTagsElement(noteElement);
         }
 
@@ -898,6 +901,9 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
         throw new Error(`Note ${noteId} payload tags must be a string`);
     }
     noteElement.dataset.noteTags = noteData.tags;
+    if (noteData.metadata && typeof noteData.metadata === 'object') {
+        noteElement.dataset.noteMetadata = JSON.stringify(noteData.metadata);
+    }
     syncTagsElement(noteElement);
     let flags = noteData.flags;
     if (!flags || typeof flags !== 'object') {

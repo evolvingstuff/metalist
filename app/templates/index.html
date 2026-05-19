@@ -109,6 +109,16 @@
                         title="Return to normal sort order"
                     >×</button>
                 </div>
+                <div id="date-filter-indicator" class="date-filter-indicator" hidden>
+                    <span id="date-filter-indicator-label" class="date-filter-indicator-label"></span>
+                    <button
+                        id="date-filter-indicator-clear"
+                        class="date-filter-indicator-clear interactive"
+                        type="button"
+                        aria-label="Clear date filter"
+                        title="Clear date filter"
+                    >×</button>
+                </div>
                 <!-- <button id="trash-can" class="trash-can interactive" draggable="false">🗑️</button> -->
             </div>
             <div id="notes-container">
@@ -117,6 +127,9 @@
                 % endif
             </div>
         </div>
+        <aside id="rhs-panel" class="rhs-panel" aria-label="Activity and note metadata">
+            <div id="rhs-panel-content" class="rhs-panel-content"></div>
+        </aside>
     </div>
 </div>
 

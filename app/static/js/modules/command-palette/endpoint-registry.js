@@ -51,6 +51,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showBacklinks: true,
         showNoteTags: false,
         showTabUi: false,
+        showRhsPanel: true,
         showPerfOverlay: false,
         theme: 'system',
     };
@@ -76,10 +77,18 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.show_tab_ui',
             kind: 'boolean',
-            label: 'Toggle tab UI',
+            label: 'Toggle tabs',
             persistenceKey: 'pref.show_tab_ui',
             defaultValue: defaults.showTabUi,
             apply: (next) => applyPreference('pref.show_tab_ui', next),
+        },
+        {
+            id: 'pref.show_rhs_panel',
+            kind: 'boolean',
+            label: 'Toggle calendar view',
+            persistenceKey: 'pref.show_rhs_panel',
+            defaultValue: defaults.showRhsPanel,
+            apply: (next) => applyPreference('pref.show_rhs_panel', next),
         },
         {
             id: 'pref.show_perf_overlay',

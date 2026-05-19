@@ -16,6 +16,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_backlinks": {"true", "false"},
     "pref.show_note_tags": {"true", "false"},
     "pref.show_tab_ui": {"true", "false"},
+    "pref.show_rhs_panel": {"true", "false"},
     "pref.show_perf_overlay": {"true", "false"},
     "pref.theme": {"system", "light", "dark"},
 }

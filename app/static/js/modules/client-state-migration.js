@@ -6,6 +6,7 @@ const LEGACY_CLIENT_PREFERENCE_KEYS = [
     'pref.show_backlinks',
     'pref.show_note_tags',
     'pref.show_tab_ui',
+    'pref.show_rhs_panel',
     'pref.show_perf_overlay',
     'pref.theme',
 ];

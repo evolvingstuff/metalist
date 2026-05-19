@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from app.services.snapshot import build_view_state
+from app.services.snapshot import build_activity_summary, build_view_state
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,14 @@ class _FakeNoteStore:
 
     def get_children(self, parent_id: Optional[str]) -> List[str]:
         return list(self._children_by_parent.get(parent_id, []))
+
+    def list_note_ids(self) -> List[str]:
+        return list(self._notes.keys())
+
+    def get_inherited_non_meta_tag_terms(self, note_id: str):
+        if note_id not in self._notes:
+            raise KeyError(note_id)
+        return frozenset()
 
 
 def _patch_fake_store(monkeypatch: pytest.MonkeyPatch, store: _FakeNoteStore) -> None:
@@ -94,6 +102,7 @@ def test_build_view_state_uses_newest_created_timestamp_in_root_subtree(
         editing_note_id=None,
         search=None,
         sort_mode="created",
+        date_filter=None,
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
@@ -156,6 +165,7 @@ def test_build_view_state_uses_newest_updated_timestamp_in_root_subtree(
         editing_note_id=None,
         search=None,
         sort_mode="updated",
+        date_filter=None,
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
@@ -218,6 +228,7 @@ def test_build_view_state_sorts_roots_alphabetically_by_root_content(
         editing_note_id=None,
         search=None,
         sort_mode="alphabetical",
+        date_filter=None,
         client_known_note_ids=set(),
         client_seen_root_ids=set(),
         anchor_root_id=None,
@@ -226,3 +237,122 @@ def test_build_view_state_sorts_roots_alphabetically_by_root_content(
     assert state.children_by_parent[None] == ["root-apple", "root-banana", "root-zebra"]
     assert state.metadata["sortMode"] == "alphabetical"
     assert state.metadata["rootSortBuckets"] == {}
+
+
+def test_build_view_state_filters_by_updated_date_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "root-a": _Note(
+            id="root-a",
+            parent_id=None,
+            prev_id=None,
+            next_id="root-b",
+            is_collapsed=False,
+            content="<div>A</div>",
+            tags="",
+            created_at=datetime(2026, 5, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 10, 20, 0, tzinfo=timezone.utc),
+        ),
+        "child-a": _Note(
+            id="child-a",
+            parent_id="root-a",
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<div>A child</div>",
+            tags="",
+            created_at=datetime(2026, 5, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 18, 20, 0, tzinfo=timezone.utc),
+        ),
+        "root-b": _Note(
+            id="root-b",
+            parent_id=None,
+            prev_id="root-a",
+            next_id=None,
+            is_collapsed=False,
+            content="<div>B</div>",
+            tags="",
+            created_at=datetime(2026, 5, 1, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 20, 20, 0, tzinfo=timezone.utc),
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root-a", "root-b"], "root-a": ["child-a"]},
+    )
+    _patch_fake_store(monkeypatch, store)
+
+    state = build_view_state(
+        editing_note_id=None,
+        search=None,
+        sort_mode="normal",
+        client_known_note_ids=set(),
+        client_seen_root_ids=set(),
+        anchor_root_id=None,
+        date_filter={"metric": "updated", "startDate": "2026-05-18", "endDate": "2026-05-18"},
+    )
+
+    assert state.children_by_parent[None] == ["root-a"]
+    assert state.children_by_parent["root-a"] == ["child-a"]
+    assert state.payloads["root-a"]["flags"]["searchRedacted"] is False
+    assert state.payloads["child-a"]["flags"]["searchRedacted"] is False
+    assert state.metadata["dateFilter"]["metric"] == "updated"
+    assert state.metadata["searchRootCountTotal"] == 1
+
+
+def test_activity_summary_includes_old_created_and_updated_result_roots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "old-arxiv": _Note(
+            id="old-arxiv",
+            parent_id=None,
+            prev_id=None,
+            next_id="new-arxiv",
+            is_collapsed=False,
+            content="<div>old arXiv</div>",
+            tags="",
+            created_at=datetime(2019, 1, 5, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2020, 2, 6, 20, 0, tzinfo=timezone.utc),
+        ),
+        "new-arxiv": _Note(
+            id="new-arxiv",
+            parent_id=None,
+            prev_id="old-arxiv",
+            next_id=None,
+            is_collapsed=False,
+            content="<div>new arXiv</div>",
+            tags="",
+            created_at=datetime(2026, 5, 18, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 18, 20, 0, tzinfo=timezone.utc),
+        ),
+        "child-arxiv": _Note(
+            id="child-arxiv",
+            parent_id="new-arxiv",
+            prev_id=None,
+            next_id=None,
+            is_collapsed=False,
+            content="<div>child arXiv detail</div>",
+            tags="",
+            created_at=datetime(2026, 5, 19, 20, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 19, 20, 0, tzinfo=timezone.utc),
+        ),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["old-arxiv", "new-arxiv"], "new-arxiv": ["child-arxiv"]},
+    )
+    _patch_fake_store(monkeypatch, store)
+
+    created = build_activity_summary(search=None, sort_mode="normal", metric="created")
+    updated = build_activity_summary(search=None, sort_mode="normal", metric="updated")
+
+    assert created["rangeStart"] == "2019-01-05"
+    assert created["rangeEnd"] == "2026-05-18"
+    assert created["buckets"] == {"2019-01-05": 1, "2026-05-18": 1}
+    assert created["total"] == 2
+    assert updated["rangeStart"] == "2020-02-06"
+    assert updated["rangeEnd"] == "2026-05-18"
+    assert updated["buckets"] == {"2020-02-06": 1, "2026-05-18": 1}
+    assert updated["total"] == 2
