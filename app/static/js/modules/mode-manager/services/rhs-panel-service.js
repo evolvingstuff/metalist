@@ -19,8 +19,13 @@ let panelScrollListenerAttached = false;
 let tooltipElement = null;
 let pendingRefreshTimeout = null;
 let latestRefreshRequestId = 0;
+let pendingTooltipTimeout = null;
+let pendingTooltipSignature = null;
+let pendingTooltipHideTimeout = null;
 
 const ACTIVITY_REFRESH_DEBOUNCE_MS = 75;
+const NOTE_HOVER_TOOLTIP_DELAY_MS = 800;
+const TOOLTIP_FADE_MS = 900;
 
 export function initializeRhsPanel() {
     if (initialized) {
@@ -385,7 +390,7 @@ function updateHoveredNoteDateHighlight() {
     if (matchingCell instanceof HTMLElement) {
         matchingCell.classList.add('is-note-hovered-date');
         scrollHeatmapCellIntoView(matchingCell);
-        showDateTooltipForCell(isoDate, matchingCell);
+        scheduleDateTooltipForCell(isoDate, matchingCell);
         return;
     }
     hideDateTooltip();
@@ -562,15 +567,13 @@ function showDateTooltip(isoDate, clientX, clientY) {
     if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
         throw new Error('Heatmap date tooltip requires finite pointer coordinates');
     }
-    if (!tooltipElement) {
-        tooltipElement = document.createElement('div');
-        tooltipElement.className = 'rhs-date-tooltip';
-        document.body.appendChild(tooltipElement);
-    }
+    clearPendingDateTooltip();
+    clearPendingTooltipHide();
+    const tooltip = ensureDateTooltipElement();
     tooltipElement.textContent = isoDate;
     tooltipElement.style.left = `${clientX + 10}px`;
     tooltipElement.style.top = `${clientY + 10}px`;
-    tooltipElement.hidden = false;
+    showDateTooltipElement(tooltip);
 }
 
 function showDateTooltipForCell(isoDate, cell) {
@@ -586,14 +589,89 @@ function showDateTooltipForCell(isoDate, cell) {
         hideDateTooltip();
         return;
     }
-    const clientX = rect.right + 4;
-    const clientY = rect.top + (rect.height / 2);
-    showDateTooltip(isoDate, clientX, clientY);
+    clearPendingDateTooltip();
+    clearPendingTooltipHide();
+    const tooltip = ensureDateTooltipElement();
+    tooltip.textContent = isoDate;
+    tooltip.hidden = false;
+    tooltip.classList.remove('is-visible');
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const centeredLeft = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+    const aboveTop = rect.top - tooltipRect.height - 6;
+    tooltip.style.left = `${Math.max(4, centeredLeft)}px`;
+    tooltip.style.top = `${Math.max(4, aboveTop)}px`;
+    showDateTooltipElement(tooltip);
+}
+
+function scheduleDateTooltipForCell(isoDate, cell) {
+    if (!(cell instanceof HTMLElement)) {
+        throw new Error('Delayed heatmap date tooltip requires a cell element');
+    }
+    if (typeof isoDate !== 'string' || isoDate.length === 0) {
+        throw new Error('Delayed heatmap date tooltip requires an ISO date');
+    }
+    const signature = `${isoDate}:${cell.dataset.date}`;
+    if (pendingTooltipTimeout !== null && pendingTooltipSignature === signature) {
+        return;
+    }
+    if (tooltipElement && tooltipElement.textContent === isoDate && tooltipElement.classList.contains('is-visible')) {
+        return;
+    }
+    hideDateTooltip();
+    pendingTooltipSignature = signature;
+    pendingTooltipTimeout = window.setTimeout(() => {
+        pendingTooltipTimeout = null;
+        pendingTooltipSignature = null;
+        showDateTooltipForCell(isoDate, cell);
+    }, NOTE_HOVER_TOOLTIP_DELAY_MS);
 }
 
 function hideDateTooltip() {
+    clearPendingDateTooltip();
     if (tooltipElement) {
-        tooltipElement.hidden = true;
+        tooltipElement.classList.remove('is-visible');
+        clearPendingTooltipHide();
+        const target = tooltipElement;
+        pendingTooltipHideTimeout = window.setTimeout(() => {
+            pendingTooltipHideTimeout = null;
+            if (!target.classList.contains('is-visible')) {
+                target.hidden = true;
+            }
+        }, TOOLTIP_FADE_MS);
+    }
+}
+
+function ensureDateTooltipElement() {
+    if (!tooltipElement) {
+        tooltipElement = document.createElement('div');
+        tooltipElement.className = 'rhs-date-tooltip';
+        document.body.appendChild(tooltipElement);
+    }
+    return tooltipElement;
+}
+
+function showDateTooltipElement(tooltip) {
+    if (!(tooltip instanceof HTMLElement)) {
+        throw new Error('showDateTooltipElement requires tooltip element');
+    }
+    tooltip.hidden = false;
+    window.requestAnimationFrame(() => {
+        tooltip.classList.add('is-visible');
+    });
+}
+
+function clearPendingDateTooltip() {
+    if (pendingTooltipTimeout !== null) {
+        window.clearTimeout(pendingTooltipTimeout);
+        pendingTooltipTimeout = null;
+    }
+    pendingTooltipSignature = null;
+}
+
+function clearPendingTooltipHide() {
+    if (pendingTooltipHideTimeout !== null) {
+        window.clearTimeout(pendingTooltipHideTimeout);
+        pendingTooltipHideTimeout = null;
     }
 }
 

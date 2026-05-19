@@ -2007,6 +2007,12 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     white-space: nowrap;
+    opacity: 0;
+    transition: opacity 900ms ease;
+}
+
+.rhs-date-tooltip.is-visible {
+    opacity: 1;
 }
 
 .rhs-date-tooltip[hidden] {
