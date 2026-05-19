@@ -107,6 +107,29 @@ export async function refreshRhsActivity(options) {
     }
 }
 
+export function isRhsCalendarPinnedToNewest() {
+    if (!document.body.classList.contains('pref-show-rhs-panel')) {
+        return true;
+    }
+    const panel = document.getElementById('rhs-panel');
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('rhs-panel element missing');
+    }
+    return isRhsPanelElementPinnedToNewest(panel);
+}
+
+export function scrollRhsCalendarToNewest() {
+    if (!document.body.classList.contains('pref-show-rhs-panel')) {
+        return false;
+    }
+    const panel = document.getElementById('rhs-panel');
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('rhs-panel element missing');
+    }
+    scrollRhsPanelElementToNewest(panel);
+    return true;
+}
+
 export function renderRhsPanel() {
     hideDateTooltip();
     const container = document.getElementById('rhs-panel-content');
@@ -335,14 +358,30 @@ function updateRhsPanelScrollStateFromDom(panel) {
         return;
     }
     const scrollTop = Math.max(0, Math.round(panel.scrollTop));
-    const maxScrollTop = Math.max(0, Math.round(panel.scrollHeight - panel.clientHeight));
-    let pinnedToNewest = false;
-    if (maxScrollTop === 0) {
-        pinnedToNewest = true;
-    } else if (scrollTop >= maxScrollTop - 2) {
-        pinnedToNewest = true;
-    }
+    const pinnedToNewest = isRhsPanelElementPinnedToNewest(panel);
     ModeContext.updateActiveTabCalendarScroll(scrollTop, pinnedToNewest);
+}
+
+function isRhsPanelElementPinnedToNewest(panel) {
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('isRhsPanelElementPinnedToNewest requires panel element');
+    }
+    const scrollTop = Math.max(0, Math.round(panel.scrollTop));
+    const maxScrollTop = getRhsPanelMaxScrollTop(panel);
+    if (maxScrollTop === 0) {
+        return true;
+    }
+    if (scrollTop >= maxScrollTop - 2) {
+        return true;
+    }
+    return false;
+}
+
+function getRhsPanelMaxScrollTop(panel) {
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('getRhsPanelMaxScrollTop requires panel element');
+    }
+    return Math.max(0, Math.round(panel.scrollHeight - panel.clientHeight));
 }
 
 function commitDragSelection() {
@@ -535,12 +574,21 @@ function maybeScrollRhsPanelToNewest() {
     if (!(panel instanceof HTMLElement)) {
         return;
     }
+    scrollRhsPanelElementToNewest(panel);
+}
+
+function scrollRhsPanelElementToNewest(panel) {
+    if (!(panel instanceof HTMLElement)) {
+        throw new Error('scrollRhsPanelElementToNewest requires panel element');
+    }
     shouldScrollToNewest = false;
+    panel.scrollTop = getRhsPanelMaxScrollTop(panel);
+    updateRhsPanelScrollStateFromDom(panel);
     window.requestAnimationFrame(() => {
-        panel.scrollTop = panel.scrollHeight;
+        panel.scrollTop = getRhsPanelMaxScrollTop(panel);
         updateRhsPanelScrollStateFromDom(panel);
         window.requestAnimationFrame(() => {
-            panel.scrollTop = panel.scrollHeight;
+            panel.scrollTop = getRhsPanelMaxScrollTop(panel);
             updateRhsPanelScrollStateFromDom(panel);
         });
     });

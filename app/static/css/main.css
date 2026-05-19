@@ -3653,7 +3653,7 @@ body.loading::after {
     pointer-events: none;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1520px) {
     .rhs-panel,
     #search-contexts-list,
     #backlinks-panel {
