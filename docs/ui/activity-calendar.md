@@ -20,6 +20,7 @@
 ## Calendar State
 - Calendar scroll position is persisted per tab.
 - The calendar starts pinned to newest activity for fresh/default state.
+- The global `↑` button also jumps the calendar back to newest activity; it remains enabled at page top when the calendar is scrolled away from newest.
 - The heatmap uses current search context and counts matching notes, including child notes, so searching `journal` shows activity for matching `journal` notes throughout the tree.
 - Each visible month keeps the calendar-shaped outline; boundary months render inactive days before the first active day, and the newest partial week is padded with inactive cells so the outline stays contiguous.
 - Hovering notes scrolls the matching date into view immediately, while the date tooltip and green calendar-cell hover fill delay/fade in to avoid peripheral flashes during quick mouse movement; direct calendar hover/focus uses the same green transient cell highlight.
@@ -28,3 +29,4 @@
 - Right-click the left lane to show/hide tabs.
 - Right-click the right lane to show/hide the calendar view.
 - `Cmd/Ctrl+/` also exposes `Toggle tabs` and `Toggle calendar view`.
+- The left/right lanes hide at narrower desktop widths before they can overlap the centered note column.

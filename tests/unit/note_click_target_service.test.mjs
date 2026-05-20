@@ -25,6 +25,18 @@ test('returns null for clicks inside note content', () => {
     assert.equal(resolveNonContentNoteSelectionTarget(target), null);
 });
 
+test('returns null for clicks inside the editing tag bar', () => {
+    const noteElement = { dataset: { noteId: 'parent-note' } };
+    const tagBar = { className: 'note-tag-bar' };
+    const target = createClosestTarget({
+        '.note-content': null,
+        '.note-tag-bar': tagBar,
+        '.note': noteElement,
+    });
+
+    assert.equal(resolveNonContentNoteSelectionTarget(target), null);
+});
+
 test('returns the parent note for clicks in parent-only whitespace', () => {
     const parentNote = { dataset: { noteId: 'parent-note' } };
     const noteChildren = { className: 'note-children' };

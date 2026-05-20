@@ -1,4 +1,10 @@
-export function initializeScrollToTopButton() {
+import {
+    isRhsCalendarPinnedToNewest,
+    scrollRhsCalendarToNewest,
+} from './rhs-panel-service.js';
+
+export function initializeScrollToTopButton(options) {
+    const dependencies = resolveScrollToTopDependencies(options);
     const button = document.getElementById('scroll-to-top-button');
     if (!button) {
         throw new Error('scroll-to-top-button not found');
@@ -11,15 +17,17 @@ export function initializeScrollToTopButton() {
     let activeAnimationFrame = null;
 
     let pendingFrame = null;
-    let lastAtTop = null;
+    let lastDisabled = null;
 
     const syncVisibility = () => {
-        const atTop = window.scrollY <= 0;
-        if (atTop === lastAtTop) {
+        const pageAtTop = window.scrollY <= 0;
+        const calendarPinnedToNewest = dependencies.isCalendarPinnedToNewest();
+        const shouldDisable = pageAtTop && calendarPinnedToNewest;
+        if (shouldDisable === lastDisabled) {
             return;
         }
-        lastAtTop = atTop;
-        button.disabled = atTop;
+        lastDisabled = shouldDisable;
+        button.disabled = shouldDisable;
     };
 
     const scheduleSyncVisibility = () => {
@@ -33,10 +41,20 @@ export function initializeScrollToTopButton() {
     };
 
     window.addEventListener('scroll', scheduleSyncVisibility, { passive: true });
+    const rhsPanel = document.getElementById('rhs-panel');
+    if (rhsPanel !== null) {
+        if (typeof rhsPanel.addEventListener !== 'function') {
+            throw new Error('rhs-panel must support addEventListener');
+        }
+        rhsPanel.addEventListener('scroll', scheduleSyncVisibility, { passive: true });
+    }
 
     button.addEventListener('click', () => {
+        dependencies.scrollCalendarToNewest();
         const startY = window.scrollY;
         if (startY <= 0) {
+            syncVisibility();
+            button.blur();
             return;
         }
 
@@ -52,6 +70,7 @@ export function initializeScrollToTopButton() {
         if (prefersReducedMotion) {
             window.scrollTo(0, 0);
             syncVisibility();
+            button.blur();
             return;
         }
 
@@ -81,4 +100,30 @@ export function initializeScrollToTopButton() {
     });
 
     syncVisibility();
+}
+
+function resolveScrollToTopDependencies(options) {
+    let scrollCalendarToNewest = scrollRhsCalendarToNewest;
+    let isCalendarPinnedToNewest = isRhsCalendarPinnedToNewest;
+    if (options !== undefined) {
+        if (options === null || typeof options !== 'object') {
+            throw new Error('initializeScrollToTopButton options must be an object');
+        }
+        if (Object.prototype.hasOwnProperty.call(options, 'scrollCalendarToNewest')) {
+            if (typeof options.scrollCalendarToNewest !== 'function') {
+                throw new Error('scrollCalendarToNewest option must be a function');
+            }
+            scrollCalendarToNewest = options.scrollCalendarToNewest;
+        }
+        if (Object.prototype.hasOwnProperty.call(options, 'isCalendarPinnedToNewest')) {
+            if (typeof options.isCalendarPinnedToNewest !== 'function') {
+                throw new Error('isCalendarPinnedToNewest option must be a function');
+            }
+            isCalendarPinnedToNewest = options.isCalendarPinnedToNewest;
+        }
+    }
+    return {
+        scrollCalendarToNewest,
+        isCalendarPinnedToNewest,
+    };
 }

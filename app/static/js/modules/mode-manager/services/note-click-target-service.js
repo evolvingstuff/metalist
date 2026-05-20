@@ -11,5 +11,9 @@ export function resolveNonContentNoteSelectionTarget(target) {
         return null;
     }
 
+    if (target.closest('.note-tag-bar')) {
+        return null;
+    }
+
     return target.closest('.note');
 }

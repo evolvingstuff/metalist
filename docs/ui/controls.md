@@ -57,6 +57,7 @@
 - When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
 - The right-side activity calendar defaults to `Created`, with `Updated` available as the second metric. Clicking a day or dragging across days applies a date filter for the active tab; editing the search input clears that date filter.
 - The memory/search contexts overlay is pinned to the lower-left on all screen sizes. The backlinks panel follows that placement so the two overlays stay grouped.
+- Left/right side lanes hide at narrower desktop widths before they can overlap the centered notes column.
 
 ### Search Input Behavior
 - Pressing `Enter` while focused in the search input creates a new **root** note.
@@ -108,7 +109,7 @@
 |--------|--------|
 | Click `+` button | Add new note at top |
 | Click menu (`≡`) button | Open command palette |
-| Click `↑` button | Scroll to the top |
+| Click `↑` button | Scroll the page to the top and jump the right-side calendar to newest activity. The button stays enabled at page top when the calendar is not at newest. |
 | Click note arrow | Toggle collapse/expand note |
 | Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
@@ -116,6 +117,7 @@
 | Click link-mode reference text | Set search input to the referenced UUID and run search |
 | Press `@todo` / `@done` checkbox | Toggle the note status on mouse down. If another note is being edited, save + exit edit mode first and do not enter edit mode for the toggled note. |
 | Press note shell / blank space | Select/edit that note on mouse down. Note content waits until click so drag/drop can disambiguate click vs drag. |
+| Click the tag bar while editing | Focus the tag input without re-selecting the note shell. |
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Once movement crosses the drag threshold, releasing back over the source note does not count as a click. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
 | Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`). Paste actions appear only when a note has been copied. |
