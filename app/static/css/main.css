@@ -2060,6 +2060,10 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     opacity: 1;
 }
 
+.rhs-date-tooltip.is-immediate {
+    transition: none;
+}
+
 .rhs-date-tooltip[hidden] {
     display: none;
 }

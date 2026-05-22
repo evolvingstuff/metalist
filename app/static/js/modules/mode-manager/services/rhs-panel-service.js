@@ -129,7 +129,9 @@ export function scrollRhsCalendarToNewest() {
 }
 
 export function renderRhsPanel() {
-    hideDateTooltip();
+    if (!shouldPreserveEditedNoteDateTooltip()) {
+        hideDateTooltip();
+    }
     const container = document.getElementById('rhs-panel-content');
     if (!(container instanceof HTMLElement)) {
         throw new Error('rhs-panel-content element missing');
@@ -447,7 +449,11 @@ function updateHoveredNoteDateHighlight() {
     if (matchingCell instanceof HTMLElement) {
         scrollHeatmapCellIntoView(matchingCell);
         scheduleHoveredNoteDateHighlight(isoDate, matchingCell);
-        scheduleDateTooltipForCell(isoDate, matchingCell);
+        if (ModeContext.isEditing) {
+            showDateTooltipForCell(isoDate, matchingCell, true);
+        } else {
+            scheduleDateTooltipForCell(isoDate, matchingCell);
+        }
         return;
     }
     scheduleHoveredNoteDateHighlightClear();
@@ -469,6 +475,17 @@ function getEffectiveDateHighlightNoteId() {
         throw new Error('ModeContext.hoveredNoteId must be null or non-empty string');
     }
     return hoveredNoteId;
+}
+
+function shouldPreserveEditedNoteDateTooltip() {
+    if (!ModeContext.isEditing) {
+        return false;
+    }
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId === 'string' && currentNoteId.length > 0) {
+        return true;
+    }
+    throw new Error('ModeContext is editing but currentNoteId is missing');
 }
 
 function scheduleHoveredNoteDateHighlight(isoDate, cell) {
@@ -706,10 +723,11 @@ function showDateTooltip(isoDate, clientX, clientY) {
     showDateTooltipElement(tooltip);
 }
 
-function showDateTooltipForCell(isoDate, cell) {
+function showDateTooltipForCell(isoDate, cell, immediate) {
     if (!(cell instanceof HTMLElement)) {
         throw new Error('Heatmap date tooltip requires a cell element');
     }
+    const shouldShowImmediately = immediate === true;
     if (!isRhsPanelVisible()) {
         hideDateTooltip();
         return;
@@ -717,6 +735,11 @@ function showDateTooltipForCell(isoDate, cell) {
     const rect = cell.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) {
         hideDateTooltip();
+        return;
+    }
+    if (tooltipElement && tooltipElement.textContent === isoDate && tooltipElement.classList.contains('is-visible')) {
+        clearPendingDateTooltip();
+        clearPendingTooltipHide();
         return;
     }
     clearPendingDateTooltip();
@@ -735,7 +758,7 @@ function showDateTooltipForCell(isoDate, cell) {
     const top = aboveTop < DATE_TOOLTIP_TOP_COLLISION_Y_PX ? belowTop : aboveTop;
     tooltip.style.left = `${Math.min(Math.max(minLeft, centeredLeft), maxLeft)}px`;
     tooltip.style.top = `${Math.max(DATE_TOOLTIP_EDGE_MARGIN_PX, top)}px`;
-    showDateTooltipElement(tooltip);
+    showDateTooltipElement(tooltip, shouldShowImmediately);
 }
 
 function scheduleDateTooltipForCell(isoDate, cell) {
@@ -767,6 +790,7 @@ function hideDateTooltip() {
     clearPendingDateTooltip();
     if (tooltipElement) {
         tooltipElement.classList.remove('is-visible');
+        tooltipElement.classList.remove('is-immediate');
         clearPendingTooltipHide();
         const target = tooltipElement;
         pendingTooltipHideTimeout = window.setTimeout(() => {
@@ -787,11 +811,19 @@ function ensureDateTooltipElement() {
     return tooltipElement;
 }
 
-function showDateTooltipElement(tooltip) {
+function showDateTooltipElement(tooltip, immediate) {
     if (!(tooltip instanceof HTMLElement)) {
         throw new Error('showDateTooltipElement requires tooltip element');
     }
     tooltip.hidden = false;
+    if (immediate === true) {
+        tooltip.classList.add('is-immediate');
+        tooltip.classList.add('is-visible');
+        window.requestAnimationFrame(() => {
+            tooltip.classList.remove('is-immediate');
+        });
+        return;
+    }
     window.requestAnimationFrame(() => {
         tooltip.classList.add('is-visible');
     });
