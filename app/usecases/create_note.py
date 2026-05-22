@@ -13,7 +13,8 @@ from app.services.store import store
 from app.services.sync import generate_new_uuid
 
 from app.db.session import begin_writer
-from app.db.notes_sql import insert_note as db_insert_note, update_links as db_update_links
+from app.db.notes_sql import insert_note as db_insert_note
+from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
 from app.security.encryption import encrypt
 
 
@@ -48,9 +49,9 @@ def apply_insert_note(
             updated_at=now,
         )
         if prev_id:
-            db_update_links(connection, prev_id, next_id=note_id, updated_at=now)
+            db_update_links_preserving_updated_at(connection, prev_id, next_id=note_id)
         if next_id:
-            db_update_links(connection, next_id, prev_id=note_id, updated_at=now)
+            db_update_links_preserving_updated_at(connection, next_id, prev_id=note_id)
 
     store.insert_after(
         SimpleNamespace(

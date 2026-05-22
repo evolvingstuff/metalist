@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 import logging
-from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
 from app.usecases.base import QueryCommand
@@ -11,7 +10,7 @@ from app.services.store import store
 from app.services.sync import generate_new_uuid
 
 from app.db.session import begin_writer
-from app.db.notes_sql import update_links as db_update_links
+from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
 
 
 def _neighbors(note_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -39,19 +38,18 @@ def _assert_neighbors(note_id: str, exp_parent: Optional[str], exp_prev: Optiona
 
 
 def apply_move(note_id: str, new_parent_id: Optional[str], prev_id: Optional[str], next_id: Optional[str]) -> None:
-    now = datetime.now(timezone.utc)
     old_parent, old_prev, old_next = _neighbors(note_id)
     with begin_writer() as connection:
         if old_prev:
-            db_update_links(connection, old_prev, next_id=old_next, updated_at=now)
+            db_update_links_preserving_updated_at(connection, old_prev, next_id=old_next)
         if old_next:
-            db_update_links(connection, old_next, prev_id=old_prev, updated_at=now)
+            db_update_links_preserving_updated_at(connection, old_next, prev_id=old_prev)
 
-        db_update_links(connection, note_id, parent_id=new_parent_id, prev_id=prev_id, next_id=next_id, updated_at=now)
+        db_update_links_preserving_updated_at(connection, note_id, parent_id=new_parent_id, prev_id=prev_id, next_id=next_id)
         if prev_id:
-            db_update_links(connection, prev_id, next_id=note_id, updated_at=now)
+            db_update_links_preserving_updated_at(connection, prev_id, next_id=note_id)
         if next_id:
-            db_update_links(connection, next_id, prev_id=note_id, updated_at=now)
+            db_update_links_preserving_updated_at(connection, next_id, prev_id=note_id)
 
     store.move_note(note_id, new_parent_id, prev_id)
 

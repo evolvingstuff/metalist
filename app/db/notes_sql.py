@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Iterable, Optional, Any
 
 from .engine import GuardedConnection
@@ -304,6 +304,56 @@ def update_note_fields(
     conn.execute(sql, tuple(values))
 
 
+def update_note_fields_preserving_updated_at(
+    connection: GuardedConnection | sqlite3.Connection,
+    note_id: str,
+    **updates: Any,
+) -> None:
+    fields: list[str] = []
+    values: list = []
+
+    allowed_fields = {
+        "content",
+        "encryption_nonce",
+        "encryption_tag",
+        "tags",
+        "tags_encryption_nonce",
+        "tags_encryption_tag",
+    }
+
+    for key in updates:
+        if key not in allowed_fields:
+            raise ValueError(f"update_note_fields_preserving_updated_at received unexpected field: {key}")
+
+    if "content" in updates:
+        fields.append("content = ?")
+        values.append(updates["content"])
+    if "encryption_nonce" in updates:
+        fields.append("encryption_nonce = ?")
+        values.append(updates["encryption_nonce"])
+    if "encryption_tag" in updates:
+        fields.append("encryption_tag = ?")
+        values.append(updates["encryption_tag"])
+    if "tags" in updates:
+        fields.append("tags = ?")
+        values.append(updates["tags"])
+    if "tags_encryption_nonce" in updates:
+        fields.append("tags_encryption_nonce = ?")
+        values.append(updates["tags_encryption_nonce"])
+    if "tags_encryption_tag" in updates:
+        fields.append("tags_encryption_tag = ?")
+        values.append(updates["tags_encryption_tag"])
+
+    if len(fields) == 0:
+        raise ValueError("update_note_fields_preserving_updated_at requires at least one field")
+
+    values.append(note_id)
+
+    conn = _conn(connection)
+    sql = f"UPDATE {NOTES_TABLE} SET " + ", ".join(fields) + " WHERE id = ?"
+    conn.execute(sql, tuple(values))
+
+
 def delete_notes(
     connection: GuardedConnection | sqlite3.Connection,
     note_ids: Iterable[str],
@@ -382,8 +432,6 @@ def fetch_all_for_cache(connection: GuardedConnection | sqlite3.Connection) -> l
 
 def clear_encryption_metadata_for_empty_notes(
     connection: GuardedConnection | sqlite3.Connection,
-    *,
-    updated_at: datetime,
 ) -> int:
     """Clear encryption metadata for notes whose content/tags are empty strings.
 
@@ -399,8 +447,7 @@ def clear_encryption_metadata_for_empty_notes(
         SET encryption_nonce = CASE WHEN content = '' THEN NULL ELSE encryption_nonce END,
             encryption_tag = CASE WHEN content = '' THEN NULL ELSE encryption_tag END,
             tags_encryption_nonce = CASE WHEN tags = '' THEN NULL ELSE tags_encryption_nonce END,
-            tags_encryption_tag = CASE WHEN tags = '' THEN NULL ELSE tags_encryption_tag END,
-            updated_at = ?
+            tags_encryption_tag = CASE WHEN tags = '' THEN NULL ELSE tags_encryption_tag END
         WHERE (
             content = ''
             AND encryption_nonce IS NOT NULL
@@ -411,7 +458,6 @@ def clear_encryption_metadata_for_empty_notes(
             AND tags_encryption_tag IS NOT NULL
         )
         """,
-        (_serialize_datetime(updated_at),),
     )
     rowcount = cursor.rowcount
     if rowcount is None:

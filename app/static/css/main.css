@@ -27,7 +27,8 @@
     --rhs-calendar-cell-size: clamp(1px, calc(var(--rhs-calendar-content-width) / 8.75), 16px);
     --rhs-calendar-grid-gap: clamp(0.5px, calc(var(--rhs-calendar-cell-size) * 0.1875), 3px);
     --rhs-calendar-grid-padding: var(--rhs-calendar-grid-gap);
-    --rhs-calendar-toggle-width: min(150px, var(--rhs-calendar-content-width));
+    --rhs-calendar-toggle-button-width: 70px;
+    --rhs-calendar-toggle-height: 34px;
 }
 
 html {
@@ -1847,6 +1848,7 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     flex-direction: column;
     align-items: center;
     width: 100%;
+    padding-top: calc(var(--rhs-calendar-toggle-height) + 8px);
     font-size: 12px;
     color: #4b5563;
 }
@@ -1866,16 +1868,20 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 }
 
 .rhs-metric-toggle {
-    position: sticky;
-    top: 0;
+    position: fixed;
+    top: var(--app-control-top);
+    left: var(--rhs-rail-left);
     z-index: 4;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, var(--rhs-calendar-toggle-button-width)));
+    justify-content: center;
     gap: 2px;
-    width: var(--rhs-calendar-toggle-width);
-    margin: 0 auto 6px;
-    padding: 0 0 3px;
+    width: var(--side-rail-active-width);
+    height: var(--rhs-calendar-toggle-height);
+    margin: 0;
+    padding: 0 var(--side-rail-scrollbar-width) 5px 0;
     background: #ffffff;
+    box-sizing: border-box;
 }
 
 .rhs-metric-button {

@@ -19,7 +19,7 @@ from app.db.notes_sql import (
     fetch_children_ordered,
     fetch_note,
     insert_note,
-    update_links,
+    update_links_preserving_updated_at,
 )
 from app.models.database import SafeSession
 from app.utils.text_utils import strip_html
@@ -171,18 +171,15 @@ def _deserialize_note_recursive(db: SafeSession, note_data: Dict[str, Any], new_
             
             # Update prev_id and next_id to maintain sibling order
             if previous_child_id:
-                updated_at = datetime.now(timezone.utc)
-                update_links(
+                update_links_preserving_updated_at(
                     db.connection(),
                     new_child_id,
                     prev_id=previous_child_id,
-                    updated_at=updated_at,
                 )
-                update_links(
+                update_links_preserving_updated_at(
                     db.connection(),
                     previous_child_id,
                     next_id=new_child_id,
-                    updated_at=updated_at,
                 )
                 if note_store.loaded:
                     new_child_record = note_store.get_note(new_child_id)
@@ -304,18 +301,15 @@ def _copy_note_recursive(
         new_child_id = _copy_note_recursive(db, child_row, new_id)
 
         if previous_child_id:
-            updated_at = datetime.now(timezone.utc)
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 new_child_id,
                 prev_id=previous_child_id,
-                updated_at=updated_at,
             )
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 previous_child_id,
                 next_id=new_child_id,
-                updated_at=updated_at,
             )
 
             if note_store.loaded:

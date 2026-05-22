@@ -56,7 +56,6 @@ import uuid
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 import os
-from datetime import datetime, timezone
 from urllib.parse import parse_qsl
 from urllib.parse import urlencode
 from urllib.parse import urlsplit
@@ -191,10 +190,7 @@ else:
     # Populate content cache on startup
     repair_start = time.perf_counter()
     with begin_writer() as connection:
-        repaired = clear_encryption_metadata_for_empty_notes(
-            connection,
-            updated_at=datetime.now(timezone.utc),
-        )
+        repaired = clear_encryption_metadata_for_empty_notes(connection)
     if repaired:
         logger.info(
             f"[startup] repaired {repaired} empty encrypted notes (cleared nonce/tag)"

@@ -1,8 +1,7 @@
-from datetime import datetime, timezone
 from typing import Optional
 from types import SimpleNamespace
 
-from app.db.notes_sql import fetch_children_ordered, fetch_note, update_links
+from app.db.notes_sql import fetch_children_ordered, fetch_note, update_links_preserving_updated_at
 from app.models.database import SafeSession
 from .enums import MovePosition
 from ..services.note_store import store as note_store
@@ -71,30 +70,25 @@ class ListOperations:
             target_rows = fetch_children_ordered(db.connection(), new_parent_id)
         target_notes = [SimpleNamespace(**row) for row in target_rows]
 
-        updated_at = datetime.now(timezone.utc)
-
         if old_prev_id:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 old_prev_id,
                 next_id=old_next_id,
-                updated_at=updated_at,
             )
         if old_next_id:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 old_next_id,
                 prev_id=old_prev_id,
-                updated_at=updated_at,
             )
 
-        update_links(
+        update_links_preserving_updated_at(
             db.connection(),
             note_id,
             parent_id=new_parent_id,
             prev_id=None,
             next_id=None,
-            updated_at=updated_at,
         )
 
         if sibling_id is None:
@@ -104,17 +98,15 @@ class ListOperations:
                     "Integrity failure: target sibling list has no head (prev_id is NULL)"
                 )
             existing_head = heads[0]
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 existing_head.id,
                 prev_id=note_id,
-                updated_at=updated_at,
             )
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 note_id,
                 next_id=existing_head.id,
-                updated_at=updated_at,
             )
             return
 
@@ -127,46 +119,40 @@ class ListOperations:
             raise ValueError("Sibling must have the same parent")
 
         if position == MovePosition.BEFORE:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 note_id,
                 prev_id=sibling.prev_id,
                 next_id=sibling_id,
-                updated_at=updated_at,
             )
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 sibling_id,
                 prev_id=note_id,
-                updated_at=updated_at,
             )
             if sibling.prev_id:
-                update_links(
+                update_links_preserving_updated_at(
                     db.connection(),
                     sibling.prev_id,
                     next_id=note_id,
-                    updated_at=updated_at,
                 )
         else:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 note_id,
                 prev_id=sibling_id,
                 next_id=sibling.next_id,
-                updated_at=updated_at,
             )
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 sibling_id,
                 next_id=note_id,
-                updated_at=updated_at,
             )
             if sibling.next_id:
-                update_links(
+                update_links_preserving_updated_at(
                     db.connection(),
                     sibling.next_id,
                     prev_id=note_id,
-                    updated_at=updated_at,
                 )
 
 
@@ -242,8 +228,7 @@ def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: li
         if not (changed_parent or changed_prev or changed_next):
             continue
 
-        updated_at = datetime.now(timezone.utc)
-        kwargs = {"updated_at": updated_at}
+        kwargs = {}
         if changed_parent:
             kwargs["parent_id"] = parent_id
         if changed_prev:
@@ -251,7 +236,7 @@ def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: li
         if changed_next:
             kwargs["next_id"] = next_id
 
-        update_links(db.connection(), current_id, **kwargs)
+        update_links_preserving_updated_at(db.connection(), current_id, **kwargs)
 
         updates.append(
             SimpleNamespace(
@@ -259,7 +244,7 @@ def _apply_order_with_store(db: SafeSession, parent_id: Optional[str], order: li
                 parent_id=parent_id,
                 prev_id=prev_id,
                 next_id=next_id,
-                updated_at=updated_at,
+                updated_at=record.updated_at,
             )
         )
 

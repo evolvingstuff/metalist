@@ -19,7 +19,8 @@ from app.config import (
     VAULT_VERSION,
 )
 from app.db.session import begin_writer
-from app.db.notes_sql import fetch_all_for_cache, update_note_fields
+from app.db.notes_sql import fetch_all_for_cache
+from app.db.notes_sql import update_note_fields_preserving_updated_at
 from app.db.ontology_rules_sql import fetch_all_rules as fetch_all_ontology_rules
 from app.db.ontology_rules_sql import update_rule as update_ontology_rule
 from app.db.settings_sql import (
@@ -289,8 +290,7 @@ class AuthService:
                             }
                         )
 
-                    update_payload["updated_at"] = datetime.now(timezone.utc)
-                    update_note_fields(connection, note_id, **update_payload)
+                    update_note_fields_preserving_updated_at(connection, note_id, **update_payload)
                     encrypted_count += 1
 
                 with SafeSession.allow_reads("auth:set_password:fetch_ontology_rules"):
@@ -565,8 +565,8 @@ class AuthService:
                         )
                         cache_tag_updates[note_id] = tags_plaintext
 
-                    update_payload["updated_at"] = datetime.now(timezone.utc)
-                    update_note_fields(connection, note_id, **update_payload)
+                    if update_payload:
+                        update_note_fields_preserving_updated_at(connection, note_id, **update_payload)
                     decrypted_count += 1
 
                 with SafeSession.allow_reads("auth:remove_password:fetch_ontology_rules"):

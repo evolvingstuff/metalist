@@ -8,7 +8,7 @@ from app.db.notes_sql import (
     fetch_children_ordered,
     fetch_note,
     insert_note,
-    update_links,
+    update_links_preserving_updated_at,
     update_note_content,
 )
 from app.models.database import SafeSession
@@ -72,11 +72,10 @@ class NoteCRUD:
         cache_note_text(note_id, content_text)
 
         if next_id:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 next_id,
                 prev_id=note_id,
-                updated_at=timestamp,
             )
 
         if note_store.loaded:
@@ -197,15 +196,13 @@ class NoteCRUD:
             print(f"[notes.delete] ids_to_delete count={len(ids_to_delete)}")
 
             timings: dict[str, float] = {}
-            updated_at = datetime.now(timezone.utc)
 
             neighbor_start = time.perf_counter()
             if record.prev_id:
-                update_links(
+                update_links_preserving_updated_at(
                     db.connection(),
                     record.prev_id,
                     next_id=record.next_id,
-                    updated_at=updated_at,
                 )
                 prev_record = note_store.get_note(record.prev_id)
                 note_store.update_metadata_from_db(
@@ -222,11 +219,10 @@ class NoteCRUD:
                 )
 
             if record.next_id:
-                update_links(
+                update_links_preserving_updated_at(
                     db.connection(),
                     record.next_id,
                     prev_id=record.prev_id,
-                    updated_at=updated_at,
                 )
                 next_record = note_store.get_note(record.next_id)
                 note_store.update_metadata_from_db(
@@ -284,21 +280,17 @@ class NoteCRUD:
 
         prev_id = note["prev_id"]
         next_id = note["next_id"]
-        updated_at = datetime.now(timezone.utc)
-
         if prev_id:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 prev_id,
                 next_id=next_id,
-                updated_at=updated_at,
             )
         if next_id:
-            update_links(
+            update_links_preserving_updated_at(
                 db.connection(),
                 next_id,
                 prev_id=prev_id,
-                updated_at=updated_at,
             )
 
         delete_notes(db.connection(), [note_id])

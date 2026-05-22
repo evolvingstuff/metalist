@@ -12,7 +12,7 @@ from app.db.session import begin_writer
 from app.db.notes_sql import (
     delete_notes as db_delete_notes,
     insert_note as db_insert_note,
-    update_links as db_update_links,
+    update_links_preserving_updated_at as db_update_links_preserving_updated_at,
 )
 from app.security.encryption import encrypt
 
@@ -63,11 +63,10 @@ def apply_delete_subtree(note_id: str) -> None:
 
     with begin_writer() as connection:
         # Relink neighbors
-        now = datetime.now(timezone.utc)
         if prev_id:
-            db_update_links(connection, prev_id, next_id=next_id, updated_at=now)
+            db_update_links_preserving_updated_at(connection, prev_id, next_id=next_id)
         if next_id:
-            db_update_links(connection, next_id, prev_id=prev_id, updated_at=now)
+            db_update_links_preserving_updated_at(connection, next_id, prev_id=prev_id)
         # Delete subtree
         db_delete_notes(connection, ids_to_delete)
 
@@ -88,6 +87,9 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
             created_at = rec.created_at
             if created_at is None:
                 created_at = now
+            updated_at = rec.updated_at
+            if updated_at is None:
+                updated_at = now
             db_insert_note(
                 connection,
                 note_id=rec.id,
@@ -102,13 +104,13 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
                 next_id=rec.next_id,
                 is_collapsed=rec.is_collapsed,
                 created_at=created_at,
-                updated_at=now,
+                updated_at=updated_at,
             )
             # Update neighbor links around this node
             if rec.prev_id:
-                db_update_links(connection, rec.prev_id, next_id=rec.id, updated_at=now)
+                db_update_links_preserving_updated_at(connection, rec.prev_id, next_id=rec.id)
             if rec.next_id:
-                db_update_links(connection, rec.next_id, prev_id=rec.id, updated_at=now)
+                db_update_links_preserving_updated_at(connection, rec.next_id, prev_id=rec.id)
 
     # Update in-memory store after commit
     store.restore_subtree(records)

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from app.db.session import begin_writer
-from app.db.notes_sql import update_note_fields as db_update_note_fields
+from app.db.notes_sql import update_note_fields_preserving_updated_at as db_update_note_fields_preserving_updated_at
 from app.db.settings_sql import fetch_settings
 from app.security.encryption import is_encryption_available, encrypt
 from app.services.content_cache import cache_note_tags
@@ -42,8 +41,6 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
             continue
         updates.append((note_id, record.content, updated))
 
-    now = datetime.now(timezone.utc)
-
     with begin_writer() as connection:
         settings = fetch_settings(connection)
         encryption_enabled = False
@@ -58,18 +55,20 @@ def apply_rename_tag_everywhere(*, old: str, new: str, token: str) -> dict:
             if (tags_nonce is None) != (tags_tag is None):
                 raise RuntimeError('Encrypted tags must include both nonce and tag')
 
-            db_update_note_fields(
+            db_update_note_fields_preserving_updated_at(
                 connection,
                 note_id,
                 tags=tags_ciphertext,
                 tags_encryption_nonce=tags_nonce,
                 tags_encryption_tag=tags_tag,
-                updated_at=now,
             )
 
     for note_id, content, tags in updates:
+        record = store.get(note_id)
+        if record.updated_at is None:
+            raise RuntimeError(f"Cannot preserve missing updated_at while renaming tag: {note_id}")
         cache_note_tags(note_id, tags)
-        store.update_content_and_tags(note_id, content, tags, updated_at=now)
+        store.update_content_and_tags(note_id, content, tags, updated_at=record.updated_at)
 
     view_cache.clear()
     update_uuid = generate_new_uuid()

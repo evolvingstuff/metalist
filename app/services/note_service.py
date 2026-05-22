@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Optional
 from fastapi import HTTPException
 import uuid
@@ -11,7 +10,7 @@ from ..models.enums import MovePosition
 from ..models.utils import copy_note
 from .integrity import count_subtree
 from .sync_state import generate_new_uuid, set_server_sync_uuid
-from app.db.notes_sql import update_links
+from app.db.notes_sql import update_links_preserving_updated_at
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +78,10 @@ class NoteService(BaseTransactionService):
         self._set_operation("set_note_collapse")
         assert self.client_id, "set_note_collapse requires client_id"
         self.expect_note_delta(0)
-        update_links(
+        update_links_preserving_updated_at(
             self.db.connection(),
             note_id,
             is_collapsed=desired_state,
-            updated_at=datetime.now(timezone.utc),
         )
 
         from .note_store import store as note_store
