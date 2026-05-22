@@ -23,7 +23,8 @@
 - The global `↑` button also jumps the calendar back to newest activity; it remains enabled at page top when the calendar is scrolled away from newest.
 - The heatmap uses current search context and counts matching notes, including child notes, so searching `journal` shows activity for matching `journal` notes throughout the tree.
 - Each visible month keeps the calendar-shaped outline; boundary months render inactive days before the first active day, and the newest partial week is padded with inactive cells so the outline stays contiguous.
-- Hovering notes scrolls the matching date into view immediately, while the date tooltip and green calendar-cell hover fill delay/fade in to avoid peripheral flashes during quick mouse movement; direct calendar hover/focus uses the same green transient cell highlight.
+- Hovering notes scrolls the matching date into view immediately. The note-driven green calendar-cell highlight appears and clears instantly, while the date tooltip still delays/fades in for non-edit hover movement.
+- An actively edited note counts as the effective hovered note for the calendar. Its matching date stays highlighted while editing, and its date tooltip appears immediately instead of using the hover delay.
 
 ## Right-Click Controls
 - Right-click the left lane to show/hide tabs.
