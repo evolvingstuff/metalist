@@ -22,8 +22,6 @@ let latestRefreshRequestId = 0;
 let pendingTooltipTimeout = null;
 let pendingTooltipSignature = null;
 let pendingTooltipHideTimeout = null;
-let pendingHoveredDateHighlightTimeout = null;
-let pendingHoveredDateHighlightSignature = null;
 let pendingHoveredDateHighlightClearTimeout = null;
 
 const ACTIVITY_REFRESH_DEBOUNCE_MS = 75;
@@ -42,7 +40,7 @@ export function initializeRhsPanel() {
     attachPointerListeners();
     attachPanelScrollListener();
     ModeContext.addListener((property) => {
-        if (property === 'hoveredNoteId') {
+        if (property === 'hoveredNoteId' || property === 'currentNoteId' || property === 'editing') {
             updateHoveredNoteDateHighlight();
         }
         if (property === 'activeTab') {
@@ -425,29 +423,24 @@ function updateDragPreview() {
 
 function updateHoveredNoteDateHighlight() {
     if (!isRhsPanelVisible()) {
-        scheduleHoveredNoteDateHighlightClear();
+        clearHoveredNoteDateHighlight();
         hideDateTooltip();
         return;
     }
-    const hoveredNoteId = ModeContext.hoveredNoteId;
-    if (hoveredNoteId === null) {
+    const noteId = getEffectiveDateHighlightNoteId();
+    if (noteId === null) {
         scheduleHoveredNoteDateHighlightClear();
-        hideDateTooltip();
         return;
     }
-    if (typeof hoveredNoteId !== 'string' || hoveredNoteId.length === 0) {
-        throw new Error('ModeContext.hoveredNoteId must be null or non-empty string');
-    }
-    const noteElement = document.querySelector(`.note[data-note-id="${hoveredNoteId}"]`);
+    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
     if (!(noteElement instanceof HTMLElement)) {
         scheduleHoveredNoteDateHighlightClear();
-        hideDateTooltip();
         return;
     }
     const metadata = parseMetadata(noteElement);
     const timestamp = metric === DATE_FILTER_METRICS.CREATED ? metadata.createdAt : metadata.updatedAt;
     if (typeof timestamp !== 'string' || timestamp.length < 10) {
-        throw new Error(`Hovered note ${hoveredNoteId} missing ${metric} timestamp metadata`);
+        throw new Error(`Date highlight note ${noteId} missing ${metric} timestamp metadata`);
     }
     const isoDate = timestamp.slice(0, 10);
     const matchingCell = document.querySelector(`.rhs-heatmap-cell[data-date="${isoDate}"]`);
@@ -458,22 +451,34 @@ function updateHoveredNoteDateHighlight() {
         return;
     }
     scheduleHoveredNoteDateHighlightClear();
-    hideDateTooltip();
+}
+
+function getEffectiveDateHighlightNoteId() {
+    if (ModeContext.isEditing) {
+        const currentNoteId = ModeContext.currentNoteId;
+        if (typeof currentNoteId === 'string' && currentNoteId.length > 0) {
+            return currentNoteId;
+        }
+        throw new Error('ModeContext is editing but currentNoteId is missing');
+    }
+    const hoveredNoteId = ModeContext.hoveredNoteId;
+    if (hoveredNoteId === null) {
+        return null;
+    }
+    if (typeof hoveredNoteId !== 'string' || hoveredNoteId.length === 0) {
+        throw new Error('ModeContext.hoveredNoteId must be null or non-empty string');
+    }
+    return hoveredNoteId;
 }
 
 function scheduleHoveredNoteDateHighlight(isoDate, cell) {
     if (typeof isoDate !== 'string' || isoDate.length === 0) {
-        throw new Error('Delayed heatmap date highlight requires an ISO date');
+        throw new Error('Heatmap date highlight requires an ISO date');
     }
     if (!(cell instanceof HTMLElement)) {
-        throw new Error('Delayed heatmap date highlight requires a cell element');
+        throw new Error('Heatmap date highlight requires a cell element');
     }
     clearPendingHoveredDateHighlightClear();
-    const signature = `${isoDate}:${cell.dataset.date}`;
-    if (pendingHoveredDateHighlightTimeout !== null && pendingHoveredDateHighlightSignature === signature) {
-        return;
-    }
-    clearPendingHoveredDateHighlight();
     const highlightedCells = document.querySelectorAll('.rhs-heatmap-cell.is-note-hovered-date');
     for (const highlightedCell of highlightedCells) {
         if (highlightedCell !== cell) {
@@ -483,18 +488,7 @@ function scheduleHoveredNoteDateHighlight(isoDate, cell) {
     if (cell.classList.contains('is-note-hovered-date')) {
         return;
     }
-    pendingHoveredDateHighlightSignature = signature;
-    pendingHoveredDateHighlightTimeout = window.setTimeout(() => {
-        pendingHoveredDateHighlightTimeout = null;
-        pendingHoveredDateHighlightSignature = null;
-        if (!isRhsPanelVisible()) {
-            return;
-        }
-        if (cell.dataset.date !== isoDate) {
-            return;
-        }
-        cell.classList.add('is-note-hovered-date');
-    }, NOTE_HOVER_TOOLTIP_DELAY_MS);
+    cell.classList.add('is-note-hovered-date');
 }
 
 function scheduleHoveredNoteDateHighlightClear() {
@@ -504,24 +498,16 @@ function scheduleHoveredNoteDateHighlightClear() {
     pendingHoveredDateHighlightClearTimeout = window.setTimeout(() => {
         pendingHoveredDateHighlightClearTimeout = null;
         clearHoveredNoteDateHighlight();
+        hideDateTooltip();
     }, NOTE_HOVER_HIGHLIGHT_CLEAR_GRACE_MS);
 }
 
 function clearHoveredNoteDateHighlight() {
-    clearPendingHoveredDateHighlight();
     clearPendingHoveredDateHighlightClear();
     const cells = document.querySelectorAll('.rhs-heatmap-cell[data-date]');
     for (const cell of cells) {
         cell.classList.remove('is-note-hovered-date');
     }
-}
-
-function clearPendingHoveredDateHighlight() {
-    if (pendingHoveredDateHighlightTimeout !== null) {
-        window.clearTimeout(pendingHoveredDateHighlightTimeout);
-        pendingHoveredDateHighlightTimeout = null;
-    }
-    pendingHoveredDateHighlightSignature = null;
 }
 
 function clearPendingHoveredDateHighlightClear() {
@@ -764,6 +750,8 @@ function scheduleDateTooltipForCell(isoDate, cell) {
         return;
     }
     if (tooltipElement && tooltipElement.textContent === isoDate && tooltipElement.classList.contains('is-visible')) {
+        clearPendingDateTooltip();
+        clearPendingTooltipHide();
         return;
     }
     hideDateTooltip();
