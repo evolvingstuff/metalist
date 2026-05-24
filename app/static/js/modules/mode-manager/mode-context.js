@@ -198,6 +198,9 @@ class ModeContext {
         const normalized = typeof query === 'string' ? query : '';
         this._assertStateChanged('executedSearchQuery', this._tabExecutedSearchQuery[targetTabId], normalized);
         this._tabExecutedSearchQuery[targetTabId] = normalized;
+        if (targetTabId === this._activeTabId) {
+            this._notifyListeners('executedSearchQuery', normalized);
+        }
         return this;
     }
 

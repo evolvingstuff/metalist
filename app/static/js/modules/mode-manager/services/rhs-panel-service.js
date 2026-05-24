@@ -48,7 +48,7 @@ export function initializeRhsPanel() {
             shouldScrollToNewest = ModeContext.activeTabCalendarScrollState.pinnedToNewest;
             scheduleRhsActivityRefresh({ preserveScroll: false });
         }
-        if (property === 'searchQuery') {
+        if (property === 'executedSearchQuery') {
             scheduleRhsActivityRefresh({ preserveScroll: false });
         }
     });
@@ -87,7 +87,10 @@ export async function refreshRhsActivity(options) {
     const panelScrollTop = preserveScroll ? getRhsPanelScrollTop() : null;
     metric = ModeContext.activeTabCalendarMetric;
     const activeTabId = ModeContext.activeTabId;
-    const searchQuery = typeof ModeContext.searchQuery === 'string' ? ModeContext.searchQuery : '';
+    const searchQuery = ModeContext.getExecutedSearchQuery(activeTabId);
+    if (typeof searchQuery !== 'string') {
+        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
+    }
     const requestId = latestRefreshRequestId + 1;
     latestRefreshRequestId = requestId;
     const nextActivityPayload = await NotesAPI.fetchActivity(searchQuery, metric, activeTabId);

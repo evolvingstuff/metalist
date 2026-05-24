@@ -60,6 +60,7 @@ from app.services.search_history import (
 )
 from app.services.root_sorting import is_root_reorder_locked
 from app.services.root_sorting import normalize_sort_mode
+from app.services.search_query import parse_search_query
 from app.services.html_export import build_notes_export_document
 from app.services.html_export import build_notes_export_filename
 from app.services.search_index import search_index
@@ -166,7 +167,6 @@ def view_diff(payload: dict):
 
     sort_mode = _resolve_tab_sort_mode(tab_id)
     date_filter = _resolve_tab_date_filter(tab_id)
-    maybe_reset_on_context(client_id, undo_context)
 
     if not isinstance(client_note_uuid_hashes, dict):
         raise TypeError("clientNoteUuidHashes must be an object")
@@ -174,6 +174,17 @@ def view_diff(payload: dict):
     normalized_search = search
     if isinstance(normalized_search, str) and normalized_search == "":
         normalized_search = None
+    if normalized_search is not None:
+        if not isinstance(normalized_search, str):
+            raise HTTPException(status_code=400, detail="search must be a string or null")
+        capture = CapturedExceptionContext(ValueError)
+        with capture:
+            parse_search_query(normalized_search)
+        if capture.captured_exception is not None:
+            exc = capture.captured_exception
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    maybe_reset_on_context(client_id, undo_context)
 
     normalized_editing_note_id = editing_note_id
     if isinstance(normalized_editing_note_id, str) and normalized_editing_note_id == "":
@@ -440,8 +451,17 @@ def notes_activity(payload: dict) -> Dict[str, object]:
     if isinstance(normalized_search, str) and normalized_search == "":
         normalized_search = None
     if normalized_search is not None and not isinstance(normalized_search, str):
-        raise TypeError("search must be a string or null")
-    return build_activity_summary(search=normalized_search, sort_mode=sort_mode, metric=metric)
+        raise HTTPException(status_code=400, detail="search must be a string or null")
+    capture = CapturedExceptionContext(TypeError, ValueError)
+    response: Dict[str, object] | None = None
+    with capture:
+        response = build_activity_summary(search=normalized_search, sort_mode=sort_mode, metric=metric)
+    if capture.captured_exception is not None:
+        exc = capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if response is None:
+        raise RuntimeError("build_activity_summary returned no value")
+    return response
 
 
 @router.post("/notes/tab-state/new-tab")

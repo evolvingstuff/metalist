@@ -118,7 +118,7 @@ export function handleSearchInput(event) {
                 ModeContext.setRootAnchorId(null);
             }
             // Refresh the view with the search query (let errors crash)
-            await actionRefreshAndMaybeSelect({});
+            await actionRefreshAndMaybeSelect({ context: 'search' });
             await recordSearchExecutionInteractionIfEligible(currentSearch);
             primeActiveSearchInteractionState();
         });
@@ -165,9 +165,10 @@ export async function initializeSearchEvents() {
     const initialQueryLogValue = analysis.normalizedText.length > 0 ? analysis.normalizedText : 'none';
     Logger.logAction('initialPageLoad', { searchQuery: initialQueryLogValue });
 
+    const initialExecutableQuery = analysis.isComplete ? analysis.normalizedText : analysis.sanitizedText;
     // The default executed query is empty, so initial empty searches do not need a setter call.
-    if (ModeContext.getExecutedSearchQuery() !== analysis.normalizedText) {
-        ModeContext.setExecutedSearchQuery(analysis.normalizedText);
+    if (ModeContext.getExecutedSearchQuery() !== initialExecutableQuery) {
+        ModeContext.setExecutedSearchQuery(initialExecutableQuery);
     }
     const initResult = await CommandGate.run('search.init_view', async () => {
         await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'init search' });

@@ -63,6 +63,25 @@ test('ModeContext scalar setters reject same-value writes', async (t) => {
     );
 });
 
+test('ModeContext notifies listeners when an executable search query is committed', async (t) => {
+    installModeContextGlobals(t);
+    const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');
+    const notifications = [];
+    const listener = (property, value) => {
+        notifications.push({ property, value });
+    };
+    ModeContext.addListener(listener);
+    t.after(() => {
+        ModeContext.removeListener(listener);
+    });
+
+    ModeContext.setExecutedSearchQuery('committed-search-test');
+
+    assert.deepEqual(notifications, [
+        { property: 'executedSearchQuery', value: 'committed-search-test' },
+    ]);
+});
+
 test('ModeContext modal stack uses strict mutators instead of direct array mutation', async (t) => {
     installModeContextGlobals(t);
     const { ModeContextInstance: ModeContext } = await import('../../app/static/js/modules/mode-manager/mode-context.js');

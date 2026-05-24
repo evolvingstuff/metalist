@@ -185,7 +185,10 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
     }
     const requestTabId = ModeContext.activeTabId;
-    const requestSearchQuery = ModeContext.searchQuery;
+    const requestSearchQuery = ModeContext.getExecutedSearchQuery(requestTabId);
+    if (typeof requestSearchQuery !== 'string') {
+        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
+    }
     const requireExecution = options.requireExecution === true;
     const resetViewCacheBeforeFetch = options.resetViewCacheBeforeFetch === true;
     const scrollToTopAfterRender = options.scrollToTopAfterRender === true;
@@ -384,6 +387,8 @@ export async function actionRefreshAndMaybeSelect(options) {
         await refreshBacklinksPanel({});
         if (context === 'dateFilter') {
             await refreshRhsActivity({ preserveScroll: true });
+        } else if (context === 'search') {
+            // The calendar refresh is triggered when the search handler commits an executable query.
         } else {
             scheduleRhsActivityRefresh({ preserveScroll: false });
         }

@@ -46,13 +46,12 @@ function captureUndoContext() {
         throw new Error('ModeContext.undoContextEpoch must be a non-negative integer');
     }
 
-    const searchQuery = ModeContext.searchQuery;
-    if (searchQuery !== null && typeof searchQuery !== 'string') {
-        throw new Error('ModeContext.searchQuery must be a string or null');
+    const searchQuery = ModeContext.getExecutedSearchQuery(tabId);
+    if (typeof searchQuery !== 'string') {
+        throw new Error('ModeContext.getExecutedSearchQuery() must return a string');
     }
 
-    const normalizedSearch = searchQuery === null ? '' : searchQuery;
-    return `tab:${tabId}|search:${normalizedSearch}|epoch:${epoch}`;
+    return `tab:${tabId}|search:${searchQuery}|epoch:${epoch}`;
 }
 
 export const NotesAPI = {
