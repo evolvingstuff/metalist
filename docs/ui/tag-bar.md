@@ -52,6 +52,9 @@ Examples (autocorrected while typing):
   - `@todo` renders an unchecked box icon; pressing the icon toggles the tag to `@done` on mouse down.
   - `@done` renders a checked box icon; pressing the icon toggles the tag to `@todo` on mouse down.
   - If another note is being edited, pressing a status icon saves and exits that edit session before toggling, without selecting the toggled note for editing.
+- Image meta tag:
+  - `@image` is inferred dynamically for search when note content contains inline image markup, a Markdown image link, or an embedded file reference whose attachment metadata is an image.
+  - The tag is search-only; it is not persisted in the note's tag bar and does not change note rendering.
 - Markdown meta tags:
   - `@markdown` renders note content as Markdown on the server in view mode.
 - LaTeX meta tags:

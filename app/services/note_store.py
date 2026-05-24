@@ -20,14 +20,19 @@ from app.db.notes_sql import fetch_all_for_cache
 
 from app.models.database import SafeSession
 from app.services.content_cache import get_cached_content, get_cached_tags
+from app.services.file_registry import file_registry
 from app.services.hydration_state import hydration_state
+from app.services.note_image_tags import infer_image_tag_terms
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import SearchRecord, extract_tags_for_search, search_index
 from app.utils.text_utils import strip_html
 
 
-def _derive_own_tag_terms(tags: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
-    tag_terms = extract_tags_for_search(tags)
+def _derive_own_tag_terms(*, tags: str, content_html: str) -> tuple[FrozenSet[str], FrozenSet[str]]:
+    tag_terms = extract_tags_for_search(tags) | infer_image_tag_terms(
+        content_html=content_html,
+        is_image_file=file_registry.has_image_file,
+    )
     non_meta_tag_terms = frozenset(term for term in tag_terms if not term.startswith("@"))
     return tag_terms, non_meta_tag_terms
 
@@ -264,7 +269,10 @@ class NoteStore:
                 plaintext = get_cached_content(note.id)
                 tags = get_cached_tags(note.id)
                 content_text_by_id[note.id] = strip_html(plaintext)
-                tag_terms, non_meta_tag_terms = _derive_own_tag_terms(tags)
+                tag_terms, non_meta_tag_terms = _derive_own_tag_terms(
+                    tags=tags,
+                    content_html=plaintext,
+                )
 
                 note_map[note.id] = NoteRecord(
                     id=note.id,
@@ -498,7 +506,10 @@ class NoteStore:
     def add_note_from_db(self, note: SimpleNamespace, plaintext: str, tags: str) -> None:
         if not self._loaded:
             return
-        tag_terms, non_meta_tag_terms = _derive_own_tag_terms(tags)
+        tag_terms, non_meta_tag_terms = _derive_own_tag_terms(
+            tags=tags,
+            content_html=plaintext,
+        )
         effective_tag_terms: FrozenSet[str] | None = None
         content_text = strip_html(plaintext)
         with self._lock:
@@ -560,7 +571,10 @@ class NoteStore:
             if not current:
                 return
             tags_changed = current.tags != tags
-            tag_terms, non_meta_tag_terms = _derive_own_tag_terms(tags)
+            tag_terms, non_meta_tag_terms = _derive_own_tag_terms(
+                tags=tags,
+                content_html=plaintext,
+            )
             updated = NoteRecord(
                 id=note.id,
                 parent_id=current.parent_id,

@@ -12,7 +12,6 @@ from typing import Optional
 from app.db.file_session import begin_file_writer, connect_file_reader, resolve_file_database_path
 from app.db.files_sql import (
     delete_files,
-    fetch_all_file_ids,
     fetch_all_files,
     fetch_file,
     insert_file,
@@ -66,8 +65,48 @@ def bootstrap_file_registry() -> set[str]:
     with begin_file_writer():
         pass
     with connect_file_reader() as connection:
-        file_ids = set(fetch_all_file_ids(connection))
-    file_registry.replace_all(file_ids)
+        rows = list(fetch_all_files(connection))
+    file_ids: set[str] = set()
+    thumbnail_kinds_by_id: dict[str, str] = {}
+    encryption_service = _resolve_encryption_service(None)
+    can_decrypt_encrypted_metadata = _coerce_encryption_service(encryption_service) is not None
+    for row in rows:
+        file_id = row["id"]
+        if not isinstance(file_id, str) or file_id == "":
+            raise TypeError(f"files.id must be a non-empty string, got {file_id!r}")
+        file_ids.add(file_id)
+        metadata_has_encryption = _field_has_encryption(
+            nonce=row["metadata_encryption_nonce"],
+            tag=row["metadata_encryption_tag"],
+            file_id=file_id,
+            field_name="metadata_json",
+        )
+        if metadata_has_encryption and not can_decrypt_encrypted_metadata:
+            file_ids = set()
+            for id_row in rows:
+                row_file_id = id_row["id"]
+                if not isinstance(row_file_id, str) or row_file_id == "":
+                    raise TypeError(f"files.id must be a non-empty string, got {row_file_id!r}")
+                file_ids.add(row_file_id)
+            file_registry.replace_all(file_ids)
+            return file_ids
+        metadata_json = _decrypt_text_field(
+            encryption_service=encryption_service,
+            value=row["metadata_json"],
+            nonce=row["metadata_encryption_nonce"],
+            tag=row["metadata_encryption_tag"],
+            field_name="metadata_json",
+            file_id=file_id,
+        )
+        metadata = _parse_file_metadata(metadata_json, file_id=file_id)
+        thumbnail_kind = metadata["thumbnail_kind"]
+        if not isinstance(thumbnail_kind, str) or thumbnail_kind == "":
+            raise TypeError(f"files.metadata_json thumbnail_kind invalid for file {file_id}")
+        thumbnail_kinds_by_id[file_id] = thumbnail_kind
+    if len(thumbnail_kinds_by_id) == len(file_ids):
+        file_registry.replace_all_with_thumbnail_kinds(thumbnail_kinds_by_id)
+    else:
+        file_registry.replace_all(file_ids)
     return file_ids
 
 
@@ -132,7 +171,7 @@ def create_file(
             updated_at=now,
         )
 
-    file_registry.add(file_id)
+    file_registry.add_with_thumbnail_kind(file_id, thumbnail_kind=metadata["thumbnail_kind"])
     return FileReferenceRecord(
         id=file_id,
         title=title,
