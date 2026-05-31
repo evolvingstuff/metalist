@@ -18,6 +18,7 @@ from app.services.namespace_switcher import delete_current_namespace
 from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_switcher import open_or_launch_all_namespaces
+from app.services.namespace_switcher import save_namespace_port_profiles
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import _probe_namespace_status
 
@@ -183,6 +184,91 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
     assert saved_profile.port == 8123
     assert saved_profile.https_port is None
     assert saved_profile.mcp_port == 8766
+
+
+def test_save_namespace_port_profiles_updates_without_launching(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="cla",
+        port=8001,
+        https_port=None,
+        mcp_port=8766,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_launch_namespace_process",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("_launch_namespace_process should not be called")),
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_restart_running_namespace_process",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("_restart_running_namespace_process should not be called")),
+    )
+
+    result = save_namespace_port_profiles(
+        environ={},
+        current_namespace="default",
+        requested_profiles=[
+            NamespaceLaunchProfile(
+                namespace="cla",
+                port=8011,
+                https_port=None,
+                mcp_port=8776,
+            )
+        ],
+    )
+
+    assert result.message == "Saved ports for 1 namespace(s)."
+    assert result.saved_profiles == [
+        NamespaceLaunchProfile(
+            namespace="cla",
+            port=8011,
+            https_port=None,
+            mcp_port=8776,
+        )
+    ]
+    saved_profile = load_namespace_launch_profile(namespace="cla")
+    assert saved_profile == NamespaceLaunchProfile(
+        namespace="cla",
+        port=8011,
+        https_port=None,
+        mcp_port=8776,
+    )
+
+
+def test_save_namespace_port_profiles_rejects_batch_conflicts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+
+    with pytest.raises(
+        RuntimeError,
+        match="HTTP port 8100 for namespace work conflicts with HTTP port for namespace cla",
+    ):
+        save_namespace_port_profiles(
+            environ={},
+            current_namespace="default",
+            requested_profiles=[
+                NamespaceLaunchProfile(
+                    namespace="cla",
+                    port=8100,
+                    https_port=None,
+                    mcp_port=8766,
+                ),
+                NamespaceLaunchProfile(
+                    namespace="work",
+                    port=8100,
+                    https_port=None,
+                    mcp_port=8767,
+                ),
+            ],
+        )
 
 
 def test_open_login_namespace_uses_catalog_default_profile(
