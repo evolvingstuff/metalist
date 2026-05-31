@@ -28,7 +28,9 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             exportCurrentViewAsHtml: noop,
             attachFileToCurrentNote: noop,
             trimUnusedFiles: noop,
-            openNamespaceSwitcher: noop,
+            openSwitchNamespace: noop,
+            openCreateNamespace: noop,
+            openManageNamespacePorts: noop,
             openDeleteCurrentNamespace: noop,
             prioritizeTagToFront: noop,
             prioritizeTagToBack: noop,
@@ -44,6 +46,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     const attachFileEndpoint = endpoints.find((endpoint) => endpoint.id === 'action.attach_file_to_current_note');
     assert.equal(endpointIds.has('action.create_backup'), true);
     assert.equal(endpointIds.has('form.switch_namespace'), true);
+    assert.equal(endpointIds.has('form.create_namespace'), true);
+    assert.equal(endpointIds.has('form.manage_namespace_ports'), true);
     assert.equal(endpointIds.has('form.delete_current_namespace'), true);
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('form.session_timeout'), true);

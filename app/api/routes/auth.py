@@ -32,7 +32,9 @@ from app.services.namespace_switcher import build_login_namespace_catalog
 from app.services.namespace_switcher import delete_current_namespace
 from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.namespace_switcher import save_namespace_port_profiles
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
+from app.server_runtime import NamespaceLaunchProfile
 from app.services.tokens import token_service
 from app.services.note_store import store as note_store
 from app.services.sync import clear_all_locks
@@ -399,6 +401,15 @@ def _optional_int_field(payload: dict[str, object], field_name: str) -> int | No
     return value
 
 
+def _require_list_field(payload: dict[str, object], field_name: str) -> list[object]:
+    if field_name not in payload:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required")
+    value = payload[field_name]
+    if not isinstance(value, list):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a list")
+    return value
+
+
 @router.post("/login", response_model=LoginResponse)
 @transactional_route
 def login(
@@ -671,6 +682,63 @@ def open_namespace(
             "mcp_port": result.saved_profile.mcp_port,
         },
         "saved_for_next_launch": result.saved_for_next_launch,
+        "message": result.message,
+    }
+
+
+@router.post("/namespaces/ports")
+@transactional_route
+def save_namespace_ports(
+    payload: dict[str, object],
+    token: Annotated[str, Depends(_require_auth)],
+):
+    body = _require_body_object(payload)
+    raw_profiles = _require_list_field(body, "profiles")
+    requested_profiles: list[NamespaceLaunchProfile] = []
+    for raw_profile in raw_profiles:
+        if not isinstance(raw_profile, dict):
+            raise HTTPException(status_code=400, detail="profiles entries must be objects")
+        namespace = _require_string_field(raw_profile, "namespace")
+        port = _require_int_field(raw_profile, "port")
+        https_port = _optional_int_field(raw_profile, "https_port")
+        mcp_port = _require_int_field(raw_profile, "mcp_port")
+        requested_profiles.append(
+            NamespaceLaunchProfile(
+                namespace=namespace,
+                port=port,
+                https_port=https_port,
+                mcp_port=mcp_port,
+            )
+        )
+
+    save_capture = CapturedExceptionContext(
+        RuntimeError,
+        ValueError,
+        TypeError,
+        FileNotFoundError,
+    )
+    result = None
+    with save_capture:
+        result = save_namespace_port_profiles(
+            environ=os.environ,
+            current_namespace=ACTIVE_NAMESPACE,
+            requested_profiles=requested_profiles,
+        )
+    if save_capture.captured_exception is not None:
+        exc = save_capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Namespace ports save did not return a result")
+    return {
+        "profiles": [
+            {
+                "namespace": profile.namespace,
+                "port": profile.port,
+                "https_port": profile.https_port,
+                "mcp_port": profile.mcp_port,
+            }
+            for profile in result.saved_profiles
+        ],
         "message": result.message,
     }
 

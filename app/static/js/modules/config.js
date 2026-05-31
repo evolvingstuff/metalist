@@ -80,6 +80,7 @@ export const CONFIG = {
             NAMESPACES: {
                 LIST: `${API_AUTH_BASE}/namespaces`,
                 OPEN: `${API_AUTH_BASE}/namespaces/open`,
+                SAVE_PORTS: `${API_AUTH_BASE}/namespaces/ports`,
                 DELETE_CURRENT: `${API_AUTH_BASE}/namespaces/delete-current`,
                 DELETE_JOB_STATUS: (jobId) => `${API_AUTH_BASE}/namespaces/delete-jobs/${jobId}`,
             },

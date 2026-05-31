@@ -19,7 +19,11 @@ import { BackupSettingsModal } from '../modals/backup-settings-modal.js';
 import { OntologyModal } from '../modals/ontology-modal.js';
 import { RandomPasswordModal } from '../modals/random-password-modal.js';
 import { HelpModal } from '../modals/help-modal.js';
-import { NamespaceSwitcherModal } from '../modals/namespace-switcher-modal.js';
+import {
+    CreateNamespaceModal,
+    ManageNamespacePortsModal,
+    SwitchNamespaceModal,
+} from '../modals/namespace-modals.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
 import { PrioritizeModal } from '../modals/prioritize-modal.js';
 import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-modal.js';
@@ -251,7 +255,9 @@ class CommandPaletteController {
         this._randomPasswordModal = null;
         this._helpModal = null;
         this._sessionTimeoutModal = null;
-        this._namespaceSwitcherModal = null;
+        this._switchNamespaceModal = null;
+        this._createNamespaceModal = null;
+        this._manageNamespacePortsModal = null;
         this._deleteNamespaceModal = null;
         this._prioritizeModal = null;
         this._alphabetizeRootNotesModal = null;
@@ -304,7 +310,9 @@ class CommandPaletteController {
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
                 trimUnusedFiles: this.trimUnusedFiles.bind(this),
-                openNamespaceSwitcher: this.openNamespaceSwitcher.bind(this),
+                openSwitchNamespace: this.openSwitchNamespace.bind(this),
+                openCreateNamespace: this.openCreateNamespace.bind(this),
+                openManageNamespacePorts: this.openManageNamespacePorts.bind(this),
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
                 prioritizeTagToFront: this.prioritizeTagToFront.bind(this),
                 prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
@@ -1814,16 +1822,40 @@ class CommandPaletteController {
         this._helpModal.open();
     }
 
-    async openNamespaceSwitcher() {
-        const isReady = await this._prepareForModalOpen('commandPalette.openNamespaceSwitcher');
+    async openSwitchNamespace() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openSwitchNamespace');
         if (!isReady) {
             return;
         }
 
-        if (this._namespaceSwitcherModal === null) {
-            this._namespaceSwitcherModal = new NamespaceSwitcherModal();
+        if (this._switchNamespaceModal === null) {
+            this._switchNamespaceModal = new SwitchNamespaceModal();
         }
-        this._namespaceSwitcherModal.open();
+        this._switchNamespaceModal.open();
+    }
+
+    async openCreateNamespace() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openCreateNamespace');
+        if (!isReady) {
+            return;
+        }
+
+        if (this._createNamespaceModal === null) {
+            this._createNamespaceModal = new CreateNamespaceModal();
+        }
+        this._createNamespaceModal.open();
+    }
+
+    async openManageNamespacePorts() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openManageNamespacePorts');
+        if (!isReady) {
+            return;
+        }
+
+        if (this._manageNamespacePortsModal === null) {
+            this._manageNamespacePortsModal = new ManageNamespacePortsModal();
+        }
+        this._manageNamespacePortsModal.open();
     }
 
     async openDeleteCurrentNamespace() {

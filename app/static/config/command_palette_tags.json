@@ -70,7 +70,15 @@
     },
     {
       "id": "form.switch_namespace",
-      "tags": ["namespace", "namespaces", "switch", "switcher", "change", "create", "new", "open", "launch", "select", "ports", "database", "instance", "workspace"]
+      "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
+    },
+    {
+      "id": "form.create_namespace",
+      "tags": ["namespace", "namespaces", "create", "new", "add", "ports", "database", "instance", "workspace"]
+    },
+    {
+      "id": "form.manage_namespace_ports",
+      "tags": ["namespace", "namespaces", "manage", "ports", "port", "configure", "settings", "http", "https", "mcp", "launch"]
     },
     {
       "id": "form.delete_current_namespace",

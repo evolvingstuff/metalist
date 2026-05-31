@@ -37,7 +37,9 @@ export function buildCommandPaletteEndpoints(deps) {
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
     const exportCurrentViewAsHtml = requireAction(actions, 'exportCurrentViewAsHtml');
-    const openNamespaceSwitcher = requireAction(actions, 'openNamespaceSwitcher');
+    const openSwitchNamespace = requireAction(actions, 'openSwitchNamespace');
+    const openCreateNamespace = requireAction(actions, 'openCreateNamespace');
+    const openManageNamespacePorts = requireAction(actions, 'openManageNamespacePorts');
     const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
     const prioritizeTagToFront = requireAction(actions, 'prioritizeTagToFront');
     const prioritizeTagToBack = requireAction(actions, 'prioritizeTagToBack');
@@ -191,8 +193,20 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'form.switch_namespace',
             kind: 'form',
-            label: 'Switch or create namespace…',
-            execute: async () => openNamespaceSwitcher(),
+            label: 'Switch namespace…',
+            execute: async () => openSwitchNamespace(),
+        },
+        {
+            id: 'form.create_namespace',
+            kind: 'form',
+            label: 'Create namespace…',
+            execute: async () => openCreateNamespace(),
+        },
+        {
+            id: 'form.manage_namespace_ports',
+            kind: 'form',
+            label: 'Manage namespace ports…',
+            execute: async () => openManageNamespacePorts(),
         },
         {
             id: 'form.delete_current_namespace',

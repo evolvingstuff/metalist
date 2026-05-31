@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from http.client import HTTPConnection
 from pathlib import Path
@@ -77,6 +77,12 @@ class NamespaceDeleteResult:
     deleted_namespace: str
     redirect_url: str
     delete_job_id: str
+    message: str
+
+
+@dataclass(frozen=True)
+class NamespacePortsSaveResult:
+    saved_profiles: list[NamespaceLaunchProfile]
     message: str
 
 
@@ -313,6 +319,62 @@ def open_or_launch_all_namespaces(
             )
         )
     return results
+
+
+def save_namespace_port_profiles(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    requested_profiles: Sequence[NamespaceLaunchProfile],
+) -> NamespacePortsSaveResult:
+    if not isinstance(requested_profiles, Sequence):
+        raise TypeError(f"requested_profiles must be a sequence, got {type(requested_profiles)}")
+    if len(requested_profiles) == 0:
+        raise RuntimeError("At least one namespace port profile is required")
+
+    supports_https = _supports_https(environ=environ)
+    current_profile = _build_current_profile(
+        environ=environ,
+        current_namespace=current_namespace,
+    )
+    saved_profiles = _load_saved_profiles_by_namespace()
+    normalized_profiles: list[NamespaceLaunchProfile] = []
+    seen_namespaces: set[str] = set()
+    for requested_profile in requested_profiles:
+        if not isinstance(requested_profile, NamespaceLaunchProfile):
+            raise TypeError("requested_profiles must contain NamespaceLaunchProfile values")
+        normalized_profile = _build_requested_profile(
+            namespace=validate_namespace(namespace=requested_profile.namespace),
+            port=requested_profile.port,
+            https_port=requested_profile.https_port,
+            mcp_port=requested_profile.mcp_port,
+            supports_https=supports_https,
+        )
+        if normalized_profile.namespace in seen_namespaces:
+            raise RuntimeError(f"Duplicate namespace profile: {normalized_profile.namespace}")
+        seen_namespaces.add(normalized_profile.namespace)
+        normalized_profiles.append(normalized_profile)
+
+    _assert_requested_profiles_are_conflict_free(
+        requested_profiles=normalized_profiles,
+        saved_profiles=saved_profiles,
+        current_profile=current_profile,
+    )
+
+    saved_results: list[NamespaceLaunchProfile] = []
+    for profile in normalized_profiles:
+        saved_results.append(
+            save_namespace_launch_profile(
+                namespace=profile.namespace,
+                port=profile.port,
+                https_port=profile.https_port,
+                mcp_port=profile.mcp_port,
+            )
+        )
+    return NamespacePortsSaveResult(
+        saved_profiles=saved_results,
+        message=f"Saved ports for {len(saved_results)} namespace(s).",
+    )
 
 
 def build_login_namespace_catalog(
@@ -783,6 +845,67 @@ def _assert_profile_is_conflict_free(
             f"{service.upper()} port {port} conflicts with "
             f"{reservation.service.upper()} port reserved for namespace {reservation.namespace}"
         )
+
+
+def _profile_service_ports(*, profile: NamespaceLaunchProfile) -> list[tuple[str, int]]:
+    service_pairs = [
+        ("http", profile.port),
+        ("https", profile.https_port),
+        ("mcp", profile.mcp_port),
+    ]
+    ports: list[tuple[str, int]] = []
+    for service, port in service_pairs:
+        if port is None:
+            continue
+        ports.append((service, port))
+    return ports
+
+
+def _assert_requested_profiles_are_conflict_free(
+    *,
+    requested_profiles: Sequence[NamespaceLaunchProfile],
+    saved_profiles: Mapping[str, NamespaceLaunchProfile],
+    current_profile: NamespaceLaunchProfile | None,
+) -> None:
+    requested_namespaces = {profile.namespace for profile in requested_profiles}
+    requested_ports: dict[int, tuple[str, str]] = {}
+    for profile in requested_profiles:
+        for service, port in _profile_service_ports(profile=profile):
+            if port in requested_ports:
+                other_namespace, other_service = requested_ports[port]
+                raise RuntimeError(
+                    f"{service.upper()} port {port} for namespace {profile.namespace} conflicts with "
+                    f"{other_service.upper()} port for namespace {other_namespace}"
+                )
+            requested_ports[port] = (profile.namespace, service)
+
+    persisted_reservations = _reserved_ports(
+        saved_profiles={
+            namespace: profile
+            for namespace, profile in saved_profiles.items()
+            if namespace not in requested_namespaces
+        },
+        current_profile=None,
+        ignore_namespace=None,
+    )
+    for profile in requested_profiles:
+        for service, port in _profile_service_ports(profile=profile):
+            for reservation in persisted_reservations:
+                if reservation.port != port:
+                    continue
+                raise RuntimeError(
+                    f"{service.upper()} port {port} for namespace {profile.namespace} conflicts with "
+                    f"{reservation.service.upper()} port reserved for namespace {reservation.namespace}"
+                )
+            if current_profile is None or current_profile.namespace == profile.namespace:
+                continue
+            for current_service, current_port in _profile_service_ports(profile=current_profile):
+                if current_port != port:
+                    continue
+                raise RuntimeError(
+                    f"{service.upper()} port {port} for namespace {profile.namespace} conflicts with "
+                    f"{current_service.upper()} port used by current namespace {current_profile.namespace}"
+                )
 
 
 def _find_running_namespace_port(
