@@ -16,7 +16,7 @@ function createStorage() {
     };
 }
 
-function installSuggestionsContainer(t, container) {
+function installSuggestionsContainer(t, container, notesContainer = null) {
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;
     const originalSessionStorage = globalThis.sessionStorage;
@@ -25,6 +25,9 @@ function installSuggestionsContainer(t, container) {
         getElementById(id) {
             if (id === 'search-suggestions') {
                 return container;
+            }
+            if (id === 'notes-container') {
+                return notesContainer;
             }
             return null;
         },
@@ -54,6 +57,18 @@ function createSuggestionsContainer(overrides) {
             return {
                 top: 40,
                 bottom: 140,
+            };
+        },
+        ...overrides,
+    };
+}
+
+function createNotesContainer(overrides) {
+    return {
+        getBoundingClientRect() {
+            return {
+                left: 200,
+                right: 1000,
             };
         },
         ...overrides,
@@ -147,4 +162,40 @@ test('does not re-hide search suggestions that are already hidden', async (t) =>
     assert.equal(container.hidden, true);
     assert.equal(container.style.display, 'none');
     assert.equal(container.innerHTML, '');
+});
+
+test('hides visible search suggestions when pointer moves horizontally outside the notes column during search mode', async (t) => {
+    const container = createSuggestionsContainer({});
+    const notesContainer = createNotesContainer({});
+    installSuggestionsContainer(t, container, notesContainer);
+    const { hideSearchSuggestionsForSearchContextPointerMove } = await importSearchSuggestionsService();
+
+    const didHide = hideSearchSuggestionsForSearchContextPointerMove({
+        isSearching: true,
+        pointerClientX: 180,
+        pointerClientY: 100,
+    });
+
+    assert.equal(didHide, true);
+    assert.equal(container.hidden, true);
+    assert.equal(container.style.display, 'none');
+    assert.equal(container.innerHTML, '');
+});
+
+test('keeps search suggestions open when pointer stays inside notes column and suggestion vertical range', async (t) => {
+    const container = createSuggestionsContainer({});
+    const notesContainer = createNotesContainer({});
+    installSuggestionsContainer(t, container, notesContainer);
+    const { hideSearchSuggestionsForSearchContextPointerMove } = await importSearchSuggestionsService();
+
+    const didHide = hideSearchSuggestionsForSearchContextPointerMove({
+        isSearching: true,
+        pointerClientX: 600,
+        pointerClientY: 100,
+    });
+
+    assert.equal(didHide, false);
+    assert.equal(container.hidden, false);
+    assert.equal(container.style.display, 'flex');
+    assert.equal(container.innerHTML, '<button class="search-suggestion">work</button>');
 });

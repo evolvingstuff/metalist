@@ -81,7 +81,7 @@
 - When the active prefix starts with `@`, matching meta-tag suggestions are ordered by notebook usage frequency (note count), with alphabetical tiebreaks for equal counts.
 - After completing a tag and adding a space, suggestions are ordered by tag co-occurrence with all existing tag tokens in the query (strict overlap count > Jaccard within overlap).
 - Suggestions appear only when the search input is focused.
-- Moving the pointer onto a note below the suggestion popup hides open search suggestions while keeping focus in the search input.
+- Moving the pointer below the suggestion popup, or horizontally outside the centered notes column, hides open search suggestions while keeping focus in the search input. After that pointer dismissal, suggestions stay closed until the user resumes typing or clicks the search input again.
 - Arrow keys move selection; `Enter` accepts the selected suggestion without adding a trailing space.
 - Suggestion matching is broader than actual filtering: search results still match exact effective tag terms only.
 

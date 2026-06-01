@@ -6,7 +6,10 @@ import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-a
 import { DOMUtils } from '../../dom-utils.js'; 
 import { normalizeTagBarForNewTag } from '../services/tag-bar-service.js';
 import { updateTagSuggestions } from '../services/tag-suggestions-service.js';
-import { hideSearchSuggestionsForSearchContextHover } from '../services/search-suggestions-service.js';
+import {
+    hideSearchSuggestionsForSearchContextHover,
+    hideSearchSuggestionsForSearchContextPointerMove,
+} from '../services/search-suggestions-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
@@ -50,6 +53,7 @@ export function initMouseEvents() {
     document.addEventListener('mousedown', handleImmediateMouseDown, { capture: true });
     document.addEventListener('mousedown', handleMoveDragMouseDown, { capture: true });
     document.addEventListener('mousemove', handleMoveDragMouseMove, { capture: true });
+    document.addEventListener('mousemove', handleSearchSuggestionsPointerMove, { capture: true, passive: true });
     document.addEventListener('mouseup', handleMoveDragMouseUp, { capture: true });
     document.addEventListener('mousedown', handleSelectionDragMouseDown, { capture: true });
     document.addEventListener('mouseup', handleSelectionDragMouseUp, { capture: true });
@@ -320,6 +324,9 @@ function handleImmediateMouseDown(event) {
 
     const searchField = event.target.closest('#search-input');
     if (handleSearchFieldMouseDown(event, searchField)) {
+        return;
+    }
+    if (searchField) {
         return;
     }
 
@@ -1926,6 +1933,27 @@ function handleMouseOver(event) {
         noteId,
         isEditing: ModeContext.isEditing,
         didHideSearchSuggestions,
+    }, Logger.LogCategory.EVENT);
+}
+
+function handleSearchSuggestionsPointerMove(event) {
+    if (!event) {
+        throw new Error('handleSearchSuggestionsPointerMove called without an event object');
+    }
+
+    const didHideSearchSuggestions = hideSearchSuggestionsForSearchContextPointerMove({
+        isSearching: ModeContext.isSearching,
+        pointerClientX: event.clientX,
+        pointerClientY: event.clientY,
+    });
+
+    if (!didHideSearchSuggestions) {
+        return;
+    }
+
+    Logger.logDebug('Search suggestions hidden after pointer left search context', {
+        pointerClientX: Math.round(event.clientX),
+        pointerClientY: Math.round(event.clientY),
     }, Logger.LogCategory.EVENT);
 }
 

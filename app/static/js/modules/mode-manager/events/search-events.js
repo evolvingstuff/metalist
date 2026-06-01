@@ -51,7 +51,7 @@ export function handleSearchInput(event) {
     const enforcedValue = enforceSearchInputElement(searchInput);
     const analysis = analyzeSearchQueryInput(enforcedValue);
     setSearchValidationState(searchInput, analysis);
-    updateSearchSuggestions(searchInput);
+    updateSearchSuggestions(searchInput, { source: 'input' });
 
     Logger.logDebug('Search input changed', {
         searchQuery: analysis.normalizedText,

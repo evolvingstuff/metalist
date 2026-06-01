@@ -7,6 +7,7 @@ const HOVER_DISMISS_BOTTOM_BUFFER_PX = 25;
 let pendingTimer = null;
 let requestSerial = 0;
 let selectedIndex = -1;
+let suppressSuggestionsUntilInputInteraction = false;
 
 function getSearchSuggestionsContainer() {
     const container = document.getElementById('search-suggestions');
@@ -103,12 +104,75 @@ function parseSuggestionContext(rawValue, cursorIndex) {
     };
 }
 
-function hideSuggestions() {
+function clearPendingSuggestionRequest() {
+    if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        pendingTimer = null;
+    }
+    requestSerial += 1;
+}
+
+function hideSuggestions(options) {
+    let normalizedOptions = options;
+    if (normalizedOptions === undefined) {
+        normalizedOptions = {};
+    }
+    if (normalizedOptions === null || typeof normalizedOptions !== 'object') {
+        throw new Error('hideSuggestions options must be an object');
+    }
+    if (normalizedOptions.suppressUntilInputInteraction === true) {
+        suppressSuggestionsUntilInputInteraction = true;
+    }
+    if (normalizedOptions.invalidateRequests === true) {
+        clearPendingSuggestionRequest();
+    }
+
     const container = getSearchSuggestionsContainer();
     container.hidden = true;
     container.style.display = 'none';
     container.innerHTML = '';
     selectedIndex = -1;
+}
+
+function shouldHideForVerticalPointerPosition(container, pointerClientY) {
+    if (!Number.isFinite(pointerClientY)) {
+        throw new Error('pointerClientY must be finite');
+    }
+    if (typeof container.getBoundingClientRect !== 'function') {
+        throw new Error('search-suggestions must support getBoundingClientRect()');
+    }
+
+    const suggestionsRect = container.getBoundingClientRect();
+    if (!suggestionsRect || typeof suggestionsRect.bottom !== 'number') {
+        throw new Error('search-suggestions rect missing bottom');
+    }
+    return pointerClientY > suggestionsRect.bottom + HOVER_DISMISS_BOTTOM_BUFFER_PX;
+}
+
+function shouldHideForHorizontalPointerPosition(pointerClientX) {
+    if (!Number.isFinite(pointerClientX)) {
+        throw new Error('pointerClientX must be finite');
+    }
+
+    const notesContainer = document.getElementById('notes-container');
+    if (!notesContainer) {
+        throw new Error('notes-container element missing from DOM');
+    }
+    if (typeof notesContainer.getBoundingClientRect !== 'function') {
+        throw new Error('notes-container must support getBoundingClientRect()');
+    }
+
+    const notesRect = notesContainer.getBoundingClientRect();
+    if (!notesRect || typeof notesRect.left !== 'number' || typeof notesRect.right !== 'number') {
+        throw new Error('notes-container rect missing horizontal bounds');
+    }
+    if (pointerClientX < notesRect.left) {
+        return true;
+    }
+    if (pointerClientX > notesRect.right) {
+        return true;
+    }
+    return false;
 }
 
 export function hideSearchSuggestionsForSearchContextHover(options) {
@@ -130,19 +194,49 @@ export function hideSearchSuggestionsForSearchContextHover(options) {
     if (container.hidden) {
         return false;
     }
-    if (typeof container.getBoundingClientRect !== 'function') {
-        throw new Error('search-suggestions must support getBoundingClientRect()');
-    }
-
-    const suggestionsRect = container.getBoundingClientRect();
-    if (!suggestionsRect || typeof suggestionsRect.bottom !== 'number') {
-        throw new Error('search-suggestions rect missing bottom');
-    }
-    if (pointerClientY <= suggestionsRect.bottom + HOVER_DISMISS_BOTTOM_BUFFER_PX) {
+    if (!shouldHideForVerticalPointerPosition(container, pointerClientY)) {
         return false;
     }
 
-    hideSuggestions();
+    hideSuggestions({
+        invalidateRequests: true,
+        suppressUntilInputInteraction: true,
+    });
+    return true;
+}
+
+export function hideSearchSuggestionsForSearchContextPointerMove(options) {
+    if (!options || typeof options !== 'object') {
+        throw new Error('hideSearchSuggestionsForSearchContextPointerMove requires options');
+    }
+    const { isSearching, pointerClientX, pointerClientY } = options;
+    if (!Number.isFinite(pointerClientX)) {
+        throw new Error('hideSearchSuggestionsForSearchContextPointerMove requires pointerClientX');
+    }
+    if (!Number.isFinite(pointerClientY)) {
+        throw new Error('hideSearchSuggestionsForSearchContextPointerMove requires pointerClientY');
+    }
+    if (!isSearching) {
+        return false;
+    }
+
+    const container = getSearchSuggestionsContainer();
+    if (container.hidden) {
+        return false;
+    }
+
+    let shouldHide = shouldHideForVerticalPointerPosition(container, pointerClientY);
+    if (!shouldHide) {
+        shouldHide = shouldHideForHorizontalPointerPosition(pointerClientX);
+    }
+    if (!shouldHide) {
+        return false;
+    }
+
+    hideSuggestions({
+        invalidateRequests: true,
+        suppressUntilInputInteraction: true,
+    });
     return true;
 }
 
@@ -179,7 +273,7 @@ function applySuggestion(searchInput, suggestion) {
 
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     searchInput.focus();
-    hideSuggestions();
+    hideSuggestions({ invalidateRequests: true });
 }
 
 function updateSelectedSuggestion(container) {
@@ -230,9 +324,43 @@ function renderSuggestions(searchInput, suggestions) {
     });
 }
 
-export function updateSearchSuggestions(searchInput) {
+function normalizeUpdateOptions(options) {
+    if (options === undefined) {
+        return { source: 'programmatic' };
+    }
+    if (options === null || typeof options !== 'object') {
+        throw new Error('updateSearchSuggestions options must be an object');
+    }
+    const source = options.source;
+    if (source === undefined) {
+        return { source: 'programmatic' };
+    }
+    if (typeof source !== 'string' || source.length === 0) {
+        throw new Error('updateSearchSuggestions source must be a non-empty string');
+    }
+    return { source };
+}
+
+function doesUpdateSourceResumeSuggestions(source) {
+    if (source === 'input') {
+        return true;
+    }
+    if (source === 'search-input-click') {
+        return true;
+    }
+    if (source === 'search-input-focus') {
+        return true;
+    }
+    return false;
+}
+
+export function updateSearchSuggestions(searchInput, options) {
     if (!searchInput || typeof searchInput.value !== 'string') {
         throw new Error('updateSearchSuggestions requires search input element');
+    }
+    const updateOptions = normalizeUpdateOptions(options);
+    if (doesUpdateSourceResumeSuggestions(updateOptions.source)) {
+        suppressSuggestionsUntilInputInteraction = false;
     }
     if (document.activeElement !== searchInput) {
         if (pendingTimer) {
@@ -240,6 +368,11 @@ export function updateSearchSuggestions(searchInput) {
             pendingTimer = null;
         }
         requestSerial += 1;
+        hideSuggestions();
+        return;
+    }
+    if (suppressSuggestionsUntilInputInteraction) {
+        clearPendingSuggestionRequest();
         hideSuggestions();
         return;
     }
@@ -287,6 +420,9 @@ export function updateSearchSuggestions(searchInput) {
         if (requestId !== requestSerial) {
             return;
         }
+        if (suppressSuggestionsUntilInputInteraction) {
+            return;
+        }
         renderSuggestions(searchInput, response.suggestions);
     }, SUGGESTION_DEBOUNCE_MS);
 }
@@ -320,7 +456,11 @@ export function initializeSearchSuggestions() {
     });
 
     searchInput.addEventListener('focus', () => {
-        updateSearchSuggestions(searchInput);
+        updateSearchSuggestions(searchInput, { source: 'search-input-focus' });
+    });
+
+    searchInput.addEventListener('mousedown', () => {
+        updateSearchSuggestions(searchInput, { source: 'search-input-click' });
     });
 
     searchInput.addEventListener('keydown', (event) => {
