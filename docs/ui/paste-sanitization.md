@@ -24,10 +24,11 @@
 5. Otherwise read `text/html` from clipboard.
 6. Parse with `DOMParser`.
 7. Walk DOM and sanitize nodes/attributes/styles/URLs.
-8. Convert meaningful literal CR/LF text-node breaks from clipboard HTML into `<br>` nodes, while ignoring formatting-only indentation whitespace.
-9. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
-10. Insert sanitized HTML into current selection.
-11. If no usable HTML remains, fallback to `text/plain`.
+8. Normalize soft-wrapped prose line breaks from clipboard HTML into spaces, including hyphenated visual wraps such as `non-\nAC0`.
+9. Convert meaningful literal CR/LF text-node breaks from clipboard HTML into `<br>` nodes, while ignoring formatting-only indentation whitespace.
+10. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
+11. Insert sanitized HTML into current selection.
+12. If no usable HTML remains, fallback to `text/plain`.
 
 ## Security Policy
 
@@ -81,6 +82,8 @@
 - Block indentation styles (block tags only): `margin-left`, `padding-left`, `text-indent`
 - Image box styles (`img` only): `width`, `height`, `max-width`, `max-height`
 - Meaningful literal CR/LF inside pasted HTML text nodes is preserved as line breaks, for sources such as YouTube descriptions that put visible structure in raw newlines instead of block tags.
+- Soft line wraps inside prose are collapsed to spaces so copied abstracts from sources such as arXiv do not paste with visual-wrap breaks in the middle of sentences.
+- Numeric `vertical-align` values are retained for inline spans so copied math superscripts/subscripts can preserve their visual position.
 
 ### Rejected
 - Any style containing dangerous payloads (`url(...)`, `expression(...)`, `@import`, encoded entity escapes, angle-bracket/backtick payload chars, etc.).

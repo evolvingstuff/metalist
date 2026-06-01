@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { CONFIG } from '../../app/static/js/modules/config.js';
 import {
+    normalizeSoftWrappedTextLineBreaks,
     splitMeaningfulTextLineBreaks,
     sanitizePastedImageSourceUrl,
     sanitizeStyleAttributeValue,
@@ -55,6 +56,11 @@ test('sanitizeStyleAttributeValue keeps safe block indentation styles', () => {
     assert.equal(value, 'margin-left: 24px; text-indent: 0px;');
 });
 
+test('sanitizeStyleAttributeValue keeps numeric vertical align for copied math superscripts', () => {
+    const value = sanitizeStyleAttributeValue('vertical-align: 0.5em; color: red;', 'span');
+    assert.equal(value, 'vertical-align: 0.5em;');
+});
+
 test('sanitizeStyleAttributeValue strips unsafe styles and disallowed properties', () => {
     const value = sanitizeStyleAttributeValue('position: absolute; color: red; margin-left: 12px; background-image: url(https://x);', 'div');
     assert.equal(value, 'margin-left: 12px;');
@@ -79,4 +85,34 @@ test('splitMeaningfulTextLineBreaks preserves YouTube literal timestamp newlines
 test('splitMeaningfulTextLineBreaks ignores formatting-only HTML whitespace', () => {
     const parts = splitMeaningfulTextLineBreaks('\n    \n  ');
     assert.equal(parts, null);
+});
+
+test('normalizeSoftWrappedTextLineBreaks joins wrapped arXiv abstract prose', () => {
+    const input = 'formal languages in the complexity class AC0,\n'
+        + 'the class of languages recognizable by families of Boolean circuits of\n'
+        + 'constant depth and polynomial size. In contrast, the non-\n'
+        + 'AC0 languages MAJORITY and DYCK-1 are recognizable.';
+
+    const normalized = normalizeSoftWrappedTextLineBreaks(input);
+
+    assert.equal(
+        normalized,
+        'formal languages in the complexity class AC0, the class of languages recognizable by families of Boolean circuits of constant depth and polynomial size. In contrast, the non-AC0 languages MAJORITY and DYCK-1 are recognizable.',
+    );
+});
+
+test('normalizeSoftWrappedTextLineBreaks keeps real arXiv abstract paragraph breaks', () => {
+    const input = 'heads.\n\nOur results feature several implications unique to the attention structure.';
+
+    const normalized = normalizeSoftWrappedTextLineBreaks(input);
+
+    assert.equal(normalized, input);
+});
+
+test('normalizeSoftWrappedTextLineBreaks keeps timestamp lists as explicit line breaks', () => {
+    const input = 'Timestamps:\n(0:00) - Intro\n(0:18) - Rule';
+
+    const normalized = normalizeSoftWrappedTextLineBreaks(input);
+
+    assert.equal(normalized, input);
 });
