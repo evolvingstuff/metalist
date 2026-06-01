@@ -73,6 +73,8 @@ const AVATAR_HINT_PATTERN = /(avatar|profile|pfp|user.?icon|user.?image|communit
 const TIME_HINT_PATTERN = /\b(?:edited\s+)?\d+\s*(?:s|m|min|h|d|w|mo|y)\s*ago\b/i;
 const META_HINT_PATTERN = /\b(?:op|edited|top\s+\d+%?\s+commenter)\b/i;
 const SCORE_HINT_PATTERN = /^\d+(?:\.\d+)?k?$/i;
+const LINE_BREAK_PATTERN = /\r\n|\r|\n/;
+const STRUCTURED_LINE_PATTERN = /^\s*(?:[-*+\u2022]\s+|\d+[.)]\s+|\(?\d{1,2}:\d{2}(?::\d{2})?\)?\s*(?:[-\u2013\u2014:]|\s)|[A-Za-z][A-Za-z0-9 /_-]{0,48}:\s*)/;
 const AVATAR_CLAMP_PX = 48;
 const TREE_WALKER_SHOW_ELEMENT_AND_TEXT = 0x1 | 0x4;
 const TREE_WALKER_SHOW_TEXT = 0x4;
@@ -353,7 +355,10 @@ function isSafeStyleValue(propertyName, propertyValue) {
         return /^(?:none|underline|line-through|overline)(?:\s+(?:underline|line-through|overline))*$/i.test(propertyValue);
     }
     if (propertyName === 'vertical-align') {
-        return /^(?:baseline|middle|top|bottom|text-top|text-bottom|sub|super)$/i.test(propertyValue);
+        if (/^(?:baseline|middle|top|bottom|text-top|text-bottom|sub|super)$/i.test(propertyValue)) {
+            return true;
+        }
+        return isSafeLengthValue(propertyValue);
     }
     if (propertyName === 'width' || propertyName === 'height' || propertyName === 'max-width' || propertyName === 'max-height') {
         if (propertyValue === 'auto') {
@@ -1048,6 +1053,71 @@ export function splitMeaningfulTextLineBreaks(rawText) {
     return rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 }
 
+function hasStructuredLineBreaks(lines) {
+    if (!Array.isArray(lines)) {
+        throw new Error('hasStructuredLineBreaks expects lines array');
+    }
+
+    let nonEmptyLineCount = 0;
+    let structuredLineCount = 0;
+    let emptyInteriorLineCount = 0;
+
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i];
+        if (typeof line !== 'string') {
+            throw new Error('hasStructuredLineBreaks expects string lines');
+        }
+
+        if (line.trim().length === 0) {
+            if (i > 0 && i < lines.length - 1) {
+                emptyInteriorLineCount += 1;
+            }
+            i += 1;
+            continue;
+        }
+
+        nonEmptyLineCount += 1;
+        if (STRUCTURED_LINE_PATTERN.test(line)) {
+            structuredLineCount += 1;
+        }
+        i += 1;
+    }
+
+    if (emptyInteriorLineCount > 0) {
+        return true;
+    }
+    if (structuredLineCount >= 2) {
+        return true;
+    }
+    if (structuredLineCount === 1 && nonEmptyLineCount <= 2) {
+        return true;
+    }
+    return false;
+}
+
+export function normalizeSoftWrappedTextLineBreaks(rawText) {
+    if (typeof rawText !== 'string') {
+        throw new Error('normalizeSoftWrappedTextLineBreaks expects rawText string');
+    }
+    if (!LINE_BREAK_PATTERN.test(rawText)) {
+        return rawText;
+    }
+    if (rawText.trim().length === 0) {
+        return rawText;
+    }
+
+    const normalizedLines = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    if (hasStructuredLineBreaks(normalizedLines)) {
+        return rawText;
+    }
+
+    return rawText
+        .replace(/[ \t]*-\s*(?:\r\n|\r|\n)\s*/g, '-')
+        .replace(/[ \t]*(?:\r\n|\r|\n)[ \t]*/g, ' ')
+        .replace(/ {2,}/g, ' ');
+}
+
 function replaceTextNodeWithLineBreaks(documentRoot, textNode, parts) {
     if (!documentRoot) {
         throw new Error('replaceTextNodeWithLineBreaks expects documentRoot');
@@ -1118,7 +1188,14 @@ function preserveLiteralTextLineBreaks(rootNode) {
             throw new Error('preserveLiteralTextLineBreaks expects textContent string');
         }
 
-        const parts = splitMeaningfulTextLineBreaks(rawText);
+        const normalizedText = normalizeSoftWrappedTextLineBreaks(rawText);
+        if (normalizedText !== rawText) {
+            textNode.textContent = normalizedText;
+            i += 1;
+            continue;
+        }
+
+        const parts = splitMeaningfulTextLineBreaks(normalizedText);
         if (parts !== null) {
             replaceTextNodeWithLineBreaks(documentRoot, textNode, parts);
         }
