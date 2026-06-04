@@ -798,19 +798,29 @@ export const NotesAPI = {
         });
     },
 
-    async exportCurrentViewAsHtml(theme) {
+    async exportCurrentViewAsHtml(theme, options = {}) {
         if (theme !== 'dark' && theme !== 'light') {
             throw new Error("NotesAPI.exportCurrentViewAsHtml requires theme 'dark' or 'light'");
+        }
+        if (options === null || typeof options !== 'object') {
+            throw new Error('NotesAPI.exportCurrentViewAsHtml requires options object');
         }
 
         const searchQuery = ModeContext.searchQuery;
         if (searchQuery !== null && typeof searchQuery !== 'string') {
             throw new Error('ModeContext.searchQuery must be a string or null');
         }
+        const noteId = options.noteId;
+        if (noteId !== undefined && (typeof noteId !== 'string' || noteId.length === 0)) {
+            throw new Error('NotesAPI.exportCurrentViewAsHtml requires noteId string when provided');
+        }
 
         const params = new URLSearchParams();
         params.set('theme', theme);
         params.set('search_query', typeof searchQuery === 'string' ? searchQuery : '');
+        if (typeof noteId === 'string') {
+            params.set('note_id', noteId);
+        }
 
         const response = await fetch(`${CONFIG.API.NOTES.EXPORT_HTML}?${params.toString()}`, {
             method: 'GET',

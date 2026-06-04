@@ -53,6 +53,8 @@ function buildNoteContextItems(context, handlers) {
     const onSaveImage = handlers.onSaveImage;
     const onZoomImage = handlers.onZoomImage;
     const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
+    const onExportNoteHtml = handlers.onExportNoteHtml;
+    const onExportViewHtml = handlers.onExportViewHtml;
     if (typeof onAddSiblingNote !== 'function') {
         throw new Error('Note context missing onAddSiblingNote handler');
     }
@@ -82,6 +84,12 @@ function buildNoteContextItems(context, handlers) {
     }
     if (typeof onPasteReferenceChild !== 'function') {
         throw new Error('Note context missing onPasteReferenceChild handler');
+    }
+    if (typeof onExportNoteHtml !== 'function') {
+        throw new Error('Note context missing onExportNoteHtml handler');
+    }
+    if (typeof onExportViewHtml !== 'function') {
+        throw new Error('Note context missing onExportViewHtml handler');
     }
 
     const items = [];
@@ -134,6 +142,27 @@ function buildNoteContextItems(context, handlers) {
 
     const hasSelectedText = context.hasSelectedText === true;
     const hasNoteClipboard = context.hasNoteClipboard === true;
+    const exportNoteItem = {
+        id: 'export-note-html',
+        label: 'Export Note as HTML',
+        icon: 'download',
+        enabled: true,
+        onSelect: () => onExportNoteHtml(noteId),
+    };
+    if (items.length > 0) {
+        exportNoteItem.separated = true;
+    }
+    items.push(
+        exportNoteItem,
+        {
+            id: 'export-view-html',
+            label: 'Export View as HTML',
+            icon: 'download',
+            enabled: true,
+            onSelect: () => onExportViewHtml(),
+        },
+    );
+
     const copyItem = {
         id: hasSelectedText ? 'copy-selection' : 'copy-note',
         label: hasSelectedText ? 'Copy' : 'Copy Note',
@@ -147,9 +176,7 @@ function buildNoteContextItems(context, handlers) {
             onCopyNote(noteId);
         },
     };
-    if (items.length > 0) {
-        copyItem.separated = true;
-    }
+    copyItem.separated = true;
     items.push(copyItem);
 
     if (hasNoteClipboard) {
@@ -219,6 +246,30 @@ function buildNoteContextItems(context, handlers) {
     return items;
 }
 
+function buildViewContextItems(context, handlers) {
+    if (!context || typeof context !== 'object') {
+        throw new Error('buildViewContextItems requires context object');
+    }
+    if (!handlers || typeof handlers !== 'object') {
+        throw new Error('buildViewContextItems requires handlers object');
+    }
+
+    const onExportViewHtml = handlers.onExportViewHtml;
+    if (typeof onExportViewHtml !== 'function') {
+        throw new Error('View context missing onExportViewHtml handler');
+    }
+
+    return [
+        {
+            id: 'export-view-html',
+            label: 'Export View as HTML',
+            icon: 'download',
+            enabled: true,
+            onSelect: () => onExportViewHtml(),
+        },
+    ];
+}
+
 export function buildContextMenuItems(context, handlers) {
     if (!context || typeof context !== 'object') {
         throw new Error('buildContextMenuItems requires context object');
@@ -233,6 +284,9 @@ export function buildContextMenuItems(context, handlers) {
     }
     if (kind === 'note') {
         return buildNoteContextItems(context, handlers);
+    }
+    if (kind === 'view') {
+        return buildViewContextItems(context, handlers);
     }
 
     return [];

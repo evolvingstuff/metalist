@@ -592,6 +592,11 @@ def export_notes_html(request: Request) -> Response:
     normalized_search = search_query
     if normalized_search == "":
         normalized_search = None
+    note_id = request.query_params.get("note_id")
+    if note_id is not None:
+        if not isinstance(note_id, str) or note_id == "":
+            raise HTTPException(status_code=400, detail="note_id query parameter must be non-empty")
+        _require_note_present(note_id, context="notes.export-html")
 
     normalized_theme = theme.strip().lower()
     if normalized_theme not in {"dark", "light"}:
@@ -601,6 +606,7 @@ def export_notes_html(request: Request) -> Response:
         search=normalized_search,
         theme=normalized_theme,
         token=token,
+        root_note_id=note_id,
     )
     filename = build_notes_export_filename()
     quoted_filename = urllib.parse.quote(filename)

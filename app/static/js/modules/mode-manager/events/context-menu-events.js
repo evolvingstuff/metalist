@@ -34,8 +34,23 @@ import { getInputCaretIndexFromPoint } from '../../context-menu/input-caret-serv
 import { buildContextMenuItems } from '../../context-menu/context-menu-registry.js';
 import { initContextMenuService, showContextMenu } from '../../context-menu/context-menu-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { NotesAPI } from '../../api-client.js';
 
 const ontologyModal = new OntologyModal();
+
+function resolveEffectiveTheme() {
+    const explicitTheme = document.documentElement.getAttribute('data-theme');
+    if (explicitTheme === 'dark' || explicitTheme === 'light') {
+        return explicitTheme;
+    }
+    if (
+        typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+        return 'dark';
+    }
+    return 'light';
+}
 
 function resolveEventElement(target) {
     if (target instanceof HTMLElement) {
@@ -402,6 +417,54 @@ async function copyNoteFromContextMenu(noteId) {
     );
 }
 
+async function saveActiveEditSessionForExport() {
+    if (!ModeContext.isEditing) {
+        return;
+    }
+
+    const currentNoteId = ModeContext.currentNoteId;
+    if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
+        throw new Error('Cannot export while editing without current note id');
+    }
+    await actionSaveNote(currentNoteId);
+}
+
+function downloadHtmlExportPayload(payload) {
+    if (!payload || typeof payload !== 'object') {
+        throw new Error('HTML export response missing body');
+    }
+    if (!(payload.blob instanceof Blob)) {
+        throw new Error('HTML export response missing blob');
+    }
+    if (typeof payload.filename !== 'string' || payload.filename.length === 0) {
+        throw new Error('HTML export response missing filename');
+    }
+
+    const objectUrl = URL.createObjectURL(payload.blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = payload.filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+    }, 0);
+}
+
+async function exportHtmlFromContextMenu(noteId) {
+    if (noteId !== null && (typeof noteId !== 'string' || noteId.length === 0)) {
+        throw new Error('exportHtmlFromContextMenu requires noteId string or null');
+    }
+
+    await saveActiveEditSessionForExport();
+    const payload = await NotesAPI.exportCurrentViewAsHtml(
+        resolveEffectiveTheme(),
+        noteId === null ? {} : { noteId },
+    );
+    downloadHtmlExportPayload(payload);
+}
+
 async function pasteReferenceFromContextMenu(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('pasteReferenceFromContextMenu requires noteId');
@@ -508,6 +571,20 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
                 await openImageInNewTabFromContext(targetImageContext);
             });
         },
+        onExportNoteHtml: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.export_html', async () => {
+                await exportHtmlFromContextMenu(targetNoteId);
+            }, {
+                timeoutMs: 120000,
+            });
+        },
+        onExportViewHtml: () => {
+            void CommandGate.run('contextMenu.view.export_html', async () => {
+                await exportHtmlFromContextMenu(null);
+            }, {
+                timeoutMs: 120000,
+            });
+        },
         onAddSiblingNote: (targetNoteId) => {
             void CommandGate.run('contextMenu.note.add_sibling', async () => {
                 await focusNoteForContextAction(targetNoteId);
@@ -535,6 +612,39 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
                     saveActiveNoteFn: actionSaveNote,
                 });
                 await moveNoteToTop(targetNoteId);
+            });
+        },
+    });
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    showContextMenu({
+        items,
+        position: { x: event.clientX, y: event.clientY },
+        onClose: null,
+    });
+}
+
+function showViewContextMenu(event) {
+    if (!event) {
+        throw new Error('showViewContextMenu called without event');
+    }
+    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+        throw new Error('Context menu event missing coordinates');
+    }
+
+    const context = { kind: 'view' };
+    const items = buildContextMenuItems(context, {
+        onExportViewHtml: () => {
+            void CommandGate.run('contextMenu.view.export_html', async () => {
+                await exportHtmlFromContextMenu(null);
+            }, {
+                timeoutMs: 120000,
             });
         },
     });
@@ -611,6 +721,12 @@ function handleContextMenu(event) {
         const imageContext = resolveImageContextFromElement(element);
         const selectedTextRange = resolveSelectedTextRangeForNote(noteElement);
         showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, selectedTextRange);
+        return;
+    }
+
+    const notesContainer = element.closest('#notes-container');
+    if (notesContainer) {
+        showViewContextMenu(event);
     }
 }
 

@@ -93,19 +93,31 @@ def _indent_block(text: str, spaces: int) -> str:
     return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())
 
 
-def build_notes_export_document(*, search: str | None, theme: str, token: str) -> str:
+def build_notes_export_document(
+    *,
+    search: str | None,
+    theme: str,
+    token: str,
+    root_note_id: str | None,
+) -> str:
     if search is not None and not isinstance(search, str):
         raise TypeError("search must be a string or null")
     if not isinstance(theme, str):
         raise TypeError("theme must be a string")
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")
+    if root_note_id is not None and (not isinstance(root_note_id, str) or root_note_id == ""):
+        raise TypeError("root_note_id must be a non-empty string or null")
 
     normalized_theme = theme.strip().lower()
     if normalized_theme not in _VALID_EXPORT_THEMES:
         raise ValueError("theme must be 'light' or 'dark'")
 
-    notes_markup = _render_exported_notes_markup(search=search, token=token)
+    notes_markup = _render_exported_notes_markup(
+        search=search,
+        token=token,
+        root_note_id=root_note_id,
+    )
     stylesheet = _load_export_stylesheet()
     lines = [
         "<!DOCTYPE html>",
@@ -136,26 +148,32 @@ def build_notes_export_filename() -> str:
     return f"metalist-export-{timestamp}.html"
 
 
-def _render_exported_notes_markup(*, search: str | None, token: str) -> str:
+def _render_exported_notes_markup(*, search: str | None, token: str, root_note_id: str | None) -> str:
     normalized_search = search
     if normalized_search == "":
         normalized_search = None
 
-    search_scope = resolve_search_scope(
-        search=normalized_search,
-        editing_note_id=None,
-        sort_mode="normal",
-        ordered_root_ids=None,
-    )
-    allowed_note_ids = search_scope.allowed_note_ids
-
-    if search_scope.search_active:
-        if search_scope.search_root_ids_ordered is None:
-            root_ids = []
-        else:
-            root_ids = list(search_scope.search_root_ids_ordered)
+    if root_note_id is not None:
+        if not note_store.has_note(root_note_id):
+            raise ValueError(f"Export root note not found: {root_note_id}")
+        allowed_note_ids = None
+        root_ids = [root_note_id]
     else:
-        root_ids = note_store.get_children(None)
+        search_scope = resolve_search_scope(
+            search=normalized_search,
+            editing_note_id=None,
+            sort_mode="normal",
+            ordered_root_ids=None,
+        )
+        allowed_note_ids = search_scope.allowed_note_ids
+
+        if search_scope.search_active:
+            if search_scope.search_root_ids_ordered is None:
+                root_ids = []
+            else:
+                root_ids = list(search_scope.search_root_ids_ordered)
+        else:
+            root_ids = note_store.get_children(None)
 
     if not isinstance(token, str) or token == "":
         raise TypeError("token must be a non-empty string")

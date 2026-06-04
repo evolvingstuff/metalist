@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from typing import Dict, List, Optional
 
 import pytest
+from starlette.requests import Request
 
+import app.api.routes.notes as notes_route
 import app.services.html_export as export_module
 import app.services.snapshot as snapshot_module
 from app.services.html_export import build_notes_export_document
@@ -49,6 +51,14 @@ class _FakeFileRegistry:
         return file_id in self._file_ids
 
 
+class _FakePresenceStore:
+    def __init__(self, note_ids: set[str]) -> None:
+        self._note_ids = note_ids
+
+    def has_note(self, note_id: str) -> bool:
+        return note_id in self._note_ids
+
+
 ROOT_ID = "11111111-1111-1111-1111-111111111111"
 LINKED_ID = "22222222-2222-2222-2222-222222222222"
 CHILD_ID = "33333333-3333-3333-3333-333333333333"
@@ -69,7 +79,12 @@ def test_build_notes_export_document_expands_collapsed_notes_and_redacts_passwor
     monkeypatch.setattr(export_module, "note_store", store)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
 
-    html = build_notes_export_document(search=None, theme="light", token="token")
+    html = build_notes_export_document(
+        search=None,
+        theme="light",
+        token="token",
+        root_note_id=None,
+    )
 
     assert 'data-theme="light"' in html
     assert "Parent" in html
@@ -86,6 +101,98 @@ def test_build_notes_export_document_expands_collapsed_notes_and_redacts_passwor
     assert '  <main id="notes-container">' in html
     assert '    <article class="note" id="note-root">' in html
     assert '      <div class="note-content">' in html
+
+
+def test_build_notes_export_document_can_export_single_note_subtree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        "root-a": _Note("root-a", None, None, "root-b", True, "<div>Selected root</div>", ""),
+        "child-a": _Note("child-a", "root-a", None, None, True, "<div>sekret</div>", "@password"),
+        "root-b": _Note("root-b", None, "root-a", None, False, "<div>Other root</div>", ""),
+    }
+    store = _FakeNoteStore(
+        notes=notes,
+        children_by_parent={None: ["root-a", "root-b"], "root-a": ["child-a"]},
+    )
+
+    monkeypatch.setattr(export_module, "note_store", store)
+    monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
+
+    html = build_notes_export_document(
+        search="other",
+        theme="light",
+        token="token",
+        root_note_id="root-a",
+    )
+
+    assert "Selected root" in html
+    assert "Other root" not in html
+    assert "sekret" not in html
+    assert "XXXXXX" in html
+    assert '<button class="note-collapse-toggle"' not in html
+    assert 'class="note-children"' in html
+
+
+def test_export_notes_html_route_passes_note_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(notes_route, "_require_bearer_token", lambda request: "token")
+    monkeypatch.setattr(notes_route, "note_store", _FakePresenceStore({"note-123"}))
+    monkeypatch.setattr(notes_route, "build_notes_export_filename", lambda: "export.html")
+
+    def _build_document(*, search, theme, token, root_note_id):
+        captured["search"] = search
+        captured["theme"] = theme
+        captured["token"] = token
+        captured["root_note_id"] = root_note_id
+        return "<!DOCTYPE html><html></html>"
+
+    monkeypatch.setattr(notes_route, "build_notes_export_document", _build_document)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api2/notes/export-html",
+            "headers": [],
+            "query_string": b"search_query=tag&theme=dark&note_id=note-123",
+        }
+    )
+
+    response = notes_route.export_notes_html(request)
+
+    assert response.status_code == 200
+    assert captured == {
+        "search": "tag",
+        "theme": "dark",
+        "token": "token",
+        "root_note_id": "note-123",
+    }
+
+
+def test_export_notes_html_route_rejects_missing_note_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(notes_route, "_require_bearer_token", lambda request: "token")
+    monkeypatch.setattr(notes_route, "note_store", _FakePresenceStore(set()))
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api2/notes/export-html",
+            "headers": [],
+            "query_string": b"search_query=&theme=light&note_id=missing",
+        }
+    )
+
+    with pytest.raises(notes_route.HTTPException) as excinfo:
+        notes_route.export_notes_html(request)
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.detail == "Note not found: missing"
 
 
 def test_build_notes_export_document_uses_search_scope_and_static_reference_markup(
@@ -135,7 +242,12 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
         lambda file_id, token: SimpleNamespace(record=file_record, content_bytes=b"png-bytes"),
     )
 
-    html = build_notes_export_document(search="match", theme="dark", token="token")
+    html = build_notes_export_document(
+        search="match",
+        theme="dark",
+        token="token",
+        root_note_id=None,
+    )
 
     assert 'data-theme="dark"' in html
     assert "linked first line" in html
@@ -167,7 +279,12 @@ def test_build_notes_export_document_redacts_password_reference_preview(
     monkeypatch.setattr(snapshot_module, "note_store", store)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
 
-    html = build_notes_export_document(search=None, theme="light", token="token")
+    html = build_notes_export_document(
+        search=None,
+        theme="light",
+        token="token",
+        root_note_id=None,
+    )
 
     assert "sekret" not in html
     assert "XXXXXX" in html
@@ -198,7 +315,12 @@ def test_build_notes_export_document_renders_markdown_meta_server_side(
     monkeypatch.setattr(export_module, "note_store", store)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
 
-    html = build_notes_export_document(search=None, theme="light", token="token")
+    html = build_notes_export_document(
+        search=None,
+        theme="light",
+        token="token",
+        root_note_id=None,
+    )
 
     assert 'data-markdown-rendered="true"' in html
     assert "<h1>Title</h1>" in html
@@ -232,7 +354,12 @@ def test_build_notes_export_document_renders_latex_meta_server_side(
     monkeypatch.setattr(export_module, "note_store", store)
     monkeypatch.setattr(export_module, "file_registry", _FakeFileRegistry(set()))
 
-    html = build_notes_export_document(search=None, theme="dark", token="token")
+    html = build_notes_export_document(
+        search=None,
+        theme="dark",
+        token="token",
+        root_note_id=None,
+    )
 
     assert '<math xmlns="http://www.w3.org/1998/Math/MathML" display="block">' in html
     assert "<mfrac>" in html
