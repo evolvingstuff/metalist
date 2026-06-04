@@ -57,6 +57,9 @@ _COLLAPSED_PREVIEW_MEDIA_TAGS = {
     "video",
 }
 _REFERENCE_TOKEN_RE = re.compile(r"!?\[\[[^\[\]\n]+\]\]")
+_UUID_REFERENCE_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -405,12 +408,7 @@ def _find_next_reference_token_start(*, text: str, start: int) -> tuple[Optional
 
 
 def _is_valid_embed_note_id(note_id: str) -> bool:
-    if note_id == "":
-        return False
-    for ch in note_id:
-        if ch.isspace():
-            return False
-    return True
+    return _UUID_REFERENCE_ID_RE.fullmatch(note_id) is not None
 
 
 def _render_reference_block(
@@ -825,9 +823,20 @@ def _extract_first_line_preview(content_html: str) -> str:
 def _strip_reference_tokens(text: str) -> str:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
-    without_refs = _REFERENCE_TOKEN_RE.sub(" ", text)
+    without_refs = _REFERENCE_TOKEN_RE.sub(_strip_reference_token_if_uuid, text)
     normalized = _WHITESPACE_RE.sub(" ", without_refs)
     return normalized.strip()
+
+
+def _strip_reference_token_if_uuid(match: re.Match[str]) -> str:
+    token = match.group(0)
+    if token.startswith("![["):
+        note_id = token[3:-2].strip()
+    else:
+        note_id = token[2:-2].strip()
+    if _is_valid_embed_note_id(note_id):
+        return " "
+    return token
 
 
 def _is_collapsed_preview_line_boundary_tag(tag_html: str) -> bool:

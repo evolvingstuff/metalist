@@ -6,24 +6,29 @@ import app.usecases.toggle_reference_mode as toggle_module
 from app.services.embedded_references import replace_reference_token_mode_in_html
 
 
+HOST_ID = "11111111-1111-1111-1111-111111111111"
+TARGET_ID = "22222222-2222-2222-2222-222222222222"
+OTHER_ID = "33333333-3333-3333-3333-333333333333"
+
+
 def test_replace_reference_token_mode_updates_only_target_occurrence() -> None:
-    content = "<div>[[aaa]] ![[bbb]] [[aaa]]</div>"
+    content = f"<div>[[{TARGET_ID}]] ![[{OTHER_ID}]] [[{TARGET_ID}]]</div>"
     updated, changed = replace_reference_token_mode_in_html(
         content_html=content,
-        reference_note_id="aaa",
+        reference_note_id=TARGET_ID,
         occurrence_index=2,
         target_mode="embed",
     )
 
     assert changed
-    assert updated == "<div>[[aaa]] ![[bbb]] ![[aaa]]</div>"
+    assert updated == f"<div>[[{TARGET_ID}]] ![[{OTHER_ID}]] ![[{TARGET_ID}]]</div>"
 
 
 def test_replace_reference_token_mode_noop_when_reference_mismatches() -> None:
-    content = "<div>[[aaa]]</div>"
+    content = f"<div>[[{TARGET_ID}]]</div>"
     updated, changed = replace_reference_token_mode_in_html(
         content_html=content,
-        reference_note_id="bbb",
+        reference_note_id=OTHER_ID,
         occurrence_index=0,
         target_mode="embed",
     )
@@ -51,8 +56,8 @@ class _FakeStore:
 
 def test_cmd_toggle_reference_mode_updates_content_and_records_undo(monkeypatch) -> None:
     record = _Record(
-        id="host",
-        content="<div>![[target]] [[other]]</div>",
+        id=HOST_ID,
+        content=f"<div>![[{TARGET_ID}]] [[{OTHER_ID}]]</div>",
         tags="alpha beta",
     )
     fake_store = _FakeStore(record=record)
@@ -74,8 +79,8 @@ def test_cmd_toggle_reference_mode_updates_content_and_records_undo(monkeypatch)
     monkeypatch.setattr("app.services.undo_state.record_update", _fake_record_update)
 
     command = toggle_module.CmdToggleReferenceMode(
-        note_id="host",
-        reference_note_id="target",
+        note_id=HOST_ID,
+        reference_note_id=TARGET_ID,
         occurrence_index=0,
         mode="link",
         token="token",
@@ -86,8 +91,8 @@ def test_cmd_toggle_reference_mode_updates_content_and_records_undo(monkeypatch)
     result = command.execute()
 
     assert captured["update"] == (
-        "host",
-        "<div>[[target]] [[other]]</div>",
+        HOST_ID,
+        f"<div>[[{TARGET_ID}]] [[{OTHER_ID}]]</div>",
         "alpha beta",
         "token",
     )

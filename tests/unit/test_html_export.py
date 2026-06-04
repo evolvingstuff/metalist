@@ -49,6 +49,11 @@ class _FakeFileRegistry:
         return file_id in self._file_ids
 
 
+ROOT_ID = "11111111-1111-1111-1111-111111111111"
+LINKED_ID = "22222222-2222-2222-2222-222222222222"
+CHILD_ID = "33333333-3333-3333-3333-333333333333"
+
+
 def test_build_notes_export_document_expands_collapsed_notes_and_redacts_passwords(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -88,13 +93,13 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
 ) -> None:
     file_id = "f9989d26-5ec9-4b09-9647-909c58ad997a"
     notes = {
-        "a": _Note("a", None, None, "b", False, f"<div>[[b]] ![[{file_id}]]</div>", "match"),
-        "b": _Note("b", None, "a", None, False, "<div>linked first line</div><div>linked second line</div>", ""),
-        "c": _Note("c", "a", None, None, False, "<div>hidden child</div>", ""),
+        ROOT_ID: _Note(ROOT_ID, None, None, LINKED_ID, False, f"<div>[[{LINKED_ID}]] ![[{file_id}]]</div>", "match"),
+        LINKED_ID: _Note(LINKED_ID, None, ROOT_ID, None, False, "<div>linked first line</div><div>linked second line</div>", ""),
+        CHILD_ID: _Note(CHILD_ID, ROOT_ID, None, None, False, "<div>hidden child</div>", ""),
     }
     store = _FakeNoteStore(
         notes=notes,
-        children_by_parent={None: ["a", "b"], "a": ["c"]},
+        children_by_parent={None: [ROOT_ID, LINKED_ID], ROOT_ID: [CHILD_ID]},
     )
     index = SearchIndex()
     index.rebuild(
@@ -150,12 +155,12 @@ def test_build_notes_export_document_redacts_password_reference_preview(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     notes = {
-        "a": _Note("a", None, None, "b", False, "<div>[[b]]</div>", ""),
-        "b": _Note("b", None, "a", None, False, "<div>sekret</div>", "@password"),
+        ROOT_ID: _Note(ROOT_ID, None, None, LINKED_ID, False, f"<div>[[{LINKED_ID}]]</div>", ""),
+        LINKED_ID: _Note(LINKED_ID, None, ROOT_ID, None, False, "<div>sekret</div>", "@password"),
     }
     store = _FakeNoteStore(
         notes=notes,
-        children_by_parent={None: ["a", "b"]},
+        children_by_parent={None: [ROOT_ID, LINKED_ID]},
     )
 
     monkeypatch.setattr(export_module, "note_store", store)
