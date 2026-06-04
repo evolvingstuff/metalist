@@ -33,6 +33,7 @@ export function restoreCollapsedStateLocallyIfNeeded(noteElement) {
     const shouldRestore = shouldRestoreCollapsedStateLocally({
         startedCollapsed: ModeContext.editSessionStartedCollapsed,
         hasEdits: ModeContext.editSessionHasEdits,
+        expandedPersisted: ModeContext.editSessionExpandedPersisted,
     });
     if (!shouldRestore) {
         return false;

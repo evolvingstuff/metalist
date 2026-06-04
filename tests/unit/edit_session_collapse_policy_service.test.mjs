@@ -49,6 +49,7 @@ test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that s
         shouldRestoreCollapsedStateLocally({
             startedCollapsed: true,
             hasEdits: false,
+            expandedPersisted: false,
         }),
         true,
     );
@@ -57,6 +58,7 @@ test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that s
         shouldRestoreCollapsedStateLocally({
             startedCollapsed: false,
             hasEdits: false,
+            expandedPersisted: false,
         }),
         false,
     );
@@ -65,6 +67,16 @@ test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that s
         shouldRestoreCollapsedStateLocally({
             startedCollapsed: true,
             hasEdits: true,
+            expandedPersisted: false,
+        }),
+        false,
+    );
+
+    assert.equal(
+        shouldRestoreCollapsedStateLocally({
+            startedCollapsed: true,
+            hasEdits: false,
+            expandedPersisted: true,
         }),
         false,
     );
