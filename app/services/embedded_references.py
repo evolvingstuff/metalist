@@ -731,9 +731,14 @@ def _render_embedded_note_node(
     if not isinstance(record_tags, str):
         raise TypeError("embedded note tags must be a string")
 
+    is_collapsed = bool(record.is_collapsed) and not static_export
+    source_content = record_content
+    if is_collapsed:
+        source_content = extract_collapsed_preview_source_html(record_content)
+
     rendered_content = _replace_reference_tokens_in_html(
         host_note_id=note_id,
-        content_html=record_content,
+        content_html=source_content,
         tags=record_tags,
         context=context,
         ancestry=ancestry,
@@ -750,10 +755,12 @@ def _render_embedded_note_node(
     classes = "note-embed-node"
     if is_root:
         classes = f"{classes} note-embed-root"
+    if is_collapsed:
+        classes = f"{classes} collapsed"
 
     children_html = ""
     child_ids = context.get_children(note_id)
-    if child_ids:
+    if child_ids and not is_collapsed:
         child_parts: List[str] = []
         for child_id in child_ids:
             child_parts.append(
@@ -768,12 +775,59 @@ def _render_embedded_note_node(
             )
         children_html = f'<div class="note-embed-children">{"".join(child_parts)}</div>'
 
+    can_collapse = _embedded_note_is_collapsible(
+        content_html=record_content,
+        context=context,
+        child_ids=child_ids,
+    )
+    show_collapse_toggle = can_collapse and not static_export
+    collapse_toggle_html = ""
+    if show_collapse_toggle:
+        if is_collapsed:
+            collapse_label = "Expand referenced note"
+            collapse_symbol = "▸"
+        else:
+            collapse_label = "Collapse referenced note"
+            collapse_symbol = "▾"
+        collapse_toggle_html = (
+            '<button type="button" class="note-embed-collapse-toggle" '
+            f'aria-label="{collapse_label}" title="{collapse_label}">'
+            f"{collapse_symbol}"
+            "</button>"
+        )
+
     return (
-        f'<div class="{classes}" data-embed-note-id="{escaped_note_id}">'
+        f'<div class="{classes}" data-embed-note-id="{escaped_note_id}" '
+        f'data-is-collapsed="{str(is_collapsed).lower()}" '
+        f'data-can-collapse="{str(show_collapse_toggle).lower()}">'
+        f"{collapse_toggle_html}"
+        '<div class="note-embed-body">'
         f'<div class="note-embed-content">{rendered_content}</div>'
         f"{children_html}"
         "</div>"
+        "</div>"
     )
+
+
+def _embedded_note_is_collapsible(
+    *,
+    content_html: str,
+    context: EmbedRenderContext,
+    child_ids: List[str],
+) -> bool:
+    if child_ids:
+        return True
+    collapsed_preview_source = extract_collapsed_preview_source_html(content_html)
+    if collapsed_preview_source == "":
+        return False
+    if collapsed_preview_source_has_media(content_html):
+        return True
+    if collapsed_preview_source_has_image_file_embed(
+        content_html=content_html,
+        context=context,
+    ):
+        return True
+    return collapsed_preview_source != content_html.strip()
 
 
 def _ignored_link_wrapper_keys_for_tags(tags: str) -> FrozenSet[Tuple[str, int]]:

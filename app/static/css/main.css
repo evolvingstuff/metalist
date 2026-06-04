@@ -2786,7 +2786,39 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 }
 
 .note-embed-node {
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 2px;
+}
+
+.note-embed-node[data-can-collapse="true"] {
+    grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.note-embed-collapse-toggle {
+    appearance: none;
+    align-self: start;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #5f6368;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.note-embed-collapse-toggle:hover,
+.note-embed-collapse-toggle:focus-visible {
+    background: rgba(0, 0, 0, 0.12);
+    color: #1f2937;
+    outline: none;
+}
+
+.note-embed-body {
+    min-width: 0;
 }
 
 .note-embed-content {
@@ -4700,6 +4732,7 @@ html[data-theme="dark"] .note-reference-link-mode {
 }
 
 html[data-theme="dark"] .note-reference-toggle,
+html[data-theme="dark"] .note-embed-collapse-toggle,
 html[data-theme="dark"] .note-file-image-download-link,
 html[data-theme="dark"] .note-reference-link,
 html[data-theme="dark"] .note-file-reference-link {
@@ -4707,7 +4740,9 @@ html[data-theme="dark"] .note-file-reference-link {
 }
 
 html[data-theme="dark"] .note-reference-toggle:hover,
-html[data-theme="dark"] .note-reference-toggle:focus-visible {
+html[data-theme="dark"] .note-reference-toggle:focus-visible,
+html[data-theme="dark"] .note-embed-collapse-toggle:hover,
+html[data-theme="dark"] .note-embed-collapse-toggle:focus-visible {
     background: rgba(255, 255, 255, 0.12);
     color: #f8fbff;
 }

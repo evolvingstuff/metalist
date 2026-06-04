@@ -148,6 +148,7 @@ function isMouseDownOutsideEditExclusion(target) {
             '.add-note',
             '#trash-can',
             '.note-collapse-toggle',
+            '.note-embed-collapse-toggle',
             '.note-reference-toggle',
             '.note-reference-link',
             '.note-file-reference-link',
@@ -849,6 +850,10 @@ function handleClick(event) {
         return;
     }
 
+    if (handleEmbeddedReferenceCollapseClick(event)) {
+        return;
+    }
+
     if (handleReferenceBackButtonClick(event)) {
         return;
     }
@@ -972,9 +977,10 @@ function handleClick(event) {
         const searchField = event.target.closest('#search-input');
         const createButton = event.target.closest('.add-note');
         const collapseToggle = event.target.closest('.note-collapse-toggle');
+        const embedCollapseToggle = event.target.closest('.note-embed-collapse-toggle');
         
         // Only allow certain actions when disconnected
-        if (noteContent || createButton || collapseToggle) {
+        if (noteContent || createButton || collapseToggle || embedCollapseToggle) {
             Logger.logNoop('Click event ignored while disconnected from server', {
                 eventType: event.type,
                 targetElement: event.target.tagName,
@@ -1343,6 +1349,58 @@ function handleReferenceToggleClick(event) {
 
     void CommandGate.run('mouse.toggle_reference_mode', async () => {
         await toggleReferenceModeForNote(hostNoteId, referenceNoteId, occurrenceIndex, mode);
+    });
+    return true;
+}
+
+function handleEmbeddedReferenceCollapseClick(event) {
+    if (!event.target) {
+        throw new Error('Embedded reference collapse click missing target element');
+    }
+
+    const collapseToggle = event.target.closest('.note-embed-collapse-toggle');
+    if (!collapseToggle) {
+        return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!ModeContext.isConnected) {
+        Logger.logNoop('Embedded reference collapse click ignored while disconnected', {
+            isConnected: false,
+        });
+        return true;
+    }
+
+    const embedNode = collapseToggle.closest('.note-embed-node');
+    if (!embedNode) {
+        throw new Error('Embedded reference collapse toggle missing .note-embed-node container');
+    }
+
+    const noteId = embedNode.dataset.embedNoteId;
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('Embedded reference collapse toggle missing embedded note id');
+    }
+
+    const canCollapse = embedNode.dataset.canCollapse !== 'false';
+    if (!canCollapse) {
+        Logger.logNoop('Embedded reference collapse toggle ignored: note cannot collapse', {
+            noteId,
+        });
+        return true;
+    }
+
+    const isCurrentlyCollapsed = embedNode.dataset.isCollapsed === 'true';
+    if (isCurrentlyCollapsed) {
+        void CommandGate.run('mouse.expand_embedded_reference_note', async () => {
+            await expandNote(noteId);
+        });
+        return true;
+    }
+
+    void CommandGate.run('mouse.collapse_embedded_reference_note', async () => {
+        await collapseNote(noteId);
     });
     return true;
 }

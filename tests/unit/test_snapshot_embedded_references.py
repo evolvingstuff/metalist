@@ -73,7 +73,7 @@ def _state_for(
 def test_embed_reference_renders_as_block_and_includes_descendants(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"<div>blah ![[{TARGET_ID}]] yada</div>", ""),
-        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, True, "<div>embedded root</div>", ""),
+        TARGET_ID: _Note(TARGET_ID, None, HOST_ID, None, False, "<div>embedded root</div>", ""),
         CHILD_ID: _Note(CHILD_ID, TARGET_ID, None, None, False, "<div>embedded child</div>", ""),
     }
     state = _state_for(
@@ -85,10 +85,40 @@ def test_embed_reference_renders_as_block_and_includes_descendants(monkeypatch: 
     rendered = state.payloads[HOST_ID]["content"]
     assert "note-embed-block" in rendered
     assert f'data-embed-ref-id="{TARGET_ID}"' in rendered
+    assert f'data-embed-note-id="{TARGET_ID}" data-is-collapsed="false"' in rendered
     assert "embedded root" in rendered
     assert "embedded child" in rendered
     assert rendered.index("blah") < rendered.index("note-embed-block")
     assert rendered.index("note-embed-block") < rendered.index("yada")
+
+
+def test_embed_reference_respects_collapsed_source_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"<div>![[{TARGET_ID}]]</div>", ""),
+        TARGET_ID: _Note(
+            TARGET_ID,
+            None,
+            HOST_ID,
+            None,
+            True,
+            "<div>embedded first line</div><div>embedded hidden line</div>",
+            "",
+        ),
+        CHILD_ID: _Note(CHILD_ID, TARGET_ID, None, None, False, "<div>embedded child</div>", ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: [HOST_ID, TARGET_ID], TARGET_ID: [CHILD_ID]},
+    )
+
+    rendered = state.payloads[HOST_ID]["content"]
+    assert f'data-embed-note-id="{TARGET_ID}" data-is-collapsed="true"' in rendered
+    assert 'class="note-embed-collapse-toggle"' in rendered
+    assert "Expand referenced note" in rendered
+    assert "embedded first line" in rendered
+    assert "embedded hidden line" not in rendered
+    assert "embedded child" not in rendered
 
 
 def test_embed_reference_missing_uuid_shows_missing_marker(monkeypatch: pytest.MonkeyPatch) -> None:

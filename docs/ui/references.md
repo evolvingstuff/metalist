@@ -29,8 +29,8 @@
   - Toggle actions mutate the raw token in note content (`![[...]]` <-> `[[...]]`) and work per-token occurrence.
   - The embed always renders on its own visual line (block), even when written inline.
   - The referenced note's child subtree is included.
-  - Embedded rendering ignores collapsed/expanded state of the source note and renders fully expanded.
-  - Embed blocks do not show normal note collapse arrows/affordances.
+  - Embedded note rendering starts with the same collapsed/expanded state as the source note.
+  - Embedded note collapse controls update the source note state, so toggling inside a reference is reflected anywhere that note appears.
   - Clicking a link-mode reference opens UUID search for that note (it does not enter edit mode on the target note).
 - **Edit mode**:
   - Tokens remain literal raw text (`![[UUID]]` or `[[UUID]]`).
