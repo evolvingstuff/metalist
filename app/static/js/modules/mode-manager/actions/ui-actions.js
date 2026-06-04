@@ -5,7 +5,6 @@ import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { applyDifferentialView } from '../services/differential-view-service.js';
 import { clearTagBar, syncTagBar } from '../services/tag-bar-service.js';
-import { ensureNoteExpandedLocally } from '../services/collapse-affordance-service.js';
 import { initializeEditSessionCollapseStateFromNoteElement } from '../services/edit-session-collapse-service.js';
 import { clearEditingStateForHiddenFilteredNote } from '../services/filtered-refresh-selection-service.js';
 import { attachEditorSurface, detachEditorSurface } from '../../editor-toolbar.js';
@@ -327,7 +326,6 @@ export async function actionRefreshAndMaybeSelect(options) {
 
             if (ModeContext.isEditing) {
                 initializeEditSessionCollapseStateFromNoteElement(noteElement);
-                ensureNoteExpandedLocally(noteId);
                 DOMUtils.setNoteEditable(noteElement, true);
                 syncTagBar(noteElement);
 

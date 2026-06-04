@@ -6,14 +6,14 @@ import {
     shouldRestoreCollapsedStateLocally,
 } from '../../app/static/js/modules/mode-manager/services/edit-session-collapse-policy-service.js';
 
-test('shouldPersistExpandedEditSession only persists when a collapsed session has edits and is not yet persisted', () => {
+test('shouldPersistExpandedEditSession never persists expansion for collapsed edit sessions', () => {
     assert.equal(
         shouldPersistExpandedEditSession({
             startedCollapsed: true,
             hasEdits: true,
             expandedPersisted: false,
         }),
-        true,
+        false,
     );
 
     assert.equal(
@@ -49,6 +49,7 @@ test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that s
         shouldRestoreCollapsedStateLocally({
             startedCollapsed: true,
             hasEdits: false,
+            expandedPersisted: false,
         }),
         true,
     );
@@ -57,6 +58,7 @@ test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that s
         shouldRestoreCollapsedStateLocally({
             startedCollapsed: false,
             hasEdits: false,
+            expandedPersisted: false,
         }),
         false,
     );
@@ -65,6 +67,16 @@ test('shouldRestoreCollapsedStateLocally only restores for no-op sessions that s
         shouldRestoreCollapsedStateLocally({
             startedCollapsed: true,
             hasEdits: true,
+            expandedPersisted: false,
+        }),
+        false,
+    );
+
+    assert.equal(
+        shouldRestoreCollapsedStateLocally({
+            startedCollapsed: true,
+            hasEdits: false,
+            expandedPersisted: true,
         }),
         false,
     );

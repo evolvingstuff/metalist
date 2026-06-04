@@ -11,6 +11,7 @@ import { isRootReorderLocked } from '../services/root-sort-service.js';
 import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { exitEditingBeforeTodoToggle } from '../services/todo-toggle-editing-service.js';
+import { shouldExitEditingBeforeCollapseToggle } from '../services/collapse-editing-policy-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSaveAndExitEditingWithoutRefreshing, actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -736,13 +737,19 @@ async function setNoteCollapse(noteId, collapsed) {
         throw new Error('Cannot change collapse state: noteId is required');
     }
 
-	    if (ModeContext.isEditing) {
+    const shouldExitEditing = shouldExitEditingBeforeCollapseToggle({
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        targetNoteId: noteId,
+    });
+
+    if (shouldExitEditing) {
         const editingNoteId = ModeContext.currentNoteId;
         if (!editingNoteId) {
             throw new Error('Invariant violation: isEditing is true but currentNoteId is null');
         }
 
-        Logger.logDebug('Collapse toggle clicked while editing; exiting edit mode first', {
+        Logger.logDebug('Collapse toggle clicked on a different note while editing; exiting edit mode first', {
             editingNoteId,
             targetNoteId: noteId,
             collapsed
@@ -765,12 +772,15 @@ async function setNoteCollapse(noteId, collapsed) {
         }
     }
 
-	    if (collapsed) {
-	        await NotesAPI.collapseNote(noteId);
-	    } else {
-	        await NotesAPI.expandNote(noteId);
-	    }
-	    await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'setNoteCollapse' });
+    if (collapsed) {
+        await NotesAPI.collapseNote(noteId);
+    } else {
+        await NotesAPI.expandNote(noteId);
+        if (ModeContext.isEditing && ModeContext.currentNoteId === noteId) {
+            ModeContext.markEditSessionExpandedPersisted();
+        }
+    }
+    await actionRefreshAndMaybeSelect({ startedAt: startedAt, context: 'setNoteCollapse' });
 }
 
 export async function collapseNote(noteId) {

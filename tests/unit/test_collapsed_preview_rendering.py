@@ -43,12 +43,13 @@ def _state_for(
     monkeypatch: pytest.MonkeyPatch,
     notes: Dict[str, _Note],
     children_by_parent: Dict[Optional[str], List[str]],
+    editing_note_id: str | None,
 ):
     store = _FakeNoteStore(notes=notes, children_by_parent=children_by_parent)
     monkeypatch.setattr(snapshot_module, "note_store", store)
     monkeypatch.setattr(snapshot_module, "get_all_locks", lambda: {})
     return build_view_state(
-        editing_note_id=None,
+        editing_note_id=editing_note_id,
         search=None,
         sort_mode="normal",
         date_filter=None,
@@ -88,7 +89,12 @@ def test_inline_image_note_is_collapsible_even_when_image_is_entire_note(monkeyp
         ),
     }
 
-    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        editing_note_id=None,
+    )
 
     assert state.payloads["a"]["flags"]["isCollapsible"] is True
 
@@ -106,7 +112,12 @@ def test_inline_image_first_note_is_collapsible_with_following_text(monkeypatch:
         ),
     }
 
-    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        editing_note_id=None,
+    )
 
     assert state.payloads["a"]["flags"]["isCollapsible"] is True
 
@@ -124,7 +135,12 @@ def test_collapsed_snapshot_sends_first_meaningful_line_only(monkeypatch: pytest
         ),
     }
 
-    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        editing_note_id=None,
+    )
 
     rendered = state.payloads["a"]["content"]
     assert rendered == "Timestamps:"
@@ -132,12 +148,38 @@ def test_collapsed_snapshot_sends_first_meaningful_line_only(monkeypatch: pytest
     assert "(0:00)" not in rendered
 
 
+def test_collapsed_editing_note_hides_children_but_keeps_full_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, True, "<div>A</div><div>second line</div>", ""),
+        "b": _Note("b", "a", None, None, False, "<div>B</div>", ""),
+    }
+
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"], "a": ["b"]},
+        editing_note_id="a",
+    )
+
+    assert {entry["id"] for entry in state.structure} == {"a"}
+    assert state.payloads["a"]["content"] == "<div>A</div><div>second line</div>"
+    assert state.payloads["a"]["flags"]["isCollapsed"] is True
+    assert state.payloads["a"]["flags"]["isEditing"] is True
+    assert state.payloads["a"]["flags"]["hasChildren"] is True
+    assert "b" not in state.payloads
+
+
 def test_blank_collapsed_note_without_children_is_not_collapsible(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         "a": _Note("a", None, None, None, True, "<div><br></div>", ""),
     }
 
-    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"]})
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        editing_note_id=None,
+    )
 
     assert state.payloads["a"]["content"] == ""
     assert state.payloads["a"]["flags"]["isCollapsible"] is False
@@ -149,7 +191,12 @@ def test_blank_collapsed_note_with_children_is_collapsible(monkeypatch: pytest.M
         "b": _Note("b", "a", None, None, False, "child", ""),
     }
 
-    state = _state_for(monkeypatch=monkeypatch, notes=notes, children_by_parent={None: ["a"], "a": ["b"]})
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"], "a": ["b"]},
+        editing_note_id=None,
+    )
 
     assert state.payloads["a"]["flags"]["hasChildren"] is True
     assert state.payloads["a"]["flags"]["isCollapsible"] is True

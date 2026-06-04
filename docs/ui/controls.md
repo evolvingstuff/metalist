@@ -110,7 +110,7 @@
 | Click `+` button | Add new note at top |
 | Click menu (`≡`) button | Open command palette |
 | Click `↑` button | Scroll the page to the top and jump the right-side calendar to newest activity. The button stays enabled at page top when the calendar is not at newest. |
-| Click note arrow | Toggle collapse/expand note |
+| Click note arrow | Toggle collapse/expand note. If the note is currently being edited, edit mode remains active. |
 | Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
 | Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
@@ -132,6 +132,7 @@
 > Saved-file image actions are available in view mode on rendered image previews; edit mode only contains the raw UUID token for those files.
 > Collapse arrows reflect the server-provided `isCollapsible` flag, plus a browser-side promotion when rendered note content visibly wraps beyond one line.
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
+> Selecting a collapsed note for editing shows that note's full editable content but keeps its child subtree hidden until the note is explicitly expanded.
 
 ### Command Palette Utility Entries
 - Toggle tabs

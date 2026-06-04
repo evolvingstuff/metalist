@@ -8,11 +8,12 @@ export function shouldPersistExpandedEditSession({ startedCollapsed, hasEdits, e
     requireBoolean('startedCollapsed', startedCollapsed);
     requireBoolean('hasEdits', hasEdits);
     requireBoolean('expandedPersisted', expandedPersisted);
-    return startedCollapsed && hasEdits && !expandedPersisted;
+    return false;
 }
 
-export function shouldRestoreCollapsedStateLocally({ startedCollapsed, hasEdits }) {
+export function shouldRestoreCollapsedStateLocally({ startedCollapsed, hasEdits, expandedPersisted }) {
     requireBoolean('startedCollapsed', startedCollapsed);
     requireBoolean('hasEdits', hasEdits);
-    return startedCollapsed && !hasEdits;
+    requireBoolean('expandedPersisted', expandedPersisted);
+    return startedCollapsed && !hasEdits && !expandedPersisted;
 }
