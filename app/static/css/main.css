@@ -2344,6 +2344,65 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     display: inline-block !important;
 }
 
+.note-embed-node.collapsed > .note-embed-body > .note-embed-content:has(img) {
+    max-height: 4.8em;
+    overflow: hidden;
+}
+
+.note-embed-node.collapsed > .note-embed-body > .note-embed-content :not(img) {
+    font-size: inherit !important;
+    line-height: inherit !important;
+}
+
+.note-embed-node.collapsed > .note-embed-body > .note-embed-content :is(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p,
+    div,
+    section,
+    article,
+    header,
+    footer,
+    main,
+    blockquote,
+    pre,
+    ul,
+    ol,
+    li,
+    table,
+    thead,
+    tbody,
+    tfoot,
+    tr,
+    th,
+    td
+) {
+    display: block;
+    margin: 0 !important;
+    padding: 0;
+}
+
+.note-embed-node.collapsed > .note-embed-body > .note-embed-content br {
+    display: inline;
+}
+
+.note-embed-node.collapsed > .note-embed-body > .note-embed-content img {
+    height: 4.5em !important;
+    width: 7.5em !important;
+    max-height: 4.5em !important;
+    max-width: 7.5em !important;
+    object-fit: cover !important;
+    object-position: center center;
+    border-radius: 4px;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+    display: inline-block !important;
+}
+
 
 .note.search-redacted {
     margin: 0;
@@ -2734,6 +2793,52 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 }
 
 .note.collapsed:not(.editing) .note-reference-block.note-reference-file-image .note-file-image-preview-placeholder {
+    padding: 0 0.35rem;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image {
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    min-width: 0;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-reference-toggle,
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-file-image-download-link {
+    display: none;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-reference-content {
+    width: auto;
+    min-width: 0;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-file-image-embed {
+    gap: 0;
+    width: auto;
+    max-width: none;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-file-image-preview-frame {
+    width: 7.5em;
+    height: 4.5em;
+    min-height: 0;
+    border-radius: 4px;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-file-image-preview {
+    width: 100%;
+    height: 100% !important;
+    max-width: none;
+    max-height: none !important;
+    object-fit: cover;
+}
+
+.note-embed-node.collapsed .note-reference-block.note-reference-file-image .note-file-image-preview-placeholder {
     padding: 0 0.35rem;
     font-size: 11px;
     line-height: 1.2;
