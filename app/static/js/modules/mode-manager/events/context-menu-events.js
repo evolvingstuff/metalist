@@ -226,6 +226,20 @@ function showPreferenceContextMenu(event, itemId, itemLabel, preferenceKey, next
                     void CommandPalette.applyPreference(preferenceKey, nextValue);
                 },
             },
+            {
+                id: 'export-view-html',
+                label: 'Export View as HTML',
+                icon: 'download',
+                enabled: true,
+                separated: true,
+                onSelect: () => {
+                    void CommandGate.run('contextMenu.view.export_html', async () => {
+                        await exportHtmlFromContextMenu(null);
+                    }, {
+                        timeoutMs: 120000,
+                    });
+                },
+            },
         ],
         position: { x: event.clientX, y: event.clientY },
         onClose: null,
