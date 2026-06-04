@@ -613,7 +613,7 @@ def build_view_state(
             hash_by_id[rec.id] = h
             if rec.id in force_uncollapsed_ids:
                 traverse(rec.id)
-            elif not flags["isCollapsed"] or flags["isEditing"]:
+            elif not flags["isCollapsed"]:
                 traverse(rec.id)
 
     traverse(None)

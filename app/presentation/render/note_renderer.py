@@ -330,7 +330,7 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
         is_editing = note_id == editing_note_id
         record_child_ids = note_store.get_children(note_id)
         has_children = bool(record_child_ids)
-        if bool(record.is_collapsed) and not is_editing:
+        if bool(record.is_collapsed):
             children = []
         else:
             children = _build_tree_from_store(note_id, editing_note_id, allowed_root_ids)
@@ -409,7 +409,7 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
 
         decrypted_note = DecryptedNote(note, decrypted_content)
         is_editing = note.id == editing_note_id
-        if bool(getattr(note, 'is_collapsed', False)) and not is_editing:
+        if bool(getattr(note, 'is_collapsed', False)):
             children = []
         else:
             children = _build_tree_from_db(db_manager, db, note.id, editing_note_id, allowed_root_ids)

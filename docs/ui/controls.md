@@ -132,6 +132,7 @@
 > Saved-file image actions are available in view mode on rendered image previews; edit mode only contains the raw UUID token for those files.
 > Collapse arrows reflect the server-provided `isCollapsible` flag, plus a browser-side promotion when rendered note content visibly wraps beyond one line.
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
+> Selecting a collapsed note for editing shows that note's full editable content but keeps its child subtree hidden until the note is explicitly expanded.
 
 ### Command Palette Utility Entries
 - Toggle tabs
