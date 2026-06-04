@@ -120,12 +120,13 @@
 | Click the tag bar while editing | Focus the tag input without re-selecting the note shell. |
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Once movement crosses the drag threshold, releasing back over the source note does not count as a click. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
-| Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`). Paste actions appear only when a note has been copied. |
+| Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`, `Export Note as HTML`, `Export View as HTML`). Paste actions appear only when a note has been copied. |
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note` |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
+| Right-click notes view background | Open the view context menu with `Export View as HTML` |
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
-| Right-click left lane | Toggle tabs visibility |
-| Right-click right lane | Toggle calendar view visibility |
+| Right-click left lane | Toggle tabs visibility or export the current view as HTML |
+| Right-click right lane | Toggle calendar view visibility or export the current view as HTML |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.

@@ -142,27 +142,6 @@ function buildNoteContextItems(context, handlers) {
 
     const hasSelectedText = context.hasSelectedText === true;
     const hasNoteClipboard = context.hasNoteClipboard === true;
-    const exportNoteItem = {
-        id: 'export-note-html',
-        label: 'Export Note as HTML',
-        icon: 'download',
-        enabled: true,
-        onSelect: () => onExportNoteHtml(noteId),
-    };
-    if (items.length > 0) {
-        exportNoteItem.separated = true;
-    }
-    items.push(
-        exportNoteItem,
-        {
-            id: 'export-view-html',
-            label: 'Export View as HTML',
-            icon: 'download',
-            enabled: true,
-            onSelect: () => onExportViewHtml(),
-        },
-    );
-
     const copyItem = {
         id: hasSelectedText ? 'copy-selection' : 'copy-note',
         label: hasSelectedText ? 'Copy' : 'Copy Note',
@@ -176,7 +155,9 @@ function buildNoteContextItems(context, handlers) {
             onCopyNote(noteId);
         },
     };
-    copyItem.separated = true;
+    if (items.length > 0) {
+        copyItem.separated = true;
+    }
     items.push(copyItem);
 
     if (hasNoteClipboard) {
@@ -241,6 +222,23 @@ function buildNoteContextItems(context, handlers) {
             icon: 'arrow_top',
             enabled: true,
             onSelect: () => onMoveNoteToTop(noteId),
+        },
+    );
+    items.push(
+        {
+            id: 'export-note-html',
+            label: 'Export Note as HTML',
+            icon: 'download',
+            enabled: true,
+            separated: true,
+            onSelect: () => onExportNoteHtml(noteId),
+        },
+        {
+            id: 'export-view-html',
+            label: 'Export View as HTML',
+            icon: 'download',
+            enabled: true,
+            onSelect: () => onExportViewHtml(),
         },
     );
     return items;

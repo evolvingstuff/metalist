@@ -30,30 +30,30 @@ test('buildContextMenuItems returns note actions for note context', () => {
     assert.deepEqual(
         items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
-            { id: 'export-note-html', label: 'Export Note as HTML', enabled: true },
-            { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
             { id: 'copy-note', label: 'Copy Note', enabled: true },
             { id: 'add-sibling-note', label: 'Add Sibling Note', enabled: true },
             { id: 'add-child-note', label: 'Add Child Note', enabled: true },
             { id: 'delete-note', label: 'Delete Note', enabled: true },
             { id: 'move-note-to-top', label: 'Move Note to Top', enabled: true },
+            { id: 'export-note-html', label: 'Export Note as HTML', enabled: true },
+            { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
     assert.equal(items[0].separated, undefined);
-    assert.equal(items[2].separated, true);
+    assert.equal(items[5].separated, true);
 
     for (const item of items) {
         item.onSelect();
     }
 
     assert.deepEqual(calls, [
-        ['exportNoteHtml', 'note-123'],
-        ['exportViewHtml'],
         ['copyNote', 'note-123'],
         ['addSibling', 'note-123'],
         ['addChild', 'note-123'],
         ['delete', 'note-123'],
         ['moveToTop', 'note-123'],
+        ['exportNoteHtml', 'note-123'],
+        ['exportViewHtml'],
     ]);
 });
 
@@ -84,18 +84,18 @@ test('buildContextMenuItems prepends image actions for note image context', () =
             { id: 'save-image', label: 'Save Image', enabled: true },
             { id: 'zoom-image', label: 'Zoom Image', enabled: true },
             { id: 'open-image-new-tab', label: 'Open Image in New Tab', enabled: true },
-            { id: 'export-note-html', label: 'Export Note as HTML', enabled: true },
-            { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
             { id: 'copy-note', label: 'Copy Note', enabled: true },
             { id: 'add-sibling-note', label: 'Add Sibling Note', enabled: true },
             { id: 'add-child-note', label: 'Add Child Note', enabled: true },
             { id: 'delete-note', label: 'Delete Note', enabled: true },
             { id: 'move-note-to-top', label: 'Move Note to Top', enabled: true },
+            { id: 'export-note-html', label: 'Export Note as HTML', enabled: true },
+            { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
     assert.equal(items[4].separated, true);
-    assert.equal(items[6].separated, true);
-    assert.equal(items[7].separated, undefined);
+    assert.equal(items[5].separated, undefined);
+    assert.equal(items[9].separated, true);
 
     items[0].onSelect();
     items[1].onSelect();
@@ -117,9 +117,9 @@ test('buildContextMenuItems shows text copy when selected text is present', () =
         buildNoteHandlers(calls),
     );
 
-    assert.equal(items[2].id, 'copy-selection');
-    assert.equal(items[2].label, 'Copy');
-    items[2].onSelect();
+    assert.equal(items[0].id, 'copy-selection');
+    assert.equal(items[0].label, 'Copy');
+    items[0].onSelect();
     assert.deepEqual(calls, [['copySelection', 'note-123']]);
 });
 
@@ -131,10 +131,8 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
     );
 
     assert.deepEqual(
-        items.slice(0, 7).map((item) => ({ id: item.id, label: item.label })),
+        items.slice(0, 5).map((item) => ({ id: item.id, label: item.label })),
         [
-            { id: 'export-note-html', label: 'Export Note as HTML' },
-            { id: 'export-view-html', label: 'Export View as HTML' },
             { id: 'copy-note', label: 'Copy Note' },
             { id: 'paste-note', label: 'Paste Sibling Note' },
             { id: 'paste-note-child', label: 'Paste Child Note' },
@@ -142,11 +140,18 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
             { id: 'paste-reference-child', label: 'Paste Child Reference' },
         ],
     );
+    assert.deepEqual(
+        items.slice(-2).map((item) => ({ id: item.id, label: item.label })),
+        [
+            { id: 'export-note-html', label: 'Export Note as HTML' },
+            { id: 'export-view-html', label: 'Export View as HTML' },
+        ],
+    );
 
+    items[1].onSelect();
+    items[2].onSelect();
     items[3].onSelect();
     items[4].onSelect();
-    items[5].onSelect();
-    items[6].onSelect();
     assert.deepEqual(calls, [
         ['pasteNote', 'note-123'],
         ['pasteNoteChild', 'note-123'],
