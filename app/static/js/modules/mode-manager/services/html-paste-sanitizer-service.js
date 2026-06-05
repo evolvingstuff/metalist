@@ -75,6 +75,16 @@ const META_HINT_PATTERN = /\b(?:op|edited|top\s+\d+%?\s+commenter)\b/i;
 const SCORE_HINT_PATTERN = /^\d+(?:\.\d+)?k?$/i;
 const LINE_BREAK_PATTERN = /\r\n|\r|\n/;
 const STRUCTURED_LINE_PATTERN = /^\s*(?:[-*+\u2022]\s+|\d+[.)]\s+|\(?\d{1,2}:\d{2}(?::\d{2})?\)?\s*(?:[-\u2013\u2014:]|\s)|[A-Za-z][A-Za-z0-9 /_-]{0,48}:\s*)/;
+const TIMESTAMP_ONLY_PATTERN = /^\s*\(?\d{1,2}:\d{2}(?::\d{2})?\)?\s*$/;
+const TIMESTAMP_SECTION_LABEL_PATTERN = /(?:^|\s)(?:time\s*stamps?|timestamps?|chapters?)\s*:\s*$/i;
+const INVISIBLE_TEXT_CHARS_PATTERN = /[\u200b-\u200f\ufeff]/g;
+const CITATION_MARKER_PATTERN = /^\s*\[\d+(?:\s*,\s*\d+)*\]\s*$/;
+const CUSTOM_ELEMENTS_TO_UNWRAP = new Set([
+    'd-cite',
+]);
+const CUSTOM_ELEMENTS_TO_REMOVE = new Set([
+    'd-footnote',
+]);
 const AVATAR_CLAMP_PX = 48;
 const TREE_WALKER_SHOW_ELEMENT_AND_TEXT = 0x1 | 0x4;
 const TREE_WALKER_SHOW_TEXT = 0x4;
@@ -505,6 +515,13 @@ function normalizeText(value) {
     return value.replace(/\s+/g, ' ').trim();
 }
 
+function normalizeVisibleText(value) {
+    if (typeof value !== 'string') {
+        throw new Error('normalizeVisibleText expects string');
+    }
+    return normalizeText(value.replace(INVISIBLE_TEXT_CHARS_PATTERN, ''));
+}
+
 function collectAvatarContextSignalsFromText(rawText, signals) {
     if (typeof rawText !== 'string') {
         return;
@@ -874,6 +891,45 @@ function removeElementPreserveChildren(element) {
     element.remove();
 }
 
+function unwrapElementPreserveChildren(element) {
+    if (!element) {
+        throw new Error('unwrapElementPreserveChildren expects element');
+    }
+    if (!(element instanceof Element)) {
+        throw new Error('unwrapElementPreserveChildren expects DOM Element');
+    }
+
+    const parent = element.parentNode;
+    if (!parent) {
+        element.remove();
+        return [];
+    }
+
+    const movedChildren = [];
+    while (element.firstChild) {
+        const child = element.firstChild;
+        movedChildren.push(child);
+        parent.insertBefore(child, element);
+    }
+    element.remove();
+    return movedChildren;
+}
+
+export function getCustomPasteElementPolicy(tagName) {
+    if (typeof tagName !== 'string') {
+        throw new Error('getCustomPasteElementPolicy expects tagName string');
+    }
+
+    const normalizedTagName = tagName.trim().toLowerCase();
+    if (CUSTOM_ELEMENTS_TO_REMOVE.has(normalizedTagName)) {
+        return 'remove';
+    }
+    if (CUSTOM_ELEMENTS_TO_UNWRAP.has(normalizedTagName)) {
+        return 'unwrap';
+    }
+    return 'keep';
+}
+
 function sanitizeElementAttributes(element, imageSourceFrequencyMap) {
     if (!element) {
         throw new Error('sanitizeElementAttributes expects element');
@@ -1015,6 +1071,21 @@ function sanitizeTree(rootNode, imageSourceFrequencyMap) {
         }
 
         const tagName = element.tagName.toLowerCase();
+        const customElementPolicy = getCustomPasteElementPolicy(tagName);
+        if (customElementPolicy === 'remove') {
+            element.remove();
+            continue;
+        }
+        if (customElementPolicy === 'unwrap') {
+            const movedChildren = unwrapElementPreserveChildren(element);
+            let childIndex = 0;
+            while (childIndex < movedChildren.length) {
+                queue.push(movedChildren[childIndex]);
+                childIndex += 1;
+            }
+            continue;
+        }
+
         if (BLOCKED_TAGS.has(tagName)) {
             element.remove();
             continue;
@@ -1118,6 +1189,96 @@ export function normalizeSoftWrappedTextLineBreaks(rawText) {
         .replace(/ {2,}/g, ' ');
 }
 
+export function shouldPreserveTimestampSiblingLineBreaks(rawText, previousSiblingText, nextSiblingText) {
+    if (typeof rawText !== 'string') {
+        throw new Error('shouldPreserveTimestampSiblingLineBreaks expects rawText string');
+    }
+    if (typeof previousSiblingText !== 'string') {
+        throw new Error('shouldPreserveTimestampSiblingLineBreaks expects previousSiblingText string');
+    }
+    if (typeof nextSiblingText !== 'string') {
+        throw new Error('shouldPreserveTimestampSiblingLineBreaks expects nextSiblingText string');
+    }
+    if (!LINE_BREAK_PATTERN.test(rawText)) {
+        return false;
+    }
+    if (rawText.trim().length === 0) {
+        return false;
+    }
+
+    return TIMESTAMP_ONLY_PATTERN.test(previousSiblingText) && TIMESTAMP_ONLY_PATTERN.test(nextSiblingText);
+}
+
+export function shouldInsertLineBreakBeforeTimestampAnchor(timestampText, timestampIndexInBlock, previousText) {
+    if (typeof timestampText !== 'string') {
+        throw new Error('shouldInsertLineBreakBeforeTimestampAnchor expects timestampText string');
+    }
+    if (typeof timestampIndexInBlock !== 'number') {
+        throw new Error('shouldInsertLineBreakBeforeTimestampAnchor expects timestampIndexInBlock number');
+    }
+    if (!Number.isInteger(timestampIndexInBlock)) {
+        throw new Error('shouldInsertLineBreakBeforeTimestampAnchor expects integer timestampIndexInBlock');
+    }
+    if (timestampIndexInBlock < 0) {
+        throw new Error('shouldInsertLineBreakBeforeTimestampAnchor expects timestampIndexInBlock >= 0');
+    }
+    if (typeof previousText !== 'string') {
+        throw new Error('shouldInsertLineBreakBeforeTimestampAnchor expects previousText string');
+    }
+    if (!TIMESTAMP_ONLY_PATTERN.test(timestampText)) {
+        return false;
+    }
+    if (timestampIndexInBlock > 0) {
+        return true;
+    }
+    return TIMESTAMP_SECTION_LABEL_PATTERN.test(previousText);
+}
+
+export function shouldInlineStandaloneCitationMarker(markerText, previousText, nextText) {
+    if (typeof markerText !== 'string') {
+        throw new Error('shouldInlineStandaloneCitationMarker expects markerText string');
+    }
+    if (typeof previousText !== 'string') {
+        throw new Error('shouldInlineStandaloneCitationMarker expects previousText string');
+    }
+    if (typeof nextText !== 'string') {
+        throw new Error('shouldInlineStandaloneCitationMarker expects nextText string');
+    }
+    if (!CITATION_MARKER_PATTERN.test(normalizeVisibleText(markerText))) {
+        return false;
+    }
+    return previousText.trim().length > 0 && nextText.trim().length > 0;
+}
+
+export function shouldRemoveStandaloneCitationMarker(markerText) {
+    if (typeof markerText !== 'string') {
+        throw new Error('shouldRemoveStandaloneCitationMarker expects markerText string');
+    }
+    return CITATION_MARKER_PATTERN.test(normalizeVisibleText(markerText));
+}
+
+function getNearestTextBearingSibling(node, direction) {
+    if (!node) {
+        throw new Error('getNearestTextBearingSibling expects node');
+    }
+    if (direction !== 'previous' && direction !== 'next') {
+        throw new Error(`getNearestTextBearingSibling direction must be previous or next, received: ${direction}`);
+    }
+
+    let sibling = direction === 'previous' ? node.previousSibling : node.nextSibling;
+    while (sibling) {
+        const textContent = sibling.textContent;
+        if (typeof textContent === 'string') {
+            const normalized = normalizeText(textContent);
+            if (normalized.length > 0) {
+                return normalized;
+            }
+        }
+        sibling = direction === 'previous' ? sibling.previousSibling : sibling.nextSibling;
+    }
+    return '';
+}
+
 function replaceTextNodeWithLineBreaks(documentRoot, textNode, parts) {
     if (!documentRoot) {
         throw new Error('replaceTextNodeWithLineBreaks expects documentRoot');
@@ -1154,6 +1315,252 @@ function replaceTextNodeWithLineBreaks(documentRoot, textNode, parts) {
     parent.replaceChild(fragment, textNode);
 }
 
+function findNearestBlockAncestor(element, rootNode) {
+    if (!element) {
+        throw new Error('findNearestBlockAncestor expects element');
+    }
+    if (!(element instanceof Element)) {
+        throw new Error('findNearestBlockAncestor expects DOM Element');
+    }
+    if (!rootNode) {
+        throw new Error('findNearestBlockAncestor expects rootNode');
+    }
+
+    let current = element.parentElement;
+    while (current && current !== rootNode) {
+        const tagName = current.tagName.toLowerCase();
+        if (BLOCK_TAGS.has(tagName)) {
+            return current;
+        }
+        current = current.parentElement;
+    }
+    return rootNode;
+}
+
+function hasImmediateLineBreakBefore(element) {
+    if (!element) {
+        throw new Error('hasImmediateLineBreakBefore expects element');
+    }
+    if (!(element instanceof Element)) {
+        throw new Error('hasImmediateLineBreakBefore expects DOM Element');
+    }
+
+    let sibling = element.previousSibling;
+    while (sibling) {
+        if (sibling.nodeType === ELEMENT_NODE) {
+            if (!(sibling instanceof Element)) {
+                throw new Error('hasImmediateLineBreakBefore encountered non-Element node');
+            }
+            return sibling.tagName.toLowerCase() === 'br';
+        }
+        const textContent = sibling.textContent;
+        if (typeof textContent === 'string' && textContent.trim().length > 0) {
+            return false;
+        }
+        sibling = sibling.previousSibling;
+    }
+    return false;
+}
+
+function getAdjacentNonWhitespaceSibling(node, direction) {
+    if (!node) {
+        throw new Error('getAdjacentNonWhitespaceSibling expects node');
+    }
+    if (direction !== 'previous' && direction !== 'next') {
+        throw new Error(`getAdjacentNonWhitespaceSibling direction must be previous or next, received: ${direction}`);
+    }
+
+    let sibling = direction === 'previous' ? node.previousSibling : node.nextSibling;
+    while (sibling) {
+        if (sibling.nodeType === TEXT_NODE) {
+            const textContent = sibling.textContent;
+            if (typeof textContent !== 'string') {
+                throw new Error('getAdjacentNonWhitespaceSibling expects textContent string');
+            }
+            if (normalizeVisibleText(textContent).length > 0) {
+                return sibling;
+            }
+        } else {
+            return sibling;
+        }
+        sibling = direction === 'previous' ? sibling.previousSibling : sibling.nextSibling;
+    }
+    return null;
+}
+
+function getNodeTextContent(node, functionName) {
+    if (!node) {
+        throw new Error(`${functionName} expects node`);
+    }
+
+    const textContent = node.textContent;
+    if (typeof textContent !== 'string') {
+        throw new Error(`${functionName} expects node textContent string`);
+    }
+    return textContent;
+}
+
+function getPreviousTextWithinContainer(element, container) {
+    if (!element) {
+        throw new Error('getPreviousTextWithinContainer expects element');
+    }
+    if (!(element instanceof Element)) {
+        throw new Error('getPreviousTextWithinContainer expects DOM Element');
+    }
+    if (!container) {
+        throw new Error('getPreviousTextWithinContainer expects container');
+    }
+
+    const range = element.ownerDocument.createRange();
+    range.setStart(container, 0);
+    range.setEndBefore(element);
+    const text = range.toString();
+    range.detach();
+    return text;
+}
+
+function insertLineBreakBefore(element) {
+    if (!element) {
+        throw new Error('insertLineBreakBefore expects element');
+    }
+    if (!(element instanceof Element)) {
+        throw new Error('insertLineBreakBefore expects DOM Element');
+    }
+
+    const parent = element.parentNode;
+    if (!parent) {
+        throw new Error('Cannot insert line break before detached element');
+    }
+    parent.insertBefore(element.ownerDocument.createElement('br'), element);
+}
+
+function getElementTextContent(element, functionName) {
+    if (!element) {
+        throw new Error(`${functionName} expects element`);
+    }
+    if (!(element instanceof Element)) {
+        throw new Error(`${functionName} expects DOM Element`);
+    }
+
+    const textContent = element.textContent;
+    if (typeof textContent !== 'string') {
+        throw new Error(`${functionName} expects element textContent string`);
+    }
+    return textContent;
+}
+
+function preserveFlattenedTimestampLinkRuns(rootNode) {
+    if (!rootNode) {
+        throw new Error('preserveFlattenedTimestampLinkRuns expects rootNode');
+    }
+    if (!(rootNode instanceof Element)) {
+        throw new Error('preserveFlattenedTimestampLinkRuns expects DOM Element rootNode');
+    }
+
+    const timestampLinks = Array.from(rootNode.querySelectorAll('a'))
+        .filter((link) => TIMESTAMP_ONLY_PATTERN.test(normalizeText(
+            getElementTextContent(link, 'preserveFlattenedTimestampLinkRuns')
+        )));
+    if (timestampLinks.length < 2) {
+        return;
+    }
+
+    const timestampCountsByContainer = new Map();
+    let i = 0;
+    while (i < timestampLinks.length) {
+        const link = timestampLinks[i];
+        const container = findNearestBlockAncestor(link, rootNode);
+        const existingCount = timestampCountsByContainer.get(container);
+        const timestampIndexInBlock = typeof existingCount === 'number' ? existingCount : 0;
+        timestampCountsByContainer.set(container, timestampIndexInBlock + 1);
+
+        const previousText = getPreviousTextWithinContainer(link, container);
+        const shouldInsert = shouldInsertLineBreakBeforeTimestampAnchor(
+            normalizeText(getElementTextContent(link, 'preserveFlattenedTimestampLinkRuns')),
+            timestampIndexInBlock,
+            previousText,
+        );
+        if (shouldInsert && !hasImmediateLineBreakBefore(link)) {
+            insertLineBreakBefore(link);
+        }
+        i += 1;
+    }
+}
+
+function trimTrailingLineBreakWhitespace(textNode) {
+    if (!textNode) {
+        throw new Error('trimTrailingLineBreakWhitespace expects textNode');
+    }
+    if (textNode.nodeType !== TEXT_NODE) {
+        return;
+    }
+
+    const textContent = textNode.textContent;
+    if (typeof textContent !== 'string') {
+        throw new Error('trimTrailingLineBreakWhitespace expects textContent string');
+    }
+    textNode.textContent = textContent.replace(/[ \t]*(?:\r\n|\r|\n)[\s\u200b-\u200f\ufeff]*$/g, '');
+}
+
+function trimLeadingLineBreakWhitespace(textNode) {
+    if (!textNode) {
+        throw new Error('trimLeadingLineBreakWhitespace expects textNode');
+    }
+    if (textNode.nodeType !== TEXT_NODE) {
+        return;
+    }
+
+    const textContent = textNode.textContent;
+    if (typeof textContent !== 'string') {
+        throw new Error('trimLeadingLineBreakWhitespace expects textContent string');
+    }
+    textNode.textContent = textContent.replace(/^[\s\u200b-\u200f\ufeff]*(?:\r\n|\r|\n)[ \t]*/g, '');
+}
+
+function removeCitationMarkerNode(markerNode) {
+    if (!markerNode) {
+        throw new Error('removeCitationMarkerNode expects markerNode');
+    }
+
+    const previousSibling = getAdjacentNonWhitespaceSibling(markerNode, 'previous');
+    const nextSibling = getAdjacentNonWhitespaceSibling(markerNode, 'next');
+    if (previousSibling) {
+        trimTrailingLineBreakWhitespace(previousSibling);
+    }
+    if (nextSibling) {
+        trimLeadingLineBreakWhitespace(nextSibling);
+    }
+    markerNode.remove();
+}
+
+function removeStandaloneCitationMarkers(rootNode) {
+    if (!rootNode) {
+        throw new Error('removeStandaloneCitationMarkers expects rootNode');
+    }
+    if (!(rootNode instanceof Element)) {
+        throw new Error('removeStandaloneCitationMarkers expects DOM Element rootNode');
+    }
+
+    const walker = rootNode.ownerDocument.createTreeWalker(rootNode, TREE_WALKER_SHOW_ELEMENT_AND_TEXT);
+    const markerNodes = [];
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const textContent = getNodeTextContent(node, 'removeStandaloneCitationMarkers');
+        if (shouldRemoveStandaloneCitationMarker(textContent)) {
+            markerNodes.push(node);
+        }
+    }
+
+    let i = 0;
+    while (i < markerNodes.length) {
+        const markerNode = markerNodes[i];
+        if (markerNode.parentNode) {
+            removeCitationMarkerNode(markerNode);
+        }
+        i += 1;
+    }
+}
+
 function preserveLiteralTextLineBreaks(rootNode) {
     if (!rootNode) {
         throw new Error('preserveLiteralTextLineBreaks expects rootNode');
@@ -1188,7 +1595,16 @@ function preserveLiteralTextLineBreaks(rootNode) {
             throw new Error('preserveLiteralTextLineBreaks expects textContent string');
         }
 
-        const normalizedText = normalizeSoftWrappedTextLineBreaks(rawText);
+        const previousSiblingText = getNearestTextBearingSibling(textNode, 'previous');
+        const nextSiblingText = getNearestTextBearingSibling(textNode, 'next');
+        const preserveTimestampSiblingBreaks = shouldPreserveTimestampSiblingLineBreaks(
+            rawText,
+            previousSiblingText,
+            nextSiblingText,
+        );
+        const normalizedText = preserveTimestampSiblingBreaks
+            ? rawText
+            : normalizeSoftWrappedTextLineBreaks(rawText);
         if (normalizedText !== rawText) {
             textNode.textContent = normalizedText;
             i += 1;
@@ -1266,7 +1682,9 @@ export async function sanitizeExternalClipboardHtml(rawHtml) {
 
     const imageSourceFrequencyMap = buildImageSourceFrequencyMap(parsed.body);
     sanitizeTree(parsed.body, imageSourceFrequencyMap);
+    removeStandaloneCitationMarkers(parsed.body);
     preserveLiteralTextLineBreaks(parsed.body);
+    preserveFlattenedTimestampLinkRuns(parsed.body);
     await recompressEmbeddedDataImageElements(parsed.body);
     return parsed.body.innerHTML;
 }
