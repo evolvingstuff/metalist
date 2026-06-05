@@ -3,7 +3,12 @@ import test from 'node:test';
 
 import { CONFIG } from '../../app/static/js/modules/config.js';
 import {
+    getCustomPasteElementPolicy,
     normalizeSoftWrappedTextLineBreaks,
+    shouldInsertLineBreakBeforeTimestampAnchor,
+    shouldInlineStandaloneCitationMarker,
+    shouldPreserveTimestampSiblingLineBreaks,
+    shouldRemoveStandaloneCitationMarker,
     splitMeaningfulTextLineBreaks,
     sanitizePastedImageSourceUrl,
     sanitizeStyleAttributeValue,
@@ -71,6 +76,18 @@ test('sanitizeStyleAttributeValue removes encoded entity payloads', () => {
     assert.equal(value, null);
 });
 
+test('getCustomPasteElementPolicy unwraps Distill citation components', () => {
+    assert.equal(getCustomPasteElementPolicy('d-cite'), 'unwrap');
+});
+
+test('getCustomPasteElementPolicy removes Distill footnote bodies', () => {
+    assert.equal(getCustomPasteElementPolicy('d-footnote'), 'remove');
+});
+
+test('getCustomPasteElementPolicy keeps normal inline elements', () => {
+    assert.equal(getCustomPasteElementPolicy('a'), 'keep');
+});
+
 test('splitMeaningfulTextLineBreaks preserves YouTube literal timestamp newlines', () => {
     const parts = splitMeaningfulTextLineBreaks('\n\nTimestamps:\n(0:00) - Intro\r\n(0:18) - Rule');
     assert.deepEqual(parts, [
@@ -115,4 +132,89 @@ test('normalizeSoftWrappedTextLineBreaks keeps timestamp lists as explicit line 
     const normalized = normalizeSoftWrappedTextLineBreaks(input);
 
     assert.equal(normalized, input);
+});
+
+test('normalizeSoftWrappedTextLineBreaks keeps bare YouTube timestamp links as explicit line breaks', () => {
+    const input = 'Time Stamps:\n'
+        + '00:00 Why eating less stops working (in practical terms)\n'
+        + '01:07 How visceral fat protects itself\n'
+        + '01:39 Visceral Fat Protocol Roadmap';
+
+    const normalized = normalizeSoftWrappedTextLineBreaks(input);
+
+    assert.equal(normalized, input);
+});
+
+test('shouldPreserveTimestampSiblingLineBreaks keeps YouTube anchor timestamp sibling breaks', () => {
+    assert.equal(
+        shouldPreserveTimestampSiblingLineBreaks(
+            ' Why eating less stops working (in practical terms)\n',
+            '00:00',
+            '01:07',
+        ),
+        true,
+    );
+});
+
+test('shouldInsertLineBreakBeforeTimestampAnchor breaks flattened YouTube chapter link runs', () => {
+    assert.equal(
+        shouldInsertLineBreakBeforeTimestampAnchor(
+            '01:07',
+            1,
+            'Time Stamps: 00:00 Why eating less stops working (in practical terms) ',
+        ),
+        true,
+    );
+});
+
+test('shouldInsertLineBreakBeforeTimestampAnchor breaks first chapter after timestamp label', () => {
+    assert.equal(
+        shouldInsertLineBreakBeforeTimestampAnchor(
+            '00:00',
+            0,
+            'Time Stamps: ',
+        ),
+        true,
+    );
+});
+
+test('shouldInsertLineBreakBeforeTimestampAnchor ignores non-timestamp inline links', () => {
+    assert.equal(
+        shouldInsertLineBreakBeforeTimestampAnchor(
+            'visceral fat protocol',
+            1,
+            'Time Stamps: 00:00 Why eating less stops working ',
+        ),
+        false,
+    );
+});
+
+test('shouldInlineStandaloneCitationMarker recognizes citation markers between prose', () => {
+    assert.equal(
+        shouldInlineStandaloneCitationMarker(
+            '[6]',
+            'In the past, mechanistic interpretability has largely focused on CNN vision models',
+            ', but recently, we presented progress',
+        ),
+        true,
+    );
+});
+
+test('shouldRemoveStandaloneCitationMarker handles invisible-character wrapped markers', () => {
+    assert.equal(shouldRemoveStandaloneCitationMarker('\u200b[7]\u200b'), true);
+});
+
+test('shouldInlineStandaloneCitationMarker ignores non-citation bracket text', () => {
+    assert.equal(
+        shouldInlineStandaloneCitationMarker(
+            '[A] [B]',
+            'forming the sequence ',
+            ' in the example',
+        ),
+        false,
+    );
+});
+
+test('shouldRemoveStandaloneCitationMarker ignores model notation', () => {
+    assert.equal(shouldRemoveStandaloneCitationMarker('[A] [B]'), false);
 });
