@@ -5,6 +5,7 @@ const NOTE_CONTENT_SELECTOR = '.note-content';
 const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
 const MULTILINE_HEIGHT_TOLERANCE = 1.35;
+const LINE_BOX_TOP_TOLERANCE_PX = 1.5;
 
 function parsePixelValue(value) {
     if (typeof value !== 'string') {
@@ -41,9 +42,45 @@ function resolveLineHeightPx(contentElement) {
     return fontSize * 1.2;
 }
 
+function countRenderedLineBoxes(contentElement) {
+    if (!globalThis.document || typeof globalThis.document.createRange !== 'function') {
+        return null;
+    }
+
+    const range = globalThis.document.createRange();
+    range.selectNodeContents(contentElement);
+    const rects = Array.from(range.getClientRects()).filter((rect) => {
+        return rect
+            && typeof rect.width === 'number'
+            && typeof rect.height === 'number'
+            && rect.width > 0.5
+            && rect.height > 0.5;
+    });
+    if (typeof range.detach === 'function') {
+        range.detach();
+    }
+
+    const lineTops = [];
+    for (const rect of rects) {
+        if (typeof rect.top !== 'number') {
+            throw new Error('Range rect missing top value');
+        }
+        const hasExistingLine = lineTops.some((top) => Math.abs(top - rect.top) <= LINE_BOX_TOP_TOLERANCE_PX);
+        if (!hasExistingLine) {
+            lineTops.push(rect.top);
+        }
+    }
+    return lineTops.length;
+}
+
 export function doesRenderedContentNeedCollapse(contentElement) {
     if (!contentElement) {
         throw new Error('doesRenderedContentNeedCollapse requires content element');
+    }
+
+    const renderedLineBoxCount = countRenderedLineBoxes(contentElement);
+    if (renderedLineBoxCount !== null) {
+        return renderedLineBoxCount > 1;
     }
 
     const lineHeightPx = resolveLineHeightPx(contentElement);

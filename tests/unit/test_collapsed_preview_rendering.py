@@ -76,6 +76,36 @@ def test_extract_collapsed_preview_source_keeps_first_image_line() -> None:
     assert "Hidden later" not in preview
 
 
+def test_trailing_blank_html_does_not_make_note_collapsible(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, False, "<div>Only meaningful line</div><div><br></div>", ""),
+    }
+
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        editing_note_id=None,
+    )
+
+    assert state.payloads["a"]["flags"]["isCollapsible"] is False
+
+
+def test_second_meaningful_html_line_makes_note_collapsible(monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = {
+        "a": _Note("a", None, None, None, False, "<div>First line</div><div>Second line</div>", ""),
+    }
+
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: ["a"]},
+        editing_note_id=None,
+    )
+
+    assert state.payloads["a"]["flags"]["isCollapsible"] is True
+
+
 def test_inline_image_note_is_collapsible_even_when_image_is_entire_note(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         "a": _Note(

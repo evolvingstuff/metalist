@@ -197,12 +197,13 @@ def render_collapsed_note_content_with_embeds(
     )
 
 
-def extract_collapsed_preview_source_html(content_html: str) -> str:
+def _extract_collapsed_preview_meaningful_fragments(content_html: str) -> List[str]:
     if not isinstance(content_html, str):
         raise TypeError("content_html must be a string")
     if content_html == "":
-        return ""
+        return []
 
+    fragments: List[str] = []
     fragment_parts: List[str] = []
     for part in _HTML_TOKEN_SPLIT_RE.split(content_html):
         if part == "":
@@ -211,7 +212,7 @@ def extract_collapsed_preview_source_html(content_html: str) -> str:
             fragment_parts.append(part)
             if _is_collapsed_preview_line_boundary_tag(part):
                 if _fragment_has_collapsed_preview_content(fragment_parts):
-                    return "".join(fragment_parts).strip()
+                    fragments.append("".join(fragment_parts).strip())
                 fragment_parts = []
             continue
 
@@ -220,14 +221,26 @@ def extract_collapsed_preview_source_html(content_html: str) -> str:
                 continue
             if _TEXT_LINE_SPLIT_RE.fullmatch(text_part):
                 if _fragment_has_collapsed_preview_content(fragment_parts):
-                    return "".join(fragment_parts).strip()
+                    fragments.append("".join(fragment_parts).strip())
                 fragment_parts = []
                 continue
             fragment_parts.append(text_part)
 
     if _fragment_has_collapsed_preview_content(fragment_parts):
-        return "".join(fragment_parts).strip()
+        fragments.append("".join(fragment_parts).strip())
+    return fragments
+
+
+def extract_collapsed_preview_source_html(content_html: str) -> str:
+    fragments = _extract_collapsed_preview_meaningful_fragments(content_html)
+    if fragments:
+        return fragments[0]
     return ""
+
+
+def collapsed_preview_source_has_hidden_content(content_html: str) -> bool:
+    fragments = _extract_collapsed_preview_meaningful_fragments(content_html)
+    return len(fragments) > 1
 
 
 def collapsed_preview_source_has_media(content_html: str) -> bool:
@@ -827,7 +840,7 @@ def _embedded_note_is_collapsible(
         context=context,
     ):
         return True
-    return collapsed_preview_source != content_html.strip()
+    return collapsed_preview_source_has_hidden_content(content_html)
 
 
 def _ignored_link_wrapper_keys_for_tags(tags: str) -> FrozenSet[Tuple[str, int]]:

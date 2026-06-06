@@ -9,6 +9,7 @@ import re
 import logging
 
 from app.services.content_formatting import format_note_content_for_view
+from app.services.embedded_references import collapsed_preview_source_has_hidden_content
 from app.services.embedded_references import collapsed_preview_source_has_media
 from app.services.embedded_references import extract_collapsed_preview_source_html
 from app.utils.text_utils import strip_html
@@ -339,7 +340,7 @@ def _build_tree_from_store(parent_id, editing_note_id, allowed_root_ids):
         if collapsed_preview_source != "":
             if collapsed_preview_source_has_media(record.content):
                 content_is_collapsible = True
-            elif collapsed_preview_source != record.content.strip():
+            elif collapsed_preview_source_has_hidden_content(record.content):
                 content_is_collapsible = True
         is_collapsible = has_children
         if content_is_collapsible:
@@ -418,7 +419,7 @@ def _build_tree_from_db(db_manager, db, parent_id, editing_note_id, allowed_root
         if collapsed_preview_source != "":
             if collapsed_preview_source_has_media(decrypted_content):
                 content_is_collapsible = True
-            elif collapsed_preview_source != decrypted_content.strip():
+            elif collapsed_preview_source_has_hidden_content(decrypted_content):
                 content_is_collapsible = True
         is_collapsible = has_children
         if content_is_collapsible:

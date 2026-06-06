@@ -73,6 +73,25 @@ function installComputedStyle(t, styles) {
     });
 }
 
+function installRangeRects(t, rects) {
+    const originalDocument = globalThis.document;
+    globalThis.document = {
+        createRange() {
+            return {
+                selectNodeContents() {},
+                getClientRects() {
+                    return rects;
+                },
+                detach() {},
+            };
+        },
+    };
+
+    t.after(() => {
+        globalThis.document = originalDocument;
+    });
+}
+
 test('resolveCanCollapseFromDataset trusts only server isCollapsible flag', async (t) => {
     installBrowserStorage(t);
     const { resolveCanCollapseFromDataset } = await import(
@@ -123,6 +142,73 @@ test('rendered multi-line content promotes server non-collapsible notes', async 
 
     assert.equal(noteElement.dataset.canCollapse, 'true');
     assert.equal(collapseToggle.attributes['aria-label'], 'Collapse note');
+});
+
+test('single rendered line box does not promote collapse despite tall element box', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    installRangeRects(t, [{ top: 10, width: 320, height: 24 }]);
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const contentElement = createMeasuredContent({ rectHeight: 36, scrollHeight: 36 });
+    const noteElement = {
+        classList: createClassList(['note']),
+        dataset: {
+            isCollapsed: 'false',
+            isCollapsible: 'false',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return null;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'false');
+});
+
+test('multiple rendered line boxes promote collapse', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    installRangeRects(t, [
+        { top: 10, width: 320, height: 24 },
+        { top: 34, width: 180, height: 24 },
+    ]);
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const contentElement = createMeasuredContent({ rectHeight: 36, scrollHeight: 36 });
+    const noteElement = {
+        classList: createClassList(['note']),
+        dataset: {
+            isCollapsed: 'false',
+            isCollapsible: 'false',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return null;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'true');
 });
 
 test('rendered collapse promotion preserves saved collapsed state', async (t) => {
