@@ -1,4 +1,9 @@
-export function shouldExitEditingBeforeCollapseToggle({ isEditing, currentNoteId, targetNoteId }) {
+export function shouldExitEditingBeforeCollapseToggle({
+    isEditing,
+    currentNoteId,
+    targetNoteId,
+    isTargetInsideCurrentEditSubtree,
+}) {
     if (typeof isEditing !== 'boolean') {
         throw new Error('shouldExitEditingBeforeCollapseToggle requires boolean isEditing');
     }
@@ -13,6 +18,9 @@ export function shouldExitEditingBeforeCollapseToggle({ isEditing, currentNoteId
     if (typeof currentNoteId !== 'string' || currentNoteId.length === 0) {
         throw new Error('editing collapse toggle requires currentNoteId');
     }
+    if (typeof isTargetInsideCurrentEditSubtree !== 'boolean') {
+        throw new Error('editing collapse toggle requires isTargetInsideCurrentEditSubtree boolean');
+    }
 
-    return currentNoteId !== targetNoteId;
+    return !isTargetInsideCurrentEditSubtree;
 }

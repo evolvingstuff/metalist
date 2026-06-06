@@ -737,10 +737,22 @@ async function setNoteCollapse(noteId, collapsed) {
         throw new Error('Cannot change collapse state: noteId is required');
     }
 
+    let isTargetInsideCurrentEditSubtree = false;
+    if (ModeContext.isEditing) {
+        const editingNoteId = ModeContext.currentNoteId;
+        if (typeof editingNoteId !== 'string' || editingNoteId.length === 0) {
+            throw new Error('Invariant violation: isEditing is true but currentNoteId is missing');
+        }
+        const editingNoteElement = DOMUtils.getNoteById(editingNoteId);
+        const targetNoteElement = DOMUtils.getNoteById(noteId);
+        isTargetInsideCurrentEditSubtree = editingNoteElement.contains(targetNoteElement);
+    }
+
     const shouldExitEditing = shouldExitEditingBeforeCollapseToggle({
         isEditing: ModeContext.isEditing,
         currentNoteId: ModeContext.currentNoteId,
         targetNoteId: noteId,
+        isTargetInsideCurrentEditSubtree,
     });
 
     if (shouldExitEditing) {
@@ -749,7 +761,7 @@ async function setNoteCollapse(noteId, collapsed) {
             throw new Error('Invariant violation: isEditing is true but currentNoteId is null');
         }
 
-        Logger.logDebug('Collapse toggle clicked on a different note while editing; exiting edit mode first', {
+        Logger.logDebug('Collapse toggle clicked outside current edit subtree; exiting edit mode first', {
             editingNoteId,
             targetNoteId: noteId,
             collapsed

@@ -110,7 +110,7 @@
 | Click `+` button | Add new note at top |
 | Click menu (`≡`) button | Open command palette |
 | Click `↑` button | Scroll the page to the top and jump the right-side calendar to newest activity. The button stays enabled at page top when the calendar is not at newest. |
-| Click note arrow | Toggle collapse/expand note. If the note is currently being edited, edit mode remains active. |
+| Click note arrow | Toggle collapse/expand note. If the arrow is within the current edited note subtree, that edit session remains active; outside that subtree, the current edit saves/exits first. |
 | Click `...` under the edited note's tag bar | Expand that collapsed parent note to reveal its hidden children. |
 | Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
