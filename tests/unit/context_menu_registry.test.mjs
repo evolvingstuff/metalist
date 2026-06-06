@@ -180,6 +180,33 @@ test('buildContextMenuItems returns export view for view context', () => {
     assert.deepEqual(calls, [['exportViewHtml']]);
 });
 
+test('buildContextMenuItems returns only link actions for link context', () => {
+    const calls = [];
+    const linkContext = { href: 'https://example.com/docs' };
+    const items = buildContextMenuItems(
+        { kind: 'link', linkContext },
+        {
+            onCopyLink: (context) => calls.push(['copyLink', context]),
+            onOpenLinkInNewTab: (context) => calls.push(['openLink', context]),
+        },
+    );
+
+    assert.deepEqual(
+        items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
+        [
+            { id: 'copy-link', label: 'Copy Link', enabled: true },
+            { id: 'open-link-new-tab', label: 'Open Link in New Tab', enabled: true },
+        ],
+    );
+
+    items[0].onSelect();
+    items[1].onSelect();
+    assert.deepEqual(calls, [
+        ['copyLink', linkContext],
+        ['openLink', linkContext],
+    ]);
+});
+
 test('buildContextMenuItems preserves tag menu behavior', () => {
     const calls = [];
     const items = buildContextMenuItems(

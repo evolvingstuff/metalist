@@ -244,6 +244,50 @@ function buildNoteContextItems(context, handlers) {
     return items;
 }
 
+function buildLinkContextItems(context, handlers) {
+    if (!context || typeof context !== 'object') {
+        throw new Error('buildLinkContextItems requires context object');
+    }
+    if (!handlers || typeof handlers !== 'object') {
+        throw new Error('buildLinkContextItems requires handlers object');
+    }
+
+    const linkContext = context.linkContext;
+    if (linkContext === null || typeof linkContext !== 'object') {
+        throw new Error('Link context missing linkContext');
+    }
+    const href = linkContext.href;
+    if (typeof href !== 'string' || href.trim() === '') {
+        throw new Error('Link context missing href');
+    }
+
+    const onCopyLink = handlers.onCopyLink;
+    const onOpenLinkInNewTab = handlers.onOpenLinkInNewTab;
+    if (typeof onCopyLink !== 'function') {
+        throw new Error('Link context missing onCopyLink handler');
+    }
+    if (typeof onOpenLinkInNewTab !== 'function') {
+        throw new Error('Link context missing onOpenLinkInNewTab handler');
+    }
+
+    return [
+        {
+            id: 'copy-link',
+            label: 'Copy Link',
+            icon: 'copy',
+            enabled: true,
+            onSelect: () => onCopyLink(linkContext),
+        },
+        {
+            id: 'open-link-new-tab',
+            label: 'Open Link in New Tab',
+            icon: 'external',
+            enabled: true,
+            onSelect: () => onOpenLinkInNewTab(linkContext),
+        },
+    ];
+}
+
 function buildViewContextItems(context, handlers) {
     if (!context || typeof context !== 'object') {
         throw new Error('buildViewContextItems requires context object');
@@ -282,6 +326,9 @@ export function buildContextMenuItems(context, handlers) {
     }
     if (kind === 'note') {
         return buildNoteContextItems(context, handlers);
+    }
+    if (kind === 'link') {
+        return buildLinkContextItems(context, handlers);
     }
     if (kind === 'view') {
         return buildViewContextItems(context, handlers);

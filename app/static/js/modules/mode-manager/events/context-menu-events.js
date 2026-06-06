@@ -27,6 +27,11 @@ import {
     saveImageFromContext,
     zoomImageFromContext,
 } from '../services/image-context-menu-action-service.js';
+import {
+    copyLinkToClipboard,
+    openLinkInNewTabFromContext,
+    resolveLinkContextFromElement,
+} from '../services/link-context-menu-action-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
 import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
@@ -644,6 +649,45 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
     });
 }
 
+function showLinkContextMenu(event, linkContext) {
+    if (!event) {
+        throw new Error('showLinkContextMenu called without event');
+    }
+    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+        throw new Error('Context menu event missing coordinates');
+    }
+    if (linkContext === null || typeof linkContext !== 'object') {
+        throw new Error('showLinkContextMenu requires linkContext object');
+    }
+
+    const context = { kind: 'link', linkContext };
+    const items = buildContextMenuItems(context, {
+        onCopyLink: (targetLinkContext) => {
+            void CommandGate.run('contextMenu.link.copy', async () => {
+                await copyLinkToClipboard(targetLinkContext);
+            });
+        },
+        onOpenLinkInNewTab: (targetLinkContext) => {
+            void CommandGate.run('contextMenu.link.open_new_tab', async () => {
+                await openLinkInNewTabFromContext(targetLinkContext);
+            });
+        },
+    });
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    showContextMenu({
+        items,
+        position: { x: event.clientX, y: event.clientY },
+        onClose: null,
+    });
+}
+
 function showViewContextMenu(event) {
     if (!event) {
         throw new Error('showViewContextMenu called without event');
@@ -727,6 +771,12 @@ function handleContextMenu(event) {
         if (tagInfo && typeof tagInfo.tag === 'string') {
             showTagContextMenu(event, tagInfo.tag, 'search');
         }
+        return;
+    }
+
+    const linkContext = resolveLinkContextFromElement(element);
+    if (linkContext) {
+        showLinkContextMenu(event, linkContext);
         return;
     }
 
