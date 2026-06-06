@@ -3919,7 +3919,6 @@ body.loading::after {
 
 @media (max-width: 960px) {
     .rhs-panel,
-    #search-contexts-list,
     #backlinks-panel {
         display: none !important;
     }

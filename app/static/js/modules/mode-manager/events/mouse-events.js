@@ -10,7 +10,10 @@ import {
     hideSearchSuggestionsForSearchContextHover,
     hideSearchSuggestionsForSearchContextPointerMove,
 } from '../services/search-suggestions-service.js';
-import { hideSearchContextsOverlayForPointerMove } from '../services/search-contexts-overlay-service.js';
+import {
+    hideSearchContextsOverlay,
+    hideSearchContextsOverlayForPointerMove,
+} from '../services/search-contexts-overlay-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
@@ -172,6 +175,7 @@ function handleSearchFieldMouseDown(event, searchField) {
     if (!searchField) {
         return false;
     }
+    hideSearchContextsOverlay();
 
     let shouldEnterSearch = false;
     if (ModeContext.isEditing) {
@@ -2031,6 +2035,11 @@ function handleMouseOver(event) {
     const target = event.target;
     if (!target) {
         throw new Error('Mouseover event missing target element');
+    }
+
+    if (target instanceof Element && target.closest('#search-input')) {
+        hideSearchContextsOverlay();
+        return;
     }
 
     const noteElement = target.closest('.note');

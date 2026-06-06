@@ -833,11 +833,18 @@ function handleEscapeKey() {
         throw new Error('ModeContext missing isSearching property in handleEscapeKey');
     }
 
+    const didHideSearchContexts = hideSearchContextsOverlay();
+
     if (blurFocusedSearchInput()) {
         if (ModeContext.isSearching) {
             actionExitSearchMode();
         }
         Logger.logDebug('Search input blurred via Escape key', {}, Logger.LogCategory.EVENT);
+        return;
+    }
+
+    if (didHideSearchContexts) {
+        Logger.logDebug('Search contexts hidden via Escape key', {}, Logger.LogCategory.EVENT);
         return;
     }
         

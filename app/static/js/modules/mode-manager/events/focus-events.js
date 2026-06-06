@@ -1,6 +1,7 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
 import { sanitizeTags, validateAndRenderTagBar } from '../services/tag-bar-service.js';
+import { hideSearchContextsOverlay } from '../services/search-contexts-overlay-service.js';
 
 export function initFocusEvents() {
         
@@ -30,6 +31,7 @@ function handleFocus(event) {
     const searchField = event.target.closest('#search-input');
         
     if (searchField) {
+        hideSearchContextsOverlay();
 
         Logger.logDebug('Search field focused (no state change)');
     }
