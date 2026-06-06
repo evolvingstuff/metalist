@@ -4,6 +4,7 @@ import { analyzeTagBarInput, enforceTagBarInputForEditing, normalizeTagBarInput 
 const TAG_BAR_CLASS = 'note-tag-bar';
 const TAG_BAR_INPUT_CLASS = 'note-tag-bar-input';
 const TAG_BAR_VALIDATION_MESSAGE_CLASS = 'note-tag-bar-validation-message';
+const COLLAPSED_CHILDREN_INDICATOR_CLASS = 'note-collapsed-children-indicator';
 
 let activeNoteElement = null;
 let activeObserver = null;
@@ -72,6 +73,38 @@ function ensureTagBarElement(noteElement) {
     }
 
     return { element: tagBar, created: true };
+}
+
+function ensureCollapsedChildrenIndicator(noteElement, tagBar) {
+    if (!noteElement) {
+        throw new Error('ensureCollapsedChildrenIndicator requires a note element');
+    }
+    if (!tagBar) {
+        throw new Error('ensureCollapsedChildrenIndicator requires a tag bar element');
+    }
+
+    let indicator = getDirectChildByClass(noteElement, COLLAPSED_CHILDREN_INDICATOR_CLASS);
+    if (!indicator) {
+        indicator = document.createElement('button');
+        indicator.classList.add(COLLAPSED_CHILDREN_INDICATOR_CLASS);
+        indicator.type = 'button';
+        indicator.textContent = '...';
+        indicator.setAttribute('aria-label', 'Expand note to show hidden children');
+    }
+
+    if (indicator.previousSibling !== tagBar) {
+        noteElement.insertBefore(indicator, tagBar.nextSibling);
+    }
+
+    return indicator;
+}
+
+function syncCollapsedChildrenIndicator(noteElement, tagBar) {
+    const indicator = ensureCollapsedChildrenIndicator(noteElement, tagBar);
+    const shouldShow = noteElement.classList.contains(CONFIG.CLASSES.EDITING)
+        && noteElement.dataset.isCollapsed === 'true'
+        && noteElement.dataset.hasChildren === 'true';
+    indicator.hidden = !shouldShow;
 }
 
 function ensureValidationMessageElement(tagBar) {
@@ -250,6 +283,11 @@ function removeTagBar(noteElement) {
     if (existing) {
         existing.remove();
     }
+
+    const indicator = getDirectChildByClass(noteElement, COLLAPSED_CHILDREN_INDICATOR_CLASS);
+    if (indicator) {
+        indicator.remove();
+    }
 }
 
 function disconnectVisibilityTracking() {
@@ -330,6 +368,7 @@ export function syncTagBar(editingNoteElement) {
     }
 
     validateAndRenderTagBar(editingNoteElement);
+    syncCollapsedChildrenIndicator(editingNoteElement, tagBar);
 
     // While editing, the tag bar is part of the core editing UI. Keep it visible
     // (and avoid any observer-driven hiding that can get out of sync during

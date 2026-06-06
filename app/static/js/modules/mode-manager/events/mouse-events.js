@@ -43,6 +43,7 @@ const STATUS_TOGGLE_SELECTOR = '.meta-status-toggle';
 const CREDENTIAL_COPY_CLASS = 'meta-credential-copied';
 const COPYABLE_SELECTOR = '.meta-copyable';
 const COPYABLE_COPY_CLASS = 'meta-copyable-copied';
+const COLLAPSED_CHILDREN_INDICATOR_SELECTOR = '.note-collapsed-children-indicator';
 const SHELL_RUN_TIMEOUT_SECONDS = 0;
 const SHELL_POLL_INTERVAL_MS = 250;
 const copyFeedbackTimers = new WeakMap();
@@ -148,6 +149,7 @@ function isMouseDownOutsideEditExclusion(target) {
             '.add-note',
             '#trash-can',
             '.note-collapse-toggle',
+            COLLAPSED_CHILDREN_INDICATOR_SELECTOR,
             '.note-embed-collapse-toggle',
             '.note-reference-toggle',
             '.note-reference-link',
@@ -309,6 +311,12 @@ function handleImmediateMouseDown(event) {
     }
 
     if (event.target.closest('.modal') || event.target.closest('#context-menu') || isShellInteractiveTarget(event.target)) {
+        return;
+    }
+
+    if (event.target.closest(COLLAPSED_CHILDREN_INDICATOR_SELECTOR)) {
+        event.preventDefault();
+        event.stopPropagation();
         return;
     }
 
@@ -977,10 +985,11 @@ function handleClick(event) {
         const searchField = event.target.closest('#search-input');
         const createButton = event.target.closest('.add-note');
         const collapseToggle = event.target.closest('.note-collapse-toggle');
+        const collapsedChildrenIndicator = event.target.closest(COLLAPSED_CHILDREN_INDICATOR_SELECTOR);
         const embedCollapseToggle = event.target.closest('.note-embed-collapse-toggle');
         
         // Only allow certain actions when disconnected
-        if (noteContent || createButton || collapseToggle || embedCollapseToggle) {
+        if (noteContent || createButton || collapseToggle || collapsedChildrenIndicator || embedCollapseToggle) {
             Logger.logNoop('Click event ignored while disconnected from server', {
                 eventType: event.type,
                 targetElement: event.target.tagName,
@@ -1008,6 +1017,12 @@ function handleClick(event) {
         }
 
         handleCollapseToggleInteraction(event, collapseToggle, 'click');
+        return;
+    }
+
+    const collapsedChildrenIndicator = event.target.closest(COLLAPSED_CHILDREN_INDICATOR_SELECTOR);
+    if (collapsedChildrenIndicator) {
+        handleCollapsedChildrenIndicatorClick(event, collapsedChildrenIndicator);
         return;
     }
 
@@ -1953,6 +1968,56 @@ function handleCollapseToggleInteraction(event, collapseToggle, interactionSourc
 
     Logger.logNoop('Collapse toggle ignored: note cannot collapse', {
         noteId
+    });
+}
+
+function handleCollapsedChildrenIndicatorClick(event, indicator) {
+    if (!indicator) {
+        throw new Error('handleCollapsedChildrenIndicatorClick called without indicator');
+    }
+    if (event.clientX === undefined || event.clientY === undefined) {
+        throw new Error(`Invalid MouseEvent: missing coordinates (type: ${event.type})`);
+    }
+
+    const noteElement = indicator.closest('.note');
+    if (!noteElement) {
+        throw new Error('Collapsed children indicator activated without parent .note element');
+    }
+
+    const noteId = noteElement.dataset?.noteId;
+    if (!noteId) {
+        throw new Error('Collapsed children indicator activated without a parent note id');
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const searchInput = document.getElementById('search-input');
+    if (searchInput && typeof searchInput.blur === 'function') {
+        searchInput.blur();
+    }
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+
+    const isCurrentlyCollapsed = noteElement.dataset.isCollapsed === 'true';
+    if (!isCurrentlyCollapsed) {
+        Logger.logNoop('Collapsed children indicator ignored: note is already expanded', {
+            noteId,
+        });
+        return;
+    }
+
+    Logger.logDebug('Collapsed children indicator clicked', {
+        noteId,
+        coordinates: {
+            x: event.clientX,
+            y: event.clientY,
+        },
+    }, Logger.LogCategory.EVENT);
+
+    void CommandGate.run('mouse.expand_note', async () => {
+        await expandNote(noteId);
     });
 }
 

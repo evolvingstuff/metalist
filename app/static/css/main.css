@@ -3020,6 +3020,38 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     color: rgba(0, 0, 0, 0.28);
 }
 
+.note-collapsed-children-indicator {
+    display: none;
+    flex-basis: 100%;
+    width: calc(100% - 30px);
+    min-height: 18px;
+    margin: 0 15px 3px 15px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.38);
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    line-height: 1;
+}
+
+.note.editing.collapsed[data-has-children="true"] > .note-collapsed-children-indicator:not([hidden]) {
+    display: flex;
+}
+
+.note-collapsed-children-indicator:hover {
+    color: rgba(0, 0, 0, 0.72);
+}
+
+.note-collapsed-children-indicator:focus-visible {
+    outline: 2px solid rgba(0, 0, 0, 0.55);
+    outline-offset: 1px;
+    border-radius: 3px;
+}
+
 .note-tag-suggestions {
     position: absolute;
     left: 10px;
@@ -4900,6 +4932,18 @@ html[data-theme="dark"] .note-tag-bar-input {
 
 html[data-theme="dark"] .note-tag-bar-input::placeholder {
     color: rgba(229, 235, 243, 0.34);
+}
+
+html[data-theme="dark"] .note-collapsed-children-indicator {
+    color: rgba(229, 235, 243, 0.42);
+}
+
+html[data-theme="dark"] .note-collapsed-children-indicator:hover {
+    color: rgba(229, 235, 243, 0.78);
+}
+
+html[data-theme="dark"] .note-collapsed-children-indicator:focus-visible {
+    outline-color: rgba(229, 235, 243, 0.68);
 }
 
 html[data-theme="dark"] .controls .search-input {
