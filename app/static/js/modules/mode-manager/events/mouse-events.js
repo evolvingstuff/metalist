@@ -10,6 +10,7 @@ import {
     hideSearchSuggestionsForSearchContextHover,
     hideSearchSuggestionsForSearchContextPointerMove,
 } from '../services/search-suggestions-service.js';
+import { hideSearchContextsOverlayForPointerMove } from '../services/search-contexts-overlay-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
@@ -55,6 +56,7 @@ export function initMouseEvents() {
     document.addEventListener('mousedown', handleMoveDragMouseDown, { capture: true });
     document.addEventListener('mousemove', handleMoveDragMouseMove, { capture: true });
     document.addEventListener('mousemove', handleSearchSuggestionsPointerMove, { capture: true, passive: true });
+    document.addEventListener('mousemove', handleSearchContextsPointerMove, { capture: true, passive: true });
     document.addEventListener('mouseup', handleMoveDragMouseUp, { capture: true });
     document.addEventListener('mousedown', handleSelectionDragMouseDown, { capture: true });
     document.addEventListener('mouseup', handleSelectionDragMouseUp, { capture: true });
@@ -2075,6 +2077,26 @@ function handleSearchSuggestionsPointerMove(event) {
     }
 
     Logger.logDebug('Search suggestions hidden after pointer left search context', {
+        pointerClientX: Math.round(event.clientX),
+        pointerClientY: Math.round(event.clientY),
+    }, Logger.LogCategory.EVENT);
+}
+
+function handleSearchContextsPointerMove(event) {
+    if (!event) {
+        throw new Error('handleSearchContextsPointerMove called without an event object');
+    }
+
+    const didHideSearchContexts = hideSearchContextsOverlayForPointerMove({
+        pointerClientX: event.clientX,
+        pointerClientY: event.clientY,
+    });
+
+    if (!didHideSearchContexts) {
+        return;
+    }
+
+    Logger.logDebug('Search contexts hidden after pointer left hover bounds', {
         pointerClientX: Math.round(event.clientX),
         pointerClientY: Math.round(event.clientY),
     }, Logger.LogCategory.EVENT);

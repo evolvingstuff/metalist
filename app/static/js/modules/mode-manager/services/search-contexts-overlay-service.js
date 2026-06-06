@@ -1,5 +1,10 @@
-const BOTTOM_LEFT_CLASS = 'search-contexts-list--bottom-left';
 const SEARCH_CONTEXTS_SELECTOR = '#search-contexts-list';
+const TAB_HOVER_ZONE_SELECTOR = '#tab-hover-zone';
+const HOVER_CLASS = 'search-contexts-list--hover';
+const POINTER_DISMISS_BUFFER_PX = 28;
+
+let isHoverOverlayVisible = false;
+let isHoverInitialized = false;
 
 function getSearchContextsListElement() {
     const element = document.querySelector(SEARCH_CONTEXTS_SELECTOR);
@@ -12,12 +17,43 @@ function getSearchContextsListElement() {
     return element;
 }
 
-export function isSearchContextsOverlayBottomLeft() {
-    const element = getSearchContextsListElement();
+function getTabHoverZoneElement() {
+    const element = document.querySelector(TAB_HOVER_ZONE_SELECTOR);
     if (!element) {
-        return false;
+        return null;
     }
-    return element.classList.contains(BOTTOM_LEFT_CLASS);
+    if (!(element instanceof HTMLElement)) {
+        throw new Error('tab-hover-zone must be an HTMLElement');
+    }
+    return element;
+}
+
+function isTabUiEnabled() {
+    return document.body.classList.contains('pref-show-tab-ui');
+}
+
+function hasRenderedTabRows(searchContextsList) {
+    if (!(searchContextsList instanceof HTMLElement)) {
+        throw new Error('hasRenderedTabRows requires search contexts element');
+    }
+    return searchContextsList.innerHTML.trim().length > 0;
+}
+
+function clampPopoverLeft(left, width) {
+    if (!Number.isFinite(left) || !Number.isFinite(width)) {
+        throw new Error('clampPopoverLeft requires finite values');
+    }
+    const viewportWidth = window.innerWidth;
+    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+        throw new Error('window.innerWidth must be a positive number');
+    }
+    const minLeft = 8;
+    const maxLeft = Math.max(minLeft, viewportWidth - width - 8);
+    return Math.min(Math.max(left, minLeft), maxLeft);
+}
+
+export function isSearchContextsOverlayBottomLeft() {
+    return false;
 }
 
 export function updateSearchContextsOverlayPlacement() {
@@ -26,13 +62,169 @@ export function updateSearchContextsOverlayPlacement() {
         return false;
     }
 
-    searchContextsList.classList.remove(BOTTOM_LEFT_CLASS);
+    searchContextsList.classList.add(HOVER_CLASS);
 
-    const isVisible = window.getComputedStyle(searchContextsList).display !== 'none';
-    if (!isVisible) {
+    if (!isTabUiEnabled() || !hasRenderedTabRows(searchContextsList)) {
+        isHoverOverlayVisible = false;
+        searchContextsList.style.display = 'none';
         return false;
     }
 
-    searchContextsList.classList.add(BOTTOM_LEFT_CLASS);
+    if (!isHoverOverlayVisible) {
+        searchContextsList.style.display = 'none';
+        return false;
+    }
+
+    const hoverZone = getTabHoverZoneElement();
+    if (!hoverZone) {
+        searchContextsList.style.display = 'none';
+        return false;
+    }
+
+    searchContextsList.style.display = 'block';
+    const hoverRect = hoverZone.getBoundingClientRect();
+    const listRect = searchContextsList.getBoundingClientRect();
+    if (
+        !hoverRect
+        || !listRect
+        || !Number.isFinite(hoverRect.left)
+        || !Number.isFinite(hoverRect.bottom)
+        || !Number.isFinite(listRect.width)
+    ) {
+        throw new Error('search contexts placement requires valid element rects');
+    }
+
+    const popoverLeft = clampPopoverLeft(Math.round(hoverRect.left), Math.round(listRect.width));
+    const popoverTop = Math.max(8, Math.round(hoverRect.bottom + 6));
+    searchContextsList.style.left = `${popoverLeft}px`;
+    searchContextsList.style.top = `${popoverTop}px`;
+    searchContextsList.style.right = 'auto';
+    searchContextsList.style.bottom = 'auto';
     return true;
+}
+
+export function showSearchContextsOverlay() {
+    const searchContextsList = getSearchContextsListElement();
+    if (!searchContextsList) {
+        return false;
+    }
+    if (!isTabUiEnabled() || !hasRenderedTabRows(searchContextsList)) {
+        return false;
+    }
+    isHoverOverlayVisible = true;
+    return updateSearchContextsOverlayPlacement();
+}
+
+export function hideSearchContextsOverlay() {
+    isHoverOverlayVisible = false;
+
+    const searchContextsList = getSearchContextsListElement();
+    if (!searchContextsList) {
+        return false;
+    }
+    const wasVisible = window.getComputedStyle(searchContextsList).display !== 'none';
+    searchContextsList.style.display = 'none';
+    return wasVisible;
+}
+
+function buildBufferedBounds(rects) {
+    if (!Array.isArray(rects) || rects.length === 0) {
+        throw new Error('buildBufferedBounds requires rects');
+    }
+
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const rect of rects) {
+        if (
+            !rect
+            || !Number.isFinite(rect.left)
+            || !Number.isFinite(rect.right)
+            || !Number.isFinite(rect.top)
+            || !Number.isFinite(rect.bottom)
+        ) {
+            throw new Error('buildBufferedBounds requires valid rects');
+        }
+        left = Math.min(left, rect.left);
+        right = Math.max(right, rect.right);
+        top = Math.min(top, rect.top);
+        bottom = Math.max(bottom, rect.bottom);
+    }
+
+    return {
+        left: left - POINTER_DISMISS_BUFFER_PX,
+        right: right + POINTER_DISMISS_BUFFER_PX,
+        top: top - POINTER_DISMISS_BUFFER_PX,
+        bottom: bottom + POINTER_DISMISS_BUFFER_PX,
+    };
+}
+
+function isPointerInsideBounds(bounds, pointerClientX, pointerClientY) {
+    if (!bounds || typeof bounds !== 'object') {
+        throw new Error('isPointerInsideBounds requires bounds');
+    }
+    if (!Number.isFinite(pointerClientX) || !Number.isFinite(pointerClientY)) {
+        throw new Error('isPointerInsideBounds requires finite pointer coordinates');
+    }
+    return (
+        pointerClientX >= bounds.left
+        && pointerClientX <= bounds.right
+        && pointerClientY >= bounds.top
+        && pointerClientY <= bounds.bottom
+    );
+}
+
+export function hideSearchContextsOverlayForPointerMove(options) {
+    if (!options || typeof options !== 'object') {
+        throw new Error('hideSearchContextsOverlayForPointerMove requires options');
+    }
+    const { pointerClientX, pointerClientY } = options;
+    if (!Number.isFinite(pointerClientX)) {
+        throw new Error('hideSearchContextsOverlayForPointerMove requires pointerClientX');
+    }
+    if (!Number.isFinite(pointerClientY)) {
+        throw new Error('hideSearchContextsOverlayForPointerMove requires pointerClientY');
+    }
+    if (!isHoverOverlayVisible) {
+        return false;
+    }
+
+    const searchContextsList = getSearchContextsListElement();
+    const hoverZone = getTabHoverZoneElement();
+    if (!searchContextsList || !hoverZone) {
+        return false;
+    }
+    if (window.getComputedStyle(searchContextsList).display === 'none') {
+        return false;
+    }
+
+    const bounds = buildBufferedBounds([
+        searchContextsList.getBoundingClientRect(),
+        hoverZone.getBoundingClientRect(),
+    ]);
+    if (isPointerInsideBounds(bounds, pointerClientX, pointerClientY)) {
+        return false;
+    }
+
+    hideSearchContextsOverlay();
+    return true;
+}
+
+export function initializeSearchContextsHover() {
+    if (isHoverInitialized) {
+        return;
+    }
+    const hoverZone = getTabHoverZoneElement();
+    if (!hoverZone) {
+        throw new Error('tab-hover-zone element missing from DOM');
+    }
+
+    const showOverlay = () => {
+        showSearchContextsOverlay();
+    };
+
+    hoverZone.addEventListener('mouseenter', showOverlay);
+    hoverZone.addEventListener('mousemove', showOverlay);
+    isHoverInitialized = true;
 }

@@ -3342,6 +3342,15 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     justify-content: center;
 }
 
+.controls .tab-hover-zone {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: max(0px, calc(50% - var(--search-input-half-width) - 40px));
+    cursor: default;
+}
+
 .controls .search-validation-message {
     width: var(--search-input-width);
     margin: 4px auto 0 auto;
@@ -3760,29 +3769,23 @@ body.loading::after {
 
 #search-contexts-list {
     position: fixed;
-    top: auto;
-    bottom: 10px;
-    left: var(--side-rail-edge);
+    top: 0;
+    bottom: auto;
+    left: 0;
     right: auto;
     z-index: 9999;
     background: rgba(0,0,0,0.7);
     color: #ccc;
     padding: 8px 12px;
-    width: var(--side-rail-width);
+    width: min(320px, calc(100vw - 16px));
     box-sizing: border-box;
-    border-radius: 3px;
+    border-radius: 4px;
     font-family: monospace;
     font-size: 12px;
     display: none;
     line-height: 1.4;
-    max-width: var(--side-rail-width);
-}
-
-#search-contexts-list.search-contexts-list--bottom-left {
-    top: auto;
-    bottom: 10px;
-    left: var(--side-rail-edge);
-    right: auto;
+    max-width: calc(100vw - 16px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 #backlinks-panel {

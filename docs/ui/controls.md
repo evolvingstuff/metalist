@@ -56,7 +56,7 @@
 
 - When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
 - The right-side activity calendar defaults to `Created`, with `Updated` available as the second metric. Clicking a day or dragging across days applies a date filter for the active tab; editing the search input clears that date filter.
-- The memory/search contexts overlay is pinned to the lower-left on all screen sizes. The backlinks panel follows that placement so the two overlays stay grouped.
+- The tab/search-context overlay appears when hovering over the left side of the black search bar, before the back button and search field. It dismisses when the pointer moves far enough away horizontally or vertically, and selecting a tab switches context then closes it.
 - Left/right side lanes hide at narrower desktop widths before they can overlap the centered notes column.
 
 ### Search Input Behavior
@@ -129,6 +129,7 @@
 | Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
 | Right-click left lane | Toggle tabs visibility or export the current view as HTML |
 | Right-click right lane | Toggle calendar view visibility or export the current view as HTML |
+| Hover left side of search bar | Show the tab/search-context overlay |
 
 > Tip: You can right-click directly on a tag without selecting the full text first (selection still works).
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.

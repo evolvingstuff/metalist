@@ -64,7 +64,11 @@ import {
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
 import { attachPickedFileToCurrentNote, insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
 import { syncBacklinksPanelPlacement } from '../services/backlinks-panel-service.js';
-import { updateSearchContextsOverlayPlacement } from '../services/search-contexts-overlay-service.js';
+import {
+    hideSearchContextsOverlay,
+    initializeSearchContextsHover,
+    updateSearchContextsOverlayPlacement,
+} from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
@@ -231,6 +235,7 @@ export function initKeyboardEvents() {
     document.addEventListener('drop', handleDropEvent, { capture: false });
     window.addEventListener('blur', handleWindowBlur, { capture: false });
     window.addEventListener('resize', handleSearchContextsViewportChange, { passive: true });
+    initializeSearchContextsHover();
         
     Logger.logInit('Keyboard events handler');
     
@@ -2964,9 +2969,7 @@ export function updateSearchContextsList() {
     
     if (contextsList.length > 0) {
         searchContextsList.innerHTML = contextsList.join('');
-        if (showTabUi) {
-            searchContextsList.style.display = 'block';
-        } else {
+        if (!showTabUi) {
             searchContextsList.style.display = 'none';
         }
         updateSearchContextsOverlayPlacement();
@@ -2975,7 +2978,11 @@ export function updateSearchContextsList() {
         searchContextsList.querySelectorAll('.tab-context-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 const tabId = e.currentTarget.getAttribute('data-tab-id');
-                if (!tabId || tabId === ModeContext.activeTabId) {
+                if (!tabId) {
+                    return;
+                }
+                hideSearchContextsOverlay();
+                if (tabId === ModeContext.activeTabId) {
                     return;
                 }
 					void CommandGate.run('tab.switch', async () => {

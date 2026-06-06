@@ -456,11 +456,7 @@ class CommandPaletteController {
 
         const searchContextsList = document.getElementById('search-contexts-list');
         if (searchContextsList) {
-            if (showTabUi) {
-                if (searchContextsList.innerHTML.trim().length > 0) {
-                    searchContextsList.style.display = 'block';
-                }
-            } else {
+            if (!showTabUi) {
                 searchContextsList.style.display = 'none';
             }
             updateSearchContextsOverlayPlacement();
