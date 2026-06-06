@@ -6,6 +6,7 @@ from typing import Dict
 from app.usecases.base import QueryCommand
 from app.services.store import store
 from app.services.sync import generate_new_uuid
+from app.usecases.collapse import apply_set_collapse
 from app.usecases.move import apply_move, _neighbors, _assert_neighbors
 from app.services.undo_state import record_move
 
@@ -63,6 +64,8 @@ class CmdIndent(QueryCommand):
 
         apply_move(self.note_id, new_parent_id, dest_prev, dest_next)
         _assert_neighbors(self.note_id, new_parent_id, dest_prev, dest_next)
+        if prev_record.is_collapsed:
+            apply_set_collapse(new_parent_id, False)
 
         record_move(
             self.client_id,
