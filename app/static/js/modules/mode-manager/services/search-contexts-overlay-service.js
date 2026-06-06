@@ -1,5 +1,6 @@
 const SEARCH_CONTEXTS_SELECTOR = '#search-contexts-list';
 const TAB_HOVER_ZONE_SELECTOR = '#tab-hover-zone';
+const CONTROLS_SELECTOR = '.controls';
 const HOVER_CLASS = 'search-contexts-list--hover';
 const POINTER_DISMISS_BUFFER_PX = 28;
 
@@ -24,6 +25,17 @@ function getTabHoverZoneElement() {
     }
     if (!(element instanceof HTMLElement)) {
         throw new Error('tab-hover-zone must be an HTMLElement');
+    }
+    return element;
+}
+
+function getControlsElement() {
+    const element = document.querySelector(CONTROLS_SELECTOR);
+    if (!element) {
+        return null;
+    }
+    if (!(element instanceof HTMLElement)) {
+        throw new Error('controls element must be an HTMLElement');
     }
     return element;
 }
@@ -83,18 +95,22 @@ export function updateSearchContextsOverlayPlacement() {
 
     searchContextsList.style.display = 'block';
     const hoverRect = hoverZone.getBoundingClientRect();
+    const controls = getControlsElement();
+    const controlsRect = controls ? controls.getBoundingClientRect() : hoverRect;
     const listRect = searchContextsList.getBoundingClientRect();
     if (
         !hoverRect
+        || !controlsRect
         || !listRect
         || !Number.isFinite(hoverRect.left)
         || !Number.isFinite(hoverRect.bottom)
+        || !Number.isFinite(controlsRect.left)
         || !Number.isFinite(listRect.width)
     ) {
         throw new Error('search contexts placement requires valid element rects');
     }
 
-    const popoverLeft = clampPopoverLeft(Math.round(hoverRect.left), Math.round(listRect.width));
+    const popoverLeft = clampPopoverLeft(Math.round(controlsRect.left), Math.round(listRect.width));
     const popoverTop = Math.max(8, Math.round(hoverRect.bottom + 6));
     searchContextsList.style.left = `${popoverLeft}px`;
     searchContextsList.style.top = `${popoverTop}px`;
