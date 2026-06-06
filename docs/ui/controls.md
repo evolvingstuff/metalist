@@ -133,6 +133,7 @@
 > In non-normal sort modes, drag/drop cannot reorder root notes, but it can still reorder children within a root.
 > Saved-file image actions are available in view mode on rendered image previews; edit mode only contains the raw UUID token for those files.
 > Collapse arrows reflect the server-provided `isCollapsible` flag, plus a browser-side promotion when rendered note content visibly wraps beyond one line.
+> While editing, collapse arrows ignore content length and appear only for notes with children, because the edited note already shows its full content.
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
 > Selecting a collapsed note for editing shows that note's full editable content but keeps its child subtree hidden until the note is explicitly expanded. If the collapsed note has hidden children, an inline `...` affordance appears under the tag bar and expands the note.
 

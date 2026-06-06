@@ -136,6 +136,8 @@ export function updateCollapseAffordanceForNote(noteElement) {
     }
 
     const isCollapsed = noteElement.dataset[COLLAPSED_DATA_KEY] === 'true';
+    const isEditing = noteElement.classList.contains('editing');
+    const hasChildren = noteElement.dataset.hasChildren === 'true';
     const isSearchRedacted = noteElement.dataset.searchRedacted === 'true';
     const serverCanCollapse = resolveCanCollapseFromDataset(noteElement.dataset);
     const wasCollapsed = noteElement.classList.contains('collapsed');
@@ -146,7 +148,11 @@ export function updateCollapseAffordanceForNote(noteElement) {
     if (wasCollapsed) {
         noteElement.classList.add('collapsed');
     }
-    const canCollapse = !isSearchRedacted && (serverCanCollapse || renderedContentNeedsCollapse);
+    const canCollapse = !isSearchRedacted && (
+        isEditing
+            ? hasChildren
+            : (serverCanCollapse || renderedContentNeedsCollapse)
+    );
 
     noteElement.dataset[CAN_COLLAPSE_DATA_KEY] = canCollapse ? 'true' : 'false';
     const shouldApplyCollapsedClass = isCollapsed && canCollapse;

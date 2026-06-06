@@ -254,6 +254,94 @@ test('rendered collapse promotion preserves saved collapsed state', async (t) =>
     assert.equal(collapseToggle.attributes['aria-label'], 'Expand note');
 });
 
+test('editing childless note ignores content-only collapse promotion', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const contentElement = createMeasuredContent({ rectHeight: 48, scrollHeight: 48 });
+    const noteClassList = createClassList(['note', 'editing']);
+    const collapseToggle = {
+        attributes: {},
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        },
+        removeAttribute(name) {
+            delete this.attributes[name];
+        },
+    };
+    const noteElement = {
+        classList: noteClassList,
+        dataset: {
+            isCollapsed: 'false',
+            hasChildren: 'false',
+            isCollapsible: 'true',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return collapseToggle;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'false');
+    assert.equal(noteClassList.contains('collapsed'), false);
+    assert.equal(collapseToggle.attributes['aria-label'], 'Collapse note');
+});
+
+test('editing note with children keeps collapse affordance', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const contentElement = createMeasuredContent({ rectHeight: 20, scrollHeight: 20 });
+    const noteClassList = createClassList(['note', 'editing', 'collapsed']);
+    const collapseToggle = {
+        attributes: {},
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        },
+        removeAttribute(name) {
+            delete this.attributes[name];
+        },
+    };
+    const noteElement = {
+        classList: noteClassList,
+        dataset: {
+            isCollapsed: 'true',
+            hasChildren: 'true',
+            isCollapsible: 'true',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return collapseToggle;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'true');
+    assert.equal(noteClassList.contains('collapsed'), true);
+    assert.equal(collapseToggle.attributes['aria-label'], 'Expand note');
+});
+
 test('search redaction blocks rendered-height collapse promotion', async (t) => {
     installBrowserStorage(t);
     installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
