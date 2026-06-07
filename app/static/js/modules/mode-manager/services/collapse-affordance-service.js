@@ -2,6 +2,7 @@ import { NotesAPI } from '../../api-client.js';
 
 const NOTE_SELECTOR = '.note';
 const NOTE_CONTENT_SELECTOR = '.note-content';
+const META_STATUS_TEXT_SELECTOR = ':scope > .meta-status > .meta-status-text';
 const COLLAPSED_DATA_KEY = 'isCollapsed';
 const CAN_COLLAPSE_DATA_KEY = 'canCollapse';
 const MULTILINE_HEIGHT_TOLERANCE = 1.35;
@@ -73,26 +74,38 @@ function countRenderedLineBoxes(contentElement) {
     return lineTops.length;
 }
 
+function getCollapseMeasurementElement(contentElement) {
+    if (!contentElement || typeof contentElement.querySelector !== 'function') {
+        return contentElement;
+    }
+    const metaStatusText = contentElement.querySelector(META_STATUS_TEXT_SELECTOR);
+    if (metaStatusText !== null) {
+        return metaStatusText;
+    }
+    return contentElement;
+}
+
 export function doesRenderedContentNeedCollapse(contentElement) {
     if (!contentElement) {
         throw new Error('doesRenderedContentNeedCollapse requires content element');
     }
 
-    const renderedLineBoxCount = countRenderedLineBoxes(contentElement);
+    const measurementElement = getCollapseMeasurementElement(contentElement);
+    const renderedLineBoxCount = countRenderedLineBoxes(measurementElement);
     if (renderedLineBoxCount !== null) {
         return renderedLineBoxCount > 1;
     }
 
-    const lineHeightPx = resolveLineHeightPx(contentElement);
-    const rect = contentElement.getBoundingClientRect();
+    const lineHeightPx = resolveLineHeightPx(measurementElement);
+    const rect = measurementElement.getBoundingClientRect();
     if (!rect || typeof rect.height !== 'number') {
         throw new Error('content element must provide a bounding rect height');
     }
-    if (typeof contentElement.scrollHeight !== 'number') {
+    if (typeof measurementElement.scrollHeight !== 'number') {
         throw new Error('content element must provide scrollHeight');
     }
 
-    const measuredHeight = Math.max(rect.height, contentElement.scrollHeight);
+    const measuredHeight = Math.max(rect.height, measurementElement.scrollHeight);
     return measuredHeight > lineHeightPx * MULTILINE_HEIGHT_TOLERANCE;
 }
 

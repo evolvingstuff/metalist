@@ -92,6 +92,28 @@ function installRangeRects(t, rects) {
     });
 }
 
+function installRangeRectsBySelectedNode(t, rectsByNode) {
+    const originalDocument = globalThis.document;
+    globalThis.document = {
+        createRange() {
+            let selectedNode = null;
+            return {
+                selectNodeContents(node) {
+                    selectedNode = node;
+                },
+                getClientRects() {
+                    return rectsByNode.get(selectedNode) || [];
+                },
+                detach() {},
+            };
+        },
+    };
+
+    t.after(() => {
+        globalThis.document = originalDocument;
+    });
+}
+
 test('resolveCanCollapseFromDataset trusts only server isCollapsible flag', async (t) => {
     installBrowserStorage(t);
     const { resolveCanCollapseFromDataset } = await import(
@@ -174,6 +196,107 @@ test('single rendered line box does not promote collapse despite tall element bo
     updateCollapseAffordanceForNote(noteElement);
 
     assert.equal(noteElement.dataset.canCollapse, 'false');
+});
+
+test('single-line status wrapper control does not promote collapse', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    const statusTextElement = createMeasuredContent({ rectHeight: 20, scrollHeight: 20 });
+    const contentElement = {
+        ...createMeasuredContent({ rectHeight: 36, scrollHeight: 36 }),
+        querySelector(selector) {
+            if (selector === ':scope > .meta-status > .meta-status-text') {
+                return statusTextElement;
+            }
+            throw new Error(`Unexpected content selector: ${selector}`);
+        },
+    };
+    installRangeRectsBySelectedNode(t, new Map([
+        [
+            contentElement,
+            [
+                { top: 10, width: 18, height: 18 },
+                { top: 34, width: 180, height: 24 },
+            ],
+        ],
+        [statusTextElement, [{ top: 34, width: 180, height: 24 }]],
+    ]));
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const noteElement = {
+        classList: createClassList(['note']),
+        dataset: {
+            isCollapsed: 'false',
+            hasChildren: 'false',
+            isCollapsible: 'false',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return null;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'false');
+});
+
+test('multi-line status wrapper text still promotes collapse', async (t) => {
+    installBrowserStorage(t);
+    installComputedStyle(t, { lineHeight: '20px', fontSize: '16px' });
+    const statusTextElement = createMeasuredContent({ rectHeight: 44, scrollHeight: 44 });
+    const contentElement = {
+        ...createMeasuredContent({ rectHeight: 48, scrollHeight: 48 }),
+        querySelector(selector) {
+            if (selector === ':scope > .meta-status > .meta-status-text') {
+                return statusTextElement;
+            }
+            throw new Error(`Unexpected content selector: ${selector}`);
+        },
+    };
+    installRangeRectsBySelectedNode(t, new Map([
+        [
+            statusTextElement,
+            [
+                { top: 34, width: 180, height: 24 },
+                { top: 58, width: 120, height: 24 },
+            ],
+        ],
+    ]));
+    const { updateCollapseAffordanceForNote } = await import(
+        '../../app/static/js/modules/mode-manager/services/collapse-affordance-service.js'
+    );
+
+    const noteElement = {
+        classList: createClassList(['note']),
+        dataset: {
+            isCollapsed: 'false',
+            hasChildren: 'false',
+            isCollapsible: 'false',
+            searchRedacted: 'false',
+        },
+        querySelector(selector) {
+            if (selector === ':scope > .note-content') {
+                return contentElement;
+            }
+            if (selector === ':scope > .note-collapse-toggle') {
+                return null;
+            }
+            throw new Error(`Unexpected selector: ${selector}`);
+        },
+    };
+
+    updateCollapseAffordanceForNote(noteElement);
+
+    assert.equal(noteElement.dataset.canCollapse, 'true');
 });
 
 test('multiple rendered line boxes promote collapse', async (t) => {
