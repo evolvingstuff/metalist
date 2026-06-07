@@ -1,0 +1,108 @@
+# Reminders
+
+Reminders are privacy-first in-app scheduled prompts. They are not a task manager, calendar, habit tracker, or background notification system.
+
+## Scope
+
+Implemented now:
+
+- Standalone reminders only.
+- One-time and recurring schedules.
+- Date-time and date-only time modes.
+- Optional details text beyond the title.
+- In-app popup surface with one action: `Got it`.
+- Registry search and schedule filters: `All schedules`, `One Time`, `Daily`, `Weekly`, `Monthly`, `Yearly`.
+- Pause/resume for recurring reminders.
+- Delete for all reminders.
+
+Intentionally not implemented:
+
+- Note-attached reminders. The backend model keeps `attachment_type`, but attached reminders are rejected until there is a real note picker/search UX.
+- Raw note ID entry in the UI.
+- Browser/system push notifications, service workers, notification permissions, Web Push/VAPID, or OS-level reminder delivery.
+- Reminder history/archive. When a one-time reminder is acknowledged, it is removed.
+- Manual skip-next controls in the registry. Skipping a visible occurrence should happen from the reminder surface if that behavior is reintroduced.
+
+## Privacy Model
+
+Reminders only surface inside the visible, authenticated MetaList app.
+
+They must not appear when the app is closed, logged out, backgrounded, or as browser/OS notifications. This is deliberate: reminder text can be private note-adjacent content, and it should not appear to another person using the laptop.
+
+## Data Ownership
+
+The server owns reminder truth.
+
+- Backend service: `app/services/reminders.py`
+- API routes: `app/api/routes/reminders.py`
+- Client mirror: `app/static/js/modules/reminder-store.js`
+- Registry/builder modal: `app/static/js/modules/modals/reminder-modal.js`
+- Popup surface: `app/static/js/modules/reminder-surface-service.js`
+
+The browser keeps an in-memory mirror only so it can surface due reminders without polling. After any create/update/delete/action, the client sends the mutation to the server and then refreshes the full reminder snapshot from the server. The client should not try to locally mutate its own reminder truth.
+
+## Persistence
+
+Reminders are namespace-local.
+
+Rows live in the `reminders` table, but the payload is loaded into the in-memory reminder store at startup or after encrypted hydration. When namespace encryption is enabled, the full reminder JSON payload is encrypted at rest like other namespace-owned data.
+
+Reminder ids are server-generated UUID strings. The client treats them as opaque ids.
+
+## Scheduling
+
+### Time Modes
+
+`date_time` reminders fire at a specific local instant and use `scheduled_at` / `next_fire_at`.
+
+`date_only` reminders are calendar-day prompts. They do not fire at midnight, morning, or any default wall-clock time. They become eligible on the relevant local date and surface on the first non-idle app use that day.
+
+### Schedule Kinds
+
+`one_time` reminders have one occurrence. Acknowledging that occurrence deletes the reminder from the store.
+
+`recurring` reminders can be daily, weekly, monthly, or yearly. For monthly reminders, if the selected day does not exist in a later month, the occurrence rolls back to the last valid day of that month.
+
+Weekly reminders use selected weekdays, not the creation date. Monthly/yearly reminders display the day/month pattern rather than the original creation date.
+
+## Missed Behavior
+
+Each reminder has a missed policy:
+
+- `keep_until_seen`: the reminder remains due/overdue until acknowledged.
+- `drop_if_missed`: the reminder can be advanced or removed without entering the visible missed state.
+
+Visible due/overdue state is shown in the registry. Date-time popups display elapsed due time live. Date-only popups show calendar-day status such as due today or overdue.
+
+## Popup Surface
+
+The popup surface is intentionally compact:
+
+- Fixed reminder icon is render-only; it is not stored.
+- Title and optional details are shown.
+- A horizontal rule separates content from the due status/action row.
+- Due status is italic and shares a row with `Got it`.
+- `Got it` acknowledges the current visible occurrence.
+
+The surface reconciles rendered popups against each fresh server snapshot. If a reminder is deleted, paused, advanced, or otherwise no longer due, the stale popup is removed. If the same occurrence remains due but title/details changed, the popup content is re-rendered from the fresh snapshot.
+
+## Client Evaluation
+
+The client does not repeatedly poll the server for due reminders.
+
+Snapshot refresh happens on app load, visibility return, reminder modal close, and after reminder mutations/actions. Date-time reminders use local timers against the in-memory mirror. Date-only reminders evaluate on non-idle visible app use.
+
+This keeps the server authoritative while avoiding pointless server traffic during idle time.
+
+## UI Semantics
+
+`Add reminder` always clears back to the default form after a successful create.
+
+`Clear form` discards the current form state.
+
+`Pause` is only shown for recurring reminders. One-time reminders can be edited or deleted; once acknowledged, they disappear.
+
+`Delete` permanently removes the reminder definition.
+
+`Got it` resolves the currently visible due/overdue occurrence. For one-time reminders this removes the reminder. For recurring reminders this advances to the next occurrence.
+
