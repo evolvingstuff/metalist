@@ -26,6 +26,7 @@ from app.security.encryption import (
     get_encryption_service_with_token,
     is_encryption_required,
 )
+from app.services.client_state_service import load_client_preferences
 from app.services.reminders import reminder_store
 
 BUILTIN_DEFAULT_SOUND_ID = "builtin.default_chime"
@@ -740,6 +741,14 @@ def _decrypt_blob_field(
 def _assert_sound_not_selected(sound_id: str) -> None:
     if reminder_store.sound_is_referenced(sound_id=sound_id):
         raise ValueError("Sound is selected by a reminder; choose another sound before deleting it")
+    preferences = load_client_preferences()
+    default_keys = {
+        "pref.reminder_default_popup_sound_id": "default popup sound",
+        "pref.reminder_default_ack_sound_id": "default Got it sound",
+    }
+    for preference_key, label in default_keys.items():
+        if preferences.get(preference_key) == sound_id:
+            raise ValueError(f"Sound is selected as the {label}; choose another sound before deleting it")
 
 
 sound_store = SoundStore()

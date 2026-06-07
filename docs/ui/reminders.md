@@ -119,9 +119,10 @@ The surface reconciles rendered popups against each fresh server snapshot. If a 
 
 Reminder sound controls live in the reminder modal:
 
-- `Sound on popup` selects the sound for newly surfaced reminder popups.
-- `Sound on Got it` selects the sound for successful `Got it` actions.
-- Both selectors include the non-deletable `Default chime`.
+- The bottom `Default sounds` section sets namespace defaults for popup and `Got it` sounds.
+- Each reminder can override the defaults independently for popup and `Got it` sounds.
+- Individual overrides include `Silent`, so a reminder can explicitly suppress a default sound.
+- Sound selectors include the non-deletable `Default chime`.
 - Uploaded sounds are managed from `Cmd/Ctrl+/` → `Manage sounds…`.
 
 Uploaded sounds are namespace-local and memory-first after startup/login. Rows persist in the sibling `*.files.db` `sounds` table, but playback uses the in-memory sound store instead of per-play SQLite reads. Password-protected namespaces decrypt sounds during post-login hydration.
@@ -132,7 +133,7 @@ Limits:
 - 10 seconds per uploaded sound.
 - 50 MB total uploaded sound library per namespace.
 
-The sound manager displays current uploaded library usage and the per-sound limits. Uploaded sounds cannot be deleted while selected by any reminder's popup or `Got it` sound field; edit those reminders to another sound first.
+The sound manager displays current uploaded library usage and the per-sound limits. Uploaded sounds cannot be deleted while selected by any reminder's popup or `Got it` sound field; edit those reminders to another sound first. Default sound selections must also be changed before deleting a referenced uploaded sound.
 
 ## Client Evaluation
 

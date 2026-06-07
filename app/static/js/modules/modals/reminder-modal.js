@@ -2,6 +2,11 @@ import { ReminderStore } from '../reminder-store.js';
 import { ReminderSurface } from '../reminder-surface-service.js';
 import {
     DEFAULT_SOUND_ID,
+    PREF_REMINDER_DEFAULT_ACK_SOUND_ENABLED,
+    PREF_REMINDER_DEFAULT_ACK_SOUND_ID,
+    PREF_REMINDER_DEFAULT_POPUP_SOUND_ENABLED,
+    PREF_REMINDER_DEFAULT_POPUP_SOUND_ID,
+    SILENT_SOUND_ID,
     SoundService,
 } from '../sound-service.js';
 import { BaseModal } from './base-modal.js';
@@ -712,14 +717,11 @@ function reminderSearchHaystack(reminder) {
     return normalizeReminderSearchText(parts.join(' '));
 }
 
-function reminderHasSound(reminder) {
+function reminderHasSound(reminder, defaultSoundSettings) {
     if (!reminder || typeof reminder !== 'object') {
         throw new Error('reminderHasSound requires reminder');
     }
-    if (reminder.popup_sound_enabled === true) {
-        return true;
-    }
-    return reminder.ack_sound_enabled === true;
+    return SoundService.reminderHasAudibleSound(reminder, defaultSoundSettings);
 }
 
 function defaultReminderModalState() {
@@ -735,6 +737,7 @@ function defaultReminderModalState() {
         unsubscribe: null,
         saving: false,
         soundLibrary: null,
+        defaultSoundSettings: SoundService.currentDefaultSettings(),
     };
 }
 
@@ -832,8 +835,12 @@ export class ReminderModal extends BaseModal {
     }
 
     async _loadSounds() {
-        const library = await SoundService.library();
+        const [library, defaultSoundSettings] = await Promise.all([
+            SoundService.library(),
+            SoundService.defaultSettings(),
+        ]);
         this._state.soundLibrary = library;
+        this._state.defaultSoundSettings = defaultSoundSettings;
         this._render();
     }
 
@@ -956,6 +963,7 @@ export class ReminderModal extends BaseModal {
                         <p class="reminder-modal-error">${escapeHtml(this._state.error)}</p>
                     </section>
                 </div>
+                ${this._renderDefaultSoundSettings()}
             </div>
         `;
     }
@@ -963,20 +971,20 @@ export class ReminderModal extends BaseModal {
     _renderSoundSettings() {
         const library = this._state.soundLibrary;
         const form = this._state.form;
-        const soundOptions = this._soundOptions(form.popup_sound_id, library);
-        const ackSoundOptions = this._soundOptions(form.ack_sound_id, library);
+        const soundOptions = this._soundOptions(form.popup_sound_id, library, true);
+        const ackSoundOptions = this._soundOptions(form.ack_sound_id, library, true);
         return `
             <div class="reminder-sound-settings">
                 <label class="reminder-field-label reminder-check-label" for="reminder-popup-sound-enabled">
                     <input id="reminder-popup-sound-enabled" type="checkbox" ${form.popup_sound_enabled ? 'checked' : ''}>
-                    <span>Sound on popup</span>
+                    <span>Override popup sound</span>
                 </label>
                 <select id="reminder-popup-sound-id" ${form.popup_sound_enabled ? '' : 'disabled'}>
                     ${soundOptions}
                 </select>
                 <label class="reminder-field-label reminder-check-label" for="reminder-ack-sound-enabled">
                     <input id="reminder-ack-sound-enabled" type="checkbox" ${form.ack_sound_enabled ? 'checked' : ''}>
-                    <span>Sound on Got it</span>
+                    <span>Override Got it sound</span>
                 </label>
                 <select id="reminder-ack-sound-id" ${form.ack_sound_enabled ? '' : 'disabled'}>
                     ${ackSoundOptions}
@@ -985,22 +993,77 @@ export class ReminderModal extends BaseModal {
         `;
     }
 
-    _soundOptions(currentSoundId, library) {
+    _renderDefaultSoundSettings() {
+        const library = this._state.soundLibrary;
+        const settings = this._state.defaultSoundSettings;
+        const popupOptions = this._soundOptions(settings.popupSoundId, library, false);
+        const ackOptions = this._soundOptions(settings.ackSoundId, library, false);
+        return `
+            <section class="reminder-default-sound-settings">
+                <h4>Default sounds</h4>
+                <div class="reminder-default-sound-grid">
+                    <label class="reminder-field-label reminder-check-label" for="reminder-default-popup-sound-enabled">
+                        <input id="reminder-default-popup-sound-enabled" type="checkbox" ${settings.popupEnabled ? 'checked' : ''}>
+                        <span>Sound on popup</span>
+                    </label>
+                    <select id="reminder-default-popup-sound-id" ${settings.popupEnabled ? '' : 'disabled'}>
+                        ${popupOptions}
+                    </select>
+                    <label class="reminder-field-label reminder-check-label" for="reminder-default-ack-sound-enabled">
+                        <input id="reminder-default-ack-sound-enabled" type="checkbox" ${settings.ackEnabled ? 'checked' : ''}>
+                        <span>Sound on Got it</span>
+                    </label>
+                    <select id="reminder-default-ack-sound-id" ${settings.ackEnabled ? '' : 'disabled'}>
+                        ${ackOptions}
+                    </select>
+                </div>
+            </section>
+        `;
+    }
+
+    _soundOptions(currentSoundId, library, includeSilent) {
         if (typeof currentSoundId !== 'string' || currentSoundId.length === 0) {
             throw new Error('_soundOptions requires currentSoundId');
         }
+        if (typeof includeSilent !== 'boolean') {
+            throw new Error('_soundOptions requires includeSilent');
+        }
         if (library && Array.isArray(library.sounds)) {
-            const options = library.sounds.map((sound) => this._option(sound.id, sound.title, currentSoundId));
-            const hasCurrent = library.sounds.some((sound) => sound.id === currentSoundId);
+            const options = [];
+            if (includeSilent) {
+                options.push(this._option(SILENT_SOUND_ID, 'Silent', currentSoundId));
+            }
+            for (const sound of library.sounds) {
+                options.push(this._option(sound.id, sound.title, currentSoundId));
+            }
+            const hasCurrent = currentSoundId === SILENT_SOUND_ID
+                ? includeSilent
+                : library.sounds.some((sound) => sound.id === currentSoundId);
             if (!hasCurrent) {
                 options.push(this._option(currentSoundId, `Missing sound (${currentSoundId})`, currentSoundId));
             }
             return options.join('');
         }
+        if (currentSoundId === SILENT_SOUND_ID && includeSilent) {
+            return `
+                <option value="${SILENT_SOUND_ID}" selected>Silent</option>
+                <option value="${DEFAULT_SOUND_ID}">Default chime</option>
+            `;
+        }
         if (currentSoundId === DEFAULT_SOUND_ID) {
+            if (includeSilent) {
+                return `
+                    <option value="${SILENT_SOUND_ID}">Silent</option>
+                    <option value="${DEFAULT_SOUND_ID}" selected>Default chime</option>
+                `;
+            }
             return `<option value="${DEFAULT_SOUND_ID}" selected>Default chime</option>`;
         }
+        const silentOption = includeSilent
+            ? `<option value="${SILENT_SOUND_ID}">Silent</option>`
+            : '';
         return `
+            ${silentOption}
             <option value="${DEFAULT_SOUND_ID}">Default chime</option>
             <option value="${escapeHtml(currentSoundId)}" selected>Missing sound (${escapeHtml(currentSoundId)})</option>
         `;
@@ -1113,7 +1176,7 @@ export class ReminderModal extends BaseModal {
         const nextLabelClass = nextLabel.startsWith('Overdue')
             ? 'reminder-row-overdue'
             : (nextLabel.startsWith('Due:') ? 'reminder-row-due' : 'reminder-row-next');
-        const soundIndicator = reminderHasSound(reminder)
+        const soundIndicator = reminderHasSound(reminder, this._state.defaultSoundSettings)
             ? `<span class="reminder-row-icon reminder-row-sound-icon" aria-label="Sound enabled" title="Sound enabled">${REMINDER_SOUND_ICON}</span>`
             : '';
         return `
@@ -1213,6 +1276,38 @@ export class ReminderModal extends BaseModal {
             } else {
                 form.ack_sound_id = target.value;
             }
+            return;
+        }
+        if (
+            target.id === 'reminder-default-popup-sound-enabled'
+            || target.id === 'reminder-default-ack-sound-enabled'
+        ) {
+            if (!(target instanceof HTMLInputElement)) {
+                throw new Error('Default reminder sound enabled target must be input');
+            }
+            if (target.id === 'reminder-default-popup-sound-enabled') {
+                this._state.defaultSoundSettings.popupEnabled = target.checked;
+                this._setSoundSelectorDisabled('reminder-default-popup-sound-id', !target.checked);
+            } else {
+                this._state.defaultSoundSettings.ackEnabled = target.checked;
+                this._setSoundSelectorDisabled('reminder-default-ack-sound-id', !target.checked);
+            }
+            void this._saveDefaultSoundSettings();
+            return;
+        }
+        if (
+            target.id === 'reminder-default-popup-sound-id'
+            || target.id === 'reminder-default-ack-sound-id'
+        ) {
+            if (!(target instanceof HTMLSelectElement)) {
+                throw new Error('Default reminder sound selector target must be select');
+            }
+            if (target.id === 'reminder-default-popup-sound-id') {
+                this._state.defaultSoundSettings.popupSoundId = target.value;
+            } else {
+                this._state.defaultSoundSettings.ackSoundId = target.value;
+            }
+            void this._saveDefaultSoundSettings();
             return;
         }
         const mapping = {
@@ -1356,6 +1451,20 @@ export class ReminderModal extends BaseModal {
             throw new Error(`Reminder sound selector missing: ${selectorId}`);
         }
         selector.disabled = disabled;
+    }
+
+    async _saveDefaultSoundSettings() {
+        const settings = this._state.defaultSoundSettings;
+        if (!settings || typeof settings !== 'object') {
+            throw new Error('_saveDefaultSoundSettings requires settings');
+        }
+        this._state.defaultSoundSettings = await SoundService.saveDefaultSettings({
+            [PREF_REMINDER_DEFAULT_POPUP_SOUND_ENABLED]: settings.popupEnabled ? 'true' : 'false',
+            [PREF_REMINDER_DEFAULT_POPUP_SOUND_ID]: settings.popupSoundId,
+            [PREF_REMINDER_DEFAULT_ACK_SOUND_ENABLED]: settings.ackEnabled ? 'true' : 'false',
+            [PREF_REMINDER_DEFAULT_ACK_SOUND_ID]: settings.ackSoundId,
+        });
+        this._render();
     }
 
 }

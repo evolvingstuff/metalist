@@ -1,10 +1,17 @@
 import { CONFIG } from './config.js';
 import { SoundsAPI } from './api-client.js';
+import { loadClientState, persistClientPreferences } from './client-state-api.js';
 import { buildSessionHeaders } from './session-auth.js';
 
 export const DEFAULT_SOUND_ID = 'builtin.default_chime';
+export const SILENT_SOUND_ID = 'builtin.silent';
+export const PREF_REMINDER_DEFAULT_POPUP_SOUND_ENABLED = 'pref.reminder_default_popup_sound_enabled';
+export const PREF_REMINDER_DEFAULT_POPUP_SOUND_ID = 'pref.reminder_default_popup_sound_id';
+export const PREF_REMINDER_DEFAULT_ACK_SOUND_ENABLED = 'pref.reminder_default_ack_sound_enabled';
+export const PREF_REMINDER_DEFAULT_ACK_SOUND_ID = 'pref.reminder_default_ack_sound_id';
 
 let cachedLibrary = null;
+let cachedDefaultSettings = null;
 const activeAudioElements = new Set();
 const activeAudioContexts = new Set();
 
@@ -34,6 +41,105 @@ function soundIds(library) {
         }
         return sound.id;
     }));
+}
+
+function defaultSoundSettings() {
+    return {
+        popupEnabled: false,
+        popupSoundId: DEFAULT_SOUND_ID,
+        ackEnabled: false,
+        ackSoundId: DEFAULT_SOUND_ID,
+    };
+}
+
+function preferenceBoolean(preferences, key) {
+    if (!preferences || typeof preferences !== 'object') {
+        throw new Error('preferenceBoolean requires preferences');
+    }
+    const raw = preferences[key];
+    if (raw === undefined) {
+        return false;
+    }
+    if (raw === 'true') {
+        return true;
+    }
+    if (raw === 'false') {
+        return false;
+    }
+    throw new Error(`Invalid boolean sound preference for ${key}`);
+}
+
+function preferenceSoundId(preferences, key) {
+    if (!preferences || typeof preferences !== 'object') {
+        throw new Error('preferenceSoundId requires preferences');
+    }
+    const raw = preferences[key];
+    if (raw === undefined) {
+        return DEFAULT_SOUND_ID;
+    }
+    if (typeof raw !== 'string' || raw.length === 0) {
+        throw new Error(`Invalid sound id preference for ${key}`);
+    }
+    return raw;
+}
+
+function defaultSettingsFromPreferences(preferences) {
+    return {
+        popupEnabled: preferenceBoolean(preferences, PREF_REMINDER_DEFAULT_POPUP_SOUND_ENABLED),
+        popupSoundId: preferenceSoundId(preferences, PREF_REMINDER_DEFAULT_POPUP_SOUND_ID),
+        ackEnabled: preferenceBoolean(preferences, PREF_REMINDER_DEFAULT_ACK_SOUND_ENABLED),
+        ackSoundId: preferenceSoundId(preferences, PREF_REMINDER_DEFAULT_ACK_SOUND_ID),
+    };
+}
+
+async function loadPreferences() {
+    const clientState = await loadClientState();
+    if (!clientState || typeof clientState !== 'object') {
+        throw new Error('Sound client state missing');
+    }
+    const preferences = clientState.preferences;
+    if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
+        throw new Error('Sound preferences missing');
+    }
+    return preferences;
+}
+
+function effectiveSoundId(reminder, kind, defaultSettingsValue) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('effectiveSoundId requires reminder');
+    }
+    if (!defaultSettingsValue || typeof defaultSettingsValue !== 'object') {
+        throw new Error('effectiveSoundId requires defaultSettingsValue');
+    }
+    if (kind !== 'popup' && kind !== 'ack') {
+        throw new Error(`Unsupported reminder sound kind: ${kind}`);
+    }
+    const enabledKey = kind === 'popup' ? 'popup_sound_enabled' : 'ack_sound_enabled';
+    const soundIdKey = kind === 'popup' ? 'popup_sound_id' : 'ack_sound_id';
+    if (reminder[enabledKey] === true) {
+        const reminderSoundId = reminder[soundIdKey];
+        if (typeof reminderSoundId !== 'string' || reminderSoundId.length === 0) {
+            throw new Error(`Reminder missing ${soundIdKey}`);
+        }
+        return reminderSoundId;
+    }
+    const defaultEnabled = kind === 'popup' ? defaultSettingsValue.popupEnabled : defaultSettingsValue.ackEnabled;
+    if (defaultEnabled !== true) {
+        return SILENT_SOUND_ID;
+    }
+    const defaultSoundId = kind === 'popup' ? defaultSettingsValue.popupSoundId : defaultSettingsValue.ackSoundId;
+    if (typeof defaultSoundId !== 'string' || defaultSoundId.length === 0) {
+        throw new Error(`Default reminder sound missing for ${kind}`);
+    }
+    return defaultSoundId;
+}
+
+function reminderHasAudibleSoundWithDefaults(reminder, defaultSettingsValue) {
+    const popupSoundId = effectiveSoundId(reminder, 'popup', defaultSettingsValue);
+    if (popupSoundId !== SILENT_SOUND_ID) {
+        return true;
+    }
+    return effectiveSoundId(reminder, 'ack', defaultSettingsValue) !== SILENT_SOUND_ID;
 }
 
 function browserAudioContextConstructor() {
@@ -148,6 +254,56 @@ export const SoundService = {
 
     clearCache() {
         cachedLibrary = null;
+        cachedDefaultSettings = null;
+    },
+
+    async defaultSettings() {
+        cachedDefaultSettings = defaultSettingsFromPreferences(await loadPreferences());
+        return cachedDefaultSettings;
+    },
+
+    currentDefaultSettings() {
+        if (cachedDefaultSettings === null) {
+            return defaultSoundSettings();
+        }
+        return cachedDefaultSettings;
+    },
+
+    async saveDefaultSettings(nextPreferences) {
+        if (!nextPreferences || typeof nextPreferences !== 'object') {
+            throw new Error('SoundService.saveDefaultSettings requires object');
+        }
+        const clientState = await loadClientState();
+        if (!clientState || typeof clientState !== 'object') {
+            throw new Error('Sound client state missing');
+        }
+        const current = clientState.preferences;
+        if (!current || typeof current !== 'object' || Array.isArray(current)) {
+            throw new Error('Sound preferences missing');
+        }
+        const merged = { ...current };
+        const library = await this.library();
+        const validSoundIds = soundIds(library);
+        const soundKeys = [
+            PREF_REMINDER_DEFAULT_POPUP_SOUND_ID,
+            PREF_REMINDER_DEFAULT_ACK_SOUND_ID,
+        ];
+        for (const [key, value] of Object.entries(nextPreferences)) {
+            if (soundKeys.includes(key) && !validSoundIds.has(value)) {
+                throw new Error(`Unknown default reminder sound selected for ${key}: ${value}`);
+            }
+            merged[key] = value;
+        }
+        const saved = await persistClientPreferences(merged);
+        if (!saved || typeof saved !== 'object') {
+            throw new Error('Saved sound preferences payload missing');
+        }
+        const preferences = saved.preferences;
+        if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
+            throw new Error('Saved sound preferences missing');
+        }
+        cachedDefaultSettings = defaultSettingsFromPreferences(preferences);
+        return cachedDefaultSettings;
     },
 
     playSound(soundId) {
@@ -174,18 +330,21 @@ export const SoundService = {
         if (kind !== 'popup' && kind !== 'ack') {
             throw new Error(`Unsupported reminder sound kind: ${kind}`);
         }
-        const enabledKey = kind === 'popup' ? 'popup_sound_enabled' : 'ack_sound_enabled';
-        const soundIdKey = kind === 'popup' ? 'popup_sound_id' : 'ack_sound_id';
-        if (reminder[enabledKey] !== true) {
-            return { status: 'disabled' };
+        let defaults = cachedDefaultSettings;
+        if (defaults === null) {
+            defaults = await this.defaultSettings();
         }
-        const soundId = reminder[soundIdKey];
-        if (typeof soundId !== 'string' || soundId.length === 0) {
-            throw new Error(`Reminder missing ${soundIdKey}`);
+        const soundId = effectiveSoundId(reminder, kind, defaults);
+        if (soundId === SILENT_SOUND_ID) {
+            return { status: 'disabled' };
         }
         if (cachedLibrary === null) {
             await this.refreshLibrary();
         }
         return await this.playSound(soundId);
+    },
+
+    reminderHasAudibleSound(reminder, defaultSettingsValue) {
+        return reminderHasAudibleSoundWithDefaults(reminder, defaultSettingsValue);
     },
 };

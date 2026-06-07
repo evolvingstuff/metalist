@@ -36,10 +36,7 @@ function reminderHasSound(reminder) {
     if (!reminder || typeof reminder !== 'object') {
         throw new Error('reminderHasSound requires reminder');
     }
-    if (reminder.popup_sound_enabled === true) {
-        return true;
-    }
-    return reminder.ack_sound_enabled === true;
+    return SoundService.reminderHasAudibleSound(reminder, SoundService.currentDefaultSettings());
 }
 
 function formatElapsedSince(value, now) {
@@ -248,6 +245,7 @@ class ReminderSurfaceService {
         }
         this._started = true;
         await this._loadExpandedPreference();
+        await SoundService.defaultSettings();
         this._hasCompletedInitialEvaluation = false;
         this._ensureContainer();
         document.addEventListener('pointerdown', this._handleInteraction, true);

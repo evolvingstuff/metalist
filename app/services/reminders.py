@@ -60,6 +60,7 @@ RECURRENCE_FREQUENCIES = frozenset({"daily", "weekly", "monthly", "yearly"})
 RECURRENCE_END_TYPES = frozenset({"never", "on_date", "after_count"})
 PRE_REMINDER_UNITS = frozenset({"minutes", "hours", "days"})
 BUILTIN_DEFAULT_SOUND_ID = "builtin.default_chime"
+BUILTIN_SILENT_SOUND_ID = "builtin.silent"
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,8 @@ def _require_int(value: object, *, field_name: str, min_value: int) -> int:
 def _normalize_sound_id(value: object, *, field_name: str) -> str:
     sound_id = _require_string(value, field_name=field_name, allow_blank=False)
     if sound_id == BUILTIN_DEFAULT_SOUND_ID:
+        return sound_id
+    if sound_id == BUILTIN_SILENT_SOUND_ID:
         return sound_id
     if len(sound_id) != 36:
         raise ValueError(f"{field_name} must be a sound id")

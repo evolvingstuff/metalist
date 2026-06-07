@@ -5822,8 +5822,27 @@ html[data-theme="dark"] body.loading::after {
     border-top: 1px solid #e1e1e1;
 }
 
+.reminder-default-sound-settings {
+    flex: 0 0 auto;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e1e1e1;
+}
+
+.reminder-default-sound-settings h4 {
+    margin: 0 0 8px;
+}
+
+.reminder-default-sound-grid {
+    display: grid;
+    grid-template-columns: minmax(160px, auto) minmax(180px, 1fr) minmax(160px, auto) minmax(180px, 1fr);
+    gap: 8px 10px;
+    align-items: center;
+}
+
 @media (max-width: 560px) {
-    .reminder-sound-settings {
+    .reminder-sound-settings,
+    .reminder-default-sound-grid {
         grid-template-columns: 1fr;
     }
 }

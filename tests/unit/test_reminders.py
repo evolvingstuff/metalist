@@ -141,7 +141,7 @@ def test_reminder_sound_fields_are_stored_per_reminder(
                 "recurrence_rule": None,
                 "persistence_mode": PERSISTENCE_KEEP_UNTIL_SEEN,
                 "popup_sound_enabled": True,
-                "popup_sound_id": "11111111-1111-4111-8111-111111111111",
+                "popup_sound_id": "builtin.silent",
                 "ack_sound_enabled": True,
                 "ack_sound_id": "22222222-2222-4222-8222-222222222222",
                 "status": REMINDER_STATUS_ACTIVE,
@@ -150,7 +150,7 @@ def test_reminder_sound_fields_are_stored_per_reminder(
         )
 
         assert reminder["popup_sound_enabled"] is True
-        assert reminder["popup_sound_id"] == "11111111-1111-4111-8111-111111111111"
+        assert reminder["popup_sound_id"] == "builtin.silent"
         assert reminder["ack_sound_enabled"] is True
         assert reminder["ack_sound_id"] == "22222222-2222-4222-8222-222222222222"
 

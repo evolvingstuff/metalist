@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from app.db.session import begin_writer
 from app.db.settings_sql import (
@@ -19,6 +20,10 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_rhs_panel": {"true", "false"},
     "pref.show_perf_overlay": {"true", "false"},
     "pref.reminder_surface_expanded": {"true", "false"},
+    "pref.reminder_default_popup_sound_enabled": {"true", "false"},
+    "pref.reminder_default_popup_sound_id": "sound_id",
+    "pref.reminder_default_ack_sound_enabled": {"true", "false"},
+    "pref.reminder_default_ack_sound_id": "sound_id",
     "pref.theme": {"system", "light", "dark"},
 }
 
@@ -29,6 +34,15 @@ _OBSOLETE_CLIENT_PREFERENCES = frozenset(
         "pref.reminder_popup_sound_id",
         "pref.reminder_ack_sound_id",
     }
+)
+
+_BUILTIN_DEFAULT_SOUND_ID = "builtin.default_chime"
+_UUID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{12}$"
 )
 
 
@@ -74,10 +88,19 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
         if not isinstance(value, str):
             raise RuntimeError(f"Client preference {key} must be a string")
         allowed_values = _ALLOWED_CLIENT_PREFERENCES[key]
-        if value not in allowed_values:
+        if allowed_values == "sound_id":
+            _validate_sound_preference_value(key=key, value=value)
+        elif value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value
     return normalized
+
+
+def _validate_sound_preference_value(*, key: str, value: str) -> None:
+    if value == _BUILTIN_DEFAULT_SOUND_ID:
+        return
+    if _UUID_PATTERN.fullmatch(value) is None:
+        raise RuntimeError(f"Invalid client preference value for {key}: {value}")
 
 
 def _validate_usage_state(usage_state: dict[str, object]) -> dict[str, dict[str, object]]:

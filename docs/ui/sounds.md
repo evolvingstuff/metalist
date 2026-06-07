@@ -29,9 +29,10 @@ Reusable sounds are namespace-local audio assets for in-app UI events.
 ## UI
 
 - Command palette: `Manage sounds…`.
-- Reminder modal: per-reminder dropdowns for popup sound and `Got it` sound, both with enable toggles.
+- Reminder modal: bottom default-sound controls plus per-reminder override dropdowns for popup sound and `Got it` sound.
+- Per-reminder override dropdowns include `Silent` to explicitly suppress an otherwise audible default.
 - Sound manager shows uploaded usage against the aggregate cap, supports upload, preview, rename, and delete.
 
 ## Deletion Rule
 
-Uploaded sounds cannot be deleted while any reminder references them for popup or `Got it` playback. Edit those reminders to select another sound first.
+Uploaded sounds cannot be deleted while any reminder or reminder default references them for popup or `Got it` playback. Edit those selections to another sound first.

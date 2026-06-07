@@ -17,6 +17,7 @@ from app.db.sounds_sql import fetch_sound
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
 from app.services.auth_service import AuthService
+from app.services.client_state_service import save_client_preferences
 from app.services.reminders import PERSISTENCE_KEEP_UNTIL_SEEN
 from app.services.reminders import REMINDER_STATUS_ACTIVE
 from app.services.reminders import SCHEDULE_ONE_TIME
@@ -157,6 +158,26 @@ def test_delete_sound_rejects_reminder_reference(memory_sound_db) -> None:
     )
 
     with pytest.raises(ValueError, match="selected by a reminder"):
+        sound_store.delete_sound(sound_id=record.id)
+
+
+def test_delete_sound_rejects_default_sound_reference(memory_sound_db) -> None:
+    del memory_sound_db
+    record = sound_store.create_sound(
+        title="Default",
+        original_filename="default.wav",
+        mime_type="audio/wav",
+        content_bytes=_wav_bytes(seconds=_TEST_SOUND_SECONDS),
+        token="",
+    )
+    save_client_preferences(
+        preferences={
+            "pref.reminder_default_popup_sound_enabled": "true",
+            "pref.reminder_default_popup_sound_id": record.id,
+        }
+    )
+
+    with pytest.raises(ValueError, match="default popup sound"):
         sound_store.delete_sound(sound_id=record.id)
 
 
