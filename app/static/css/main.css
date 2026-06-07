@@ -5335,6 +5335,10 @@ html[data-theme="dark"] body.loading::after {
     overflow-wrap: anywhere;
 }
 
+.reminder-row-icon {
+    margin-right: 2px;
+}
+
 .reminder-row-past-due {
     color: #9a3b00;
     font-weight: 600;
@@ -5588,6 +5592,10 @@ html[data-theme="dark"] body.loading::after {
     font-weight: 700;
 }
 
+.reminder-surface-icon {
+    margin-right: 2px;
+}
+
 .reminder-surface-text span {
     color: #d7d7d7;
     font-size: 15px;
@@ -5595,6 +5603,17 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-surface-details {
     white-space: pre-wrap;
+}
+
+.reminder-surface-rule {
+    width: 100%;
+    margin: 4px 0 0;
+    border: 0;
+    border-top: 1px solid rgba(216, 162, 28, 0.45);
+}
+
+.reminder-surface-status {
+    font-style: italic;
 }
 
 .reminder-surface-actions {

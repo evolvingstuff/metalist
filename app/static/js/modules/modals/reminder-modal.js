@@ -2,6 +2,8 @@ import { ReminderStore } from '../reminder-store.js';
 import { ReminderSurface } from '../reminder-surface-service.js';
 import { BaseModal } from './base-modal.js';
 
+const REMINDER_RENDER_ICON = '🔔';
+
 function escapeHtml(value) {
     if (typeof value !== 'string') {
         return '';
@@ -942,7 +944,7 @@ export class ReminderModal extends BaseModal {
         return `
             <article class="reminder-row ${isMissed ? 'reminder-row-missed' : ''} ${reminder.status === 'paused' ? 'reminder-row-paused' : ''}" data-reminder-id="${escapeHtml(reminder.id)}">
                 <div class="reminder-row-main">
-                    <strong>${escapeHtml(reminderDisplayTitle(reminder))}</strong>
+                    <strong><span class="reminder-row-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span> ${escapeHtml(reminderDisplayTitle(reminder))}</strong>
                     ${details ? `<small class="reminder-row-details">${escapeHtml(details)}</small>` : ''}
                     <span>${escapeHtml(reminderScheduleLabel(reminder))}</span>
                     ${pastDueLabel ? `<small class="reminder-row-past-due">${escapeHtml(pastDueLabel)}</small>` : ''}
