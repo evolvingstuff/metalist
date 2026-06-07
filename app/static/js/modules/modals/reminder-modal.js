@@ -168,9 +168,9 @@ function reminderScheduleLabel(reminder) {
     }
     if (reminder.time_mode === 'date_only') {
         if (reminder.schedule_kind === 'recurring') {
-            return `${recurrenceLabel(reminder.recurrence_rule)} · first app use that day`;
+            return recurrenceLabel(reminder.recurrence_rule);
         }
-        return `${reminder.scheduled_date} · first app use that day`;
+        return reminder.scheduled_date;
     }
     if (reminder.schedule_kind === 'recurring') {
         return `${recurrenceLabel(reminder.recurrence_rule)} at ${displayTime(reminder.scheduled_at)}`;
@@ -1020,7 +1020,6 @@ export class ReminderModal extends BaseModal {
                     ${preReminder ? `<small class="reminder-row-next">${escapeHtml(preReminder)}</small>` : ''}
                     ${pastDueLabel ? `<small class="reminder-row-past-due">${escapeHtml(pastDueLabel)}</small>` : ''}
                     ${nextLabel ? `<small class="${nextLabelClass}">${escapeHtml(nextLabel)}</small>` : ''}
-                    <small>${escapeHtml(reminder.status)} · ${escapeHtml(reminder.persistence_mode)}</small>
                 </div>
                 <div class="reminder-row-actions">
                     ${isMissed ? '<button type="button" data-reminder-action="acknowledge" title="Clear this due or missed notice">Got it</button>' : ''}
