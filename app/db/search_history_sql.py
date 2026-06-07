@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime
 from typing import Iterable, Optional
 
-from app.db.search_history_schema import SEARCH_HISTORY_TABLE
+from app.db.schema import SEARCH_HISTORY_TABLE
 
 
 def _serialize_datetime(value: datetime) -> str:
@@ -205,4 +205,9 @@ def delete_search_history_rows(connection: sqlite3.Connection, query_hashes: Ite
         f"DELETE FROM {SEARCH_HISTORY_TABLE} WHERE query_hash IN ({placeholders})",
         tuple(identifiers),
     )
+    return int(cursor.rowcount)
+
+
+def delete_all_search_history_rows(connection: sqlite3.Connection) -> int:
+    cursor = connection.execute(f"DELETE FROM {SEARCH_HISTORY_TABLE}")
     return int(cursor.rowcount)

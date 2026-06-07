@@ -10,11 +10,12 @@ const TAG_CONFIG_PATH = resolve(
     '../../app/static/config/command_palette_tags.json',
 );
 
-test('create backup action matches the plural backups query', () => {
+test('create backup action matches backup and create queries', () => {
     const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
     const payload = JSON.parse(source);
     const createBackup = payload.endpoints.find((endpoint) => endpoint.id === 'action.create_backup');
 
     assert.ok(createBackup, 'expected action.create_backup endpoint in command palette tag config');
     assert.equal(createBackup.tags.includes('backups'), true);
+    assert.equal(createBackup.tags.includes('create'), true);
 });

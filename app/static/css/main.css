@@ -1416,6 +1416,35 @@ body.ontology-modal-open #ontology-modal {
     min-height: 44px;
 }
 
+.backup-restore-danger-warning {
+    border-width: 2px;
+    font-size: 1rem;
+}
+
+.backup-restore-danger-warning input {
+    width: 100%;
+    margin-top: 8px;
+}
+
+.backup-restore-target-password-label {
+    display: block;
+    margin-top: 12px;
+    font-weight: 700;
+}
+
+.backup-restore-port-config {
+    margin: 16px 0;
+}
+
+.backup-restore-port-config h4 {
+    margin: 0 0 8px;
+}
+
+.backup-restore-port-config ul {
+    margin: 8px 0 0;
+    padding-left: 22px;
+}
+
 .backup-retention-modal-content {
     width: min(760px, 92vw);
 }

@@ -14,8 +14,7 @@ from threading import Lock
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
-from app.db.search_history_schema import initialize_search_history_schema
-from app.db.search_history_session import resolve_search_history_database_path
+from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.models.database import SafeSession
 
 
@@ -45,6 +44,20 @@ class BackupFileInfo:
     filename: str
     created_at: str
     size_bytes: int
+
+
+@dataclass(frozen=True)
+class BackupLaunchProfile:
+    namespace: str
+    port: int | None
+    https_port: int | None
+    mcp_port: int | None
+
+
+def _coerce_optional_db_port(*, value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def _derive_namespace_name(database_path: Path) -> str:
@@ -208,10 +221,6 @@ def _resolve_related_file_database_path(database_path: Path) -> Path:
     return resolve_file_database_path(database_path)
 
 
-def _resolve_related_search_history_database_path(database_path: Path) -> Path:
-    return resolve_search_history_database_path(database_path)
-
-
 def _resolve_related_file_backup_path(
     backup_directory: Path,
     filename: str,
@@ -219,18 +228,6 @@ def _resolve_related_file_backup_path(
     database_path: Path,
 ) -> Path:
     return backup_directory / _derive_file_backup_filename(filename=filename, database_path=database_path)
-
-
-def _resolve_related_search_history_backup_path(
-    backup_directory: Path,
-    filename: str,
-    *,
-    database_path: Path,
-) -> Path:
-    return backup_directory / _derive_search_history_backup_filename(
-        filename=filename,
-        database_path=database_path,
-    )
 
 
 def _copy_database(source_path: Path, target_path: Path) -> None:
@@ -265,18 +262,6 @@ def _reset_file_database_to_empty(file_database_path: Path) -> None:
         connection.close()
 
 
-def _reset_search_history_database_to_empty(search_history_database_path: Path) -> None:
-    search_history_database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(search_history_database_path), check_same_thread=False)
-    try:
-        initialize_search_history_schema(connection)
-        connection.execute("DELETE FROM search_interaction_history")
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        connection.close()
-
-
 def _copy_file_from_archive(archive_handle: tarfile.TarFile, *, archive_name: str, target_path: Path) -> None:
     if Path(archive_name).name != archive_name:
         raise RuntimeError(f"Archive member must be a basename: {archive_name}")
@@ -300,6 +285,136 @@ def _sha256_for_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _read_launch_profile_from_database(
+    *,
+    database_path: Path,
+    namespace: str,
+) -> BackupLaunchProfile | None:
+    connection = sqlite3.connect(str(database_path), check_same_thread=False)
+    try:
+        table_row = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            LIMIT 1
+            """,
+            (NAMESPACE_LAUNCH_PROFILE_TABLE,),
+        ).fetchone()
+        if table_row is None:
+            return None
+        row = connection.execute(
+            f"""
+            SELECT namespace, port, https_port, mcp_port
+            FROM {NAMESPACE_LAUNCH_PROFILE_TABLE}
+            WHERE namespace = ?
+            """,
+            (namespace,),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        return None
+    stored_namespace = str(row[0])
+    if stored_namespace != namespace:
+        raise RuntimeError(
+            f"Backup launch profile namespace mismatch: expected {namespace}, got {stored_namespace}"
+        )
+    return BackupLaunchProfile(
+        namespace=stored_namespace,
+        port=_coerce_optional_db_port(value=row[1]),
+        https_port=_coerce_optional_db_port(value=row[2]),
+        mcp_port=_coerce_optional_db_port(value=row[3]),
+    )
+
+
+def _rewrite_launch_profile_namespace(
+    *,
+    database_path: Path,
+    source_namespace: str,
+    target_namespace: str,
+) -> None:
+    if source_namespace == target_namespace:
+        return
+    connection = sqlite3.connect(str(database_path), check_same_thread=False)
+    try:
+        table_row = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            LIMIT 1
+            """,
+            (NAMESPACE_LAUNCH_PROFILE_TABLE,),
+        ).fetchone()
+        if table_row is None:
+            return
+        now_text = datetime.now(timezone.utc).isoformat()
+        connection.execute(
+            f"""
+            UPDATE {NAMESPACE_LAUNCH_PROFILE_TABLE}
+            SET namespace = ?, updated_at = ?
+            WHERE namespace = ?
+            """,
+            (target_namespace, now_text, source_namespace),
+        )
+        connection.commit()
+        _checkpoint_database(database_path)
+    finally:
+        connection.close()
+
+
+def read_backup_launch_profile(
+    backup_path: Path,
+    *,
+    expected_namespace: str,
+) -> BackupLaunchProfile | None:
+    if not isinstance(backup_path, Path):
+        raise TypeError(f"backup_path must be a Path, got {type(backup_path)}")
+    if not isinstance(expected_namespace, str) or expected_namespace == "":
+        raise ValueError("expected_namespace must be a non-empty string")
+    if not backup_path.exists():
+        raise FileNotFoundError(f"Backup file not found: {backup_path}")
+    if not backup_path.is_file():
+        raise ValueError(f"Backup path is not a file: {backup_path}")
+    if not _is_archive_backup_filename(backup_path.name):
+        return None
+
+    validated_manifest = _validate_archive_contents(
+        backup_path,
+        expected_namespace=expected_namespace,
+    )
+    raw_files = validated_manifest["files"]
+    assert isinstance(raw_files, list)
+    notes_archive_name: str | None = None
+    for raw_entry in raw_files:
+        if not isinstance(raw_entry, dict):
+            raise RuntimeError("validated manifest files entries must be dictionaries")
+        database_role = raw_entry["database_role"]
+        assert isinstance(database_role, str)
+        if database_role != _DATABASE_ROLE_NOTES:
+            continue
+        archive_name = raw_entry["archive_name"]
+        assert isinstance(archive_name, str)
+        notes_archive_name = archive_name
+        break
+    if notes_archive_name is None:
+        raise RuntimeError("Archive manifest must include the notes database")
+
+    with tempfile.TemporaryDirectory(prefix="metalist-profile-read-") as temp_directory:
+        temp_database_path = Path(temp_directory) / notes_archive_name
+        with tarfile.open(backup_path, mode="r:gz") as archive_handle:
+            _copy_file_from_archive(
+                archive_handle,
+                archive_name=notes_archive_name,
+                target_path=temp_database_path,
+            )
+        return _read_launch_profile_from_database(
+            database_path=temp_database_path,
+            namespace=expected_namespace,
+        )
 
 
 def _detect_encryption_enabled(database_path: Path) -> bool:
@@ -540,15 +655,6 @@ def _collect_existing_database_sources(database_path: Path) -> list[tuple[str, P
             raise ValueError(f"Related file database path is not a file: {related_file_database_path}")
         sources.append((_DATABASE_ROLE_FILES, related_file_database_path))
 
-    related_search_history_database_path = _resolve_related_search_history_database_path(database_path)
-    if related_search_history_database_path.exists():
-        if not related_search_history_database_path.is_file():
-            raise ValueError(
-                "Related search history database path is not a file: "
-                f"{related_search_history_database_path}"
-            )
-        sources.append((_DATABASE_ROLE_SEARCH_HISTORY, related_search_history_database_path))
-
     return sources
 
 
@@ -612,8 +718,16 @@ def _create_archive_backup_for_paths(database_path: Path, backup_directory: Path
     return _stat_to_backup_info(backup_path)
 
 
-def _restore_archive_backup_to_paths(backup_path: Path, database_path: Path) -> None:
-    expected_namespace = _derive_namespace_name(database_path)
+def _restore_archive_backup_to_paths(
+    backup_path: Path,
+    database_path: Path,
+    *,
+    source_namespace: str | None,
+) -> None:
+    target_namespace = _derive_namespace_name(database_path)
+    expected_namespace = target_namespace
+    if source_namespace is not None:
+        expected_namespace = source_namespace
     validated_manifest = _validate_archive_contents(
         backup_path,
         expected_namespace=expected_namespace,
@@ -662,22 +776,11 @@ def _restore_archive_backup_to_paths(backup_path: Path, database_path: Path) -> 
                     _checkpoint_database(file_database_path)
                 else:
                     _reset_file_database_to_empty(file_database_path)
-
-                search_history_database_path = _resolve_related_search_history_database_path(database_path)
-                if _DATABASE_ROLE_SEARCH_HISTORY in file_entry_by_role:
-                    search_history_entry = file_entry_by_role[_DATABASE_ROLE_SEARCH_HISTORY]
-                    search_history_archive_name = search_history_entry["archive_name"]
-                    assert isinstance(search_history_archive_name, str)
-                    search_history_temp_path = temp_directory_path / search_history_archive_name
-                    _copy_file_from_archive(
-                        archive_handle,
-                        archive_name=search_history_archive_name,
-                        target_path=search_history_temp_path,
-                    )
-                    _copy_database(search_history_temp_path, search_history_database_path)
-                    _checkpoint_database(search_history_database_path)
-                else:
-                    _reset_search_history_database_to_empty(search_history_database_path)
+        _rewrite_launch_profile_namespace(
+            database_path=database_path,
+            source_namespace=expected_namespace,
+            target_namespace=target_namespace,
+        )
 
 
 def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> None:
@@ -698,18 +801,6 @@ def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> N
             _checkpoint_database(related_file_database_path)
         else:
             _reset_file_database_to_empty(related_file_database_path)
-
-        related_search_history_database_path = _resolve_related_search_history_database_path(database_path)
-        related_search_history_backup_path = _resolve_related_search_history_backup_path(
-            backup_path.parent,
-            backup_path.name,
-            database_path=database_path,
-        )
-        if related_search_history_backup_path.exists():
-            _copy_database(related_search_history_backup_path, related_search_history_database_path)
-            _checkpoint_database(related_search_history_database_path)
-        else:
-            _reset_search_history_database_to_empty(related_search_history_database_path)
 
 
 def resolve_live_database_path() -> Path:
@@ -780,7 +871,12 @@ def create_timestamped_backup_for_paths(
     return _create_archive_backup_for_paths(database_path, backup_directory)
 
 
-def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
+def _restore_backup_to_paths(
+    backup_path: Path,
+    database_path: Path,
+    *,
+    source_namespace: str | None,
+) -> None:
     if not isinstance(backup_path, Path):
         raise TypeError(f"backup_path must be a Path, got {type(backup_path)}")
     if not isinstance(database_path, Path):
@@ -791,12 +887,39 @@ def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
         raise ValueError(f"Backup path is not a file: {backup_path}")
 
     if _is_archive_backup_filename(backup_path.name):
-        _restore_archive_backup_to_paths(backup_path, database_path)
+        _restore_archive_backup_to_paths(
+            backup_path,
+            database_path,
+            source_namespace=source_namespace,
+        )
         return
     if _is_legacy_primary_backup_filename(backup_path.name):
         _restore_legacy_backup_to_paths(backup_path, database_path)
         return
     raise ValueError(f"Unsupported backup file: {backup_path.name}")
+
+
+def restore_backup_to_paths(backup_path: Path, database_path: Path) -> None:
+    _restore_backup_to_paths(
+        backup_path,
+        database_path,
+        source_namespace=None,
+    )
+
+
+def restore_backup_to_paths_from_namespace(
+    backup_path: Path,
+    database_path: Path,
+    *,
+    source_namespace: str,
+) -> None:
+    if not isinstance(source_namespace, str) or source_namespace == "":
+        raise ValueError("source_namespace must be a non-empty string")
+    _restore_backup_to_paths(
+        backup_path,
+        database_path,
+        source_namespace=source_namespace,
+    )
 
 
 def create_timestamped_backup() -> BackupFileInfo:

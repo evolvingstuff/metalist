@@ -5,14 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from app.db.search_history_session import (
-    begin_search_history_writer,
-    connect_search_history_reader,
-    resolve_search_history_database_path,
-)
+from app.db.session import connect_reader
 from app.models.database import SafeSession
 from app.security.encryption import clear_encryption_key, set_encryption_required, set_session_dek
 from app.services.search_history import (
+    MAX_SEARCH_HISTORY_ROWS,
     is_first_search_tag_suggestion_context,
     list_recent_search_tags,
     normalize_search_history_query,
@@ -34,17 +31,26 @@ def _build_index(records: list[SearchRecord]) -> SearchIndex:
     return index
 
 
-def test_resolve_search_history_database_path_uses_sibling_search_history_name() -> None:
-    path = resolve_search_history_database_path(Path("/tmp/namespaces/default/default.metalist.db"))
-    assert path == Path("/tmp/namespaces/default/default.metalist.search-history.db")
+def _reset_search_history_state() -> None:
+    search_history_module.search_history_store.clear_persisted_state_for_tests()
 
 
-def test_normalize_search_history_query_preserves_order_and_skips_negative_and_text_terms() -> None:
+def _fetch_search_history_rows(statement: str):
+    with connect_reader("tests:search_history") as connection:
+        return connection.execute(statement).fetchall()
+
+
+def test_normalize_search_history_query_sorts_dedupes_and_skips_negative_and_text_terms() -> None:
     normalized = normalize_search_history_query('journal +exercise -"weekly" \'review\' todo')
     assert normalized is not None
-    assert normalized.query_key == "journal exercise todo"
-    assert normalized.root_tag == "journal"
-    assert normalized.tags == ("journal", "exercise", "todo")
+    assert normalized.query_key == "exercise journal todo"
+    assert normalized.root_tag == "exercise"
+    assert normalized.tags == ("exercise", "journal", "todo")
+
+    duplicate = normalize_search_history_query("journal exercise journal")
+    assert duplicate is not None
+    assert duplicate.query_key == "exercise journal"
+    assert duplicate.tags == ("exercise", "journal")
 
     assert normalize_search_history_query('"quoted only" -"ignored"') is None
     assert normalize_search_history_query("4f9e98ee-0cae-4e63-a7b1-bd322ec0cb87") is None
@@ -61,8 +67,7 @@ def test_record_search_interaction_uses_event_decay_and_returns_recent_tags(
     monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
     SafeSession.use_memory_db()
     try:
-        with begin_search_history_writer() as connection:
-            connection.execute("DELETE FROM search_interaction_history")
+        _reset_search_history_state()
         index = _build_index(
             [
                 SearchRecord(
@@ -87,10 +92,9 @@ def test_record_search_interaction_uses_event_decay_and_returns_recent_tags(
         recent_tags = list_recent_search_tags(limit=3, token="token")
         assert recent_tags == ["exercise", "journal"]
 
-        with connect_search_history_reader() as connection:
-            rows = connection.execute(
-                "SELECT query_key, score FROM search_interaction_history ORDER BY query_key ASC"
-            ).fetchall()
+        rows = _fetch_search_history_rows(
+            "SELECT query_key, score FROM search_interaction_history ORDER BY query_key ASC"
+        )
         assert len(rows) == 2
         by_query = {str(row["query_key"]): float(row["score"]) for row in rows}
         assert by_query["journal"] == pytest.approx(0.98)
@@ -109,8 +113,7 @@ def test_list_recent_search_tags_aggregates_recent_frequency_across_queries(
     monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
     SafeSession.use_memory_db()
     try:
-        with begin_search_history_writer() as connection:
-            connection.execute("DELETE FROM search_interaction_history")
+        _reset_search_history_state()
         index = _build_index(
             [
                 SearchRecord(
@@ -155,8 +158,7 @@ def test_repeated_direct_search_promotes_tag_for_blank_and_first_prefix(
     monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
     SafeSession.use_memory_db()
     try:
-        with begin_search_history_writer() as connection:
-            connection.execute("DELETE FROM search_interaction_history")
+        _reset_search_history_state()
         index = _build_index(
             [
                 SearchRecord(
@@ -282,8 +284,7 @@ def test_list_recent_search_tags_canonicalizes_case_equivalent_terms(
     monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
     SafeSession.use_memory_db()
     try:
-        with begin_search_history_writer() as connection:
-            connection.execute("DELETE FROM search_interaction_history")
+        _reset_search_history_state()
         index = _build_index(
             [
                 SearchRecord(
@@ -319,6 +320,83 @@ def test_list_recent_search_tags_canonicalizes_case_equivalent_terms(
         SafeSession.use_file_db()
 
 
+def test_search_history_collapses_same_terms_in_different_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        _reset_search_history_state()
+        index = _build_index(
+            [
+                SearchRecord(
+                    note_id="n1",
+                    content_text="Journal exercise",
+                    tags="journal exercise",
+                    tag_terms=extract_tags_for_search("journal exercise"),
+                ),
+            ]
+        )
+        monkeypatch.setattr(search_history_module, "search_index", index)
+
+        assert record_search_interaction(query="journal exercise", interaction_type="edit", token="token") is True
+        assert record_search_interaction(query="exercise journal", interaction_type="edit", token="token") is True
+
+        rows = _fetch_search_history_rows(
+            "SELECT query_key, score FROM search_interaction_history ORDER BY query_key ASC"
+        )
+        assert len(rows) == 1
+        assert rows[0]["query_key"] == "exercise journal"
+        assert float(rows[0]["score"]) == pytest.approx(1.98)
+    finally:
+        clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
+def test_search_history_enforces_explicit_row_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_encryption_required(False)
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    try:
+        _reset_search_history_state()
+        monkeypatch.setattr(search_history_module, "SEARCH_HISTORY_DECAY_FACTOR", 1.0)
+        monkeypatch.setattr(search_history_module, "_SEARCH_HISTORY_PRUNE_SCORE_THRESHOLD", -1.0)
+        records = [
+            SearchRecord(
+                note_id=f"n{i}",
+                content_text=f"Tag {i}",
+                tags=f"tag-{i:03d}",
+                tag_terms=extract_tags_for_search(f"tag-{i:03d}"),
+            )
+            for i in range(MAX_SEARCH_HISTORY_ROWS + 5)
+        ]
+        monkeypatch.setattr(search_history_module, "search_index", _build_index(records))
+
+        for i in range(MAX_SEARCH_HISTORY_ROWS + 5):
+            query = f"tag-{i:03d}"
+            assert record_search_interaction(query=query, interaction_type="search", token="token") is True
+
+        rows = _fetch_search_history_rows(
+            "SELECT query_key FROM search_interaction_history ORDER BY query_key ASC"
+        )
+        query_keys = [str(row["query_key"]) for row in rows]
+        assert len(query_keys) == MAX_SEARCH_HISTORY_ROWS
+        assert "tag-000" not in query_keys
+        assert "tag-004" not in query_keys
+        assert "tag-005" in query_keys
+        assert f"tag-{MAX_SEARCH_HISTORY_ROWS + 4:03d}" in query_keys
+    finally:
+        clear_encryption_key()
+        set_encryption_required(False)
+        SafeSession.use_file_db()
+
+
 def test_search_history_encrypts_at_rest_and_round_trips(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -328,8 +406,7 @@ def test_search_history_encrypts_at_rest_and_round_trips(
     SafeSession.use_memory_db()
     set_session_dek(os.urandom(32))
     try:
-        with begin_search_history_writer() as connection:
-            connection.execute("DELETE FROM search_interaction_history")
+        _reset_search_history_state()
         index = _build_index(
             [
                 SearchRecord(
@@ -344,29 +421,30 @@ def test_search_history_encrypts_at_rest_and_round_trips(
 
         assert record_search_interaction(query="journal exercise", interaction_type="edit", token="token") is True
 
-        with connect_search_history_reader() as connection:
-            row = connection.execute(
-                """
-                SELECT
-                    query_key,
-                    query_key_encryption_nonce,
-                    root_tag,
-                    root_tag_encryption_nonce,
-                    tags_json,
-                    tags_json_encryption_nonce
-                FROM search_interaction_history
-                LIMIT 1
-                """
-            ).fetchone()
+        rows = _fetch_search_history_rows(
+            """
+            SELECT
+                query_key,
+                query_key_encryption_nonce,
+                root_tag,
+                root_tag_encryption_nonce,
+                tags_json,
+                tags_json_encryption_nonce
+            FROM search_interaction_history
+            LIMIT 1
+            """
+        )
+        assert rows
+        row = rows[0]
         assert row is not None
-        assert row["query_key"] != "journal exercise"
+        assert row["query_key"] != "exercise journal"
         assert isinstance(row["query_key_encryption_nonce"], bytes)
-        assert row["root_tag"] != "journal"
+        assert row["root_tag"] != "exercise"
         assert isinstance(row["root_tag_encryption_nonce"], bytes)
-        assert row["tags_json"] != '["journal","exercise"]'
+        assert row["tags_json"] != '["exercise","journal"]'
         assert isinstance(row["tags_json_encryption_nonce"], bytes)
 
-        assert list_recent_search_tags(limit=3, token="token") == ["journal", "exercise"]
+        assert list_recent_search_tags(limit=3, token="token") == ["exercise", "journal"]
     finally:
         clear_encryption_key()
         set_encryption_required(False)

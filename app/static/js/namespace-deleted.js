@@ -73,7 +73,7 @@ function updatePageForPending(deletedNamespace) {
 function updatePageForSuccess(deletedNamespace) {
     requireElement('namespace-deleted-title').textContent = `Namespace ${deletedNamespace} deleted`;
     requireElement('namespace-deleted-copy').textContent = (
-        'The namespace directory, database files, backups, and saved launch profile were removed.'
+        'The namespace directory, database files, backups, and launch profile were removed.'
     );
     const statusElement = requireElement('namespace-deleted-status');
     statusElement.dataset.state = 'succeeded';

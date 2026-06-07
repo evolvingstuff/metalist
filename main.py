@@ -24,9 +24,11 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
+from app.server_runtime import save_namespace_launch_profile
 from app.startup_js_sanity import assert_startup_js_sanity
 from app.startup_sanity import assert_startup_sanity
 from app.services.exception_capture import CapturedExceptionContext
+from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 
@@ -113,6 +115,95 @@ def _should_open_or_launch_all_namespaces(
     if not _is_source_main_entrypoint():
         return False
     return not any(name in original_environ for name in _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES)
+
+
+def _should_bootstrap_all_namespaces_without_cli_parse(
+    *,
+    argv: list[str],
+    original_environ: dict[str, str],
+) -> bool:
+    if len(argv) != 0:
+        return False
+    if not _is_source_main_entrypoint():
+        return False
+    if "TEST_MODE" in original_environ and original_environ["TEST_MODE"] == "1":
+        return False
+    return not any(name in original_environ for name in _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES)
+
+
+def _read_prompted_port(*, namespace: str, service: str, suggested_port: object) -> int:
+    if not isinstance(suggested_port, int):
+        raise RuntimeError(f"Namespace {namespace} missing suggested {service} port")
+    raw_value = input(f"{namespace} {service} port [{suggested_port}]: ")
+    value = raw_value.strip()
+    if value == "":
+        return suggested_port
+    if not value.isdigit():
+        raise RuntimeError(f"{namespace} {service} port must be numeric, got: {value!r}")
+    port = int(value)
+    if not 0 < port < 65536:
+        raise RuntimeError(f"{namespace} {service} port must be between 1 and 65535, got: {port}")
+    return port
+
+
+def _read_prompted_https_port(*, namespace: str, suggested_port: object) -> int | None:
+    if suggested_port is None:
+        return None
+    return _read_prompted_port(
+        namespace=namespace,
+        service="HTTPS",
+        suggested_port=suggested_port,
+    )
+
+
+def _prompt_for_missing_namespace_launch_profile(*, entry: dict[str, object]) -> None:
+    namespace = entry["namespace"]
+    if not isinstance(namespace, str) or namespace == "":
+        raise RuntimeError("Namespace catalog entry missing namespace")
+    raw_profile = entry["default_profile"]
+    if not isinstance(raw_profile, dict):
+        raise RuntimeError(f"Namespace {namespace} missing default profile")
+    print(f"Namespace {namespace} has no saved launch profile. Enter ports or press Return for suggestions.")
+    port = _read_prompted_port(
+        namespace=namespace,
+        service="HTTP",
+        suggested_port=raw_profile["port"],
+    )
+    https_port = _read_prompted_https_port(
+        namespace=namespace,
+        suggested_port=raw_profile["https_port"],
+    )
+    mcp_port = _read_prompted_port(
+        namespace=namespace,
+        service="MCP",
+        suggested_port=raw_profile["mcp_port"],
+    )
+    save_namespace_launch_profile(
+        namespace=namespace,
+        port=port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
+
+
+def _prompt_for_missing_namespace_launch_profiles(*, environ: dict[str, str]) -> None:
+    while True:
+        catalog = build_namespace_catalog(environ=environ, current_namespace=None)
+        raw_namespaces = catalog["namespaces"]
+        if not isinstance(raw_namespaces, list):
+            raise RuntimeError("Namespace catalog missing namespaces")
+        missing_entry: dict[str, object] | None = None
+        for raw_entry in raw_namespaces:
+            if not isinstance(raw_entry, dict):
+                raise RuntimeError("Namespace catalog entry must be an object")
+            has_launch_profile = raw_entry["has_launch_profile"]
+            if has_launch_profile is True:
+                continue
+            missing_entry = raw_entry
+            break
+        if missing_entry is None:
+            return
+        _prompt_for_missing_namespace_launch_profile(entry=missing_entry)
 
 
 def _resolve_agent_web_browser_host(*, environ: dict[str, str]) -> str:
@@ -565,6 +656,15 @@ def main(argv: list[str]) -> None:
     _record_self_executable_for_namespace_launch()
     _run_startup_sanity_gates(repo_root=Path(__file__).resolve().parent)
     original_environ = dict(os.environ)
+    if _should_bootstrap_all_namespaces_without_cli_parse(
+        argv=argv,
+        original_environ=original_environ,
+    ):
+        ensure_default_tls_pair(environ=os.environ)
+        _prompt_for_missing_namespace_launch_profiles(environ=os.environ)
+        launch_results = open_or_launch_all_namespaces(environ=os.environ)
+        _print_namespace_bootstrap_results(environ=os.environ, launch_results=launch_results)
+        return
     cli_args = apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     if _should_open_or_launch_all_namespaces(
         original_environ=original_environ,

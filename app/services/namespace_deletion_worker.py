@@ -9,7 +9,6 @@ import time
 import traceback
 
 import app.server_runtime as server_runtime
-from app.server_runtime import delete_namespace_launch_profile
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import validate_namespace
 from app.services.exception_capture import CapturedExceptionContext
@@ -126,7 +125,6 @@ def main() -> None:
 
         _stop_process(pid=args.pid)
         _delete_namespace_directory(namespace=normalized_namespace)
-        delete_namespace_launch_profile(namespace=normalized_namespace)
         mark_namespace_deletion_job_succeeded(job_id=args.job_id)
     if main_capture.captured_exception is not None:
         mark_namespace_deletion_job_failed(

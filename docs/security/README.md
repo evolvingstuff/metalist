@@ -199,11 +199,11 @@ writes).
 
 ## Remote Access / HTTPS
 
-- Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved/default profiles, prints their URLs, and exits.
+- Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved profiles, prints their URLs, and exits.
 - `python main.py --namespace work` starts a separate process against `~/MetaList/namespaces/work/work.metalist.db`.
-- After a namespace has been launched once with explicit ports, `python main.py work` reuses that namespace's remembered HTTP / HTTPS / MCP sidecar ports from `~/MetaList/namespaces.db`.
+- After a namespace has been launched once with explicit ports, `python main.py work` reuses that namespace's remembered HTTP / HTTPS / MCP sidecar ports from its main namespace DB.
 - With no explicit namespace on a single-namespace launch, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
-- Deleting a namespace removes both its saved launch profile from `~/MetaList/namespaces.db` and its namespace directory on disk, including the namespace SQLite databases and backups under `~/MetaList/namespaces/<namespace>/`.
+- Deleting a namespace removes its namespace directory on disk, including the namespace SQLite databases, launch-profile metadata, and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
 - When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from an explicit single-namespace `python main.py ...` run, set both:
@@ -215,7 +215,7 @@ writes).
   - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default)
 - Login rate limiting already prefers the first `x-forwarded-for` hop, so when you deploy behind a trusted proxy you still get client-IP-based throttling.
 - Namespace selection is independent of listener ports. Use `--namespace` / `METALIST_NAMESPACE` for DB selection and `--port` / `METALIST_PORT` for listener selection.
-- Listener precedence is explicit CLI flags > env vars > saved namespace profile in `~/MetaList/namespaces.db` > built-in defaults.
+- Listener precedence is explicit CLI flags > env vars > saved namespace profile in the namespace DB. A namespace without a saved launch profile must be launched once with explicit ports or configured from the UI.
 - The MCP sidecar redirect now supports a public override via `MCP_AGENT_PUBLIC_ORIGIN=https://host:port`. The sidecar is disabled by default; enable it explicitly with `MCP_AGENT_WEB_ENABLED=1` only when needed.
 - When `main.py` auto-starts the MCP sidecar, its default MCP URL now follows the resolved MetaList HTTP port for that process.
 - If multiple MetaList processes auto-start sidecars on the same machine, use `--mcp-port` or `MCP_AGENT_WEB_PORT` to avoid sidecar port collisions.
@@ -261,7 +261,7 @@ For fresh imports using `convert-from-legacy.py`:
    - omit `--namespace` to import into `~/MetaList/namespaces/default/default.metalist.db`.
 7. Launch profile prompting:
    - if `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the importer prompts for them
-   - the chosen ports are saved in `~/MetaList/namespaces.db` so later `python main.py work` can reuse them.
+   - the chosen ports are saved in the namespace DB so later `python main.py work` can reuse them.
 
 ## API Endpoints
 
@@ -280,7 +280,7 @@ Auth:
 - `GET /api2/auth/client-state` - Load namespace-scoped client preferences and command-palette usage
 - `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences
 - `PUT /api2/auth/client-state/command-palette-usage` - Persist namespace-scoped command-palette usage history
-- `POST /api2/auth/namespaces/delete-current` - Delete the active non-default namespace after typed confirmation and, when enabled, password re-entry. The tab moves to a dedicated namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory and saved launch profile.
+- `POST /api2/auth/namespaces/delete/preflight` / `POST /api2/auth/namespaces/delete` - Delete a named non-default namespace after typed namespace confirmation and, when that namespace is password-protected, password re-entry. Deleting the active namespace moves the tab to a namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory; deleting an inactive namespace stays in the current tab.
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)
 - `DELETE /api2/auth/settings/password/remove` - Disable encryption
@@ -293,6 +293,7 @@ Backup:
 - `POST /api2/backup/run` - Create one versioned workspace archive snapshot and write it to the enabled destination(s)
 - `POST /api2/backup/restore` - Restore the selected folder archive snapshot and trigger the usual post-restore runtime reset/restart flow
   - Backup scope follows the active DB path, so namespaced runs use `~/MetaList/namespaces/<namespace>/backups/` and write one versioned archive per snapshot, for example `cla-<timestamp>.metalist-backup.tar.gz`. Legacy `.bak` snapshots remain restorable.
+  - Restoring `cla` into `cla` is allowed even when that namespace already exists. Importing `cla` under another target name requires that target namespace to be new and rejects saved launch-port conflicts.
   - Backup settings are stored per namespace; when namespace encryption is enabled, that settings payload is encrypted at rest too.
   - Manual backup runs now target one selected folder and can include multiple namespaces in the same run.
 - `POST /api2/backup/folder/pick` - Open the native folder picker and return the selected absolute backup path

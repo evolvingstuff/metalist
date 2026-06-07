@@ -60,10 +60,11 @@ Database selection:
 - No explicit namespace on a single-namespace launch: `~/MetaList/namespaces/default/default.metalist.db`
 - `--namespace work` or `METALIST_NAMESPACE=work`: `~/MetaList/namespaces/work/work.metalist.db`
 - The related files DB is derived automatically, so `namespaces/work/work.metalist.db` uses `namespaces/work/work.metalist.files.db`
-- Remembered launch ports are stored per namespace in `~/MetaList/namespaces.db`
-- Launch precedence is: explicit CLI flags > env vars > saved namespace profile > built-in defaults
+- Remembered launch ports are stored as plaintext metadata inside each namespace's main `*.metalist.db`
+- Launch precedence is: explicit CLI flags > env vars > saved namespace profile; if a namespace has no saved profile, launch it once with explicit ports or configure ports from the UI
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use one archive per snapshot with filenames like `work-<timestamp>.metalist-backup.tar.gz`
 - The Backup Settings modal targets one user-selected backup folder and can include multiple namespaces in a single run
+- Restoring `work` into `work` is the normal overwrite path; importing a backup under a different namespace name requires a new target namespace and rejects saved launch-port conflicts.
 
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
@@ -93,7 +94,7 @@ metalist --namespace work --port 8001 --mcp-port 8766
 This starts a separate process backed by `~/MetaList/namespaces/work/work.metalist.db` on `http://127.0.0.1:8001`.
 Its backup snapshots live under `~/MetaList/namespaces/work/backups/` with filenames like `work-<timestamp>.metalist-backup.tar.gz`. New backups are versioned `.tar.gz` workspace archives; legacy `.bak` backups remain restorable.
 
-After you launch a namespace once with explicit ports, MetaList remembers them in `~/MetaList/namespaces.db`, so later you can use the shorthand:
+After you launch a namespace once with explicit ports, MetaList remembers them in that namespace's main DB, so later you can use the shorthand:
 ```bash
 metalist work
 ```
@@ -207,7 +208,7 @@ Target a namespaced database during import:
 convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
 ```
 
-If `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the import script prompts for them and saves the resulting launch profile to `~/MetaList/namespaces.db`. That means a one-time import into `work` can immediately seed later shorthand launches like `metalist work`.
+If `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the import script prompts for them and saves the resulting launch profile inside the target namespace DB. That means a one-time import into `work` can immediately seed later shorthand launches like `metalist work`.
 
 ### Publishing
 For the real user-facing install flow:

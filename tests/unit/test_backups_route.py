@@ -1,11 +1,55 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 import app.api.routes.backups as backups_route
+from app.db.schema import initialize_schema
+from app.db.settings_sql import insert_default_settings
+from app.db.settings_sql import update_password_settings
 from app.services.backup_service import BackupFileInfo
+from app.services.encryption import EncryptionService
+
+
+def _write_password_protected_target_database(*, database_path: Path, password: str) -> None:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    auth_salt = b"auth-salt-123456"
+    auth_iterations = backups_route.KDF_MIN_TIME_COST
+    memory_cost_kib = backups_route.KDF_MIN_MEMORY_COST_KIB
+    parallelism = backups_route.KDF_MIN_PARALLELISM
+    auth_verifier = EncryptionService().derive_master_key(
+        password,
+        auth_salt,
+        auth_iterations,
+        memory_cost_kib,
+        parallelism,
+    ).hex()
+
+    connection = sqlite3.connect(database_path)
+    try:
+        initialize_schema(connection)
+        insert_default_settings(connection)
+        update_password_settings(
+            connection,
+            auth_verifier=auth_verifier,
+            auth_salt=auth_salt,
+            auth_iterations=auth_iterations,
+            kek_salt=b"kek-salt-1234567",
+            kek_iterations=auth_iterations,
+            vault_version=backups_route.VAULT_VERSION,
+            kdf_algorithm=backups_route.KDF_ALGORITHM,
+            kdf_memory_cost_kib=memory_cost_kib,
+            kdf_parallelism=parallelism,
+            encrypted_dek=b"encrypted-dek",
+            dek_nonce=b"dek-nonce",
+            dek_tag=b"dek-tag",
+            encryption_algorithm="AES-256-GCM",
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def test_serialize_settings_response_returns_folder_and_namespace_fields(
@@ -197,3 +241,422 @@ def test_pick_backup_folder_returns_not_selected_when_cancelled(
 
     assert response.selected is False
     assert response.folder_path == ""
+
+
+def test_restore_preflight_reports_existing_different_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+    target_database_path = tmp_path / "namespaces" / "target" / "target.metalist.db"
+    _write_password_protected_target_database(
+        database_path=target_database_path,
+        password="target-password",
+    )
+
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["source"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+
+    payload = backups_route.BackupRestoreRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+    )
+
+    monkeypatch.setattr(
+        backups_route,
+        "read_backup_launch_profile",
+        lambda backup_path, *, expected_namespace: backups_route.BackupLaunchProfile(
+            namespace=expected_namespace,
+            port=8001,
+            https_port=None,
+            mcp_port=8766,
+        ),
+    )
+    monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
+
+    response = backups_route.restore_backup_preflight(payload=payload, token="token")
+
+    assert response.target_namespace == "target"
+    assert response.target_exists is True
+    assert response.target_requires_password is True
+    assert response.same_namespace is False
+    assert response.restored_profile is not None
+    assert response.restored_profile.port == 8001
+    assert response.suggested_profile is not None
+    assert response.suggested_profile.port == 8001
+
+
+def test_restore_import_rejects_existing_target_without_overwrite_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+    target_directory = tmp_path / "namespaces" / "target"
+    target_directory.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=False,
+        target_password="",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8001,
+            https_port=None,
+            mcp_port=8766,
+        ),
+    )
+
+    with pytest.raises(backups_route.HTTPException) as excinfo:
+        backups_route.import_backup(payload=payload, token="token")
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail == "Target namespace already exists: target"
+
+
+def test_restore_import_rejects_restored_profile_port_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["source"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "load_all_namespace_launch_profiles",
+        lambda: [
+            backups_route.NamespaceLaunchProfile(
+                namespace="source",
+                port=8001,
+                https_port=None,
+                mcp_port=8766,
+            )
+        ],
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=False,
+        target_password="",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8001,
+            https_port=None,
+            mcp_port=8766,
+        ),
+    )
+
+    with pytest.raises(backups_route.HTTPException) as excinfo:
+        backups_route.import_backup(payload=payload, token="token")
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail == "HTTP port 8001 from backup conflicts with HTTP port reserved for namespace source"
+
+
+def test_restore_import_passes_source_namespace_for_new_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    backup_path = folder_directory / backup_filename
+    backup_path.write_bytes(b"backup")
+    restored: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["source"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "read_backup_launch_profile",
+        lambda backup_path, *, expected_namespace: None,
+    )
+    monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
+
+    def _capture_restore(backup_path: Path, database_path: Path, *, source_namespace: str | None) -> None:
+        restored["backup_path"] = backup_path
+        restored["database_path"] = database_path
+        restored["source_namespace"] = source_namespace
+
+    monkeypatch.setattr(backups_route, "restore_backup_to_paths_from_namespace", _capture_restore)
+    monkeypatch.setattr(
+        backups_route,
+        "save_namespace_launch_profile",
+        lambda **kwargs: restored.__setitem__("saved_profile", kwargs),
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=False,
+        target_password="",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8010,
+            https_port=None,
+            mcp_port=8770,
+        ),
+    )
+
+    response = backups_route.import_backup(payload=payload, token="token")
+
+    assert response.target_namespace == "target"
+    assert response.open_namespace_suggested is True
+    assert restored["backup_path"] == backup_path
+    assert restored["database_path"] == tmp_path / "namespaces" / "target" / "target.metalist.db"
+    assert restored["source_namespace"] == "source"
+    assert restored["saved_profile"] == {
+        "namespace": "target",
+        "port": 8010,
+        "https_port": None,
+        "mcp_port": 8770,
+    }
+
+
+def test_restore_import_rejects_missing_password_for_existing_protected_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+    target_database_path = tmp_path / "namespaces" / "target" / "target.metalist.db"
+    _write_password_protected_target_database(
+        database_path=target_database_path,
+        password="target-password",
+    )
+
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=True,
+        target_password="",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8010,
+            https_port=None,
+            mcp_port=8770,
+        ),
+    )
+
+    with pytest.raises(backups_route.HTTPException) as excinfo:
+        backups_route.import_backup(payload=payload, token="token")
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail == "Target namespace password is required"
+
+
+def test_restore_import_rejects_wrong_password_for_existing_protected_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+    target_database_path = tmp_path / "namespaces" / "target" / "target.metalist.db"
+    _write_password_protected_target_database(
+        database_path=target_database_path,
+        password="target-password",
+    )
+
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=True,
+        target_password="wrong-password",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8010,
+            https_port=None,
+            mcp_port=8770,
+        ),
+    )
+
+    with pytest.raises(backups_route.HTTPException) as excinfo:
+        backups_route.import_backup(payload=payload, token="token")
+
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.detail == "Target namespace password is incorrect"
+
+
+def test_restore_import_accepts_correct_password_for_existing_protected_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    backup_path = folder_directory / backup_filename
+    backup_path.write_bytes(b"backup")
+    target_database_path = tmp_path / "namespaces" / "target" / "target.metalist.db"
+    _write_password_protected_target_database(
+        database_path=target_database_path,
+        password="target-password",
+    )
+    restored: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["source"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespace_directory",
+        lambda *, namespace: tmp_path / "namespaces" / namespace,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+    monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
+
+    def _capture_restore(backup_path: Path, database_path: Path, *, source_namespace: str | None) -> None:
+        restored["backup_path"] = backup_path
+        restored["database_path"] = database_path
+        restored["source_namespace"] = source_namespace
+
+    monkeypatch.setattr(backups_route, "restore_backup_to_paths_from_namespace", _capture_restore)
+    monkeypatch.setattr(
+        backups_route,
+        "save_namespace_launch_profile",
+        lambda **kwargs: restored.__setitem__("saved_profile", kwargs),
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=True,
+        target_password="target-password",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8010,
+            https_port=None,
+            mcp_port=8770,
+        ),
+    )
+
+    response = backups_route.import_backup(payload=payload, token="token")
+
+    assert response.target_namespace == "target"
+    assert response.open_namespace_suggested is True
+    assert restored["backup_path"] == backup_path
+    assert restored["database_path"] == target_database_path
+    assert restored["source_namespace"] == "source"

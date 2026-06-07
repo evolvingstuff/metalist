@@ -41,7 +41,6 @@ _PROCESS_WAIT_POLL_INTERVAL_SECONDS = 0.25
 _TERMINATE_GRACE_SECONDS = 5.0
 _KILL_GRACE_SECONDS = 5.0
 _PROBE_TAB_ID = "namespace-switcher-probe"
-_DELETE_NAMESPACE_CONFIRMATION_PHRASE = "permanently delete"
 
 
 @dataclass(frozen=True)
@@ -77,6 +76,7 @@ class NamespaceDeleteResult:
     deleted_namespace: str
     redirect_url: str
     delete_job_id: str
+    active_namespace_deleted: bool
     message: str
 
 
@@ -307,6 +307,7 @@ def open_or_launch_all_namespaces(
 
     results: list[NamespaceOpenResult] = []
     for entry in raw_namespaces:
+        _assert_catalog_entry_has_launch_profile(entry=entry)
         profile = _catalog_default_profile(entry=entry)
         results.append(
             open_or_launch_namespace(
@@ -437,21 +438,55 @@ def open_login_namespace(
     )
 
 
+def delete_namespace(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    target_namespace: str,
+    confirmed_namespace: str,
+) -> NamespaceDeleteResult:
+    normalized_target_namespace = validate_namespace(namespace=target_namespace)
+    if current_namespace is None:
+        raise RuntimeError("Current namespace is unavailable")
+    normalized_current_namespace = validate_namespace(namespace=current_namespace)
+    if normalized_target_namespace == normalized_current_namespace:
+        return _delete_active_namespace(
+            environ=environ,
+            current_namespace=normalized_current_namespace,
+            confirmed_namespace=confirmed_namespace,
+        )
+    return _delete_inactive_namespace(
+        target_namespace=normalized_target_namespace,
+        confirmed_namespace=confirmed_namespace,
+    )
+
+
 def delete_current_namespace(
     *,
     environ: Mapping[str, str],
     current_namespace: str | None,
-    confirmation_text: str,
+    confirmed_namespace: str,
 ) -> NamespaceDeleteResult:
     if current_namespace is None:
         raise RuntimeError("Current namespace is unavailable")
+    return _delete_active_namespace(
+        environ=environ,
+        current_namespace=validate_namespace(namespace=current_namespace),
+        confirmed_namespace=confirmed_namespace,
+    )
+
+
+def _delete_active_namespace(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str,
+    confirmed_namespace: str,
+) -> NamespaceDeleteResult:
     normalized_namespace = validate_namespace(namespace=current_namespace)
     if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
         raise RuntimeError("Default namespace cannot be deleted")
-    if confirmation_text.strip() != _DELETE_NAMESPACE_CONFIRMATION_PHRASE:
-        raise RuntimeError(
-            f"Type '{_DELETE_NAMESPACE_CONFIRMATION_PHRASE}' to confirm namespace deletion"
-        )
+    if confirmed_namespace.strip() != normalized_namespace:
+        raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
 
     fallback_profile = _resolve_fallback_profile(
         environ=environ,
@@ -483,11 +518,59 @@ def delete_current_namespace(
         deleted_namespace=normalized_namespace,
         redirect_url=redirect_url,
         delete_job_id=job_record["job_id"],
+        active_namespace_deleted=True,
         message=(
             f"Deleting namespace {normalized_namespace}. "
             "Opening the namespace removal page."
         ),
     )
+
+
+def _delete_inactive_namespace(
+    *,
+    target_namespace: str,
+    confirmed_namespace: str,
+) -> NamespaceDeleteResult:
+    normalized_namespace = validate_namespace(namespace=target_namespace)
+    if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
+        raise RuntimeError("Default namespace cannot be deleted")
+    if confirmed_namespace.strip() != normalized_namespace:
+        raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
+
+    namespace_directory = server_runtime.resolve_namespace_directory(namespace=normalized_namespace)
+    if not namespace_directory.exists():
+        raise RuntimeError(f"Namespace {normalized_namespace} is unavailable")
+    if not namespace_directory.is_dir():
+        raise RuntimeError(f"Namespace path is not a directory: {namespace_directory}")
+
+    saved_profiles = _load_saved_profiles_by_namespace()
+    saved_profile = saved_profiles.get(normalized_namespace)
+    if saved_profile is not None:
+        _stop_processes_for_namespace_profile(profile=saved_profile)
+    shutil.rmtree(namespace_directory)
+    return NamespaceDeleteResult(
+        deleted_namespace=normalized_namespace,
+        redirect_url="",
+        delete_job_id="",
+        active_namespace_deleted=False,
+        message=f"Deleted namespace {normalized_namespace}.",
+    )
+
+
+def _stop_processes_for_namespace_profile(*, profile: NamespaceLaunchProfile) -> None:
+    ports = [
+        profile.port,
+        profile.https_port,
+        profile.mcp_port,
+    ]
+    stopped_ports: set[int] = set()
+    for port in ports:
+        if port is None:
+            continue
+        if port in stopped_ports:
+            continue
+        stopped_ports.add(port)
+        _stop_processes_listening_on_port(port=port)
 
 
 def _serialize_catalog_entry(*, entry: NamespaceCatalogEntry) -> dict[str, object]:
@@ -548,6 +631,22 @@ def _catalog_default_profile(*, entry: object) -> NamespaceLaunchProfile:
         port=port,
         https_port=https_port,
         mcp_port=mcp_port,
+    )
+
+
+def _assert_catalog_entry_has_launch_profile(*, entry: object) -> None:
+    if not isinstance(entry, dict):
+        raise RuntimeError("Namespace catalog entry must be an object")
+    namespace = entry.get("namespace")
+    if not isinstance(namespace, str) or namespace == "":
+        raise RuntimeError("Namespace catalog entry missing namespace")
+    has_launch_profile = entry.get("has_launch_profile")
+    if has_launch_profile is True:
+        return
+    raise RuntimeError(
+        f"Namespace {namespace} has no launch profile. "
+        "Configure its HTTP and MCP ports from Manage namespace ports, "
+        "or launch it once with explicit --port and --mcp-port values."
     )
 
 
@@ -1342,6 +1441,7 @@ def _resolve_catalog_profile(
             continue
         if entry.get("namespace") != normalized_namespace:
             continue
+        _assert_catalog_entry_has_launch_profile(entry=entry)
         return _catalog_default_profile(entry=entry)
     raise RuntimeError(f"Namespace {normalized_namespace} is unavailable")
 
