@@ -3,6 +3,8 @@ import { ReminderStore } from './reminder-store.js';
 const NON_IDLE_THROTTLE_MS = 30_000;
 const ELAPSED_UPDATE_MS = 1_000;
 const REMINDER_RENDER_ICON = '🔔';
+const OCCURRENCE_KIND_MAIN = 'main';
+const OCCURRENCE_KIND_PRE = 'pre';
 
 function reminderDisplayTitle(reminder) {
     if (!reminder || typeof reminder !== 'object') {
@@ -65,6 +67,73 @@ function dateOnlySurfaceLabel(eventKind) {
         return 'Due today';
     }
     throw new Error(`Unsupported reminder event kind: ${eventKind}`);
+}
+
+function reminderPreReminder(reminder) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderPreReminder requires reminder');
+    }
+    if (reminder.pre_reminder === null || reminder.pre_reminder === undefined) {
+        return null;
+    }
+    if (typeof reminder.pre_reminder !== 'object') {
+        throw new Error('reminder pre_reminder must be object');
+    }
+    if (!Number.isInteger(reminder.pre_reminder.amount) || reminder.pre_reminder.amount < 1) {
+        throw new Error('reminder pre_reminder amount invalid');
+    }
+    if (!['minutes', 'hours', 'days'].includes(reminder.pre_reminder.unit)) {
+        throw new Error('reminder pre_reminder unit invalid');
+    }
+    return reminder.pre_reminder;
+}
+
+function subtractLocalDays(dateValue, days) {
+    if (typeof dateValue !== 'string' || dateValue.length !== 10) {
+        throw new Error('subtractLocalDays requires YYYY-MM-DD');
+    }
+    if (!Number.isInteger(days) || days < 1) {
+        throw new Error('subtractLocalDays requires positive days');
+    }
+    const date = new Date(`${dateValue}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+        throw new Error('subtractLocalDays requires valid date');
+    }
+    date.setDate(date.getDate() - days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function localDateFromDateTime(value) {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error('localDateFromDateTime requires value');
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        throw new Error('localDateFromDateTime requires valid datetime');
+    }
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function preReminderKey(reminder, triggerValue, eventValue) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('preReminderKey requires reminder');
+    }
+    if (typeof reminder.id !== 'string' || reminder.id.length === 0) {
+        throw new Error('preReminderKey requires reminder id');
+    }
+    if (typeof triggerValue !== 'string' || triggerValue.length === 0) {
+        throw new Error('preReminderKey requires triggerValue');
+    }
+    if (typeof eventValue !== 'string' || eventValue.length === 0) {
+        throw new Error('preReminderKey requires eventValue');
+    }
+    return `${reminder.id}:pre:${triggerValue}:event:${eventValue}`;
 }
 
 class ReminderSurfaceService {
@@ -252,14 +321,14 @@ class ReminderSurfaceService {
         if (!reminder || typeof reminder !== 'object') {
             throw new Error('Reminder mirror entry must be object');
         }
-        const occurrence = this._currentOccurrence(reminder, activityKind, now, today);
-        if (occurrence === null) {
+        const event = this._currentEvent(reminder, activityKind, now, today);
+        if (event === null) {
             return null;
         }
-        return this._eventIfNotShown(reminder, occurrence.value, occurrence.isMissed);
+        return this._eventIfNotShown(event);
     }
 
-    _currentOccurrence(reminder, activityKind, now, today) {
+    _currentEvent(reminder, activityKind, now, today) {
         if (!reminder || typeof reminder !== 'object') {
             throw new Error('Reminder occurrence requires reminder');
         }
@@ -275,6 +344,17 @@ class ReminderSurfaceService {
         if (reminder.status !== 'active') {
             return null;
         }
+        const mainEvent = this._mainEventForReminder(reminder, activityKind, now, today);
+        if (mainEvent !== null) {
+            return mainEvent;
+        }
+        return this._preEventForReminder(reminder, activityKind, now, today);
+    }
+
+    _mainEventForReminder(reminder, activityKind, now, today) {
+        if (!reminder || typeof reminder !== 'object') {
+            throw new Error('_mainEventForReminder requires reminder');
+        }
         if (reminder.time_mode === 'date_time') {
             if (typeof reminder.next_fire_at !== 'string' || reminder.next_fire_at.length === 0) {
                 return null;
@@ -287,8 +367,11 @@ class ReminderSurfaceService {
                 return null;
             }
             return {
-                value: reminder.next_fire_at,
-                isMissed: fireAt.getTime() < now.getTime(),
+                kind: fireAt.getTime() < now.getTime() ? 'missed' : 'due',
+                reminder,
+                occurrenceKind: OCCURRENCE_KIND_MAIN,
+                occurrenceValue: reminder.next_fire_at,
+                isDateOnly: false,
             };
         }
         if (activityKind !== 'non_idle_use') {
@@ -301,25 +384,122 @@ class ReminderSurfaceService {
             return null;
         }
         return {
-            value: reminder.next_fire_date,
-            isMissed: reminder.next_fire_date < today,
+            kind: reminder.next_fire_date < today ? 'missed' : 'due',
+            reminder,
+            occurrenceKind: OCCURRENCE_KIND_MAIN,
+            occurrenceValue: reminder.next_fire_date,
+            isDateOnly: true,
         };
     }
 
-    _eventIfNotShown(reminder, occurrenceValue, isMissed) {
+    _preEventForReminder(reminder, activityKind, now, today) {
+        if (!reminder || typeof reminder !== 'object') {
+            throw new Error('_preEventForReminder requires reminder');
+        }
+        const preReminder = reminderPreReminder(reminder);
+        if (preReminder === null) {
+            return null;
+        }
+        const trigger = this._preTriggerForReminder(reminder, preReminder);
+        if (trigger === null) {
+            return null;
+        }
+        if (reminder.pre_reminder_last_seen_key === trigger.key) {
+            return null;
+        }
+        if (trigger.isDateOnly) {
+            if (activityKind !== 'non_idle_use') {
+                return null;
+            }
+            if (trigger.value > today) {
+                return null;
+            }
+            return {
+                kind: trigger.value < today ? 'pre_missed' : 'pre_due',
+                reminder,
+                occurrenceKind: OCCURRENCE_KIND_PRE,
+                occurrenceValue: trigger.value,
+                isDateOnly: true,
+                preReminderKey: trigger.key,
+            };
+        }
+        if (trigger.fireAt.getTime() > now.getTime()) {
+            return null;
+        }
+        return {
+            kind: trigger.fireAt.getTime() < now.getTime() ? 'pre_missed' : 'pre_due',
+            reminder,
+            occurrenceKind: OCCURRENCE_KIND_PRE,
+            occurrenceValue: trigger.value,
+            isDateOnly: false,
+            preReminderKey: trigger.key,
+        };
+    }
+
+    _preTriggerForReminder(reminder, preReminder) {
+        if (!reminder || typeof reminder !== 'object') {
+            throw new Error('_preTriggerForReminder requires reminder');
+        }
+        if (!preReminder || typeof preReminder !== 'object') {
+            throw new Error('_preTriggerForReminder requires preReminder');
+        }
+        if (reminder.time_mode === 'date_only') {
+            if (preReminder.unit !== 'days') {
+                return null;
+            }
+            if (typeof reminder.next_fire_date !== 'string' || reminder.next_fire_date.length === 0) {
+                return null;
+            }
+            const triggerValue = subtractLocalDays(reminder.next_fire_date, preReminder.amount);
+            return {
+                value: triggerValue,
+                isDateOnly: true,
+                key: preReminderKey(reminder, triggerValue, reminder.next_fire_date),
+            };
+        }
+        if (typeof reminder.next_fire_at !== 'string' || reminder.next_fire_at.length === 0) {
+            return null;
+        }
+        if (preReminder.unit === 'days') {
+            const eventDate = localDateFromDateTime(reminder.next_fire_at);
+            const triggerValue = subtractLocalDays(eventDate, preReminder.amount);
+            return {
+                value: triggerValue,
+                isDateOnly: true,
+                key: preReminderKey(reminder, triggerValue, reminder.next_fire_at),
+            };
+        }
+        const fireAt = new Date(reminder.next_fire_at);
+        if (Number.isNaN(fireAt.getTime())) {
+            throw new Error('Reminder mirror has invalid next_fire_at');
+        }
+        const offsetMs = preReminder.unit === 'hours'
+            ? preReminder.amount * 60 * 60 * 1000
+            : preReminder.amount * 60 * 1000;
+        const triggerDate = new Date(fireAt.getTime() - offsetMs);
+        const triggerValue = triggerDate.toISOString();
+        return {
+            value: triggerValue,
+            fireAt: triggerDate,
+            isDateOnly: false,
+            key: preReminderKey(reminder, triggerValue, reminder.next_fire_at),
+        };
+    }
+
+    _eventIfNotShown(event) {
+        if (!event || typeof event !== 'object') {
+            throw new Error('_eventIfNotShown requires event');
+        }
+        const reminder = event.reminder;
         if (typeof reminder.id !== 'string' || reminder.id.length === 0) {
             throw new Error('Reminder mirror entry missing id');
         }
-        const occurrenceKey = `${reminder.id}:${occurrenceValue}`;
+        const occurrenceKey = `${reminder.id}:${event.occurrenceKind}:${event.occurrenceValue}`;
         if (this._shownOccurrenceKeys.has(occurrenceKey)) {
             return null;
         }
         this._shownOccurrenceKeys.add(occurrenceKey);
-        return {
-            kind: isMissed ? 'missed' : 'due',
-            reminder,
-            occurrenceValue,
-        };
+        return event;
     }
 
     _scheduleNextLocalDueTimer() {
@@ -370,6 +550,16 @@ class ReminderSurfaceService {
             if (nearestMs === null || fireAtMs < nearestMs) {
                 nearestMs = fireAtMs;
             }
+            const preReminder = reminderPreReminder(reminder);
+            if (preReminder !== null && preReminder.unit !== 'days') {
+                const trigger = this._preTriggerForReminder(reminder, preReminder);
+                if (trigger !== null && trigger.isDateOnly === false && reminder.pre_reminder_last_seen_key !== trigger.key) {
+                    const triggerMs = trigger.fireAt.getTime();
+                    if (triggerMs > nowMs && (nearestMs === null || triggerMs < nearestMs)) {
+                        nearestMs = triggerMs;
+                    }
+                }
+            }
         }
         if (nearestMs === null) {
             return null;
@@ -414,7 +604,11 @@ class ReminderSurfaceService {
         const item = document.createElement('div');
         item.className = 'reminder-surface-item';
         item.dataset.reminderId = reminder.id;
+        item.dataset.occurrenceKind = event.occurrenceKind;
         item.dataset.occurrenceValue = event.occurrenceValue;
+        if (event.occurrenceKind === OCCURRENCE_KIND_PRE) {
+            item.dataset.preReminderKey = event.preReminderKey;
+        }
         this._renderSurfaceItemContent(item, event);
         container.appendChild(item);
     }
@@ -467,14 +661,18 @@ class ReminderSurfaceService {
                 throw new Error('Reminder surface query returned non-element');
             }
             const reminderId = item.dataset.reminderId;
+            const occurrenceKind = item.dataset.occurrenceKind;
             const occurrenceValue = item.dataset.occurrenceValue;
             if (typeof reminderId !== 'string' || reminderId.length === 0) {
                 throw new Error('Reminder surface item missing reminder id');
             }
+            if (typeof occurrenceKind !== 'string' || occurrenceKind.length === 0) {
+                throw new Error('Reminder surface item missing occurrence kind');
+            }
             if (typeof occurrenceValue !== 'string' || occurrenceValue.length === 0) {
                 throw new Error('Reminder surface item missing occurrence value');
             }
-            const occurrenceKey = `${reminderId}:${occurrenceValue}`;
+            const occurrenceKey = `${reminderId}:${occurrenceKind}:${occurrenceValue}`;
             const activeEvent = activeOccurrenceEvents.get(occurrenceKey);
             if (activeEvent === undefined) {
                 this._removeSurfaceItem(item);
@@ -495,18 +693,14 @@ class ReminderSurfaceService {
             if (!reminder || typeof reminder !== 'object') {
                 throw new Error('Reminder mirror entry must be object');
             }
-            const occurrence = this._currentOccurrence(reminder, 'non_idle_use', now, today);
-            if (occurrence === null) {
+            const event = this._currentEvent(reminder, 'non_idle_use', now, today);
+            if (event === null) {
                 continue;
             }
             if (typeof reminder.id !== 'string' || reminder.id.length === 0) {
                 throw new Error('Reminder mirror entry missing id');
             }
-            events.set(`${reminder.id}:${occurrence.value}`, {
-                kind: occurrence.isMissed ? 'missed' : 'due',
-                reminder,
-                occurrenceValue: occurrence.value,
-            });
+            events.set(`${reminder.id}:${event.occurrenceKind}:${event.occurrenceValue}`, event);
         }
         return events;
     }
@@ -539,11 +733,20 @@ class ReminderSurfaceService {
         if (typeof reminderId !== 'string' || reminderId.length === 0) {
             throw new Error('Reminder surface item missing reminder id');
         }
-        const actionName = actionButton.getAttribute('data-reminder-surface-action');
+        let actionName = actionButton.getAttribute('data-reminder-surface-action');
         if (typeof actionName !== 'string' || actionName.length === 0) {
             throw new Error('Reminder surface action missing');
         }
-        await ReminderStore.action(reminderId, actionName);
+        let actionPayload = {};
+        if (item.dataset.occurrenceKind === OCCURRENCE_KIND_PRE) {
+            actionName = 'pre_acknowledge';
+            const preReminderKey = item.dataset.preReminderKey;
+            if (typeof preReminderKey !== 'string' || preReminderKey.length === 0) {
+                throw new Error('Pre-reminder surface item missing key');
+            }
+            actionPayload = { pre_reminder_key: preReminderKey };
+        }
+        await ReminderStore.action(reminderId, actionName, actionPayload);
         this._removeSurfaceItem(item);
     }
 
@@ -554,6 +757,12 @@ class ReminderSurfaceService {
         const reminder = event.reminder;
         if (!reminder || typeof reminder !== 'object') {
             throw new Error('Reminder surface text requires reminder');
+        }
+        if (event.occurrenceKind === OCCURRENCE_KIND_PRE) {
+            if (event.isDateOnly === true) {
+                return event.kind === 'pre_missed' ? 'Pre-reminder overdue' : 'Pre-reminder';
+            }
+            return `Pre-reminder · ${formatElapsedSince(event.occurrenceValue, new Date())}`;
         }
         if (reminder.time_mode === 'date_time') {
             if (typeof event.occurrenceValue !== 'string' || event.occurrenceValue.length === 0) {
@@ -575,7 +784,7 @@ class ReminderSurfaceService {
         if (!reminder || typeof reminder !== 'object') {
             throw new Error('_startElapsedTimerIfNeeded requires reminder');
         }
-        if (reminder.time_mode !== 'date_time') {
+        if (event.isDateOnly === true) {
             return;
         }
         if (typeof event.occurrenceValue !== 'string' || event.occurrenceValue.length === 0) {
@@ -586,7 +795,7 @@ class ReminderSurfaceService {
             throw new Error('reminder surface text element missing');
         }
         const timerId = window.setInterval(() => {
-            textElement.textContent = formatElapsedSince(event.occurrenceValue, new Date());
+            textElement.textContent = this._surfaceEventText(event);
         }, ELAPSED_UPDATE_MS);
         this._elapsedTimers.set(item, timerId);
     }

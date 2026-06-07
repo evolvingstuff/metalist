@@ -10,6 +10,7 @@ Implemented now:
 - One-time and recurring schedules.
 - Date-time and date-only time modes.
 - Optional details text beyond the title.
+- One optional pre-reminder per reminder.
 - In-app popup surface with one action: `Got it`.
 - Registry search and schedule filters: `All schedules`, `One Time`, `Daily`, `Weekly`, `Monthly`, `Yearly`.
 - Pause/resume for recurring reminders.
@@ -65,6 +66,27 @@ Reminder ids are server-generated UUID strings. The client treats them as opaque
 
 Weekly reminders use selected weekdays, not the creation date. Monthly/yearly reminders display the day/month pattern rather than the original creation date.
 
+## Pre-reminders
+
+A pre-reminder is optional extra data on the reminder definition. It is not stored as a separate reminder row.
+
+V1 supports at most one pre-reminder per reminder. The actual reminder remains the canonical event; the pre-reminder is derived from the next event occurrence.
+
+Supported offsets:
+
+- Minutes before
+- Hours before
+- Days before
+
+Date-only reminders only support day-based pre-reminders.
+
+For date-time reminders:
+
+- Minute/hour pre-reminders are exact instants: event time minus the offset.
+- Day-based pre-reminders are date-only prompts. For example, a Wednesday 9:30 AM appointment with a 1-day pre-reminder surfaces on Tuesday on first app use, not exactly Tuesday at 9:30 AM.
+
+`Got it` on a pre-reminder only marks that pre-reminder occurrence as seen. It does not advance, complete, or delete the actual reminder. If the actual reminder is already due, it takes priority over any unacknowledged pre-reminder.
+
 ## Missed Behavior
 
 Each reminder has a missed policy:
@@ -84,7 +106,7 @@ The popup surface is intentionally compact:
 - Due status is italic and shares a row with `Got it`.
 - `Got it` acknowledges the current visible occurrence.
 
-The surface reconciles rendered popups against each fresh server snapshot. If a reminder is deleted, paused, advanced, or otherwise no longer due, the stale popup is removed. If the same occurrence remains due but title/details changed, the popup content is re-rendered from the fresh snapshot.
+The surface reconciles rendered popups against each fresh server snapshot. If a reminder is deleted, paused, advanced, acknowledged, or otherwise no longer due, the stale popup is removed. If the same occurrence remains due but title/details changed, the popup content is re-rendered from the fresh snapshot. Pre-reminders use separate occurrence keys from actual reminders so acknowledging a pre-reminder cannot accidentally resolve the event itself.
 
 ## Client Evaluation
 
@@ -106,3 +128,4 @@ This keeps the server authoritative while avoiding pointless server traffic duri
 
 `Got it` resolves the currently visible due/overdue occurrence. For one-time reminders this removes the reminder. For recurring reminders this advances to the next occurrence.
 
+For pre-reminders, `Got it` only records the pre-reminder occurrence as seen.

@@ -5460,6 +5460,24 @@ html[data-theme="dark"] body.loading::after {
     gap: 8px;
 }
 
+.reminder-pre-control {
+    display: grid;
+    grid-template-columns: minmax(72px, 0.45fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+.reminder-inline-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+}
+
+.reminder-inline-check input {
+    width: auto;
+}
+
 .reminder-interval-control span {
     color: var(--muted-text-color, #666);
 }

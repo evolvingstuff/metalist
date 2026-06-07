@@ -67,9 +67,12 @@ class ReminderStoreService {
         return await this.refresh();
     }
 
-    async action(reminderId, actionName) {
+    async action(reminderId, actionName, actionPayload) {
+        if (!actionPayload || typeof actionPayload !== 'object') {
+            throw new Error('ReminderStore.action requires actionPayload');
+        }
         await this._enqueueMutation(async () => {
-            await RemindersAPI.action(reminderId, actionName);
+            await RemindersAPI.action(reminderId, actionName, actionPayload);
         });
         return await this.refresh();
     }
