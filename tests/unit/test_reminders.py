@@ -182,6 +182,73 @@ def test_reminder_details_default_to_blank_for_legacy_payloads() -> None:
     )
 
     assert reminder["details"] == ""
+    assert reminder["pre_reminder"] is None
+    assert reminder["pre_reminder_last_seen_key"] is None
+
+
+def test_date_only_pre_reminder_must_be_day_based() -> None:
+    with pytest.raises(ValueError, match="date-only reminders require day-based pre_reminder"):
+        normalize_reminder_payload(
+            {
+                "id": "reminder-date-only-pre-hours",
+                "note_id": None,
+                "title": "Invalid pre-reminder",
+                "attachment_type": "unattached",
+                "schedule_kind": SCHEDULE_ONE_TIME,
+                "time_mode": TIME_MODE_DATE_ONLY,
+                "scheduled_at": None,
+                "scheduled_date": "2026-06-08",
+                "recurrence_rule": None,
+                "pre_reminder": {"amount": 12, "unit": "hours"},
+                "persistence_mode": PERSISTENCE_KEEP_UNTIL_SEEN,
+            },
+            now=_now("2026-06-07T10:00:00+00:00"),
+            recompute_next=True,
+        )
+
+
+def test_acknowledged_pre_reminder_keeps_one_time_reminder_live(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_memory_db(tmp_path, monkeypatch)
+    store = ReminderStore()
+    try:
+        store.clear_persisted_state_for_tests()
+        reminder = store.create_reminder(
+            payload={
+                "note_id": None,
+                "title": "Appointment",
+                "attachment_type": "unattached",
+                "schedule_kind": SCHEDULE_ONE_TIME,
+                "time_mode": TIME_MODE_DATE_TIME,
+                "scheduled_at": "2026-06-08T09:30:00+00:00",
+                "scheduled_date": None,
+                "recurrence_rule": None,
+                "pre_reminder": {"amount": 1, "unit": "days"},
+                "persistence_mode": PERSISTENCE_KEEP_UNTIL_SEEN,
+                "status": REMINDER_STATUS_ACTIVE,
+            },
+            token="",
+        )
+        reminder_id = reminder["id"]
+        assert isinstance(reminder_id, str)
+        assert reminder["pre_reminder"] == {"amount": 1, "unit": "days"}
+
+        updated = store.acknowledge_pre_reminder(
+            reminder_id=reminder_id,
+            token="",
+            pre_reminder_key="appointment-pre-key",
+            now=_now("2026-06-07T10:00:00+00:00"),
+        )
+
+        assert updated["status"] == REMINDER_STATUS_ACTIVE
+        assert updated["next_fire_at"] == "2026-06-08T09:30:00+00:00"
+        assert updated["pre_reminder_last_seen_key"] == "appointment-pre-key"
+        assert len(store.list_reminders()) == 1
+    finally:
+        store.clear_persisted_state_for_tests()
+        SafeSession.use_file_db()
 
 
 def test_attached_reminders_are_deferred_until_picker_ux_exists() -> None:

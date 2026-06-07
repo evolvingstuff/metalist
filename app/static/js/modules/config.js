@@ -115,6 +115,7 @@ export const CONFIG = {
             UPDATE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}`,
             DELETE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}`,
             ACKNOWLEDGE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/acknowledge`,
+            PRE_ACKNOWLEDGE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/pre-acknowledge`,
             DISMISS: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/dismiss`,
             DONE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/done`,
             PAUSE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/pause`,

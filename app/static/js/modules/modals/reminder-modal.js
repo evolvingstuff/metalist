@@ -198,6 +198,36 @@ function reminderDetails(reminder) {
     return reminder.details.trim();
 }
 
+function reminderPreReminder(reminder) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderPreReminder requires reminder');
+    }
+    if (reminder.pre_reminder === null || reminder.pre_reminder === undefined) {
+        return null;
+    }
+    if (typeof reminder.pre_reminder !== 'object') {
+        throw new Error('reminder pre_reminder must be object');
+    }
+    if (!Number.isInteger(reminder.pre_reminder.amount) || reminder.pre_reminder.amount < 1) {
+        throw new Error('reminder pre_reminder amount invalid');
+    }
+    if (!['minutes', 'hours', 'days'].includes(reminder.pre_reminder.unit)) {
+        throw new Error('reminder pre_reminder unit invalid');
+    }
+    return reminder.pre_reminder;
+}
+
+function preReminderLabel(reminder) {
+    const preReminder = reminderPreReminder(reminder);
+    if (preReminder === null) {
+        return '';
+    }
+    const unit = preReminder.amount === 1
+        ? preReminder.unit.slice(0, -1)
+        : preReminder.unit;
+    return `Pre-reminder: ${preReminder.amount} ${unit} before`;
+}
+
 function reminderDueValueLabel(reminder, value) {
     if (!reminder || typeof reminder !== 'object') {
         throw new Error('reminderDueValueLabel requires reminder');
@@ -431,6 +461,9 @@ function defaultFormState() {
         weekdays: [now.getDay() === 0 ? 6 : now.getDay() - 1],
         end_type: 'never',
         end_value: '',
+        pre_reminder_enabled: false,
+        pre_reminder_amount: '1',
+        pre_reminder_unit: 'days',
         persistence_mode: 'keep_until_seen',
         status: 'active',
     };
@@ -444,6 +477,7 @@ function stateFromReminder(reminder) {
         ? reminder.recurrence_rule
         : {};
     const end = rule.end && typeof rule.end === 'object' ? rule.end : { type: 'never' };
+    const preReminder = reminderPreReminder(reminder);
     return {
         id: reminder.id,
         title: reminder.title,
@@ -459,6 +493,9 @@ function stateFromReminder(reminder) {
         weekdays: Array.isArray(rule.weekdays) ? rule.weekdays : [],
         end_type: typeof end.type === 'string' ? end.type : 'never',
         end_value: end.value === undefined ? '' : String(end.value),
+        pre_reminder_enabled: preReminder !== null,
+        pre_reminder_amount: preReminder === null ? '1' : String(preReminder.amount),
+        pre_reminder_unit: preReminder === null ? 'days' : preReminder.unit,
         persistence_mode: reminder.persistence_mode,
         status: reminder.status,
     };
@@ -482,6 +519,12 @@ function buildPayloadFromForm(form) {
         scheduled_at: timeMode === 'date_time' ? localDateTimeIso(form.date, form.time) : null,
         scheduled_date: timeMode === 'date_only' ? form.date : null,
         recurrence_rule: null,
+        pre_reminder: form.pre_reminder_enabled
+            ? {
+                amount: Number.parseInt(form.pre_reminder_amount, 10),
+                unit: timeMode === 'date_only' ? 'days' : form.pre_reminder_unit,
+            }
+            : null,
         persistence_mode: form.persistence_mode,
         status: scheduleKind === 'recurring' ? form.status : 'active',
     };
@@ -644,6 +687,7 @@ function reminderSearchHaystack(reminder) {
     const parts = [
         reminderDisplayTitle(reminder),
         reminderDetails(reminder),
+        preReminderLabel(reminder),
         reminderScheduleLabel(reminder),
         reminder.status,
         reminder.persistence_mode,
@@ -808,32 +852,33 @@ export class ReminderModal extends BaseModal {
                                 <input id="reminder-title" type="text" value="${escapeHtml(form.title)}">
                             </label>
                             <label class="reminder-field">
-                                <span class="reminder-field-label">Time mode</span>
-                                <select id="reminder-time-mode">
-                                    ${this._option('date_time', 'Date and time', form.time_mode)}
-                                    ${this._option('date_only', 'Date only', form.time_mode)}
-                                </select>
-                            </label>
-                            <label class="reminder-field reminder-field-wide reminder-details-field">
-                                <span class="reminder-field-label">Details</span>
-                                <textarea id="reminder-details">${escapeHtml(form.details)}</textarea>
-                            </label>
-                            <label class="reminder-field">
                                 <span class="reminder-field-label">Schedule</span>
                                 <select id="reminder-schedule-kind">
                                     ${this._option('one_time', 'Once', form.schedule_kind)}
                                     ${this._option('recurring', 'Repeat', form.schedule_kind)}
                                 </select>
                             </label>
+                            <label class="reminder-field reminder-field-wide reminder-details-field">
+                                <span class="reminder-field-label">Details</span>
+                                <textarea id="reminder-details">${escapeHtml(form.details)}</textarea>
+                            </label>
                             ${this._renderDateField(form)}
-                            ${this._renderRepeatsField(form)}
+                            <label class="reminder-field">
+                                <span class="reminder-field-label">Time mode</span>
+                                <select id="reminder-time-mode">
+                                    ${this._option('date_time', 'Date and time', form.time_mode)}
+                                    ${this._option('date_only', 'Date only', form.time_mode)}
+                                </select>
+                            </label>
                             <label class="reminder-field ${form.time_mode === 'date_time' ? '' : 'reminder-hidden'}">
                                 <span class="reminder-field-label">Time</span>
                                 <input id="reminder-time" type="time" value="${escapeHtml(form.time)}">
                             </label>
+                            ${this._renderRepeatsField(form)}
+                            ${this._renderPreReminderFields(form)}
                             ${this._renderRecurrenceDetails(form)}
                             <label class="reminder-field">
-                                <span class="reminder-field-label">Missed</span>
+                                <span class="reminder-field-label">Behavior</span>
                                 <select id="reminder-persistence-mode">
                                     ${this._option('keep_until_seen', 'Keep until seen', form.persistence_mode)}
                                     ${this._option('drop_if_missed', 'Forget if missed', form.persistence_mode)}
@@ -855,6 +900,27 @@ export class ReminderModal extends BaseModal {
                         <p class="reminder-modal-error">${escapeHtml(this._state.error)}</p>
                     </section>
                 </div>
+            </div>
+        `;
+    }
+
+    _renderPreReminderFields(form) {
+        return `
+            <div class="reminder-field reminder-field-wide reminder-pre-field">
+                <label class="reminder-field-label reminder-check-label" for="reminder-pre-enabled">
+                    <input id="reminder-pre-enabled" type="checkbox" ${form.pre_reminder_enabled ? 'checked' : ''}>
+                    <span>Pre-reminder</span>
+                </label>
+                ${form.pre_reminder_enabled ? `
+                    <span class="reminder-pre-control">
+                        <input id="reminder-pre-amount" type="number" min="1" step="1" value="${escapeHtml(form.pre_reminder_amount)}">
+                        <select id="reminder-pre-unit">
+                            ${form.time_mode === 'date_time' ? this._option('minutes', 'Minutes', form.pre_reminder_unit) : ''}
+                            ${form.time_mode === 'date_time' ? this._option('hours', 'Hours', form.pre_reminder_unit) : ''}
+                            ${this._option('days', 'Days', form.pre_reminder_unit)}
+                        </select>
+                    </span>
+                ` : '<span class="reminder-pre-empty"></span>'}
             </div>
         `;
     }
@@ -900,13 +966,16 @@ export class ReminderModal extends BaseModal {
                     <span>${escapeHtml(recurrenceIntervalUnit(form))}</span>
                 </span>
             </label>
-            <div class="${form.frequency === 'weekly' ? 'reminder-weekdays' : 'reminder-hidden'}">
-                ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => `
-                    <label>
-                        <input type="checkbox" data-reminder-weekday="${index}" ${form.weekdays.includes(index) ? 'checked' : ''}>
-                        ${label}
-                    </label>
-                `).join('')}
+            <div class="reminder-field ${form.frequency === 'weekly' ? '' : 'reminder-hidden'}">
+                <span class="reminder-field-label">Weekdays</span>
+                <div class="reminder-weekdays">
+                    ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => `
+                        <label>
+                            <input type="checkbox" data-reminder-weekday="${index}" ${form.weekdays.includes(index) ? 'checked' : ''}>
+                            ${label}
+                        </label>
+                    `).join('')}
+                </div>
             </div>
             <label class="reminder-field">
                 <span class="reminder-field-label">Ends</span>
@@ -936,6 +1005,7 @@ export class ReminderModal extends BaseModal {
         const isMissed = reminder.is_currently_missed === true;
         const isRecurring = reminder.schedule_kind === 'recurring';
         const details = reminderDetails(reminder);
+        const preReminder = preReminderLabel(reminder);
         const pastDueLabel = reminderPastDueLabel(reminder);
         const nextLabel = reminderNextLabel(reminder);
         const nextLabelClass = nextLabel.startsWith('Overdue')
@@ -947,6 +1017,7 @@ export class ReminderModal extends BaseModal {
                     <strong><span class="reminder-row-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span> ${escapeHtml(reminderDisplayTitle(reminder))}</strong>
                     ${details ? `<small class="reminder-row-details">${escapeHtml(details)}</small>` : ''}
                     <span>${escapeHtml(reminderScheduleLabel(reminder))}</span>
+                    ${preReminder ? `<small class="reminder-row-next">${escapeHtml(preReminder)}</small>` : ''}
                     ${pastDueLabel ? `<small class="reminder-row-past-due">${escapeHtml(pastDueLabel)}</small>` : ''}
                     ${nextLabel ? `<small class="${nextLabelClass}">${escapeHtml(nextLabel)}</small>` : ''}
                     <small>${escapeHtml(reminder.status)} · ${escapeHtml(reminder.persistence_mode)}</small>
@@ -1002,6 +1073,14 @@ export class ReminderModal extends BaseModal {
             this._render();
             return;
         }
+        if (target.id === 'reminder-pre-enabled') {
+            if (!(target instanceof HTMLInputElement)) {
+                throw new Error('Pre-reminder toggle must be input');
+            }
+            form.pre_reminder_enabled = target.checked;
+            this._render();
+            return;
+        }
         const mapping = {
             'reminder-title': 'title',
             'reminder-details': 'details',
@@ -1011,6 +1090,8 @@ export class ReminderModal extends BaseModal {
             'reminder-time': 'time',
             'reminder-frequency': 'frequency',
             'reminder-interval': 'interval',
+            'reminder-pre-amount': 'pre_reminder_amount',
+            'reminder-pre-unit': 'pre_reminder_unit',
             'reminder-end-type': 'end_type',
             'reminder-end-value': 'end_value',
             'reminder-persistence-mode': 'persistence_mode',
@@ -1018,12 +1099,16 @@ export class ReminderModal extends BaseModal {
         };
         if (Object.prototype.hasOwnProperty.call(mapping, target.id)) {
             form[mapping[target.id]] = target.value;
+            if (target.id === 'reminder-time-mode' && form.time_mode === 'date_only') {
+                form.pre_reminder_unit = 'days';
+            }
             const rerenderIds = new Set([
                 'reminder-time-mode',
                 'reminder-schedule-kind',
                 'reminder-date',
                 'reminder-time',
                 'reminder-frequency',
+                'reminder-pre-unit',
                 'reminder-end-type',
                 'reminder-persistence-mode',
             ]);
@@ -1092,7 +1177,7 @@ export class ReminderModal extends BaseModal {
         const actionButton = target.closest('[data-reminder-action]');
         if (actionButton instanceof HTMLElement) {
             const actionName = actionButton.getAttribute('data-reminder-action');
-            await ReminderStore.action(reminderId, actionName);
+            await ReminderStore.action(reminderId, actionName, {});
         }
     }
 

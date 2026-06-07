@@ -58,6 +58,7 @@ PERSISTENCE_MODES = frozenset(
 DATE_TRIGGER_ON_FIRST_NON_IDLE_USE = "on_first_non_idle_use"
 RECURRENCE_FREQUENCIES = frozenset({"daily", "weekly", "monthly", "yearly"})
 RECURRENCE_END_TYPES = frozenset({"never", "on_date", "after_count"})
+PRE_REMINDER_UNITS = frozenset({"minutes", "hours", "days"})
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,29 @@ def _require_int(value: object, *, field_name: str, min_value: int) -> int:
     if value < min_value:
         raise ValueError(f"{field_name} must be >= {min_value}")
     return value
+
+
+def _normalize_pre_reminder(raw_pre_reminder: object, *, time_mode: str) -> dict[str, object] | None:
+    if raw_pre_reminder is None:
+        return None
+    if not isinstance(raw_pre_reminder, dict):
+        raise ValueError("pre_reminder must be an object or null")
+    amount = _require_int(
+        _required_mapping_value(raw_pre_reminder, "amount"),
+        field_name="pre_reminder.amount",
+        min_value=1,
+    )
+    unit = _require_choice(
+        _required_mapping_value(raw_pre_reminder, "unit"),
+        field_name="pre_reminder.unit",
+        choices=PRE_REMINDER_UNITS,
+    )
+    if time_mode == TIME_MODE_DATE_ONLY and unit != "days":
+        raise ValueError("date-only reminders require day-based pre_reminder")
+    return {
+        "amount": amount,
+        "unit": unit,
+    }
 
 
 def _local_date_from_dt(value: datetime) -> date:
@@ -554,6 +578,7 @@ def normalize_reminder_payload(
     )
     time_mode = _require_choice(_required_mapping_value(raw, "time_mode"), field_name="time_mode", choices=TIME_MODES)
     status = _require_choice(_mapping_value_or(raw, "status", REMINDER_STATUS_ACTIVE), field_name="status", choices=REMINDER_STATUSES)
+    pre_reminder = _normalize_pre_reminder(_mapping_value_or(raw, "pre_reminder", None), time_mode=time_mode)
     persistence_mode = _require_choice(
         _required_mapping_value(raw, "persistence_mode"),
         field_name="persistence_mode",
@@ -603,6 +628,11 @@ def normalize_reminder_payload(
         "next_fire_at": None,
         "scheduled_date": scheduled_date,
         "next_fire_date": None,
+        "pre_reminder": pre_reminder,
+        "pre_reminder_last_seen_key": _coerce_nullable_str(
+            _mapping_value_or(raw, "pre_reminder_last_seen_key", None),
+            field_name="pre_reminder_last_seen_key",
+        ),
         "date_trigger_policy": date_trigger_policy,
         "recurrence_rule": recurrence_rule,
         "persistence_mode": persistence_mode,
@@ -824,6 +854,37 @@ class ReminderStore:
             local_date=local_date,
             activity_kind=activity_kind,
         )
+
+    def acknowledge_pre_reminder(
+        self,
+        *,
+        reminder_id: str,
+        token: str,
+        pre_reminder_key: str,
+        now: datetime,
+    ) -> dict[str, object]:
+        if not isinstance(pre_reminder_key, str) or pre_reminder_key == "":
+            raise ValueError("pre_reminder_key must be a non-empty string")
+        if not isinstance(now, datetime):
+            raise TypeError("now must be datetime")
+        if now.tzinfo is None:
+            raise ValueError("now must include timezone")
+        if not isinstance(reminder_id, str) or reminder_id == "":
+            raise ValueError("reminder_id must be a non-empty string")
+        if not isinstance(token, str):
+            raise TypeError("token must be a string")
+        with self._lock:
+            self._try_decrypt_locked(token=token, require_success=True)
+            if reminder_id not in self._reminders:
+                raise KeyError(f"Reminder not found: {reminder_id}")
+            reminder = self._reminders[reminder_id]
+            if reminder["pre_reminder"] is None:
+                raise ValueError("reminder has no pre_reminder")
+            reminder["pre_reminder_last_seen_key"] = pre_reminder_key
+            reminder["last_seen_at"] = _serialize_dt(now)
+            reminder["updated_at"] = _serialize_dt(now)
+            self._persist_locked(reminder=reminder, token=token, connection=None, encryption_service=None, force_plaintext=False)
+            return deepcopy(reminder)
 
     def dismiss_reminder(self, *, reminder_id: str, token: str) -> dict[str, object]:
         return self._mutate_status(reminder_id=reminder_id, token=token, action="dismiss", now=_utc_now())

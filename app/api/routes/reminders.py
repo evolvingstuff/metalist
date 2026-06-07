@@ -155,6 +155,13 @@ def _run_action(*, reminder_id: str, request: Request, payload: dict[str, object
             reminder = reminder_store.dismiss_reminder(reminder_id=reminder_id, token=token)
         elif action == "done":
             reminder = reminder_store.mark_done(reminder_id=reminder_id, token=token)
+        elif action == "pre-acknowledge":
+            reminder = reminder_store.acknowledge_pre_reminder(
+                reminder_id=reminder_id,
+                token=token,
+                pre_reminder_key=_require_string(body, "pre_reminder_key"),
+                now=_parse_datetime_field(body, "now"),
+            )
         elif action == "pause":
             reminder = reminder_store.pause_reminder(reminder_id=reminder_id, token=token)
         elif action == "resume":
@@ -183,6 +190,12 @@ def dismiss_reminder(reminder_id: str, request: Request, payload: dict[str, obje
 @transactional_route
 def mark_reminder_done(reminder_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     return _run_action(reminder_id=reminder_id, request=request, payload=payload, action="done")
+
+
+@router.post("/{reminder_id}/pre-acknowledge")
+@transactional_route
+def acknowledge_pre_reminder(reminder_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
+    return _run_action(reminder_id=reminder_id, request=request, payload=payload, action="pre-acknowledge")
 
 
 @router.post("/{reminder_id}/pause")

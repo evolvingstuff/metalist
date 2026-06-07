@@ -992,13 +992,25 @@ function reminderLocalIso(value) {
     return `${dateText}T${hour}:${minute}:${second}${sign}${offsetHours}:${offsetRemainder}`;
 }
 
-function reminderActionBody(actionName) {
+function reminderActionBody(actionName, actionPayload) {
+    if (!actionPayload || typeof actionPayload !== 'object') {
+        throw new Error('reminderActionBody requires actionPayload');
+    }
     if (actionName === 'acknowledge') {
         const now = new Date();
         return {
             now: reminderLocalIso(now),
             local_date: reminderLocalDate(now),
             activity_kind: 'non_idle_use',
+        };
+    }
+    if (actionName === 'pre_acknowledge') {
+        if (typeof actionPayload.pre_reminder_key !== 'string' || actionPayload.pre_reminder_key.length === 0) {
+            throw new Error('pre_acknowledge requires pre_reminder_key');
+        }
+        return {
+            now: reminderLocalIso(new Date()),
+            pre_reminder_key: actionPayload.pre_reminder_key,
         };
     }
     return {};
@@ -1037,12 +1049,16 @@ export const RemindersAPI = {
         });
     },
 
-    async action(reminderId, actionName) {
+    async action(reminderId, actionName, actionPayload) {
         if (typeof reminderId !== 'string' || reminderId.length === 0) {
             throw new Error('RemindersAPI.action requires reminderId');
         }
+        if (!actionPayload || typeof actionPayload !== 'object') {
+            throw new Error('RemindersAPI.action requires actionPayload');
+        }
         const actionUrls = {
             acknowledge: CONFIG.API.REMINDERS.ACKNOWLEDGE,
+            pre_acknowledge: CONFIG.API.REMINDERS.PRE_ACKNOWLEDGE,
             dismiss: CONFIG.API.REMINDERS.DISMISS,
             done: CONFIG.API.REMINDERS.DONE,
             pause: CONFIG.API.REMINDERS.PAUSE,
@@ -1055,7 +1071,7 @@ export const RemindersAPI = {
         }
         return remindersJsonRequest(urlBuilder(reminderId), {
             method: 'POST',
-            body: JSON.stringify(reminderActionBody(actionName)),
+            body: JSON.stringify(reminderActionBody(actionName, actionPayload)),
         });
     },
 
