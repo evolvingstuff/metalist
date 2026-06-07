@@ -1,9 +1,11 @@
 import { ReminderStore } from './reminder-store.js';
 import { loadClientState, persistClientPreferences } from './client-state-api.js';
+import { SoundService } from './sound-service.js';
 
 const NON_IDLE_THROTTLE_MS = 30_000;
 const ELAPSED_UPDATE_MS = 1_000;
 const REMINDER_RENDER_ICON = '🔔';
+const REMINDER_SOUND_ICON = '🔊';
 const OCCURRENCE_KIND_MAIN = 'main';
 const OCCURRENCE_KIND_PRE = 'pre';
 const REMINDER_SURFACE_TOGGLE_SELECTOR = '[data-reminder-surface-toggle]';
@@ -28,6 +30,16 @@ function reminderDetails(reminder) {
         return '';
     }
     return reminder.details.trim();
+}
+
+function reminderHasSound(reminder) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderHasSound requires reminder');
+    }
+    if (reminder.popup_sound_enabled === true) {
+        return true;
+    }
+    return reminder.ack_sound_enabled === true;
 }
 
 function formatElapsedSince(value, now) {
@@ -719,6 +731,7 @@ class ReminderSurfaceService {
         } else {
             this._syncExpandedState();
         }
+        void SoundService.playReminderSound(reminder, 'popup');
         this._syncToggleControl();
     }
 
@@ -759,12 +772,16 @@ class ReminderSurfaceService {
         const surfaceText = this._surfaceEventText(event);
         const details = reminderDetails(reminder);
         const title = reminderDisplayTitle(reminder);
+        const soundIndicator = reminderHasSound(reminder)
+            ? `<span class="reminder-surface-icon reminder-surface-sound-icon" aria-label="Sound enabled" title="Sound enabled">${REMINDER_SOUND_ICON}</span>`
+            : '';
         this._clearElapsedTimerForItem(item);
         item.dataset.reminderTitle = title;
         item.innerHTML = `
             <div class="reminder-surface-text">
                 <button type="button" class="reminder-surface-title" data-reminder-surface-open-registry="true" title="Open in Reminders">
                     <span class="reminder-surface-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span>
+                    ${soundIndicator}
                     <span class="reminder-surface-title-text">${this._escape(title)}</span>
                 </button>
                 ${details ? `<span class="reminder-surface-details">${this._escape(details)}</span>` : ''}
@@ -901,7 +918,13 @@ class ReminderSurfaceService {
             }
             actionPayload = { pre_reminder_key: preReminderKey };
         }
+        const snapshot = ReminderStore.snapshot();
+        const reminder = snapshot.reminders.find((entry) => entry.id === reminderId);
+        if (!reminder) {
+            throw new Error(`Reminder not found in store snapshot: ${reminderId}`);
+        }
         await ReminderStore.action(reminderId, actionName, actionPayload);
+        await SoundService.playReminderSound(reminder, 'ack');
         this._removeSurfaceItem(item);
     }
 

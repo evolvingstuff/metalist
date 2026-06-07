@@ -12,6 +12,7 @@ Implemented now:
 - Optional details text beyond the title.
 - One optional pre-reminder per reminder.
 - In-app popup surface with one action: `Got it`.
+- Optional in-app sounds when a reminder popup appears and when `Got it` succeeds.
 - Registry search and schedule filters: `All schedules`, `One Time`, `Daily`, `Weekly`, `Monthly`, `Yearly`.
 - Pause/resume for recurring reminders.
 - Delete for all reminders.
@@ -109,8 +110,28 @@ The popup surface is intentionally compact:
 - The arrow collapses or expands the stack; no arrow appears when nothing is waiting for `Got it`.
 - The expanded/collapsed state is stored as the namespace-scoped `pref.reminder_surface_expanded` client preference in the main database, not in browser storage.
 - Existing waiting popups use that stored state after browser refresh; a newly surfaced reminder automatically expands the stack and persists the expanded state.
+- Popup and `Got it` sounds are stored on each reminder. Sounds only play inside the visible authenticated app; browser autoplay policy can still block playback until the user has interacted with the page.
 
 The surface reconciles rendered popups against each fresh server snapshot. If a reminder is deleted, paused, advanced, acknowledged, or otherwise no longer due, the stale popup is removed. If the same occurrence remains due but title/details changed, the popup content is re-rendered from the fresh snapshot. Pre-reminders use separate occurrence keys from actual reminders so acknowledging a pre-reminder cannot accidentally resolve the event itself.
+
+## Sounds
+
+Reminder sound controls live in the reminder modal:
+
+- `Sound on popup` selects the sound for newly surfaced reminder popups.
+- `Sound on Got it` selects the sound for successful `Got it` actions.
+- Both selectors include the non-deletable `Default chime`.
+- Uploaded sounds are managed from `Cmd/Ctrl+/` → `Manage sounds…`.
+
+Uploaded sounds are namespace-local and memory-first after startup/login. Rows persist in the sibling `*.files.db` `sounds` table, but playback uses the in-memory sound store instead of per-play SQLite reads. Password-protected namespaces decrypt sounds during post-login hydration.
+
+Limits:
+
+- 2 MB per uploaded sound.
+- 10 seconds per uploaded sound.
+- 50 MB total uploaded sound library per namespace.
+
+The sound manager displays current uploaded library usage and the per-sound limits. Uploaded sounds cannot be deleted while selected by any reminder's popup or `Got it` sound field; edit those reminders to another sound first.
 
 ## Client Evaluation
 
@@ -122,7 +143,7 @@ This keeps the server authoritative while avoiding pointless server traffic duri
 
 ## UI Semantics
 
-`Add reminder` always clears back to the default form after a successful create.
+`Add reminder` and `Save changes` always clear back to the default new-reminder form after a successful create/update, including both sound toggles and selectors.
 
 `Clear form` discards the current form state.
 

@@ -13,6 +13,8 @@ import tempfile
 from threading import Lock
 
 from app.db.file_schema import initialize_file_schema
+from app.db.file_schema import SOUNDS_TABLE
+from app.db.file_schema import FILES_TABLE
 from app.db.file_session import resolve_file_database_path
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.models.database import SafeSession
@@ -255,7 +257,8 @@ def _reset_file_database_to_empty(file_database_path: Path) -> None:
     connection = sqlite3.connect(str(file_database_path), check_same_thread=False)
     try:
         initialize_file_schema(connection)
-        connection.execute("DELETE FROM files")
+        connection.execute(f"DELETE FROM {FILES_TABLE}")
+        connection.execute(f"DELETE FROM {SOUNDS_TABLE}")
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:

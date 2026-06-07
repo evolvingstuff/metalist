@@ -945,6 +945,76 @@ export const FilesAPI = {
     },
 };
 
+export const SoundsAPI = {
+    async listSounds() {
+        const response = await fetch(CONFIG.API.SOUNDS.LIST, {
+            method: 'GET',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`Sound list failed: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    },
+
+    async uploadSound({ title, file }) {
+        if (typeof title !== 'string' || title.trim().length === 0) {
+            throw new Error('SoundsAPI.uploadSound requires title');
+        }
+        if (!(file instanceof File)) {
+            throw new Error('SoundsAPI.uploadSound requires File');
+        }
+        const formData = new FormData();
+        formData.append('title', title);
+        formData.append('file', file);
+        const response = await fetch(CONFIG.API.SOUNDS.UPLOAD, {
+            method: 'POST',
+            headers: buildAuthHeaders(false),
+            body: formData,
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`Sound upload failed: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    },
+
+    async updateSound(soundId, { title }) {
+        if (typeof soundId !== 'string' || soundId.length === 0) {
+            throw new Error('SoundsAPI.updateSound requires soundId');
+        }
+        if (typeof title !== 'string' || title.trim().length === 0) {
+            throw new Error('SoundsAPI.updateSound requires title');
+        }
+        const response = await fetch(CONFIG.API.SOUNDS.UPDATE(soundId), {
+            method: 'PUT',
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({ title }),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`Sound update failed: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    },
+
+    async deleteSound(soundId) {
+        if (typeof soundId !== 'string' || soundId.length === 0) {
+            throw new Error('SoundsAPI.deleteSound requires soundId');
+        }
+        const response = await fetch(CONFIG.API.SOUNDS.DELETE(soundId), {
+            method: 'DELETE',
+            headers: buildAuthHeaders(false),
+        });
+        if (!response.ok) {
+            ErrorHandler.handleApiError(null, response);
+            throw new Error(`Sound delete failed: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    },
+};
+
 async function remindersJsonRequest(url, options) {
     if (typeof url !== 'string' || url.length === 0) {
         throw new Error('remindersJsonRequest requires url');

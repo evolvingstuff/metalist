@@ -25,6 +25,7 @@ from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
 from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
+from app.services.sound_storage import sound_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
@@ -42,6 +43,7 @@ from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.memory import router as api2_memory_router
 from app.api.routes.files import router as api2_files_router
+from app.api.routes.sounds import router as api2_sounds_router
 from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.mcp import router as api2_mcp_router
 from app.api.routes.backups import router as api2_backup_router
@@ -158,9 +160,23 @@ with begin_writer() as connection:
     search_history_store.bootstrap(connection=connection)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
+startup_has_password = False
+encryption_enabled = False
+if settings:
+    encryption_enabled = bool(settings["encryption_enabled"])
+    startup_has_password = encryption_enabled
+set_encryption_required(encryption_enabled)
+
 file_registry_start = time.perf_counter()
 bootstrap_file_registry()
 _log_startup_step("file registry bootstrap", time.perf_counter() - file_registry_start)
+
+sound_store_start = time.perf_counter()
+if startup_has_password:
+    sound_store.reset()
+else:
+    sound_store.bootstrap(token="")
+_log_startup_step("sound store bootstrap", time.perf_counter() - sound_store_start)
 
 
 def _resolve_page_title(*, base_title: str) -> str:
@@ -176,13 +192,6 @@ try:
 finally:
     integrity_session.close()
 _log_startup_step("linked list integrity check", time.perf_counter() - integrity_start)
-
-startup_has_password = False
-encryption_enabled = False
-if settings:
-    encryption_enabled = bool(settings["encryption_enabled"])
-    startup_has_password = encryption_enabled
-set_encryption_required(encryption_enabled)
 
 if startup_has_password:
     logger.info("[startup] password set; skipping cache + store hydration until login")
@@ -262,6 +271,7 @@ app.include_router(api2_auth_router, prefix=API_PREFIX)
 app.include_router(api2_backup_router, prefix=API_PREFIX)
 app.include_router(api2_memory_router, prefix=API_PREFIX)
 app.include_router(api2_files_router, prefix=API_PREFIX)
+app.include_router(api2_sounds_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_mcp_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)

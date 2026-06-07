@@ -26,6 +26,7 @@
 - `app/services/client_state_service.py`: Stores namespace-scoped command-palette preferences/usage in `app_settings` so UI preferences travel with the namespace instead of the browser.
 - `app/services/note_store.py`: Canonical in-memory store for decrypted notes + parent/prev/next links.
 - `app/services/file_storage.py`: Stores file attachments in a sibling `*.files.db` SQLite database; uses plaintext rows when the app has no password and encrypted metadata/blob rows when the app is in encrypted mode.
+- `app/services/sound_storage.py`: Memory-first reusable sound asset store backed by a separate `sounds` table in the sibling `*.files.db`; includes non-deletable `builtin.default_chime`, encrypted metadata/blob persistence when password-protected, 2 MB / 10 second per-sound caps, and a 50 MB uploaded-library cap.
 - `app/services/search_history.py`: Memory-first store for interacted search histories persisted in the main namespace DB; successful non-empty searches and newly added non-meta note tags feed recent-tag activity; positive tag terms are sorted/deduped for history identity, storage is capped at 500 rows, blank-search and first-tag-prefix suggestions can reserve the top 3 slots for the highest-scoring recent matching tags, case-equivalent tags are collapsed to the most-used spelling, and stored query/tag payloads encrypt at rest when the namespace is password-protected.
 - `app/services/file_registry.py`: In-memory registry of valid file UUIDs plus attachment thumbnail kinds; startup/login bootstraps this metadata without hydrating file blobs.
 - `app/services/backup_settings_service.py`: Stores the configured backup folder, selected namespaces, and retention count in the namespace DB; when namespace encryption is enabled, that payload is encrypted at rest too.
@@ -66,6 +67,7 @@
 - Date filtering/calendar: `POST /api2/notes/tab-state/date-filter` sets or clears per-tab date ranges; `POST /api2/notes/activity` returns created/updated date buckets for the current search context. The RHS calendar renders those buckets, click/drag selects date filters, search input changes clear date filters, and right-clicking the right lane toggles the calendar view.
 - Embedded references: view payload `notes[*].content` can include rendered `![[UUID]]` blocks (view mode only); embedded note nodes follow the source note collapsed/expanded state and their inline collapse controls mutate that source state; host note hashes include rendered embed output.
 - File attachments: `POST /api2/files/upload` stores the uploaded file in `*.files.db`, returns a UUID token, and the client inserts `![[UUID]]` into the active note (or a newly created note when none is active).
+- Sound assets: `GET/POST/PUT/DELETE /api2/sounds` manages reusable uploaded sounds; `GET /api2/sounds/{id}/play` streams authenticated audio from the in-memory `sound_store`. The command palette exposes `Manage sounds…`, and the reminder modal stores per-reminder popup and `Got it` sound fields.
 - File downloads: rendered file references in view mode call `GET /api2/files/{file_id}/download`; metadata/blob rows are decrypted on demand rather than at startup.
 - File trimming: `POST /api2/files/trim-unused` deletes attachment rows no longer referenced by any note; removing refs does not auto-delete files so undo/redo remains safe until trim runs.
 - Tag persistence: tags are included in `snapshot.notes[*].tags` and are saved alongside note content on `PUT /api2/notes/{id}/save`; inferred search-only tags like `@image` are computed for the search index and are not shown in the tag bar.
@@ -125,6 +127,7 @@ metalist
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
 - Reminders: `app/services/reminders.py` + `app/api/routes/reminders.py`; frontend modal is `app/static/js/modules/modals/reminder-modal.js`, in-app surfacing loop is `app/static/js/modules/reminder-surface-service.js`.
+- Sounds: `app/services/sound_storage.py` + `app/api/routes/sounds.py`; frontend manager is `app/static/js/modules/modals/sound-manager-modal.js`, shared playback is `app/static/js/modules/sound-service.js`.
 - File store: `app/services/file_storage.py` + `app/services/file_registry.py`.
 - Search history store: `app/services/search_history.py` + `app/db/search_history_sql.py`.
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).

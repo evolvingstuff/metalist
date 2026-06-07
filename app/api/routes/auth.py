@@ -62,6 +62,7 @@ from app.services.ontology_rules_store import ensure_rules_decrypted_and_compile
 from app.services.link_titles import link_title_store
 from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
+from app.services.sound_storage import sound_store
 from app.services.hydration_state import hydration_state
 from app.services.file_registry import file_registry
 from app.services.file_storage import bootstrap_file_registry
@@ -415,6 +416,7 @@ def _run_hydration() -> None:
         session.close()
 
     note_store.load_from_db(None, prefetched_rows=prefetched_rows)
+    sound_store.bootstrap(token="")
     auth_cache_state.mark_cache_ready()
     hydration_state.finish()
 
@@ -465,6 +467,7 @@ def _reset_runtime_state_after_restore() -> bool:
     link_title_store.reset()
     reminder_store.reset()
     search_history_store.reset()
+    sound_store.reset()
     clear_all_locks()
     token_service.revoke_all_tokens()
     clear_encryption_key()
@@ -493,6 +496,7 @@ def _reset_runtime_state_after_restore() -> bool:
         if password_required:
             return True
 
+        sound_store.bootstrap(token="")
         prefetched_rows = populate_cache_from_db(session)
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
         auth_cache_state.mark_cache_ready()

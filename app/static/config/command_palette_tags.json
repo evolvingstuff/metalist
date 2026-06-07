@@ -73,6 +73,10 @@
       "tags": ["reminder", "reminders", "notification", "notifications", "schedule", "scheduled", "prompt", "missed", "recurring", "date", "time"]
     },
     {
+      "id": "form.manage_sounds",
+      "tags": ["sound", "sounds", "audio", "chime", "upload", "manage", "reminder", "got", "it", "notification"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
     },

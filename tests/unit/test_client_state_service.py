@@ -70,6 +70,25 @@ def test_save_client_preferences_round_trips_through_app_settings(
         session.close()
 
 
+def test_save_client_preferences_drops_obsolete_reminder_sound_keys(
+    memory_settings_db,
+) -> None:
+    del memory_settings_db
+
+    saved = save_client_preferences(
+        preferences={
+            "pref.theme": "dark",
+            "pref.reminder_popup_sound_enabled": "true",
+            "pref.reminder_popup_sound_id": "11111111-1111-4111-8111-111111111111",
+            "pref.reminder_ack_sound_enabled": "true",
+            "pref.reminder_ack_sound_id": "builtin.default_chime",
+        }
+    )
+
+    assert saved == {"pref.theme": "dark"}
+    assert load_client_preferences() == {"pref.theme": "dark"}
+
+
 def test_save_command_palette_usage_round_trips_through_app_settings(
     memory_settings_db,
 ) -> None:

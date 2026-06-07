@@ -113,6 +113,13 @@ export const CONFIG = {
             DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,
             TRIM_UNUSED: `${API_FILES_BASE}/trim-unused`,
         },
+        SOUNDS: {
+            LIST: `${API_BASE}/sounds`,
+            UPLOAD: `${API_BASE}/sounds/upload`,
+            UPDATE: (soundId) => `${API_BASE}/sounds/${soundId}`,
+            DELETE: (soundId) => `${API_BASE}/sounds/${soundId}`,
+            PLAY: (soundId) => `${API_BASE}/sounds/${soundId}/play`,
+        },
         REMINDERS: {
             LIST: API_REMINDERS_BASE,
             CREATE: API_REMINDERS_BASE,

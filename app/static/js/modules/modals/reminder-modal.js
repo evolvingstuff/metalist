@@ -1,8 +1,13 @@
 import { ReminderStore } from '../reminder-store.js';
 import { ReminderSurface } from '../reminder-surface-service.js';
+import {
+    DEFAULT_SOUND_ID,
+    SoundService,
+} from '../sound-service.js';
 import { BaseModal } from './base-modal.js';
 
 const REMINDER_RENDER_ICON = '🔔';
+const REMINDER_SOUND_ICON = '🔊';
 
 function escapeHtml(value) {
     if (typeof value !== 'string') {
@@ -465,6 +470,10 @@ function defaultFormState() {
         pre_reminder_amount: '1',
         pre_reminder_unit: 'days',
         persistence_mode: 'keep_until_seen',
+        popup_sound_enabled: false,
+        popup_sound_id: DEFAULT_SOUND_ID,
+        ack_sound_enabled: false,
+        ack_sound_id: DEFAULT_SOUND_ID,
         status: 'active',
     };
 }
@@ -497,6 +506,10 @@ function stateFromReminder(reminder) {
         pre_reminder_amount: preReminder === null ? '1' : String(preReminder.amount),
         pre_reminder_unit: preReminder === null ? 'days' : preReminder.unit,
         persistence_mode: reminder.persistence_mode,
+        popup_sound_enabled: reminder.popup_sound_enabled === true,
+        popup_sound_id: typeof reminder.popup_sound_id === 'string' ? reminder.popup_sound_id : DEFAULT_SOUND_ID,
+        ack_sound_enabled: reminder.ack_sound_enabled === true,
+        ack_sound_id: typeof reminder.ack_sound_id === 'string' ? reminder.ack_sound_id : DEFAULT_SOUND_ID,
         status: reminder.status,
     };
 }
@@ -526,6 +539,10 @@ function buildPayloadFromForm(form) {
             }
             : null,
         persistence_mode: form.persistence_mode,
+        popup_sound_enabled: form.popup_sound_enabled,
+        popup_sound_id: form.popup_sound_id,
+        ack_sound_enabled: form.ack_sound_enabled,
+        ack_sound_id: form.ack_sound_id,
         status: scheduleKind === 'recurring' ? form.status : 'active',
     };
     if (scheduleKind === 'recurring') {
@@ -695,21 +712,36 @@ function reminderSearchHaystack(reminder) {
     return normalizeReminderSearchText(parts.join(' '));
 }
 
+function reminderHasSound(reminder) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderHasSound requires reminder');
+    }
+    if (reminder.popup_sound_enabled === true) {
+        return true;
+    }
+    return reminder.ack_sound_enabled === true;
+}
+
+function defaultReminderModalState() {
+    return {
+        loading: false,
+        error: '',
+        query: '',
+        scheduleFilter: 'all_schedules',
+        reminders: [],
+        missed: [],
+        form: defaultFormState(),
+        editingId: '',
+        unsubscribe: null,
+        saving: false,
+        soundLibrary: null,
+    };
+}
+
 export class ReminderModal extends BaseModal {
     constructor() {
         super('reminderModal', 'reminder-modal');
-        this._state = {
-            loading: false,
-            error: '',
-            query: '',
-            scheduleFilter: 'all_schedules',
-            reminders: [],
-            missed: [],
-            form: defaultFormState(),
-            editingId: '',
-            unsubscribe: null,
-            saving: false,
-        };
+        this._state = defaultReminderModalState();
         this._pendingInitialSearch = '';
         this._handleInput = this._handleInput.bind(this);
         this._handleClick = this._handleClick.bind(this);
@@ -760,18 +792,9 @@ export class ReminderModal extends BaseModal {
     }
 
     onOpen() {
-        this._state = {
-            loading: true,
-            error: '',
-            query: this._pendingInitialSearch,
-            scheduleFilter: 'all_schedules',
-            reminders: [],
-            missed: [],
-            form: defaultFormState(),
-            editingId: '',
-            unsubscribe: null,
-            saving: false,
-        };
+        this._state = defaultReminderModalState();
+        this._state.loading = true;
+        this._state.query = this._pendingInitialSearch;
         this._render();
         const modalElement = this._modalElement();
         modalElement.addEventListener('input', this._handleInput);
@@ -805,6 +828,13 @@ export class ReminderModal extends BaseModal {
     async _load() {
         const payload = await ReminderStore.refresh();
         this._applySnapshot(payload);
+        await this._loadSounds();
+    }
+
+    async _loadSounds() {
+        const library = await SoundService.library();
+        this._state.soundLibrary = library;
+        this._render();
     }
 
     _applySnapshot(payload) {
@@ -917,6 +947,7 @@ export class ReminderModal extends BaseModal {
                                 </select>
                             </label>
                         </div>
+                        ${this._renderSoundSettings()}
                         <div class="reminder-form-actions">
                             <button type="button" class="primary-btn" data-reminder-save ${this._state.saving ? 'disabled' : ''}>${this._state.editingId ? 'Save changes' : 'Add reminder'}</button>
                             <button type="button" class="secondary-btn" data-reminder-new ${this._state.saving ? 'disabled' : ''}>Clear form</button>
@@ -926,6 +957,52 @@ export class ReminderModal extends BaseModal {
                     </section>
                 </div>
             </div>
+        `;
+    }
+
+    _renderSoundSettings() {
+        const library = this._state.soundLibrary;
+        const form = this._state.form;
+        const soundOptions = this._soundOptions(form.popup_sound_id, library);
+        const ackSoundOptions = this._soundOptions(form.ack_sound_id, library);
+        return `
+            <div class="reminder-sound-settings">
+                <label class="reminder-field-label reminder-check-label" for="reminder-popup-sound-enabled">
+                    <input id="reminder-popup-sound-enabled" type="checkbox" ${form.popup_sound_enabled ? 'checked' : ''}>
+                    <span>Sound on popup</span>
+                </label>
+                <select id="reminder-popup-sound-id" ${form.popup_sound_enabled ? '' : 'disabled'}>
+                    ${soundOptions}
+                </select>
+                <label class="reminder-field-label reminder-check-label" for="reminder-ack-sound-enabled">
+                    <input id="reminder-ack-sound-enabled" type="checkbox" ${form.ack_sound_enabled ? 'checked' : ''}>
+                    <span>Sound on Got it</span>
+                </label>
+                <select id="reminder-ack-sound-id" ${form.ack_sound_enabled ? '' : 'disabled'}>
+                    ${ackSoundOptions}
+                </select>
+            </div>
+        `;
+    }
+
+    _soundOptions(currentSoundId, library) {
+        if (typeof currentSoundId !== 'string' || currentSoundId.length === 0) {
+            throw new Error('_soundOptions requires currentSoundId');
+        }
+        if (library && Array.isArray(library.sounds)) {
+            const options = library.sounds.map((sound) => this._option(sound.id, sound.title, currentSoundId));
+            const hasCurrent = library.sounds.some((sound) => sound.id === currentSoundId);
+            if (!hasCurrent) {
+                options.push(this._option(currentSoundId, `Missing sound (${currentSoundId})`, currentSoundId));
+            }
+            return options.join('');
+        }
+        if (currentSoundId === DEFAULT_SOUND_ID) {
+            return `<option value="${DEFAULT_SOUND_ID}" selected>Default chime</option>`;
+        }
+        return `
+            <option value="${DEFAULT_SOUND_ID}">Default chime</option>
+            <option value="${escapeHtml(currentSoundId)}" selected>Missing sound (${escapeHtml(currentSoundId)})</option>
         `;
     }
 
@@ -1036,10 +1113,13 @@ export class ReminderModal extends BaseModal {
         const nextLabelClass = nextLabel.startsWith('Overdue')
             ? 'reminder-row-overdue'
             : (nextLabel.startsWith('Due:') ? 'reminder-row-due' : 'reminder-row-next');
+        const soundIndicator = reminderHasSound(reminder)
+            ? `<span class="reminder-row-icon reminder-row-sound-icon" aria-label="Sound enabled" title="Sound enabled">${REMINDER_SOUND_ICON}</span>`
+            : '';
         return `
             <article class="reminder-row ${isMissed ? 'reminder-row-missed' : ''} ${reminder.status === 'paused' ? 'reminder-row-paused' : ''}" data-reminder-id="${escapeHtml(reminder.id)}">
                 <div class="reminder-row-main">
-                    <strong><span class="reminder-row-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span> ${escapeHtml(reminderDisplayTitle(reminder))}</strong>
+                    <strong><span class="reminder-row-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span>${soundIndicator} ${escapeHtml(reminderDisplayTitle(reminder))}</strong>
                     ${details ? `<small class="reminder-row-details">${escapeHtml(details)}</small>` : ''}
                     <span>${escapeHtml(reminderScheduleLabel(reminder))}</span>
                     ${preReminder ? `<small class="reminder-row-next">${escapeHtml(preReminder)}</small>` : ''}
@@ -1103,6 +1183,36 @@ export class ReminderModal extends BaseModal {
             }
             form.pre_reminder_enabled = target.checked;
             this._render();
+            return;
+        }
+        if (
+            target.id === 'reminder-popup-sound-enabled'
+            || target.id === 'reminder-ack-sound-enabled'
+        ) {
+            if (!(target instanceof HTMLInputElement)) {
+                throw new Error('Reminder sound enabled target must be input');
+            }
+            if (target.id === 'reminder-popup-sound-enabled') {
+                form.popup_sound_enabled = target.checked;
+                this._setSoundSelectorDisabled('reminder-popup-sound-id', !target.checked);
+            } else {
+                form.ack_sound_enabled = target.checked;
+                this._setSoundSelectorDisabled('reminder-ack-sound-id', !target.checked);
+            }
+            return;
+        }
+        if (
+            target.id === 'reminder-popup-sound-id'
+            || target.id === 'reminder-ack-sound-id'
+        ) {
+            if (!(target instanceof HTMLSelectElement)) {
+                throw new Error('Reminder sound selector target must be select');
+            }
+            if (target.id === 'reminder-popup-sound-id') {
+                form.popup_sound_id = target.value;
+            } else {
+                form.ack_sound_id = target.value;
+            }
             return;
         }
         const mapping = {
@@ -1201,7 +1311,14 @@ export class ReminderModal extends BaseModal {
         const actionButton = target.closest('[data-reminder-action]');
         if (actionButton instanceof HTMLElement) {
             const actionName = actionButton.getAttribute('data-reminder-action');
+            const reminder = this._state.reminders.find((entry) => entry.id === reminderId);
+            if (!reminder) {
+                throw new Error(`Reminder not found in modal state: ${reminderId}`);
+            }
             await ReminderStore.action(reminderId, actionName, {});
+            if (actionName === 'acknowledge') {
+                await SoundService.playReminderSound(reminder, 'ack');
+            }
         }
     }
 
@@ -1226,4 +1343,19 @@ export class ReminderModal extends BaseModal {
             this._render();
         });
     }
+
+    _setSoundSelectorDisabled(selectorId, disabled) {
+        if (typeof selectorId !== 'string' || selectorId.length === 0) {
+            throw new Error('_setSoundSelectorDisabled requires selectorId');
+        }
+        if (typeof disabled !== 'boolean') {
+            throw new Error('_setSoundSelectorDisabled requires disabled boolean');
+        }
+        const selector = document.getElementById(selectorId);
+        if (!(selector instanceof HTMLSelectElement)) {
+            throw new Error(`Reminder sound selector missing: ${selectorId}`);
+        }
+        selector.disabled = disabled;
+    }
+
 }

@@ -121,6 +121,53 @@ def test_drop_if_missed_one_time_reminder_is_deleted_from_store(
         SafeSession.use_file_db()
 
 
+def test_reminder_sound_fields_are_stored_per_reminder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_memory_db(tmp_path, monkeypatch)
+    store = ReminderStore()
+    try:
+        store.clear_persisted_state_for_tests()
+        reminder = store.create_reminder(
+            payload={
+                "note_id": None,
+                "title": "Sounded",
+                "attachment_type": "unattached",
+                "schedule_kind": SCHEDULE_ONE_TIME,
+                "time_mode": TIME_MODE_DATE_ONLY,
+                "scheduled_at": None,
+                "scheduled_date": "2026-06-08",
+                "recurrence_rule": None,
+                "persistence_mode": PERSISTENCE_KEEP_UNTIL_SEEN,
+                "popup_sound_enabled": True,
+                "popup_sound_id": "11111111-1111-4111-8111-111111111111",
+                "ack_sound_enabled": True,
+                "ack_sound_id": "22222222-2222-4222-8222-222222222222",
+                "status": REMINDER_STATUS_ACTIVE,
+            },
+            token="",
+        )
+
+        assert reminder["popup_sound_enabled"] is True
+        assert reminder["popup_sound_id"] == "11111111-1111-4111-8111-111111111111"
+        assert reminder["ack_sound_enabled"] is True
+        assert reminder["ack_sound_id"] == "22222222-2222-4222-8222-222222222222"
+
+        store.reset()
+        session = SafeSession()
+        try:
+            store.bootstrap(connection=session.connection())
+        finally:
+            session.close()
+        reloaded = store.get_reminder(reminder_id=reminder["id"])
+        assert reloaded["popup_sound_id"] == reminder["popup_sound_id"]
+        assert reloaded["ack_sound_id"] == reminder["ack_sound_id"]
+    finally:
+        store.clear_persisted_state_for_tests()
+        SafeSession.use_file_db()
+
+
 def test_date_only_reminder_fires_on_non_idle_use_only() -> None:
     now = _now("2026-06-08T10:00:00+00:00")
     reminder = normalize_reminder_payload(

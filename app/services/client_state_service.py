@@ -22,6 +22,15 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.theme": {"system", "light", "dark"},
 }
 
+_OBSOLETE_CLIENT_PREFERENCES = frozenset(
+    {
+        "pref.reminder_popup_sound_enabled",
+        "pref.reminder_ack_sound_enabled",
+        "pref.reminder_popup_sound_id",
+        "pref.reminder_ack_sound_id",
+    }
+)
+
 
 def _parse_json_object(*, raw_json: object, label: str) -> dict[str, object]:
     if not isinstance(label, str) or label == "":
@@ -58,11 +67,14 @@ def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, st
     for key, value in preferences.items():
         if not isinstance(key, str) or key == "":
             raise RuntimeError("client preference keys must be non-empty strings")
+        if key in _OBSOLETE_CLIENT_PREFERENCES:
+            continue
         if key not in _ALLOWED_CLIENT_PREFERENCES:
             raise RuntimeError(f"Unknown client preference key: {key}")
         if not isinstance(value, str):
             raise RuntimeError(f"Client preference {key} must be a string")
-        if value not in _ALLOWED_CLIENT_PREFERENCES[key]:
+        allowed_values = _ALLOWED_CLIENT_PREFERENCES[key]
+        if value not in allowed_values:
             raise RuntimeError(f"Invalid client preference value for {key}: {value}")
         normalized[key] = value
     return normalized
