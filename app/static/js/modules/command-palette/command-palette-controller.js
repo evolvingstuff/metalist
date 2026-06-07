@@ -270,6 +270,7 @@ class CommandPaletteController {
         this._handleKeyDown = this._handleKeyDown.bind(this);
         this._handleInput = this._handleInput.bind(this);
         this._handleClick = this._handleClick.bind(this);
+        this._handleOpenRemindersRequest = this._handleOpenRemindersRequest.bind(this);
     }
 
     async init() {
@@ -333,6 +334,7 @@ class CommandPaletteController {
         this._applyPreferenceEffectsFromStorage();
 
         this._initialized = true;
+        document.addEventListener('metalist:open-reminders', this._handleOpenRemindersRequest);
     }
 
     _mergeAndValidateTags() {
@@ -1592,6 +1594,20 @@ class CommandPaletteController {
         return true;
     }
 
+    async _handleOpenRemindersRequest(event) {
+        if (!event || typeof event !== 'object') {
+            throw new Error('Open reminders event missing');
+        }
+        const detail = event.detail;
+        if (!detail || typeof detail !== 'object') {
+            throw new Error('Open reminders event detail missing');
+        }
+        if (typeof detail.search !== 'string') {
+            throw new Error('Open reminders search must be string');
+        }
+        await this.openReminders({ search: detail.search });
+    }
+
     async _listBackupsForRetentionPrompt() {
         const payload = await this._authRequest(CONFIG.API.AUTH.BACKUP.LIST, 'GET', null);
         if (!payload || typeof payload !== 'object') {
@@ -1891,7 +1907,18 @@ class CommandPaletteController {
         this._sessionTimeoutModal.open();
     }
 
-    async openReminders() {
+    async openReminders(options = {}) {
+        if (!options || typeof options !== 'object') {
+            throw new Error('openReminders options must be object');
+        }
+        const search = Object.prototype.hasOwnProperty.call(options, 'search') ? options.search : '';
+        if (typeof search !== 'string') {
+            throw new Error('openReminders search must be string');
+        }
+        if (this._reminderModal !== null && this._reminderModal.isOpen) {
+            this._reminderModal.setSearchQuery(search);
+            return;
+        }
         const isReady = await this._prepareForModalOpen('commandPalette.openReminders');
         if (!isReady) {
             return;
@@ -1900,7 +1927,7 @@ class CommandPaletteController {
         if (this._reminderModal === null) {
             this._reminderModal = new ReminderModal();
         }
-        this._reminderModal.open();
+        this._reminderModal.open({ search });
     }
 }
 

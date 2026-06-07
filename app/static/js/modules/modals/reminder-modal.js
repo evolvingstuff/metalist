@@ -710,8 +710,33 @@ export class ReminderModal extends BaseModal {
             unsubscribe: null,
             saving: false,
         };
+        this._pendingInitialSearch = '';
         this._handleInput = this._handleInput.bind(this);
         this._handleClick = this._handleClick.bind(this);
+    }
+
+    open(options = {}) {
+        if (!options || typeof options !== 'object') {
+            throw new Error('ReminderModal.open options must be object');
+        }
+        const search = Object.prototype.hasOwnProperty.call(options, 'search') ? options.search : '';
+        if (typeof search !== 'string') {
+            throw new Error('ReminderModal.open search must be string');
+        }
+        this._pendingInitialSearch = search;
+        super.open();
+    }
+
+    setSearchQuery(search) {
+        if (typeof search !== 'string') {
+            throw new Error('ReminderModal.setSearchQuery requires string');
+        }
+        if (!this.isOpen) {
+            throw new Error('ReminderModal.setSearchQuery requires open modal');
+        }
+        this._state.query = search;
+        this._render();
+        this._focusSearchInput(search.length, search.length);
     }
 
     getInitialModalState() {
@@ -738,7 +763,7 @@ export class ReminderModal extends BaseModal {
         this._state = {
             loading: true,
             error: '',
-            query: '',
+            query: this._pendingInitialSearch,
             scheduleFilter: 'all_schedules',
             reminders: [],
             missed: [],

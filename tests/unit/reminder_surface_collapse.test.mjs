@@ -128,6 +128,9 @@ class FakeElement {
         if (name === 'data-reminder-surface-toggle') {
             this.dataset.reminderSurfaceToggle = String(value);
         }
+        if (name === 'data-reminder-surface-open-registry') {
+            this.dataset.reminderSurfaceOpenRegistry = String(value);
+        }
     }
 
     getAttribute(name) {
@@ -167,6 +170,9 @@ class FakeElement {
         if (selector === '[data-reminder-surface-toggle]') {
             return this.dataset.reminderSurfaceToggle === 'true';
         }
+        if (selector === '[data-reminder-surface-open-registry]') {
+            return this.dataset.reminderSurfaceOpenRegistry === 'true';
+        }
         return false;
     }
 }
@@ -180,7 +186,9 @@ function installReminderSurfaceDom(t, options = {}) {
     const originalHTMLElement = globalThis.HTMLElement;
     const originalSessionStorage = globalThis.sessionStorage;
     const originalFetch = globalThis.fetch;
+    const originalCustomEvent = globalThis.CustomEvent;
     const elementsById = new Map();
+    const documentListeners = new Map();
     const body = new FakeElement('body');
     const preferences = { ...(options.preferences ?? {}) };
     const reminders = Array.isArray(options.reminders) ? options.reminders : [];
@@ -206,6 +214,12 @@ function installReminderSurfaceDom(t, options = {}) {
         },
         clearInterval() {},
     };
+    globalThis.CustomEvent = class CustomEvent {
+        constructor(type, init = {}) {
+            this.type = type;
+            this.detail = init.detail;
+        }
+    };
     globalThis.document = {
         body,
         visibilityState: 'visible',
@@ -215,8 +229,31 @@ function installReminderSurfaceDom(t, options = {}) {
         getElementById(id) {
             return elementsById.get(id) ?? null;
         },
-        addEventListener() {},
-        removeEventListener() {},
+        addEventListener(type, listener) {
+            if (typeof type !== 'string' || typeof listener !== 'function') {
+                throw new Error('document.addEventListener requires type and listener');
+            }
+            const listeners = documentListeners.get(type) ?? new Set();
+            listeners.add(listener);
+            documentListeners.set(type, listeners);
+        },
+        removeEventListener(type, listener) {
+            const listeners = documentListeners.get(type);
+            if (listeners === undefined) {
+                return;
+            }
+            listeners.delete(listener);
+        },
+        dispatchEvent(event) {
+            if (!event || typeof event.type !== 'string') {
+                throw new Error('document.dispatchEvent requires event type');
+            }
+            const listeners = documentListeners.get(event.type) ?? new Set();
+            for (const listener of listeners) {
+                listener(event);
+            }
+            return true;
+        },
     };
     globalThis.fetch = async (url, requestOptions = {}) => {
         if (url === '/api2/auth/client-state') {
@@ -275,6 +312,11 @@ function installReminderSurfaceDom(t, options = {}) {
             delete globalThis.fetch;
         } else {
             globalThis.fetch = originalFetch;
+        }
+        if (typeof originalCustomEvent === 'undefined') {
+            delete globalThis.CustomEvent;
+        } else {
+            globalThis.CustomEvent = originalCustomEvent;
         }
     });
 
@@ -359,6 +401,31 @@ test('reminder surface toggle disappears when no reminders await acknowledgement
 
     assert.equal(container.querySelector('[data-reminder-surface-toggle]'), null);
     assert.equal(container.classList.contains('is-collapsed'), false);
+});
+
+test('reminder surface title requests reminders modal filtered to title', async (t) => {
+    installReminderSurfaceDom(t);
+    const { ReminderSurface } = await import('../../app/static/js/modules/reminder-surface-service.js');
+
+    ReminderSurface._renderEvent(reminderEvent('filtered-title'));
+
+    const container = document.getElementById('reminder-surface');
+    const item = container.querySelector('.reminder-surface-item');
+    assert.ok(item instanceof HTMLElement);
+    assert.equal(item.dataset.reminderTitle, 'Reminder filtered-title');
+
+    const titleButton = new HTMLElement('button');
+    titleButton.setAttribute('data-reminder-surface-open-registry', 'true');
+    item.appendChild(titleButton);
+
+    const requests = [];
+    document.addEventListener('metalist:open-reminders', (event) => {
+        requests.push(event.detail);
+    });
+
+    await ReminderSurface._handleSurfaceClick({ target: titleButton });
+
+    assert.deepEqual(requests, [{ search: 'Reminder filtered-title' }]);
 });
 
 test('reminder surface loads collapsed preference from database-backed client state', async (t) => {

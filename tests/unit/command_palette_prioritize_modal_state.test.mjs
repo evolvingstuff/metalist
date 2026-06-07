@@ -52,3 +52,22 @@ test('command palette modal opens are guarded by shared modal preparation', () =
         );
     }
 });
+
+test('openReminders updates an already-open reminder modal search', () => {
+    const source = readFileSync(CONTROLLER_PATH, 'utf8');
+    const methodStart = source.indexOf('async openReminders(options = {}) {');
+    assert.notEqual(methodStart, -1, 'openReminders should exist');
+
+    const methodEnd = source.indexOf('\n    async ', methodStart + 1);
+    const end = methodEnd === -1 ? source.indexOf('\n}', methodStart + 1) : methodEnd;
+    assert.notEqual(end, -1, 'openReminders method end should be found');
+
+    const methodSource = source.slice(methodStart, end);
+    const updateIndex = methodSource.indexOf('this._reminderModal.setSearchQuery(search);');
+    const openIndex = methodSource.indexOf('this._reminderModal.open({ search });');
+
+    assert.notEqual(updateIndex, -1, 'openReminders should update search on an already-open modal');
+    assert.notEqual(openIndex, -1, 'openReminders should still open the modal when closed');
+    assert.ok(updateIndex < openIndex, 'already-open search update must happen before modal open');
+    assert.match(methodSource, /this\._reminderModal !== null && this\._reminderModal\.isOpen/);
+});

@@ -5609,7 +5609,7 @@ html[data-theme="dark"] body.loading::after {
     z-index: 30001;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
     width: min(240px, calc(100vw - 28px));
     pointer-events: none;
 }
@@ -5618,8 +5618,8 @@ html[data-theme="dark"] body.loading::after {
     pointer-events: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-    padding: 12px 14px;
+    gap: 5px;
+    padding: 8px 14px;
     border: 1px solid #d8a21c;
     border-radius: 8px;
     background: #1f1f1f;
@@ -5634,19 +5634,45 @@ html[data-theme="dark"] body.loading::after {
 .reminder-surface-text {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 3px;
     min-width: 0;
 }
 
-.reminder-surface-text strong,
 .reminder-surface-text span {
     overflow-wrap: anywhere;
 }
 
-.reminder-surface-text strong {
+.reminder-surface-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: #ffffff;
-    font-size: 16px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 15px;
     font-weight: 700;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.reminder-surface-title:hover .reminder-surface-title-text {
+    text-decoration: underline;
+}
+
+.reminder-surface-title:focus-visible {
+    outline: 2px solid #f5f5f5;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.reminder-surface-title-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .reminder-surface-icon {
@@ -5655,7 +5681,8 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-surface-text span {
     color: #d7d7d7;
-    font-size: 15px;
+    font-size: 14px;
+    line-height: 1.2;
 }
 
 .reminder-surface-details {
@@ -5664,15 +5691,16 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-surface-rule {
     width: 100%;
-    margin: 4px 0 0;
+    margin: 2px 0 0;
     border: 0;
     border-top: 1px solid rgba(216, 162, 28, 0.45);
 }
 
 .reminder-surface-status {
     color: #d7d7d7;
-    font-size: 15px;
+    font-size: 14px;
     font-style: italic;
+    line-height: 1.2;
     overflow-wrap: anywhere;
 }
 
@@ -5680,18 +5708,19 @@ html[data-theme="dark"] body.loading::after {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
 }
 
 .reminder-surface-footer button {
     flex: 0 0 auto;
-    min-height: 36px;
-    padding: 6px 12px;
+    min-height: 24px;
+    padding: 1px 8px;
     border: 1px solid #d0d0d0;
     border-radius: 6px;
     background: #f7f7f7;
     color: #111111;
-    font-size: 15px;
+    font-size: 14px;
+    line-height: 1.1;
 }
 
 .reminder-surface-toggle {

@@ -7,6 +7,7 @@ const REMINDER_RENDER_ICON = '🔔';
 const OCCURRENCE_KIND_MAIN = 'main';
 const OCCURRENCE_KIND_PRE = 'pre';
 const REMINDER_SURFACE_TOGGLE_SELECTOR = '[data-reminder-surface-toggle]';
+const REMINDER_SURFACE_OPEN_REGISTRY_SELECTOR = '[data-reminder-surface-open-registry]';
 const REMINDER_SURFACE_EXPANDED_PREF = 'pref.reminder_surface_expanded';
 
 function reminderDisplayTitle(reminder) {
@@ -757,10 +758,15 @@ class ReminderSurfaceService {
         }
         const surfaceText = this._surfaceEventText(event);
         const details = reminderDetails(reminder);
+        const title = reminderDisplayTitle(reminder);
         this._clearElapsedTimerForItem(item);
+        item.dataset.reminderTitle = title;
         item.innerHTML = `
             <div class="reminder-surface-text">
-                <strong><span class="reminder-surface-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span> ${this._escape(reminderDisplayTitle(reminder))}</strong>
+                <button type="button" class="reminder-surface-title" data-reminder-surface-open-registry="true" title="Open in Reminders">
+                    <span class="reminder-surface-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span>
+                    <span class="reminder-surface-title-text">${this._escape(title)}</span>
+                </button>
                 ${details ? `<span class="reminder-surface-details">${this._escape(details)}</span>` : ''}
                 <hr class="reminder-surface-rule">
             </div>
@@ -861,6 +867,17 @@ class ReminderSurfaceService {
         }
         const item = target.closest('.reminder-surface-item');
         if (!(item instanceof HTMLElement)) {
+            return;
+        }
+        const openRegistryButton = target.closest(REMINDER_SURFACE_OPEN_REGISTRY_SELECTOR);
+        if (openRegistryButton instanceof HTMLElement) {
+            const reminderTitle = item.dataset.reminderTitle;
+            if (typeof reminderTitle !== 'string' || reminderTitle.length === 0) {
+                throw new Error('Reminder surface item missing title');
+            }
+            document.dispatchEvent(new CustomEvent('metalist:open-reminders', {
+                detail: { search: reminderTitle },
+            }));
             return;
         }
         const actionButton = target.closest('[data-reminder-surface-action]');
