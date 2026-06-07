@@ -717,11 +717,14 @@ function reminderSearchHaystack(reminder) {
     return normalizeReminderSearchText(parts.join(' '));
 }
 
-function reminderHasSound(reminder, defaultSoundSettings) {
+function reminderHasSoundOverride(reminder) {
     if (!reminder || typeof reminder !== 'object') {
-        throw new Error('reminderHasSound requires reminder');
+        throw new Error('reminderHasSoundOverride requires reminder');
     }
-    return SoundService.reminderHasAudibleSound(reminder, defaultSoundSettings);
+    if (reminder.popup_sound_enabled === true) {
+        return true;
+    }
+    return reminder.ack_sound_enabled === true;
 }
 
 function defaultReminderModalState() {
@@ -1176,8 +1179,8 @@ export class ReminderModal extends BaseModal {
         const nextLabelClass = nextLabel.startsWith('Overdue')
             ? 'reminder-row-overdue'
             : (nextLabel.startsWith('Due:') ? 'reminder-row-due' : 'reminder-row-next');
-        const soundIndicator = reminderHasSound(reminder, this._state.defaultSoundSettings)
-            ? `<span class="reminder-row-icon reminder-row-sound-icon" aria-label="Sound enabled" title="Sound enabled">${REMINDER_SOUND_ICON}</span>`
+        const soundIndicator = reminderHasSoundOverride(reminder)
+            ? `<span class="reminder-row-icon reminder-row-sound-icon" aria-label="Sound override" title="Sound override">${REMINDER_SOUND_ICON}</span>`
             : '';
         return `
             <article class="reminder-row ${isMissed ? 'reminder-row-missed' : ''} ${reminder.status === 'paused' ? 'reminder-row-paused' : ''}" data-reminder-id="${escapeHtml(reminder.id)}">

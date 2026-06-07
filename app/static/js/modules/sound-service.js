@@ -12,6 +12,7 @@ export const PREF_REMINDER_DEFAULT_ACK_SOUND_ID = 'pref.reminder_default_ack_sou
 
 let cachedLibrary = null;
 let cachedDefaultSettings = null;
+let reminderSoundQueue = Promise.resolve();
 const activeAudioElements = new Set();
 const activeAudioContexts = new Set();
 
@@ -179,11 +180,13 @@ function playBuiltinDefaultChime() {
             second.start(now);
             second.stop(now + 0.28);
 
-            window.setTimeout(() => {
-                activeAudioContexts.delete(context);
-                void context.close();
-            }, 700);
-            return { status: 'played' };
+            return new Promise((resolve) => {
+                window.setTimeout(() => {
+                    activeAudioContexts.delete(context);
+                    void context.close();
+                    resolve({ status: 'played' });
+                }, 700);
+            });
         },
         (error) => {
             activeAudioContexts.delete(context);
@@ -193,6 +196,42 @@ function playBuiltinDefaultChime() {
             };
         },
     );
+}
+
+function playAudioBlob(blob) {
+    if (!(blob instanceof Blob)) {
+        throw new Error('playAudioBlob requires Blob');
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(objectUrl);
+    activeAudioElements.add(audio);
+    return new Promise((resolve) => {
+        let didCleanup = false;
+        const cleanup = (result) => {
+            if (didCleanup) {
+                return;
+            }
+            didCleanup = true;
+            activeAudioElements.delete(audio);
+            URL.revokeObjectURL(objectUrl);
+            resolve(result);
+        };
+        audio.addEventListener('ended', () => {
+            cleanup({ status: 'played' });
+        }, { once: true });
+        audio.addEventListener('error', () => {
+            cleanup({ status: 'failed', message: 'Audio playback failed' });
+        }, { once: true });
+        audio.play().then(
+            () => undefined,
+            (error) => {
+                cleanup({
+                    status: 'blocked',
+                    message: error instanceof Error ? error.message : String(error),
+                });
+            },
+        );
+    });
 }
 
 function playUploadedSound(soundId) {
@@ -208,28 +247,7 @@ function playUploadedSound(soundId) {
                 };
             }
             return response.blob().then((blob) => {
-                const objectUrl = URL.createObjectURL(blob);
-                const audio = new Audio(objectUrl);
-                activeAudioElements.add(audio);
-                audio.addEventListener('ended', () => {
-                    activeAudioElements.delete(audio);
-                    URL.revokeObjectURL(objectUrl);
-                }, { once: true });
-                audio.addEventListener('error', () => {
-                    activeAudioElements.delete(audio);
-                    URL.revokeObjectURL(objectUrl);
-                }, { once: true });
-                return audio.play().then(
-                    () => ({ status: 'played' }),
-                    (error) => {
-                        activeAudioElements.delete(audio);
-                        URL.revokeObjectURL(objectUrl);
-                        return {
-                            status: 'blocked',
-                            message: error instanceof Error ? error.message : String(error),
-                        };
-                    },
-                );
+                return playAudioBlob(blob);
             });
         },
         (error) => ({
@@ -237,6 +255,18 @@ function playUploadedSound(soundId) {
             message: error instanceof Error ? error.message : String(error),
         }),
     );
+}
+
+function enqueueReminderSound(playback) {
+    if (typeof playback !== 'function') {
+        throw new Error('enqueueReminderSound requires playback function');
+    }
+    const queued = reminderSoundQueue.then(() => playback());
+    reminderSoundQueue = queued.then(
+        () => undefined,
+        () => undefined,
+    );
+    return queued;
 }
 
 export const SoundService = {
@@ -341,7 +371,7 @@ export const SoundService = {
         if (cachedLibrary === null) {
             await this.refreshLibrary();
         }
-        return await this.playSound(soundId);
+        return await enqueueReminderSound(() => this.playSound(soundId));
     },
 
     reminderHasAudibleSound(reminder, defaultSettingsValue) {

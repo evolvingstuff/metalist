@@ -32,11 +32,14 @@ function reminderDetails(reminder) {
     return reminder.details.trim();
 }
 
-function reminderHasSound(reminder) {
+function reminderHasSoundOverride(reminder) {
     if (!reminder || typeof reminder !== 'object') {
-        throw new Error('reminderHasSound requires reminder');
+        throw new Error('reminderHasSoundOverride requires reminder');
     }
-    return SoundService.reminderHasAudibleSound(reminder, SoundService.currentDefaultSettings());
+    if (reminder.popup_sound_enabled === true) {
+        return true;
+    }
+    return reminder.ack_sound_enabled === true;
 }
 
 function formatElapsedSince(value, now) {
@@ -771,8 +774,8 @@ class ReminderSurfaceService {
         const surfaceText = this._surfaceEventText(event);
         const details = reminderDetails(reminder);
         const title = reminderDisplayTitle(reminder);
-        const soundIndicator = reminderHasSound(reminder)
-            ? `<span class="reminder-surface-icon reminder-surface-sound-icon" aria-label="Sound enabled" title="Sound enabled">${REMINDER_SOUND_ICON}</span>`
+        const soundIndicator = reminderHasSoundOverride(reminder)
+            ? `<span class="reminder-surface-icon reminder-surface-sound-icon" aria-label="Sound override" title="Sound override">${REMINDER_SOUND_ICON}</span>`
             : '';
         this._clearElapsedTimerForItem(item);
         item.dataset.reminderTitle = title;

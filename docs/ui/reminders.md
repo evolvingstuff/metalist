@@ -127,6 +127,8 @@ Reminder sound controls live in the reminder modal:
 
 Uploaded sounds are namespace-local and memory-first after startup/login. Rows persist in the sibling `*.files.db` `sounds` table, but playback uses the in-memory sound store instead of per-play SQLite reads. Password-protected namespaces decrypt sounds during post-login hydration.
 
+When multiple reminders surface at once, their sounds are queued and played one after another rather than overlapping.
+
 Limits:
 
 - 2 MB per uploaded sound.
