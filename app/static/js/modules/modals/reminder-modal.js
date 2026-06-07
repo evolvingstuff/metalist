@@ -14,6 +14,13 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
+function normalizeReminderSearchText(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    return value.toLocaleLowerCase();
+}
+
 function todayLocalDate() {
     const now = new Date();
     return formatDateInput(now);
@@ -614,6 +621,19 @@ function reminderMatchesScheduleFilter(reminder, scheduleFilter) {
     return rule.frequency === scheduleFilter;
 }
 
+function reminderSearchHaystack(reminder) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderSearchHaystack requires reminder');
+    }
+    const parts = [
+        reminderDisplayTitle(reminder),
+        reminderScheduleLabel(reminder),
+        reminder.status,
+        reminder.persistence_mode,
+    ];
+    return normalizeReminderSearchText(parts.join(' '));
+}
+
 export class ReminderModal extends BaseModal {
     constructor() {
         super('reminderModal', 'reminder-modal');
@@ -719,7 +739,7 @@ export class ReminderModal extends BaseModal {
     }
 
     _filteredReminders() {
-        const query = this._state.query.trim().toLowerCase();
+        const query = normalizeReminderSearchText(this._state.query.trim());
         return this._state.reminders.filter((reminder) => {
             if (!reminderMatchesScheduleFilter(reminder, this._state.scheduleFilter)) {
                 return false;
@@ -727,7 +747,7 @@ export class ReminderModal extends BaseModal {
             if (query.length === 0) {
                 return true;
             }
-            const haystack = reminder.title.toLowerCase();
+            const haystack = reminderSearchHaystack(reminder);
             return haystack.includes(query);
         });
     }
@@ -923,6 +943,18 @@ export class ReminderModal extends BaseModal {
         return `<option value="${escapeHtml(value)}" ${value === current ? 'selected' : ''}>${escapeHtml(label)}</option>`;
     }
 
+    _focusSearchInput(selectionStart, selectionEnd) {
+        if (!Number.isInteger(selectionStart) || !Number.isInteger(selectionEnd)) {
+            throw new Error('_focusSearchInput requires numeric selection');
+        }
+        const searchInput = document.getElementById('reminder-search');
+        if (!(searchInput instanceof HTMLInputElement)) {
+            throw new Error('Reminder search input missing');
+        }
+        searchInput.focus({ preventScroll: true });
+        searchInput.setSelectionRange(selectionStart, selectionEnd);
+    }
+
     _handleInput(event) {
         const target = event.target;
         if (!(target instanceof HTMLElement)) {
@@ -930,8 +962,17 @@ export class ReminderModal extends BaseModal {
         }
         const form = this._state.form;
         if (target.id === 'reminder-search') {
+            if (!(target instanceof HTMLInputElement)) {
+                throw new Error('Reminder search event target must be input');
+            }
+            const selectionStart = target.selectionStart;
+            const selectionEnd = target.selectionEnd;
+            if (!Number.isInteger(selectionStart) || !Number.isInteger(selectionEnd)) {
+                throw new Error('Reminder search selection missing');
+            }
             this._state.query = target.value;
             this._render();
+            this._focusSearchInput(selectionStart, selectionEnd);
             return;
         }
         if (target.id === 'reminder-schedule-filter') {
