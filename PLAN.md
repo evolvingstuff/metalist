@@ -1,67 +1,101 @@
-# PLAN: Move Search History Into Main Namespace DB
+# PLAN: Move Namespace Launch Profiles Into Namespace DBs
 
 ## Goal
-Store search history in the main namespace database instead of a sibling `*.search-history.db`, while preserving MetaList's memory-first runtime contract.
+Remove the global `~/MetaList/namespaces.db` launch-profile registry. Store each namespace's launch profile as plaintext operational metadata inside that namespace's main `*.metalist.db`, while keeping the existing branch focused on database cleanup.
 
 ## Confirmed Decisions
-- Search history starts empty after this change; old `*.search-history.db` data is ignored.
-- Existing sidecar search-history files are not deleted automatically.
-- Files remain in the sibling `*.files.db` because blobs are intentionally not hydrated at startup.
-- Search history must follow the normal namespace-state pattern: load into server memory, then write-through to SQLite on updates; no runtime DB reads after startup/hydration.
-- Search-history payload fields remain encrypted at rest when namespace encryption is enabled.
-- Add an explicit maximum of 500 search-history rows.
-- Normalize query identity by sorting and deduping positive tag terms, so `journal exercise` and `exercise journal` share one stored history row.
+- Stay on the current feature branch.
+- Namespace folders are the source of truth for namespace existence.
+- Each namespace's HTTP / HTTPS / MCP launch ports live in that namespace's own main DB.
+- Launch profile fields are plaintext even when namespace content is encrypted.
+- Parent startup scans `~/MetaList/namespaces/` once, reads each namespace DB's launch profile, and keeps the catalog in memory.
+- Runtime reads from a global registry DB are removed because there is no registry DB.
+- If a namespace folder exists but its main DB is missing/corrupt/unreadable, fail loudly.
+- Same-name restore is the normal restore path: restoring `foo` into existing `foo` replaces that namespace's app data/files and may happen while `foo` is running.
+- Restoring/importing backup namespace `foo` as a different namespace name should warn/fail only if the target name already exists.
+- Port conflicts should be checked during restore/import when creating a different target namespace or when applying restored launch-profile metadata to a new namespace.
+- Files remain in `*.files.db`; this change is only about `namespaces.db` launch metadata.
 
 ## Implementation Steps
-1. Move schema ownership into the main DB
-   - Add `search_interaction_history` table and score index to `app/db/schema.py`.
-   - Keep or adapt `app/db/search_history_sql.py` as the SQL helper for this table.
-   - Stop relying on `app/db/search_history_session.py` for runtime storage.
+1. Add launch-profile storage to main schema
+   - Add a table such as `namespace_launch_profile` to `app/db/schema.py`.
+   - Store `namespace`, `port`, `https_port`, `mcp_port`, `created_at`, and `updated_at`.
+   - Do not encrypt these fields.
+   - Add SQL helpers for fetch/upsert/delete if helpful.
 
-2. Introduce memory-first search history state
-   - Add a service-owned in-memory cache/store for search-history rows.
-   - Load all search-history rows during startup and post-login hydration.
-   - Keep suggestion reads and ranking fully in memory.
-   - On each credited interaction, update the in-memory store first, then write the changed rows/deletes to the main DB.
+2. Replace `~/MetaList/namespaces.db` runtime APIs
+   - Refactor `app/server_runtime.py` functions:
+     - `load_namespace_launch_profile`
+     - `load_all_namespace_launch_profiles`
+     - `save_namespace_launch_profile`
+     - `delete_namespace_launch_profile`
+     - `resolve_namespace_launch_defaults`
+   - Make them operate on namespace DBs under `~/MetaList/namespaces/<ns>/<ns>.metalist.db`.
+   - Remove or deprecate `resolve_namespace_registry_path`.
+   - Keep validation strict and fail loudly on malformed/missing DB state.
 
-3. Update normalization and retention
-   - Continue ignoring blank, text-only, UUID-only, negative-only, and zero-result searches.
-   - Normalize positive tag terms by case-insensitive sort plus deterministic tie-breaker.
-   - Deduplicate repeated terms within the same query.
-   - Preserve typed/display spelling in stored payload where practical.
-   - Enforce the 500-row cap after decay/prune/update by deleting the lowest-ranked excess rows.
+3. Startup discovery
+   - Scan the namespace directory once at parent startup or at namespace-catalog construction.
+   - Include `default` even if no folder exists yet, creating/initializing its DB when needed.
+   - Read launch profiles from each namespace DB and cache the result in memory where appropriate.
+   - Ensure directory names, DB filenames, and stored namespace names agree.
 
-4. Preserve encryption behavior
-   - Keep query key, root tag, and tags JSON encrypted at rest when a namespace password is enabled.
-   - Keep operational metadata such as query hash, score, and timestamps plaintext.
-   - Update password set/remove flows so search-history rewrites operate on the main DB and in-memory store inside the existing password-transition flow.
+4. Creation and port management
+   - Namespace creation should create the namespace folder and main DB first, then save its launch profile into that DB.
+   - Manage Namespace Ports should read/write profiles through the namespace DBs.
+   - Batch validation should still catch duplicate requested ports, conflicts with saved profiles, and conflicts with running/current processes.
 
-5. Remove search-history sidecar backup behavior
-   - New backups include notes DB plus files DB only.
-   - Old archive backups that contain a search-history sidecar should ignore that member.
-   - Old legacy `.search-history.db.bak` sidecars should be ignored on restore.
-   - Backup cleanup can still delete matching legacy search-history sidecars when deleting old legacy primary backups.
+5. Backup and restore semantics
+   - Backups automatically carry launch-profile metadata because it is inside the main namespace DB.
+   - Restore into the same namespace name should restore app data/files normally and keep or reconcile local runtime state without treating name existence as an error.
+   - Import/restore under a different namespace name should fail or require explicit confirmation if that target namespace already exists.
+   - When importing under a different name, rewrite the stored namespace name in the restored launch-profile row and resolve port conflicts before launch.
+   - If restoring into the same namespace while it is running, use the existing maintenance/reset/reload path.
 
-6. Update tests
-   - Search-history unit tests should use the main in-memory DB path/session.
-   - Add/adjust tests for sorted/deduped normalized query keys.
-   - Add tests for the 500-row retention cap.
-   - Update auth password-transition tests for main-DB search-history rows.
-   - Update backup tests so search-history sidecars are no longer included/restored.
+6. Migration and compatibility
+   - On first startup after this change, if old `~/MetaList/namespaces.db` exists, read profiles from it and copy them into each namespace DB when that DB exists or is created.
+   - Do not require the old registry after migration.
+   - Do not delete `namespaces.db` automatically in the first implementation; ignore it after migration.
+   - If both old registry and namespace DB profile exist, namespace DB wins unless the namespace DB profile is missing.
 
-7. Update docs
+7. Delete namespace behavior
+   - Deleting a namespace removes its namespace directory, including the profile because it is in the namespace DB.
+   - Remove the separate registry-profile delete from the worker path.
+   - Update deletion UI/docs copy that mentions saved profiles/ports.
+
+8. Tests
+   - Update `tests/unit/test_server_runtime.py` for DB-backed launch profiles.
+   - Update `tests/unit/test_namespace_switcher.py` for catalog scan + DB-backed save/read.
+   - Update main entrypoint tests that assert saved profile behavior.
+   - Add migration tests from old `namespaces.db` into namespace DB profile rows.
+   - Add restore/import tests for:
+     - same-name restore allowed
+     - different-name conflict rejected
+     - different-name import rewrites profile namespace and resolves/checks ports
+   - Keep full pytest passing.
+
+9. Docs
    - Update `docs/AI-SUMMARY.md`.
-   - Update backup/search-history documentation that mentions `*.search-history.db`.
-   - Clarify that files are the only sibling DB for large blob storage.
+   - Update README namespace setup/launch sections.
+   - Update MCP/security/electron/command-palette docs that mention `~/MetaList/namespaces.db`.
+   - Clarify persistent DB model:
+     - main namespace DB: notes, app state, reminders, search history, launch profile
+     - files DB: large file blobs
+     - no global namespace registry DB
 
 ## Verification
-- Run focused tests:
-  - `./.venv/bin/pytest tests/unit/test_search_history.py`
-  - `./.venv/bin/pytest tests/unit/test_auth_vault_metadata.py`
-  - `./.venv/bin/pytest tests/unit/test_backup_service.py`
-- Run broader relevant tests if focused tests uncover cross-module impact.
+- Focused tests:
+  - `./.venv/bin/pytest tests/unit/test_server_runtime.py`
+  - `./.venv/bin/pytest tests/unit/test_namespace_switcher.py`
+  - `./.venv/bin/pytest tests/unit/test_main_entrypoint.py`
+  - `./.venv/bin/pytest tests/unit/test_backup_service.py tests/unit/test_backups_route.py`
+- Startup sanity:
+  - `./.venv/bin/python -c "from pathlib import Path; from app.startup_sanity import assert_startup_sanity; assert_startup_sanity(Path('.').resolve())"`
+- Full test suite:
+  - `./.venv/bin/pytest`
 
 ## Open Risks
-- Password-transition flows currently rewrite search history through the sidecar session; moving that into the main DB must avoid nested writer/locking issues.
-- Startup/hydration must load search history only after the active DEK is available for encrypted namespaces.
-- Retention cap enforcement must be deterministic so tests and suggestion ranking remain stable.
+- Parent orchestration imports `app.server_runtime` before namespace-specific app startup, so DB-backed profile reads must not depend on an active namespace import context.
+- Old registry migration must not silently overwrite newer namespace-DB profile rows.
+- Restore/import needs a clear API distinction between same-name restore and different-name import/clone.
+- Existing UI copy and tests assume one central "saved ports" table; implementation should preserve the UX while changing the backing store.
