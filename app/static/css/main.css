@@ -5613,15 +5613,21 @@ html[data-theme="dark"] body.loading::after {
     z-index: 30001;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 0;
     width: min(240px, calc(100vw - 28px));
     pointer-events: none;
+}
+
+.reminder-surface > * + * {
+    margin-top: 6px;
 }
 
 .reminder-surface-item {
     pointer-events: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    box-sizing: border-box;
+    overflow: hidden;
     gap: 5px;
     padding: 8px 14px;
     border: 1px solid #d8a21c;
@@ -5629,10 +5635,43 @@ html[data-theme="dark"] body.loading::after {
     background: #1f1f1f;
     color: #f5f5f5;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+    transform-origin: bottom right;
+    transition:
+        height 180ms ease,
+        opacity 180ms ease,
+        transform 180ms ease,
+        margin-top 180ms ease,
+        padding-top 180ms ease,
+        padding-bottom 180ms ease;
+}
+
+.reminder-surface-item.is-entering {
+    opacity: 0;
+    margin-top: 0;
+    padding-bottom: 0;
+    padding-top: 0;
+    transform: translateY(10px) scale(0.98);
+}
+
+.reminder-surface-item.is-exiting {
+    opacity: 0;
+    margin-top: 0;
+    padding-bottom: 0;
+    padding-top: 0;
+    pointer-events: none;
+    transform: translateY(8px) scale(0.98);
 }
 
 .reminder-surface.is-collapsed .reminder-surface-item {
     display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reminder-surface-item,
+    .reminder-surface-item.is-entering,
+    .reminder-surface-item.is-exiting {
+        transition-duration: 1ms;
+    }
 }
 
 .reminder-surface-text {

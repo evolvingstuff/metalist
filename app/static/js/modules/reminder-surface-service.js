@@ -726,6 +726,7 @@ class ReminderSurfaceService {
         } else {
             container.appendChild(item);
         }
+        this._animateSurfaceItemEnter(item);
         if (this._hasCompletedInitialEvaluation) {
             void this._setExpanded(true);
         } else {
@@ -1113,9 +1114,62 @@ class ReminderSurfaceService {
         if (!(item instanceof HTMLElement)) {
             throw new Error('_removeSurfaceItem requires HTMLElement');
         }
+        if (item.classList.contains('is-exiting')) {
+            return;
+        }
         this._clearElapsedTimerForItem(item);
-        item.remove();
-        this._syncToggleControl();
+        const currentHeight = item.getBoundingClientRect().height;
+        item.style.height = `${currentHeight}px`;
+        item.getBoundingClientRect();
+        item.classList.add('is-exiting');
+        let didRemove = false;
+        const removeAfterTransition = () => {
+            if (didRemove) {
+                return;
+            }
+            didRemove = true;
+            item.remove();
+            this._syncToggleControl();
+        };
+        item.addEventListener('transitionend', (event) => {
+            if (event.propertyName !== 'height') {
+                return;
+            }
+            removeAfterTransition();
+        }, { once: true });
+        window.requestAnimationFrame(() => {
+            item.style.height = '0px';
+        });
+        window.setTimeout(removeAfterTransition, 240);
+    }
+
+    _animateSurfaceItemEnter(item) {
+        if (!(item instanceof HTMLElement)) {
+            throw new Error('_animateSurfaceItemEnter requires HTMLElement');
+        }
+        const targetHeight = item.getBoundingClientRect().height;
+        item.style.height = '0px';
+        item.classList.add('is-entering');
+        item.getBoundingClientRect();
+        let didFinish = false;
+        const finishEnter = () => {
+            if (didFinish) {
+                return;
+            }
+            didFinish = true;
+            item.style.height = '';
+        };
+        item.addEventListener('transitionend', (event) => {
+            if (event.propertyName !== 'height') {
+                return;
+            }
+            finishEnter();
+        }, { once: true });
+        window.requestAnimationFrame(() => {
+            item.classList.remove('is-entering');
+            item.style.height = `${targetHeight}px`;
+        });
+        window.setTimeout(finishEnter, 240);
     }
 
     _clearElapsedTimerForItem(item) {
