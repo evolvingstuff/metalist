@@ -135,6 +135,7 @@
   - For each affected note id present in `snapshot.notes`, refresh the DOM content, flags, and cached hash.
   - Apply `lockDiffs` by toggling lock styling/editability without re-rendering content.
   - Update `ModeContext`’s root tracking via the provided `rootIds` array.
+- Active editor preservation: when a note is being edited by the current client and the edit session has user edits, `/notes/view` refreshes may update flags, locks, collapse state, and the snapshot hash, but must not replace the note content DOM. The DOM content hash remains tied to the actual rendered editor content until the client intentionally saves or exits editing.
 - Both paths keep the `clientNoteUuidHashes` map authoritative so follow-up requests remain incremental. Because caches are tab-scoped, a tab switch simply swaps the active map—no mass invalidation necessary and each `/notes/view` request only sends hashes for what that tab rendered last time.
 
 ### Scroll State Note
