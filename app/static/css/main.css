@@ -2295,6 +2295,10 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     line-height: inherit !important;
 }
 
+.note.collapsed:not(.editing) .note-content .meta-heading {
+    font-size: 1.35em !important;
+}
+
 .note.collapsed:not(.editing) .note-content :is(
     h1,
     h2,
