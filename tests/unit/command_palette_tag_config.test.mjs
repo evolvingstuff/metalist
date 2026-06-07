@@ -19,3 +19,13 @@ test('create backup action matches backup and create queries', () => {
     assert.equal(createBackup.tags.includes('backups'), true);
     assert.equal(createBackup.tags.includes('create'), true);
 });
+
+test('reminders action matches notification queries', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const reminders = payload.endpoints.find((endpoint) => endpoint.id === 'form.reminders');
+
+    assert.ok(reminders, 'expected form.reminders endpoint in command palette tag config');
+    assert.equal(reminders.tags.includes('notification'), true);
+    assert.equal(reminders.tags.includes('notifications'), true);
+});

@@ -70,7 +70,7 @@
     },
     {
       "id": "form.reminders",
-      "tags": ["reminder", "reminders", "schedule", "scheduled", "prompt", "missed", "recurring", "date", "time"]
+      "tags": ["reminder", "reminders", "notification", "notifications", "schedule", "scheduled", "prompt", "missed", "recurring", "date", "time"]
     },
     {
       "id": "form.switch_namespace",

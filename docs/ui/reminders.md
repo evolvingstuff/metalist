@@ -105,6 +105,9 @@ The popup surface is intentionally compact:
 - A horizontal rule separates content from the due status/action row.
 - Due status is italic and shares a row with `Got it`.
 - `Got it` acknowledges the current visible occurrence.
+- When at least one popup is waiting for `Got it`, a bell plus up/down arrow appears below the stack.
+- The arrow collapses or expands the stack; no arrow appears when nothing is waiting for `Got it`.
+- A newly surfaced reminder automatically expands the stack.
 
 The surface reconciles rendered popups against each fresh server snapshot. If a reminder is deleted, paused, advanced, acknowledged, or otherwise no longer due, the stale popup is removed. If the same occurrence remains due but title/details changed, the popup content is re-rendered from the fresh snapshot. Pre-reminders use separate occurrence keys from actual reminders so acknowledging a pre-reminder cannot accidentally resolve the event itself.
 

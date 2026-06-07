@@ -5627,6 +5627,10 @@ html[data-theme="dark"] body.loading::after {
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
+.reminder-surface.is-collapsed .reminder-surface-item {
+    display: none;
+}
+
 .reminder-surface-text {
     display: flex;
     flex-direction: column;
@@ -5688,6 +5692,39 @@ html[data-theme="dark"] body.loading::after {
     background: #f7f7f7;
     color: #111111;
     font-size: 15px;
+}
+
+.reminder-surface-toggle {
+    pointer-events: auto;
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 48px;
+    min-height: 34px;
+    padding: 5px 11px;
+    border: 1px solid #d8a21c;
+    border-radius: 8px;
+    background: #1f1f1f;
+    color: #f5f5f5;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+    font-size: 16px;
+    line-height: 1;
+}
+
+.reminder-surface-toggle:hover {
+    background: #2a2a2a;
+}
+
+.reminder-surface-toggle:focus-visible {
+    outline: 2px solid #f5f5f5;
+    outline-offset: 2px;
+}
+
+.reminder-surface-toggle-arrow {
+    font-size: 18px;
+    line-height: 1;
 }
 
 @media (max-width: 520px) {

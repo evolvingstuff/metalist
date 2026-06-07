@@ -5,6 +5,7 @@ const ELAPSED_UPDATE_MS = 1_000;
 const REMINDER_RENDER_ICON = '🔔';
 const OCCURRENCE_KIND_MAIN = 'main';
 const OCCURRENCE_KIND_PRE = 'pre';
+const REMINDER_SURFACE_TOGGLE_SELECTOR = '[data-reminder-surface-toggle]';
 
 function reminderDisplayTitle(reminder) {
     if (!reminder || typeof reminder !== 'object') {
@@ -218,6 +219,7 @@ class ReminderSurfaceService {
         this._shownOccurrenceKeys = new Set();
         this._elapsedTimers = new Map();
         this._lastNonIdleAt = 0;
+        this._isExpanded = true;
         this._handleInteraction = this._handleInteraction.bind(this);
         this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
         this._handleModalClosed = this._handleModalClosed.bind(this);
@@ -254,6 +256,8 @@ class ReminderSurfaceService {
         this._clearLocalDueTimer();
         this._clearElapsedTimers();
         this._shownOccurrenceKeys.clear();
+        this._isExpanded = true;
+        this._syncExpandedState();
     }
 
     async _handleInteraction() {
@@ -671,6 +675,7 @@ class ReminderSurfaceService {
         container.addEventListener('click', (event) => {
             void this._handleSurfaceClick(event);
         });
+        this._syncExpandedState();
         return container;
     }
 
@@ -695,7 +700,14 @@ class ReminderSurfaceService {
             item.dataset.preReminderKey = event.preReminderKey;
         }
         this._renderSurfaceItemContent(item, event);
-        container.appendChild(item);
+        const toggle = container.querySelector(REMINDER_SURFACE_TOGGLE_SELECTOR);
+        if (toggle instanceof HTMLElement) {
+            container.insertBefore(item, toggle);
+        } else {
+            container.appendChild(item);
+        }
+        this._setExpanded(true);
+        this._syncToggleControl();
     }
 
     _removeRenderedPreRemindersForReminder(reminderId) {
@@ -759,6 +771,7 @@ class ReminderSurfaceService {
         const container = this._ensureContainer();
         const items = Array.from(container.querySelectorAll('.reminder-surface-item'));
         if (items.length === 0) {
+            this._syncToggleControl();
             return;
         }
         const activeOccurrenceEvents = this._activeOccurrenceEvents(snapshot.reminders);
@@ -788,6 +801,7 @@ class ReminderSurfaceService {
             }
             this._renderSurfaceItemContent(item, activeEvent);
         }
+        this._syncToggleControl();
     }
 
     _activeOccurrenceEvents(reminders) {
@@ -829,6 +843,11 @@ class ReminderSurfaceService {
         if (!(target instanceof HTMLElement)) {
             return;
         }
+        const toggleButton = target.closest(REMINDER_SURFACE_TOGGLE_SELECTOR);
+        if (toggleButton instanceof HTMLElement) {
+            this._setExpanded(!this._isExpanded);
+            return;
+        }
         const item = target.closest('.reminder-surface-item');
         if (!(item instanceof HTMLElement)) {
             return;
@@ -856,6 +875,80 @@ class ReminderSurfaceService {
         }
         await ReminderStore.action(reminderId, actionName, actionPayload);
         this._removeSurfaceItem(item);
+    }
+
+    _setExpanded(isExpanded) {
+        if (typeof isExpanded !== 'boolean') {
+            throw new Error('_setExpanded requires boolean');
+        }
+        this._isExpanded = isExpanded;
+        this._syncExpandedState();
+        this._syncToggleControl();
+    }
+
+    _syncExpandedState() {
+        const container = document.getElementById('reminder-surface');
+        if (!(container instanceof HTMLElement)) {
+            return;
+        }
+        container.classList.toggle('is-collapsed', this._isExpanded === false);
+    }
+
+    _syncToggleControl() {
+        const container = this._ensureContainer();
+        const itemCount = this._surfaceItemCount(container);
+        let toggle = container.querySelector(REMINDER_SURFACE_TOGGLE_SELECTOR);
+        if (itemCount === 0) {
+            if (toggle instanceof HTMLElement) {
+                toggle.remove();
+            }
+            this._setExpandedWithoutControl(true);
+            return;
+        }
+        if (!(toggle instanceof HTMLElement)) {
+            toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'reminder-surface-toggle';
+            toggle.setAttribute('data-reminder-surface-toggle', 'true');
+            container.appendChild(toggle);
+        }
+        this._renderToggleControl(toggle, itemCount);
+        if (toggle.parentElement === container && container.lastElementChild !== toggle) {
+            container.appendChild(toggle);
+        }
+    }
+
+    _setExpandedWithoutControl(isExpanded) {
+        if (typeof isExpanded !== 'boolean') {
+            throw new Error('_setExpandedWithoutControl requires boolean');
+        }
+        this._isExpanded = isExpanded;
+        this._syncExpandedState();
+    }
+
+    _surfaceItemCount(container) {
+        if (!(container instanceof HTMLElement)) {
+            throw new Error('_surfaceItemCount requires container');
+        }
+        return container.querySelectorAll('.reminder-surface-item').length;
+    }
+
+    _renderToggleControl(toggle, itemCount) {
+        if (!(toggle instanceof HTMLElement)) {
+            throw new Error('_renderToggleControl requires toggle');
+        }
+        if (!Number.isInteger(itemCount) || itemCount < 1) {
+            throw new Error('_renderToggleControl requires positive itemCount');
+        }
+        const action = this._isExpanded ? 'Collapse' : 'Expand';
+        const arrow = this._isExpanded ? '↑' : '↓';
+        toggle.setAttribute('aria-label', `${action} ${itemCount} active reminder${itemCount === 1 ? '' : 's'}`);
+        toggle.setAttribute('title', `${action} reminders`);
+        toggle.setAttribute('aria-expanded', this._isExpanded ? 'true' : 'false');
+        toggle.innerHTML = `
+            <span class="reminder-surface-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span>
+            <span class="reminder-surface-toggle-arrow" aria-hidden="true">${arrow}</span>
+        `;
     }
 
     _surfaceEventText(event) {
@@ -936,6 +1029,7 @@ class ReminderSurfaceService {
         }
         this._clearElapsedTimerForItem(item);
         item.remove();
+        this._syncToggleControl();
     }
 
     _clearElapsedTimerForItem(item) {
