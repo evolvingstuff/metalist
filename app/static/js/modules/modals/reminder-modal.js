@@ -852,33 +852,33 @@ export class ReminderModal extends BaseModal {
                                 <input id="reminder-title" type="text" value="${escapeHtml(form.title)}">
                             </label>
                             <label class="reminder-field">
-                                <span class="reminder-field-label">Time mode</span>
-                                <select id="reminder-time-mode">
-                                    ${this._option('date_time', 'Date and time', form.time_mode)}
-                                    ${this._option('date_only', 'Date only', form.time_mode)}
-                                </select>
-                            </label>
-                            <label class="reminder-field reminder-field-wide reminder-details-field">
-                                <span class="reminder-field-label">Details</span>
-                                <textarea id="reminder-details">${escapeHtml(form.details)}</textarea>
-                            </label>
-                            <label class="reminder-field">
                                 <span class="reminder-field-label">Schedule</span>
                                 <select id="reminder-schedule-kind">
                                     ${this._option('one_time', 'Once', form.schedule_kind)}
                                     ${this._option('recurring', 'Repeat', form.schedule_kind)}
                                 </select>
                             </label>
+                            <label class="reminder-field reminder-field-wide reminder-details-field">
+                                <span class="reminder-field-label">Details</span>
+                                <textarea id="reminder-details">${escapeHtml(form.details)}</textarea>
+                            </label>
                             ${this._renderDateField(form)}
-                            ${this._renderRepeatsField(form)}
+                            <label class="reminder-field">
+                                <span class="reminder-field-label">Time mode</span>
+                                <select id="reminder-time-mode">
+                                    ${this._option('date_time', 'Date and time', form.time_mode)}
+                                    ${this._option('date_only', 'Date only', form.time_mode)}
+                                </select>
+                            </label>
                             <label class="reminder-field ${form.time_mode === 'date_time' ? '' : 'reminder-hidden'}">
                                 <span class="reminder-field-label">Time</span>
                                 <input id="reminder-time" type="time" value="${escapeHtml(form.time)}">
                             </label>
+                            ${this._renderRepeatsField(form)}
                             ${this._renderPreReminderFields(form)}
                             ${this._renderRecurrenceDetails(form)}
                             <label class="reminder-field">
-                                <span class="reminder-field-label">Missed</span>
+                                <span class="reminder-field-label">Behavior</span>
                                 <select id="reminder-persistence-mode">
                                     ${this._option('keep_until_seen', 'Keep until seen', form.persistence_mode)}
                                     ${this._option('drop_if_missed', 'Forget if missed', form.persistence_mode)}
@@ -906,24 +906,22 @@ export class ReminderModal extends BaseModal {
 
     _renderPreReminderFields(form) {
         return `
-            <label class="reminder-field">
-                <span class="reminder-field-label">Pre-reminder</span>
-                <span class="reminder-inline-check">
+            <div class="reminder-field reminder-field-wide reminder-pre-field">
+                <label class="reminder-field-label reminder-check-label" for="reminder-pre-enabled">
                     <input id="reminder-pre-enabled" type="checkbox" ${form.pre_reminder_enabled ? 'checked' : ''}>
-                    <span>Enabled</span>
-                </span>
-            </label>
-            <label class="reminder-field ${form.pre_reminder_enabled ? '' : 'reminder-hidden'}">
-                <span class="reminder-field-label">Before</span>
-                <span class="reminder-pre-control">
-                    <input id="reminder-pre-amount" type="number" min="1" step="1" value="${escapeHtml(form.pre_reminder_amount)}">
-                    <select id="reminder-pre-unit">
-                        ${form.time_mode === 'date_time' ? this._option('minutes', 'Minutes', form.pre_reminder_unit) : ''}
-                        ${form.time_mode === 'date_time' ? this._option('hours', 'Hours', form.pre_reminder_unit) : ''}
-                        ${this._option('days', 'Days', form.pre_reminder_unit)}
-                    </select>
-                </span>
-            </label>
+                    <span>Pre-reminder</span>
+                </label>
+                ${form.pre_reminder_enabled ? `
+                    <span class="reminder-pre-control">
+                        <input id="reminder-pre-amount" type="number" min="1" step="1" value="${escapeHtml(form.pre_reminder_amount)}">
+                        <select id="reminder-pre-unit">
+                            ${form.time_mode === 'date_time' ? this._option('minutes', 'Minutes', form.pre_reminder_unit) : ''}
+                            ${form.time_mode === 'date_time' ? this._option('hours', 'Hours', form.pre_reminder_unit) : ''}
+                            ${this._option('days', 'Days', form.pre_reminder_unit)}
+                        </select>
+                    </span>
+                ` : '<span class="reminder-pre-empty"></span>'}
+            </div>
         `;
     }
 
@@ -968,13 +966,16 @@ export class ReminderModal extends BaseModal {
                     <span>${escapeHtml(recurrenceIntervalUnit(form))}</span>
                 </span>
             </label>
-            <div class="${form.frequency === 'weekly' ? 'reminder-weekdays' : 'reminder-hidden'}">
-                ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => `
-                    <label>
-                        <input type="checkbox" data-reminder-weekday="${index}" ${form.weekdays.includes(index) ? 'checked' : ''}>
-                        ${label}
-                    </label>
-                `).join('')}
+            <div class="reminder-field ${form.frequency === 'weekly' ? '' : 'reminder-hidden'}">
+                <span class="reminder-field-label">Weekdays</span>
+                <div class="reminder-weekdays">
+                    ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, index) => `
+                        <label>
+                            <input type="checkbox" data-reminder-weekday="${index}" ${form.weekdays.includes(index) ? 'checked' : ''}>
+                            ${label}
+                        </label>
+                    `).join('')}
+                </div>
             </div>
             <label class="reminder-field">
                 <span class="reminder-field-label">Ends</span>

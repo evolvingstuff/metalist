@@ -28,9 +28,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
-        ReminderSurface.start();
         await Auth.waitForStartupIntro();
         Auth.revealMainApp();
+        await ReminderSurface.start();
         document.body.dataset.appReady = 'true';
     } else {
         console.log('+++ main.js: Skipping ModeManager init due to auth requirement');

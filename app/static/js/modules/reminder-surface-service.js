@@ -59,6 +59,78 @@ function formatElapsedSince(value, now) {
     return `Due ${elapsedDays} day ${remainingHours} hr ago`;
 }
 
+function formatTimeUntilDateTime(value, now) {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error('formatTimeUntilDateTime requires value');
+    }
+    if (!(now instanceof Date)) {
+        throw new Error('formatTimeUntilDateTime requires Date');
+    }
+    const eventAt = new Date(value);
+    if (Number.isNaN(eventAt.getTime())) {
+        throw new Error('formatTimeUntilDateTime requires valid datetime');
+    }
+    const remainingSeconds = Math.max(0, Math.ceil((eventAt.getTime() - now.getTime()) / 1000));
+    if (remainingSeconds < 1) {
+        return 'Event now';
+    }
+    if (remainingSeconds < 60) {
+        return `Event in ${remainingSeconds} sec`;
+    }
+    const remainingMinutes = Math.floor(remainingSeconds / 60);
+    const leftoverSeconds = remainingSeconds % 60;
+    if (remainingMinutes < 60) {
+        return `Event in ${remainingMinutes} min ${leftoverSeconds} sec`;
+    }
+    const remainingHours = Math.floor(remainingMinutes / 60);
+    const leftoverMinutes = remainingMinutes % 60;
+    if (remainingHours < 24) {
+        return `Event in ${remainingHours} hr ${leftoverMinutes} min`;
+    }
+    const remainingDays = Math.floor(remainingHours / 24);
+    const leftoverHours = remainingHours % 24;
+    return `Event in ${remainingDays} day ${leftoverHours} hr`;
+}
+
+function localDateStringFromDate(value) {
+    if (!(value instanceof Date)) {
+        throw new Error('localDateStringFromDate requires Date');
+    }
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatTimeUntilDateOnly(value, now) {
+    if (typeof value !== 'string' || value.length !== 10) {
+        throw new Error('formatTimeUntilDateOnly requires YYYY-MM-DD');
+    }
+    if (!(now instanceof Date)) {
+        throw new Error('formatTimeUntilDateOnly requires Date');
+    }
+    const today = localDateStringFromDate(now);
+    if (value < today) {
+        return 'Event date passed';
+    }
+    if (value === today) {
+        return 'Event today';
+    }
+    const eventDate = new Date(`${value}T00:00:00`);
+    const todayDate = new Date(`${today}T00:00:00`);
+    if (Number.isNaN(eventDate.getTime())) {
+        throw new Error('formatTimeUntilDateOnly requires valid dates');
+    }
+    if (Number.isNaN(todayDate.getTime())) {
+        throw new Error('formatTimeUntilDateOnly requires valid dates');
+    }
+    const remainingDays = Math.round((eventDate.getTime() - todayDate.getTime()) / (24 * 60 * 60 * 1000));
+    if (remainingDays === 1) {
+        return 'Event tomorrow';
+    }
+    return `Event in ${remainingDays} days`;
+}
+
 function dateOnlySurfaceLabel(eventKind) {
     if (eventKind === 'missed') {
         return 'Overdue';
@@ -152,7 +224,7 @@ class ReminderSurfaceService {
         this._handleStoreSnapshot = this._handleStoreSnapshot.bind(this);
     }
 
-    start() {
+    async start() {
         if (this._started) {
             return;
         }
@@ -163,7 +235,7 @@ class ReminderSurfaceService {
         document.addEventListener('visibilitychange', this._handleVisibilityChange);
         document.addEventListener('metalist:modal-closed', this._handleModalClosed);
         this._unsubscribeStore = ReminderStore.subscribe(this._handleStoreSnapshot);
-        void this._refreshAndEvaluate('idle');
+        await this._refreshAndEvaluate('non_idle_use');
     }
 
     stop() {
@@ -198,7 +270,7 @@ class ReminderSurfaceService {
 
     _handleVisibilityChange() {
         if (document.visibilityState === 'visible') {
-            void this._refreshAndEvaluate('idle');
+            void this._refreshAndEvaluate('non_idle_use');
         }
     }
 
@@ -240,7 +312,7 @@ class ReminderSurfaceService {
             throw new Error('Reminder surface public evaluation activityKind invalid');
         }
         if (!this._started) {
-            this.start();
+            await this.start();
         }
         await this._evaluate(activityKind);
     }
@@ -420,6 +492,8 @@ class ReminderSurfaceService {
                 occurrenceKind: OCCURRENCE_KIND_PRE,
                 occurrenceValue: trigger.value,
                 isDateOnly: true,
+                actualEventValue: trigger.actualEventValue,
+                actualEventIsDateOnly: trigger.actualEventIsDateOnly,
                 preReminderKey: trigger.key,
             };
         }
@@ -432,6 +506,8 @@ class ReminderSurfaceService {
             occurrenceKind: OCCURRENCE_KIND_PRE,
             occurrenceValue: trigger.value,
             isDateOnly: false,
+            actualEventValue: trigger.actualEventValue,
+            actualEventIsDateOnly: trigger.actualEventIsDateOnly,
             preReminderKey: trigger.key,
         };
     }
@@ -454,6 +530,8 @@ class ReminderSurfaceService {
             return {
                 value: triggerValue,
                 isDateOnly: true,
+                actualEventValue: reminder.next_fire_date,
+                actualEventIsDateOnly: true,
                 key: preReminderKey(reminder, triggerValue, reminder.next_fire_date),
             };
         }
@@ -466,6 +544,8 @@ class ReminderSurfaceService {
             return {
                 value: triggerValue,
                 isDateOnly: true,
+                actualEventValue: eventDate,
+                actualEventIsDateOnly: true,
                 key: preReminderKey(reminder, triggerValue, reminder.next_fire_at),
             };
         }
@@ -482,6 +562,8 @@ class ReminderSurfaceService {
             value: triggerValue,
             fireAt: triggerDate,
             isDateOnly: false,
+            actualEventValue: reminder.next_fire_at,
+            actualEventIsDateOnly: false,
             key: preReminderKey(reminder, triggerValue, reminder.next_fire_at),
         };
     }
@@ -601,6 +683,9 @@ class ReminderSurfaceService {
             throw new Error('Reminder event missing reminder');
         }
         const container = this._ensureContainer();
+        if (event.occurrenceKind === OCCURRENCE_KIND_MAIN) {
+            this._removeRenderedPreRemindersForReminder(reminder.id);
+        }
         const item = document.createElement('div');
         item.className = 'reminder-surface-item';
         item.dataset.reminderId = reminder.id;
@@ -611,6 +696,29 @@ class ReminderSurfaceService {
         }
         this._renderSurfaceItemContent(item, event);
         container.appendChild(item);
+    }
+
+    _removeRenderedPreRemindersForReminder(reminderId) {
+        if (typeof reminderId !== 'string') {
+            throw new Error('_removeRenderedPreRemindersForReminder requires reminderId');
+        }
+        if (reminderId.length === 0) {
+            throw new Error('_removeRenderedPreRemindersForReminder requires reminderId');
+        }
+        const container = this._ensureContainer();
+        const items = Array.from(container.querySelectorAll('.reminder-surface-item'));
+        for (const item of items) {
+            if (!(item instanceof HTMLElement)) {
+                throw new Error('Reminder surface query returned non-element');
+            }
+            if (item.dataset.reminderId !== reminderId) {
+                continue;
+            }
+            if (item.dataset.occurrenceKind !== OCCURRENCE_KIND_PRE) {
+                continue;
+            }
+            this._removeSurfaceItem(item);
+        }
     }
 
     _renderSurfaceItemContent(item, event) {
@@ -759,10 +867,16 @@ class ReminderSurfaceService {
             throw new Error('Reminder surface text requires reminder');
         }
         if (event.occurrenceKind === OCCURRENCE_KIND_PRE) {
-            if (event.isDateOnly === true) {
-                return event.kind === 'pre_missed' ? 'Pre-reminder overdue' : 'Pre-reminder';
+            if (typeof event.actualEventValue !== 'string') {
+                throw new Error('Pre-reminder event missing actualEventValue');
             }
-            return `Pre-reminder · ${formatElapsedSince(event.occurrenceValue, new Date())}`;
+            if (event.actualEventValue.length === 0) {
+                throw new Error('Pre-reminder event missing actualEventValue');
+            }
+            if (event.actualEventIsDateOnly === true) {
+                return `Pre-reminder · ${formatTimeUntilDateOnly(event.actualEventValue, new Date())}`;
+            }
+            return `Pre-reminder · ${formatTimeUntilDateTime(event.actualEventValue, new Date())}`;
         }
         if (reminder.time_mode === 'date_time') {
             if (typeof event.occurrenceValue !== 'string' || event.occurrenceValue.length === 0) {
@@ -784,11 +898,27 @@ class ReminderSurfaceService {
         if (!reminder || typeof reminder !== 'object') {
             throw new Error('_startElapsedTimerIfNeeded requires reminder');
         }
-        if (event.isDateOnly === true) {
+        if (event.occurrenceKind === OCCURRENCE_KIND_PRE && event.actualEventIsDateOnly === true) {
             return;
         }
-        if (typeof event.occurrenceValue !== 'string' || event.occurrenceValue.length === 0) {
-            throw new Error('date-time reminder event requires occurrenceValue');
+        if (event.occurrenceKind !== OCCURRENCE_KIND_PRE && event.isDateOnly === true) {
+            return;
+        }
+        if (event.occurrenceKind === OCCURRENCE_KIND_PRE) {
+            if (typeof event.actualEventValue !== 'string') {
+                throw new Error('pre-reminder event requires actualEventValue');
+            }
+            if (event.actualEventValue.length === 0) {
+                throw new Error('pre-reminder event requires actualEventValue');
+            }
+        }
+        if (event.occurrenceKind !== OCCURRENCE_KIND_PRE) {
+            if (typeof event.occurrenceValue !== 'string') {
+                throw new Error('date-time reminder event requires occurrenceValue');
+            }
+            if (event.occurrenceValue.length === 0) {
+                throw new Error('date-time reminder event requires occurrenceValue');
+            }
         }
         const textElement = item.querySelector('[data-reminder-surface-text]');
         if (!(textElement instanceof HTMLElement)) {

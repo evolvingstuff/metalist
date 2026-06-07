@@ -85,7 +85,7 @@ For date-time reminders:
 - Minute/hour pre-reminders are exact instants: event time minus the offset.
 - Day-based pre-reminders are date-only prompts. For example, a Wednesday 9:30 AM appointment with a 1-day pre-reminder surfaces on Tuesday on first app use, not exactly Tuesday at 9:30 AM.
 
-`Got it` on a pre-reminder only marks that pre-reminder occurrence as seen. It does not advance, complete, or delete the actual reminder. If the actual reminder is already due, it takes priority over any unacknowledged pre-reminder.
+`Got it` on a pre-reminder only marks that pre-reminder occurrence as seen. It does not advance, complete, or delete the actual reminder. If the actual reminder is already due, it takes priority over any unacknowledged pre-reminder; any visible pre-reminder for that same occurrence is removed when the actual reminder surfaces.
 
 ## Missed Behavior
 
@@ -112,7 +112,7 @@ The surface reconciles rendered popups against each fresh server snapshot. If a 
 
 The client does not repeatedly poll the server for due reminders.
 
-Snapshot refresh happens on app load, visibility return, reminder modal close, and after reminder mutations/actions. Date-time reminders use local timers against the in-memory mirror. Date-only reminders evaluate on non-idle visible app use.
+Snapshot refresh happens on app load, visibility return, reminder modal close, and after reminder mutations/actions. App load and visibility return count as non-idle visible app use for reminder evaluation. Date-time reminders use local timers against the in-memory mirror.
 
 This keeps the server authoritative while avoiding pointless server traffic during idle time.
 

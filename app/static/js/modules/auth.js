@@ -4,6 +4,7 @@
 import { CONFIG } from './config.js';
 import { createUuid } from './uuid.js';
 import { CommandPalette } from './command-palette/command-palette-controller.js';
+import { ReminderSurface } from './reminder-surface-service.js';
 import { clearLegacyAuthStorage, resolveStoredThemePreference } from './client-state-migration.js';
 import { consumeBooleanQueryFlag } from './location-flags.js';
 import {
@@ -654,10 +655,12 @@ export const Auth = {
 
                 console.log('[Auth] Login successful, initializing ModeManager');
                 if (window.ModeManager) {
-                    window.ModeManager.init({});
+                    await window.ModeManager.init({});
                     await CommandPalette.init();
                     await this.waitForStartupIntro();
                     this.revealMainApp();
+                    await ReminderSurface.start();
+                    document.body.dataset.appReady = 'true';
                 } else {
                     window.location.reload();
                 }
