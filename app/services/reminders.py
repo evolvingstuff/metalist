@@ -545,6 +545,7 @@ def normalize_reminder_payload(
     title = _require_string(_mapping_value_or(raw, "title", ""), field_name="title", allow_blank=True)
     if attachment_type == ATTACHMENT_UNATTACHED and title == "":
         raise ValueError("standalone reminder requires non-empty title")
+    details = _require_string(_mapping_value_or(raw, "details", ""), field_name="details", allow_blank=True)
 
     schedule_kind = _require_choice(
         _required_mapping_value(raw, "schedule_kind"),
@@ -594,6 +595,7 @@ def normalize_reminder_payload(
         "id": reminder_id,
         "note_id": note_id,
         "title": title,
+        "details": details,
         "attachment_type": attachment_type,
         "schedule_kind": schedule_kind,
         "time_mode": time_mode,

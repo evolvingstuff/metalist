@@ -186,6 +186,16 @@ function reminderDisplayTitle(reminder) {
     return 'Untitled reminder';
 }
 
+function reminderDetails(reminder) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderDetails requires reminder');
+    }
+    if (typeof reminder.details !== 'string') {
+        return '';
+    }
+    return reminder.details.trim();
+}
+
 function reminderDueValueLabel(reminder, value) {
     if (!reminder || typeof reminder !== 'object') {
         throw new Error('reminderDueValueLabel requires reminder');
@@ -409,6 +419,7 @@ function defaultFormState() {
     return {
         id: '',
         title: '',
+        details: '',
         schedule_kind: 'one_time',
         time_mode: 'date_only',
         date: formatDateInput(now),
@@ -434,6 +445,7 @@ function stateFromReminder(reminder) {
     return {
         id: reminder.id,
         title: reminder.title,
+        details: typeof reminder.details === 'string' ? reminder.details : '',
         schedule_kind: reminder.schedule_kind,
         time_mode: reminder.time_mode,
         date: reminder.time_mode === 'date_time'
@@ -455,11 +467,13 @@ function buildPayloadFromForm(form) {
         throw new Error('buildPayloadFromForm requires form');
     }
     const title = form.title.trim();
+    const details = form.details.trim();
     const timeMode = form.time_mode;
     const scheduleKind = form.schedule_kind;
     const payload = {
         note_id: null,
         title,
+        details,
         attachment_type: 'unattached',
         schedule_kind: scheduleKind,
         time_mode: timeMode,
@@ -627,6 +641,7 @@ function reminderSearchHaystack(reminder) {
     }
     const parts = [
         reminderDisplayTitle(reminder),
+        reminderDetails(reminder),
         reminderScheduleLabel(reminder),
         reminder.status,
         reminder.persistence_mode,
@@ -797,6 +812,10 @@ export class ReminderModal extends BaseModal {
                                     ${this._option('date_only', 'Date only', form.time_mode)}
                                 </select>
                             </label>
+                            <label class="reminder-field reminder-field-wide reminder-details-field">
+                                <span class="reminder-field-label">Details</span>
+                                <textarea id="reminder-details">${escapeHtml(form.details)}</textarea>
+                            </label>
                             <label class="reminder-field">
                                 <span class="reminder-field-label">Schedule</span>
                                 <select id="reminder-schedule-kind">
@@ -913,8 +932,8 @@ export class ReminderModal extends BaseModal {
 
     _renderReminderRow(reminder) {
         const isMissed = reminder.is_currently_missed === true;
-        const attachment = ' · standalone';
         const isRecurring = reminder.schedule_kind === 'recurring';
+        const details = reminderDetails(reminder);
         const pastDueLabel = reminderPastDueLabel(reminder);
         const nextLabel = reminderNextLabel(reminder);
         const nextLabelClass = nextLabel.startsWith('Overdue')
@@ -924,7 +943,8 @@ export class ReminderModal extends BaseModal {
             <article class="reminder-row ${isMissed ? 'reminder-row-missed' : ''} ${reminder.status === 'paused' ? 'reminder-row-paused' : ''}" data-reminder-id="${escapeHtml(reminder.id)}">
                 <div class="reminder-row-main">
                     <strong>${escapeHtml(reminderDisplayTitle(reminder))}</strong>
-                    <span>${escapeHtml(reminderScheduleLabel(reminder))}${attachment}</span>
+                    ${details ? `<small class="reminder-row-details">${escapeHtml(details)}</small>` : ''}
+                    <span>${escapeHtml(reminderScheduleLabel(reminder))}</span>
                     ${pastDueLabel ? `<small class="reminder-row-past-due">${escapeHtml(pastDueLabel)}</small>` : ''}
                     ${nextLabel ? `<small class="${nextLabelClass}">${escapeHtml(nextLabel)}</small>` : ''}
                     <small>${escapeHtml(reminder.status)} · ${escapeHtml(reminder.persistence_mode)}</small>
@@ -982,6 +1002,7 @@ export class ReminderModal extends BaseModal {
         }
         const mapping = {
             'reminder-title': 'title',
+            'reminder-details': 'details',
             'reminder-time-mode': 'time_mode',
             'reminder-schedule-kind': 'schedule_kind',
             'reminder-date': 'date',

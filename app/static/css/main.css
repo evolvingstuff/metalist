@@ -5227,9 +5227,11 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-modal-content {
     width: min(1120px, 94vw);
-    max-height: min(86vh, 820px);
+    height: min(86vh, 820px);
     margin: 5vh auto;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .reminder-modal-header {
@@ -5237,7 +5239,7 @@ html[data-theme="dark"] body.loading::after {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
 }
 
 .reminder-modal-header h3,
@@ -5249,8 +5251,10 @@ html[data-theme="dark"] body.loading::after {
 .reminder-modal-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
-    gap: 16px;
+    gap: 12px;
     min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
 }
 
 .reminder-registry-pane,
@@ -5260,7 +5264,6 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-registry-pane {
     overflow: auto;
-    max-height: calc(min(86vh, 820px) - 92px);
     padding-right: 4px;
 }
 
@@ -5268,7 +5271,7 @@ html[data-theme="dark"] body.loading::after {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 140px;
     gap: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 
 .reminder-toolbar input,
@@ -5283,21 +5286,21 @@ html[data-theme="dark"] body.loading::after {
 .reminder-missed-bucket {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .reminder-missed-bucket {
-    margin-bottom: 14px;
-    padding-bottom: 14px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color, #333);
 }
 
 .reminder-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
-    padding: 10px;
+    padding: 8px 10px;
     border: 1px solid var(--border-color, #333);
     border-radius: 8px;
     background: var(--panel-bg, rgba(255, 255, 255, 0.03));
@@ -5323,7 +5326,7 @@ html[data-theme="dark"] body.loading::after {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
 }
 
 .reminder-row-main strong,
@@ -5335,6 +5338,12 @@ html[data-theme="dark"] body.loading::after {
 .reminder-row-past-due {
     color: #9a3b00;
     font-weight: 600;
+}
+
+.reminder-row-details {
+    max-width: 72ch;
+    color: var(--muted-text-color, #666);
+    white-space: pre-wrap;
 }
 
 .reminder-row-due {
@@ -5365,40 +5374,50 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-form-pane {
     border-left: 1px solid var(--border-color, #333);
-    padding-left: 16px;
+    padding-left: 12px;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .reminder-form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 24px;
-    row-gap: 16px;
+    column-gap: 18px;
+    row-gap: 10px;
     align-items: start;
-    margin-top: 18px;
+    margin-top: 12px;
 }
 
 .reminder-field {
     display: grid;
-    grid-template-rows: 24px 44px;
-    gap: 8px;
+    grid-template-rows: 22px 38px;
+    gap: 5px;
     align-items: start;
     min-width: 0;
     font-size: 15px;
 }
 
+.reminder-field-wide {
+    grid-column: 1 / -1;
+}
+
+.reminder-details-field {
+    grid-template-rows: 22px 72px;
+}
+
 .reminder-field-label {
     display: flex;
     align-items: center;
-    min-height: 24px;
+    min-height: 22px;
     font-weight: 500;
 }
 
 .reminder-field input,
 .reminder-field select,
+.reminder-field textarea,
 .reminder-toolbar input,
 .reminder-toolbar select {
-    min-height: 44px;
-    height: 44px;
+    min-height: 38px;
     margin: 0;
     padding: 0 12px;
     border: 1px solid var(--border-color);
@@ -5409,7 +5428,23 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .reminder-field input,
-.reminder-field select {
+.reminder-field select,
+.reminder-toolbar input,
+.reminder-toolbar select {
+    height: 38px;
+}
+
+.reminder-field textarea {
+    min-height: 72px;
+    height: 72px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    resize: vertical;
+}
+
+.reminder-field input,
+.reminder-field select,
+.reminder-field textarea {
     align-self: stretch;
     width: 100%;
 }
@@ -5418,7 +5453,7 @@ html[data-theme="dark"] body.loading::after {
     display: grid;
     grid-template-columns: minmax(72px, 0.45fr) minmax(0, 1fr);
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .reminder-interval-control span {
@@ -5429,12 +5464,12 @@ html[data-theme="dark"] body.loading::after {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
 }
 
 .reminder-weekdays label {
     display: flex;
-    min-height: 36px;
+    min-height: 32px;
     align-items: center;
     justify-content: center;
     gap: 5px;
@@ -5450,8 +5485,8 @@ html[data-theme="dark"] body.loading::after {
     grid-column: 1 / -1;
     display: flex;
     justify-content: flex-start;
-    gap: 10px;
-    margin-top: 18px;
+    gap: 8px;
+    margin-top: 12px;
 }
 
 .reminder-modal-error {
@@ -5461,7 +5496,7 @@ html[data-theme="dark"] body.loading::after {
 
 .reminder-modal-warning {
     min-height: 1.2em;
-    margin: 10px 0 0;
+    margin: 6px 0 0;
     color: #9a6500;
     font-size: 14px;
 }
@@ -5556,6 +5591,10 @@ html[data-theme="dark"] body.loading::after {
 .reminder-surface-text span {
     color: #d7d7d7;
     font-size: 15px;
+}
+
+.reminder-surface-details {
+    white-space: pre-wrap;
 }
 
 .reminder-surface-actions {

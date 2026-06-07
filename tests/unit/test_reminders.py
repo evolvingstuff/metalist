@@ -49,6 +49,7 @@ def test_acknowledged_one_time_reminder_is_deleted_from_store(
             payload={
                 "note_id": None,
                 "title": "One time",
+                "details": "Join at https://example.test/visit",
                 "attachment_type": "unattached",
                 "schedule_kind": SCHEDULE_ONE_TIME,
                 "time_mode": TIME_MODE_DATE_ONLY,
@@ -62,6 +63,7 @@ def test_acknowledged_one_time_reminder_is_deleted_from_store(
         )
         reminder_id = reminder["id"]
         assert isinstance(reminder_id, str)
+        assert reminder["details"] == "Join at https://example.test/visit"
         assert len(store.list_reminders()) == 1
 
         completed = store.acknowledge_reminder(
@@ -72,6 +74,7 @@ def test_acknowledged_one_time_reminder_is_deleted_from_store(
             activity_kind="non_idle_use",
         )
         assert completed["status"] == REMINDER_STATUS_DONE
+        assert completed["details"] == "Join at https://example.test/visit"
         assert store.list_reminders() == []
     finally:
         store.clear_persisted_state_for_tests()
@@ -158,6 +161,27 @@ def test_date_only_reminder_fires_on_non_idle_use_only() -> None:
     assert reminder["last_fired_date"] == "2026-06-08"
     assert reminder["is_currently_missed"] is True
     assert reminder["missed_since"] == "2026-06-08"
+
+
+def test_reminder_details_default_to_blank_for_legacy_payloads() -> None:
+    reminder = normalize_reminder_payload(
+        {
+            "id": "reminder-legacy-details",
+            "note_id": None,
+            "title": "Legacy",
+            "attachment_type": "unattached",
+            "schedule_kind": SCHEDULE_ONE_TIME,
+            "time_mode": TIME_MODE_DATE_ONLY,
+            "scheduled_at": None,
+            "scheduled_date": "2026-06-08",
+            "recurrence_rule": None,
+            "persistence_mode": PERSISTENCE_KEEP_UNTIL_SEEN,
+        },
+        now=_now("2026-06-07T10:00:00+00:00"),
+        recompute_next=True,
+    )
+
+    assert reminder["details"] == ""
 
 
 def test_attached_reminders_are_deferred_until_picker_ux_exists() -> None:
