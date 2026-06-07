@@ -186,6 +186,31 @@ def _prompt_for_missing_namespace_launch_profile(*, entry: dict[str, object]) ->
     )
 
 
+def _save_missing_default_namespace_launch_profile(*, entry: dict[str, object]) -> None:
+    namespace = entry["namespace"]
+    if namespace != "default":
+        raise RuntimeError(f"Expected default namespace entry, got: {namespace!r}")
+    raw_profile = entry["default_profile"]
+    if not isinstance(raw_profile, dict):
+        raise RuntimeError("Namespace default missing default profile")
+    port = raw_profile["port"]
+    https_port = raw_profile["https_port"]
+    mcp_port = raw_profile["mcp_port"]
+    if not isinstance(port, int):
+        raise RuntimeError("Namespace default missing suggested HTTP port")
+    if https_port is not None and not isinstance(https_port, int):
+        raise RuntimeError("Namespace default has invalid suggested HTTPS port")
+    if not isinstance(mcp_port, int):
+        raise RuntimeError("Namespace default missing suggested MCP port")
+    print("Namespace default has no saved launch profile. Saving suggested default ports.")
+    save_namespace_launch_profile(
+        namespace="default",
+        port=port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
+
+
 def _prompt_for_missing_namespace_launch_profiles(*, environ: dict[str, str]) -> None:
     while True:
         catalog = build_namespace_catalog(environ=environ, current_namespace=None)
@@ -203,6 +228,10 @@ def _prompt_for_missing_namespace_launch_profiles(*, environ: dict[str, str]) ->
             break
         if missing_entry is None:
             return
+        raw_namespace = missing_entry["namespace"]
+        if raw_namespace == "default":
+            _save_missing_default_namespace_launch_profile(entry=missing_entry)
+            continue
         _prompt_for_missing_namespace_launch_profile(entry=missing_entry)
 
 

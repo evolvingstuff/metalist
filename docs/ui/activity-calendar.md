@@ -1,7 +1,7 @@
 # Activity Calendar
 
 ## Purpose
-- The right-side lane can show a vertical activity calendar for the current tab.
+- The right-side lane can show a vertical activity calendar for the current tab; it is hidden by default and can be enabled from the command palette or right-click menu.
 - Dates are not part of search syntax. Calendar selection is tab view state that composes with the current search result set.
 
 ## Metrics

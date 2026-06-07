@@ -356,7 +356,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
     ]
 
 
-def test_prompt_for_missing_namespace_launch_profiles_saves_suggested_ports(monkeypatch) -> None:
+def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(monkeypatch) -> None:
     calls: list[object] = []
     catalog_calls = {"count": 0}
 
@@ -398,13 +398,17 @@ def test_prompt_for_missing_namespace_launch_profiles_saves_suggested_ports(monk
         "save_namespace_launch_profile",
         lambda **kwargs: calls.append(kwargs),
     )
-    monkeypatch.setattr(builtins, "input", lambda prompt: "")
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt: (_ for _ in ()).throw(AssertionError("default bootstrap should not prompt")),
+    )
     monkeypatch.setattr(builtins, "print", lambda text: calls.append(text))
 
     main_entrypoint._prompt_for_missing_namespace_launch_profiles(environ={})
 
     assert calls == [
-        "Namespace default has no saved launch profile. Enter ports or press Return for suggestions.",
+        "Namespace default has no saved launch profile. Saving suggested default ports.",
         {
             "namespace": "default",
             "port": 8000,

@@ -433,7 +433,7 @@ class CommandPaletteController {
         const showTabUi = this._getBoolean('pref.show_tab_ui', false);
         document.body.classList.toggle('pref-show-tab-ui', showTabUi);
 
-        const showRhsPanel = this._getBoolean('pref.show_rhs_panel', true);
+        const showRhsPanel = this._getBoolean('pref.show_rhs_panel', false);
         document.body.classList.toggle('pref-show-rhs-panel', showRhsPanel);
 
         const showPerfOverlay = this._getBoolean('pref.show_perf_overlay', false);

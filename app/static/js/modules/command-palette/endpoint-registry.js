@@ -54,7 +54,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showBacklinks: true,
         showNoteTags: false,
         showTabUi: false,
-        showRhsPanel: true,
+        showRhsPanel: false,
         showPerfOverlay: false,
         theme: 'system',
     };
