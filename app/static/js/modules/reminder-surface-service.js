@@ -935,7 +935,11 @@ class ReminderSurfaceService {
         }
         const didChange = this._isExpanded !== isExpanded;
         this._isExpanded = isExpanded;
-        this._syncExpandedState();
+        if (didChange) {
+            this._animateExpandedStateChange(isExpanded);
+        } else {
+            this._syncExpandedState();
+        }
         this._syncToggleControl();
         if (didChange) {
             await this._persistExpandedPreference();
@@ -948,6 +952,46 @@ class ReminderSurfaceService {
             return;
         }
         container.classList.toggle('is-collapsed', this._isExpanded === false);
+        const items = Array.from(container.querySelectorAll('.reminder-surface-item'));
+        for (const item of items) {
+            if (!(item instanceof HTMLElement)) {
+                throw new Error('Reminder surface query returned non-element');
+            }
+            if (this._isExpanded) {
+                item.classList.remove('is-stack-collapsed');
+                item.removeAttribute('aria-hidden');
+                item.style.height = '';
+            } else {
+                item.classList.add('is-stack-collapsed');
+                item.setAttribute('aria-hidden', 'true');
+                item.style.height = '0px';
+            }
+        }
+    }
+
+    _animateExpandedStateChange(isExpanded) {
+        if (typeof isExpanded !== 'boolean') {
+            throw new Error('_animateExpandedStateChange requires boolean');
+        }
+        const container = document.getElementById('reminder-surface');
+        if (!(container instanceof HTMLElement)) {
+            return;
+        }
+        container.classList.toggle('is-collapsed', isExpanded === false);
+        const items = Array.from(container.querySelectorAll('.reminder-surface-item'));
+        for (const item of items) {
+            if (!(item instanceof HTMLElement)) {
+                throw new Error('Reminder surface query returned non-element');
+            }
+            if (item.classList.contains('is-exiting')) {
+                continue;
+            }
+            if (isExpanded) {
+                this._animateSurfaceItemStackExpand(item);
+            } else {
+                this._animateSurfaceItemStackCollapse(item);
+            }
+        }
     }
 
     _syncToggleControl() {
@@ -1170,6 +1214,72 @@ class ReminderSurfaceService {
             item.style.height = `${targetHeight}px`;
         });
         window.setTimeout(finishEnter, 240);
+    }
+
+    _animateSurfaceItemStackCollapse(item) {
+        if (!(item instanceof HTMLElement)) {
+            throw new Error('_animateSurfaceItemStackCollapse requires HTMLElement');
+        }
+        if (item.classList.contains('is-stack-collapsed')) {
+            return;
+        }
+        const currentHeight = item.getBoundingClientRect().height;
+        item.style.height = `${currentHeight}px`;
+        item.getBoundingClientRect();
+        window.requestAnimationFrame(() => {
+            item.classList.add('is-stack-collapsed');
+            item.setAttribute('aria-hidden', 'true');
+            item.style.height = '0px';
+        });
+    }
+
+    _animateSurfaceItemStackExpand(item) {
+        if (!(item instanceof HTMLElement)) {
+            throw new Error('_animateSurfaceItemStackExpand requires HTMLElement');
+        }
+        if (!item.classList.contains('is-stack-collapsed')) {
+            return;
+        }
+        const targetHeight = this._measureExpandedSurfaceItemHeight(item);
+        item.style.height = '0px';
+        item.getBoundingClientRect();
+        let didFinish = false;
+        const finishExpand = () => {
+            if (didFinish) {
+                return;
+            }
+            didFinish = true;
+            item.style.height = '';
+        };
+        item.addEventListener('transitionend', (event) => {
+            if (event.propertyName !== 'height') {
+                return;
+            }
+            finishExpand();
+        }, { once: true });
+        window.requestAnimationFrame(() => {
+            item.classList.remove('is-stack-collapsed');
+            item.removeAttribute('aria-hidden');
+            item.style.height = `${targetHeight}px`;
+        });
+        window.setTimeout(finishExpand, 240);
+    }
+
+    _measureExpandedSurfaceItemHeight(item) {
+        if (!(item instanceof HTMLElement)) {
+            throw new Error('_measureExpandedSurfaceItemHeight requires HTMLElement');
+        }
+        const previousHeight = item.style.height;
+        const previousTransition = item.style.transition;
+        item.style.transition = 'none';
+        item.classList.remove('is-stack-collapsed');
+        item.style.height = '';
+        const targetHeight = item.getBoundingClientRect().height;
+        item.classList.add('is-stack-collapsed');
+        item.style.height = previousHeight;
+        item.getBoundingClientRect();
+        item.style.transition = previousTransition;
+        return targetHeight;
     }
 
     _clearElapsedTimerForItem(item) {

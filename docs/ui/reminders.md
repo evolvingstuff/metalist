@@ -110,6 +110,7 @@ The popup surface is intentionally compact:
 - The arrow collapses or expands the stack; no arrow appears when nothing is waiting for `Got it`.
 - The expanded/collapsed state is stored as the namespace-scoped `pref.reminder_surface_expanded` client preference in the main database, not in browser storage.
 - Existing waiting popups use that stored state after browser refresh; a newly surfaced reminder automatically expands the stack and persists the expanded state.
+- Popup items animate when they appear, disappear, and when the user manually expands/collapses the stack.
 - Popup and `Got it` sounds are stored on each reminder. Sounds only play inside the visible authenticated app; browser autoplay policy can still block playback until the user has interacted with the page.
 
 The surface reconciles rendered popups against each fresh server snapshot. If a reminder is deleted, paused, advanced, acknowledged, or otherwise no longer due, the stale popup is removed. If the same occurrence remains due but title/details changed, the popup content is re-rendered from the fresh snapshot. Pre-reminders use separate occurrence keys from actual reminders so acknowledging a pre-reminder cannot accidentally resolve the event itself.
