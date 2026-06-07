@@ -750,6 +750,8 @@ class ReminderStore:
         raw["created_at"] = _serialize_dt(now)
         raw["updated_at"] = _serialize_dt(now)
         reminder = normalize_reminder_payload(raw, now=now, recompute_next=True)
+        if reminder["status"] == REMINDER_STATUS_DONE:
+            raise ValueError("done reminders are deleted, not stored")
         with self._lock:
             self._try_decrypt_locked(token=token, require_success=True)
             reminder_id = reminder["id"]
@@ -777,6 +779,8 @@ class ReminderStore:
             raw["created_at"] = existing["created_at"]
             raw["updated_at"] = _serialize_dt(_utc_now())
             reminder = normalize_reminder_payload(raw, now=_utc_now(), recompute_next=True)
+            if reminder["status"] == REMINDER_STATUS_DONE:
+                raise ValueError("done reminders are deleted, not stored")
             self._reminders[reminder_id] = deepcopy(reminder)
             self._persist_locked(reminder=reminder, token=token, connection=None, encryption_service=None, force_plaintext=False)
             return deepcopy(reminder)
@@ -870,6 +874,12 @@ class ReminderStore:
                     emitted.append(event)
                 if reminder != before:
                     reminder["updated_at"] = _serialize_dt(now)
+                    changed.append(deepcopy(reminder))
+                    if reminder["status"] == REMINDER_STATUS_DONE:
+                        del self._reminders[reminder_id]
+                        with begin_writer() as connection:
+                            delete_reminder_row(connection, reminder_id=reminder_id)
+                        continue
                     self._persist_locked(
                         reminder=reminder,
                         token=token,
@@ -877,7 +887,6 @@ class ReminderStore:
                         encryption_service=None,
                         force_plaintext=False,
                     )
-                    changed.append(deepcopy(reminder))
         return {"events": emitted, "changed": changed}
 
     def rewrite_persisted_reminders(
@@ -946,6 +955,12 @@ class ReminderStore:
             else:
                 raise RuntimeError(f"Unsupported reminder action: {action}")
             reminder["updated_at"] = _serialize_dt(now)
+            if reminder["status"] == REMINDER_STATUS_DONE:
+                completed_reminder = deepcopy(reminder)
+                del self._reminders[reminder_id]
+                with begin_writer() as connection:
+                    delete_reminder_row(connection, reminder_id=reminder_id)
+                return completed_reminder
             self._persist_locked(reminder=reminder, token=token, connection=None, encryption_service=None, force_plaintext=False)
             return deepcopy(reminder)
 
@@ -982,6 +997,12 @@ class ReminderStore:
                     activity_kind=activity_kind,
                 )
             reminder["updated_at"] = _serialize_dt(now)
+            if reminder["status"] == REMINDER_STATUS_DONE:
+                completed_reminder = deepcopy(reminder)
+                del self._reminders[reminder_id]
+                with begin_writer() as connection:
+                    delete_reminder_row(connection, reminder_id=reminder_id)
+                return completed_reminder
             self._persist_locked(reminder=reminder, token=token, connection=None, encryption_service=None, force_plaintext=False)
             return deepcopy(reminder)
 

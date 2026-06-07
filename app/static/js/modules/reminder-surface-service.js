@@ -1,6 +1,7 @@
 import { ReminderStore } from './reminder-store.js';
 
 const NON_IDLE_THROTTLE_MS = 30_000;
+const ELAPSED_UPDATE_MS = 1_000;
 
 function reminderDisplayTitle(reminder) {
     if (!reminder || typeof reminder !== 'object') {
@@ -12,6 +13,49 @@ function reminderDisplayTitle(reminder) {
     return 'Reminder';
 }
 
+function formatElapsedSince(value, now) {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error('formatElapsedSince requires value');
+    }
+    if (!(now instanceof Date)) {
+        throw new Error('formatElapsedSince requires Date');
+    }
+    const dueAt = new Date(value);
+    if (Number.isNaN(dueAt.getTime())) {
+        throw new Error('formatElapsedSince requires valid datetime');
+    }
+    const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - dueAt.getTime()) / 1000));
+    if (elapsedSeconds < 1) {
+        return 'Due now';
+    }
+    if (elapsedSeconds < 60) {
+        return `Due ${elapsedSeconds} sec ago`;
+    }
+    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+    const remainingSeconds = elapsedSeconds % 60;
+    if (elapsedMinutes < 60) {
+        return `Due ${elapsedMinutes} min ${remainingSeconds} sec ago`;
+    }
+    const elapsedHours = Math.floor(elapsedMinutes / 60);
+    const remainingMinutes = elapsedMinutes % 60;
+    if (elapsedHours < 24) {
+        return `Due ${elapsedHours} hr ${remainingMinutes} min ago`;
+    }
+    const elapsedDays = Math.floor(elapsedHours / 24);
+    const remainingHours = elapsedHours % 24;
+    return `Due ${elapsedDays} day ${remainingHours} hr ago`;
+}
+
+function dateOnlySurfaceLabel(eventKind) {
+    if (eventKind === 'missed') {
+        return 'Overdue';
+    }
+    if (eventKind === 'due') {
+        return 'Due today';
+    }
+    throw new Error(`Unsupported reminder event kind: ${eventKind}`);
+}
+
 class ReminderSurfaceService {
     constructor() {
         this._started = false;
@@ -20,6 +64,7 @@ class ReminderSurfaceService {
         this._pendingEvaluationActivityKind = null;
         this._unsubscribeStore = null;
         this._shownOccurrenceKeys = new Set();
+        this._elapsedTimers = new Map();
         this._lastNonIdleAt = 0;
         this._handleInteraction = this._handleInteraction.bind(this);
         this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
@@ -55,6 +100,7 @@ class ReminderSurfaceService {
             this._unsubscribeStore = null;
         }
         this._clearLocalDueTimer();
+        this._clearElapsedTimers();
         this._shownOccurrenceKeys.clear();
     }
 
@@ -234,6 +280,7 @@ class ReminderSurfaceService {
         return {
             kind: isMissed ? 'missed' : 'due',
             reminder,
+            occurrenceValue,
         };
     }
 
@@ -329,16 +376,18 @@ class ReminderSurfaceService {
         const item = document.createElement('div');
         item.className = 'reminder-surface-item';
         item.dataset.reminderId = reminder.id;
+        const surfaceText = this._surfaceEventText(event);
         item.innerHTML = `
             <div class="reminder-surface-text">
                 <strong>${this._escape(reminderDisplayTitle(reminder))}</strong>
-                <span>${this._escape(event.kind === 'missed' ? 'Missed reminder' : 'Reminder due')}</span>
+                <span data-reminder-surface-text>${this._escape(surfaceText)}</span>
             </div>
             <div class="reminder-surface-actions">
                 <button type="button" data-reminder-surface-action="acknowledge" title="Clear this due or missed notice">Got it</button>
             </div>
         `;
         container.appendChild(item);
+        this._startElapsedTimerIfNeeded(item, event);
     }
 
     async _handleSurfaceClick(event) {
@@ -363,7 +412,70 @@ class ReminderSurfaceService {
             throw new Error('Reminder surface action missing');
         }
         await ReminderStore.action(reminderId, actionName);
+        this._removeSurfaceItem(item);
+    }
+
+    _surfaceEventText(event) {
+        if (!event || typeof event !== 'object') {
+            throw new Error('Reminder surface text requires event');
+        }
+        const reminder = event.reminder;
+        if (!reminder || typeof reminder !== 'object') {
+            throw new Error('Reminder surface text requires reminder');
+        }
+        if (reminder.time_mode === 'date_time') {
+            if (typeof event.occurrenceValue !== 'string' || event.occurrenceValue.length === 0) {
+                throw new Error('date-time reminder event requires occurrenceValue');
+            }
+            return formatElapsedSince(event.occurrenceValue, new Date());
+        }
+        return dateOnlySurfaceLabel(event.kind);
+    }
+
+    _startElapsedTimerIfNeeded(item, event) {
+        if (!(item instanceof HTMLElement)) {
+            throw new Error('_startElapsedTimerIfNeeded requires HTMLElement');
+        }
+        if (!event || typeof event !== 'object') {
+            throw new Error('_startElapsedTimerIfNeeded requires event');
+        }
+        const reminder = event.reminder;
+        if (!reminder || typeof reminder !== 'object') {
+            throw new Error('_startElapsedTimerIfNeeded requires reminder');
+        }
+        if (reminder.time_mode !== 'date_time') {
+            return;
+        }
+        if (typeof event.occurrenceValue !== 'string' || event.occurrenceValue.length === 0) {
+            throw new Error('date-time reminder event requires occurrenceValue');
+        }
+        const textElement = item.querySelector('[data-reminder-surface-text]');
+        if (!(textElement instanceof HTMLElement)) {
+            throw new Error('reminder surface text element missing');
+        }
+        const timerId = window.setInterval(() => {
+            textElement.textContent = formatElapsedSince(event.occurrenceValue, new Date());
+        }, ELAPSED_UPDATE_MS);
+        this._elapsedTimers.set(item, timerId);
+    }
+
+    _removeSurfaceItem(item) {
+        if (!(item instanceof HTMLElement)) {
+            throw new Error('_removeSurfaceItem requires HTMLElement');
+        }
+        const timerId = this._elapsedTimers.get(item);
+        if (timerId !== undefined) {
+            window.clearInterval(timerId);
+            this._elapsedTimers.delete(item);
+        }
         item.remove();
+    }
+
+    _clearElapsedTimers() {
+        for (const timerId of this._elapsedTimers.values()) {
+            window.clearInterval(timerId);
+        }
+        this._elapsedTimers.clear();
     }
 
     _escape(value) {

@@ -5307,6 +5307,18 @@ html[data-theme="dark"] body.loading::after {
     border-color: #b37b00;
 }
 
+.reminder-row-paused {
+    border-color: #d5d5d5;
+    filter: grayscale(1);
+    opacity: 0.62;
+}
+
+.reminder-row-paused .reminder-row-main strong,
+.reminder-row-paused .reminder-row-main span,
+.reminder-row-paused .reminder-row-main small {
+    color: #777777;
+}
+
 .reminder-row-main {
     min-width: 0;
     display: flex;

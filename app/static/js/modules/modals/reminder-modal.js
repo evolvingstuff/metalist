@@ -74,6 +74,25 @@ function toInputTime(value) {
     return value.slice(0, 5);
 }
 
+function displayTime(value) {
+    const inputTime = toInputTime(value);
+    const pieces = inputTime.split(':');
+    if (pieces.length !== 2) {
+        throw new Error('displayTime requires HH:mm time');
+    }
+    const hour = Number.parseInt(pieces[0], 10);
+    const minute = Number.parseInt(pieces[1], 10);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+        throw new Error('displayTime requires numeric time');
+    }
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        throw new Error('displayTime time out of range');
+    }
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    return `${displayHour}:${String(minute).padStart(2, '0')} ${period}`;
+}
+
 function parseLocalDateInput(value) {
     if (typeof value !== 'string' || value.length !== 10) {
         throw new Error('parseLocalDateInput requires YYYY-MM-DD');
@@ -145,9 +164,9 @@ function reminderScheduleLabel(reminder) {
         return `${reminder.scheduled_date} · first app use that day`;
     }
     if (reminder.schedule_kind === 'recurring') {
-        return `${recurrenceLabel(reminder.recurrence_rule)} at ${toInputTime(reminder.scheduled_at)}`;
+        return `${recurrenceLabel(reminder.recurrence_rule)} at ${displayTime(reminder.scheduled_at)}`;
     }
-    return `${toInputDate(reminder.scheduled_at)} ${toInputTime(reminder.scheduled_at)}`;
+    return `${toInputDate(reminder.scheduled_at)} ${displayTime(reminder.scheduled_at)}`;
 }
 
 function reminderDisplayTitle(reminder) {
@@ -175,7 +194,7 @@ function reminderDueValueLabel(reminder, value) {
         return recurringDateOnlyOccurrenceLabel(reminder, value);
     }
     if (value.includes('T')) {
-        return `${toInputDate(value)} ${toInputTime(value)} (${relativeDateTimeLabel(value)})`;
+        return `${toInputDate(value)} ${displayTime(value)} (${relativeDateTimeLabel(value)})`;
     }
     return `${value} (${relativeDayLabel(value)})`;
 }
@@ -441,7 +460,7 @@ function buildPayloadFromForm(form) {
         scheduled_date: timeMode === 'date_only' ? form.date : null,
         recurrence_rule: null,
         persistence_mode: form.persistence_mode,
-        status: form.status,
+        status: scheduleKind === 'recurring' ? form.status : 'active',
     };
     if (scheduleKind === 'recurring') {
         payload.recurrence_rule = {
@@ -569,6 +588,32 @@ function recurrenceIntervalUnit(form) {
     throw new Error(`Unsupported recurrence frequency: ${form.frequency}`);
 }
 
+function reminderMatchesScheduleFilter(reminder, scheduleFilter) {
+    if (!reminder || typeof reminder !== 'object') {
+        throw new Error('reminderMatchesScheduleFilter requires reminder');
+    }
+    if (typeof scheduleFilter !== 'string' || scheduleFilter.length === 0) {
+        throw new Error('reminderMatchesScheduleFilter requires scheduleFilter');
+    }
+    if (scheduleFilter === 'all_schedules') {
+        return true;
+    }
+    if (scheduleFilter === 'one_time') {
+        return reminder.schedule_kind === 'one_time';
+    }
+    if (!['daily', 'weekly', 'monthly', 'yearly'].includes(scheduleFilter)) {
+        throw new Error(`Unsupported schedule filter: ${scheduleFilter}`);
+    }
+    if (reminder.schedule_kind !== 'recurring') {
+        return false;
+    }
+    const rule = reminder.recurrence_rule;
+    if (!rule || typeof rule !== 'object') {
+        throw new Error('recurring reminder requires recurrence_rule');
+    }
+    return rule.frequency === scheduleFilter;
+}
+
 export class ReminderModal extends BaseModal {
     constructor() {
         super('reminderModal', 'reminder-modal');
@@ -576,7 +621,7 @@ export class ReminderModal extends BaseModal {
             loading: false,
             error: '',
             query: '',
-            statusFilter: 'live',
+            scheduleFilter: 'all_schedules',
             reminders: [],
             missed: [],
             form: defaultFormState(),
@@ -591,7 +636,7 @@ export class ReminderModal extends BaseModal {
     getInitialModalState() {
         return {
             query: '',
-            statusFilter: 'live',
+            scheduleFilter: 'all_schedules',
             editingId: '',
         };
     }
@@ -613,7 +658,7 @@ export class ReminderModal extends BaseModal {
             loading: true,
             error: '',
             query: '',
-            statusFilter: 'live',
+            scheduleFilter: 'all_schedules',
             reminders: [],
             missed: [],
             form: defaultFormState(),
@@ -676,13 +721,8 @@ export class ReminderModal extends BaseModal {
     _filteredReminders() {
         const query = this._state.query.trim().toLowerCase();
         return this._state.reminders.filter((reminder) => {
-            if (this._state.statusFilter === 'live' && reminder.status === 'done') {
+            if (!reminderMatchesScheduleFilter(reminder, this._state.scheduleFilter)) {
                 return false;
-            }
-            if (this._state.statusFilter !== 'all' && this._state.statusFilter !== 'live') {
-                if (reminder.status !== this._state.statusFilter) {
-                    return false;
-                }
             }
             if (query.length === 0) {
                 return true;
@@ -707,12 +747,13 @@ export class ReminderModal extends BaseModal {
                     <section class="reminder-registry-pane">
                         <div class="reminder-toolbar">
                             <input id="reminder-search" type="search" placeholder="Search reminders" value="${escapeHtml(this._state.query)}">
-                            <select id="reminder-status-filter">
-                                ${this._option('live', 'Live', this._state.statusFilter)}
-                                ${this._option('active', 'Active', this._state.statusFilter)}
-                                ${this._option('paused', 'Paused', this._state.statusFilter)}
-                                ${this._option('done', 'Done', this._state.statusFilter)}
-                                ${this._option('all', 'All', this._state.statusFilter)}
+                            <select id="reminder-schedule-filter">
+                                ${this._option('all_schedules', 'All schedules', this._state.scheduleFilter)}
+                                ${this._option('one_time', 'One Time', this._state.scheduleFilter)}
+                                ${this._option('daily', 'Daily', this._state.scheduleFilter)}
+                                ${this._option('weekly', 'Weekly', this._state.scheduleFilter)}
+                                ${this._option('monthly', 'Monthly', this._state.scheduleFilter)}
+                                ${this._option('yearly', 'Yearly', this._state.scheduleFilter)}
                             </select>
                         </div>
                         ${this._state.missed.length > 0 ? this._renderMissed() : ''}
@@ -757,12 +798,11 @@ export class ReminderModal extends BaseModal {
                                     ${this._option('drop_if_missed', 'Forget if missed', form.persistence_mode)}
                                 </select>
                             </label>
-                            <label class="reminder-field">
+                            <label class="reminder-field ${form.schedule_kind === 'recurring' ? '' : 'reminder-hidden'}">
                                 <span class="reminder-field-label">Status</span>
                                 <select id="reminder-status">
                                     ${this._option('active', 'Active', form.status)}
                                     ${this._option('paused', 'Paused', form.status)}
-                                    ${this._option('done', 'Done', form.status)}
                                 </select>
                             </label>
                         </div>
@@ -861,7 +901,7 @@ export class ReminderModal extends BaseModal {
             ? 'reminder-row-overdue'
             : (nextLabel.startsWith('Due:') ? 'reminder-row-due' : 'reminder-row-next');
         return `
-            <article class="reminder-row ${isMissed ? 'reminder-row-missed' : ''}" data-reminder-id="${escapeHtml(reminder.id)}">
+            <article class="reminder-row ${isMissed ? 'reminder-row-missed' : ''} ${reminder.status === 'paused' ? 'reminder-row-paused' : ''}" data-reminder-id="${escapeHtml(reminder.id)}">
                 <div class="reminder-row-main">
                     <strong>${escapeHtml(reminderDisplayTitle(reminder))}</strong>
                     <span>${escapeHtml(reminderScheduleLabel(reminder))}${attachment}</span>
@@ -872,8 +912,7 @@ export class ReminderModal extends BaseModal {
                 <div class="reminder-row-actions">
                     ${isMissed ? '<button type="button" data-reminder-action="acknowledge" title="Clear this due or missed notice">Got it</button>' : ''}
                     <button type="button" data-reminder-edit>Edit</button>
-                    <button type="button" data-reminder-action="${reminder.status === 'paused' ? 'resume' : 'pause'}">${reminder.status === 'paused' ? 'Resume' : 'Pause'}</button>
-                    ${isRecurring ? '' : '<button type="button" data-reminder-action="done" title="Mark this reminder complete">Mark done</button>'}
+                    ${isRecurring ? `<button type="button" data-reminder-action="${reminder.status === 'paused' ? 'resume' : 'pause'}">${reminder.status === 'paused' ? 'Resume' : 'Pause'}</button>` : ''}
                     <button type="button" data-reminder-delete>Delete</button>
                 </div>
             </article>
@@ -895,8 +934,8 @@ export class ReminderModal extends BaseModal {
             this._render();
             return;
         }
-        if (target.id === 'reminder-status-filter') {
-            this._state.statusFilter = target.value;
+        if (target.id === 'reminder-schedule-filter') {
+            this._state.scheduleFilter = target.value;
             this._render();
             return;
         }

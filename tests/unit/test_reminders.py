@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 
+from app.db.schema import initialize_schema
+from app.db.session import begin_writer
+from app.models.database import SafeSession
 from app.services.reminders import (
     PERSISTENCE_DROP_IF_MISSED,
     PERSISTENCE_KEEP_UNTIL_SEEN,
     REMINDER_STATUS_ACTIVE,
     REMINDER_STATUS_DONE,
+    ReminderStore,
     SCHEDULE_ONE_TIME,
     SCHEDULE_RECURRING,
     TIME_MODE_DATE_ONLY,
@@ -23,6 +28,94 @@ def _now(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
     assert parsed.tzinfo is not None
     return parsed
+
+
+def _prepare_memory_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(SafeSession, "_db_path", tmp_path / "notes.db")
+    SafeSession.use_memory_db()
+    with begin_writer() as connection:
+        initialize_schema(connection)
+
+
+def test_acknowledged_one_time_reminder_is_deleted_from_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_memory_db(tmp_path, monkeypatch)
+    store = ReminderStore()
+    try:
+        store.clear_persisted_state_for_tests()
+        reminder = store.create_reminder(
+            payload={
+                "note_id": None,
+                "title": "One time",
+                "attachment_type": "unattached",
+                "schedule_kind": SCHEDULE_ONE_TIME,
+                "time_mode": TIME_MODE_DATE_ONLY,
+                "scheduled_at": None,
+                "scheduled_date": "2026-06-08",
+                "recurrence_rule": None,
+                "persistence_mode": PERSISTENCE_KEEP_UNTIL_SEEN,
+                "status": REMINDER_STATUS_ACTIVE,
+            },
+            token="",
+        )
+        reminder_id = reminder["id"]
+        assert isinstance(reminder_id, str)
+        assert len(store.list_reminders()) == 1
+
+        completed = store.acknowledge_reminder(
+            reminder_id=reminder_id,
+            token="",
+            now=_now("2026-06-08T10:00:00+00:00"),
+            local_date=date(2026, 6, 8),
+            activity_kind="non_idle_use",
+        )
+        assert completed["status"] == REMINDER_STATUS_DONE
+        assert store.list_reminders() == []
+    finally:
+        store.clear_persisted_state_for_tests()
+        SafeSession.use_file_db()
+
+
+def test_drop_if_missed_one_time_reminder_is_deleted_from_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_memory_db(tmp_path, monkeypatch)
+    store = ReminderStore()
+    try:
+        store.clear_persisted_state_for_tests()
+        store.create_reminder(
+            payload={
+                "note_id": None,
+                "title": "Forget me",
+                "attachment_type": "unattached",
+                "schedule_kind": SCHEDULE_ONE_TIME,
+                "time_mode": TIME_MODE_DATE_ONLY,
+                "scheduled_at": None,
+                "scheduled_date": "2026-06-08",
+                "recurrence_rule": None,
+                "persistence_mode": PERSISTENCE_DROP_IF_MISSED,
+                "status": REMINDER_STATUS_ACTIVE,
+            },
+            token="",
+        )
+        assert len(store.list_reminders()) == 1
+
+        result = store.evaluate_due(
+            now=_now("2026-06-09T10:00:00+00:00"),
+            local_date=date(2026, 6, 9),
+            activity_kind="non_idle_use",
+            token="",
+        )
+        assert result["events"] == []
+        assert len(result["changed"]) == 1
+        assert result["changed"][0]["status"] == REMINDER_STATUS_DONE
+        assert store.list_reminders() == []
+    finally:
+        store.clear_persisted_state_for_tests()
+        SafeSession.use_file_db()
 
 
 def test_date_only_reminder_fires_on_non_idle_use_only() -> None:
