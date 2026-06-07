@@ -1,4 +1,5 @@
 import { ReminderStore } from './reminder-store.js';
+import { loadClientState, persistClientPreferences } from './client-state-api.js';
 
 const NON_IDLE_THROTTLE_MS = 30_000;
 const ELAPSED_UPDATE_MS = 1_000;
@@ -6,6 +7,7 @@ const REMINDER_RENDER_ICON = '🔔';
 const OCCURRENCE_KIND_MAIN = 'main';
 const OCCURRENCE_KIND_PRE = 'pre';
 const REMINDER_SURFACE_TOGGLE_SELECTOR = '[data-reminder-surface-toggle]';
+const REMINDER_SURFACE_EXPANDED_PREF = 'pref.reminder_surface_expanded';
 
 function reminderDisplayTitle(reminder) {
     if (!reminder || typeof reminder !== 'object') {
@@ -220,6 +222,7 @@ class ReminderSurfaceService {
         this._elapsedTimers = new Map();
         this._lastNonIdleAt = 0;
         this._isExpanded = true;
+        this._hasCompletedInitialEvaluation = true;
         this._handleInteraction = this._handleInteraction.bind(this);
         this._handleVisibilityChange = this._handleVisibilityChange.bind(this);
         this._handleModalClosed = this._handleModalClosed.bind(this);
@@ -231,6 +234,8 @@ class ReminderSurfaceService {
             return;
         }
         this._started = true;
+        await this._loadExpandedPreference();
+        this._hasCompletedInitialEvaluation = false;
         this._ensureContainer();
         document.addEventListener('pointerdown', this._handleInteraction, true);
         document.addEventListener('keydown', this._handleInteraction, true);
@@ -238,6 +243,7 @@ class ReminderSurfaceService {
         document.addEventListener('metalist:modal-closed', this._handleModalClosed);
         this._unsubscribeStore = ReminderStore.subscribe(this._handleStoreSnapshot);
         await this._refreshAndEvaluate('non_idle_use');
+        this._hasCompletedInitialEvaluation = true;
     }
 
     stop() {
@@ -257,6 +263,7 @@ class ReminderSurfaceService {
         this._clearElapsedTimers();
         this._shownOccurrenceKeys.clear();
         this._isExpanded = true;
+        this._hasCompletedInitialEvaluation = true;
         this._syncExpandedState();
     }
 
@@ -706,7 +713,11 @@ class ReminderSurfaceService {
         } else {
             container.appendChild(item);
         }
-        this._setExpanded(true);
+        if (this._hasCompletedInitialEvaluation) {
+            void this._setExpanded(true);
+        } else {
+            this._syncExpandedState();
+        }
         this._syncToggleControl();
     }
 
@@ -845,7 +856,7 @@ class ReminderSurfaceService {
         }
         const toggleButton = target.closest(REMINDER_SURFACE_TOGGLE_SELECTOR);
         if (toggleButton instanceof HTMLElement) {
-            this._setExpanded(!this._isExpanded);
+            await this._setExpanded(!this._isExpanded);
             return;
         }
         const item = target.closest('.reminder-surface-item');
@@ -877,13 +888,17 @@ class ReminderSurfaceService {
         this._removeSurfaceItem(item);
     }
 
-    _setExpanded(isExpanded) {
+    async _setExpanded(isExpanded) {
         if (typeof isExpanded !== 'boolean') {
             throw new Error('_setExpanded requires boolean');
         }
+        const didChange = this._isExpanded !== isExpanded;
         this._isExpanded = isExpanded;
         this._syncExpandedState();
         this._syncToggleControl();
+        if (didChange) {
+            await this._persistExpandedPreference();
+        }
     }
 
     _syncExpandedState() {
@@ -902,7 +917,6 @@ class ReminderSurfaceService {
             if (toggle instanceof HTMLElement) {
                 toggle.remove();
             }
-            this._setExpandedWithoutControl(true);
             return;
         }
         if (!(toggle instanceof HTMLElement)) {
@@ -918,12 +932,44 @@ class ReminderSurfaceService {
         }
     }
 
-    _setExpandedWithoutControl(isExpanded) {
-        if (typeof isExpanded !== 'boolean') {
-            throw new Error('_setExpandedWithoutControl requires boolean');
+    async _loadExpandedPreference() {
+        const clientState = await loadClientState();
+        if (!clientState || typeof clientState !== 'object') {
+            throw new Error('Reminder surface client state missing');
         }
-        this._isExpanded = isExpanded;
-        this._syncExpandedState();
+        const preferences = clientState.preferences;
+        if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
+            throw new Error('Reminder surface client preferences missing');
+        }
+        if (!Object.prototype.hasOwnProperty.call(preferences, REMINDER_SURFACE_EXPANDED_PREF)) {
+            this._isExpanded = true;
+            return;
+        }
+        const raw = preferences[REMINDER_SURFACE_EXPANDED_PREF];
+        if (raw === 'true') {
+            this._isExpanded = true;
+            return;
+        }
+        if (raw === 'false') {
+            this._isExpanded = false;
+            return;
+        }
+        throw new Error(`Invalid stored boolean for ${REMINDER_SURFACE_EXPANDED_PREF}`);
+    }
+
+    async _persistExpandedPreference() {
+        const clientState = await loadClientState();
+        if (!clientState || typeof clientState !== 'object') {
+            throw new Error('Reminder surface client state missing');
+        }
+        const preferences = clientState.preferences;
+        if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
+            throw new Error('Reminder surface client preferences missing');
+        }
+        await persistClientPreferences({
+            ...preferences,
+            [REMINDER_SURFACE_EXPANDED_PREF]: this._isExpanded ? 'true' : 'false',
+        });
     }
 
     _surfaceItemCount(container) {

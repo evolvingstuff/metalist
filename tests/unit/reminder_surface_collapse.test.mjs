@@ -171,17 +171,27 @@ class FakeElement {
     }
 }
 
-function installReminderSurfaceDom(t) {
+function installReminderSurfaceDom(t, options = {}) {
+    if (!options || typeof options !== 'object') {
+        throw new Error('installReminderSurfaceDom options must be object');
+    }
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;
     const originalHTMLElement = globalThis.HTMLElement;
     const originalSessionStorage = globalThis.sessionStorage;
+    const originalFetch = globalThis.fetch;
     const elementsById = new Map();
     const body = new FakeElement('body');
+    const preferences = { ...(options.preferences ?? {}) };
+    const reminders = Array.isArray(options.reminders) ? options.reminders : [];
+    const preferenceWrites = [];
 
     globalThis.HTMLElement = FakeElement;
     globalThis.sessionStorage = {
-        getItem() {
+        getItem(key) {
+            if (key === 'metalist_tab_id') {
+                return 'test-tab';
+            }
             return null;
         },
         setItem() {},
@@ -207,6 +217,30 @@ function installReminderSurfaceDom(t) {
         },
         addEventListener() {},
         removeEventListener() {},
+    };
+    globalThis.fetch = async (url, requestOptions = {}) => {
+        if (url === '/api2/auth/client-state') {
+            return Response.json({
+                preferences,
+                command_palette_usage: {},
+            });
+        }
+        if (url === '/api2/auth/client-state/preferences') {
+            const bodyPayload = JSON.parse(requestOptions.body);
+            Object.keys(preferences).forEach((key) => {
+                delete preferences[key];
+            });
+            Object.assign(preferences, bodyPayload.preferences);
+            preferenceWrites.push({ ...preferences });
+            return Response.json({ preferences });
+        }
+        if (url === '/api2/reminders') {
+            return Response.json({
+                reminders,
+                missed: [],
+            });
+        }
+        throw new Error(`Unexpected fetch URL: ${url}`);
     };
     body.appendChild = (child) => {
         FakeElement.prototype.appendChild.call(body, child);
@@ -237,9 +271,14 @@ function installReminderSurfaceDom(t) {
         } else {
             globalThis.sessionStorage = originalSessionStorage;
         }
+        if (typeof originalFetch === 'undefined') {
+            delete globalThis.fetch;
+        } else {
+            globalThis.fetch = originalFetch;
+        }
     });
 
-    return { body };
+    return { body, preferences, preferenceWrites };
 }
 
 function reminderEvent(id) {
@@ -257,8 +296,20 @@ function reminderEvent(id) {
     };
 }
 
+function reminderMirrorEntry(id) {
+    return {
+        id,
+        title: `Reminder ${id}`,
+        details: '',
+        status: 'active',
+        time_mode: 'date_only',
+        next_fire_date: '2000-01-01',
+        pre_reminder: null,
+    };
+}
+
 test('reminder surface toggle collapses and new reminders auto-expand the stack', async (t) => {
-    installReminderSurfaceDom(t);
+    const { preferences, preferenceWrites } = installReminderSurfaceDom(t);
     const { ReminderSurface } = await import('../../app/static/js/modules/reminder-surface-service.js');
 
     ReminderSurface._renderEvent(reminderEvent('r1'));
@@ -272,19 +323,25 @@ test('reminder surface toggle collapses and new reminders auto-expand the stack'
     assert.equal(toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(container.classList.contains('is-collapsed'), false);
 
-    ReminderSurface._setExpanded(false);
+    await ReminderSurface._setExpanded(false);
 
     assert.equal(container.classList.contains('is-collapsed'), true);
     assert.equal(toggle.getAttribute('aria-expanded'), 'false');
     assert.match(toggle.innerHTML, /↓/);
+    assert.equal(preferences['pref.reminder_surface_expanded'], 'false');
 
     ReminderSurface._renderEvent(reminderEvent('r2'));
+    await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
 
     toggle = container.querySelector('[data-reminder-surface-toggle]');
     assert.equal(container.querySelectorAll('.reminder-surface-item').length, 2);
     assert.equal(container.classList.contains('is-collapsed'), false);
     assert.equal(toggle.getAttribute('aria-expanded'), 'true');
     assert.match(toggle.innerHTML, /↑/);
+    assert.equal(preferences['pref.reminder_surface_expanded'], 'true');
+    assert.equal(preferenceWrites.length, 2);
 });
 
 test('reminder surface toggle disappears when no reminders await acknowledgement', async (t) => {
@@ -302,4 +359,24 @@ test('reminder surface toggle disappears when no reminders await acknowledgement
 
     assert.equal(container.querySelector('[data-reminder-surface-toggle]'), null);
     assert.equal(container.classList.contains('is-collapsed'), false);
+});
+
+test('reminder surface loads collapsed preference from database-backed client state', async (t) => {
+    installReminderSurfaceDom(t, {
+        preferences: {
+            'pref.reminder_surface_expanded': 'false',
+        },
+        reminders: [reminderMirrorEntry('r4')],
+    });
+    const { ReminderSurface } = await import('../../app/static/js/modules/reminder-surface-service.js');
+
+    ReminderSurface.stop();
+    await ReminderSurface.start();
+
+    const container = document.getElementById('reminder-surface');
+    const toggle = container.querySelector('[data-reminder-surface-toggle]');
+
+    assert.ok(toggle instanceof HTMLElement);
+    assert.equal(container.classList.contains('is-collapsed'), true);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
 });
