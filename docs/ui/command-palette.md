@@ -42,6 +42,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.
 - `Session idle timeout…`: opens a modal for changing the namespace-scoped inactivity window before reauthentication is required again, or disabling idle timeout entirely.
+- `Reminders…`: opens the privacy-first in-app reminder registry and builder. Reminders are namespace-local, encrypted with the namespace when password protection is enabled, and never use browser/system push notifications. See `docs/ui/reminders.md`.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
 - `Switch namespace…`: opens a simple namespace picker and launches/restarts the selected non-current namespace with its saved/default profile.
 - `Create namespace…`: opens a namespace creation modal with defaulted HTTP / HTTPS / MCP ports, saves the profile, launches the namespace, and opens it.

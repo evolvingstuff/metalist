@@ -36,6 +36,7 @@ from app.services.search_history import (
     encrypt_all_search_history_for_active_dek,
 )
 from app.services.link_titles import rewrite_persisted_link_titles
+from app.services.reminders import reminder_store
 from app.utils.text_utils import strip_html
 from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
@@ -240,6 +241,7 @@ class AuthService:
         encrypted_rule_count = 0
         encrypted_file_count = 0
         encrypted_search_history_count = 0
+        encrypted_reminder_count = 0
         try:
             with begin_writer() as connection:
                 with SafeSession.allow_reads("auth:set_password:fetch_notes"):
@@ -365,6 +367,11 @@ class AuthService:
                     encryption_service=self.encryption,
                     force_plaintext=False,
                 )
+                encrypted_reminder_count = reminder_store.rewrite_persisted_reminders(
+                    connection=connection,
+                    encryption_service=self.encryption,
+                    force_plaintext=False,
+                )
         finally:
             maintenance_service.exit_maintenance()
 
@@ -379,7 +386,7 @@ class AuthService:
             "Password set successfully. "
             f"Encrypted {encrypted_count} notes, {encrypted_rule_count} ontology rules, "
             f"{encrypted_file_count} files, {encrypted_search_history_count} search histories, "
-            f"and {encrypted_link_title_count} link titles.",
+            f"{encrypted_link_title_count} link titles, and {encrypted_reminder_count} reminders.",
         )
 
     def change_password(
@@ -492,6 +499,7 @@ class AuthService:
         cache_tag_updates: dict[str, str] = {}
         decrypted_file_count = 0
         decrypted_search_history_count = 0
+        decrypted_reminder_count = 0
         try:
             decrypted_count = 0
             decrypted_rule_count = 0
@@ -627,6 +635,11 @@ class AuthService:
                     encryption_service=None,
                     force_plaintext=True,
                 )
+                decrypted_reminder_count = reminder_store.rewrite_persisted_reminders(
+                    connection=connection,
+                    encryption_service=None,
+                    force_plaintext=True,
+                )
                 clear_password_settings(connection)
             self.encryption.clear_keys()
         finally:
@@ -649,5 +662,5 @@ class AuthService:
             "Password removed successfully. "
             f"Decrypted {decrypted_count} notes, {decrypted_rule_count} ontology rules, "
             f"{decrypted_file_count} files, {decrypted_search_history_count} search histories, "
-            f"and {decrypted_link_title_count} link titles.",
+            f"{decrypted_link_title_count} link titles, and {decrypted_reminder_count} reminders.",
         )

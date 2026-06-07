@@ -944,3 +944,125 @@ export const FilesAPI = {
         return await response.json();
     },
 };
+
+async function remindersJsonRequest(url, options) {
+    if (typeof url !== 'string' || url.length === 0) {
+        throw new Error('remindersJsonRequest requires url');
+    }
+    if (!options || typeof options !== 'object') {
+        throw new Error('remindersJsonRequest requires options');
+    }
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+            ...buildAuthHeaders(true),
+            ...options.headers,
+        },
+    });
+    if (!response.ok) {
+        ErrorHandler.handleApiError(null, response);
+        throw new Error(`Reminder request failed: ${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+function reminderLocalDate(value) {
+    if (!(value instanceof Date)) {
+        throw new Error('reminderLocalDate requires Date');
+    }
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function reminderLocalIso(value) {
+    if (!(value instanceof Date)) {
+        throw new Error('reminderLocalIso requires Date');
+    }
+    const dateText = reminderLocalDate(value);
+    const hour = String(value.getHours()).padStart(2, '0');
+    const minute = String(value.getMinutes()).padStart(2, '0');
+    const second = String(value.getSeconds()).padStart(2, '0');
+    const offsetMinutes = -value.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absolute = Math.abs(offsetMinutes);
+    const offsetHours = String(Math.floor(absolute / 60)).padStart(2, '0');
+    const offsetRemainder = String(absolute % 60).padStart(2, '0');
+    return `${dateText}T${hour}:${minute}:${second}${sign}${offsetHours}:${offsetRemainder}`;
+}
+
+function reminderActionBody(actionName) {
+    if (actionName === 'acknowledge') {
+        const now = new Date();
+        return {
+            now: reminderLocalIso(now),
+            local_date: reminderLocalDate(now),
+            activity_kind: 'non_idle_use',
+        };
+    }
+    return {};
+}
+
+export const RemindersAPI = {
+    async list() {
+        return remindersJsonRequest(CONFIG.API.REMINDERS.LIST, {
+            method: 'GET',
+        });
+    },
+
+    async create(payload) {
+        return remindersJsonRequest(CONFIG.API.REMINDERS.CREATE, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async update(reminderId, payload) {
+        if (typeof reminderId !== 'string' || reminderId.length === 0) {
+            throw new Error('RemindersAPI.update requires reminderId');
+        }
+        return remindersJsonRequest(CONFIG.API.REMINDERS.UPDATE(reminderId), {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async delete(reminderId) {
+        if (typeof reminderId !== 'string' || reminderId.length === 0) {
+            throw new Error('RemindersAPI.delete requires reminderId');
+        }
+        return remindersJsonRequest(CONFIG.API.REMINDERS.DELETE(reminderId), {
+            method: 'DELETE',
+        });
+    },
+
+    async action(reminderId, actionName) {
+        if (typeof reminderId !== 'string' || reminderId.length === 0) {
+            throw new Error('RemindersAPI.action requires reminderId');
+        }
+        const actionUrls = {
+            acknowledge: CONFIG.API.REMINDERS.ACKNOWLEDGE,
+            dismiss: CONFIG.API.REMINDERS.DISMISS,
+            done: CONFIG.API.REMINDERS.DONE,
+            pause: CONFIG.API.REMINDERS.PAUSE,
+            resume: CONFIG.API.REMINDERS.RESUME,
+            skip_next: CONFIG.API.REMINDERS.SKIP_NEXT,
+        };
+        const urlBuilder = actionUrls[actionName];
+        if (typeof urlBuilder !== 'function') {
+            throw new Error(`Unsupported reminder action: ${actionName}`);
+        }
+        return remindersJsonRequest(urlBuilder(reminderId), {
+            method: 'POST',
+            body: JSON.stringify(reminderActionBody(actionName)),
+        });
+    },
+
+    async evaluate(payload) {
+        return remindersJsonRequest(CONFIG.API.REMINDERS.EVALUATE, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    },
+};

@@ -3,6 +3,7 @@ const API_BASE = '/api2'; // change to '/api' to switch back to v1
 const API_NOTES_BASE = `${API_BASE}/notes`;
 const API_AUTH_BASE = `${API_BASE}/auth`;
 const API_FILES_BASE = `${API_BASE}/files`;
+const API_REMINDERS_BASE = `${API_BASE}/reminders`;
 const RUNTIME_FLAGS = globalThis.__METALIST_RUNTIME__;
 const STARTUP_ANIMATION_ENABLED = Boolean(
     RUNTIME_FLAGS &&
@@ -107,6 +108,19 @@ export const CONFIG = {
             UPLOAD: `${API_FILES_BASE}/upload`,
             DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,
             TRIM_UNUSED: `${API_FILES_BASE}/trim-unused`,
+        },
+        REMINDERS: {
+            LIST: API_REMINDERS_BASE,
+            CREATE: API_REMINDERS_BASE,
+            UPDATE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}`,
+            DELETE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}`,
+            ACKNOWLEDGE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/acknowledge`,
+            DISMISS: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/dismiss`,
+            DONE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/done`,
+            PAUSE: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/pause`,
+            RESUME: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/resume`,
+            SKIP_NEXT: (reminderId) => `${API_REMINDERS_BASE}/${reminderId}/skip-next`,
+            EVALUATE: `${API_REMINDERS_BASE}/evaluate`,
         }
     },
 

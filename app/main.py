@@ -23,6 +23,7 @@ from app.services.tag_ontology import OntologyParseError
 from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
+from app.services.reminders import reminder_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
@@ -43,6 +44,7 @@ from app.api.routes.files import router as api2_files_router
 from app.api.routes.ontology import router as api2_ontology_router
 from app.api.routes.mcp import router as api2_mcp_router
 from app.api.routes.backups import router as api2_backup_router
+from app.api.routes.reminders import router as api2_reminders_router
 from app.api.routes.test import router as api2_test_router
 from app.api.transactions import transactional_route
 from app.config import API_PREFIX, TEST_MODE, V1_API_PREFIX
@@ -151,6 +153,7 @@ with begin_writer() as connection:
     bootstrap_ontology_rules_store(connection=connection)
     tab_state_store.bootstrap(connection=connection)
     link_title_store.bootstrap(connection=connection)
+    reminder_store.bootstrap(connection=connection)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 file_registry_start = time.perf_counter()
@@ -259,6 +262,7 @@ app.include_router(api2_memory_router, prefix=API_PREFIX)
 app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_mcp_router, prefix=API_PREFIX)
+app.include_router(api2_reminders_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(api2_test_router, prefix=API_PREFIX, tags=["api2-test"])
 

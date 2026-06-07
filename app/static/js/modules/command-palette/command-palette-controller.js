@@ -28,6 +28,7 @@ import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
 import { PrioritizeModal } from '../modals/prioritize-modal.js';
 import { AlphabetizeRootNotesModal } from '../modals/alphabetize-root-notes-modal.js';
 import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
+import { ReminderModal } from '../modals/reminder-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -262,6 +263,7 @@ class CommandPaletteController {
         this._prioritizeModal = null;
         this._alphabetizeRootNotesModal = null;
         this._resetUpdatedAtModal = null;
+        this._reminderModal = null;
 
         this._elements = null;
 
@@ -319,6 +321,7 @@ class CommandPaletteController {
                 alphabetizeRootNotesAsc: this.alphabetizeRootNotesAsc.bind(this),
                 alphabetizeRootNotesDesc: this.alphabetizeRootNotesDesc.bind(this),
                 resetUpdatedAtToCreatedAt: this.resetUpdatedAtToCreatedAt.bind(this),
+                openReminders: this.openReminders.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
             },
@@ -1886,6 +1889,18 @@ class CommandPaletteController {
             this._sessionTimeoutModal = new SessionTimeoutModal();
         }
         this._sessionTimeoutModal.open();
+    }
+
+    async openReminders() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openReminders');
+        if (!isReady) {
+            return;
+        }
+
+        if (this._reminderModal === null) {
+            this._reminderModal = new ReminderModal();
+        }
+        this._reminderModal.open();
     }
 }
 

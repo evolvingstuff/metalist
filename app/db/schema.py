@@ -9,6 +9,7 @@ APP_SETTINGS_TABLE = "app_settings"
 ONTOLOGY_RULES_TABLE = "ontology_rules"
 TAB_STATE_TABLE = "tab_state"
 LINK_TITLES_TABLE = "link_titles"
+REMINDERS_TABLE = "reminders"
 
 _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
@@ -111,6 +112,17 @@ CREATE TABLE IF NOT EXISTS {LINK_TITLES_TABLE} (
 );
 """
 
+_CREATE_REMINDERS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {REMINDERS_TABLE} (
+    id TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    payload_encryption_nonce BLOB,
+    payload_encryption_tag BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]
@@ -132,6 +144,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_ONTOLOGY_RULES_TABLE)
     connection.execute(_CREATE_TAB_STATE_TABLE)
     connection.execute(_CREATE_LINK_TITLES_TABLE)
+    connection.execute(_CREATE_REMINDERS_TABLE)
     _ensure_columns(
         connection,
         NOTES_TABLE,
