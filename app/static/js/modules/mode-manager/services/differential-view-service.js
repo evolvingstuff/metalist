@@ -732,6 +732,7 @@ export function applyDifferentialView(payload, options) {
         const canReplaceWhileEditing = editingByCurrentClient
             && ModeContext.currentNoteId === noteId
             && !ModeContext.isDirty
+            && !ModeContext.editSessionHasEdits
             && (previousHash === null || previousHash !== incomingHash);
 
         const shouldRenderContent = Boolean(noteData)
@@ -918,7 +919,6 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     const hasPreviousContentHash = Object.prototype.hasOwnProperty.call(noteElement.dataset, 'contentHash');
     const previousContentHash = hasPreviousContentHash ? noteElement.dataset.contentHash : null;
     noteElement.dataset.snapshotHash = snapshotHash;
-    noteElement.dataset.contentHash = snapshotHash;
     noteElement.dataset.lockOwner = lockOwner;
     noteElement.dataset.isCollapsed = Boolean(flags.isCollapsed).toString();
     if (Object.prototype.hasOwnProperty.call(flags, 'hasChildren')) {
@@ -950,13 +950,17 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     const canReplaceWhileEditing = editingByCurrentClient
         && ModeContext.currentNoteId === noteId
         && !ModeContext.isDirty
+        && !ModeContext.editSessionHasEdits
         && previousContentHash !== snapshotHash;
 
     let contentChanged = false;
     if ((forceContentUpdate || !editingByCurrentClient || canReplaceWhileEditing) && typeof noteData.content === 'string') {
         contentElement.innerHTML = noteData.content;
         ensureAnchorsOpenInNewTabs(contentElement);
+        noteElement.dataset.contentHash = snapshotHash;
         contentChanged = true;
+    } else if (snapshotHash && !editingByCurrentClient) {
+        noteElement.dataset.contentHash = snapshotHash;
     }
 
     if (snapshotHash) {
