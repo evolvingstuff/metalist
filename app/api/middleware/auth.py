@@ -40,6 +40,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     # Background/automated paths that should NOT refresh tokens (not user activity)
     NO_TOKEN_REFRESH_PATHS = [
         f"{API_PREFIX}/auth/status",  # Polling service pings this for connectivity
+        f"{API_PREFIX}/reminders/evaluate",  # Reminder polling is not user-initiated activity
     ]
     
     # Note: /api/notes/* paths are NOT in this list - they require auth when password is set

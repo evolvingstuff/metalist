@@ -69,6 +69,10 @@
       "tags": ["session", "idle", "timeout", "security", "login", "auth", "minutes"]
     },
     {
+      "id": "form.reminders",
+      "tags": ["reminder", "reminders", "schedule", "scheduled", "prompt", "missed", "recurring", "date", "time"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
     },

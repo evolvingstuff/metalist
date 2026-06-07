@@ -18,6 +18,23 @@ Reminder creation and editing should be entirely UI-driven. Do not implement nat
 
 ---
 
+## First Implementation Slice
+
+Start with **standalone reminders only**.
+
+Do not expose raw note IDs in the reminder UI. Note-attached reminders are deferred until there is a proper note picker/search flow that lets the user select a note by recognizable content/title, not by UUID.
+
+The first implementation should not include:
+
+- note-attached reminder creation
+- note ID entry fields
+- note title search in the reminder registry
+- jump-to-source-note actions
+
+Keep the data model shaped so note attachment can be added later without changing the reminder concept, but reject attached reminders in the API until the UX exists.
+
+---
+
 ## V1 Scope
 
 ### Must support

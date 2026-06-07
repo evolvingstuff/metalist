@@ -33,6 +33,7 @@
 - `app/services/snapshot.py`: Builds the view snapshot used by `/api2/notes/view`.
 - `app/services/content_formatting.py`: Applies view-only meta-tag formatting (`@monospace`, `@red`) with optional wrapper scoping, auto-links bare `http(s)` URLs in rendered notes, renders cached standalone URL titles when available, and normalizes rendered anchors to open in a new tab.
 - `app/services/link_titles.py`: Memory-first cache + bounded background fetcher for compact standalone URL titles. Text fields (`url`, `title`) persist encrypted-at-rest in the main DB `link_titles` table when namespace encryption is enabled; runtime rendering only reads the in-memory cache. Early failed/no-title lookups retry on short adaptive backoff before settling into longer refresh intervals.
+- `app/services/reminders.py`: Namespace-local in-memory reminder store + deterministic scheduler for privacy-first in-app scheduled prompts. Reminder payload rows live in `reminders`, load at startup/login, and encrypt the full JSON payload at rest when namespace encryption is enabled; browser/system push is intentionally not modeled.
 - `app/services/tag_term_matching.py`: Shared helper for connector-aware, punctuation-tolerant tag suggestion matching/ranking (`-`, `_`, `.`, `/`) used by search suggestions and tag suggestions.
 - `app/services/embedded_references.py`: Resolves note/file UUID references in view mode (embedded notes, note previews, file cards, missing/cycle markers).
 - `app/services/tab_state.py`: Stores namespace-scoped tab workspace state (`activeTabId`, `tabOrder`, per-tab search/scroll/sort/date-filter/calendar metadata) in the main SQLite DB; rows stay plaintext without a password and are DEK-encrypted at rest when the namespace is password-protected.
@@ -95,6 +96,7 @@
 - Backup settings: `GET/PUT /api2/backup/settings` stores the configured folder path, selected namespaces, and per-namespace retention count for manual runs.
 - Backup run: `POST /api2/backup/run` creates one archive per selected namespace, writes them all into the configured folder, and reports one result row per namespace in the result modal.
 - Backup/restore scope: backup listing/creation/restore are scoped to the active DB path; namespaces live under `~/MetaList/namespaces/<namespace>/` and back up into `~/MetaList/namespaces/<namespace>/backups/` with filenames like `<namespace>-<timestamp>.metalist-backup.tar.gz`.
+- Reminders: `Cmd/Ctrl+/` → `Reminders…` opens the in-app reminder registry/builder. Current implementation is standalone-only; note attachment is deferred until there is a real note picker/search flow rather than raw UUID entry. Reminders can be one-time or recurring, date-time or date-only, and either drop if missed or stay visible until seen. Date-only reminders fire only on first non-idle app use for the local date. Reminder evaluation runs only inside the visible authenticated app; no browser/system push notifications are used.
 - Note mutations: `/api2/notes/*` → `app/usecases/Cmd*` → sqlite helpers → update NoteStore + bump sync UUID.
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
@@ -122,6 +124,7 @@ metalist
 - Frontend paste config: `app/static/js/modules/config.js` (`CONFIG.PASTE.MAX_DATA_IMAGE_BYTES`).
 - Frontend split shortcut: `app/static/js/modules/mode-manager/actions/note-actions.js` (`splitCurrentNoteFromSelection`) + `app/static/js/modules/mode-manager/events/keyboard-events.js` (`Cmd/Ctrl+S` binding).
 - Store: `app/services/note_store.py` (in-memory note graph + ordering).
+- Reminders: `app/services/reminders.py` + `app/api/routes/reminders.py`; frontend modal is `app/static/js/modules/modals/reminder-modal.js`, in-app surfacing loop is `app/static/js/modules/reminder-surface-service.js`.
 - File store: `app/services/file_storage.py` + `app/services/file_registry.py`.
 - Search history store: `app/services/search_history.py` + `app/db/search_history_session.py`.
 - Snapshots: `app/services/snapshot.py` (view snapshot builder).

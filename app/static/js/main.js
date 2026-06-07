@@ -5,6 +5,7 @@ import { Auth } from './modules/auth.js';
 import { ErrorHandler } from './modules/error-handler.js';
 import { ActivityTracker } from './modules/activity-tracker.js';
 import { CommandPalette } from './modules/command-palette/command-palette-controller.js';
+import { ReminderSurface } from './modules/reminder-surface-service.js';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
     document.body.dataset.appReady = 'false';
@@ -27,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('+++ main.js: ModeManager init() completed');
 
         await CommandPalette.init();
+        ReminderSurface.start();
         await Auth.waitForStartupIntro();
         Auth.revealMainApp();
         document.body.dataset.appReady = 'true';

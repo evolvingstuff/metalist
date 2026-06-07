@@ -46,6 +46,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const alphabetizeRootNotesAsc = requireAction(actions, 'alphabetizeRootNotesAsc');
     const alphabetizeRootNotesDesc = requireAction(actions, 'alphabetizeRootNotesDesc');
     const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
+    const openReminders = requireAction(actions, 'openReminders');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
 
@@ -189,6 +190,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Session idle timeout…',
             execute: async () => openSessionTimeoutSettings(),
+        },
+        {
+            id: 'form.reminders',
+            kind: 'form',
+            label: 'Reminders…',
+            execute: async () => openReminders(),
         },
         {
             id: 'form.switch_namespace',

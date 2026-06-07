@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from app.config import TEST_MODE
-from app.db.schema import APP_SETTINGS_TABLE, LINK_TITLES_TABLE, NOTES_TABLE
+from app.db.schema import APP_SETTINGS_TABLE, LINK_TITLES_TABLE, NOTES_TABLE, REMINDERS_TABLE
 from app.db.search_history_session import begin_search_history_writer
 from app.db.session import begin_writer
 from app.db.settings_sql import insert_default_settings
@@ -12,6 +12,7 @@ from app.services.note_store import store as note_store
 from app.services.sync import reset_state as reset_sync_state
 from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
+from app.services.reminders import reminder_store
 from app.services.tokens import token_service
 from app.services.view_cache import view_cache
 
@@ -31,6 +32,7 @@ def reset_state_for_tests() -> None:
     with begin_writer() as connection:
         _execute_sql(connection, f"DELETE FROM {NOTES_TABLE}")
         _execute_sql(connection, f"DELETE FROM {LINK_TITLES_TABLE}")
+        _execute_sql(connection, f"DELETE FROM {REMINDERS_TABLE}")
         _execute_sql(connection, f"DELETE FROM {APP_SETTINGS_TABLE}")
         insert_default_settings(connection)
 
@@ -41,6 +43,7 @@ def reset_state_for_tests() -> None:
     view_cache.clear()
     tab_state_store.clear_persisted_state_for_tests()
     link_title_store.reset()
+    reminder_store.reset()
     token_service.reset()
 
     prefetched_rows = populate_cache_from_db(None)

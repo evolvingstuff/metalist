@@ -43,6 +43,7 @@ from app.services.view_cache import view_cache
 from app.services import auth_cache_state
 from app.services.ontology_rules_store import ensure_rules_decrypted_and_compiled
 from app.services.link_titles import link_title_store
+from app.services.reminders import reminder_store
 from app.services.hydration_state import hydration_state
 from app.services.file_registry import file_registry
 from app.services.file_storage import bootstrap_file_registry
@@ -284,6 +285,7 @@ def _reset_runtime_state_after_restore() -> bool:
     view_cache.clear()
     tab_state_store.reset()
     link_title_store.reset()
+    reminder_store.reset()
     clear_all_locks()
     token_service.revoke_all_tokens()
     clear_encryption_key()
@@ -303,15 +305,17 @@ def _reset_runtime_state_after_restore() -> bool:
         password_required = bool(settings["encryption_enabled"])
         set_encryption_required(password_required)
 
+        with SafeSession.allow_reads("auth:backup_restore:runtime_stores"):
+            tab_state_store.bootstrap(connection=session.connection())
+            link_title_store.bootstrap(connection=session.connection())
+            reminder_store.bootstrap(connection=session.connection())
+
         if password_required:
             return True
 
         prefetched_rows = populate_cache_from_db(session)
         note_store.load_from_db(None, prefetched_rows=prefetched_rows)
         auth_cache_state.mark_cache_ready()
-        with SafeSession.allow_reads("auth:backup_restore:tab_state"):
-            tab_state_store.bootstrap(connection=session.connection())
-            link_title_store.bootstrap(connection=session.connection())
         return False
     finally:
         session.close()
@@ -440,6 +444,7 @@ def login(
     ensure_rules_decrypted_and_compiled(token="")
     tab_state_store.ensure_decrypted(token="")
     link_title_store.ensure_decrypted(token="")
+    reminder_store.ensure_decrypted(token="")
 
     needs_hydration = auth_cache_state.cache_refresh_needed()
     if not note_store.loaded:
