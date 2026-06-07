@@ -218,7 +218,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'form.delete_current_namespace',
             kind: 'form',
-            label: 'Delete current namespace…',
+            label: 'Delete namespace…',
             execute: async () => openDeleteCurrentNamespace(),
         },
         {

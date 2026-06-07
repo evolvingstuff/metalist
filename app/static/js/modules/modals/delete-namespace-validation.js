@@ -1,6 +1,3 @@
-export const DELETE_NAMESPACE_CONFIRMATION_PHRASE = 'permanently delete';
-
-
 export function validateNamespaceDeletionSubmission({
     namespace,
     confirmationText,
@@ -17,22 +14,22 @@ export function validateNamespaceDeletionSubmission({
         throw new Error('Password state is unavailable');
     }
     if (typeof confirmationText !== 'string') {
-        throw new Error(`Type '${DELETE_NAMESPACE_CONFIRMATION_PHRASE}' to confirm deletion`);
+        throw new Error(`Type '${namespace}' to confirm deletion`);
     }
     const normalizedConfirmationText = confirmationText.trim();
-    if (normalizedConfirmationText !== DELETE_NAMESPACE_CONFIRMATION_PHRASE) {
-        throw new Error(`Type '${DELETE_NAMESPACE_CONFIRMATION_PHRASE}' to confirm deletion`);
+    if (normalizedConfirmationText !== namespace) {
+        throw new Error(`Type '${namespace}' to confirm deletion`);
     }
     if (!hasPassword) {
         return {
-            confirmation_text: normalizedConfirmationText,
+            confirmed_namespace: normalizedConfirmationText,
         };
     }
     if (typeof currentPassword !== 'string' || currentPassword.length === 0) {
         throw new Error('Enter your current password');
     }
     return {
-        confirmation_text: normalizedConfirmationText,
+        confirmed_namespace: normalizedConfirmationText,
         current_password: currentPassword,
     };
 }

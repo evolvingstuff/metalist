@@ -2,12 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-    DELETE_NAMESPACE_CONFIRMATION_PHRASE,
     validateNamespaceDeletionSubmission,
 } from '../../app/static/js/modules/modals/delete-namespace-validation.js';
 
 
-test('validateNamespaceDeletionSubmission requires the exact confirmation phrase', () => {
+test('validateNamespaceDeletionSubmission requires the exact namespace name', () => {
     assert.throws(
         () => validateNamespaceDeletionSubmission({
             namespace: 'work',
@@ -15,7 +14,7 @@ test('validateNamespaceDeletionSubmission requires the exact confirmation phrase
             currentPassword: '',
             hasPassword: false,
         }),
-        new RegExp(`Type '${DELETE_NAMESPACE_CONFIRMATION_PHRASE}'`),
+        /Type 'work'/,
     );
 });
 
@@ -24,7 +23,7 @@ test('validateNamespaceDeletionSubmission requires current password when passwor
     assert.throws(
         () => validateNamespaceDeletionSubmission({
             namespace: 'work',
-            confirmationText: DELETE_NAMESPACE_CONFIRMATION_PHRASE,
+            confirmationText: 'work',
             currentPassword: '',
             hasPassword: true,
         }),
@@ -36,13 +35,13 @@ test('validateNamespaceDeletionSubmission requires current password when passwor
 test('validateNamespaceDeletionSubmission returns normalized payload', () => {
     const payload = validateNamespaceDeletionSubmission({
         namespace: 'work',
-        confirmationText: ` ${DELETE_NAMESPACE_CONFIRMATION_PHRASE} `,
+        confirmationText: ' work ',
         currentPassword: 'abcd',
         hasPassword: true,
     });
 
     assert.deepEqual(payload, {
-        confirmation_text: DELETE_NAMESPACE_CONFIRMATION_PHRASE,
+        confirmed_namespace: 'work',
         current_password: 'abcd',
     });
 });

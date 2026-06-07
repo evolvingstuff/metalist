@@ -280,7 +280,7 @@ Auth:
 - `GET /api2/auth/client-state` - Load namespace-scoped client preferences and command-palette usage
 - `PUT /api2/auth/client-state/preferences` - Persist namespace-scoped client preferences
 - `PUT /api2/auth/client-state/command-palette-usage` - Persist namespace-scoped command-palette usage history
-- `POST /api2/auth/namespaces/delete-current` - Delete the active non-default namespace after typed confirmation and, when enabled, password re-entry. The tab moves to a dedicated namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory.
+- `POST /api2/auth/namespaces/delete/preflight` / `POST /api2/auth/namespaces/delete` - Delete a named non-default namespace after typed namespace confirmation and, when that namespace is password-protected, password re-entry. Deleting the active namespace moves the tab to a namespace-removal status page while a detached worker shuts down the current namespace and deletes its directory; deleting an inactive namespace stays in the current tab.
 - `POST /api2/auth/settings/password/create` - Enable password protection
 - `PUT /api2/auth/settings/password/change` - Change password (re-encrypts DEK)
 - `DELETE /api2/auth/settings/password/remove` - Disable encryption

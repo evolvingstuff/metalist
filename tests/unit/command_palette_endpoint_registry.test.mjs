@@ -50,6 +50,10 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('form.create_namespace'), true);
     assert.equal(endpointIds.has('form.manage_namespace_ports'), true);
     assert.equal(endpointIds.has('form.delete_current_namespace'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.delete_current_namespace').label,
+        'Delete namespace…',
+    );
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(endpointIds.has('form.reminders'), true);

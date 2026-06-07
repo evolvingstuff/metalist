@@ -15,6 +15,7 @@ from app.server_runtime import save_namespace_launch_profile
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import build_login_namespace_catalog
 from app.services.namespace_switcher import delete_current_namespace
+from app.services.namespace_switcher import delete_namespace
 from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_switcher import open_or_launch_all_namespaces
@@ -786,11 +787,12 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
     result = delete_current_namespace(
         environ={},
         current_namespace="work",
-        confirmation_text=" permanently delete ",
+        confirmed_namespace=" work ",
     )
 
     assert result.deleted_namespace == "work"
     assert result.delete_job_id == "11111111-1111-1111-1111-111111111111"
+    assert result.active_namespace_deleted is True
     assert result.message == "Deleting namespace work. Opening the namespace removal page."
     parsed_redirect = urlsplit(result.redirect_url)
     assert parsed_redirect.netloc == "127.0.0.1:8001"
@@ -806,8 +808,59 @@ def test_delete_current_namespace_rejects_default_namespace() -> None:
         delete_current_namespace(
             environ={},
             current_namespace="default",
-            confirmation_text="permanently delete",
+            confirmed_namespace="default",
         )
+
+
+def test_delete_current_namespace_requires_confirmed_namespace_name() -> None:
+    with pytest.raises(RuntimeError, match="Type 'work' to confirm namespace deletion"):
+        delete_current_namespace(
+            environ={},
+            current_namespace="work",
+            confirmed_namespace="permanently delete",
+        )
+
+
+def test_delete_namespace_removes_inactive_namespace_without_redirect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace_directory = tmp_path / "namespaces" / "cla"
+    namespace_directory.mkdir(parents=True)
+    stopped_profiles: list[NamespaceLaunchProfile] = []
+    target_profile = NamespaceLaunchProfile(
+        namespace="cla",
+        port=8002,
+        https_port=None,
+        mcp_port=8767,
+    )
+
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_load_saved_profiles_by_namespace",
+        lambda: {"cla": target_profile},
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_stop_processes_for_namespace_profile",
+        lambda *, profile: stopped_profiles.append(profile),
+    )
+
+    result = delete_namespace(
+        environ={},
+        current_namespace="test",
+        target_namespace="cla",
+        confirmed_namespace=" cla ",
+    )
+
+    assert result.deleted_namespace == "cla"
+    assert result.redirect_url == ""
+    assert result.delete_job_id == ""
+    assert result.active_namespace_deleted is False
+    assert result.message == "Deleted namespace cla."
+    assert namespace_directory.exists() is False
+    assert stopped_profiles == [target_profile]
 
 
 def test_delete_namespace_launch_profile_removes_saved_entry(
