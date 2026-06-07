@@ -438,9 +438,9 @@ class ReminderSurfaceService {
                 <strong><span class="reminder-surface-icon" aria-hidden="true">${REMINDER_RENDER_ICON}</span> ${this._escape(reminderDisplayTitle(reminder))}</strong>
                 ${details ? `<span class="reminder-surface-details">${this._escape(details)}</span>` : ''}
                 <hr class="reminder-surface-rule">
-                <span class="reminder-surface-status" data-reminder-surface-text>${this._escape(surfaceText)}</span>
             </div>
-            <div class="reminder-surface-actions">
+            <div class="reminder-surface-footer">
+                <span class="reminder-surface-status" data-reminder-surface-text>${this._escape(surfaceText)}</span>
                 <button type="button" data-reminder-surface-action="acknowledge" title="Clear this due or missed notice">Got it</button>
             </div>
         `;

@@ -5557,7 +5557,7 @@ html[data-theme="dark"] body.loading::after {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    width: min(420px, calc(100vw - 28px));
+    width: min(240px, calc(100vw - 28px));
     pointer-events: none;
 }
 
@@ -5565,8 +5565,8 @@ html[data-theme="dark"] body.loading::after {
     pointer-events: auto;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-    padding: 14px 16px;
+    gap: 8px;
+    padding: 12px 14px;
     border: 1px solid #d8a21c;
     border-radius: 8px;
     background: #1f1f1f;
@@ -5613,17 +5613,21 @@ html[data-theme="dark"] body.loading::after {
 }
 
 .reminder-surface-status {
+    color: #d7d7d7;
+    font-size: 15px;
     font-style: italic;
+    overflow-wrap: anywhere;
 }
 
-.reminder-surface-actions {
+.reminder-surface-footer {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
 }
 
-.reminder-surface-actions button {
+.reminder-surface-footer button {
+    flex: 0 0 auto;
     min-height: 36px;
     padding: 6px 12px;
     border: 1px solid #d0d0d0;
@@ -5637,9 +5641,5 @@ html[data-theme="dark"] body.loading::after {
     .reminder-surface {
         right: 14px;
         bottom: 14px;
-    }
-
-    .reminder-surface-actions {
-        justify-content: flex-start;
     }
 }
