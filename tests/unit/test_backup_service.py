@@ -13,8 +13,7 @@ import pytest
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
-from app.db.search_history_schema import initialize_search_history_schema
-from app.db.search_history_session import resolve_search_history_database_path
+from app.db.schema import initialize_schema
 from app.services.backup_service import (
     create_timestamped_backup_for_paths,
     delete_oldest_backups_in_directory,
@@ -103,11 +102,15 @@ def _read_file_ids(database_path: Path) -> list[str]:
         connection.close()
 
 
+def _resolve_legacy_search_history_database_path(database_path: Path) -> Path:
+    return database_path.with_name(f"{database_path.stem}.search-history{database_path.suffix}")
+
+
 def _write_search_history_marker(database_path: Path, query_key: str) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(database_path))
     try:
-        initialize_search_history_schema(connection)
+        initialize_schema(connection)
         connection.execute("DELETE FROM search_interaction_history")
         connection.execute(
             """
@@ -154,7 +157,7 @@ def _read_search_history_queries(database_path: Path) -> list[str]:
     connection = sqlite3.connect(str(database_path))
     connection.row_factory = sqlite3.Row
     try:
-        initialize_search_history_schema(connection)
+        initialize_schema(connection)
         rows = connection.execute(
             "SELECT query_key FROM search_interaction_history ORDER BY query_key ASC"
         ).fetchall()
@@ -301,9 +304,9 @@ def test_create_and_restore_backup_round_trip_includes_related_file_db(tmp_path:
     assert _read_file_ids(file_database_path) == ["file-a"]
 
 
-def test_create_and_restore_backup_round_trip_includes_related_search_history_db(tmp_path: Path) -> None:
+def test_create_and_restore_backup_round_trip_ignores_legacy_search_history_sidecar(tmp_path: Path) -> None:
     database_path = tmp_path / "live.db"
-    search_history_database_path = resolve_search_history_database_path(database_path)
+    search_history_database_path = _resolve_legacy_search_history_database_path(database_path)
     backup_directory = tmp_path / "backups"
 
     _write_counter(database_path, 7)
@@ -311,13 +314,13 @@ def test_create_and_restore_backup_round_trip_includes_related_search_history_db
     backup_file = create_timestamped_backup_for_paths(database_path, backup_directory)
     backup_path = backup_directory / backup_file.filename
 
-    assert _archive_member_names(backup_path) == {"manifest.json", "live.db", "live.search-history.db"}
+    assert _archive_member_names(backup_path) == {"manifest.json", "live.db"}
     manifest = _read_archive_manifest(backup_path)
     files = manifest["files"]
     assert isinstance(files, list)
     file_entries = {entry["database_role"]: entry for entry in files}
     assert file_entries["notes"]["archive_name"] == "live.db"
-    assert file_entries["search_history"]["archive_name"] == "live.search-history.db"
+    assert "search_history" not in file_entries
 
     _write_counter(database_path, 99)
     _write_search_history_marker(search_history_database_path, "exercise")
@@ -326,7 +329,7 @@ def test_create_and_restore_backup_round_trip_includes_related_search_history_db
 
     restore_backup_to_paths(backup_path, database_path)
     assert _read_counter(database_path) == 7
-    assert _read_search_history_queries(search_history_database_path) == ["journal"]
+    assert _read_search_history_queries(search_history_database_path) == ["exercise"]
 
 
 def test_namespaced_backup_directories_do_not_mix_files(tmp_path: Path) -> None:
@@ -452,7 +455,7 @@ def test_delete_oldest_backups_removes_matching_legacy_search_history_sidecars(t
 def test_restore_supports_legacy_backup_format(tmp_path: Path) -> None:
     database_path = tmp_path / "live.db"
     file_database_path = resolve_file_database_path(database_path)
-    search_history_database_path = resolve_search_history_database_path(database_path)
+    search_history_database_path = _resolve_legacy_search_history_database_path(database_path)
     backup_directory = tmp_path / "backups"
     backup_directory.mkdir(parents=True, exist_ok=True)
 
@@ -474,7 +477,7 @@ def test_restore_supports_legacy_backup_format(tmp_path: Path) -> None:
     restore_backup_to_paths(backup_path, database_path)
     assert _read_counter(database_path) == 7
     assert _read_file_ids(file_database_path) == ["file-a"]
-    assert _read_search_history_queries(search_history_database_path) == ["journal"]
+    assert _read_search_history_queries(search_history_database_path) == ["exercise"]
 
 
 def test_restore_rejects_unsupported_future_archive_format_before_writing(tmp_path: Path) -> None:

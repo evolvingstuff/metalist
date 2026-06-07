@@ -24,6 +24,7 @@ from app.services.ontology_rules_store import bootstrap_ontology_rules_store
 from app.services.tab_state import tab_state_store
 from app.services.link_titles import link_title_store
 from app.services.reminders import reminder_store
+from app.services.search_history import search_history_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
@@ -154,6 +155,7 @@ with begin_writer() as connection:
     tab_state_store.bootstrap(connection=connection)
     link_title_store.bootstrap(connection=connection)
     reminder_store.bootstrap(connection=connection)
+    search_history_store.bootstrap(connection=connection)
 _log_startup_step("schema + settings bootstrap", time.perf_counter() - schema_start)
 
 file_registry_start = time.perf_counter()

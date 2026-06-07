@@ -34,10 +34,10 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 
 ## Utility Actions
 - `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, sets the retention count, and then runs the backup. Typing `backups` in the palette also matches this action, and the completion modal shows the created archive size per namespace.
-  - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling file/search-history DBs when present.
+  - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling files DB when present.
   - The completion modal shows one result row per namespace.
 - `Restore from backup…`: opens a restore picker for configured-folder snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.
-  - Restore reuses the same archive pipeline for both sources and recreates sibling file/search-history DBs from the archive contents.
+  - Restore reuses the same archive pipeline for both sources and recreates the sibling files DB from the archive contents. Legacy search-history sidecars are ignored.
 - `Export as HTML`: downloads a self-contained HTML file for the current view with inline CSS, the active light/dark theme, all exported notes fully expanded, no command/search chrome, no collapse arrows, and `@password` note values redacted to matching-length `X` characters while keeping the blur styling.
 - `Logout`: revokes the current session and returns to login.
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.

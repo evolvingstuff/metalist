@@ -354,6 +354,7 @@ class AuthService:
                     encryption_service=self.encryption,
                 )
                 encrypted_search_history_count = encrypt_all_search_history_for_active_dek(
+                    connection=connection,
                     encryption_service=self.encryption,
                 )
                 with SafeSession.allow_reads("auth:set_password:fetch_link_titles"):
@@ -622,6 +623,7 @@ class AuthService:
                     encryption_service=self.encryption,
                 )
                 decrypted_search_history_count = decrypt_all_search_history_for_plaintext(
+                    connection=connection,
                     encryption_service=self.encryption,
                 )
                 with SafeSession.allow_reads("auth:remove_password:fetch_link_titles"):

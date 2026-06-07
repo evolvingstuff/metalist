@@ -5,16 +5,18 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+from threading import RLock
 from typing import Optional
 
-from app.db.search_history_session import begin_search_history_writer, connect_search_history_reader
 from app.db.search_history_sql import (
+    delete_all_search_history_rows,
     delete_search_history_rows,
     fetch_all_search_history_rows,
     insert_search_history_row,
     update_search_history_row,
     update_search_history_score_fields,
 )
+from app.db.session import begin_writer
 from app.security.encryption import (
     get_encryption_service,
     get_encryption_service_with_token,
@@ -25,6 +27,7 @@ from app.services.tag_term_matching import tag_term_matches_prefix
 
 SEARCH_HISTORY_DECAY_FACTOR = 0.98
 SEARCH_HISTORY_PRIORITY_SLOTS = 3
+MAX_SEARCH_HISTORY_ROWS = 500
 _SEARCH_HISTORY_PRUNE_SCORE_THRESHOLD = 0.01
 _UUID_TERM_RE = re.compile(
     r"^(?:\[\[)?[0-9a-fA-F]{8}-"
@@ -53,6 +56,268 @@ class SearchHistoryEntry:
     created_at: datetime
     last_interacted_at: datetime
     updated_at: datetime
+
+
+class SearchHistoryStore:
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._stored_rows_by_hash: dict[str, dict[str, object]] = {}
+        self._entries_by_hash: dict[str, SearchHistoryEntry] | None = {}
+
+    def bootstrap(self, *, connection) -> None:
+        rows = fetch_all_search_history_rows(connection)
+        stored_rows_by_hash = _rows_by_hash(rows)
+        entries_by_hash = _build_entries_by_hash(
+            stored_rows_by_hash=stored_rows_by_hash,
+            token="",
+            require_success=False,
+        )
+        with self._lock:
+            self._stored_rows_by_hash = stored_rows_by_hash
+            self._entries_by_hash = entries_by_hash
+
+    def ensure_decrypted(self, *, token: str) -> None:
+        if not isinstance(token, str):
+            raise TypeError("token must be a string")
+        with self._lock:
+            if self._entries_by_hash is not None:
+                return
+            self._entries_by_hash = _build_entries_by_hash(
+                stored_rows_by_hash=self._stored_rows_by_hash,
+                token=token,
+                require_success=True,
+            )
+
+    def reset(self) -> None:
+        with self._lock:
+            self._stored_rows_by_hash = {}
+            self._entries_by_hash = {}
+
+    def clear_persisted_state_for_tests(self) -> None:
+        with begin_writer() as connection:
+            delete_all_search_history_rows(connection)
+        self.reset()
+
+    def record_interaction(self, *, normalized: NormalizedSearchHistoryQuery, token: str) -> bool:
+        encryption_service = _resolve_encryption_service(token)
+        if encryption_service is None and is_encryption_required():
+            raise RuntimeError("Search history interaction requires an active DEK")
+
+        now = datetime.now(timezone.utc)
+        encrypted_fields = _serialize_search_history_fields(
+            encryption_service=encryption_service,
+            normalized=normalized,
+        )
+
+        with self._lock:
+            self.ensure_decrypted(token=token)
+            if self._entries_by_hash is None:
+                raise RuntimeError("Search history store must be decrypted before writes")
+
+            entries_by_hash = dict(self._entries_by_hash)
+            current_entry = None
+            if normalized.query_hash in entries_by_hash:
+                current_entry = entries_by_hash[normalized.query_hash]
+            updated_entries_by_hash: dict[str, SearchHistoryEntry] = {}
+            rows_to_delete: list[str] = []
+            score_updates: list[SearchHistoryEntry] = []
+
+            for query_hash, entry in entries_by_hash.items():
+                decayed_score = entry.score * SEARCH_HISTORY_DECAY_FACTOR
+                if query_hash == normalized.query_hash:
+                    continue
+                if decayed_score < _SEARCH_HISTORY_PRUNE_SCORE_THRESHOLD:
+                    rows_to_delete.append(query_hash)
+                    continue
+                updated_entry = SearchHistoryEntry(
+                    query_hash=entry.query_hash,
+                    query_key=entry.query_key,
+                    root_tag=entry.root_tag,
+                    tags=entry.tags,
+                    score=decayed_score,
+                    created_at=entry.created_at,
+                    last_interacted_at=entry.last_interacted_at,
+                    updated_at=now,
+                )
+                updated_entries_by_hash[query_hash] = updated_entry
+                score_updates.append(updated_entry)
+
+            if current_entry is None:
+                current_entry = SearchHistoryEntry(
+                    query_hash=normalized.query_hash,
+                    query_key=normalized.query_key,
+                    root_tag=normalized.root_tag,
+                    tags=normalized.tags,
+                    score=1.0,
+                    created_at=now,
+                    last_interacted_at=now,
+                    updated_at=now,
+                )
+                row_mode = "insert"
+            else:
+                current_entry = SearchHistoryEntry(
+                    query_hash=current_entry.query_hash,
+                    query_key=normalized.query_key,
+                    root_tag=normalized.root_tag,
+                    tags=normalized.tags,
+                    score=(current_entry.score * SEARCH_HISTORY_DECAY_FACTOR) + 1.0,
+                    created_at=current_entry.created_at,
+                    last_interacted_at=now,
+                    updated_at=now,
+                )
+                row_mode = "update"
+
+            updated_entries_by_hash[normalized.query_hash] = current_entry
+            cap_delete_hashes = _select_excess_hashes_for_cap(updated_entries_by_hash)
+            for query_hash in cap_delete_hashes:
+                updated_entries_by_hash.pop(query_hash)
+            rows_to_delete.extend(cap_delete_hashes)
+
+            with begin_writer() as connection:
+                if rows_to_delete:
+                    delete_search_history_rows(connection, rows_to_delete)
+                for entry in score_updates:
+                    if entry.query_hash in cap_delete_hashes:
+                        continue
+                    update_search_history_score_fields(
+                        connection,
+                        query_hash=entry.query_hash,
+                        score=entry.score,
+                        updated_at=entry.updated_at,
+                    )
+                if row_mode == "insert":
+                    insert_search_history_row(
+                        connection,
+                        query_hash=current_entry.query_hash,
+                        query_key=encrypted_fields["query_key"],
+                        query_key_encryption_nonce=encrypted_fields["query_key_encryption_nonce"],
+                        query_key_encryption_tag=encrypted_fields["query_key_encryption_tag"],
+                        root_tag=encrypted_fields["root_tag"],
+                        root_tag_encryption_nonce=encrypted_fields["root_tag_encryption_nonce"],
+                        root_tag_encryption_tag=encrypted_fields["root_tag_encryption_tag"],
+                        tags_json=encrypted_fields["tags_json"],
+                        tags_json_encryption_nonce=encrypted_fields["tags_json_encryption_nonce"],
+                        tags_json_encryption_tag=encrypted_fields["tags_json_encryption_tag"],
+                        score=current_entry.score,
+                        created_at=current_entry.created_at,
+                        last_interacted_at=current_entry.last_interacted_at,
+                        updated_at=current_entry.updated_at,
+                    )
+                else:
+                    update_search_history_row(
+                        connection,
+                        query_hash=current_entry.query_hash,
+                        query_key=encrypted_fields["query_key"],
+                        query_key_encryption_nonce=encrypted_fields["query_key_encryption_nonce"],
+                        query_key_encryption_tag=encrypted_fields["query_key_encryption_tag"],
+                        root_tag=encrypted_fields["root_tag"],
+                        root_tag_encryption_nonce=encrypted_fields["root_tag_encryption_nonce"],
+                        root_tag_encryption_tag=encrypted_fields["root_tag_encryption_tag"],
+                        tags_json=encrypted_fields["tags_json"],
+                        tags_json_encryption_nonce=encrypted_fields["tags_json_encryption_nonce"],
+                        tags_json_encryption_tag=encrypted_fields["tags_json_encryption_tag"],
+                        score=current_entry.score,
+                        last_interacted_at=current_entry.last_interacted_at,
+                        updated_at=current_entry.updated_at,
+                    )
+
+            self._entries_by_hash = updated_entries_by_hash
+            self._stored_rows_by_hash = _serialize_entries_for_memory(
+                entries_by_hash=updated_entries_by_hash,
+                encryption_service=encryption_service,
+            )
+
+        return True
+
+    def list_recent_tags(self, *, limit: int, token: str) -> list[str]:
+        with self._lock:
+            self.ensure_decrypted(token=token)
+            if self._entries_by_hash is None:
+                raise RuntimeError("Search history store must be decrypted before reads")
+            entries = list(self._entries_by_hash.values())
+        return _list_recent_search_tags_from_entries(entries=entries, limit=limit)
+
+    def rewrite_persisted_entries(
+        self,
+        *,
+        connection,
+        encryption_service: object,
+        force_plaintext: bool,
+    ) -> int:
+        service = _coerce_encryption_service(encryption_service)
+        if service is None and not force_plaintext:
+            raise RuntimeError("Search history encryption migration requires an active DEK")
+        if service is None and force_plaintext:
+            raise RuntimeError("Search history decryption migration requires an active DEK")
+
+        with self._lock:
+            if self._entries_by_hash is None:
+                self._entries_by_hash = _build_entries_by_hash(
+                    stored_rows_by_hash=self._stored_rows_by_hash,
+                    token="",
+                    require_success=True,
+                )
+            if self._entries_by_hash is None:
+                raise RuntimeError("Search history store must be decrypted before rewrite")
+
+            rewritten_count = 0
+            encryption_target = service
+            if force_plaintext:
+                encryption_target = None
+            stored_rows_by_hash: dict[str, dict[str, object]] = {}
+            for entry in self._entries_by_hash.values():
+                old_row = self._stored_rows_by_hash.get(entry.query_hash)
+                if old_row is not None:
+                    if force_plaintext and _row_is_fully_plaintext(old_row):
+                        stored_rows_by_hash[entry.query_hash] = old_row
+                        continue
+                    if not force_plaintext and _row_is_fully_encrypted(old_row):
+                        stored_rows_by_hash[entry.query_hash] = old_row
+                        continue
+
+                fields = _serialize_search_history_fields(
+                    encryption_service=encryption_target,
+                    normalized=NormalizedSearchHistoryQuery(
+                        query_hash=entry.query_hash,
+                        query_key=entry.query_key,
+                        root_tag=entry.root_tag,
+                        tags=entry.tags,
+                    ),
+                )
+                updated_at = datetime.now(timezone.utc)
+                update_search_history_row(
+                    connection,
+                    query_hash=entry.query_hash,
+                    query_key=fields["query_key"],
+                    query_key_encryption_nonce=fields["query_key_encryption_nonce"],
+                    query_key_encryption_tag=fields["query_key_encryption_tag"],
+                    root_tag=fields["root_tag"],
+                    root_tag_encryption_nonce=fields["root_tag_encryption_nonce"],
+                    root_tag_encryption_tag=fields["root_tag_encryption_tag"],
+                    tags_json=fields["tags_json"],
+                    tags_json_encryption_nonce=fields["tags_json_encryption_nonce"],
+                    tags_json_encryption_tag=fields["tags_json_encryption_tag"],
+                    score=entry.score,
+                    last_interacted_at=entry.last_interacted_at,
+                    updated_at=updated_at,
+                )
+                stored_rows_by_hash[entry.query_hash] = _build_stored_row(
+                    entry=SearchHistoryEntry(
+                        query_hash=entry.query_hash,
+                        query_key=entry.query_key,
+                        root_tag=entry.root_tag,
+                        tags=entry.tags,
+                        score=entry.score,
+                        created_at=entry.created_at,
+                        last_interacted_at=entry.last_interacted_at,
+                        updated_at=updated_at,
+                    ),
+                    serialized_fields=fields,
+                )
+                rewritten_count += 1
+
+            self._stored_rows_by_hash = stored_rows_by_hash
+        return rewritten_count
 
 
 def _build_preferred_case_variant_map(*, exact_tag_counts: dict[str, int]) -> dict[str, str]:
@@ -90,7 +355,7 @@ def normalize_search_history_query(query: str) -> NormalizedSearchHistoryQuery |
     if not isinstance(query, str):
         raise TypeError(f"query must be a string, got {type(query)}")
 
-    tags: list[str] = []
+    tags_by_casefold: dict[str, str] = {}
     text = query.strip()
     if text == "":
         return None
@@ -137,12 +402,17 @@ def normalize_search_history_query(query: str) -> NormalizedSearchHistoryQuery |
             continue
         if _UUID_TERM_RE.fullmatch(token) is not None:
             continue
-        tags.append(token)
+        token_casefold = token.casefold()
+        if token_casefold not in tags_by_casefold:
+            tags_by_casefold[token_casefold] = token
 
-    if not tags:
+    if not tags_by_casefold:
         return None
 
-    normalized_tags = tuple(tags)
+    normalized_tags = tuple(
+        tags_by_casefold[key]
+        for key in sorted(tags_by_casefold.keys(), key=lambda term: (term, tags_by_casefold[term]))
+    )
     query_key = " ".join(normalized_tags)
     return NormalizedSearchHistoryQuery(
         query_hash=_hash_query_key(query_key),
@@ -164,87 +434,10 @@ def record_search_interaction(*, query: str, interaction_type: str, token: str) 
     if len(search_index.query_note_ids(query)) == 0:
         return False
 
-    encryption_service = _resolve_encryption_service(token)
-    if encryption_service is None and is_encryption_required():
-        raise RuntimeError("Search history interaction requires an active DEK")
-
-    now = datetime.now(timezone.utc)
-    encrypted_fields = _serialize_search_history_fields(
-        encryption_service=encryption_service,
+    return search_history_store.record_interaction(
         normalized=normalized,
+        token=token,
     )
-
-    with begin_search_history_writer() as connection:
-        rows = fetch_all_search_history_rows(connection)
-        current_row: dict[str, object] | None = None
-        rows_to_delete: list[str] = []
-
-        for row in rows:
-            row_hash = row["query_hash"]
-            if not isinstance(row_hash, str) or row_hash == "":
-                raise TypeError("search_interaction_history.query_hash must be a non-empty string")
-            score = row["score"]
-            if not isinstance(score, float):
-                raise TypeError(f"search_interaction_history.score must be a float: {type(score)}")
-
-            decayed_score = score * SEARCH_HISTORY_DECAY_FACTOR
-            if row_hash == normalized.query_hash:
-                current_row = row
-                current_row["score"] = decayed_score
-                continue
-            if decayed_score < _SEARCH_HISTORY_PRUNE_SCORE_THRESHOLD:
-                rows_to_delete.append(row_hash)
-                continue
-            update_search_history_score_fields(
-                connection,
-                query_hash=row_hash,
-                score=decayed_score,
-                updated_at=now,
-            )
-
-        if rows_to_delete:
-            delete_search_history_rows(connection, rows_to_delete)
-
-        if current_row is None:
-            insert_search_history_row(
-                connection,
-                query_hash=normalized.query_hash,
-                query_key=encrypted_fields["query_key"],
-                query_key_encryption_nonce=encrypted_fields["query_key_encryption_nonce"],
-                query_key_encryption_tag=encrypted_fields["query_key_encryption_tag"],
-                root_tag=encrypted_fields["root_tag"],
-                root_tag_encryption_nonce=encrypted_fields["root_tag_encryption_nonce"],
-                root_tag_encryption_tag=encrypted_fields["root_tag_encryption_tag"],
-                tags_json=encrypted_fields["tags_json"],
-                tags_json_encryption_nonce=encrypted_fields["tags_json_encryption_nonce"],
-                tags_json_encryption_tag=encrypted_fields["tags_json_encryption_tag"],
-                score=1.0,
-                created_at=now,
-                last_interacted_at=now,
-                updated_at=now,
-            )
-            return True
-
-        current_score = current_row["score"]
-        if not isinstance(current_score, float):
-            raise TypeError(f"search_interaction_history.score must be a float: {type(current_score)}")
-        update_search_history_row(
-            connection,
-            query_hash=normalized.query_hash,
-            query_key=encrypted_fields["query_key"],
-            query_key_encryption_nonce=encrypted_fields["query_key_encryption_nonce"],
-            query_key_encryption_tag=encrypted_fields["query_key_encryption_tag"],
-            root_tag=encrypted_fields["root_tag"],
-            root_tag_encryption_nonce=encrypted_fields["root_tag_encryption_nonce"],
-            root_tag_encryption_tag=encrypted_fields["root_tag_encryption_tag"],
-            tags_json=encrypted_fields["tags_json"],
-            tags_json_encryption_nonce=encrypted_fields["tags_json_encryption_nonce"],
-            tags_json_encryption_tag=encrypted_fields["tags_json_encryption_tag"],
-            score=current_score + 1.0,
-            last_interacted_at=now,
-            updated_at=now,
-        )
-    return True
 
 
 def list_recent_search_tags(*, limit: int, token: str) -> list[str]:
@@ -253,86 +446,7 @@ def list_recent_search_tags(*, limit: int, token: str) -> list[str]:
     if not isinstance(token, str) or token == "":
         raise ValueError("token must be a non-empty string")
 
-    exact_tag_counts = search_index.list_tag_frequencies()
-    preferred_terms_by_casefold = _build_preferred_case_variant_map(
-        exact_tag_counts=exact_tag_counts,
-    )
-    if not preferred_terms_by_casefold:
-        return []
-
-    service = _resolve_encryption_service(token)
-    with connect_search_history_reader() as connection:
-        rows = fetch_all_search_history_rows(connection)
-
-    entries: list[SearchHistoryEntry] = []
-    for row in rows:
-        entry = _deserialize_search_history_entry(
-            encryption_service=service,
-            row=row,
-        )
-        filtered_tags = tuple(
-            preferred_terms_by_casefold[tag.casefold()]
-            for tag in entry.tags
-            if tag.casefold() in preferred_terms_by_casefold
-        )
-        if not filtered_tags:
-            continue
-        entries.append(
-            SearchHistoryEntry(
-                query_hash=entry.query_hash,
-                query_key=entry.query_key,
-                root_tag=entry.root_tag,
-                tags=filtered_tags,
-                score=entry.score,
-                created_at=entry.created_at,
-                last_interacted_at=entry.last_interacted_at,
-                updated_at=entry.updated_at,
-            )
-        )
-
-    entries.sort(
-        key=lambda entry: (
-            -entry.score,
-            -entry.last_interacted_at.timestamp(),
-            entry.query_key,
-        )
-    )
-
-    tag_scores_by_casefold: dict[str, float] = {}
-    tag_last_interacted_at_by_casefold: dict[str, float] = {}
-    tag_display_by_casefold: dict[str, str] = {}
-    tag_first_seen_order_by_casefold: dict[str, int] = {}
-    next_tag_order = 0
-    for entry in entries:
-        seen_casefold_in_entry: set[str] = set()
-        for tag in entry.tags:
-            tag_casefold = tag.casefold()
-            if tag_casefold in seen_casefold_in_entry:
-                continue
-            seen_casefold_in_entry.add(tag_casefold)
-            if tag_casefold in tag_scores_by_casefold:
-                tag_scores_by_casefold[tag_casefold] += entry.score
-            else:
-                tag_scores_by_casefold[tag_casefold] = entry.score
-            entry_last_interacted_at = entry.last_interacted_at.timestamp()
-            if tag_casefold not in tag_last_interacted_at_by_casefold:
-                tag_last_interacted_at_by_casefold[tag_casefold] = entry_last_interacted_at
-            elif entry_last_interacted_at > tag_last_interacted_at_by_casefold[tag_casefold]:
-                tag_last_interacted_at_by_casefold[tag_casefold] = entry_last_interacted_at
-            tag_display_by_casefold[tag_casefold] = tag
-            if tag_casefold not in tag_first_seen_order_by_casefold:
-                tag_first_seen_order_by_casefold[tag_casefold] = next_tag_order
-                next_tag_order += 1
-
-    ranked_casefolds = sorted(
-        tag_scores_by_casefold.keys(),
-        key=lambda tag_casefold: (
-            -tag_scores_by_casefold[tag_casefold],
-            -tag_last_interacted_at_by_casefold[tag_casefold],
-            tag_first_seen_order_by_casefold[tag_casefold],
-        ),
-    )
-    return [tag_display_by_casefold[tag_casefold] for tag_casefold in ranked_casefolds[:limit]]
+    return search_history_store.list_recent_tags(limit=limit, token=token)
 
 
 def prioritize_blank_search_suggestions(
@@ -444,92 +558,200 @@ def _merge_prioritized_search_suggestions(
     return merged
 
 
-def encrypt_all_search_history_for_active_dek(*, encryption_service: object) -> int:
+def encrypt_all_search_history_for_active_dek(*, connection, encryption_service: object) -> int:
     service = _coerce_encryption_service(encryption_service)
     if service is None:
         raise RuntimeError("Search history encryption migration requires an active DEK")
-
-    rewritten_count = 0
-    with begin_search_history_writer() as connection:
-        rows = fetch_all_search_history_rows(connection)
-        for row in rows:
-            if _row_is_fully_encrypted(row):
-                continue
-            entry = _deserialize_search_history_entry(
-                encryption_service=service,
-                row=row,
-            )
-            encrypted_fields = _serialize_search_history_fields(
-                encryption_service=service,
-                normalized=NormalizedSearchHistoryQuery(
-                    query_hash=entry.query_hash,
-                    query_key=entry.query_key,
-                    root_tag=entry.root_tag,
-                    tags=entry.tags,
-                ),
-            )
-            update_search_history_row(
-                connection,
-                query_hash=entry.query_hash,
-                query_key=encrypted_fields["query_key"],
-                query_key_encryption_nonce=encrypted_fields["query_key_encryption_nonce"],
-                query_key_encryption_tag=encrypted_fields["query_key_encryption_tag"],
-                root_tag=encrypted_fields["root_tag"],
-                root_tag_encryption_nonce=encrypted_fields["root_tag_encryption_nonce"],
-                root_tag_encryption_tag=encrypted_fields["root_tag_encryption_tag"],
-                tags_json=encrypted_fields["tags_json"],
-                tags_json_encryption_nonce=encrypted_fields["tags_json_encryption_nonce"],
-                tags_json_encryption_tag=encrypted_fields["tags_json_encryption_tag"],
-                score=entry.score,
-                last_interacted_at=entry.last_interacted_at,
-                updated_at=datetime.now(timezone.utc),
-            )
-            rewritten_count += 1
-    return rewritten_count
+    return search_history_store.rewrite_persisted_entries(
+        connection=connection,
+        encryption_service=service,
+        force_plaintext=False,
+    )
 
 
-def decrypt_all_search_history_for_plaintext(*, encryption_service: object) -> int:
+def decrypt_all_search_history_for_plaintext(*, connection, encryption_service: object) -> int:
     service = _coerce_encryption_service(encryption_service)
     if service is None:
         raise RuntimeError("Search history decryption migration requires an active DEK")
+    return search_history_store.rewrite_persisted_entries(
+        connection=connection,
+        encryption_service=service,
+        force_plaintext=True,
+    )
 
-    rewritten_count = 0
-    with begin_search_history_writer() as connection:
-        rows = fetch_all_search_history_rows(connection)
-        for row in rows:
-            if _row_is_fully_plaintext(row):
-                continue
-            entry = _deserialize_search_history_entry(
-                encryption_service=service,
-                row=row,
-            )
-            plaintext_fields = _serialize_search_history_fields(
-                encryption_service=None,
-                normalized=NormalizedSearchHistoryQuery(
-                    query_hash=entry.query_hash,
-                    query_key=entry.query_key,
-                    root_tag=entry.root_tag,
-                    tags=entry.tags,
-                ),
-            )
-            update_search_history_row(
-                connection,
+
+def _rows_by_hash(rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    rows_by_hash: dict[str, dict[str, object]] = {}
+    for row in rows:
+        query_hash = row["query_hash"]
+        if not isinstance(query_hash, str) or query_hash == "":
+            raise TypeError("search_interaction_history.query_hash must be a non-empty string")
+        if query_hash in rows_by_hash:
+            raise RuntimeError(f"duplicate search history query_hash: {query_hash}")
+        rows_by_hash[query_hash] = row
+    return rows_by_hash
+
+
+def _build_entries_by_hash(
+    *,
+    stored_rows_by_hash: dict[str, dict[str, object]],
+    token: str,
+    require_success: bool,
+) -> dict[str, SearchHistoryEntry] | None:
+    service = _resolve_encryption_service(token)
+    if service is None:
+        has_encrypted_rows = any(_row_is_fully_encrypted(row) for row in stored_rows_by_hash.values())
+        if has_encrypted_rows:
+            if require_success:
+                raise RuntimeError("Search history decryption requires an active DEK")
+            return None
+
+    entries_by_hash: dict[str, SearchHistoryEntry] = {}
+    for row in stored_rows_by_hash.values():
+        entry = _deserialize_search_history_entry(
+            encryption_service=service,
+            row=row,
+        )
+        entries_by_hash[entry.query_hash] = entry
+    return entries_by_hash
+
+
+def _serialize_entries_for_memory(
+    *,
+    entries_by_hash: dict[str, SearchHistoryEntry],
+    encryption_service: object,
+) -> dict[str, dict[str, object]]:
+    stored_rows_by_hash: dict[str, dict[str, object]] = {}
+    for entry in entries_by_hash.values():
+        fields = _serialize_search_history_fields(
+            encryption_service=encryption_service,
+            normalized=NormalizedSearchHistoryQuery(
                 query_hash=entry.query_hash,
-                query_key=plaintext_fields["query_key"],
-                query_key_encryption_nonce=None,
-                query_key_encryption_tag=None,
-                root_tag=plaintext_fields["root_tag"],
-                root_tag_encryption_nonce=None,
-                root_tag_encryption_tag=None,
-                tags_json=plaintext_fields["tags_json"],
-                tags_json_encryption_nonce=None,
-                tags_json_encryption_tag=None,
+                query_key=entry.query_key,
+                root_tag=entry.root_tag,
+                tags=entry.tags,
+            ),
+        )
+        stored_rows_by_hash[entry.query_hash] = _build_stored_row(
+            entry=entry,
+            serialized_fields=fields,
+        )
+    return stored_rows_by_hash
+
+
+def _build_stored_row(
+    *,
+    entry: SearchHistoryEntry,
+    serialized_fields: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "query_hash": entry.query_hash,
+        "query_key": serialized_fields["query_key"],
+        "query_key_encryption_nonce": serialized_fields["query_key_encryption_nonce"],
+        "query_key_encryption_tag": serialized_fields["query_key_encryption_tag"],
+        "root_tag": serialized_fields["root_tag"],
+        "root_tag_encryption_nonce": serialized_fields["root_tag_encryption_nonce"],
+        "root_tag_encryption_tag": serialized_fields["root_tag_encryption_tag"],
+        "tags_json": serialized_fields["tags_json"],
+        "tags_json_encryption_nonce": serialized_fields["tags_json_encryption_nonce"],
+        "tags_json_encryption_tag": serialized_fields["tags_json_encryption_tag"],
+        "score": entry.score,
+        "created_at": entry.created_at,
+        "last_interacted_at": entry.last_interacted_at,
+        "updated_at": entry.updated_at,
+    }
+
+
+def _select_excess_hashes_for_cap(entries_by_hash: dict[str, SearchHistoryEntry]) -> list[str]:
+    if len(entries_by_hash) <= MAX_SEARCH_HISTORY_ROWS:
+        return []
+    ranked_worst_first = sorted(
+        entries_by_hash.values(),
+        key=lambda entry: (
+            entry.score,
+            entry.last_interacted_at.timestamp(),
+            entry.updated_at.timestamp(),
+            entry.query_key,
+            entry.query_hash,
+        ),
+    )
+    excess_count = len(entries_by_hash) - MAX_SEARCH_HISTORY_ROWS
+    return [entry.query_hash for entry in ranked_worst_first[:excess_count]]
+
+
+def _list_recent_search_tags_from_entries(*, entries: list[SearchHistoryEntry], limit: int) -> list[str]:
+    exact_tag_counts = search_index.list_tag_frequencies()
+    preferred_terms_by_casefold = _build_preferred_case_variant_map(
+        exact_tag_counts=exact_tag_counts,
+    )
+    if not preferred_terms_by_casefold:
+        return []
+
+    filtered_entries: list[SearchHistoryEntry] = []
+    for entry in entries:
+        filtered_tags = tuple(
+            preferred_terms_by_casefold[tag.casefold()]
+            for tag in entry.tags
+            if tag.casefold() in preferred_terms_by_casefold
+        )
+        if not filtered_tags:
+            continue
+        filtered_entries.append(
+            SearchHistoryEntry(
+                query_hash=entry.query_hash,
+                query_key=entry.query_key,
+                root_tag=entry.root_tag,
+                tags=filtered_tags,
                 score=entry.score,
+                created_at=entry.created_at,
                 last_interacted_at=entry.last_interacted_at,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=entry.updated_at,
             )
-            rewritten_count += 1
-    return rewritten_count
+        )
+
+    filtered_entries.sort(
+        key=lambda entry: (
+            -entry.score,
+            -entry.last_interacted_at.timestamp(),
+            entry.query_key,
+        )
+    )
+
+    tag_scores_by_casefold: dict[str, float] = {}
+    tag_last_interacted_at_by_casefold: dict[str, float] = {}
+    tag_display_by_casefold: dict[str, str] = {}
+    tag_first_seen_order_by_casefold: dict[str, int] = {}
+    next_tag_order = 0
+    for entry in filtered_entries:
+        seen_casefold_in_entry: set[str] = set()
+        for tag in entry.tags:
+            tag_casefold = tag.casefold()
+            if tag_casefold in seen_casefold_in_entry:
+                continue
+            seen_casefold_in_entry.add(tag_casefold)
+            if tag_casefold in tag_scores_by_casefold:
+                tag_scores_by_casefold[tag_casefold] += entry.score
+            else:
+                tag_scores_by_casefold[tag_casefold] = entry.score
+            entry_last_interacted_at = entry.last_interacted_at.timestamp()
+            if tag_casefold not in tag_last_interacted_at_by_casefold:
+                tag_last_interacted_at_by_casefold[tag_casefold] = entry_last_interacted_at
+            elif entry_last_interacted_at > tag_last_interacted_at_by_casefold[tag_casefold]:
+                tag_last_interacted_at_by_casefold[tag_casefold] = entry_last_interacted_at
+            tag_display_by_casefold[tag_casefold] = tag
+            if tag_casefold not in tag_first_seen_order_by_casefold:
+                tag_first_seen_order_by_casefold[tag_casefold] = next_tag_order
+                next_tag_order += 1
+
+    ranked_casefolds = sorted(
+        tag_scores_by_casefold.keys(),
+        key=lambda tag_casefold: (
+            -tag_scores_by_casefold[tag_casefold],
+            -tag_last_interacted_at_by_casefold[tag_casefold],
+            tag_first_seen_order_by_casefold[tag_casefold],
+        ),
+    )
+    return [tag_display_by_casefold[tag_casefold] for tag_casefold in ranked_casefolds[:limit]]
 
 
 def _hash_query_key(query_key: str) -> str:
@@ -760,3 +982,6 @@ def _coerce_encryption_service(encryption_service: object):
     if not isinstance(dek, bytes):
         return None
     return encryption_service
+
+
+search_history_store = SearchHistoryStore()

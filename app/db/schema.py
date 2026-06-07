@@ -10,6 +10,7 @@ ONTOLOGY_RULES_TABLE = "ontology_rules"
 TAB_STATE_TABLE = "tab_state"
 LINK_TITLES_TABLE = "link_titles"
 REMINDERS_TABLE = "reminders"
+SEARCH_HISTORY_TABLE = "search_interaction_history"
 
 _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
@@ -123,6 +124,30 @@ CREATE TABLE IF NOT EXISTS {REMINDERS_TABLE} (
 );
 """
 
+_CREATE_SEARCH_HISTORY_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {SEARCH_HISTORY_TABLE} (
+    query_hash TEXT PRIMARY KEY,
+    query_key TEXT NOT NULL,
+    query_key_encryption_nonce BLOB,
+    query_key_encryption_tag BLOB,
+    root_tag TEXT NOT NULL,
+    root_tag_encryption_nonce BLOB,
+    root_tag_encryption_tag BLOB,
+    tags_json TEXT NOT NULL,
+    tags_json_encryption_nonce BLOB,
+    tags_json_encryption_tag BLOB,
+    score REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    last_interacted_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+_CREATE_SEARCH_HISTORY_SCORE_INDEX = f"""
+CREATE INDEX IF NOT EXISTS idx_{SEARCH_HISTORY_TABLE}_score
+ON {SEARCH_HISTORY_TABLE}(score DESC, updated_at DESC);
+"""
+
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]
@@ -145,6 +170,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_TAB_STATE_TABLE)
     connection.execute(_CREATE_LINK_TITLES_TABLE)
     connection.execute(_CREATE_REMINDERS_TABLE)
+    connection.execute(_CREATE_SEARCH_HISTORY_TABLE)
     _ensure_columns(
         connection,
         NOTES_TABLE,
@@ -178,3 +204,4 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_NOTES_PARENT_INDEX)
     connection.execute(_CREATE_NOTES_PREV_INDEX)
     connection.execute(_CREATE_NOTES_NEXT_INDEX)
+    connection.execute(_CREATE_SEARCH_HISTORY_SCORE_INDEX)

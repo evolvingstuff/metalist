@@ -14,8 +14,6 @@ from threading import Lock
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
-from app.db.search_history_schema import initialize_search_history_schema
-from app.db.search_history_session import resolve_search_history_database_path
 from app.models.database import SafeSession
 
 
@@ -208,10 +206,6 @@ def _resolve_related_file_database_path(database_path: Path) -> Path:
     return resolve_file_database_path(database_path)
 
 
-def _resolve_related_search_history_database_path(database_path: Path) -> Path:
-    return resolve_search_history_database_path(database_path)
-
-
 def _resolve_related_file_backup_path(
     backup_directory: Path,
     filename: str,
@@ -219,18 +213,6 @@ def _resolve_related_file_backup_path(
     database_path: Path,
 ) -> Path:
     return backup_directory / _derive_file_backup_filename(filename=filename, database_path=database_path)
-
-
-def _resolve_related_search_history_backup_path(
-    backup_directory: Path,
-    filename: str,
-    *,
-    database_path: Path,
-) -> Path:
-    return backup_directory / _derive_search_history_backup_filename(
-        filename=filename,
-        database_path=database_path,
-    )
 
 
 def _copy_database(source_path: Path, target_path: Path) -> None:
@@ -259,18 +241,6 @@ def _reset_file_database_to_empty(file_database_path: Path) -> None:
     try:
         initialize_file_schema(connection)
         connection.execute("DELETE FROM files")
-        connection.commit()
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        connection.close()
-
-
-def _reset_search_history_database_to_empty(search_history_database_path: Path) -> None:
-    search_history_database_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(search_history_database_path), check_same_thread=False)
-    try:
-        initialize_search_history_schema(connection)
-        connection.execute("DELETE FROM search_interaction_history")
         connection.commit()
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
@@ -540,15 +510,6 @@ def _collect_existing_database_sources(database_path: Path) -> list[tuple[str, P
             raise ValueError(f"Related file database path is not a file: {related_file_database_path}")
         sources.append((_DATABASE_ROLE_FILES, related_file_database_path))
 
-    related_search_history_database_path = _resolve_related_search_history_database_path(database_path)
-    if related_search_history_database_path.exists():
-        if not related_search_history_database_path.is_file():
-            raise ValueError(
-                "Related search history database path is not a file: "
-                f"{related_search_history_database_path}"
-            )
-        sources.append((_DATABASE_ROLE_SEARCH_HISTORY, related_search_history_database_path))
-
     return sources
 
 
@@ -663,22 +624,6 @@ def _restore_archive_backup_to_paths(backup_path: Path, database_path: Path) -> 
                 else:
                     _reset_file_database_to_empty(file_database_path)
 
-                search_history_database_path = _resolve_related_search_history_database_path(database_path)
-                if _DATABASE_ROLE_SEARCH_HISTORY in file_entry_by_role:
-                    search_history_entry = file_entry_by_role[_DATABASE_ROLE_SEARCH_HISTORY]
-                    search_history_archive_name = search_history_entry["archive_name"]
-                    assert isinstance(search_history_archive_name, str)
-                    search_history_temp_path = temp_directory_path / search_history_archive_name
-                    _copy_file_from_archive(
-                        archive_handle,
-                        archive_name=search_history_archive_name,
-                        target_path=search_history_temp_path,
-                    )
-                    _copy_database(search_history_temp_path, search_history_database_path)
-                    _checkpoint_database(search_history_database_path)
-                else:
-                    _reset_search_history_database_to_empty(search_history_database_path)
-
 
 def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -698,18 +643,6 @@ def _restore_legacy_backup_to_paths(backup_path: Path, database_path: Path) -> N
             _checkpoint_database(related_file_database_path)
         else:
             _reset_file_database_to_empty(related_file_database_path)
-
-        related_search_history_database_path = _resolve_related_search_history_database_path(database_path)
-        related_search_history_backup_path = _resolve_related_search_history_backup_path(
-            backup_path.parent,
-            backup_path.name,
-            database_path=database_path,
-        )
-        if related_search_history_backup_path.exists():
-            _copy_database(related_search_history_backup_path, related_search_history_database_path)
-            _checkpoint_database(related_search_history_database_path)
-        else:
-            _reset_search_history_database_to_empty(related_search_history_database_path)
 
 
 def resolve_live_database_path() -> Path:
