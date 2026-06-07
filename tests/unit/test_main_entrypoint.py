@@ -292,19 +292,11 @@ def test_run_namespace_server_prints_resolved_config(
 def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(monkeypatch) -> None:
     calls: list[str] = []
 
-    def _fake_apply_main_cli_args_to_environ(*, argv, environ) -> MainCliArgs:
-        calls.append("apply_main_cli_args_to_environ")
-        return MainCliArgs(
-            namespace="default",
-            port=None,
-            https_port=None,
-            mcp_port=None,
-            test_mode=False,
-            namespace_requested=False,
-        )
-
     def _fake_ensure_default_tls_pair(*, environ) -> None:
         calls.append("ensure_default_tls_pair")
+
+    def _fake_prompt_for_missing_namespace_launch_profiles(*, environ) -> None:
+        calls.append("_prompt_for_missing_namespace_launch_profiles")
 
     def _fake_open_or_launch_all_namespaces(*, environ):
         calls.append("open_or_launch_all_namespaces")
@@ -321,8 +313,17 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
             )(),
         ]
 
-    monkeypatch.setattr(main_entrypoint, "apply_main_cli_args_to_environ", _fake_apply_main_cli_args_to_environ)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "apply_main_cli_args_to_environ",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("apply_main_cli_args_to_environ should not run")),
+    )
     monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", _fake_ensure_default_tls_pair)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_prompt_for_missing_namespace_launch_profiles",
+        _fake_prompt_for_missing_namespace_launch_profiles,
+    )
     monkeypatch.setattr(main_entrypoint, "open_or_launch_all_namespaces", _fake_open_or_launch_all_namespaces)
     monkeypatch.setattr(
         main_entrypoint,
@@ -348,10 +349,68 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
     assert calls == [
         "_record_self_executable_for_namespace_launch",
         "_run_startup_sanity_gates",
-        "apply_main_cli_args_to_environ",
         "ensure_default_tls_pair",
+        "_prompt_for_missing_namespace_launch_profiles",
         "open_or_launch_all_namespaces",
         "_print_namespace_bootstrap_results",
+    ]
+
+
+def test_prompt_for_missing_namespace_launch_profiles_saves_suggested_ports(monkeypatch) -> None:
+    calls: list[object] = []
+    catalog_calls = {"count": 0}
+
+    def _fake_build_namespace_catalog(*, environ, current_namespace):
+        catalog_calls["count"] += 1
+        if catalog_calls["count"] == 1:
+            return {
+                "namespaces": [
+                    {
+                        "namespace": "default",
+                        "has_launch_profile": False,
+                        "default_profile": {
+                            "namespace": "default",
+                            "port": 8000,
+                            "https_port": 8443,
+                            "mcp_port": 8765,
+                        },
+                    }
+                ]
+            }
+        return {
+            "namespaces": [
+                {
+                    "namespace": "default",
+                    "has_launch_profile": True,
+                    "default_profile": {
+                        "namespace": "default",
+                        "port": 8000,
+                        "https_port": 8443,
+                        "mcp_port": 8765,
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(main_entrypoint, "build_namespace_catalog", _fake_build_namespace_catalog)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "save_namespace_launch_profile",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setattr(builtins, "input", lambda prompt: "")
+    monkeypatch.setattr(builtins, "print", lambda text: calls.append(text))
+
+    main_entrypoint._prompt_for_missing_namespace_launch_profiles(environ={})
+
+    assert calls == [
+        "Namespace default has no saved launch profile. Enter ports or press Return for suggestions.",
+        {
+            "namespace": "default",
+            "port": 8000,
+            "https_port": 8443,
+            "mcp_port": 8765,
+        },
     ]
 
 

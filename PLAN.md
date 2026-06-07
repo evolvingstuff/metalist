@@ -52,11 +52,14 @@ Remove the global `~/MetaList/namespaces.db` launch-profile registry. Store each
    - When importing under a different name, rewrite the stored namespace name in the restored launch-profile row and resolve port conflicts before launch.
    - If restoring into the same namespace while it is running, use the existing maintenance/reset/reload path.
 
-6. Migration and compatibility
-   - On first startup after this change, if old `~/MetaList/namespaces.db` exists, read profiles from it and copy them into each namespace DB when that DB exists or is created.
-   - Do not require the old registry after migration.
-   - Do not delete `namespaces.db` automatically in the first implementation; ignore it after migration.
-   - If both old registry and namespace DB profile exist, namespace DB wins unless the namespace DB profile is missing.
+6. Missing profile setup and old registry behavior
+   - Do not migrate from old `~/MetaList/namespaces.db`.
+   - Do not read `~/MetaList/namespaces.db`.
+   - Do not delete `~/MetaList/namespaces.db`; it is simply ignored.
+   - If a namespace DB has no launch-profile table/row, treat that namespace as needing port setup.
+   - If explicit CLI/env ports are available for that namespace, save them into the namespace DB and continue.
+   - If ports are missing and the current flow can prompt, ask the user for HTTP / HTTPS / MCP ports and save them into the namespace DB.
+   - If ports are missing and the current flow cannot prompt, fail loudly with a clear error explaining how to rerun with explicit ports or use the UI port setup flow.
 
 7. Delete namespace behavior
    - Deleting a namespace removes its namespace directory, including the profile because it is in the namespace DB.
@@ -67,7 +70,10 @@ Remove the global `~/MetaList/namespaces.db` launch-profile registry. Store each
    - Update `tests/unit/test_server_runtime.py` for DB-backed launch profiles.
    - Update `tests/unit/test_namespace_switcher.py` for catalog scan + DB-backed save/read.
    - Update main entrypoint tests that assert saved profile behavior.
-   - Add migration tests from old `namespaces.db` into namespace DB profile rows.
+   - Add tests for missing profile behavior:
+     - explicit CLI/env ports seed the DB row
+     - prompt-capable flows surface setup requirements
+     - non-prompt flows fail loudly with clear instructions
    - Add restore/import tests for:
      - same-name restore allowed
      - different-name conflict rejected
@@ -96,6 +102,6 @@ Remove the global `~/MetaList/namespaces.db` launch-profile registry. Store each
 
 ## Open Risks
 - Parent orchestration imports `app.server_runtime` before namespace-specific app startup, so DB-backed profile reads must not depend on an active namespace import context.
-- Old registry migration must not silently overwrite newer namespace-DB profile rows.
+- Missing-profile handling must be explicit enough that startup does not silently invent surprising ports.
 - Restore/import needs a clear API distinction between same-name restore and different-name import/clone.
 - Existing UI copy and tests assume one central "saved ports" table; implementation should preserve the UX while changing the backing store.

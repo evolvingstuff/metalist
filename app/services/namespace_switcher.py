@@ -307,6 +307,7 @@ def open_or_launch_all_namespaces(
 
     results: list[NamespaceOpenResult] = []
     for entry in raw_namespaces:
+        _assert_catalog_entry_has_launch_profile(entry=entry)
         profile = _catalog_default_profile(entry=entry)
         results.append(
             open_or_launch_namespace(
@@ -548,6 +549,22 @@ def _catalog_default_profile(*, entry: object) -> NamespaceLaunchProfile:
         port=port,
         https_port=https_port,
         mcp_port=mcp_port,
+    )
+
+
+def _assert_catalog_entry_has_launch_profile(*, entry: object) -> None:
+    if not isinstance(entry, dict):
+        raise RuntimeError("Namespace catalog entry must be an object")
+    namespace = entry.get("namespace")
+    if not isinstance(namespace, str) or namespace == "":
+        raise RuntimeError("Namespace catalog entry missing namespace")
+    has_launch_profile = entry.get("has_launch_profile")
+    if has_launch_profile is True:
+        return
+    raise RuntimeError(
+        f"Namespace {namespace} has no launch profile. "
+        "Configure its HTTP and MCP ports from Manage namespace ports, "
+        "or launch it once with explicit --port and --mcp-port values."
     )
 
 
@@ -1342,6 +1359,7 @@ def _resolve_catalog_profile(
             continue
         if entry.get("namespace") != normalized_namespace:
             continue
+        _assert_catalog_entry_has_launch_profile(entry=entry)
         return _catalog_default_profile(entry=entry)
     raise RuntimeError(f"Namespace {normalized_namespace} is unavailable")
 

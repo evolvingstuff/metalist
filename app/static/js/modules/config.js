@@ -99,6 +99,8 @@ export const CONFIG = {
             RUN: `${API_BASE}/backup/run`,
             LIST: `${API_BASE}/backup/list`,
             RESTORE: `${API_BASE}/backup/restore`,
+            RESTORE_PREFLIGHT: `${API_BASE}/backup/restore/preflight`,
+            RESTORE_IMPORT: `${API_BASE}/backup/restore/import`,
             FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
         },
         MEMORY: {

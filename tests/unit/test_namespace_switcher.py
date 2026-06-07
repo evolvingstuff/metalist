@@ -35,6 +35,12 @@ def test_build_namespace_catalog_suggests_next_free_ports(
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     _disable_default_tls(monkeypatch, tmp_path)
     save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=None,
+        mcp_port=8765,
+    )
+    save_namespace_launch_profile(
         namespace="cla",
         port=8001,
         https_port=None,
@@ -107,6 +113,12 @@ def test_build_login_namespace_catalog_returns_plain_namespace_names(
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=None,
+        mcp_port=8765,
+    )
     save_namespace_launch_profile(
         namespace="cla",
         port=8001,
@@ -328,6 +340,12 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     _disable_default_tls(monkeypatch, tmp_path)
     save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=None,
+        mcp_port=8765,
+    )
+    save_namespace_launch_profile(
         namespace="cla",
         port=8001,
         https_port=None,
@@ -368,6 +386,20 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
         (None, "cla", 8001, None, 8766),
     ]
     assert [result.namespace for result in results] == ["default", "cla"]
+
+
+def test_open_or_launch_all_namespaces_rejects_missing_launch_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    database_path = server_runtime.resolve_namespaced_database_path(namespace="work")
+    server_runtime.prepare_database_runtime_path(database_path=database_path)
+    database_path.touch()
+
+    with pytest.raises(RuntimeError, match="Namespace default has no launch profile"):
+        open_or_launch_all_namespaces(environ={})
 
 
 def test_restart_running_namespace_process_allows_existing_namespace_ports_before_relaunch(
@@ -707,6 +739,12 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8001,
+        https_port=None,
+        mcp_port=8766,
+    )
     launched: list[tuple[str, str, int, int | None, int]] = []
     cleanup_requests: list[tuple[str, int, str]] = []
 

@@ -142,3 +142,48 @@ test('BackupSettingsModal falls back to the next enabled control when retention 
     assert.equal(folderPickButton.focusCount, 0);
     assert.equal(runButton.focusCount, 0);
 });
+
+test('BackupSettingsModal selects every available namespace by default', async (t) => {
+    const originalSessionStorage = globalThis.sessionStorage;
+    const originalDocument = globalThis.document;
+    const originalHTMLElement = globalThis.HTMLElement;
+
+    globalThis.sessionStorage = {
+        getItem() {
+            return null;
+        },
+        setItem() {},
+    };
+    globalThis.HTMLElement = TestElement;
+    globalThis.document = {
+        getElementById() {
+            return null;
+        },
+    };
+
+    t.after(() => {
+        if (typeof originalSessionStorage === 'undefined') {
+            delete globalThis.sessionStorage;
+        } else {
+            globalThis.sessionStorage = originalSessionStorage;
+        }
+        if (typeof originalDocument === 'undefined') {
+            delete globalThis.document;
+        } else {
+            globalThis.document = originalDocument;
+        }
+        if (typeof originalHTMLElement === 'undefined') {
+            delete globalThis.HTMLElement;
+        } else {
+            globalThis.HTMLElement = originalHTMLElement;
+        }
+    });
+
+    const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
+    const modal = new BackupSettingsModal();
+
+    assert.deepEqual(
+        modal._defaultSelectedNamespaces(['default', 'cla', 'test']),
+        ['default', 'cla', 'test'],
+    );
+});

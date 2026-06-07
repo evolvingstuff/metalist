@@ -17,6 +17,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
+from app.db.schema import initialize_schema
 from app.services.exception_capture import CapturedExceptionContext
 
 
@@ -28,7 +30,6 @@ _DEFAULT_CERT_PATH = _DEFAULT_DATABASE_DIRECTORY / "certs" / "metalist-cert.pem"
 _DEFAULT_KEY_PATH = _DEFAULT_DATABASE_DIRECTORY / "certs" / "metalist-key.pem"
 _DEFAULT_RUNTIME_DIRECTORY = Path(tempfile.gettempdir()) / "metalist-runtime"
 _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
-_DEFAULT_NAMESPACE_REGISTRY_FILENAME = "namespaces.db"
 _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME = "namespace-delete-jobs"
 _DEFAULT_LOGS_DIRECTORY_NAME = "logs"
 _DEFAULT_NAMESPACE = "default"
@@ -120,10 +121,6 @@ def resolve_namespaces_directory() -> Path:
     return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACES_DIRECTORY_NAME
 
 
-def resolve_namespace_registry_path() -> Path:
-    return _DEFAULT_DATABASE_DIRECTORY / _DEFAULT_NAMESPACE_REGISTRY_FILENAME
-
-
 def resolve_namespace_delete_jobs_directory() -> Path:
     return _DEFAULT_RUNTIME_DIRECTORY / _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME
 
@@ -154,11 +151,6 @@ def prepare_database_runtime_path(*, database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _prepare_namespace_registry_path() -> Path:
-    _DEFAULT_DATABASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    return resolve_namespace_registry_path()
-
-
 def _validate_optional_port(*, name: str, value: int | None) -> int | None:
     if value is None:
         return None
@@ -175,78 +167,161 @@ def _coerce_optional_db_port(*, value: object) -> int | None:
     return int(value)
 
 
-def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile | None:
-    normalized_namespace = validate_namespace(namespace=namespace)
-    registry_path = resolve_namespace_registry_path()
-    if not registry_path.exists():
-        return None
-    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
-    try:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
-                namespace TEXT PRIMARY KEY,
-                port INTEGER,
-                https_port INTEGER,
-                mcp_port INTEGER
-            )
-            """
-        )
-        row = connection.execute(
-            """
-            SELECT namespace, port, https_port, mcp_port
-            FROM namespace_launch_profiles
-            WHERE namespace = ?
-            """,
-            (normalized_namespace,),
-        ).fetchone()
-    finally:
-        connection.close()
+def _utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _connect_namespace_database(
+    *,
+    namespace: str,
+    create_if_missing: bool,
+) -> sqlite3.Connection | None:
+    database_path = resolve_namespaced_database_path(namespace=namespace)
+    if not database_path.exists():
+        if not create_if_missing:
+            return None
+        prepare_database_runtime_path(database_path=database_path)
+    elif not database_path.is_file():
+        raise RuntimeError(f"Namespace database path is not a file: {database_path}")
+    connection = sqlite3.connect(str(database_path), check_same_thread=False)
+    initialize_schema(connection)
+    connection.commit()
+    return connection
+
+
+def _fetch_launch_profile_from_connection(
+    *,
+    connection: sqlite3.Connection,
+    namespace: str,
+) -> NamespaceLaunchProfile | None:
+    row = connection.execute(
+        f"""
+        SELECT namespace, port, https_port, mcp_port
+        FROM {NAMESPACE_LAUNCH_PROFILE_TABLE}
+        WHERE namespace = ?
+        """,
+        (namespace,),
+    ).fetchone()
     if row is None:
         return None
+    stored_namespace = str(row[0])
+    if stored_namespace != namespace:
+        raise RuntimeError(
+            f"Launch profile namespace mismatch in {namespace}: found {stored_namespace}"
+        )
     return NamespaceLaunchProfile(
-        namespace=str(row[0]),
+        namespace=stored_namespace,
         port=_coerce_optional_db_port(value=row[1]),
         https_port=_coerce_optional_db_port(value=row[2]),
         mcp_port=_coerce_optional_db_port(value=row[3]),
     )
 
 
-def load_all_namespace_launch_profiles() -> list[NamespaceLaunchProfile]:
-    registry_path = resolve_namespace_registry_path()
-    if not registry_path.exists():
-        return []
-    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
-    try:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
-                namespace TEXT PRIMARY KEY,
-                port INTEGER,
-                https_port INTEGER,
-                mcp_port INTEGER
-            )
-            """
+def _assert_launch_profile_rows_belong_to_namespace(
+    *,
+    connection: sqlite3.Connection,
+    namespace: str,
+) -> None:
+    rows = connection.execute(
+        f"""
+        SELECT namespace
+        FROM {NAMESPACE_LAUNCH_PROFILE_TABLE}
+        ORDER BY namespace ASC
+        """
+    ).fetchall()
+    for row in rows:
+        stored_namespace = str(row[0])
+        if stored_namespace == namespace:
+            continue
+        raise RuntimeError(
+            f"Namespace DB for {namespace} contains launch profile for {stored_namespace}"
         )
-        rows = connection.execute(
-            """
-            SELECT namespace, port, https_port, mcp_port
-            FROM namespace_launch_profiles
-            ORDER BY namespace ASC
-            """
-        ).fetchall()
+
+
+def _missing_launch_profile_message(*, namespace: str) -> str:
+    return (
+        f"Namespace {namespace} has no launch profile. "
+        "Run this namespace once with explicit --port and --mcp-port values"
+        " plus --https-port when TLS is enabled, or configure its ports from the namespace UI."
+    )
+
+
+def _read_profile_from_explicit_environment(
+    *,
+    namespace: str,
+    environ: Mapping[str, str],
+) -> NamespaceLaunchProfile | None:
+    env_port = _read_optional_int(environ=environ, name="METALIST_PORT")
+    env_https_port = _read_optional_int(environ=environ, name="METALIST_HTTPS_PORT")
+    env_mcp_port = _read_optional_int(environ=environ, name="MCP_AGENT_WEB_PORT")
+    if env_port is None and env_https_port is None and env_mcp_port is None:
+        return None
+    ssl_certfile, _ = _resolve_tls_pair(environ=environ)
+    if env_port is None:
+        raise RuntimeError(_missing_launch_profile_message(namespace=namespace))
+    if env_mcp_port is None:
+        raise RuntimeError(_missing_launch_profile_message(namespace=namespace))
+    if ssl_certfile is not None and env_https_port is None:
+        raise RuntimeError(_missing_launch_profile_message(namespace=namespace))
+    return NamespaceLaunchProfile(
+        namespace=namespace,
+        port=env_port,
+        https_port=env_https_port,
+        mcp_port=env_mcp_port,
+    )
+
+
+def load_namespace_launch_profile(*, namespace: str) -> NamespaceLaunchProfile | None:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    connection = _connect_namespace_database(
+        namespace=normalized_namespace,
+        create_if_missing=False,
+    )
+    if connection is None:
+        return None
+    try:
+        _assert_launch_profile_rows_belong_to_namespace(
+            connection=connection,
+            namespace=normalized_namespace,
+        )
+        profile = _fetch_launch_profile_from_connection(
+            connection=connection,
+            namespace=normalized_namespace,
+        )
     finally:
         connection.close()
+    return profile
+
+
+def load_all_namespace_launch_profiles() -> list[NamespaceLaunchProfile]:
+    namespaces_directory = resolve_namespaces_directory()
+    if not namespaces_directory.exists():
+        return []
+    if not namespaces_directory.is_dir():
+        raise RuntimeError(f"Namespaces path is not a directory: {namespaces_directory}")
+
     profiles: list[NamespaceLaunchProfile] = []
-    for row in rows:
-        profiles.append(
-            NamespaceLaunchProfile(
-                namespace=str(row[0]),
-                port=_coerce_optional_db_port(value=row[1]),
-                https_port=_coerce_optional_db_port(value=row[2]),
-                mcp_port=_coerce_optional_db_port(value=row[3]),
+    for child in sorted(namespaces_directory.iterdir(), key=lambda path: path.name):
+        if not child.is_dir():
+            continue
+        validate_capture = CapturedExceptionContext(RuntimeError)
+        normalized_namespace: str | None = None
+        with validate_capture:
+            normalized_namespace = validate_namespace(namespace=child.name)
+        if validate_capture.captured_exception is not None:
+            continue
+        if normalized_namespace is None:
+            raise RuntimeError("Namespace validation did not return a namespace")
+        database_path = resolve_namespaced_database_path(namespace=normalized_namespace)
+        if not database_path.is_file():
+            raise RuntimeError(
+                f"Namespace {normalized_namespace} directory exists but database is missing: "
+                f"{database_path}"
             )
-        )
+        profile = load_namespace_launch_profile(namespace=normalized_namespace)
+        if profile is None:
+            continue
+        profiles.append(profile)
     return profiles
 
 
@@ -261,37 +336,37 @@ def save_namespace_launch_profile(
     normalized_port = _validate_optional_port(name="port", value=port)
     normalized_https_port = _validate_optional_port(name="https_port", value=https_port)
     normalized_mcp_port = _validate_optional_port(name="mcp_port", value=mcp_port)
-    registry_path = _prepare_namespace_registry_path()
-    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
+    connection = _connect_namespace_database(
+        namespace=normalized_namespace,
+        create_if_missing=True,
+    )
+    if connection is None:
+        raise RuntimeError("Namespace DB connection was not created")
     try:
+        now = _utc_timestamp()
         connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
-                namespace TEXT PRIMARY KEY,
-                port INTEGER,
-                https_port INTEGER,
-                mcp_port INTEGER
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO namespace_launch_profiles (
+            f"""
+            INSERT INTO {NAMESPACE_LAUNCH_PROFILE_TABLE} (
                 namespace,
                 port,
                 https_port,
-                mcp_port
-            ) VALUES (?, ?, ?, ?)
+                mcp_port,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(namespace) DO UPDATE SET
                 port = excluded.port,
                 https_port = excluded.https_port,
-                mcp_port = excluded.mcp_port
+                mcp_port = excluded.mcp_port,
+                updated_at = excluded.updated_at
             """,
             (
                 normalized_namespace,
                 normalized_port,
                 normalized_https_port,
                 normalized_mcp_port,
+                now,
+                now,
             ),
         )
         connection.commit()
@@ -307,24 +382,16 @@ def save_namespace_launch_profile(
 
 def delete_namespace_launch_profile(*, namespace: str) -> None:
     normalized_namespace = validate_namespace(namespace=namespace)
-    registry_path = resolve_namespace_registry_path()
-    if not registry_path.exists():
+    connection = _connect_namespace_database(
+        namespace=normalized_namespace,
+        create_if_missing=False,
+    )
+    if connection is None:
         return
-    connection = sqlite3.connect(str(registry_path), check_same_thread=False)
     try:
         connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS namespace_launch_profiles (
-                namespace TEXT PRIMARY KEY,
-                port INTEGER,
-                https_port INTEGER,
-                mcp_port INTEGER
-            )
-            """
-        )
-        connection.execute(
-            """
-            DELETE FROM namespace_launch_profiles
+            f"""
+            DELETE FROM {NAMESPACE_LAUNCH_PROFILE_TABLE}
             WHERE namespace = ?
             """,
             (normalized_namespace,),
@@ -536,13 +603,6 @@ def apply_main_cli_args_to_environ(
     if resolved_namespace is not None:
         environ[_NAMESPACE_ENV_NAME] = resolved_namespace
         stored_profile = load_namespace_launch_profile(namespace=resolved_namespace)
-        _apply_namespace_profile_to_environ(
-            environ=environ,
-            profile=stored_profile,
-            cli_port=parsed_args.port,
-            cli_https_port=parsed_args.https_port,
-            cli_mcp_port=parsed_args.mcp_port,
-        )
     else:
         stored_profile = None
 
@@ -554,6 +614,26 @@ def apply_main_cli_args_to_environ(
         environ["MCP_AGENT_WEB_PORT"] = str(parsed_args.mcp_port)
 
     if resolved_namespace is not None:
+        if stored_profile is None:
+            explicit_profile = _read_profile_from_explicit_environment(
+                namespace=resolved_namespace,
+                environ=environ,
+            )
+            if explicit_profile is None:
+                raise RuntimeError(_missing_launch_profile_message(namespace=resolved_namespace))
+            stored_profile = save_namespace_launch_profile(
+                namespace=explicit_profile.namespace,
+                port=explicit_profile.port,
+                https_port=explicit_profile.https_port,
+                mcp_port=explicit_profile.mcp_port,
+            )
+        _apply_namespace_profile_to_environ(
+            environ=environ,
+            profile=stored_profile,
+            cli_port=parsed_args.port,
+            cli_https_port=parsed_args.https_port,
+            cli_mcp_port=parsed_args.mcp_port,
+        )
         if (
             parsed_args.port is not None
             or parsed_args.https_port is not None

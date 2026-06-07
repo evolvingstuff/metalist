@@ -208,6 +208,18 @@ export class BackupSettingsModal extends BaseModal {
         }
     }
 
+    _defaultSelectedNamespaces(availableNamespaces) {
+        if (!Array.isArray(availableNamespaces)) {
+            throw new Error('availableNamespaces must be an array');
+        }
+        return availableNamespaces.map((namespace) => {
+            if (typeof namespace !== 'string' || namespace.length === 0) {
+                throw new Error('availableNamespaces entries must be non-empty strings');
+            }
+            return namespace;
+        });
+    }
+
     setupFormEventListeners() {
         const cancelButton = document.getElementById('backup-settings-cancel-btn');
         if (cancelButton instanceof HTMLButtonElement) {
@@ -357,7 +369,7 @@ export class BackupSettingsModal extends BaseModal {
             loading: false,
             pickingFolder: false,
             folderPath: typeof payload.folder_path === 'string' ? payload.folder_path : '',
-            selectedNamespaces: payload.selected_namespaces,
+            selectedNamespaces: this._defaultSelectedNamespaces(payload.available_namespaces),
             availableNamespaces: payload.available_namespaces,
             retentionCountText: String(payload.retention_count),
             statusMessage: '',

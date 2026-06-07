@@ -13,13 +13,16 @@ import pytest
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
+from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
 from app.services.backup_service import (
     create_timestamped_backup_for_paths,
     delete_oldest_backups_in_directory,
     list_backups_in_directory,
+    read_backup_launch_profile,
     resolve_backup_directory_for_database,
     restore_backup_to_paths,
+    restore_backup_to_paths_from_namespace,
 )
 
 
@@ -46,6 +49,53 @@ def _read_counter(database_path: Path) -> int:
         return int(row[0])
     finally:
         connection.close()
+
+
+def _write_launch_profile(
+    *,
+    database_path: Path,
+    namespace: str,
+    port: int,
+    https_port: int | None,
+    mcp_port: int,
+) -> None:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database_path))
+    try:
+        initialize_schema(connection)
+        connection.execute(
+            f"""
+            INSERT INTO {NAMESPACE_LAUNCH_PROFILE_TABLE} (
+                namespace,
+                port,
+                https_port,
+                mcp_port,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
+            """,
+            (namespace, port, https_port, mcp_port),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _read_launch_profile_namespace(*, database_path: Path) -> str:
+    connection = sqlite3.connect(str(database_path))
+    try:
+        row = connection.execute(
+            f"""
+            SELECT namespace
+            FROM {NAMESPACE_LAUNCH_PROFILE_TABLE}
+            ORDER BY namespace ASC
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None
+    return str(row[0])
 
 
 def _write_file_marker(database_path: Path, file_id: str) -> None:
@@ -258,6 +308,38 @@ def test_create_and_restore_backup_round_trip(tmp_path: Path) -> None:
 
     restore_backup_to_paths(backup_path, database_path)
     assert _read_counter(database_path) == 7
+
+
+def test_restore_archive_into_different_namespace_rewrites_launch_profile(tmp_path: Path) -> None:
+    source_database_path = tmp_path / "namespaces" / "source" / "source.metalist.db"
+    target_database_path = tmp_path / "namespaces" / "target" / "target.metalist.db"
+    backup_directory = tmp_path / "backups"
+
+    _write_counter(source_database_path, 7)
+    _write_launch_profile(
+        database_path=source_database_path,
+        namespace="source",
+        port=8010,
+        https_port=None,
+        mcp_port=8770,
+    )
+    backup_file = create_timestamped_backup_for_paths(source_database_path, backup_directory)
+    backup_path = backup_directory / backup_file.filename
+
+    backup_profile = read_backup_launch_profile(backup_path, expected_namespace="source")
+    assert backup_profile is not None
+    assert backup_profile.namespace == "source"
+    assert backup_profile.port == 8010
+    assert backup_profile.mcp_port == 8770
+
+    restore_backup_to_paths_from_namespace(
+        backup_path,
+        target_database_path,
+        source_namespace="source",
+    )
+
+    assert _read_counter(target_database_path) == 7
+    assert _read_launch_profile_namespace(database_path=target_database_path) == "target"
 
 
 def test_resolve_backup_directory_for_database_scopes_default_namespace_database(tmp_path: Path) -> None:

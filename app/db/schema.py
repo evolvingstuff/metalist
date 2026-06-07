@@ -11,6 +11,7 @@ TAB_STATE_TABLE = "tab_state"
 LINK_TITLES_TABLE = "link_titles"
 REMINDERS_TABLE = "reminders"
 SEARCH_HISTORY_TABLE = "search_interaction_history"
+NAMESPACE_LAUNCH_PROFILE_TABLE = "namespace_launch_profile"
 
 _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
@@ -148,6 +149,17 @@ CREATE INDEX IF NOT EXISTS idx_{SEARCH_HISTORY_TABLE}_score
 ON {SEARCH_HISTORY_TABLE}(score DESC, updated_at DESC);
 """
 
+_CREATE_NAMESPACE_LAUNCH_PROFILE_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {NAMESPACE_LAUNCH_PROFILE_TABLE} (
+    namespace TEXT PRIMARY KEY,
+    port INTEGER,
+    https_port INTEGER,
+    mcp_port INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]
@@ -171,6 +183,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_LINK_TITLES_TABLE)
     connection.execute(_CREATE_REMINDERS_TABLE)
     connection.execute(_CREATE_SEARCH_HISTORY_TABLE)
+    connection.execute(_CREATE_NAMESPACE_LAUNCH_PROFILE_TABLE)
     _ensure_columns(
         connection,
         NOTES_TABLE,
