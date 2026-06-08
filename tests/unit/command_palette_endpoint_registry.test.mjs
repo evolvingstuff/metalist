@@ -15,6 +15,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openPasswordManager: noop,
             openSessionTimeoutSettings: noop,
             openReminders: noop,
+            openSoundManager: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,

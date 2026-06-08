@@ -48,6 +48,7 @@ class FakeElement {
         this.dataset = {};
         this.attributes = new Map();
         this.classList = new FakeClassList();
+        this.style = {};
         this._className = '';
         this._innerHTML = '';
         this.id = '';
@@ -137,6 +138,21 @@ class FakeElement {
         return this.attributes.has(name) ? this.attributes.get(name) : null;
     }
 
+    removeAttribute(name) {
+        this.attributes.delete(name);
+    }
+
+    getBoundingClientRect() {
+        return {
+            top: 0,
+            right: 320,
+            bottom: 48,
+            left: 0,
+            width: 320,
+            height: 48,
+        };
+    }
+
     querySelector(selector) {
         return this.querySelectorAll(selector)[0] ?? null;
     }
@@ -205,7 +221,10 @@ function installReminderSurfaceDom(t, options = {}) {
         setItem() {},
     };
     globalThis.window = {
-        setTimeout() {
+        setTimeout(callback, delay) {
+            if (typeof callback === 'function' && delay === 240) {
+                callback();
+            }
             return 1;
         },
         clearTimeout() {},
@@ -213,6 +232,14 @@ function installReminderSurfaceDom(t, options = {}) {
             return 1;
         },
         clearInterval() {},
+        requestAnimationFrame(callback) {
+            if (typeof callback !== 'function') {
+                throw new Error('requestAnimationFrame requires callback');
+            }
+            callback();
+            return 1;
+        },
+        cancelAnimationFrame() {},
     };
     globalThis.CustomEvent = class CustomEvent {
         constructor(type, init = {}) {
