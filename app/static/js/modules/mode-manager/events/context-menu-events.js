@@ -14,10 +14,14 @@ import {
     createChildNote,
     createNote,
     deleteNote,
+    deleteNoteOutsideEdit,
     moveNoteToTop,
 } from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
-import { prepareMoveNoteToTopContextAction } from '../services/note-context-menu-action-service.js';
+import {
+    prepareDeleteNoteContextAction,
+    prepareMoveNoteToTopContextAction,
+} from '../services/note-context-menu-action-service.js';
 import { writeRenderedNoteToSystemClipboard } from '../services/note-clipboard-write-service.js';
 import { insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
 import {
@@ -618,8 +622,20 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         },
         onDeleteNote: (targetNoteId) => {
             void CommandGate.run('contextMenu.note.delete', async () => {
-                await focusNoteForContextAction(targetNoteId);
-                await deleteNote(targetNoteId);
+                const deleteMode = await prepareDeleteNoteContextAction({
+                    targetNoteId,
+                    modeContext: ModeContext,
+                    exitSearchModeFn: actionExitSearchMode,
+                    saveAndExitEditingFn: actionSaveAndExitEditingWithoutRefreshing,
+                });
+                if (deleteMode === 'selected-edit') {
+                    await deleteNote(targetNoteId);
+                    return;
+                }
+                if (deleteMode !== 'outside-edit') {
+                    throw new Error(`Unknown context-menu delete mode: ${deleteMode}`);
+                }
+                await deleteNoteOutsideEdit(targetNoteId);
             });
         },
         onMoveNoteToTop: (targetNoteId) => {
