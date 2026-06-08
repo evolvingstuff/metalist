@@ -2319,6 +2319,10 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     max-height: 4.8em;
 }
 
+.note.collapsed:not(.editing) .note-content:has(.meta-heading) {
+    max-height: 1.75em;
+}
+
 .note.collapsed:not(.editing) .note-content :not(img) {
     font-size: inherit !important;
     line-height: inherit !important;
@@ -2326,6 +2330,7 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 
 .note.collapsed:not(.editing) .note-content .meta-heading {
     font-size: 1.35em !important;
+    line-height: 1.15 !important;
 }
 
 .note.collapsed:not(.editing) .note-content :is(
