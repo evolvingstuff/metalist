@@ -121,3 +121,73 @@ test('updateSearchContextsOverlayPlacement hides tab popover when tab UI is disa
     assert.equal(searchContextsList.style.display, 'none');
     assert.equal(isSearchContextsOverlayBottomLeft(), false);
 });
+
+test('isSearchContextsKeyboardCreateActive is true while pointer is over tab hover zone', async (t) => {
+    installOverlayDom(t, { isTabUiEnabled: true });
+
+    const {
+        hideSearchContextsOverlayForPointerMove,
+        isSearchContextsKeyboardCreateActive,
+        showSearchContextsOverlay,
+    } = await import('../../app/static/js/modules/mode-manager/services/search-contexts-overlay-service.js');
+
+    assert.equal(showSearchContextsOverlay(), true);
+    assert.equal(hideSearchContextsOverlayForPointerMove({
+        pointerClientX: 50,
+        pointerClientY: 25,
+    }), false);
+    assert.equal(isSearchContextsKeyboardCreateActive(), true);
+});
+
+test('isSearchContextsKeyboardCreateActive is true while pointer is over search context list', async (t) => {
+    installOverlayDom(t, { isTabUiEnabled: true });
+
+    const {
+        hideSearchContextsOverlayForPointerMove,
+        isSearchContextsKeyboardCreateActive,
+        showSearchContextsOverlay,
+    } = await import('../../app/static/js/modules/mode-manager/services/search-contexts-overlay-service.js');
+
+    assert.equal(showSearchContextsOverlay(), true);
+    assert.equal(hideSearchContextsOverlayForPointerMove({
+        pointerClientX: 200,
+        pointerClientY: 100,
+    }), false);
+    assert.equal(isSearchContextsKeyboardCreateActive(), true);
+});
+
+test('isSearchContextsKeyboardCreateActive is false outside exact hover and list bounds', async (t) => {
+    installOverlayDom(t, { isTabUiEnabled: true });
+
+    const {
+        hideSearchContextsOverlayForPointerMove,
+        isSearchContextsKeyboardCreateActive,
+        showSearchContextsOverlay,
+    } = await import('../../app/static/js/modules/mode-manager/services/search-contexts-overlay-service.js');
+
+    assert.equal(showSearchContextsOverlay(), true);
+    assert.equal(hideSearchContextsOverlayForPointerMove({
+        pointerClientX: 230,
+        pointerClientY: 170,
+    }), false);
+    assert.equal(isSearchContextsKeyboardCreateActive(), false);
+});
+
+test('isSearchContextsKeyboardCreateActive is false after overlay hides', async (t) => {
+    installOverlayDom(t, { isTabUiEnabled: true });
+
+    const {
+        hideSearchContextsOverlay,
+        hideSearchContextsOverlayForPointerMove,
+        isSearchContextsKeyboardCreateActive,
+        showSearchContextsOverlay,
+    } = await import('../../app/static/js/modules/mode-manager/services/search-contexts-overlay-service.js');
+
+    assert.equal(showSearchContextsOverlay(), true);
+    assert.equal(hideSearchContextsOverlay(), true);
+    assert.equal(hideSearchContextsOverlayForPointerMove({
+        pointerClientX: 50,
+        pointerClientY: 25,
+    }), false);
+    assert.equal(isSearchContextsKeyboardCreateActive(), false);
+});
