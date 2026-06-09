@@ -2342,7 +2342,6 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 
 .note.collapsed:not(.editing) .note-content .meta-heading {
     font-size: 1.35em !important;
-    line-height: 1.15 !important;
 }
 
 .note.collapsed:not(.editing) .note-content :is(
