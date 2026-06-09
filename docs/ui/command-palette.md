@@ -29,7 +29,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Tag mappings live in `app/static/config/command_palette_tags.json`.
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
-- `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions.
+- `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions and note expand/collapse transitions.
 - Session idle timeout is a namespace-scoped server setting stored in `app_settings` and managed via `/api2/auth/settings/session-timeout`.
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 

@@ -37,12 +37,26 @@ test('returns null for clicks inside the editing tag bar', () => {
     assert.equal(resolveNonContentNoteSelectionTarget(target), null);
 });
 
+test('returns null for clicks on the note collapse toggle', () => {
+    const noteElement = { dataset: { noteId: 'parent-note' } };
+    const collapseToggle = { className: 'note-collapse-toggle' };
+    const target = createClosestTarget({
+        '.note-content': null,
+        '.note-tag-bar': null,
+        '.note-collapse-toggle': collapseToggle,
+        '.note': noteElement,
+    });
+
+    assert.equal(resolveNonContentNoteSelectionTarget(target), null);
+});
+
 test('returns null for clicks on the collapsed children indicator', () => {
     const noteElement = { dataset: { noteId: 'parent-note' } };
     const indicator = { className: 'note-collapsed-children-indicator' };
     const target = createClosestTarget({
         '.note-content': null,
         '.note-tag-bar': null,
+        '.note-collapse-toggle': null,
         '.note-collapsed-children-indicator': indicator,
         '.note': noteElement,
     });

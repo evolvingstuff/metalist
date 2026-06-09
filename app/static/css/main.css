@@ -2305,6 +2305,18 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     content: '▸';
 }
 
+.note.is-collapse-transitioning {
+    box-sizing: border-box;
+    overflow: hidden;
+    transition: height 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .note.is-collapse-transitioning {
+        transition-duration: 1ms;
+    }
+}
+
 .note.collapsed:not(.editing) .note-content {
     max-height: 1.6em;
     overflow: hidden;

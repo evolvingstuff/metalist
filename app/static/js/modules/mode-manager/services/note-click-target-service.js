@@ -15,6 +15,10 @@ export function resolveNonContentNoteSelectionTarget(target) {
         return null;
     }
 
+    if (target.closest('.note-collapse-toggle')) {
+        return null;
+    }
+
     if (target.closest('.note-collapsed-children-indicator')) {
         return null;
     }

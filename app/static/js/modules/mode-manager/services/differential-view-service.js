@@ -3,6 +3,10 @@ import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
 import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
+import {
+    animateNoteCollapseChanges,
+    captureNoteCollapseAnimation,
+} from './note-collapse-animation-service.js';
 import { setNoteSearchRedactionState } from './search-redaction-reveal-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
@@ -13,6 +17,35 @@ const TAGS_ELEMENT_CACHE = new WeakMap();
 
 function logVDOM(action, details) {
     console.log(` [VDOM] ${action}`, details);
+}
+
+function captureCollapseAnimationsFromNotePayload(notePayload) {
+    if (!notePayload || typeof notePayload !== 'object') {
+        throw new Error('captureCollapseAnimationsFromNotePayload requires note payload object');
+    }
+
+    const captures = [];
+    for (const [noteId, noteData] of Object.entries(notePayload)) {
+        if (!noteData || typeof noteData !== 'object') {
+            continue;
+        }
+        const flags = noteData.flags;
+        if (!flags || typeof flags !== 'object') {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(flags, 'isCollapsed')) {
+            continue;
+        }
+        const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (!(noteElement instanceof HTMLElement)) {
+            continue;
+        }
+        const capture = captureNoteCollapseAnimation(noteElement, Boolean(flags.isCollapsed));
+        if (capture !== null) {
+            captures.push(capture);
+        }
+    }
+    return captures;
 }
 
 function applyServerDiffOps(payload) {
@@ -35,6 +68,7 @@ function applyServerDiffOps(payload) {
     }
     const touchedParentIds = new Set();
     const affordanceDirtyElements = new Set();
+    const collapseAnimationCaptures = captureCollapseAnimationsFromNotePayload(noteUpdates);
     const noteElements = new Map();
     let vdomOperations = 0;
     const insertedIds = new Set();
@@ -200,6 +234,7 @@ function applyServerDiffOps(payload) {
 
     hydrateImageFilePreviews(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
+    animateNoteCollapseChanges(collapseAnimationCaptures);
 
     return {
         notesContainer,
@@ -455,6 +490,7 @@ export function applyDifferentialView(payload, options) {
     if (!notePayload || typeof notePayload !== 'object') {
         notePayload = {};
     }
+    const collapseAnimationCaptures = captureCollapseAnimationsFromNotePayload(notePayload);
     const desired = buildDesiredForest(payload.structure, notePayload);
     const desiredIds = new Set(desired.nodeById.keys());
 
@@ -776,6 +812,7 @@ export function applyDifferentialView(payload, options) {
     hydrateImageFilePreviews(notesContainer);
     ensureAnchorsOpenInNewTabs(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
+    animateNoteCollapseChanges(collapseAnimationCaptures);
 
     return {
         notesContainer,

@@ -778,6 +778,11 @@ function handleCollapseToggleMouseDown(event) {
         return;
     }
 
+    const noteElement = collapseToggle.closest('.note');
+    if (!noteElement) {
+        throw new Error('Collapse toggle mousedown missing parent note element');
+    }
+
     if (ModeContext.isLoading) {
         Logger.logNoop('Collapse toggle mousedown ignored while system is loading', {
             eventType: event.type,
@@ -798,6 +803,7 @@ function handleCollapseToggleMouseDown(event) {
     }
 
     collapseToggleClickSkips.add(collapseToggle);
+    rememberMouseDownHandledClick(noteElement, 'collapse_toggle');
     handleCollapseToggleInteraction(event, collapseToggle, 'mousedown');
 }
 

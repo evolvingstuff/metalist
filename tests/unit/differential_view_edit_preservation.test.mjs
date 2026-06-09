@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-function installBrowserEnvironment(t) {
+function installBrowserEnvironment(t, options = {}) {
+    const animatedTransitions = Boolean(options.animatedTransitions);
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;
     const originalHTMLElement = globalThis.HTMLElement;
@@ -71,6 +72,8 @@ function installBrowserEnvironment(t) {
             this.contentEditable = 'false';
             this.textContent = '';
             this.type = '';
+            this.style = {};
+            this.listeners = new Map();
             this._innerHTML = '';
         }
 
@@ -172,19 +175,49 @@ function installBrowserEnvironment(t) {
         }
 
         getBoundingClientRect() {
-            return { height: 20 };
+            if (!this.classList.contains('note')) {
+                return { height: 20 };
+            }
+            if (this.classList.contains('collapsed')) {
+                return { height: 20 };
+            }
+            const childContainer = this.children.find((child) => child.classList.contains('note-children'));
+            const childHeight = childContainer ? childContainer.children.length * 60 : 0;
+            return { height: 20 + childHeight };
         }
 
         get scrollHeight() {
             return 20;
+        }
+
+        addEventListener(eventName, handler) {
+            if (typeof eventName !== 'string' || typeof handler !== 'function') {
+                throw new Error('FakeElement.addEventListener requires eventName and handler');
+            }
+            this.listeners.set(eventName, handler);
+        }
+
+        dispatchTransitionEnd(propertyName) {
+            const handler = this.listeners.get('transitionend');
+            if (typeof handler !== 'function') {
+                throw new Error('transitionend handler missing');
+            }
+            handler({ propertyName });
         }
     }
 
     class FakeImageElement extends FakeElement {}
 
     const elementByNoteId = new Map();
+    const body = new FakeElement('body');
+    body.isConnected = true;
+    if (animatedTransitions) {
+        body.classList.add('pref-animated-transitions');
+    }
     const notesContainer = new FakeElement('div');
     notesContainer.isConnected = true;
+    const animationFrames = [];
+    const timeouts = [];
 
     const document = {
         createElement(tagName) {
@@ -214,6 +247,7 @@ function installBrowserEnvironment(t) {
         querySelectorAll() {
             return [];
         },
+        body,
     };
 
     globalThis.HTMLElement = FakeElement;
@@ -223,6 +257,18 @@ function installBrowserEnvironment(t) {
         addEventListener() {},
         getComputedStyle() {
             return { lineHeight: '20px', fontSize: '16px' };
+        },
+        requestAnimationFrame(callback) {
+            if (typeof callback !== 'function') {
+                throw new Error('requestAnimationFrame requires callback');
+            }
+            animationFrames.push(callback);
+        },
+        setTimeout(callback) {
+            if (typeof callback !== 'function') {
+                throw new Error('setTimeout requires callback');
+            }
+            timeouts.push(callback);
         },
     };
     globalThis.sessionStorage = createStorage();
@@ -241,6 +287,20 @@ function installBrowserEnvironment(t) {
         createElement: (tagName) => document.createElement(tagName),
         elementByNoteId,
         notesContainer,
+        runAnimationFrame() {
+            const callback = animationFrames.shift();
+            if (typeof callback !== 'function') {
+                throw new Error('animation frame callback missing');
+            }
+            callback();
+        },
+        runTimeout() {
+            const callback = timeouts.shift();
+            if (typeof callback !== 'function') {
+                throw new Error('timeout callback missing');
+            }
+            callback();
+        },
     };
 }
 
@@ -314,4 +374,95 @@ test('diff refresh preserves current editor content after edit-session changes',
     assert.equal(result.vdomOperations, 0);
     assert.equal(noteElement.dataset.snapshotHash, 'hash-after-child-toggle');
     assert.equal(noteElement.dataset.contentHash, 'hash-before-child-toggle');
+});
+
+test('diff refresh animates note collapse from pre-diff height', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const { applyDifferentialView } = await import(
+        '../../app/static/js/modules/mode-manager/services/differential-view-service.js'
+    );
+
+    const parentElement = env.createElement('div');
+    parentElement.classList.add('note', 'interactive');
+    parentElement.dataset.noteId = 'parent-note';
+    parentElement.dataset.parentId = '';
+    parentElement.dataset.contentHash = 'parent-expanded';
+    parentElement.dataset.snapshotHash = 'parent-expanded';
+    parentElement.dataset.lockOwner = '';
+    parentElement.dataset.isCollapsed = 'false';
+    parentElement.dataset.hasChildren = 'true';
+    parentElement.dataset.isCollapsible = 'true';
+    parentElement.dataset.noteTags = '';
+    parentElement.dataset.searchRedacted = 'false';
+
+    const parentToggle = env.createElement('button');
+    parentToggle.classList.add('note-collapse-toggle');
+    parentElement.appendChild(parentToggle);
+
+    const parentContent = env.createElement('div');
+    parentContent.classList.add('note-content');
+    parentContent.innerHTML = 'expanded parent';
+    parentElement.appendChild(parentContent);
+
+    const parentTags = env.createElement('div');
+    parentTags.classList.add('note-tags');
+    parentElement.appendChild(parentTags);
+
+    const childContainer = env.createElement('div');
+    childContainer.classList.add('note-children');
+    parentElement.appendChild(childContainer);
+
+    const childElement = env.createElement('div');
+    childElement.classList.add('note', 'interactive');
+    childElement.dataset.noteId = 'child-note';
+    childElement.dataset.parentId = 'parent-note';
+    childElement.dataset.isCollapsed = 'false';
+    childContainer.appendChild(childElement);
+
+    env.notesContainer.appendChild(parentElement);
+    env.elementByNoteId.set('parent-note', parentElement);
+    env.elementByNoteId.set('child-note', childElement);
+
+    assert.equal(parentElement.getBoundingClientRect().height, 80);
+
+    applyDifferentialView({
+        currentClientId: 'client-1',
+        editingNoteId: null,
+        diffOps: [
+            { type: 'remove', noteId: 'child-note', parentId: 'parent-note' },
+        ],
+        locks: {},
+        lockDiffs: {},
+        notes: {
+            'parent-note': {
+                content: 'collapsed parent',
+                hash: 'parent-collapsed',
+                tags: '',
+                flags: {
+                    isEditing: false,
+                    isCollapsed: true,
+                    hasChildren: true,
+                    isCollapsible: true,
+                },
+            },
+        },
+    }, {});
+
+    assert.equal(parentElement.classList.contains('is-collapse-transitioning'), true);
+    assert.equal(parentElement.style.height, '80px');
+    assert.equal(parentElement.style.boxSizing, 'border-box');
+    assert.equal(parentElement.style.overflow, 'hidden');
+
+    env.runAnimationFrame();
+
+    assert.equal(parentElement.style.height, '20px');
+
+    parentElement.dispatchTransitionEnd('height');
+
+    assert.equal(parentElement.classList.contains('is-collapse-transitioning'), false);
+    assert.equal(parentElement.style.height, '');
+    assert.equal(parentElement.style.boxSizing, '');
+    assert.equal(parentElement.style.overflow, '');
+
+    env.runTimeout();
 });
