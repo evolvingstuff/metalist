@@ -6,6 +6,8 @@ const POINTER_DISMISS_BUFFER_PX = 28;
 
 let isHoverOverlayVisible = false;
 let isHoverInitialized = false;
+let lastPointerClientX = null;
+let lastPointerClientY = null;
 
 function getSearchContextsListElement() {
     const element = document.querySelector(SEARCH_CONTEXTS_SELECTOR);
@@ -191,6 +193,77 @@ function isPointerInsideBounds(bounds, pointerClientX, pointerClientY) {
     );
 }
 
+function recordPointerPosition(pointerClientX, pointerClientY) {
+    if (!Number.isFinite(pointerClientX) || !Number.isFinite(pointerClientY)) {
+        return;
+    }
+    lastPointerClientX = pointerClientX;
+    lastPointerClientY = pointerClientY;
+}
+
+function isPointerInsideRect(rect, pointerClientX, pointerClientY) {
+    if (
+        !rect
+        || !Number.isFinite(rect.left)
+        || !Number.isFinite(rect.right)
+        || !Number.isFinite(rect.top)
+        || !Number.isFinite(rect.bottom)
+    ) {
+        throw new Error('isPointerInsideRect requires valid rect');
+    }
+    if (!Number.isFinite(pointerClientX) || !Number.isFinite(pointerClientY)) {
+        throw new Error('isPointerInsideRect requires finite pointer coordinates');
+    }
+    return (
+        pointerClientX >= rect.left
+        && pointerClientX <= rect.right
+        && pointerClientY >= rect.top
+        && pointerClientY <= rect.bottom
+    );
+}
+
+function isElementHovered(element) {
+    if (!(element instanceof HTMLElement)) {
+        throw new Error('isElementHovered requires HTMLElement');
+    }
+    if (typeof element.matches !== 'function') {
+        return false;
+    }
+    return element.matches(':hover');
+}
+
+export function isSearchContextsKeyboardCreateActive() {
+    if (!isHoverOverlayVisible) {
+        return false;
+    }
+
+    const searchContextsList = getSearchContextsListElement();
+    const hoverZone = getTabHoverZoneElement();
+    if (!searchContextsList || !hoverZone) {
+        return false;
+    }
+
+    if (Number.isFinite(lastPointerClientX) && Number.isFinite(lastPointerClientY)) {
+        if (isPointerInsideRect(hoverZone.getBoundingClientRect(), lastPointerClientX, lastPointerClientY)) {
+            return true;
+        }
+        if (window.getComputedStyle(searchContextsList).display !== 'none') {
+            return isPointerInsideRect(
+                searchContextsList.getBoundingClientRect(),
+                lastPointerClientX,
+                lastPointerClientY,
+            );
+        }
+        return false;
+    }
+
+    if (isElementHovered(hoverZone)) {
+        return true;
+    }
+    return window.getComputedStyle(searchContextsList).display !== 'none'
+        && isElementHovered(searchContextsList);
+}
+
 export function hideSearchContextsOverlayForPointerMove(options) {
     if (!options || typeof options !== 'object') {
         throw new Error('hideSearchContextsOverlayForPointerMove requires options');
@@ -202,6 +275,7 @@ export function hideSearchContextsOverlayForPointerMove(options) {
     if (!Number.isFinite(pointerClientY)) {
         throw new Error('hideSearchContextsOverlayForPointerMove requires pointerClientY');
     }
+    recordPointerPosition(pointerClientX, pointerClientY);
     if (!isHoverOverlayVisible) {
         return false;
     }
@@ -236,11 +310,19 @@ export function initializeSearchContextsHover() {
         throw new Error('tab-hover-zone element missing from DOM');
     }
 
-    const showOverlay = () => {
+    const searchContextsList = getSearchContextsListElement();
+    const showOverlay = (event) => {
+        if (event) {
+            recordPointerPosition(event.clientX, event.clientY);
+        }
         showSearchContextsOverlay();
     };
 
     hoverZone.addEventListener('mouseenter', showOverlay);
     hoverZone.addEventListener('mousemove', showOverlay);
+    if (searchContextsList) {
+        searchContextsList.addEventListener('mouseenter', showOverlay);
+        searchContextsList.addEventListener('mousemove', showOverlay);
+    }
     isHoverInitialized = true;
 }

@@ -67,6 +67,7 @@ import { syncBacklinksPanelPlacement } from '../services/backlinks-panel-service
 import {
     hideSearchContextsOverlay,
     initializeSearchContextsHover,
+    isSearchContextsKeyboardCreateActive,
     updateSearchContextsOverlayPlacement,
 } from '../services/search-contexts-overlay-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
@@ -891,6 +892,17 @@ function handleEnterKey(event) {
 
     event.preventDefault();
     event.stopPropagation();
+
+    if (isSearchContextsKeyboardCreateActive()) {
+        void CommandGate.run('keyboard.enter.blank_search_context', async () => {
+            const newTabId = await createBlankSearchContextFromHover();
+            if (newTabId === null) {
+                return;
+            }
+            hideSearchContextsOverlay();
+        });
+        return;
+    }
 
 	if (ModeContext.isSearching) {
 		actionExitSearchMode();
@@ -3226,6 +3238,55 @@ async function duplicateTabContext(sourceTabId) {
         return newTabId;
     }
 
+    return newTabId;
+}
+
+async function createBlankSearchContextFromHover() {
+    const sourceTabId = ModeContext.activeTabId;
+    if (typeof sourceTabId !== 'string' || sourceTabId.length === 0) {
+        throw new Error('ModeContext.activeTabId must be a non-empty string');
+    }
+    if (!CONFIG.TABS || typeof CONFIG.TABS.MAX_TABS !== 'number' || CONFIG.TABS.MAX_TABS <= 0) {
+        throw new Error('CONFIG.TABS.MAX_TABS must be a positive number');
+    }
+
+    const payload = ModeContext.getTabStatePayload();
+    if (payload.tabOrder.length >= CONFIG.TABS.MAX_TABS) {
+        ErrorHandler.showInfoBanner(
+            `Tab limit reached (${CONFIG.TABS.MAX_TABS}). Close a tab before adding another.`,
+            6000,
+        );
+        return null;
+    }
+
+    snapshotActiveTabScrollState();
+    await persistTabStateSnapshot();
+
+    const response = await createTabOnServer(sourceTabId);
+    const newTabId = response?.newTabId;
+    if (typeof newTabId !== 'string' || newTabId.length === 0) {
+        throw new Error('Server did not return newTabId');
+    }
+    if (!response || typeof response !== 'object' || !response.tabs || typeof response.tabs !== 'object') {
+        throw new Error('Server did not return tab-state payload');
+    }
+    const newTab = response.tabs[newTabId];
+    if (!newTab || typeof newTab !== 'object') {
+        throw new Error('Server tab-state response missing new tab payload');
+    }
+
+    newTab.searchQuery = '';
+    newTab.scrollY = 0;
+    newTab.scrollAnchor = null;
+    newTab.anchorRootId = null;
+
+    ModeContext.hydrateTabState(response);
+    ModeContext.resetTabDiffCache(newTabId, { preserveRootAnchor: false });
+
+    await switchToTabContext(newTabId, {});
+    await actionEnterSearchMode();
+    focusSearchInputAndSelectAllText();
+    await persistTabStateSnapshot();
     return newTabId;
 }
 
