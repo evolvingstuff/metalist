@@ -452,6 +452,9 @@ class CommandPaletteController {
             }
         }
 
+        const animatedTransitions = this._getBoolean('pref.animated_transitions', true);
+        document.body.classList.toggle('pref-animated-transitions', animatedTransitions);
+
         const theme = this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system');
         if (theme === 'system') {
             document.documentElement.removeAttribute('data-theme');

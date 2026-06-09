@@ -3026,14 +3026,14 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     z-index: 60;
     transform-origin: top center;
     transition:
-        height 180ms ease,
-        opacity 180ms ease,
-        transform 180ms ease,
-        margin-top 180ms ease,
-        margin-bottom 180ms ease,
-        border-width 180ms ease,
-        padding-top 180ms ease,
-        padding-bottom 180ms ease;
+        height 140ms ease,
+        opacity 140ms ease,
+        transform 140ms ease,
+        margin-top 140ms ease,
+        margin-bottom 140ms ease,
+        border-width 140ms ease,
+        padding-top 140ms ease,
+        padding-bottom 140ms ease;
 }
 
 .note-tag-bar.is-entering,

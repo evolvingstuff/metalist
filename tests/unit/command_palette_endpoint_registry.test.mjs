@@ -47,6 +47,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     const endpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
     const attachFileEndpoint = endpoints.find((endpoint) => endpoint.id === 'action.attach_file_to_current_note');
     const calendarEndpoint = endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel');
+    const animatedTransitionsEndpoint = endpoints.find((endpoint) => endpoint.id === 'pref.animated_transitions');
     assert.equal(endpointIds.has('action.create_backup'), true);
     assert.equal(endpointIds.has('form.switch_namespace'), true);
     assert.equal(endpointIds.has('form.create_namespace'), true);
@@ -59,6 +60,8 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('form.restore_backup'), true);
     assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(calendarEndpoint.defaultValue, false);
+    assert.equal(animatedTransitionsEndpoint.defaultValue, true);
+    assert.equal(animatedTransitionsEndpoint.label, 'Animated transitions');
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);

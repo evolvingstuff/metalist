@@ -7,7 +7,7 @@ const TAG_BAR_VALIDATION_MESSAGE_CLASS = 'note-tag-bar-validation-message';
 const TAG_BAR_ENTERING_CLASS = 'is-entering';
 const TAG_BAR_EXITING_CLASS = 'is-exiting';
 const COLLAPSED_CHILDREN_INDICATOR_CLASS = 'note-collapsed-children-indicator';
-const TAG_BAR_ANIMATION_FALLBACK_MS = 260;
+const TAG_BAR_ANIMATION_FALLBACK_MS = 200;
 
 let activeNoteElement = null;
 let activeObserver = null;
@@ -44,9 +44,24 @@ function nextTagBarAnimationVersion(tagBar) {
     return nextVersion;
 }
 
+function areAnimatedTransitionsEnabled() {
+    if (!(document.body instanceof HTMLElement)) {
+        throw new Error('document.body is required for animated transition preference');
+    }
+    return document.body.classList.contains('pref-animated-transitions');
+}
+
 function animateTagBarEnter(tagBar) {
     if (!(tagBar instanceof HTMLElement)) {
         throw new Error('animateTagBarEnter requires HTMLElement');
+    }
+    if (!areAnimatedTransitionsEnabled()) {
+        nextTagBarAnimationVersion(tagBar);
+        tagBar.hidden = false;
+        tagBar.classList.remove(TAG_BAR_ENTERING_CLASS, TAG_BAR_EXITING_CLASS);
+        tagBar.style.height = '';
+        tagBar.style.overflow = '';
+        return;
     }
 
     const animationVersion = nextTagBarAnimationVersion(tagBar);
@@ -91,6 +106,11 @@ function removeTagBarElement(tagBar) {
         throw new Error('removeTagBarElement requires HTMLElement');
     }
     if (tagBar.classList.contains(TAG_BAR_EXITING_CLASS)) {
+        return;
+    }
+    if (!areAnimatedTransitionsEnabled()) {
+        nextTagBarAnimationVersion(tagBar);
+        tagBar.remove();
         return;
     }
 

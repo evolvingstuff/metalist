@@ -19,6 +19,7 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.show_tab_ui": {"true", "false"},
     "pref.show_rhs_panel": {"true", "false"},
     "pref.show_perf_overlay": {"true", "false"},
+    "pref.animated_transitions": {"true", "false"},
     "pref.reminder_surface_expanded": {"true", "false"},
     "pref.reminder_default_popup_sound_enabled": {"true", "false"},
     "pref.reminder_default_popup_sound_id": "sound_id",

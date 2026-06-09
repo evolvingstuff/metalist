@@ -57,6 +57,7 @@ export function buildCommandPaletteEndpoints(deps) {
         showTabUi: false,
         showRhsPanel: false,
         showPerfOverlay: false,
+        animatedTransitions: true,
         theme: 'system',
     };
     const sortModeActionValue = (sortMode) => (getSortMode() === sortMode ? 'Current' : '↵');
@@ -101,6 +102,14 @@ export function buildCommandPaletteEndpoints(deps) {
             persistenceKey: 'pref.show_perf_overlay',
             defaultValue: defaults.showPerfOverlay,
             apply: (next) => applyPreference('pref.show_perf_overlay', next),
+        },
+        {
+            id: 'pref.animated_transitions',
+            kind: 'boolean',
+            label: 'Animated transitions',
+            persistenceKey: 'pref.animated_transitions',
+            defaultValue: defaults.animatedTransitions,
+            apply: (next) => applyPreference('pref.animated_transitions', next),
         },
         {
             id: 'view.sort_mode.normal',

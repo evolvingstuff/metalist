@@ -29,3 +29,14 @@ test('reminders action matches notification queries', () => {
     assert.equal(reminders.tags.includes('notification'), true);
     assert.equal(reminders.tags.includes('notifications'), true);
 });
+
+test('animated transitions preference matches motion queries', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const animatedTransitions = payload.endpoints.find((endpoint) => endpoint.id === 'pref.animated_transitions');
+
+    assert.ok(animatedTransitions, 'expected pref.animated_transitions endpoint in command palette tag config');
+    assert.equal(animatedTransitions.tags.includes('animated'), true);
+    assert.equal(animatedTransitions.tags.includes('motion'), true);
+    assert.equal(animatedTransitions.tags.includes('disable'), true);
+});
