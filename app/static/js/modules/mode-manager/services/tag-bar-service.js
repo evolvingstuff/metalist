@@ -4,12 +4,16 @@ import { analyzeTagBarInput, enforceTagBarInputForEditing, normalizeTagBarInput 
 const TAG_BAR_CLASS = 'note-tag-bar';
 const TAG_BAR_INPUT_CLASS = 'note-tag-bar-input';
 const TAG_BAR_VALIDATION_MESSAGE_CLASS = 'note-tag-bar-validation-message';
+const TAG_BAR_ENTERING_CLASS = 'is-entering';
+const TAG_BAR_EXITING_CLASS = 'is-exiting';
 const COLLAPSED_CHILDREN_INDICATOR_CLASS = 'note-collapsed-children-indicator';
+const TAG_BAR_ANIMATION_FALLBACK_MS = 260;
 
 let activeNoteElement = null;
 let activeObserver = null;
 let activeFallbackHandler = null;
 let activeSyncedTags = null;
+const tagBarAnimationVersions = new WeakMap();
 
 function getDirectChildByClass(parent, className) {
     for (const child of Array.from(parent.children)) {
@@ -26,6 +30,101 @@ function isElementPartiallyInViewport(element) {
         && rect.top < window.innerHeight
         && rect.right > 0
         && rect.left < window.innerWidth;
+}
+
+function nextTagBarAnimationVersion(tagBar) {
+    const currentVersion = tagBarAnimationVersions.has(tagBar)
+        ? tagBarAnimationVersions.get(tagBar)
+        : 0;
+    if (!Number.isInteger(currentVersion)) {
+        throw new Error('Tag bar animation version must be an integer');
+    }
+    const nextVersion = currentVersion + 1;
+    tagBarAnimationVersions.set(tagBar, nextVersion);
+    return nextVersion;
+}
+
+function animateTagBarEnter(tagBar) {
+    if (!(tagBar instanceof HTMLElement)) {
+        throw new Error('animateTagBarEnter requires HTMLElement');
+    }
+
+    const animationVersion = nextTagBarAnimationVersion(tagBar);
+    tagBar.hidden = false;
+    tagBar.classList.remove(TAG_BAR_EXITING_CLASS);
+    const targetHeight = tagBar.getBoundingClientRect().height;
+    tagBar.style.height = '0px';
+    tagBar.style.overflow = 'hidden';
+    tagBar.classList.add(TAG_BAR_ENTERING_CLASS);
+    tagBar.getBoundingClientRect();
+
+    let didFinish = false;
+    const finishEnter = () => {
+        if (didFinish || tagBarAnimationVersions.get(tagBar) !== animationVersion) {
+            return;
+        }
+        didFinish = true;
+        tagBar.classList.remove(TAG_BAR_ENTERING_CLASS);
+        tagBar.style.height = '';
+        tagBar.style.overflow = '';
+    };
+
+    tagBar.addEventListener('transitionend', (event) => {
+        if (event.propertyName !== 'height') {
+            return;
+        }
+        finishEnter();
+    }, { once: true });
+
+    window.requestAnimationFrame(() => {
+        if (tagBarAnimationVersions.get(tagBar) !== animationVersion) {
+            return;
+        }
+        tagBar.classList.remove(TAG_BAR_ENTERING_CLASS);
+        tagBar.style.height = `${targetHeight}px`;
+    });
+    window.setTimeout(finishEnter, TAG_BAR_ANIMATION_FALLBACK_MS);
+}
+
+function removeTagBarElement(tagBar) {
+    if (!(tagBar instanceof HTMLElement)) {
+        throw new Error('removeTagBarElement requires HTMLElement');
+    }
+    if (tagBar.classList.contains(TAG_BAR_EXITING_CLASS)) {
+        return;
+    }
+
+    const animationVersion = nextTagBarAnimationVersion(tagBar);
+    const currentHeight = tagBar.getBoundingClientRect().height;
+    tagBar.style.height = `${currentHeight}px`;
+    tagBar.style.overflow = 'hidden';
+    tagBar.getBoundingClientRect();
+    tagBar.classList.remove(TAG_BAR_ENTERING_CLASS);
+    tagBar.classList.add(TAG_BAR_EXITING_CLASS);
+
+    let didRemove = false;
+    const removeAfterTransition = () => {
+        if (didRemove || tagBarAnimationVersions.get(tagBar) !== animationVersion) {
+            return;
+        }
+        didRemove = true;
+        tagBar.remove();
+    };
+
+    tagBar.addEventListener('transitionend', (event) => {
+        if (event.propertyName !== 'height') {
+            return;
+        }
+        removeAfterTransition();
+    }, { once: true });
+
+    window.requestAnimationFrame(() => {
+        if (tagBarAnimationVersions.get(tagBar) !== animationVersion) {
+            return;
+        }
+        tagBar.style.height = '0px';
+    });
+    window.setTimeout(removeAfterTransition, TAG_BAR_ANIMATION_FALLBACK_MS);
 }
 
 function ensureTagBarElement(noteElement) {
@@ -281,7 +380,7 @@ export function setTagBarValue(noteElement, tags) {
 function removeTagBar(noteElement) {
     const existing = getDirectChildByClass(noteElement, TAG_BAR_CLASS);
     if (existing) {
-        existing.remove();
+        removeTagBarElement(existing);
     }
 
     const indicator = getDirectChildByClass(noteElement, COLLAPSED_CHILDREN_INDICATOR_CLASS);
@@ -340,6 +439,10 @@ export function syncTagBar(editingNoteElement) {
     activeNoteElement = editingNoteElement;
     const tagBarResult = ensureTagBarElement(editingNoteElement);
     const tagBar = tagBarResult.element;
+    let shouldAnimateEntry = tagBarResult.created;
+    if (!shouldAnimateEntry && tagBar.classList.contains(TAG_BAR_EXITING_CLASS)) {
+        shouldAnimateEntry = true;
+    }
     const input = getTagBarInput(tagBar);
 
     const storedTags = typeof editingNoteElement.dataset.noteTags === 'string'
@@ -375,6 +478,9 @@ export function syncTagBar(editingNoteElement) {
     // move/undo reorder operations).
     disconnectVisibilityTracking();
     tagBar.hidden = false;
+    if (shouldAnimateEntry) {
+        animateTagBarEnter(tagBar);
+    }
 }
 
 export function clearTagBar() {

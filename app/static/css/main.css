@@ -3014,6 +3014,7 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 .note-tag-bar {
     flex-basis: 100%;
     width: calc(100% - 30px);
+    box-sizing: border-box;
     margin: 4px 15px 1px 15px;
     padding: 1px 8px;
     border: 1px solid rgba(0, 0, 0, 0.12);
@@ -3023,6 +3024,36 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     position: sticky;
     bottom: 15px;
     z-index: 60;
+    transform-origin: top center;
+    transition:
+        height 180ms ease,
+        opacity 180ms ease,
+        transform 180ms ease,
+        margin-top 180ms ease,
+        margin-bottom 180ms ease,
+        border-width 180ms ease,
+        padding-top 180ms ease,
+        padding-bottom 180ms ease;
+}
+
+.note-tag-bar.is-entering,
+.note-tag-bar.is-exiting {
+    opacity: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    border-width: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    pointer-events: none;
+    transform: translateY(-4px) scaleY(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .note-tag-bar,
+    .note-tag-bar.is-entering,
+    .note-tag-bar.is-exiting {
+        transition-duration: 1ms;
+    }
 }
 
 .note-tag-bar-validation-message {

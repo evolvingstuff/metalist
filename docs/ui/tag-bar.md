@@ -125,6 +125,7 @@ Unclosed comments behave like unclosed wrappers:
 ## Focus / Tab Behavior
 - `Tab` toggles focus between the note content and the tag bar.
 - Clicking the visible tag bar while editing focuses the tag input directly instead of treating the click as a note-shell selection.
+- The tag bar expands into view when note editing starts and contracts out of view when editing ends.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, note copy/cut/paste, and the password modal shortcut.
 - `Cmd/Ctrl+U` unformats the note content while preserving links, images, and the tag bar itself.
