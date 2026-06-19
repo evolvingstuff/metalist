@@ -96,6 +96,24 @@ def _build_index(tag_rows: list[tuple[str, str]]) -> SearchIndex:
     return index
 
 
+def _build_effective_index(*, tag_rows: list[tuple[str, str]], ontology) -> SearchIndex:
+    index = SearchIndex()
+    index.rebuild(
+        [
+            SearchRecord(
+                note_id=note_id,
+                content_text="",
+                tags=tags,
+                tag_terms=ontology.infer_implication_only(base_tags=extract_tags_for_search(tags)),
+            )
+            for note_id, tags in tag_rows
+        ],
+        progress_update=lambda _processed: None,
+        progress_interval=1000,
+    )
+    return index
+
+
 def _build_ontology(*, text: str):
     return compile_rules(
         rules=parse_rules_text(text=text, filename="test_ontology_rules.txt"),
@@ -971,6 +989,52 @@ def test_tag_suggestions_collapse_synonym_candidates_to_most_used_tag(
 
     assert suggestions[0] == "mood"
     assert "emotion" not in suggestions
+
+
+def test_tag_suggestions_choose_most_used_explicit_synonym_not_inferred_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ontology = _build_ontology(text="ruminating = intrusive-thoughts\n")
+    records = [
+        _build_note_record(note_id="current", parent_id=None, content="ruminating", tags=""),
+        *[
+            _build_note_record(
+                note_id=f"ruminating-{index}",
+                parent_id=None,
+                content="match",
+                tags="ruminating",
+            )
+            for index in range(10)
+        ],
+        _build_note_record(
+            note_id="intrusive-thoughts-1",
+            parent_id=None,
+            content="match",
+            tags="intrusive-thoughts",
+        ),
+    ]
+    store = _FakeHierarchyNoteStore(records=records, inherited_non_meta_by_note={})
+    store.loaded = True
+
+    tag_rows = [(record.id, " ".join(sorted(record.tag_terms))) for record in records]
+    monkeypatch.setattr(tag_suggestions_module, "note_store", store)
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: ontology)
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "search_index",
+        _build_effective_index(tag_rows=tag_rows, ontology=ontology),
+    )
+
+    suggestions = _suggest_tags_for_note(
+        note_id="current",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>ruminating</p>",
+    )
+
+    assert suggestions[0] == "ruminating"
+    assert "intrusive-thoughts" not in suggestions
 
 
 def test_tag_suggestions_keep_prefix_matching_synonym_variant(

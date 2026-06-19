@@ -146,10 +146,12 @@ class SearchIndex:
         self._alive: Set[int] = set()
 
         self._note_text_casefold: List[str] = []
+        self._note_explicit_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms_casefold: List[FrozenSet[str]] = []
         self._note_trigrams: List[Set[int]] = []
 
+        self._explicit_tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tri_notes: DefaultDict[int, Set[int]] = defaultdict(set)
@@ -172,9 +174,11 @@ class SearchIndex:
             self._id_to_uuid.clear()
             self._alive.clear()
             self._note_text_casefold.clear()
+            self._note_explicit_tag_terms.clear()
             self._note_tag_terms.clear()
             self._note_tag_terms_casefold.clear()
             self._note_trigrams.clear()
+            self._explicit_tag_notes.clear()
             self._tag_notes.clear()
             self._tag_notes_casefold.clear()
             self._tri_notes.clear()
@@ -326,6 +330,15 @@ class SearchIndex:
             return {
                 term: len(note_ids)
                 for term, note_ids in self._tag_notes.items()
+                if term and not term.startswith("@")
+            }
+
+    def list_explicit_tag_frequencies(self) -> Dict[str, int]:
+        """Return explicitly written tag term -> note count (excluding @meta tags)."""
+        with self._lock:
+            return {
+                term: len(note_ids)
+                for term, note_ids in self._explicit_tag_notes.items()
                 if term and not term.startswith("@")
             }
 
@@ -558,11 +571,15 @@ class SearchIndex:
         self._alive.add(note_int_id)
 
         text_casefold, trigrams = self._build_note_text_state(content_text, tags)
+        explicit_tag_terms = extract_tags_for_search(tags)
         self._note_text_casefold.append(text_casefold)
+        self._note_explicit_tag_terms.append(explicit_tag_terms)
         self._note_tag_terms.append(tag_terms)
         self._note_tag_terms_casefold.append(frozenset(term.casefold() for term in tag_terms))
         self._note_trigrams.append(trigrams)
 
+        for term in explicit_tag_terms:
+            self._explicit_tag_notes[term].add(note_int_id)
         for term in tag_terms:
             self._tag_notes[term].add(note_int_id)
             self._tag_notes_casefold[term.casefold()].add(note_int_id)
@@ -580,8 +597,20 @@ class SearchIndex:
             raise RuntimeError("Cannot update deleted note")
 
         new_text_casefold, new_trigrams = self._build_note_text_state(content_text, tags)
+        new_explicit_tag_terms = extract_tags_for_search(tags)
+        old_explicit_tag_terms = self._note_explicit_tag_terms[note_int_id]
         old_tag_terms = self._note_tag_terms[note_int_id]
         old_trigrams = self._note_trigrams[note_int_id]
+
+        if old_explicit_tag_terms != new_explicit_tag_terms:
+            for term in old_explicit_tag_terms:
+                bucket = self._explicit_tag_notes.get(term)
+                if bucket is None:
+                    continue
+                bucket.discard(note_int_id)
+            for term in new_explicit_tag_terms:
+                self._explicit_tag_notes[term].add(note_int_id)
+            self._note_explicit_tag_terms[note_int_id] = new_explicit_tag_terms
 
         if old_tag_terms != new_tag_terms:
             for term in old_tag_terms:
@@ -625,6 +654,11 @@ class SearchIndex:
             folded_bucket = self._tag_notes_casefold.get(term.casefold())
             if folded_bucket is not None:
                 folded_bucket.discard(note_int_id)
+        for term in self._note_explicit_tag_terms[note_int_id]:
+            bucket = self._explicit_tag_notes.get(term)
+            if bucket is None:
+                continue
+            bucket.discard(note_int_id)
         for trigram in self._note_trigrams[note_int_id]:
             bucket = self._tri_notes.get(trigram)
             if bucket is None:
@@ -632,6 +666,7 @@ class SearchIndex:
             bucket.discard(note_int_id)
 
         self._note_text_casefold[note_int_id] = ""
+        self._note_explicit_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms_casefold[note_int_id] = frozenset()
         self._note_trigrams[note_int_id] = set()

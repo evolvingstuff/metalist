@@ -286,7 +286,7 @@ def _lookup_count(counts: Dict[str, int], term: str) -> int:
 
 
 def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
-    exact_tag_counts = search_index.list_tag_frequencies()
+    exact_tag_counts = search_index.list_explicit_tag_frequencies()
     if exact_tag_counts and (not _can_iterate_saved_notes() or getattr(note_store, "loaded", False)):
         preferred_terms = _select_preferred_case_variants(
             terms=exact_tag_counts.keys(),
