@@ -14,10 +14,12 @@ from app.services.tag_ontology import parse_rules_text
 
 class _EmptyOntology:
     is_empty = True
+    scc_members_by_tag = {}
 
 
 class _MatcherButNoImplicationOntology:
     is_empty = False
+    scc_members_by_tag = {}
 
     def infer_implication_only(self, *, base_tags):
         return base_tags
@@ -958,7 +960,7 @@ def test_tag_suggestions_collapse_case_equivalent_candidates(
     assert suggestions[:2] == ["databricks", "delta"]
 
 
-def test_tag_suggestions_collapse_synonym_candidates_to_most_used_tag(
+def test_tag_suggestions_keep_exact_synonym_content_hit_after_most_used_tag(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = _FakeHierarchyNoteStore(
@@ -988,7 +990,7 @@ def test_tag_suggestions_collapse_synonym_candidates_to_most_used_tag(
     )
 
     assert suggestions[0] == "mood"
-    assert "emotion" not in suggestions
+    assert suggestions[1] == "emotion"
 
 
 def test_tag_suggestions_choose_most_used_explicit_synonym_not_inferred_count(
@@ -1035,6 +1037,42 @@ def test_tag_suggestions_choose_most_used_explicit_synonym_not_inferred_count(
 
     assert suggestions[0] == "ruminating"
     assert "intrusive-thoughts" not in suggestions
+
+
+def test_tag_suggestions_promote_exact_synonym_content_hit_to_common_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("noise-1", "E"),
+            ("noise-2", "E"),
+            ("noise-3", "T_n"),
+            ("toe-1", "theory-of-everything"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "get_ontology",
+        lambda: _build_ontology(text="theory-of-everything = T.O.E\n"),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="current",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>T.O.E.</p>",
+    )
+
+    assert suggestions[0] == "theory-of-everything"
+    assert suggestions[1] == "T.O.E"
 
 
 def test_tag_suggestions_keep_prefix_matching_synonym_variant(

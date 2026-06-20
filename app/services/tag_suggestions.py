@@ -118,10 +118,18 @@ def _collapse_equivalent_suggestions(
     *,
     suggestions: Iterable[str],
     representative_by_term: Dict[str, str],
+    preserve_duplicate_terms: FrozenSet[str],
 ) -> List[str]:
     collapsed: List[str] = []
     seen_casefold: set[str] = set()
     for term in suggestions:
+        if term.casefold() in preserve_duplicate_terms:
+            term_casefold = term.casefold()
+            if term_casefold in seen_casefold:
+                continue
+            seen_casefold.add(term_casefold)
+            collapsed.append(term)
+            continue
         representative = representative_by_term.get(term, term)
         representative_casefold = representative.casefold()
         if representative_casefold in seen_casefold:
@@ -285,6 +293,31 @@ def _lookup_count(counts: Dict[str, int], term: str) -> int:
     return 0
 
 
+def _list_content_match_terms_for_candidate(*, term: str, ontology) -> Tuple[str, ...]:
+    if not isinstance(term, str) or not term:
+        raise TypeError("term must be a non-empty string")
+
+    scc_members_by_tag = ontology.scc_members_by_tag
+    if not hasattr(scc_members_by_tag, "get"):
+        raise TypeError("ontology.scc_members_by_tag must support get()")
+
+    equivalent_terms = scc_members_by_tag.get(term)
+    if not equivalent_terms:
+        return (term,)
+
+    content_match_terms = [term]
+    seen_casefold = {term.casefold()}
+    for equivalent_term in sorted(equivalent_terms, key=lambda value: (value.casefold(), value)):
+        if not isinstance(equivalent_term, str) or not equivalent_term:
+            raise TypeError("ontology equivalent terms must be non-empty strings")
+        equivalent_casefold = equivalent_term.casefold()
+        if equivalent_casefold in seen_casefold:
+            continue
+        seen_casefold.add(equivalent_casefold)
+        content_match_terms.append(equivalent_term)
+    return tuple(content_match_terms)
+
+
 def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
     exact_tag_counts = search_index.list_explicit_tag_frequencies()
     if exact_tag_counts and (not _can_iterate_saved_notes() or getattr(note_store, "loaded", False)):
@@ -407,6 +440,7 @@ def _collect_content_match_scores(
     *,
     candidate_terms: Iterable[str],
     normalized_content: str,
+    ontology,
 ) -> Dict[str, TagContentMatch]:
     if normalized_content == "":
         return {}
@@ -415,16 +449,74 @@ def _collect_content_match_scores(
     content_token_set = frozenset(context.token_positions.keys())
     matches: Dict[str, TagContentMatch] = {}
     for term in candidate_terms:
-        if not _term_has_required_content_overlap(
+        strongest_match = None
+        for content_match_term in _list_content_match_terms_for_candidate(
             term=term,
-            content_token_set=content_token_set,
+            ontology=ontology,
         ):
-            continue
-        match = match_tag_term_in_content_match_context(term=term, context=context)
-        if match is None:
-            continue
-        matches[term] = match
+            if not _term_has_required_content_overlap(
+                term=content_match_term,
+                content_token_set=content_token_set,
+            ):
+                continue
+            match = match_tag_term_in_content_match_context(term=content_match_term, context=context)
+            if match is None:
+                continue
+            if strongest_match is None or match.sort_key() > strongest_match.sort_key():
+                strongest_match = match
+        if strongest_match is not None:
+            matches[term] = strongest_match
     return matches
+
+
+def _collect_exact_synonym_content_hits(
+    *,
+    candidate_terms: Iterable[str],
+    normalized_content: str,
+    ontology,
+    suppressed_casefold: set[str],
+    prefix: str,
+) -> Dict[str, List[str]]:
+    if normalized_content == "":
+        return {}
+
+    context = build_normalized_content_match_context(normalized_content=normalized_content)
+    content_token_set = frozenset(context.token_positions.keys())
+    aliases_by_representative: Dict[str, List[tuple[str, TagContentMatch]]] = {}
+    for term in candidate_terms:
+        alias_matches: List[tuple[str, TagContentMatch]] = []
+        for content_match_term in _list_content_match_terms_for_candidate(
+            term=term,
+            ontology=ontology,
+        ):
+            if content_match_term.casefold() == term.casefold():
+                continue
+            if content_match_term.casefold() in suppressed_casefold:
+                continue
+            if prefix != "" and not tag_term_matches_prefix(term=content_match_term, prefix=prefix):
+                continue
+            if not _term_has_required_content_overlap(
+                term=content_match_term,
+                content_token_set=content_token_set,
+            ):
+                continue
+            match = match_tag_term_in_content_match_context(term=content_match_term, context=context)
+            if match is None:
+                continue
+            if not match.raw_phrase_match and not match.phrase_match:
+                continue
+            alias_matches.append((content_match_term, match))
+        if not alias_matches:
+            continue
+        alias_matches.sort(
+            key=lambda alias_match: (
+                alias_match[1].sort_key(),
+                alias_match[0],
+            ),
+            reverse=True,
+        )
+        aliases_by_representative[term] = [alias for alias, _match in alias_matches]
+    return aliases_by_representative
 
 
 def _term_has_required_content_overlap(*, term: str, content_token_set: FrozenSet[str]) -> bool:
@@ -469,6 +561,7 @@ def _rank_terms_by_local_context(
     candidate_terms: List[str],
     exact_tag_counts: Dict[str, int],
     cooccurrence_rank: Dict[str, int],
+    ontology,
 ) -> List[str]:
     current_record = _get_note_record_or_none(note_id)
     if current_record is None:
@@ -480,6 +573,7 @@ def _rank_terms_by_local_context(
     current_note_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
         normalized_content=normalize_tag_match_text(strip_html(current_record.content)),
+        ontology=ontology,
     )
     for term, match in current_note_content_matches.items():
         local_scores[term] += 20000 + _score_content_match(match)
@@ -495,6 +589,7 @@ def _rank_terms_by_local_context(
     descendant_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
         normalized_content=descendant_content,
+        ontology=ontology,
     )
     for term, match in descendant_content_matches.items():
         local_scores[term] += 9000 + _score_content_match(match)
@@ -516,6 +611,7 @@ def _rank_terms_by_local_context(
     sibling_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
         normalized_content=sibling_content,
+        ontology=ontology,
     )
     for term, match in sibling_content_matches.items():
         local_scores[term] += 4500 + _score_content_match(match)
@@ -525,6 +621,7 @@ def _rank_terms_by_local_context(
     ancestor_content_matches = _collect_content_match_scores(
         candidate_terms=candidate_terms,
         normalized_content=ancestor_content,
+        ontology=ontology,
     )
     for term, match in ancestor_content_matches.items():
         local_scores[term] += 1500 + _score_content_match(match)
@@ -753,6 +850,14 @@ def suggest_tags_for_note(
     content_match_scores = _collect_content_match_scores(
         candidate_terms=candidate_terms,
         normalized_content=normalized_content,
+        ontology=ontology,
+    )
+    exact_synonym_content_hits = _collect_exact_synonym_content_hits(
+        candidate_terms=candidate_terms,
+        normalized_content=normalized_content,
+        ontology=ontology,
+        suppressed_casefold=suppressed_casefold,
+        prefix=prefix,
     )
     undercovered_content_overlap_terms = frozenset()
     if not has_prefix:
@@ -795,11 +900,25 @@ def suggest_tags_for_note(
             cooccurrence_rank=cooccurrence_rank,
         )
     )
+    content_first_with_exact_synonyms: List[str] = []
+    seen_content_first_casefold: set[str] = set()
+    for term in content_first:
+        term_casefold = term.casefold()
+        if term_casefold not in seen_content_first_casefold:
+            content_first_with_exact_synonyms.append(term)
+            seen_content_first_casefold.add(term_casefold)
+        for synonym in exact_synonym_content_hits.get(term, []):
+            synonym_casefold = synonym.casefold()
+            if synonym_casefold in seen_content_first_casefold:
+                continue
+            content_first_with_exact_synonyms.append(synonym)
+            seen_content_first_casefold.add(synonym_casefold)
     local_first = _rank_terms_by_local_context(
         note_id=note_id,
         candidate_terms=candidate_terms,
         exact_tag_counts=exact_tag_counts,
         cooccurrence_rank=cooccurrence_rank,
+        ontology=ontology,
     )
     overlap_first = _rank_terms_by_context_overlap(
         note_id=note_id,
@@ -812,21 +931,21 @@ def suggest_tags_for_note(
     cooccurrence_only: List[str] = []
     if has_direct_anchor_context:
         for term in cooccurrence:
-            if term in content_first:
+            if term in content_first_with_exact_synonyms:
                 continue
             cooccurrence_only.append(term)
 
     hierarchy_only = [
         term for term in local_first
-        if term not in content_first and term not in cooccurrence_only
+        if term not in content_first_with_exact_synonyms and term not in cooccurrence_only
     ]
     overlap_only = [
         term for term in overlap_first
-        if term not in content_first and term not in cooccurrence_only and term not in hierarchy_only
+        if term not in content_first_with_exact_synonyms and term not in cooccurrence_only and term not in hierarchy_only
     ]
 
     remaining: List[str] = []
-    seen_terms = set(content_first)
+    seen_terms = set(content_first_with_exact_synonyms)
     seen_terms.update(cooccurrence_only)
     seen_terms.update(hierarchy_only)
     seen_terms.update(overlap_only)
@@ -846,7 +965,7 @@ def suggest_tags_for_note(
         seen_terms.add(term)
 
     suggestions = _interleave_ranked_terms(
-        primary_terms=content_first,
+        primary_terms=content_first_with_exact_synonyms,
         secondary_terms=cooccurrence_only,
     ) + hierarchy_only + overlap_only + remaining
 
@@ -870,6 +989,11 @@ def suggest_tags_for_note(
     collapsed_suggestions = _collapse_equivalent_suggestions(
         suggestions=suggestions,
         representative_by_term=representative_by_term,
+        preserve_duplicate_terms=frozenset(
+            synonym.casefold()
+            for synonyms in exact_synonym_content_hits.values()
+            for synonym in synonyms
+        ),
     )
     return collapsed_suggestions[:limit]
 
