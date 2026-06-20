@@ -91,7 +91,7 @@ function installBrowserEnvironment(t, options = {}) {
 
         appendChild(child) {
             child.parentElement = this;
-            child.isConnected = this.isConnected;
+            setTreeConnection(child, this.isConnected);
             this.children.push(child);
             return child;
         }
@@ -101,7 +101,7 @@ function installBrowserEnvironment(t, options = {}) {
                 child.remove();
             }
             child.parentElement = this;
-            child.isConnected = this.isConnected;
+            setTreeConnection(child, this.isConnected);
             if (reference === null || typeof reference === 'undefined') {
                 this.children.push(child);
                 return child;
@@ -124,7 +124,7 @@ function installBrowserEnvironment(t, options = {}) {
                 siblings.splice(index, 1);
             }
             this.parentElement = null;
-            this.isConnected = false;
+            setTreeConnection(this, false);
         }
 
         cloneNode(deep = false) {
@@ -200,7 +200,10 @@ function installBrowserEnvironment(t, options = {}) {
                 return { height: 20 };
             }
             const childContainer = this.children.find((child) => child.classList.contains('note-children'));
-            const childHeight = childContainer ? childContainer.children.length * 60 : 0;
+            const visibleChildCount = childContainer
+                ? childContainer.children.filter((child) => child.style.display !== 'none').length
+                : 0;
+            const childHeight = visibleChildCount * 60;
             return { height: 20 + childHeight };
         }
 
@@ -225,6 +228,13 @@ function installBrowserEnvironment(t, options = {}) {
     }
 
     class FakeImageElement extends FakeElement {}
+
+    function setTreeConnection(element, isConnected) {
+        element.isConnected = isConnected;
+        for (const child of element.children) {
+            setTreeConnection(child, isConnected);
+        }
+    }
 
     const elementByNoteId = new Map();
     const body = new FakeElement('body');
@@ -470,6 +480,11 @@ test('diff refresh animates note collapse from pre-diff height', async (t) => {
         },
     }, {});
 
+    assert.equal(env.notesContainer.children.includes(parentElement), true);
+    assert.equal(env.notesContainer.children.length, 1);
+    assert.equal(childContainer.children.includes(childElement), true);
+    assert.equal(childElement.style.pointerEvents, 'none');
+    assert.equal(childElement.style.display, '');
     assert.equal(parentElement.classList.contains('is-collapse-transitioning'), true);
     assert.equal(parentElement.style.height, '80px');
     assert.equal(parentElement.style.boxSizing, 'border-box');
@@ -481,6 +496,8 @@ test('diff refresh animates note collapse from pre-diff height', async (t) => {
 
     parentElement.dispatchTransitionEnd('height');
 
+    assert.equal(env.notesContainer.children.includes(parentElement), true);
+    assert.equal(childContainer.children.includes(childElement), false);
     assert.equal(parentElement.classList.contains('is-collapse-transitioning'), false);
     assert.equal(parentElement.style.height, '');
     assert.equal(parentElement.style.boxSizing, '');

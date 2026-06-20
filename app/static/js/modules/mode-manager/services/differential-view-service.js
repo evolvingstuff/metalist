@@ -52,6 +52,53 @@ function captureCollapseAnimationsFromNotePayload(notePayload) {
     return captures;
 }
 
+function buildCollapsingCaptureByNoteId(collapseAnimationCaptures) {
+    if (!Array.isArray(collapseAnimationCaptures)) {
+        throw new Error('buildCollapsingCaptureByNoteId requires captures array');
+    }
+    const collapsingCaptureByNoteId = new Map();
+    for (const capture of collapseAnimationCaptures) {
+        if (!capture || typeof capture !== 'object') {
+            throw new Error('collapse animation capture must be object');
+        }
+        if (!capture.nextCollapsed) {
+            continue;
+        }
+        const noteElement = capture.noteElement;
+        if (!(noteElement instanceof HTMLElement)) {
+            throw new Error('collapse animation capture missing note element');
+        }
+        const noteId = noteElement.dataset.noteId;
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('collapsing note must have note id');
+        }
+        collapsingCaptureByNoteId.set(noteId, capture);
+    }
+    return collapsingCaptureByNoteId;
+}
+
+function deferRemovalForCollapsingParent(collapsingCaptureByNoteId, parentId, noteElement) {
+    if (!(collapsingCaptureByNoteId instanceof Map)) {
+        throw new Error('deferRemovalForCollapsingParent requires capture map');
+    }
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error('deferRemovalForCollapsingParent requires note element');
+    }
+    if (typeof parentId !== 'string' || parentId.length === 0) {
+        return false;
+    }
+    const collapseCapture = collapsingCaptureByNoteId.get(parentId);
+    if (!collapseCapture) {
+        return false;
+    }
+    if (!Array.isArray(collapseCapture.deferredRemovalElements)) {
+        throw new Error('collapse capture missing deferred removal array');
+    }
+    noteElement.style.pointerEvents = 'none';
+    collapseCapture.deferredRemovalElements.push(noteElement);
+    return true;
+}
+
 function removeNoteElementWithAnimation(noteElement) {
     if (!(noteElement instanceof HTMLElement)) {
         throw new Error('removeNoteElementWithAnimation requires HTMLElement');
@@ -85,6 +132,7 @@ function applyServerDiffOps(payload) {
     const touchedParentIds = new Set();
     const affordanceDirtyElements = new Set();
     const collapseAnimationCaptures = captureCollapseAnimationsFromNotePayload(noteUpdates);
+    const collapsingCaptureByNoteId = buildCollapsingCaptureByNoteId(collapseAnimationCaptures);
     const noteElements = new Map();
     let vdomOperations = 0;
     const insertedIds = new Set();
@@ -142,7 +190,14 @@ function applyServerDiffOps(payload) {
                 continue;
             }
             const ids = collectDomSubtreeIds(element);
-            removeNoteElementWithAnimation(element);
+            const isRemovalDeferred = deferRemovalForCollapsingParent(
+                collapsingCaptureByNoteId,
+                normalizeParentId(op.parentId),
+                element,
+            );
+            if (!isRemovalDeferred) {
+                removeNoteElementWithAnimation(element);
+            }
             ids.forEach((id) => {
                 noteElements.delete(id);
                 if (ModeContext.hasNoteHash(id)) {
@@ -507,6 +562,7 @@ export function applyDifferentialView(payload, options) {
         notePayload = {};
     }
     const collapseAnimationCaptures = captureCollapseAnimationsFromNotePayload(notePayload);
+    const collapsingCaptureByNoteId = buildCollapsingCaptureByNoteId(collapseAnimationCaptures);
     const desired = buildDesiredForest(payload.structure, notePayload);
     const desiredIds = new Set(desired.nodeById.keys());
 
@@ -562,7 +618,15 @@ export function applyDifferentialView(payload, options) {
                     continue;
                 }
                 const ids = collectSubtreeIds(node);
-                removeNoteElementWithAnimation(element);
+                const normalizedParentId = typeof parentId === 'string' ? parentId : '';
+                const isRemovalDeferred = deferRemovalForCollapsingParent(
+                    collapsingCaptureByNoteId,
+                    normalizedParentId,
+                    element,
+                );
+                if (!isRemovalDeferred) {
+                    removeNoteElementWithAnimation(element);
+                }
                 ids.forEach((id) => {
                     elementCache.delete(id);
                     if (ModeContext.hasNoteHash(id)) {

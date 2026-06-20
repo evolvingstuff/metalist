@@ -36,10 +36,22 @@ function installBrowserEnvironment(t, { animatedTransitions }) {
             this.isConnected = true;
             this.height = 20;
             this.listeners = new Map();
+            this.children = [];
+            this.parentElement = null;
+            this.attributes = new Map();
         }
 
         getBoundingClientRect() {
             return { height: this.height };
+        }
+
+        remove() {
+            if (!this.parentElement) {
+                return;
+            }
+            this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+            this.parentElement = null;
+            this.isConnected = false;
         }
 
         addEventListener(eventName, handler) {
@@ -91,7 +103,12 @@ function installBrowserEnvironment(t, { animatedTransitions }) {
 
     return {
         createNote() {
-            return new FakeElement(['note']);
+            const parent = new FakeElement();
+            const note = new FakeElement(['note']);
+            note.dataset.noteId = 'note-a';
+            parent.children.push(note);
+            note.parentElement = parent;
+            return note;
         },
         runAnimationFrame() {
             const callback = animationFrames.shift();
@@ -123,7 +140,7 @@ test('captureNoteCollapseAnimation returns null when animated transitions are di
     assert.equal(captureNoteCollapseAnimation(note, true), null);
 });
 
-test('animateNoteCollapseChanges transitions from captured height to final height', async (t) => {
+test('animateNoteCollapseChanges collapses the real expanded note', async (t) => {
     const env = installBrowserEnvironment(t, { animatedTransitions: true });
     const {
         animateNoteCollapseChanges,
@@ -141,6 +158,9 @@ test('animateNoteCollapseChanges transitions from captured height to final heigh
     note.height = 20;
     animateNoteCollapseChanges([capture]);
 
+    const parent = note.parentElement;
+    assert.equal(parent.children.includes(note), true);
+    assert.equal(parent.children.length, 1);
     assert.equal(note.classList.contains('is-collapse-transitioning'), true);
     assert.equal(note.style.height, '80px');
     assert.equal(note.style.boxSizing, 'border-box');
@@ -152,10 +172,112 @@ test('animateNoteCollapseChanges transitions from captured height to final heigh
 
     note.dispatchTransitionEnd('height');
 
+    assert.equal(parent.children.includes(note), true);
     assert.equal(note.classList.contains('is-collapse-transitioning'), false);
     assert.equal(note.style.height, '');
     assert.equal(note.style.boxSizing, '');
     assert.equal(note.style.overflow, '');
 
     env.runTimeout();
+});
+
+test('animateNoteCollapseChanges expands the real collapsed note', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const {
+        animateNoteCollapseChanges,
+        captureNoteCollapseAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-collapse-animation-service.js'
+    );
+
+    const note = env.createNote();
+    note.dataset.isCollapsed = 'true';
+    note.height = 20;
+    const capture = captureNoteCollapseAnimation(note, false);
+
+    note.dataset.isCollapsed = 'false';
+    note.height = 80;
+    animateNoteCollapseChanges([capture]);
+
+    assert.equal(note.classList.contains('is-collapse-transitioning'), true);
+    assert.equal(note.style.height, '20px');
+    assert.equal(note.style.boxSizing, 'border-box');
+    assert.equal(note.style.overflow, 'hidden');
+
+    env.runAnimationFrame();
+
+    assert.equal(note.style.height, '80px');
+
+    note.dispatchTransitionEnd('height');
+
+    assert.equal(note.classList.contains('is-collapse-transitioning'), false);
+    assert.equal(note.style.height, '');
+    assert.equal(note.style.boxSizing, '');
+    assert.equal(note.style.overflow, '');
+
+    env.runTimeout();
+});
+
+test('animateNoteCollapseChanges removes deferred children after the parent collapse', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const {
+        animateNoteCollapseChanges,
+        captureNoteCollapseAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-collapse-animation-service.js'
+    );
+
+    const note = env.createNote();
+    const child = new globalThis.HTMLElement(['note']);
+    note.children.push(child);
+    child.parentElement = note;
+    note.dataset.isCollapsed = 'false';
+    note.height = 80;
+    const capture = captureNoteCollapseAnimation(note, true);
+    capture.deferredRemovalElements.push(child);
+
+    note.dataset.isCollapsed = 'true';
+    note.height = 20;
+    animateNoteCollapseChanges([capture]);
+
+    assert.equal(note.children.includes(child), true);
+    assert.equal(child.style.display, '');
+    assert.equal(note.style.height, '80px');
+
+    env.runAnimationFrame();
+
+    assert.equal(note.style.height, '20px');
+
+    note.dispatchTransitionEnd('height');
+
+    assert.equal(note.children.includes(child), false);
+    assert.equal(child.parentElement, null);
+
+    env.runTimeout();
+});
+
+test('animateNoteCollapseChanges removes deferred children when no height transition runs', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const {
+        animateNoteCollapseChanges,
+        captureNoteCollapseAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-collapse-animation-service.js'
+    );
+
+    const note = env.createNote();
+    const child = new globalThis.HTMLElement(['note']);
+    note.children.push(child);
+    child.parentElement = note;
+    note.dataset.isCollapsed = 'false';
+    note.height = 20;
+    const capture = captureNoteCollapseAnimation(note, true);
+    capture.deferredRemovalElements.push(child);
+
+    note.dataset.isCollapsed = 'true';
+    animateNoteCollapseChanges([capture]);
+
+    assert.equal(note.children.includes(child), false);
+    assert.equal(child.parentElement, null);
+    assert.equal(note.classList.contains('is-collapse-transitioning'), false);
 });
