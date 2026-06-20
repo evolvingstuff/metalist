@@ -16,6 +16,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openSessionTimeoutSettings: noop,
             openReminders: noop,
             openSoundManager: noop,
+            openVersionInfo: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,
@@ -63,6 +64,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(animatedTransitionsEndpoint.defaultValue, true);
     assert.equal(animatedTransitionsEndpoint.label, 'Animated transitions');
     assert.equal(endpointIds.has('form.reminders'), true);
+    assert.equal(endpointIds.has('form.version_info'), true);
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);

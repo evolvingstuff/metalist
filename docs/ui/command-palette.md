@@ -45,6 +45,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Session idle timeout…`: opens a modal for changing the namespace-scoped inactivity window before reauthentication is required again, or disabling idle timeout entirely.
 - `Reminders…`: opens the privacy-first in-app reminder registry and builder. Reminders are namespace-local, encrypted with the namespace when password protection is enabled, and never use browser/system push notifications. See `docs/ui/reminders.md`.
 - `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
+- `Version info…`: opens a read-only runtime/version modal with app version, SQLite `user_version`, namespace, auth, encryption, vault, KDF, and cache readiness fields.
 - `Switch namespace…`: opens a simple namespace picker and launches/restarts the selected non-current namespace with its saved/default profile.
 - `Create namespace…`: opens a namespace creation modal with defaulted HTTP / HTTPS / MCP ports, saves the profile, launches the namespace, and opens it.
 - `Manage namespace ports…`: opens a table of saved launch profiles from each namespace's main DB; saving this table only updates future launch profiles and does not switch tabs, launch namespaces, or restart the current process. Current-namespace port edits apply on the next MetaList launch.

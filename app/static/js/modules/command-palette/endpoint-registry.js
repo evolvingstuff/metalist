@@ -48,6 +48,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const resetUpdatedAtToCreatedAt = requireAction(actions, 'resetUpdatedAtToCreatedAt');
     const openReminders = requireAction(actions, 'openReminders');
     const openSoundManager = requireAction(actions, 'openSoundManager');
+    const openVersionInfo = requireAction(actions, 'openVersionInfo');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
 
@@ -212,6 +213,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Manage sounds…',
             execute: async () => openSoundManager(),
+        },
+        {
+            id: 'form.version_info',
+            kind: 'form',
+            label: 'Version info…',
+            execute: async () => openVersionInfo(),
         },
         {
             id: 'form.switch_namespace',

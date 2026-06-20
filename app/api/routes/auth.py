@@ -24,6 +24,7 @@ from app.config import KDF_MIN_PARALLELISM
 from app.config import KDF_MIN_TIME_COST
 from app.config import KDF_TIME_COST
 from app.config import VAULT_VERSION
+from app.config import VERSION
 from app.db.schema import APP_SETTINGS_TABLE
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
@@ -739,7 +740,15 @@ def auth_status(
 ):
     auth = AuthService(db)
     settings = auth.get_settings()
+    database_user_version_row = db.connection().execute("PRAGMA user_version").fetchone()
+    if database_user_version_row is None:
+        raise RuntimeError("Database user_version PRAGMA returned no row")
+    database_user_version = database_user_version_row[0]
+    if not isinstance(database_user_version, int) or database_user_version < 0:
+        raise RuntimeError(f"Invalid database user_version: {database_user_version!r}")
     return {
+        "version": VERSION,
+        "database_user_version": database_user_version,
         "authenticated": token is not None,
         "has_password": auth.has_password(),
         "encryption_enabled": settings.encryption_enabled if settings else False,

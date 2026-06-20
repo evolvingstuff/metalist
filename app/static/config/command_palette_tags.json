@@ -81,6 +81,10 @@
       "tags": ["sound", "sounds", "audio", "chime", "upload", "manage", "reminder", "got", "it", "notification"]
     },
     {
+      "id": "form.version_info",
+      "tags": ["version", "versions", "schema", "database", "sqlite", "migration", "migrations", "about", "info", "debug"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
     },

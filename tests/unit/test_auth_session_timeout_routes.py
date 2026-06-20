@@ -1,6 +1,24 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import app.api.routes.auth as auth_route
+
+
+class _FakeUserVersionCursor:
+    def fetchone(self):
+        return (42,)
+
+
+class _FakeConnection:
+    def execute(self, statement: str):
+        assert statement == "PRAGMA user_version"
+        return _FakeUserVersionCursor()
+
+
+class _FakeDb:
+    def connection(self):
+        return _FakeConnection()
 
 
 def test_get_session_timeout_settings_returns_current_timeout(
@@ -66,3 +84,33 @@ def test_put_session_timeout_settings_allows_disabling_timeout(
         "refreshed": True,
     }
     assert response.idle_timeout_minutes == 0
+
+
+def test_auth_status_reports_app_and_database_versions(monkeypatch) -> None:
+    class FakeAuthService:
+        def __init__(self, db):
+            assert isinstance(db, _FakeDb)
+
+        def get_settings(self):
+            return SimpleNamespace(
+                encryption_enabled=False,
+                encryption_algorithm=None,
+                vault_version=None,
+                kdf_algorithm=None,
+                kdf_memory_cost_kib=None,
+                kdf_parallelism=None,
+            )
+
+        def has_password(self):
+            return False
+
+    monkeypatch.setattr(auth_route, "AuthService", FakeAuthService)
+    monkeypatch.setattr(auth_route.auth_cache_state, "cache_refresh_needed", lambda: False)
+    monkeypatch.setattr(auth_route, "load_client_preferences", lambda: {})
+
+    payload = auth_route.auth_status(db=_FakeDb(), token="token")
+
+    assert payload["version"] == auth_route.VERSION
+    assert payload["database_user_version"] == 42
+    assert payload["authenticated"] is True
+    assert payload["namespace"] == auth_route.ACTIVE_NAMESPACE

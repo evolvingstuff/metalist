@@ -429,6 +429,46 @@ html {
     width: min(860px, 96vw);
 }
 
+.version-info-modal-content {
+    width: min(520px, 92vw);
+}
+
+.version-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 18px;
+    table-layout: fixed;
+}
+
+.version-info-table tr + tr {
+    border-top: 1px solid var(--border-color);
+}
+
+.version-info-table th,
+.version-info-table td {
+    padding: 9px 0;
+    font-size: 0.92rem;
+    line-height: 1.25;
+    vertical-align: top;
+}
+
+.version-info-table th {
+    width: 46%;
+    padding-right: 14px;
+    text-align: left;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.version-info-table td {
+    overflow-wrap: anywhere;
+}
+
+.version-info-status {
+    margin: 10px 0 18px;
+    color: #6b7280;
+}
+
 .namespace-modal-list {
     display: flex;
     flex-direction: column;
