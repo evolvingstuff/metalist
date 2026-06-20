@@ -1,0 +1,391 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+function installBrowserEnvironment(t, { animatedTransitions, webAnimations = false }) {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalHTMLElement = globalThis.HTMLElement;
+
+    class FakeClassList {
+        constructor(initialClasses = []) {
+            this.classes = new Set(initialClasses);
+        }
+
+        add(...classNames) {
+            for (const className of classNames) {
+                this.classes.add(className);
+            }
+        }
+
+        remove(...classNames) {
+            for (const className of classNames) {
+                this.classes.delete(className);
+            }
+        }
+
+        contains(className) {
+            return this.classes.has(className);
+        }
+    }
+
+    class FakeElement {
+        constructor(initialClasses = []) {
+            this.classList = new FakeClassList(initialClasses);
+            this.dataset = {};
+            this.style = {};
+            this.attributes = new Map();
+            this.children = [];
+            this.parentElement = null;
+            this.isConnected = false;
+            this.top = 10;
+            this.left = 20;
+            this.width = 240;
+            this.height = 20;
+            this.listeners = new Map();
+            this.animations = [];
+            if (webAnimations) {
+                this.animate = (keyframes, options) => {
+                    const animation = {
+                        keyframes,
+                        options,
+                        onfinish: null,
+                    };
+                    this.animations.push(animation);
+                    return animation;
+                };
+            }
+        }
+
+        getBoundingClientRect() {
+            return {
+                top: this.top,
+                left: this.left,
+                width: this.width,
+                height: this.height,
+            };
+        }
+
+        appendChild(child) {
+            return this.insertBefore(child, null);
+        }
+
+        insertBefore(child, reference) {
+            if (!(child instanceof FakeElement)) {
+                throw new Error('insertBefore requires FakeElement child');
+            }
+            if (child.parentElement) {
+                child.parentElement.children = child.parentElement.children.filter((existingChild) => existingChild !== child);
+            }
+            const index = reference === null ? -1 : this.children.indexOf(reference);
+            if (index === -1) {
+                this.children.push(child);
+            } else {
+                this.children.splice(index, 0, child);
+            }
+            child.parentElement = this;
+            child.isConnected = this.isConnected;
+            return child;
+        }
+
+        remove() {
+            if (!this.parentElement) {
+                return;
+            }
+            this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+            this.parentElement = null;
+            this.isConnected = false;
+        }
+
+        cloneNode() {
+            const clone = new FakeElement(Array.from(this.classList.classes));
+            clone.dataset = { ...this.dataset };
+            clone.top = this.top;
+            clone.left = this.left;
+            clone.width = this.width;
+            clone.height = this.height;
+            return clone;
+        }
+
+        querySelectorAll() {
+            return [];
+        }
+
+        setAttribute(name, value) {
+            this.attributes.set(name, value);
+        }
+
+        addEventListener(eventName, handler) {
+            if (typeof eventName !== 'string' || typeof handler !== 'function') {
+                throw new Error('FakeElement.addEventListener requires eventName and handler');
+            }
+            this.listeners.set(eventName, handler);
+        }
+
+        dispatchTransitionEnd(propertyName) {
+            const handler = this.listeners.get('transitionend');
+            if (typeof handler !== 'function') {
+                throw new Error('transitionend handler missing');
+            }
+            handler({ propertyName });
+        }
+    }
+
+    const body = new FakeElement();
+    body.isConnected = true;
+    if (animatedTransitions) {
+        body.classList.add('pref-animated-transitions');
+    }
+
+    const animationFrames = [];
+    const timeouts = [];
+
+    globalThis.HTMLElement = FakeElement;
+    globalThis.document = { body };
+    globalThis.window = {
+        requestAnimationFrame(callback) {
+            if (typeof callback !== 'function') {
+                throw new Error('requestAnimationFrame requires callback');
+            }
+            animationFrames.push(callback);
+        },
+        setTimeout(callback) {
+            if (typeof callback !== 'function') {
+                throw new Error('setTimeout requires callback');
+            }
+            timeouts.push(callback);
+        },
+    };
+
+    t.after(() => {
+        globalThis.document = originalDocument;
+        globalThis.window = originalWindow;
+        globalThis.HTMLElement = originalHTMLElement;
+    });
+
+    return {
+        createConnectedNote() {
+            const parent = new FakeElement();
+            parent.isConnected = true;
+            const note = new FakeElement(['note']);
+            note.dataset.noteId = 'note-a';
+            note.height = 80;
+            parent.appendChild(note);
+            return { parent, note };
+        },
+        runAnimationFrame() {
+            const callback = animationFrames.shift();
+            if (typeof callback !== 'function') {
+                throw new Error('animation frame callback missing');
+            }
+            callback();
+        },
+        runTimeout() {
+            const callback = timeouts.shift();
+            if (typeof callback !== 'function') {
+                throw new Error('timeout callback missing');
+            }
+            callback();
+        },
+        finishAnimation(element, index) {
+            const animation = element.animations[index];
+            if (!animation) {
+                throw new Error(`animation ${index} missing`);
+            }
+            if (typeof animation.onfinish !== 'function') {
+                throw new Error(`animation ${index} missing onfinish`);
+            }
+            animation.onfinish();
+        },
+    };
+}
+
+test('captureNoteRepositionAnimation does not depend on the animated-transitions preference class', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: false });
+    const { captureNoteRepositionAnimation } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    const { note } = env.createConnectedNote();
+    const capture = captureNoteRepositionAnimation(note);
+    assert.equal(capture.noteElement, note);
+    assert.equal(globalThis.document.body.children.includes(capture.ghostElement), true);
+});
+
+test('captureNoteRepositionAnimation inserts an identity-free shrink ghost', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const { captureNoteRepositionAnimation } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    const { parent, note } = env.createConnectedNote();
+    const capture = captureNoteRepositionAnimation(note);
+
+    assert.equal(parent.children.length, 1);
+    assert.equal(globalThis.document.body.children.includes(capture.ghostElement), true);
+    assert.equal(capture.ghostElement.classList.contains('note-reposition-ghost'), true);
+    assert.equal(capture.ghostElement.dataset.noteId, undefined);
+    assert.equal(capture.ghostElement.style.position, 'fixed');
+    assert.equal(capture.ghostElement.style.top, '10px');
+    assert.equal(capture.ghostElement.style.left, '20px');
+    assert.equal(capture.ghostElement.style.width, '240px');
+    assert.equal(capture.ghostElement.style.height, '80px');
+});
+
+test('animateNoteRepositionChanges shrinks the ghost and expands the moved note', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const {
+        animateNoteRepositionChanges,
+        captureNoteRepositionAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    const { parent, note } = env.createConnectedNote();
+    const capture = captureNoteRepositionAnimation(note);
+    const destinationParent = parent;
+    note.height = 100;
+    destinationParent.insertBefore(note, null);
+
+    animateNoteRepositionChanges([capture]);
+
+    assert.equal(note.classList.contains('is-reposition-expanding'), true);
+    assert.equal(note.style.transform, 'scaleY(0.08)');
+    assert.equal(note.style.opacity, '0.18');
+    assert.equal(capture.ghostElement.style.height, '80px');
+
+    env.runAnimationFrame();
+
+    assert.equal(note.style.transform, 'scaleY(1)');
+    assert.equal(note.style.opacity, '1');
+    assert.equal(capture.ghostElement.style.transform, 'scaleY(0.08)');
+    assert.equal(capture.ghostElement.style.opacity, '0');
+
+    env.runTimeout();
+
+    assert.equal(note.classList.contains('is-reposition-expanding'), false);
+    assert.equal(note.style.transform, '');
+    assert.equal(note.style.opacity, '');
+    assert.equal(globalThis.document.body.children.includes(capture.ghostElement), false);
+});
+
+test('shouldAnimateNoteReposition accepts arrays and sets', async (t) => {
+    installBrowserEnvironment(t, { animatedTransitions: true });
+    const { shouldAnimateNoteReposition } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    assert.equal(shouldAnimateNoteReposition('a', ['a']), true);
+    assert.equal(shouldAnimateNoteReposition('b', ['a']), false);
+    assert.equal(shouldAnimateNoteReposition('a', new Set(['a'])), true);
+    assert.equal(shouldAnimateNoteReposition('a', null), false);
+});
+
+test('interrupted reposition animation removes the old ghost without resetting the newer target styles', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const {
+        animateNoteRepositionChanges,
+        captureNoteRepositionAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    const { parent, note } = env.createConnectedNote();
+    const firstCapture = captureNoteRepositionAnimation(note);
+    note.height = 100;
+    parent.insertBefore(note, null);
+    animateNoteRepositionChanges([firstCapture]);
+    env.runAnimationFrame();
+
+    const secondCapture = captureNoteRepositionAnimation(note);
+    note.height = 120;
+    parent.insertBefore(note, null);
+    animateNoteRepositionChanges([secondCapture]);
+    env.runAnimationFrame();
+
+    env.runTimeout();
+
+    assert.equal(globalThis.document.body.children.includes(firstCapture.ghostElement), false);
+    assert.equal(note.classList.contains('is-reposition-expanding'), true);
+    assert.equal(note.style.transform, 'scaleY(1)');
+
+    env.runTimeout();
+
+    assert.equal(globalThis.document.body.children.includes(secondCapture.ghostElement), false);
+    assert.equal(note.classList.contains('is-reposition-expanding'), false);
+});
+
+test('animateNoteRepositionChanges uses Web Animations API when available', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true, webAnimations: true });
+    const {
+        animateNoteRepositionChanges,
+        captureNoteRepositionAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    const { note } = env.createConnectedNote();
+    const capture = captureNoteRepositionAnimation(note);
+    note.height = 100;
+
+    animateNoteRepositionChanges([capture]);
+
+    assert.equal(note.animations.length, 1);
+    assert.equal(capture.ghostElement.animations.length, 1);
+    assert.deepEqual(note.animations[0].keyframes, [
+        { transform: 'scaleY(0.08)', opacity: 0.18 },
+        { transform: 'scaleY(1)', opacity: 1 },
+    ]);
+    assert.deepEqual(capture.ghostElement.animations[0].keyframes, [
+        { transform: 'scaleY(1)', opacity: 0.72 },
+        { transform: 'scaleY(0.08)', opacity: 0 },
+    ]);
+
+    env.finishAnimation(note, 0);
+    assert.equal(note.classList.contains('is-reposition-expanding'), true);
+
+    env.finishAnimation(capture.ghostElement, 0);
+
+    assert.equal(note.classList.contains('is-reposition-expanding'), false);
+    assert.equal(globalThis.document.body.children.includes(capture.ghostElement), false);
+
+    env.runTimeout();
+});
+
+test('animateNoteRemovalAndRemove collapses an identity-free note before removal', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const {
+        animateNoteRemovalAndRemove,
+        captureNoteRemovalAnimation,
+    } = await import(
+        '../../app/static/js/modules/mode-manager/services/note-reposition-animation-service.js'
+    );
+
+    const { parent, note } = env.createConnectedNote();
+    note.dataset.parentId = 'parent-note';
+
+    const capture = captureNoteRemovalAnimation(note);
+    const removingElement = animateNoteRemovalAndRemove(capture);
+
+    assert.equal(parent.children.includes(note), false);
+    assert.equal(parent.children.includes(removingElement), true);
+    assert.equal(note.dataset.noteId, 'note-a');
+    assert.equal(removingElement.dataset.noteId, undefined);
+    assert.equal(removingElement.dataset.parentId, undefined);
+    assert.equal(removingElement.attributes.get('aria-hidden'), 'true');
+    assert.equal(removingElement.classList.contains('is-removal-collapsing'), true);
+    assert.equal(removingElement.style.height, '80px');
+    assert.equal(removingElement.style.overflow, 'hidden');
+    assert.equal(removingElement.style.pointerEvents, 'none');
+
+    env.runAnimationFrame();
+
+    assert.equal(removingElement.style.height, '0px');
+    assert.equal(removingElement.style.opacity, '0');
+    assert.equal(removingElement.style.transform, 'scaleY(0.08)');
+
+    removingElement.dispatchTransitionEnd('height');
+
+    assert.equal(parent.children.includes(removingElement), false);
+
+    env.runTimeout();
+});
