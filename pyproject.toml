@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metalist"
-version = "0.3.0"
+version = "0.3.1"
 description = "A minimalist single-user note-taking app with SSR, fast in-memory tree operations, and efficient sync."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
     "argon2-cffi==23.1.0",
     "cryptography==42.0.5",

@@ -109,6 +109,7 @@
 ## Setup
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
+# Python support: >=3.10,<3.14
 # published install/run:
 uvx metalist
 # or persistent:
