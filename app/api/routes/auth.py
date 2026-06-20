@@ -759,6 +759,7 @@ def auth_status(
         "kdf_parallelism": settings.kdf_parallelism if settings else None,
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
         "namespace": ACTIVE_NAMESPACE,
+        "link_title_revision": link_title_store.get_revision(),
         "client_preferences": load_client_preferences(),
     }
 

@@ -7,7 +7,10 @@ import { CommandGate } from './command-gate-service.js';
 
 let pollingInterval = null;
 let lastTokenRefreshAt = 0;
+let lastLinkTitleRevision = 0;
+let linkTitleRefreshTimer = null;
 const TOKEN_REFRESH_INTERVAL_MS = 60_000; // minimum time between auth refresh calls
+const LINK_TITLE_REFRESH_DEBOUNCE_MS = 1_200;
 const RESTORE_TRANSITION_UNTIL_KEY = 'metalist_restore_transition_until_ms';
 
 
@@ -49,6 +52,10 @@ export function stopPolling() {
         clearInterval(pollingInterval);
         pollingInterval = null;
         Logger.logDebug('Unified polling stopped');
+    }
+    if (linkTitleRefreshTimer !== null) {
+        window.clearTimeout(linkTitleRefreshTimer);
+        linkTitleRefreshTimer = null;
     }
 }
 
@@ -99,10 +106,54 @@ async function pingAuthStatus() {
     });
 
     if (response.ok) {
+        const status = await response.json();
+        handleLinkTitleRevision(status);
         ErrorHandler.handleConnectionRestored();
         return;
     }
 
     // Use centralized handler for HTTP errors
     ErrorHandler.handleApiError(null, response);
+}
+
+function handleLinkTitleRevision(status) {
+    if (status === null || typeof status !== 'object') {
+        throw new Error('auth status response must be an object');
+    }
+    if (status.authenticated !== true) {
+        lastLinkTitleRevision = 0;
+        if (linkTitleRefreshTimer !== null) {
+            window.clearTimeout(linkTitleRefreshTimer);
+            linkTitleRefreshTimer = null;
+        }
+        return;
+    }
+    const revision = status.link_title_revision;
+    if (!Number.isInteger(revision) || revision < 0) {
+        throw new Error('auth status link_title_revision must be a non-negative integer');
+    }
+    if (revision === lastLinkTitleRevision) {
+        return;
+    }
+    lastLinkTitleRevision = revision;
+    scheduleLinkTitleRefresh();
+}
+
+function scheduleLinkTitleRefresh() {
+    if (linkTitleRefreshTimer !== null) {
+        window.clearTimeout(linkTitleRefreshTimer);
+    }
+    linkTitleRefreshTimer = window.setTimeout(() => {
+        linkTitleRefreshTimer = null;
+        void refreshForLinkTitleChanges();
+    }, LINK_TITLE_REFRESH_DEBOUNCE_MS);
+}
+
+async function refreshForLinkTitleChanges() {
+    if (CommandGate.isBusy()) {
+        scheduleLinkTitleRefresh();
+        return;
+    }
+    const { actionRefreshAndMaybeSelect } = await import('../actions/ui-actions.js');
+    await actionRefreshAndMaybeSelect({ context: 'link-title-refresh' });
 }
