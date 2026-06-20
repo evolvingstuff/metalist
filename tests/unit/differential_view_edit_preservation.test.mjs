@@ -127,6 +127,24 @@ function installBrowserEnvironment(t, options = {}) {
             this.isConnected = false;
         }
 
+        cloneNode(deep = false) {
+            const clone = new FakeElement(this.tagName);
+            clone.dataset = { ...this.dataset };
+            clone.attributes = { ...this.attributes };
+            clone.classList = new FakeClassList(Array.from(this.classList.classes));
+            clone.contentEditable = this.contentEditable;
+            clone.textContent = this.textContent;
+            clone.type = this.type;
+            clone.style = { ...this.style };
+            clone._innerHTML = this._innerHTML;
+            if (deep) {
+                for (const child of this.children) {
+                    clone.appendChild(child.cloneNode(true));
+                }
+            }
+            return clone;
+        }
+
         setAttribute(name, value) {
             this.attributes[name] = String(value);
         }
@@ -242,7 +260,11 @@ function installBrowserEnvironment(t, options = {}) {
             if (!match) {
                 return null;
             }
-            return elementByNoteId.get(match[1]) || null;
+            const element = elementByNoteId.get(match[1]) || null;
+            if (!element || !element.isConnected || element.dataset.noteId !== match[1]) {
+                return null;
+            }
+            return element;
         },
         querySelectorAll() {
             return [];
@@ -465,4 +487,66 @@ test('diff refresh animates note collapse from pre-diff height', async (t) => {
     assert.equal(parentElement.style.overflow, '');
 
     env.runTimeout();
+});
+
+test('diff remove animates disappearing note while clearing cached identity immediately', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const { ModeContextInstance: ModeContext } = await import(
+        '../../app/static/js/modules/mode-manager/mode-context.js'
+    );
+    const { applyDifferentialView } = await import(
+        '../../app/static/js/modules/mode-manager/services/differential-view-service.js'
+    );
+
+    ModeContext.clearNoteHashes();
+    ModeContext.setNoteHash('deleted-note', 'deleted-hash');
+
+    const noteElement = env.createElement('div');
+    noteElement.classList.add('note', 'interactive');
+    noteElement.dataset.noteId = 'deleted-note';
+    noteElement.dataset.parentId = '';
+    noteElement.dataset.contentHash = 'deleted-hash';
+    noteElement.dataset.snapshotHash = 'deleted-hash';
+    noteElement.dataset.lockOwner = '';
+    noteElement.dataset.isCollapsed = 'false';
+    noteElement.dataset.hasChildren = 'false';
+    noteElement.dataset.isCollapsible = 'false';
+    noteElement.dataset.noteTags = '';
+    noteElement.dataset.searchRedacted = 'false';
+    env.notesContainer.appendChild(noteElement);
+    env.elementByNoteId.set('deleted-note', noteElement);
+
+    applyDifferentialView({
+        currentClientId: 'client-1',
+        editingNoteId: null,
+        diffOps: [
+            { type: 'remove', noteId: 'deleted-note', parentId: null },
+        ],
+        locks: {},
+        lockDiffs: {},
+        notes: {},
+    }, {});
+
+    assert.equal(env.notesContainer.children.includes(noteElement), false);
+    assert.equal(noteElement.dataset.noteId, 'deleted-note');
+    assert.equal(globalThis.document.querySelector('[data-note-id="deleted-note"]'), null);
+    assert.equal(ModeContext.hasNoteHash('deleted-note'), false);
+    assert.equal(env.notesContainer.children.length, 1);
+    const removingElement = env.notesContainer.children[0];
+    assert.notEqual(removingElement, noteElement);
+    assert.equal(removingElement.dataset.noteId, undefined);
+    assert.equal(removingElement.classList.contains('is-removal-collapsing'), true);
+    assert.equal(removingElement.style.height, '20px');
+
+    env.runAnimationFrame();
+
+    assert.equal(removingElement.style.height, '0px');
+    assert.equal(removingElement.style.opacity, '0');
+
+    removingElement.dispatchTransitionEnd('height');
+
+    assert.equal(env.notesContainer.children.includes(removingElement), false);
+
+    env.runTimeout();
+    ModeContext.clearNoteHashes();
 });

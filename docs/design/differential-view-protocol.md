@@ -132,6 +132,7 @@
 - Bootstrap path: identical to the legacy behavior (diff against `snapshot.structure`, update DOM and hash cache, reset root tracking).
 - Incremental path:
   - Apply `diffOps` in order (remove/move/insert) directly to the DOM.
+  - Removed notes animate through an identity-free placeholder clone: the live note node is removed from `[data-note-id]` lookup and client hash caches immediately, while the clone collapses out of the layout before being discarded.
   - For each affected note id present in `snapshot.notes`, refresh the DOM content, flags, and cached hash.
   - Apply `lockDiffs` by toggling lock styling/editability without re-rendering content.
   - Update `ModeContext`’s root tracking via the provided `rootIds` array.

@@ -7,6 +7,10 @@ import {
     animateNoteCollapseChanges,
     captureNoteCollapseAnimation,
 } from './note-collapse-animation-service.js';
+import {
+    animateNoteRemovalAndRemove,
+    captureNoteRemovalAnimation,
+} from './note-reposition-animation-service.js';
 import { setNoteSearchRedactionState } from './search-redaction-reveal-service.js';
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
@@ -46,6 +50,18 @@ function captureCollapseAnimationsFromNotePayload(notePayload) {
         }
     }
     return captures;
+}
+
+function removeNoteElementWithAnimation(noteElement) {
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error('removeNoteElementWithAnimation requires HTMLElement');
+    }
+    const capture = captureNoteRemovalAnimation(noteElement);
+    if (capture === null) {
+        noteElement.remove();
+        return;
+    }
+    animateNoteRemovalAndRemove(capture);
 }
 
 function applyServerDiffOps(payload) {
@@ -126,7 +142,7 @@ function applyServerDiffOps(payload) {
                 continue;
             }
             const ids = collectDomSubtreeIds(element);
-            element.remove();
+            removeNoteElementWithAnimation(element);
             ids.forEach((id) => {
                 noteElements.delete(id);
                 if (ModeContext.hasNoteHash(id)) {
@@ -546,7 +562,7 @@ export function applyDifferentialView(payload, options) {
                     continue;
                 }
                 const ids = collectSubtreeIds(node);
-                element.remove();
+                removeNoteElementWithAnimation(element);
                 ids.forEach((id) => {
                     elementCache.delete(id);
                     if (ModeContext.hasNoteHash(id)) {
