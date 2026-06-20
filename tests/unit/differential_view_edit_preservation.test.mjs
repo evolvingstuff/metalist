@@ -90,6 +90,9 @@ function installBrowserEnvironment(t, options = {}) {
         }
 
         appendChild(child) {
+            if (child.parentElement) {
+                child.remove();
+            }
             child.parentElement = this;
             setTreeConnection(child, this.isConnected);
             this.children.push(child);
@@ -546,23 +549,27 @@ test('diff remove animates disappearing note while clearing cached identity imme
 
     assert.equal(env.notesContainer.children.includes(noteElement), false);
     assert.equal(noteElement.dataset.noteId, 'deleted-note');
-    assert.equal(globalThis.document.querySelector('[data-note-id="deleted-note"]'), null);
+    assert.equal(globalThis.document.querySelector('[data-note-id="deleted-note"]'), noteElement);
     assert.equal(ModeContext.hasNoteHash('deleted-note'), false);
     assert.equal(env.notesContainer.children.length, 1);
-    const removingElement = env.notesContainer.children[0];
-    assert.notEqual(removingElement, noteElement);
-    assert.equal(removingElement.dataset.noteId, undefined);
-    assert.equal(removingElement.classList.contains('is-removal-collapsing'), true);
-    assert.equal(removingElement.style.height, '20px');
+    const removalWrapper = env.notesContainer.children[0];
+    assert.notEqual(removalWrapper, noteElement);
+    assert.equal(removalWrapper.children.includes(noteElement), true);
+    assert.equal(noteElement.parentElement, removalWrapper);
+    assert.equal(noteElement.dataset.noteId, 'deleted-note');
+    assert.equal(removalWrapper.classList.contains('is-removal-collapsing'), true);
+    assert.equal(removalWrapper.style.height, '20px');
 
     env.runAnimationFrame();
 
-    assert.equal(removingElement.style.height, '0px');
-    assert.equal(removingElement.style.opacity, '0');
+    assert.equal(removalWrapper.style.height, '0px');
+    assert.equal(noteElement.style.transform, 'scaleY(0.04)');
+    assert.equal(noteElement.style.opacity, undefined);
 
-    removingElement.dispatchTransitionEnd('height');
+    removalWrapper.dispatchTransitionEnd('height');
 
-    assert.equal(env.notesContainer.children.includes(removingElement), false);
+    assert.equal(env.notesContainer.children.includes(removalWrapper), false);
+    assert.equal(globalThis.document.querySelector('[data-note-id="deleted-note"]'), null);
 
     env.runTimeout();
     ModeContext.clearNoteHashes();

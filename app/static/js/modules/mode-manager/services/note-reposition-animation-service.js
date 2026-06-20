@@ -10,6 +10,8 @@ const NOTE_REMOVAL_ANIMATION_CLASS = 'is-removal-collapsing';
 const NOTE_REMOVAL_ANIMATION_FALLBACK_MS = 240;
 const NOTE_REMOVAL_ANIMATION_DURATION_MS = 180;
 const NOTE_REMOVAL_HEIGHT_TOLERANCE_PX = 0.5;
+const NOTE_REMOVAL_COLLAPSED_SCALE_Y = '0.04';
+const NOTE_REMOVAL_WRAPPER_MARGIN = '2px 0';
 
 const noteRepositionAnimationVersions = new WeakMap();
 
@@ -313,22 +315,22 @@ export function animateNoteRemovalAndRemove(capture) {
     if (!(parentElement instanceof HTMLElement)) {
         throw new Error('animateNoteRemovalAndRemove requires connected note parent');
     }
-    const removingElement = noteElement.cloneNode(true);
-    if (!(removingElement instanceof HTMLElement)) {
-        throw new Error('Note removal animation clone must be HTMLElement');
-    }
-    stripNoteIdentityAttributes(removingElement);
-    removingElement.setAttribute('aria-hidden', 'true');
-    parentElement.insertBefore(removingElement, noteElement);
-    noteElement.remove();
 
-    removingElement.style.height = `${capture.startHeight}px`;
-    removingElement.style.boxSizing = 'border-box';
-    removingElement.style.overflow = 'hidden';
-    removingElement.style.pointerEvents = 'none';
-    removingElement.style.transformOrigin = 'top left';
-    removingElement.classList.add(NOTE_REMOVAL_ANIMATION_CLASS);
-    removingElement.getBoundingClientRect();
+    const removalWrapper = document.createElement('div');
+    if (!(removalWrapper instanceof HTMLElement)) {
+        throw new Error('Removal animation wrapper must be HTMLElement');
+    }
+    removalWrapper.classList.add(NOTE_REMOVAL_ANIMATION_CLASS);
+    removalWrapper.style.height = `${capture.startHeight}px`;
+    removalWrapper.style.boxSizing = 'border-box';
+    removalWrapper.style.overflow = 'hidden';
+    noteElement.style.pointerEvents = 'none';
+    noteElement.style.margin = '0';
+    noteElement.style.transformOrigin = 'top left';
+    removalWrapper.style.margin = NOTE_REMOVAL_WRAPPER_MARGIN;
+    parentElement.insertBefore(removalWrapper, noteElement);
+    removalWrapper.appendChild(noteElement);
+    removalWrapper.getBoundingClientRect();
 
     let didFinish = false;
     const finishAnimation = () => {
@@ -336,10 +338,10 @@ export function animateNoteRemovalAndRemove(capture) {
             return;
         }
         didFinish = true;
-        removingElement.remove();
+        removalWrapper.remove();
     };
 
-    removingElement.addEventListener('transitionend', (event) => {
+    removalWrapper.addEventListener('transitionend', (event) => {
         if (event.propertyName !== 'height') {
             return;
         }
@@ -347,15 +349,15 @@ export function animateNoteRemovalAndRemove(capture) {
     }, { once: true });
 
     window.requestAnimationFrame(() => {
-        if (!removingElement.isConnected) {
+        if (!removalWrapper.isConnected) {
             return;
         }
         const durationMs = resolveMotionDurationMs(NOTE_REMOVAL_ANIMATION_DURATION_MS);
-        removingElement.style.transition = `height ${durationMs}ms ${NOTE_REPOSITION_ANIMATION_EASING}, opacity ${durationMs}ms ${NOTE_REPOSITION_ANIMATION_EASING}, transform ${durationMs}ms ${NOTE_REPOSITION_ANIMATION_EASING}`;
-        removingElement.style.height = '0px';
-        removingElement.style.opacity = '0';
-        removingElement.style.transform = `scaleY(${NOTE_REPOSITION_COLLAPSED_SCALE_Y})`;
+        removalWrapper.style.transition = `height ${durationMs}ms ${NOTE_REPOSITION_ANIMATION_EASING}`;
+        noteElement.style.transition = `transform ${durationMs}ms ${NOTE_REPOSITION_ANIMATION_EASING}`;
+        removalWrapper.style.height = '0px';
+        noteElement.style.transform = `scaleY(${NOTE_REMOVAL_COLLAPSED_SCALE_Y})`;
     });
     window.setTimeout(finishAnimation, NOTE_REMOVAL_ANIMATION_FALLBACK_MS);
-    return removingElement;
+    return removalWrapper;
 }

@@ -140,7 +140,12 @@ function installBrowserEnvironment(t, { animatedTransitions, webAnimations = fal
     const timeouts = [];
 
     globalThis.HTMLElement = FakeElement;
-    globalThis.document = { body };
+    globalThis.document = {
+        body,
+        createElement() {
+            return new FakeElement();
+        },
+    };
     globalThis.window = {
         requestAnimationFrame(callback) {
             if (typeof callback !== 'function') {
@@ -351,7 +356,7 @@ test('animateNoteRepositionChanges uses Web Animations API when available', asyn
     env.runTimeout();
 });
 
-test('animateNoteRemovalAndRemove collapses an identity-free note before removal', async (t) => {
+test('animateNoteRemovalAndRemove collapses the removal row to zero height before removal', async (t) => {
     const env = installBrowserEnvironment(t, { animatedTransitions: true });
     const {
         animateNoteRemovalAndRemove,
@@ -364,28 +369,28 @@ test('animateNoteRemovalAndRemove collapses an identity-free note before removal
     note.dataset.parentId = 'parent-note';
 
     const capture = captureNoteRemovalAnimation(note);
-    const removingElement = animateNoteRemovalAndRemove(capture);
+    const removalWrapper = animateNoteRemovalAndRemove(capture);
 
+    assert.notEqual(removalWrapper, note);
     assert.equal(parent.children.includes(note), false);
-    assert.equal(parent.children.includes(removingElement), true);
+    assert.equal(parent.children.includes(removalWrapper), true);
+    assert.equal(removalWrapper.children.includes(note), true);
     assert.equal(note.dataset.noteId, 'note-a');
-    assert.equal(removingElement.dataset.noteId, undefined);
-    assert.equal(removingElement.dataset.parentId, undefined);
-    assert.equal(removingElement.attributes.get('aria-hidden'), 'true');
-    assert.equal(removingElement.classList.contains('is-removal-collapsing'), true);
-    assert.equal(removingElement.style.height, '80px');
-    assert.equal(removingElement.style.overflow, 'hidden');
-    assert.equal(removingElement.style.pointerEvents, 'none');
+    assert.equal(note.dataset.parentId, 'parent-note');
+    assert.equal(removalWrapper.classList.contains('is-removal-collapsing'), true);
+    assert.equal(removalWrapper.style.height, '80px');
+    assert.equal(removalWrapper.style.overflow, 'hidden');
+    assert.equal(note.style.pointerEvents, 'none');
 
     env.runAnimationFrame();
 
-    assert.equal(removingElement.style.height, '0px');
-    assert.equal(removingElement.style.opacity, '0');
-    assert.equal(removingElement.style.transform, 'scaleY(0.08)');
+    assert.equal(removalWrapper.style.height, '0px');
+    assert.equal(note.style.transform, 'scaleY(0.04)');
+    assert.equal(note.style.opacity, undefined);
 
-    removingElement.dispatchTransitionEnd('height');
+    removalWrapper.dispatchTransitionEnd('height');
 
-    assert.equal(parent.children.includes(removingElement), false);
+    assert.equal(parent.children.includes(removalWrapper), false);
 
     env.runTimeout();
 });
