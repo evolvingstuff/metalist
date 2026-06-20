@@ -706,6 +706,10 @@ def main(argv: list[str]) -> None:
     _run_namespace_server_for_current_env(argv=argv)
 
 
+def cli() -> None:
+    main([])
+
+
 def run_namespace_server(argv: list[str]) -> None:
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     apply_main_cli_args_to_environ(argv=argv, environ=os.environ)

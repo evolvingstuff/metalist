@@ -109,10 +109,13 @@
 ## Setup
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install metalist    # published install
+# published install/run:
+uvx metalist
+# or persistent:
+uv tool install metalist && metalist
 # or from source:
-# pip install .
-# pip install -e .[dev] for local development
+# uv pip install .
+# uv pip install -e .[dev] for local development
 # npm install            # only for Node-based JS unit tests / Mermaid rendering
 metalist
 ```

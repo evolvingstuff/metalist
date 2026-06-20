@@ -1,5 +1,5 @@
 {
-  "name": "metalist3",
+  "name": "metalist",
   "version": "1.0.0",
   "description": "A minimalist note-taking application with a focus on server-side rendering and efficient data synchronization.",
   "main": "index.js",
