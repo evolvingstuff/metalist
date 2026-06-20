@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import ipaddress
+import re
 import socket
 from threading import RLock
 from typing import Mapping
@@ -50,6 +51,34 @@ _NO_TITLE_RETRY_DELAYS = (
     timedelta(days=1),
     timedelta(days=7),
     _NO_TITLE_REFRESH_AFTER,
+)
+_INTERSTITIAL_TITLE_EXACT_MATCHES = {
+    "access denied",
+    "attention required",
+    "browser check",
+    "checking your browser",
+    "enable javascript",
+    "just a moment",
+    "login",
+    "please wait",
+    "sign in",
+    "verification required",
+}
+_INTERSTITIAL_TITLE_PHRASES = (
+    "access denied",
+    "are you a human",
+    "bot detection",
+    "checking if the site connection is secure",
+    "checking your browser",
+    "complete the security check",
+    "enable cookies",
+    "enable javascript",
+    "human verification",
+    "please enable js",
+    "please enable javascript",
+    "please wait for verification",
+    "security check",
+    "verify you are human",
 )
 
 
@@ -116,6 +145,12 @@ class _LinkTitleState:
     is_decrypted: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _LinkTitleSanitizeResult:
+    state: _LinkTitleState
+    did_update: bool
+
+
 class _TitleParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -172,14 +207,22 @@ class LinkTitleStore:
         self._lock = RLock()
         self._state: _LinkTitleState | None = None
         self._in_flight: set[str] = set()
+        self._revision = 0
 
     def bootstrap(self, *, connection) -> None:
         rows = fetch_all_link_title_rows(connection)
         stored_rows = tuple(_coerce_stored_row(row) for row in rows)
         state = _build_state_from_stored_rows(stored_rows=stored_rows, token="")
+        did_sanitize = False
+        if state.is_decrypted:
+            result = _sanitize_cached_interstitial_titles(state=state, connection=connection)
+            state = result.state
+            did_sanitize = result.did_update
         with self._lock:
             self._state = state
             self._in_flight.clear()
+            if did_sanitize:
+                self._revision += 1
 
     def ensure_decrypted(self, *, token: str) -> None:
         if not isinstance(token, str):
@@ -190,15 +233,27 @@ class LinkTitleStore:
                 raise RuntimeError("LinkTitleStore is not bootstrapped")
             if state.is_decrypted:
                 return
-            self._state = _build_state_from_stored_rows(
+            state = _build_state_from_stored_rows(
                 stored_rows=state.stored_rows,
                 token=token,
             )
+            if state.is_decrypted:
+                with begin_writer() as connection:
+                    result = _sanitize_cached_interstitial_titles(state=state, connection=connection)
+                    state = result.state
+                if result.did_update:
+                    self._revision += 1
+            self._state = state
 
     def reset(self) -> None:
         with self._lock:
             self._state = None
             self._in_flight.clear()
+            self._revision = 0
+
+    def get_revision(self) -> int:
+        with self._lock:
+            return self._revision
 
     def get_ok_title(self, url: str) -> str | None:
         normalized_url = normalize_url_for_link_title(url)
@@ -272,6 +327,7 @@ class LinkTitleStore:
                 is_decrypted=True,
             )
             self._in_flight.discard(normalized_url)
+            self._revision += 1
 
     def discard_in_flight(self, url: str) -> None:
         normalized_url = normalize_url_for_link_title(url)
@@ -567,6 +623,103 @@ def _stored_row_from_record(*, record: LinkTitleRecord) -> _StoredLinkTitleRow:
     )
 
 
+def _stored_row_from_serialized_record(
+    *,
+    record: LinkTitleRecord,
+    payload: dict[str, object],
+) -> _StoredLinkTitleRow:
+    return _StoredLinkTitleRow(
+        id=record.id,
+        stored_url=_require_serialized_text(payload, "url"),
+        url_encryption_nonce=_require_optional_bytes(payload, "url_encryption_nonce"),
+        url_encryption_tag=_require_optional_bytes(payload, "url_encryption_tag"),
+        stored_title=_require_optional_text(payload, "title"),
+        title_encryption_nonce=_require_optional_bytes(payload, "title_encryption_nonce"),
+        title_encryption_tag=_require_optional_bytes(payload, "title_encryption_tag"),
+        status=record.status,
+        last_error_kind=record.last_error_kind,
+        last_checked_at=record.last_checked_at,
+        last_success_at=record.last_success_at,
+        last_failure_at=record.last_failure_at,
+        next_check_after=record.next_check_after,
+        failure_count=record.failure_count,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+def _require_serialized_text(payload: Mapping[str, object], key: str) -> str:
+    value = payload[key]
+    if not isinstance(value, str) or value == "":
+        raise RuntimeError(f"Serialized link title field {key} must be non-empty string")
+    return value
+
+
+def _require_optional_text(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload[key]
+    if value is not None and not isinstance(value, str):
+        raise RuntimeError(f"Serialized link title field {key} must be string or None")
+    return value
+
+
+def _require_optional_bytes(payload: Mapping[str, object], key: str) -> bytes | None:
+    value = payload[key]
+    if value is not None and not isinstance(value, bytes):
+        raise RuntimeError(f"Serialized link title field {key} must be bytes or None")
+    return value
+
+
+def _sanitize_cached_interstitial_titles(
+    *,
+    state: _LinkTitleState,
+    connection,
+) -> _LinkTitleSanitizeResult:
+    if not state.is_decrypted:
+        return _LinkTitleSanitizeResult(state=state, did_update=False)
+    next_rows_by_id = {row.id: row for row in state.stored_rows}
+    next_records_by_url = dict(state.records_by_url)
+    now = datetime.now(timezone.utc)
+    did_update = False
+
+    for record in state.records_by_url.values():
+        if record.status != "ok" or record.title is None:
+            continue
+        if not _looks_like_interstitial_title(record.title):
+            continue
+        next_record = _build_next_record(
+            previous=record,
+            normalized_url=record.url,
+            result=_LinkTitleFetchResult(
+                url=record.url,
+                title=None,
+                status="no_title",
+                last_error_kind="interstitial_title",
+            ),
+            now=now,
+        )
+        payload = _serialize_record_for_storage(record=next_record)
+        update_payload = dict(payload)
+        update_payload.pop("created_at")
+        update_link_title_row(connection, next_record.id, **update_payload)
+        next_rows_by_id[next_record.id] = _stored_row_from_serialized_record(
+            record=next_record,
+            payload=payload,
+        )
+        next_records_by_url[next_record.url] = next_record
+        did_update = True
+
+    if not did_update:
+        return _LinkTitleSanitizeResult(state=state, did_update=False)
+    return _LinkTitleSanitizeResult(
+        state=_LinkTitleState(
+            stored_rows=tuple(sorted(next_rows_by_id.values(), key=lambda row: row.id)),
+            records_by_url=next_records_by_url,
+            is_decrypted=True,
+        ),
+        did_update=True,
+    )
+
+
 def _build_next_record(
     *,
     previous: LinkTitleRecord | None,
@@ -787,9 +940,7 @@ def _fetch_one_url(url: str) -> _LinkTitleFetchResult:
         return _LinkTitleFetchResult(url=url, title=None, status="failed", last_error_kind="http_client_error")
 
     title = _extract_title_from_html(content=content, encoding=response_encoding)
-    if title is None:
-        return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="no_title")
-    return _LinkTitleFetchResult(url=url, title=title, status="ok", last_error_kind=None)
+    return _fetch_result_from_extracted_title(url=url, title=title)
 
 
 def _redirect_result_from_response(*, url: str, response: httpx.Response) -> _LinkTitleFetchResult | None:
@@ -862,6 +1013,34 @@ def _clean_title_text(value: str | None) -> str | None:
     if len(cleaned) > 300:
         cleaned = cleaned[:300].rstrip()
     return cleaned
+
+
+def _fetch_result_from_extracted_title(*, url: str, title: str | None) -> _LinkTitleFetchResult:
+    if not isinstance(url, str) or url == "":
+        raise ValueError("url must be a non-empty string")
+    if title is None:
+        return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="no_title")
+    if _looks_like_interstitial_title(title):
+        return _LinkTitleFetchResult(url=url, title=None, status="no_title", last_error_kind="interstitial_title")
+    return _LinkTitleFetchResult(url=url, title=title, status="ok", last_error_kind=None)
+
+
+def _looks_like_interstitial_title(title: str) -> bool:
+    if not isinstance(title, str):
+        raise TypeError("title must be a string")
+    normalized = " ".join(title.casefold().split()).strip(" .!:-|")
+    if normalized == "":
+        return False
+    if normalized in _INTERSTITIAL_TITLE_EXACT_MATCHES:
+        return True
+    return any(_contains_normalized_phrase(normalized, phrase) for phrase in _INTERSTITIAL_TITLE_PHRASES)
+
+
+def _contains_normalized_phrase(normalized_value: str, normalized_phrase: str) -> bool:
+    if not isinstance(normalized_value, str) or not isinstance(normalized_phrase, str):
+        raise TypeError("normalized phrase inputs must be strings")
+    pattern = rf"(?<![a-z0-9]){re.escape(normalized_phrase)}(?![a-z0-9])"
+    return re.search(pattern, normalized_value) is not None
 
 
 def rewrite_persisted_link_titles(*, connection, encryption_service: object | None, force_plaintext: bool) -> int:
