@@ -60,6 +60,9 @@ _LOW_SIGNAL_UPPERCASE_SINGLE_LETTER_SEGMENTS = frozenset({"a", "i"})
 @dataclass(frozen=True, slots=True)
 class TagContentMatch:
     raw_phrase_match: bool
+    raw_partial_phrase_match: bool
+    raw_partial_phrase_segment_count: int
+    raw_partial_phrase_position: int
     phrase_match: bool
     matched_segment_count: int
     matched_segments: tuple[str, ...]
@@ -70,19 +73,25 @@ class TagContentMatch:
     first_position: int
     normalized_length: int
 
-    def sort_key(self) -> tuple[int, int, int, int, int, int, int, int, int]:
+    def sort_key(self) -> tuple[int, ...]:
         phrase_match_score = 0
         if self.phrase_match:
             phrase_match_score = 1
         raw_phrase_match_score = 0
+        raw_partial_phrase_match_score = 0
         raw_phrase_specificity_score = 0
         raw_phrase_position_score = 0
         if self.raw_phrase_match:
             raw_phrase_match_score = 1
             raw_phrase_specificity_score = self.raw_segment_count
             raw_phrase_position_score = -self.raw_phrase_position
+        elif self.raw_partial_phrase_match:
+            raw_partial_phrase_match_score = 1
+            raw_phrase_specificity_score = self.raw_partial_phrase_segment_count
+            raw_phrase_position_score = -self.raw_partial_phrase_position
         return (
             raw_phrase_match_score,
+            raw_partial_phrase_match_score,
             raw_phrase_specificity_score,
             raw_phrase_position_score,
             phrase_match_score,
@@ -125,7 +134,7 @@ def _split_tag_term_segments_cached(term: str) -> tuple[str, ...]:
     return tuple(segment for segment in normalized.split(" ") if segment)
 
 
-def _split_tag_term_segments_preserving_case(term: str) -> tuple[str, ...]:
+def split_tag_term_segments_preserving_case(term: str) -> tuple[str, ...]:
     if not isinstance(term, str):
         raise TypeError("term must be a string")
 
@@ -171,7 +180,7 @@ def list_significant_content_match_segments(term: str) -> tuple[str, ...]:
 
 @lru_cache(maxsize=32768)
 def _list_significant_content_match_segments_cached(term: str) -> tuple[str, ...]:
-    raw_segments = _split_tag_term_segments_preserving_case(term)
+    raw_segments = split_tag_term_segments_preserving_case(term)
     return tuple(
         raw_segment.casefold()
         for raw_segment in raw_segments
@@ -195,7 +204,7 @@ def _list_significant_content_match_segments_with_raw_indexes(
 def _list_significant_content_match_segments_with_raw_indexes_cached(
     term: str,
 ) -> tuple[tuple[str, ...], tuple[int, ...], int]:
-    raw_segments = _split_tag_term_segments_preserving_case(term)
+    raw_segments = split_tag_term_segments_preserving_case(term)
     significant_segments: list[str] = []
     significant_raw_indexes: list[int] = []
     for raw_index, raw_segment in enumerate(raw_segments):
@@ -268,6 +277,32 @@ def match_tag_term_in_content_match_context(
                 raw_phrase_position = index
                 break
 
+    raw_partial_phrase_match = False
+    raw_partial_phrase_segment_count = 0
+    raw_partial_phrase_position = -1
+    partial_phrase_segment_count = raw_segment_count - 1
+    if not raw_phrase_match and partial_phrase_segment_count >= 2:
+        significant_raw_index_set = set(segment_raw_indexes)
+        for raw_start_index in range(raw_segment_count - partial_phrase_segment_count + 1):
+            raw_end_index = raw_start_index + partial_phrase_segment_count
+            if not any(
+                raw_index in significant_raw_index_set
+                for raw_index in range(raw_start_index, raw_end_index)
+            ):
+                continue
+            raw_partial_phrase = raw_segments[raw_start_index:raw_end_index]
+            if len(context.tokens) < partial_phrase_segment_count:
+                continue
+            for content_index in range(len(context.tokens) - partial_phrase_segment_count + 1):
+                if context.tokens[content_index : content_index + partial_phrase_segment_count] != raw_partial_phrase:
+                    continue
+                raw_partial_phrase_match = True
+                raw_partial_phrase_segment_count = partial_phrase_segment_count
+                raw_partial_phrase_position = content_index
+                break
+            if raw_partial_phrase_match:
+                break
+
     phrase = " ".join(segments)
 
     phrase_match = False
@@ -296,7 +331,7 @@ def match_tag_term_in_content_match_context(
         1,
         min(len(segments), raw_segment_count - 1),
     )
-    if matched_segment_count < required_matched_segment_count:
+    if matched_segment_count < required_matched_segment_count and not raw_partial_phrase_match:
         return None
 
     assert matched_raw_indexes
@@ -308,6 +343,9 @@ def match_tag_term_in_content_match_context(
 
     return TagContentMatch(
         raw_phrase_match=raw_phrase_match,
+        raw_partial_phrase_match=raw_partial_phrase_match,
+        raw_partial_phrase_segment_count=raw_partial_phrase_segment_count,
+        raw_partial_phrase_position=raw_partial_phrase_position,
         phrase_match=phrase_match,
         matched_segment_count=matched_segment_count,
         matched_segments=tuple(matched_segments),
@@ -336,5 +374,6 @@ __all__ = [
     "match_tag_term_in_normalized_content",
     "normalize_tag_match_text",
     "split_tag_term_segments",
+    "split_tag_term_segments_preserving_case",
     "tag_term_matches_prefix",
 ]

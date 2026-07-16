@@ -15,6 +15,7 @@ from app.services.tag_term_matching import list_significant_content_match_segmen
 from app.services.tag_term_matching import match_tag_term_in_content_match_context
 from app.services.tag_term_matching import normalize_tag_match_text
 from app.services.tag_term_matching import split_tag_term_segments
+from app.services.tag_term_matching import split_tag_term_segments_preserving_case
 from app.services.tag_term_matching import tag_term_matches_prefix
 from app.utils.text_utils import strip_html
 
@@ -253,6 +254,8 @@ def _score_content_match(match: TagContentMatch) -> int:
     score = 0
     if match.phrase_match:
         score += 1000
+    if match.raw_partial_phrase_match:
+        score += 750
     score += match.matched_segment_count * 100
     score -= unmatched_segment_count * 10
     score += max(0, 100 - min(match.first_position, 100))
@@ -500,6 +503,81 @@ def _collect_content_match_scores(
     return matches
 
 
+def _build_prefix_content_remainder(*, term: str, prefix: str) -> str:
+    if not isinstance(term, str) or not term:
+        raise TypeError("term must be a non-empty string")
+    if not isinstance(prefix, str) or not prefix:
+        raise TypeError("prefix must be a non-empty string")
+    if not tag_term_matches_prefix(term=term, prefix=prefix):
+        raise ValueError("prefix must match the tag term")
+
+    raw_segments = split_tag_term_segments_preserving_case(term)
+    prefix_segments = split_tag_term_segments(prefix)
+    if not raw_segments:
+        raise ValueError("term must contain at least one segment")
+    if not prefix_segments:
+        raise ValueError("prefix must contain at least one segment")
+
+    matched_segment_index = -1
+    if term.casefold().startswith(prefix.casefold()):
+        matched_segment_index = len(prefix_segments) - 1
+        assert matched_segment_index < len(raw_segments)
+    else:
+        prefix_casefold = prefix.casefold()
+        for index, raw_segment in enumerate(raw_segments):
+            if raw_segment.casefold().startswith(prefix_casefold):
+                matched_segment_index = index
+                break
+        assert matched_segment_index >= 0
+
+    remainder_segments = raw_segments[matched_segment_index + 1 :]
+    return "-".join(remainder_segments)
+
+
+def _collect_prefix_remainder_content_match_scores(
+    *,
+    candidate_terms: Iterable[str],
+    normalized_content: str,
+    ontology,
+    prefix: str,
+) -> Dict[str, TagContentMatch]:
+    if normalized_content == "":
+        return {}
+    if not isinstance(prefix, str) or not prefix:
+        raise TypeError("prefix must be a non-empty string")
+
+    context = build_normalized_content_match_context(normalized_content=normalized_content)
+    content_token_set = frozenset(context.token_positions.keys())
+    matches: Dict[str, TagContentMatch] = {}
+    for term in candidate_terms:
+        strongest_match = None
+        for content_match_term in _list_content_match_terms_for_candidate(
+            term=term,
+            ontology=ontology,
+        ):
+            if not tag_term_matches_prefix(term=content_match_term, prefix=prefix):
+                continue
+            remainder = _build_prefix_content_remainder(
+                term=content_match_term,
+                prefix=prefix,
+            )
+            if remainder == "":
+                continue
+            if not _term_has_required_content_overlap(
+                term=remainder,
+                content_token_set=content_token_set,
+            ):
+                continue
+            match = match_tag_term_in_content_match_context(term=remainder, context=context)
+            if match is None:
+                continue
+            if strongest_match is None or match.sort_key() > strongest_match.sort_key():
+                strongest_match = match
+        if strongest_match is not None:
+            matches[term] = strongest_match
+    return matches
+
+
 def _collect_exact_synonym_content_hits(
     *,
     candidate_terms: Iterable[str],
@@ -557,7 +635,11 @@ def _term_has_required_content_overlap(*, term: str, content_token_set: FrozenSe
     raw_segment_count = len(split_tag_term_segments(term))
     required_matched_segment_count = max(1, min(len(segments), raw_segment_count - 1))
     matched_segment_count = sum(1 for segment in segments if segment in content_token_set)
-    return matched_segment_count >= required_matched_segment_count
+    if matched_segment_count >= required_matched_segment_count:
+        return True
+    raw_segments = split_tag_term_segments(term)
+    has_numeric_segment = any(segment.isdigit() for segment in raw_segments)
+    return raw_segment_count >= 3 and has_numeric_segment and matched_segment_count > 0
 
 
 def _collect_undercovered_content_overlap_terms(
@@ -747,7 +829,11 @@ def _content_match_sort_key(
         structured_term_penalty = 0
     return (
         -(1 if match.raw_phrase_match else 0),
-        -match.raw_segment_count if match.raw_phrase_match else match.raw_segment_count,
+        -(1 if match.raw_partial_phrase_match else 0),
+        -match.raw_partial_phrase_segment_count,
+        -match.raw_segment_count
+        if match.raw_phrase_match or match.raw_partial_phrase_match
+        else match.raw_segment_count,
         -(1 if match.phrase_match else 0),
         -match.matched_segment_count,
         unmatched_segment_count,
@@ -755,7 +841,11 @@ def _content_match_sort_key(
         match.first_matched_raw_segment_index,
         match.first_position,
         -tag_frequency,
-        match.raw_phrase_position if match.raw_phrase_match else len(term),
+        match.raw_phrase_position
+        if match.raw_phrase_match
+        else match.raw_partial_phrase_position
+        if match.raw_partial_phrase_match
+        else len(term),
         match.raw_segment_count,
         -match.normalized_length,
         cooccurrence_rank.get(term, len(cooccurrence_rank)),
@@ -888,6 +978,20 @@ def suggest_tags_for_note(
         normalized_content=normalized_content,
         ontology=ontology,
     )
+    if has_prefix:
+        prefix_remainder_scores = _collect_prefix_remainder_content_match_scores(
+            candidate_terms=candidate_terms,
+            normalized_content=normalized_content,
+            ontology=ontology,
+            prefix=prefix,
+        )
+        for term, match in prefix_remainder_scores.items():
+            if term not in content_match_scores:
+                content_match_scores[term] = match
+                continue
+            current_match = content_match_scores[term]
+            if match.sort_key() > current_match.sort_key():
+                content_match_scores[term] = match
     exact_synonym_content_hits = _collect_exact_synonym_content_hits(
         candidate_terms=candidate_terms,
         normalized_content=normalized_content,

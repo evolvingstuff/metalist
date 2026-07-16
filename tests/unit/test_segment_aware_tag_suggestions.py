@@ -322,6 +322,81 @@ def test_tag_suggestions_include_content_matched_tag_used_only_in_ontology(
     assert suggestions[0] == "Foley-catheter"
 
 
+def test_tag_suggestions_combine_typed_prefix_with_ontology_tag_content_remainder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("gpt-4-1", "GPT-4"),
+            ("gpt-4-2", "GPT-4"),
+            ("gpt-5-2", "GPT-5.2"),
+            ("gpt-5", "GPT-5"),
+            ("gpt5-codex", "gpt5-codex"),
+            ("gpt-5-4", "GPT-5.4"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "get_ontology",
+        lambda: _build_ontology(text="GPT-5.6-sol => GPT-5.6\n"),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="GPT",
+        content_html="<p>more work, trying 5.6 sol for first time</p>",
+    )
+
+    assert suggestions[0] == "GPT-5.6-sol"
+
+
+def test_tag_suggestions_match_numeric_connector_phrase_without_typed_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("first-time", "first-time"),
+            ("work", "work"),
+            ("first", "first"),
+            ("time", "time"),
+            ("work-day", "work-day"),
+            ("work-politics", "work-politics"),
+            ("first-day", "first-day"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "get_ontology",
+        lambda: _build_ontology(text="GPT-5.6-sol => GPT-5.6\n"),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>more work, trying 5.6 sol for first time</p>",
+    )
+
+    assert "GPT-5.6-sol" in suggestions[:5]
+
+
 def test_tag_suggestions_prefer_shorter_partial_connector_match_for_single_segment_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

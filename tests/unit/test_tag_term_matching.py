@@ -97,3 +97,20 @@ def test_match_tag_term_in_normalized_content_does_not_match_stopword_only_overl
         term="no-kings",
         normalized_content=normalize_tag_match_text("No more of that I guess"),
     ) is None
+
+
+def test_match_tag_term_in_normalized_content_uses_numeric_near_complete_phrase() -> None:
+    match = match_tag_term_in_normalized_content(
+        term="GPT-5.6-sol",
+        normalized_content=normalize_tag_match_text("trying 5.6 sol for the first time"),
+    )
+
+    assert match is not None
+    assert match.raw_phrase_match is False
+    assert match.raw_partial_phrase_match is True
+    assert match.raw_partial_phrase_segment_count == 3
+
+    assert match_tag_term_in_normalized_content(
+        term="GPT-5.6",
+        normalized_content=normalize_tag_match_text("trying 5.6 for the first time"),
+    ) is None
