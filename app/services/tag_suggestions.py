@@ -6,6 +6,7 @@ from typing import Dict, FrozenSet, Iterable, List, Tuple
 from app.config import TAG_SUGGESTION_CONNECTORS
 from app.config import TAG_SUGGESTION_SUPPRESS_REDUNDANT_CONTENT_VARIANTS
 from app.services.note_store import store as note_store
+from app.services.ontology_rules_store import extract_ontology_tags
 from app.services.ontology_rules_store import get_ontology
 from app.services.search_index import search_index
 from app.services.tag_term_matching import TagContentMatch
@@ -368,6 +369,36 @@ def _collect_explicit_tag_statistics() -> Tuple[List[str], Dict[str, int]]:
         )
     )
     return all_terms, dict(representative_counts)
+
+
+def _merge_ontology_tag_terms(
+    *,
+    explicit_terms: List[str],
+    exact_tag_counts: Dict[str, int],
+    ontology,
+) -> tuple[List[str], FrozenSet[str]]:
+    ontology_terms = {
+        term for term in extract_ontology_tags(ontology)
+        if not term.startswith("@")
+    }
+    explicit_casefold = {term.casefold() for term in explicit_terms}
+    ontology_only_casefold = frozenset(
+        term.casefold()
+        for term in ontology_terms
+        if term.casefold() not in explicit_casefold
+    )
+
+    merged_terms = _select_preferred_case_variants(
+        terms=list(explicit_terms) + sorted(ontology_terms),
+        exact_tag_counts=exact_tag_counts,
+    )
+    merged_terms.sort(
+        key=lambda term: (
+            -_lookup_count(exact_tag_counts, term),
+            *_suggestion_tiebreak(term),
+        )
+    )
+    return merged_terms, ontology_only_casefold
 
 
 def _build_saved_note_context_non_meta_tags(
@@ -830,7 +861,12 @@ def suggest_tags_for_note(
     suppressed_casefold = set(explicit_tag_casefold_set)
     suppressed_casefold.update(tag.casefold() for tag in inherited_or_implied_tags)
 
-    all_terms, exact_tag_counts = _collect_explicit_tag_statistics()
+    explicit_terms, exact_tag_counts = _collect_explicit_tag_statistics()
+    all_terms, ontology_only_casefold = _merge_ontology_tag_terms(
+        explicit_terms=explicit_terms,
+        exact_tag_counts=exact_tag_counts,
+        ontology=ontology,
+    )
     has_prefix = prefix != ""
 
     if has_prefix and prefix.startswith("@"):
@@ -960,6 +996,8 @@ def suggest_tags_for_note(
         if term in seen_terms:
             continue
         if term in undercovered_content_overlap_terms:
+            continue
+        if not has_prefix and term.casefold() in ontology_only_casefold:
             continue
         remaining.append(term)
         seen_terms.add(term)

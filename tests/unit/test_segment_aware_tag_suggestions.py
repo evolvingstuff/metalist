@@ -14,11 +14,17 @@ from app.services.tag_ontology import parse_rules_text
 
 class _EmptyOntology:
     is_empty = True
+    implication_out_edges = {}
+    implication_closure = {}
+    implied_by_closure = {}
     scc_members_by_tag = {}
 
 
 class _MatcherButNoImplicationOntology:
     is_empty = False
+    implication_out_edges = {}
+    implication_closure = {}
+    implied_by_closure = {}
     scc_members_by_tag = {}
 
     def infer_implication_only(self, *, base_tags):
@@ -280,6 +286,40 @@ def test_tag_suggestions_prefer_longer_specific_entity_hit_over_shorter_generic_
     )
 
     assert suggestions[:2] == ["CookUnity", "meal"]
+
+
+def test_tag_suggestions_include_content_matched_tag_used_only_in_ontology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            ("n1", "Foley-"),
+            ("n2", "glad"),
+            ("n3", "catheter"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "get_ontology",
+        lambda: _build_ontology(text="Foley-catheter => medical-device\n"),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>sooooo glad to have foley catheter out</p>",
+    )
+
+    assert suggestions[0] == "Foley-catheter"
 
 
 def test_tag_suggestions_prefer_shorter_partial_connector_match_for_single_segment_content(

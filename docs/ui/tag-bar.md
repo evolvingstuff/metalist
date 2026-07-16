@@ -115,6 +115,7 @@ Unclosed comments behave like unclosed wrappers:
 - Surrounding prose punctuation is ignored for content matching, so content like `(github?)` still promotes the `github` tag.
 - Case-equivalent tags are collapsed in suggestions (for example `Databricks` vs `databricks`), and the most-used spelling is shown.
 - Ontology-equivalent tags are usually collapsed to one displayed suggestion. The representative is the most-used eligible tag spelling explicitly written in tag bars, not the ontology-inferred search frequency, but prefix filtering happens first, so typing `emo` can still show `emotion` even if `mood` is the more common synonym overall. If the current note content exactly matches a synonym alias, that alias can still appear immediately after the common representative within the interleaved content/co-occurrence ordering.
+- Tags declared in ontology rules remain eligible for literal-content matching and typed-prefix completion even when they have never been explicitly assigned to a note. With a blank prefix, unrelated unused ontology tags are not added as generic fallback suggestions.
 - Tags already present explicitly in the current tag bar are never suggested.
 - Tags already present only via inheritance or ontology inference are suppressed unless they match the prefix (then they appear at the bottom).
 - Suggestions appear below the tag bar when there is room; if the tag bar is near the bottom, the list flips upward but keeps the same best-on-top ordering and initial scroll position.
