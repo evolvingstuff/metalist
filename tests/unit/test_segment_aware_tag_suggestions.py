@@ -1312,6 +1312,45 @@ def test_tag_suggestions_prefer_earlier_content_hits_when_scores_tie(
     assert suggestions[:2] == ["github", "project"]
 
 
+def test_tag_suggestions_prioritize_specific_exact_literal_over_generic_recommendations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _build_index(
+        [
+            (
+                "context-1",
+                "care-provider communications Swedish-tower message sepsis appointment suprapubic amnesia",
+            ),
+            ("context-2", "care-provider communications message appointment"),
+            ("context-3", "care-provider communications message sepsis"),
+        ]
+    )
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset(),
+        ),
+    )
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "get_ontology",
+        lambda: _build_ontology(text="communications = message\n"),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="current",
+        anchors=["care-provider"],
+        explicit_tags=["care-provider"],
+        prefix="",
+        content_html="<p>message clinician about no drainage to suprapubic</p>",
+    )
+
+    assert suggestions[0] == "suprapubic"
+
+
 def test_tag_suggestions_include_literal_content_hits_even_without_anchor_cooccurrence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

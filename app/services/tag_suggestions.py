@@ -503,6 +503,35 @@ def _collect_content_match_scores(
     return matches
 
 
+def _collect_direct_standalone_literal_terms(
+    *,
+    candidate_terms: Iterable[str],
+    normalized_content: str,
+    ontology,
+) -> FrozenSet[str]:
+    if normalized_content == "":
+        return frozenset()
+
+    context = build_normalized_content_match_context(normalized_content=normalized_content)
+    direct_terms: set[str] = set()
+    for term in candidate_terms:
+        if len(normalize_tag_match_text(term)) < 2:
+            continue
+        equivalent_terms = ontology.scc_members_by_tag.get(term, frozenset())
+        equivalent_casefolds = {equivalent.casefold() for equivalent in equivalent_terms}
+        if len(equivalent_casefolds) > 1:
+            continue
+        raw_segments = split_tag_term_segments(term)
+        if not raw_segments or len(context.tokens) < len(raw_segments):
+            continue
+        for index in range(len(context.tokens) - len(raw_segments) + 1):
+            if context.tokens[index : index + len(raw_segments)] != raw_segments:
+                continue
+            direct_terms.add(term)
+            break
+    return frozenset(direct_terms)
+
+
 def _build_prefix_content_remainder(*, term: str, prefix: str) -> str:
     if not isinstance(term, str) or not term:
         raise TypeError("term must be a non-empty string")
@@ -813,6 +842,7 @@ def _content_match_sort_key(
     *,
     term: str,
     content_match_scores: Dict[str, TagContentMatch],
+    direct_standalone_literal_terms: FrozenSet[str],
     exact_tag_counts: Dict[str, int],
     cooccurrence_rank: Dict[str, int],
 ) -> tuple[object, ...]:
@@ -829,6 +859,7 @@ def _content_match_sort_key(
         structured_term_penalty = 0
     return (
         -(1 if match.raw_phrase_match else 0),
+        -(1 if term in direct_standalone_literal_terms else 0),
         -(1 if match.raw_partial_phrase_match else 0),
         -match.raw_partial_phrase_segment_count,
         -match.raw_segment_count
@@ -978,6 +1009,11 @@ def suggest_tags_for_note(
         normalized_content=normalized_content,
         ontology=ontology,
     )
+    direct_standalone_literal_terms = _collect_direct_standalone_literal_terms(
+        candidate_terms=candidate_terms,
+        normalized_content=normalized_content,
+        ontology=ontology,
+    )
     if has_prefix:
         prefix_remainder_scores = _collect_prefix_remainder_content_match_scores(
             candidate_terms=candidate_terms,
@@ -1036,6 +1072,7 @@ def suggest_tags_for_note(
         key=lambda term: _content_match_sort_key(
             term=term,
             content_match_scores=content_match_scores,
+            direct_standalone_literal_terms=direct_standalone_literal_terms,
             exact_tag_counts=exact_tag_counts,
             cooccurrence_rank=cooccurrence_rank,
         )
