@@ -895,11 +895,7 @@ function handleEnterKey(event) {
 
     if (isSearchContextsKeyboardCreateActive()) {
         void CommandGate.run('keyboard.enter.blank_search_context', async () => {
-            const newTabId = await createBlankSearchContextFromHover();
-            if (newTabId === null) {
-                return;
-            }
-            hideSearchContextsOverlay();
+            await createBlankSearchContextFromHover();
         });
         return;
     }

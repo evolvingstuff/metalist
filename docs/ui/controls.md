@@ -56,7 +56,7 @@
 
 - When a non-normal sort mode is active, a floating pill above the sticky top bar shows the active mode and includes an `×` to return to normal sorting without reopening the command palette.
 - The right-side activity calendar defaults to `Created`, with `Updated` available as the second metric. Clicking a day or dragging across days applies a date filter for the active tab; editing the search input clears that date filter.
-- The tab/search-context overlay appears when hovering over the left side of the black search bar, before the back button and search field. It dismisses when the pointer moves far enough away, when the search input is focused or hovered, when `Esc` is pressed, and when a tab is selected.
+- The tab/search-context overlay appears while hovering over the black trigger region left of the search field and remains available while hovering over the dropdown itself. Creating a blank tab with `Enter` does not dismiss the overlay. Open search suggestions render above the tabs.
 - Left/right side lanes hide at narrower desktop widths before they can overlap the centered notes column.
 
 ### Search Input Behavior

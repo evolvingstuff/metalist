@@ -3498,6 +3498,11 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     z-index: 20;
 }
 
+/* The sticky controls create a stacking context, so raise that context above the tab overlay. */
+.controls:has(.search-suggestions:not([hidden]):not(:empty)) {
+    z-index: 10000;
+}
+
 .controls .reference-back-button {
     position: absolute;
     left: calc(50% - var(--search-input-half-width) - 34px);
