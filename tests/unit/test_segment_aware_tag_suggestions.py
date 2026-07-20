@@ -1351,6 +1351,69 @@ def test_tag_suggestions_prioritize_specific_exact_literal_over_generic_recommen
     assert suggestions[0] == "suprapubic"
 
 
+def test_tag_suggestions_prefer_longer_literal_context_match_over_standalone_ontology_bonus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag_rows = [(f"misc-{index}", "misc") for index in range(10)]
+    tag_rows.extend(
+        [
+            ("thoughts", "misc-thoughts"),
+            ("events", "misc-events"),
+        ]
+    )
+    index = _build_index(tag_rows)
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset(),
+        ),
+    )
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "get_ontology",
+        lambda: _build_ontology(text="misc-thoughts = random-thoughts\n"),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="current",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>misc thoughts</p>",
+    )
+
+    assert suggestions[:3] == ["misc-thoughts", "misc", "misc-events"]
+
+
+def test_tag_suggestions_use_frequency_to_break_equal_structural_context_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag_rows = [("left", "alpha-beta-gamma")]
+    tag_rows.extend((f"right-{index}", "beta-gamma-delta") for index in range(5))
+    index = _build_index(tag_rows)
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(get_inherited_non_meta_tag_terms=lambda _note_id: frozenset()),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="current",
+        anchors=[],
+        explicit_tags=[],
+        prefix="",
+        content_html="<p>alpha beta gamma delta</p>",
+    )
+
+    assert suggestions[:2] == ["beta-gamma-delta", "alpha-beta-gamma"]
+
+
 def test_tag_suggestions_include_literal_content_hits_even_without_anchor_cooccurrence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

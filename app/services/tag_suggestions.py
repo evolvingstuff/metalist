@@ -859,7 +859,6 @@ def _content_match_sort_key(
         structured_term_penalty = 0
     return (
         -(1 if match.raw_phrase_match else 0),
-        -(1 if term in direct_standalone_literal_terms else 0),
         -(1 if match.raw_partial_phrase_match else 0),
         -match.raw_partial_phrase_segment_count,
         -match.raw_segment_count
@@ -869,9 +868,10 @@ def _content_match_sort_key(
         -match.matched_segment_count,
         unmatched_segment_count,
         structured_term_penalty,
+        -(1 if term in direct_standalone_literal_terms else 0),
+        -tag_frequency,
         match.first_matched_raw_segment_index,
         match.first_position,
-        -tag_frequency,
         match.raw_phrase_position
         if match.raw_phrase_match
         else match.raw_partial_phrase_position
