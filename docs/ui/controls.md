@@ -111,7 +111,7 @@
 | Click menu (`≡`) button | Open command palette |
 | Click `↑` button | Scroll the page to the top and jump the right-side calendar to newest activity. The button stays enabled at page top when the calendar is not at newest. |
 | Click note arrow | Toggle collapse/expand note. If the arrow is within the current edited note subtree, that edit session remains active; outside that subtree, the current edit saves/exits first. |
-| Click `...` under the edited note's tag bar | Expand that collapsed parent note to reveal its hidden children. |
+| Click `⋮` under the edited note's tag bar | Expand that collapsed parent note to reveal its hidden children. |
 | Click note or blank space inside its outer card | Edit/select that note. Parent-note whitespace still counts as the parent until you click into a child note/card. |
 | Click redacted note | Reveal the full redacted set in that note's subtree for the current tab; the revealed notes stay dimmed to show they are still excluded by the active search |
 | Click `+/-` on a rendered reference block | Toggle reference mode (`[[UUID]]` <-> `![[UUID]]`) for that specific token occurrence |
@@ -139,7 +139,7 @@
 > While editing, collapse arrows ignore content length and appear only for notes with children, because the edited note already shows its full content.
 > Collapsed notes receive compact server-rendered content that starts at the first non-blank text or image line.
 > Note expand/collapse transitions animate by default and are controlled by `Animated transitions` in the command palette.
-> Selecting a collapsed note for editing shows that note's full editable content but keeps its child subtree hidden until the note is explicitly expanded. If the collapsed note has hidden children, an inline `...` affordance appears under the tag bar and expands the note.
+> Selecting a collapsed note for editing shows that note's full editable content but keeps its child subtree hidden until the note is explicitly expanded. If the collapsed note has hidden children, an inline `⋮` affordance appears under the tag bar and expands the note.
 
 ### Command Palette Utility Entries
 - Toggle tabs

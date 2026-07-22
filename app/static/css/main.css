@@ -3144,16 +3144,17 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     display: none;
     flex-basis: 100%;
     width: calc(100% - 30px);
-    min-height: 18px;
-    margin: 0 15px 3px 15px;
+    height: 30px;
+    margin: 6px 15px 4px 15px;
     align-items: center;
     justify-content: center;
     padding: 0;
     border: none;
     background: transparent;
-    color: rgba(0, 0, 0, 0.38);
+    color: rgba(0, 0, 0, 0.58);
     cursor: pointer;
-    font-size: 1.1rem;
+    font-size: 1.7rem;
+    font-weight: 600;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     line-height: 1;
 }
@@ -5062,11 +5063,11 @@ html[data-theme="dark"] .note-tag-bar-input::placeholder {
 }
 
 html[data-theme="dark"] .note-collapsed-children-indicator {
-    color: rgba(229, 235, 243, 0.42);
+    color: rgba(229, 235, 243, 0.68);
 }
 
 html[data-theme="dark"] .note-collapsed-children-indicator:hover {
-    color: rgba(229, 235, 243, 0.78);
+    color: rgba(229, 235, 243, 0.92);
 }
 
 html[data-theme="dark"] .note-collapsed-children-indicator:focus-visible {

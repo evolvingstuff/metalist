@@ -207,7 +207,7 @@ function ensureCollapsedChildrenIndicator(noteElement, tagBar) {
         indicator = document.createElement('button');
         indicator.classList.add(COLLAPSED_CHILDREN_INDICATOR_CLASS);
         indicator.type = 'button';
-        indicator.textContent = '...';
+        indicator.textContent = '⋮';
         indicator.setAttribute('aria-label', 'Expand note to show hidden children');
     }
 
