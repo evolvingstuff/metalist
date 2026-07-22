@@ -57,12 +57,14 @@ Examples (autocorrected while typing):
   - The tag is search-only; it is not persisted in the note's tag bar and does not change note rendering.
 - Markdown meta tags:
   - `@markdown` renders note content as Markdown on the server in view mode.
+  - Standard LaTeX regions inside Markdown render automatically: `\(...\)` or `$...$` for inline math, and `\[...\]` or `$$...$$` for display math.
+  - LaTeX delimiters inside inline code or fenced code blocks remain literal.
 - LaTeX meta tags:
   - `@LaTeX` renders note content as LaTeX on the server in view mode.
   - The server emits final MathML directly; the browser does not finish a second LaTeX rendering pass.
   - Use `$...$` for inline math and `$$...$$` for display math.
   - If no `$` delimiters are present, the entire note is rendered as display math.
-  - Scoped LaTeX works with wrappers (e.g. `{{@LaTeX}}` renders only `{{...}}` segments) and can be combined with `@markdown` to render math inside Markdown.
+  - Scoped LaTeX works with wrappers (e.g. `{{@LaTeX}}` renders only `{{...}}` segments) and can be combined with `@markdown`. Explicit scoped regions and automatically detected Markdown math can coexist; the scoped region is rendered once and its wrapper delimiters are still consumed normally.
 - Shell meta tags:
   - `@shell` renders note content as a terminal-style script block in view mode.
   - Clicking the block starts a background shell session on the server and updates stdout/stderr inline while the command is still running.

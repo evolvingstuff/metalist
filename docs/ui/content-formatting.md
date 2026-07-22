@@ -100,6 +100,9 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode on the server.
+- Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.
+- Math detection skips inline code and fenced code blocks. Unpaired delimiters and currency-like dollar text remain literal.
+- Explicit scoped LaTeX such as content `(((\frac{1}{2})))` with tag-bar token `(((@LaTeX)))` remains supported and can coexist with automatic math in the same Markdown note.
 - Collapsed notes still render a one-line preview; oversized heading styles are normalized in that preview so the first line remains visible and thumbnail behavior for images is preserved.
 - For collapsed previews where the first visible content includes an image, the image thumbnail is intentionally larger (about 3x the baseline collapsed height) to keep image context readable.
 

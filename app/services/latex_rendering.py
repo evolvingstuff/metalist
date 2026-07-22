@@ -49,6 +49,30 @@ class _LatexSegment:
     value: str
 
 
+def render_latex_math_to_html(latex_text: str, *, display: str) -> LatexRenderResult:
+    if not isinstance(latex_text, str):
+        raise TypeError(f"latex_text must be a string, got {type(latex_text)}")
+    if display not in {"inline", "block"}:
+        raise ValueError("display must be 'inline' or 'block'")
+    if latex_text == "":
+        return LatexRenderResult(html="", has_error=False, error_message="")
+
+    conversion_capture = CapturedExceptionContext(*_LATEX_CONVERSION_ERRORS)
+    rendered_math = ""
+    with conversion_capture:
+        rendered_math = _render_math_segment(latex_text, display=display)
+    if conversion_capture.captured_exception is not None:
+        return _render_latex_error_result(
+            latex_text=latex_text,
+            exception=conversion_capture.captured_exception,
+        )
+    return LatexRenderResult(
+        html=rendered_math,
+        has_error=False,
+        error_message="",
+    )
+
+
 def render_latex_to_html(latex_text: str) -> LatexRenderResult:
     if not isinstance(latex_text, str):
         raise TypeError(f"latex_text must be a string, got {type(latex_text)}")
@@ -56,20 +80,7 @@ def render_latex_to_html(latex_text: str) -> LatexRenderResult:
         return LatexRenderResult(html="", has_error=False, error_message="")
 
     if not _has_math_delimiters(latex_text):
-        block_capture = CapturedExceptionContext(*_LATEX_CONVERSION_ERRORS)
-        rendered_block = ""
-        with block_capture:
-            rendered_block = _render_math_segment(latex_text, display="block")
-        if block_capture.captured_exception is not None:
-            return _render_latex_error_result(
-                latex_text=latex_text,
-                exception=block_capture.captured_exception,
-            )
-        return LatexRenderResult(
-            html=rendered_block,
-            has_error=False,
-            error_message="",
-        )
+        return render_latex_math_to_html(latex_text, display="block")
 
     segments = _parse_latex_segments(latex_text)
     parts: list[str] = []

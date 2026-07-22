@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass
 from typing import List
 
+from app.services.latex_rendering import render_latex_math_to_html
+
 
 _ORDERED_LIST_RE = re.compile(r"^(\d+)\.\s+(.*)$")
 _UNORDERED_LIST_RE = re.compile(r"^[-+*]\s+(.*)$")
@@ -18,6 +20,21 @@ _AUTO_LINK_RE = re.compile(r"(?<![\"'=])(https?://[^\s<]+)")
 class _InlinePlaceholder:
     token: str
     html_value: str
+
+
+@dataclass(frozen=True, slots=True)
+class _LatexDelimiter:
+    opener: str
+    closer: str
+    display: str
+
+
+_LATEX_DELIMITERS = (
+    _LatexDelimiter(opener=r"\[", closer=r"\]", display="block"),
+    _LatexDelimiter(opener=r"\(", closer=r"\)", display="inline"),
+    _LatexDelimiter(opener="$$", closer="$$", display="block"),
+    _LatexDelimiter(opener="$", closer="$", display="inline"),
+)
 
 
 def render_markdown_to_html(markdown_text: str) -> str:
@@ -311,6 +328,7 @@ def _render_inline_markdown(text: str) -> str:
     rendered = _extract_code_spans(rendered, placeholders)
     rendered = _extract_markdown_links(rendered, placeholders)
     rendered = _extract_auto_links(rendered, placeholders)
+    rendered = _extract_latex_math(rendered, placeholders)
     rendered = _replace_strong(rendered)
     rendered = _replace_emphasis(rendered)
     rendered = _replace_strikethrough(rendered)
@@ -408,6 +426,153 @@ def _extract_auto_links(text: str, placeholders: List[_InlinePlaceholder]) -> st
         cursor = match.end()
     output.append(text[cursor:])
     return "".join(output)
+
+
+def _extract_latex_math(text: str, placeholders: List[_InlinePlaceholder]) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    output: List[str] = []
+    cursor = 0
+    while cursor < len(text):
+        delimiter = _latex_delimiter_at(text=text, index=cursor)
+        if delimiter is None:
+            output.append(text[cursor])
+            cursor += 1
+            continue
+
+        content_start = cursor + len(delimiter.opener)
+        close_index = _find_latex_closing_delimiter(
+            text=text,
+            start=content_start,
+            delimiter=delimiter,
+        )
+        if close_index == -1:
+            output.append(text[cursor])
+            cursor += 1
+            continue
+
+        escaped_source = text[content_start:close_index]
+        latex_source = html.unescape(escaped_source)
+        if latex_source.strip() == "":
+            output.append(text[cursor : close_index + len(delimiter.closer)])
+            cursor = close_index + len(delimiter.closer)
+            continue
+
+        rendered_math = render_latex_math_to_html(
+            latex_source,
+            display=delimiter.display,
+        )
+        class_names = ["meta-latex"]
+        if rendered_math.has_error:
+            class_names.append("meta-latex-error")
+        elif delimiter.display == "inline":
+            class_names.append("meta-latex-inline")
+        else:
+            class_names.append("meta-latex-display")
+        placeholder = _make_placeholder(
+            placeholders=placeholders,
+            html_value=(
+                f'<span class="{" ".join(class_names)}">'
+                f"{rendered_math.html}"
+                "</span>"
+            ),
+        )
+        output.append(placeholder)
+        cursor = close_index + len(delimiter.closer)
+
+    return "".join(output)
+
+
+def _latex_delimiter_at(*, text: str, index: int) -> _LatexDelimiter | None:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int):
+        raise TypeError("index must be an int")
+
+    for delimiter in _LATEX_DELIMITERS:
+        if not text.startswith(delimiter.opener, index):
+            continue
+        if _is_escaped_delimiter(text=text, index=index):
+            continue
+        if delimiter.opener == "$" and not _is_valid_inline_dollar_opener(
+            text=text,
+            index=index,
+        ):
+            continue
+        return delimiter
+    return None
+
+
+def _find_latex_closing_delimiter(
+    *,
+    text: str,
+    start: int,
+    delimiter: _LatexDelimiter,
+) -> int:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(start, int):
+        raise TypeError("start must be an int")
+
+    cursor = start
+    while cursor < len(text):
+        if not text.startswith(delimiter.closer, cursor):
+            cursor += 1
+            continue
+        if _is_escaped_delimiter(text=text, index=cursor):
+            cursor += 1
+            continue
+        if delimiter.closer == "$" and not _is_valid_inline_dollar_closer(
+            text=text,
+            index=cursor,
+        ):
+            cursor += 1
+            continue
+        return cursor
+    return -1
+
+
+def _is_escaped_delimiter(*, text: str, index: int) -> bool:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int):
+        raise TypeError("index must be an int")
+
+    backslash_count = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslash_count += 1
+        cursor -= 1
+    return backslash_count % 2 == 1
+
+
+def _is_valid_inline_dollar_opener(*, text: str, index: int) -> bool:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int):
+        raise TypeError("index must be an int")
+
+    next_index = index + 1
+    if next_index >= len(text):
+        return False
+    if text[next_index] == "$":
+        return False
+    return not text[next_index].isspace()
+
+
+def _is_valid_inline_dollar_closer(*, text: str, index: int) -> bool:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not isinstance(index, int):
+        raise TypeError("index must be an int")
+
+    if index == 0 or text[index - 1].isspace():
+        return False
+    next_index = index + 1
+    if next_index >= len(text):
+        return True
+    return text[next_index] != "$"
 
 
 def _replace_strong(text: str) -> str:

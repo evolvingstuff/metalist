@@ -361,6 +361,84 @@ def test_format_note_content_for_view_markdown_meta_renders_server_side_html() -
     assert "<div># Title</div>" not in rendered
 
 
+def test_format_note_content_for_view_markdown_auto_renders_latex_delimiters() -> None:
+    html = (
+        "<div>The core operational target is:</div>"
+        "<div></div>"
+        "<div>\\[</div>"
+        "<div>\\text{maximize actionable coverage}</div>"
+        "<div>\\]</div>"
+        "<div></div>"
+        "<div>Inline threshold: \\(p \\geq \\pi_+\\).</div>"
+        "<div>Dollar math: $q \\leq \\pi_-$.</div>"
+        "<div>Display dollar math: $$r = 1 - q$$.</div>"
+    )
+
+    rendered = format_note_content_for_view(content_html=html, tags="@markdown")
+
+    assert rendered.count('<math xmlns="http://www.w3.org/1998/Math/MathML"') == 4
+    assert rendered.count('display="block"') == 2
+    assert rendered.count('display="inline"') == 2
+    assert "<mtext>maximize" in rendered
+    assert "\\[" not in rendered
+    assert "\\]" not in rendered
+    assert "\\(" not in rendered
+    assert "\\)" not in rendered
+    assert "$q" not in rendered
+    assert "$$r" not in rendered
+
+
+def test_format_note_content_for_view_markdown_keeps_non_math_dollars_literal() -> None:
+    html = (
+        "<div>Budget: $5 and $10.</div>"
+        "<div>Escaped example: \\$x\\$.</div>"
+        "<div>Unclosed example: \\(x + 1.</div>"
+    )
+
+    rendered = format_note_content_for_view(content_html=html, tags="@markdown")
+
+    assert "Budget: $5 and $10." in rendered
+    assert "Escaped example: \\$x\\$." in rendered
+    assert "Unclosed example: \\(x + 1." in rendered
+    assert "<math" not in rendered
+
+
+def test_format_note_content_for_view_markdown_does_not_render_latex_in_code() -> None:
+    html = (
+        "<div>Inline code: `\\(x^2\\)`</div>"
+        "<div></div>"
+        "<div>```text</div>"
+        "<div>\\[y^2\\]</div>"
+        "<div>```</div>"
+    )
+
+    rendered = format_note_content_for_view(content_html=html, tags="@markdown")
+
+    assert "<code>\\(x^2\\)</code>" in rendered
+    assert "<pre><code" in rendered
+    assert "\\[y^2\\]" in rendered
+    assert "<math" not in rendered
+
+
+def test_format_note_content_for_view_markdown_auto_latex_preserves_scoped_latex() -> None:
+    html = (
+        "<div>Automatic: \\(x^2\\)</div>"
+        "<div>Explicit: (((\\frac{1}{2})))</div>"
+    )
+
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="@markdown (((@LaTeX)))",
+    )
+
+    assert rendered.count('<math xmlns="http://www.w3.org/1998/Math/MathML"') == 2
+    assert rendered.count("<msup>") == 1
+    assert rendered.count("<mfrac>") == 1
+    assert "(((" not in rendered
+    assert ")))" not in rendered
+    assert "@@MLLATEX[" not in rendered
+
+
 def test_format_note_content_for_view_latex_meta_renders_server_side_mathml() -> None:
     html = "<div>\\frac{1}{2}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="@latex")
