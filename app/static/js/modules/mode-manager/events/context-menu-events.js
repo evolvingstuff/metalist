@@ -36,6 +36,7 @@ import {
     openLinkInNewTabFromContext,
     resolveLinkContextFromElement,
 } from '../services/link-context-menu-action-service.js';
+import { resolvePriorityContextMenuTarget } from '../services/context-menu-target-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
 import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
@@ -745,48 +746,52 @@ function handleContextMenu(event) {
         return;
     }
 
-    if (isInRightRail(event)) {
-        showCalendarRailContextMenu(event);
-        return;
-    }
-
-    if (isInLeftTabRail(event)) {
-        showTabsRailContextMenu(event);
-        return;
-    }
-
     const element = resolveEventElement(event.target);
     if (!element) {
         return;
     }
 
-    const rhsPanel = element.closest('#rhs-panel');
-    if (rhsPanel) {
+    const priorityTarget = resolvePriorityContextMenuTarget(element, {
+        isInLeftRail: isInLeftTabRail(event),
+        isInRightRail: isInRightRail(event),
+    });
+
+    if (priorityTarget?.kind === 'tag-suggestion') {
+        showTagContextMenu(event, priorityTarget.tag, priorityTarget.source);
+        return;
+    }
+
+    if (priorityTarget?.kind === 'tag-bar-input') {
+        const tagInfo = resolveTagFromInput(
+            event,
+            priorityTarget.element,
+            findTagAtIndexInTagBar,
+        );
+        if (tagInfo && typeof tagInfo.text === 'string') {
+            showTagContextMenu(event, tagInfo.text, 'tag-bar');
+        }
+        return;
+    }
+
+    if (priorityTarget?.kind === 'search-input') {
+        const tagInfo = resolveTagFromInput(
+            event,
+            priorityTarget.element,
+            findSearchTagAtIndex,
+        );
+        if (tagInfo && typeof tagInfo.tag === 'string') {
+            showTagContextMenu(event, tagInfo.tag, 'search');
+        }
+        return;
+    }
+
+    if (priorityTarget?.kind === 'calendar-rail') {
         showCalendarRailContextMenu(event);
         return;
     }
 
-    const tabsPanel = element.closest('#search-contexts-list');
-    if (tabsPanel) {
+    if (priorityTarget?.kind === 'tabs-rail') {
         showTabsRailContextMenu(event);
-        return;
-    }
-
-    const tagBarInput = element.closest('.note-tag-bar-input');
-    if (tagBarInput) {
-        const tagInfo = resolveTagFromInput(event, tagBarInput, findTagAtIndexInTagBar);
-        if (tagInfo && typeof tagInfo.text === 'string') {
-            showTagContextMenu(event, tagInfo.text, 'tag-bar');
-            return;
-        }
-    }
-
-    const searchInput = element.closest('#search-input');
-    if (searchInput) {
-        const tagInfo = resolveTagFromInput(event, searchInput, findSearchTagAtIndex);
-        if (tagInfo && typeof tagInfo.tag === 'string') {
-            showTagContextMenu(event, tagInfo.tag, 'search');
-        }
         return;
     }
 

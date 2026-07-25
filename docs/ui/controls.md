@@ -126,7 +126,7 @@
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note` |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
 | Right-click notes view background | Open the view context menu with `Export View as HTML` |
-| Right-click tag in search input or tag bar | Open tag context menu (Edit Tag Relationships) |
+| Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships) |
 | Right-click left lane | Toggle tabs visibility or export the current view as HTML |
 | Right-click right lane | Toggle calendar view visibility or export the current view as HTML |
 | Hover left side of search bar | Show the tab/search-context overlay |

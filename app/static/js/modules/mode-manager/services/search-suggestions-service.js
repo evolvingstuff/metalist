@@ -314,6 +314,9 @@ function renderSuggestions(searchInput, suggestions) {
 
     container.querySelectorAll('.search-suggestion').forEach((button) => {
         button.addEventListener('mousedown', (event) => {
+            if (event.button !== 0) {
+                return;
+            }
             event.preventDefault();
             const tag = button.dataset.tag;
             if (typeof tag !== 'string' || tag.length === 0) {

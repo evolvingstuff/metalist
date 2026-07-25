@@ -156,6 +156,9 @@ function renderSuggestions(tagBarInput, suggestions) {
         button.dataset.tag = tag;
         button.textContent = tag;
         button.addEventListener('mousedown', (event) => {
+            if (event.button !== 0) {
+                return;
+            }
             event.preventDefault();
             applySuggestion(tagBarInput, tag);
         });
