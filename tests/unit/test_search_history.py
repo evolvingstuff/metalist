@@ -25,6 +25,10 @@ def _build_index(records: list[SearchRecord]) -> SearchIndex:
     index = SearchIndex()
     index.rebuild(
         records,
+        raw_tag_terms_by_id={
+            record.note_id: extract_tags_for_search(record.tags)
+            for record in records
+        },
         progress_update=lambda _processed: None,
         progress_interval=1000,
     )

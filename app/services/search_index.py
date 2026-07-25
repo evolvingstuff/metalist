@@ -147,11 +147,13 @@ class SearchIndex:
 
         self._note_text_casefold: List[str] = []
         self._note_explicit_tag_terms: List[FrozenSet[str]] = []
+        self._note_raw_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms: List[FrozenSet[str]] = []
         self._note_tag_terms_casefold: List[FrozenSet[str]] = []
         self._note_trigrams: List[Set[int]] = []
 
         self._explicit_tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
+        self._raw_tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tag_notes: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tag_notes_casefold: DefaultDict[str, Set[int]] = defaultdict(set)
         self._tri_notes: DefaultDict[int, Set[int]] = defaultdict(set)
@@ -162,6 +164,7 @@ class SearchIndex:
         self,
         records: Iterable[SearchRecord],
         *,
+        raw_tag_terms_by_id: Dict[str, FrozenSet[str]],
         progress_update: Callable[[int], None],
         progress_interval: int,
     ) -> None:
@@ -169,16 +172,21 @@ class SearchIndex:
             raise ValueError("progress_interval must be > 0")
         t0 = time.perf_counter()
         materialized = list(records)
+        record_ids = {record.note_id for record in materialized}
+        if record_ids != set(raw_tag_terms_by_id):
+            raise ValueError("raw_tag_terms_by_id must contain exactly one entry per search record")
         with self._lock:
             self._uuid_to_id.clear()
             self._id_to_uuid.clear()
             self._alive.clear()
             self._note_text_casefold.clear()
             self._note_explicit_tag_terms.clear()
+            self._note_raw_tag_terms.clear()
             self._note_tag_terms.clear()
             self._note_tag_terms_casefold.clear()
             self._note_trigrams.clear()
             self._explicit_tag_notes.clear()
+            self._raw_tag_notes_casefold.clear()
             self._tag_notes.clear()
             self._tag_notes_casefold.clear()
             self._tri_notes.clear()
@@ -193,6 +201,7 @@ class SearchIndex:
                     record.note_id,
                     record.content_text,
                     record.tags,
+                    raw_tag_terms_by_id[record.note_id],
                     record.tag_terms,
                 )
                 processed += 1
@@ -214,7 +223,15 @@ class SearchIndex:
             }
         ).info("search.index.rebuild.finish")
 
-    def upsert(self, *, note_id: str, content_text: str, tags: str, tag_terms: FrozenSet[str]) -> None:
+    def upsert(
+        self,
+        *,
+        note_id: str,
+        content_text: str,
+        tags: str,
+        raw_tag_terms: FrozenSet[str],
+        tag_terms: FrozenSet[str],
+    ) -> None:
         t0 = time.perf_counter()
         with self._lock:
             if note_id in self._uuid_to_id:
@@ -223,9 +240,21 @@ class SearchIndex:
                     # Notes can be deleted and later restored (undo/redo) with the same UUID.
                     # Treat this as a revive instead of an error.
                     self._alive.add(note_int_id)
-                self._update_existing_locked(note_int_id, content_text, tags, tag_terms)
+                self._update_existing_locked(
+                    note_int_id,
+                    content_text,
+                    tags,
+                    raw_tag_terms,
+                    tag_terms,
+                )
             else:
-                self._insert_new_locked(note_id, content_text, tags, tag_terms)
+                self._insert_new_locked(
+                    note_id,
+                    content_text,
+                    tags,
+                    raw_tag_terms,
+                    tag_terms,
+                )
 
             self._revision += 1
             self._result_cache.clear()
@@ -288,6 +317,35 @@ class SearchIndex:
             }
         ).info("search.index.bulk_update_tag_terms.finish")
 
+    def bulk_update_raw_tag_terms(self, updates: Dict[str, FrozenSet[str]]) -> None:
+        if not updates:
+            return
+
+        touched = 0
+        with self._lock:
+            for note_id, new_raw_tag_terms in updates.items():
+                note_int_id = self._uuid_to_id.get(note_id)
+                if note_int_id is None or note_int_id not in self._alive:
+                    continue
+
+                old_raw_tag_terms = self._note_raw_tag_terms[note_int_id]
+                if old_raw_tag_terms == new_raw_tag_terms:
+                    continue
+
+                for term in old_raw_tag_terms:
+                    bucket = self._raw_tag_notes_casefold.get(term.casefold())
+                    if bucket is not None:
+                        bucket.discard(note_int_id)
+                for term in new_raw_tag_terms:
+                    self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
+
+                self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
+                touched += 1
+
+            if touched:
+                self._revision += 1
+                self._result_cache.clear()
+
     def remove_many(self, note_ids: Set[str]) -> None:
         if not note_ids:
             return
@@ -331,6 +389,15 @@ class SearchIndex:
                 term: len(note_ids)
                 for term, note_ids in self._tag_notes.items()
                 if term and not term.startswith("@")
+            }
+
+    def list_raw_tag_frequencies_by_casefold(self) -> Dict[str, int]:
+        """Return raw tag -> distinct note count after inheritance, before ontology."""
+        with self._lock:
+            return {
+                term_casefold: len(note_ids)
+                for term_casefold, note_ids in self._raw_tag_notes_casefold.items()
+                if note_ids and term_casefold and not term_casefold.startswith("@")
             }
 
     def list_explicit_tag_frequencies(self) -> Dict[str, int]:
@@ -563,6 +630,7 @@ class SearchIndex:
         note_id: str,
         content_text: str,
         tags: str,
+        raw_tag_terms: FrozenSet[str],
         tag_terms: FrozenSet[str],
     ) -> None:
         note_int_id = len(self._id_to_uuid)
@@ -574,12 +642,15 @@ class SearchIndex:
         explicit_tag_terms = extract_tags_for_search(tags)
         self._note_text_casefold.append(text_casefold)
         self._note_explicit_tag_terms.append(explicit_tag_terms)
+        self._note_raw_tag_terms.append(raw_tag_terms)
         self._note_tag_terms.append(tag_terms)
         self._note_tag_terms_casefold.append(frozenset(term.casefold() for term in tag_terms))
         self._note_trigrams.append(trigrams)
 
         for term in explicit_tag_terms:
             self._explicit_tag_notes[term].add(note_int_id)
+        for term in raw_tag_terms:
+            self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
         for term in tag_terms:
             self._tag_notes[term].add(note_int_id)
             self._tag_notes_casefold[term.casefold()].add(note_int_id)
@@ -591,6 +662,7 @@ class SearchIndex:
         note_int_id: int,
         content_text: str,
         tags: str,
+        new_raw_tag_terms: FrozenSet[str],
         new_tag_terms: FrozenSet[str],
     ) -> None:
         if note_int_id not in self._alive:
@@ -599,6 +671,7 @@ class SearchIndex:
         new_text_casefold, new_trigrams = self._build_note_text_state(content_text, tags)
         new_explicit_tag_terms = extract_tags_for_search(tags)
         old_explicit_tag_terms = self._note_explicit_tag_terms[note_int_id]
+        old_raw_tag_terms = self._note_raw_tag_terms[note_int_id]
         old_tag_terms = self._note_tag_terms[note_int_id]
         old_trigrams = self._note_trigrams[note_int_id]
 
@@ -611,6 +684,15 @@ class SearchIndex:
             for term in new_explicit_tag_terms:
                 self._explicit_tag_notes[term].add(note_int_id)
             self._note_explicit_tag_terms[note_int_id] = new_explicit_tag_terms
+
+        if old_raw_tag_terms != new_raw_tag_terms:
+            for term in old_raw_tag_terms:
+                bucket = self._raw_tag_notes_casefold.get(term.casefold())
+                if bucket is not None:
+                    bucket.discard(note_int_id)
+            for term in new_raw_tag_terms:
+                self._raw_tag_notes_casefold[term.casefold()].add(note_int_id)
+            self._note_raw_tag_terms[note_int_id] = new_raw_tag_terms
 
         if old_tag_terms != new_tag_terms:
             for term in old_tag_terms:
@@ -659,6 +741,10 @@ class SearchIndex:
             if bucket is None:
                 continue
             bucket.discard(note_int_id)
+        for term in self._note_raw_tag_terms[note_int_id]:
+            bucket = self._raw_tag_notes_casefold.get(term.casefold())
+            if bucket is not None:
+                bucket.discard(note_int_id)
         for trigram in self._note_trigrams[note_int_id]:
             bucket = self._tri_notes.get(trigram)
             if bucket is None:
@@ -667,6 +753,7 @@ class SearchIndex:
 
         self._note_text_casefold[note_int_id] = ""
         self._note_explicit_tag_terms[note_int_id] = frozenset()
+        self._note_raw_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms[note_int_id] = frozenset()
         self._note_tag_terms_casefold[note_int_id] = frozenset()
         self._note_trigrams[note_int_id] = set()

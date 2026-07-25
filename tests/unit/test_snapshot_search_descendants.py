@@ -63,12 +63,16 @@ def test_search_redacts_descendants_of_matching_root(monkeypatch: pytest.MonkeyP
         [
             SearchRecord(
                 note_id=n.id,
-                    content_text=n.content,
-                    tags=n.tags,
-                    tag_terms=extract_tags_for_search(n.tags),
+                content_text=n.content,
+                tags=n.tags,
+                tag_terms=extract_tags_for_search(n.tags),
             )
             for n in notes.values()
         ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
         progress_update=lambda _: None,
         progress_interval=1000,
     )
@@ -117,6 +121,10 @@ def test_search_snapshot_does_not_include_children_of_collapsed_root(monkeypatch
             )
             for n in notes.values()
         ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
         progress_update=lambda _: None,
         progress_interval=1000,
     )
@@ -164,12 +172,16 @@ def test_search_redacts_descendants_of_matching_non_root(monkeypatch: pytest.Mon
         [
             SearchRecord(
                 note_id=n.id,
-                    content_text=n.content,
-                    tags=n.tags,
-                    tag_terms=extract_tags_for_search(n.tags),
+                content_text=n.content,
+                tags=n.tags,
+                tag_terms=extract_tags_for_search(n.tags),
             )
             for n in notes.values()
         ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
         progress_update=lambda _: None,
         progress_interval=1000,
     )
@@ -218,6 +230,10 @@ def test_search_does_not_force_include_nonmatching_editing_root(monkeypatch: pyt
             )
             for n in notes.values()
         ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
         progress_update=lambda _: None,
         progress_interval=1000,
     )

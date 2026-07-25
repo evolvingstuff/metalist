@@ -219,6 +219,10 @@ def test_build_notes_export_document_uses_search_scope_and_static_reference_mark
             )
             for note in notes.values()
         ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
         progress_update=lambda _: None,
         progress_interval=1000,
     )

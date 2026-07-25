@@ -212,6 +212,7 @@ class NoteStore:
             self._loaded = False
             search_index.rebuild(
                 [],
+                raw_tag_terms_by_id={},
                 progress_update=lambda _processed: None,
                 progress_interval=1,
             )
@@ -350,9 +351,9 @@ class NoteStore:
                 total=len(note_map),
             )
         for record in note_map.values():
-            effective_terms = effective_tag_terms_by_id.get(record.id)
-            if effective_terms is None:
+            if record.id not in effective_tag_terms_by_id:
                 raise RuntimeError(f"Integrity failure: missing effective tags for note {record.id}")
+            effective_terms = effective_tag_terms_by_id[record.id]
             if record.id not in content_text_by_id:
                 raise RuntimeError(f"Integrity failure: missing raw text for note {record.id}")
             tag_only_terms = ontology.infer_implication_only(base_tags=effective_terms)
@@ -389,6 +390,7 @@ class NoteStore:
 
         search_index.rebuild(
             search_records,
+            raw_tag_terms_by_id=effective_tag_terms_by_id,
             progress_update=_update_search_index_progress,
             progress_interval=1000,
         )
@@ -556,6 +558,7 @@ class NoteStore:
             note_id=record.id,
             content_text=content_text,
             tags=record.tags,
+            raw_tag_terms=effective_tag_terms,
             tag_terms=effective_with_ontology,
         )
 
@@ -627,6 +630,7 @@ class NoteStore:
                 note_id=updated.id,
                 content_text=strip_html(updated.content),
                 tags=updated.tags,
+                raw_tag_terms=effective_tag_terms_by_id[updated.id],
                 tag_terms=effective_for_note,
             )
 
@@ -636,6 +640,12 @@ class NoteStore:
                 if note_id != updated.id
             }
             if descendant_updates:
+                descendant_raw_updates = {
+                    note_id: terms
+                    for note_id, terms in effective_tag_terms_by_id.items()
+                    if note_id != updated.id
+                }
+                search_index.bulk_update_raw_tag_terms(descendant_raw_updates)
                 search_index.bulk_update_tag_terms(descendant_updates)
             return
 
@@ -656,6 +666,7 @@ class NoteStore:
             note_id=updated.id,
             content_text=content_text,
             tags=updated.tags,
+            raw_tag_terms=effective_tag_terms,
             tag_terms=effective_with_ontology,
         )
 
@@ -706,6 +717,7 @@ class NoteStore:
                 tag_updates = self._recompute_effective_tag_terms_subtree_locked(note.id)
 
         if tag_updates:
+            search_index.bulk_update_raw_tag_terms(tag_updates)
             ontology = get_ontology()
             matcher_rules_enabled = bool(ontology.matcher_rules)
             inferred_updates: Dict[str, FrozenSet[str]] = {}
@@ -795,6 +807,7 @@ class NoteStore:
                     tag_updates.update(self._recompute_effective_tag_terms_subtree_locked(root_id))
 
         if tag_updates:
+            search_index.bulk_update_raw_tag_terms(tag_updates)
             ontology = get_ontology()
             matcher_rules_enabled = bool(ontology.matcher_rules)
             inferred_updates: Dict[str, FrozenSet[str]] = {}
@@ -1227,6 +1240,7 @@ class NoteStore:
                 plaintext=inferred_plaintext,
             )
 
+        search_index.bulk_update_raw_tag_terms(effective_tag_terms_by_id)
         search_index.bulk_update_tag_terms(inferred_updates)
 
     def rebuild_search_index_tag_terms_for_notes(self, note_ids: Iterable[str]) -> int:
@@ -1269,6 +1283,7 @@ class NoteStore:
                 plaintext=inferred_plaintext,
             )
 
+        search_index.bulk_update_raw_tag_terms(base_terms_by_id)
         search_index.bulk_update_tag_terms(inferred_updates)
         return len(inferred_updates)
 

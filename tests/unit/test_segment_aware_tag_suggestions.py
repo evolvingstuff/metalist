@@ -88,16 +88,21 @@ class _FakeHierarchyNoteStore:
 
 def _build_index(tag_rows: list[tuple[str, str]]) -> SearchIndex:
     index = SearchIndex()
+    records = [
+        SearchRecord(
+            note_id=note_id,
+            content_text="",
+            tags=tags,
+            tag_terms=extract_tags_for_search(tags),
+        )
+        for note_id, tags in tag_rows
+    ]
     index.rebuild(
-        [
-            SearchRecord(
-                note_id=note_id,
-                content_text="",
-                tags=tags,
-                tag_terms=extract_tags_for_search(tags),
-            )
-            for note_id, tags in tag_rows
-        ],
+        records,
+        raw_tag_terms_by_id={
+            record.note_id: extract_tags_for_search(record.tags)
+            for record in records
+        },
         progress_update=lambda _processed: None,
         progress_interval=1000,
     )
@@ -106,16 +111,21 @@ def _build_index(tag_rows: list[tuple[str, str]]) -> SearchIndex:
 
 def _build_effective_index(*, tag_rows: list[tuple[str, str]], ontology) -> SearchIndex:
     index = SearchIndex()
+    records = [
+        SearchRecord(
+            note_id=note_id,
+            content_text="",
+            tags=tags,
+            tag_terms=ontology.infer_implication_only(base_tags=extract_tags_for_search(tags)),
+        )
+        for note_id, tags in tag_rows
+    ]
     index.rebuild(
-        [
-            SearchRecord(
-                note_id=note_id,
-                content_text="",
-                tags=tags,
-                tag_terms=ontology.infer_implication_only(base_tags=extract_tags_for_search(tags)),
-            )
-            for note_id, tags in tag_rows
-        ],
+        records,
+        raw_tag_terms_by_id={
+            record.note_id: extract_tags_for_search(record.tags)
+            for record in records
+        },
         progress_update=lambda _processed: None,
         progress_interval=1000,
     )
@@ -548,6 +558,91 @@ def test_tag_suggestions_use_frequency_before_literal_length_for_equivalent_conn
     )
 
     assert suggestions[:3] == ["fat.appearance", "fat-roll", "brown-fat"]
+
+
+def test_single_letter_prefix_ranks_raw_inherited_usage_without_ontology_implications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = [
+        SearchRecord(
+            note_id="ml3-root",
+            content_text="",
+            tags="ML3",
+            tag_terms=frozenset({"ML3"}),
+        )
+    ]
+    records.extend(
+        SearchRecord(
+            note_id=f"ml3-descendant-{index}",
+            content_text="",
+            tags="",
+            tag_terms=frozenset({"ML3"}),
+        )
+        for index in range(267)
+    )
+    records.extend(
+        SearchRecord(
+            note_id=f"goats-milk-{index}",
+            content_text="",
+            tags="goat's-milk",
+            tag_terms=frozenset({"goat's-milk"}),
+        )
+        for index in range(13)
+    )
+    records.append(
+        SearchRecord(
+            note_id="math-explicit",
+            content_text="",
+            tags="math",
+            tag_terms=frozenset({"math"}),
+        )
+    )
+    records.extend(
+        SearchRecord(
+            note_id=f"math-implied-{index}",
+            content_text="",
+            tags="",
+            tag_terms=frozenset({"math"}),
+        )
+        for index in range(499)
+    )
+    index = SearchIndex()
+    raw_tag_terms_by_id: dict[str, frozenset[str]] = {}
+    for record in records:
+        if record.note_id.startswith("ml3-"):
+            raw_tag_terms_by_id[record.note_id] = frozenset({"ML3"})
+            continue
+        raw_tag_terms_by_id[record.note_id] = extract_tags_for_search(record.tags)
+    index.rebuild(
+        records,
+        raw_tag_terms_by_id=raw_tag_terms_by_id,
+        progress_update=lambda _processed: None,
+        progress_interval=1000,
+    )
+    assert index.list_explicit_tag_frequencies()["ML3"] == 1
+    assert index.list_raw_tag_frequencies_by_casefold()["ml3"] == 268
+    assert index.list_tag_frequencies()["math"] == 500
+    assert index.list_raw_tag_frequencies_by_casefold()["math"] == 1
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset({"ML3"})
+        ),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="note-1",
+        anchors=[],
+        explicit_tags=["m"],
+        prefix="m",
+        content_html="<p>M should lead to ML3, not goat's milk</p>",
+    )
+
+    assert suggestions[:3] == ["ML3", "goat's-milk", "math"]
 
 
 def test_tag_suggestions_promote_full_literal_phrase_match_even_when_it_includes_stopwords(

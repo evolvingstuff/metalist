@@ -69,6 +69,10 @@ def _patch_fake_search_index(monkeypatch: pytest.MonkeyPatch, notes: Dict[str, _
             )
             for note in notes.values()
         ],
+        raw_tag_terms_by_id={
+            note.id: extract_tags_for_search(note.tags)
+            for note in notes.values()
+        },
         progress_update=lambda _: None,
         progress_interval=1000,
     )

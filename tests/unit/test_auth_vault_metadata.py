@@ -236,6 +236,7 @@ def test_password_transitions_rewrite_search_history_rows(
                     tag_terms=extract_tags_for_search("journal"),
                 ),
             ],
+            raw_tag_terms_by_id={"n1": extract_tags_for_search("journal")},
             progress_update=lambda _processed: None,
             progress_interval=1000,
         )
