@@ -965,6 +965,10 @@ def suggest_tags_for_note(
     explicit_tag_list = _sanitize_tag_terms(tags=explicit_tags, field_name="explicit_tags")
     anchor_set = {tag for tag in anchor_list if not tag.startswith("@")}
     explicit_tag_casefold_set = {tag.casefold() for tag in explicit_tag_list if not tag.startswith("@")}
+    has_prefix = prefix != ""
+    is_single_character_non_meta_prefix = (
+        not prefix.startswith("@") and len(normalize_tag_match_text(prefix)) == 1
+    )
 
     inherited_non_meta = note_store.get_inherited_non_meta_tag_terms(note_id)
     base_tags = frozenset(anchor_set | inherited_non_meta)
@@ -980,7 +984,8 @@ def suggest_tags_for_note(
         if not tag.startswith("@") and tag.casefold() not in explicit_tag_casefold_set
     }
     suppressed_casefold = set(explicit_tag_casefold_set)
-    suppressed_casefold.update(tag.casefold() for tag in inherited_or_implied_tags)
+    if not is_single_character_non_meta_prefix:
+        suppressed_casefold.update(tag.casefold() for tag in inherited_or_implied_tags)
 
     explicit_terms, exact_tag_counts = _collect_explicit_tag_statistics()
     all_terms, ontology_only_casefold = _merge_ontology_tag_terms(
@@ -988,8 +993,6 @@ def suggest_tags_for_note(
         exact_tag_counts=exact_tag_counts,
         ontology=ontology,
     )
-    has_prefix = prefix != ""
-
     if has_prefix and prefix.startswith("@"):
         meta_query = _build_search_query_for_suggestions(anchors=anchor_list, prefix=prefix)
         meta_suggestions = search_index.suggest_tag_completions(query=meta_query, limit=limit)
@@ -1159,6 +1162,12 @@ def suggest_tags_for_note(
                 present_suffix.append(term)
         present_suffix.sort()
         suggestions.extend(present_suffix)
+
+    if is_single_character_non_meta_prefix:
+        raw_tag_counts = search_index.list_raw_tag_frequencies_by_casefold()
+        suggestions.sort(
+            key=lambda term: -raw_tag_counts.get(term.casefold(), 0)
+        )
 
     representative_by_term = _build_equivalent_term_representatives(
         terms=list(candidate_terms) + suggestions,

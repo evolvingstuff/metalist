@@ -7,6 +7,10 @@ def _build_index(records: list[SearchRecord]) -> SearchIndex:
     index = SearchIndex()
     index.rebuild(
         records,
+        raw_tag_terms_by_id={
+            record.note_id: extract_tags_for_search(record.tags)
+            for record in records
+        },
         progress_update=lambda _processed: None,
         progress_interval=1000,
     )
@@ -244,3 +248,40 @@ def test_search_index_tag_suggestions_collapse_case_equivalent_terms() -> None:
 
     suggestions = index.suggest_tag_completions(query="Databricks ", limit=20)
     assert suggestions == []
+
+
+def test_search_index_tracks_raw_inherited_frequency_separately_from_ontology() -> None:
+    records = [
+        SearchRecord(
+            note_id="n1",
+            content_text="",
+            tags="ML3",
+            tag_terms=frozenset({"ML3", "math"}),
+        ),
+        SearchRecord(
+            note_id="n2",
+            content_text="",
+            tags="",
+            tag_terms=frozenset({"ML3", "math"}),
+        ),
+    ]
+    index = SearchIndex()
+    index.rebuild(
+        records,
+        raw_tag_terms_by_id={
+            "n1": frozenset({"ML3"}),
+            "n2": frozenset({"ML3"}),
+        },
+        progress_update=lambda _processed: None,
+        progress_interval=1000,
+    )
+
+    assert index.list_tag_frequencies()["math"] == 2
+    assert "math" not in index.list_raw_tag_frequencies_by_casefold()
+    assert index.list_raw_tag_frequencies_by_casefold()["ml3"] == 2
+
+    index.bulk_update_raw_tag_terms({"n2": frozenset({"ML3", "money"})})
+    assert index.list_raw_tag_frequencies_by_casefold()["money"] == 1
+
+    index.remove_many({"n2"})
+    assert "money" not in index.list_raw_tag_frequencies_by_casefold()
