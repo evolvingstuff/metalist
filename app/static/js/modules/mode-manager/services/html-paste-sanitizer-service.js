@@ -1337,27 +1337,63 @@ function findNearestBlockAncestor(element, rootNode) {
     return rootNode;
 }
 
-function hasImmediateLineBreakBefore(element) {
+function getPreviousNodeWithinBoundary(node, boundary) {
+    if (!node) {
+        throw new Error('getPreviousNodeWithinBoundary expects node');
+    }
+    if (!boundary) {
+        throw new Error('getPreviousNodeWithinBoundary expects boundary');
+    }
+
+    let current = node;
+    while (current && current !== boundary) {
+        if (current.previousSibling) {
+            current = current.previousSibling;
+            while (current.lastChild) {
+                current = current.lastChild;
+            }
+            return current;
+        }
+        current = current.parentNode;
+    }
+    return null;
+}
+
+export function hasImmediateLineBreakBefore(element, boundary) {
     if (!element) {
         throw new Error('hasImmediateLineBreakBefore expects element');
     }
     if (!(element instanceof Element)) {
         throw new Error('hasImmediateLineBreakBefore expects DOM Element');
     }
+    if (!boundary) {
+        throw new Error('hasImmediateLineBreakBefore expects boundary');
+    }
+    if (!(boundary instanceof Element)) {
+        throw new Error('hasImmediateLineBreakBefore expects DOM Element boundary');
+    }
 
-    let sibling = element.previousSibling;
-    while (sibling) {
-        if (sibling.nodeType === ELEMENT_NODE) {
-            if (!(sibling instanceof Element)) {
+    let previousNode = getPreviousNodeWithinBoundary(element, boundary);
+    while (previousNode) {
+        if (previousNode.nodeType === ELEMENT_NODE) {
+            if (!(previousNode instanceof Element)) {
                 throw new Error('hasImmediateLineBreakBefore encountered non-Element node');
             }
-            return sibling.tagName.toLowerCase() === 'br';
+            const tagName = previousNode.tagName.toLowerCase();
+            if (tagName === 'br') {
+                return true;
+            }
+            if (previousNode.lastChild || tagName === 'span') {
+                previousNode = getPreviousNodeWithinBoundary(previousNode, boundary);
+                continue;
+            }
+            return false;
         }
-        const textContent = sibling.textContent;
+        const textContent = previousNode.textContent;
         if (typeof textContent === 'string' && textContent.trim().length > 0) {
             return false;
         }
-        sibling = sibling.previousSibling;
+        previousNode = getPreviousNodeWithinBoundary(previousNode, boundary);
     }
     return false;
 }
@@ -1480,7 +1516,7 @@ function preserveFlattenedTimestampLinkRuns(rootNode) {
             timestampIndexInBlock,
             previousText,
         );
-        if (shouldInsert && !hasImmediateLineBreakBefore(link)) {
+        if (shouldInsert && !hasImmediateLineBreakBefore(link, container)) {
             insertLineBreakBefore(link);
         }
         i += 1;

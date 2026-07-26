@@ -4,6 +4,7 @@ import test from 'node:test';
 import { CONFIG } from '../../app/static/js/modules/config.js';
 import {
     getCustomPasteElementPolicy,
+    hasImmediateLineBreakBefore,
     normalizeSoftWrappedTextLineBreaks,
     shouldInsertLineBreakBeforeTimestampAnchor,
     shouldInlineStandaloneCitationMarker,
@@ -14,6 +15,27 @@ import {
     sanitizeStyleAttributeValue,
     sanitizeUrlAttributeValue,
 } from '../../app/static/js/modules/mode-manager/services/html-paste-sanitizer-service.js';
+
+class FakeElement {
+    constructor(tagName, children = []) {
+        this.nodeType = 1;
+        this.tagName = tagName.toUpperCase();
+        this.parentNode = null;
+        this.previousSibling = null;
+        this.lastChild = null;
+
+        let previousChild = null;
+        let i = 0;
+        while (i < children.length) {
+            const child = children[i];
+            child.parentNode = this;
+            child.previousSibling = previousChild;
+            previousChild = child;
+            i += 1;
+        }
+        this.lastChild = previousChild;
+    }
+}
 
 test('sanitizeUrlAttributeValue keeps safe https href', () => {
     const value = sanitizeUrlAttributeValue('https://example.com/path?q=1', 'href');
@@ -165,6 +187,32 @@ test('shouldInsertLineBreakBeforeTimestampAnchor breaks flattened YouTube chapte
         ),
         true,
     );
+});
+
+test('hasImmediateLineBreakBefore sees a YouTube newline across adjacent inline wrappers', () => {
+    const originalElement = globalThis.Element;
+    globalThis.Element = FakeElement;
+
+    try {
+        const firstTimestampLink = new FakeElement('a');
+        const firstTimestampWrapper = new FakeElement('span', [firstTimestampLink]);
+        const existingLineBreak = new FakeElement('br');
+        const firstDescriptionWrapper = new FakeElement('span', [existingLineBreak]);
+        const secondTimestampLink = new FakeElement('a');
+        const secondTimestampWrapper = new FakeElement('span', [secondTimestampLink]);
+        const timestampContainer = new FakeElement('div', [
+            firstTimestampWrapper,
+            firstDescriptionWrapper,
+            secondTimestampWrapper,
+        ]);
+
+        assert.equal(
+            hasImmediateLineBreakBefore(secondTimestampLink, timestampContainer),
+            true,
+        );
+    } finally {
+        globalThis.Element = originalElement;
+    }
 });
 
 test('shouldInsertLineBreakBeforeTimestampAnchor breaks first chapter after timestamp label', () => {

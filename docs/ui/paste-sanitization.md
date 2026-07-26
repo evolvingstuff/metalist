@@ -27,7 +27,7 @@
 8. Remove paste-only academic citation artifacts: unwrap Distill `d-cite`, remove `d-footnote`, and remove standalone numeric citation markers such as `[6]`.
 9. Normalize soft-wrapped prose line breaks from clipboard HTML into spaces, including hyphenated visual wraps such as `non-\nAC0`.
 10. Convert meaningful literal CR/LF text-node breaks from clipboard HTML into `<br>` nodes, while ignoring formatting-only indentation whitespace.
-11. Restore flattened timestamp-link runs from sources like YouTube descriptions by inserting breaks before later timestamp anchors in the same block.
+11. Restore flattened timestamp-link runs from sources like YouTube descriptions by inserting breaks before later timestamp anchors in the same block, while recognizing breaks inside adjacent inline wrappers so one source newline never becomes two rendered breaks.
 12. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
 13. Insert sanitized HTML into current selection.
 14. If no usable HTML remains, fallback to `text/plain`.
@@ -84,7 +84,7 @@
 - Block indentation styles (block tags only): `margin-left`, `padding-left`, `text-indent`
 - Image box styles (`img` only): `width`, `height`, `max-width`, `max-height`
 - Meaningful literal CR/LF inside pasted HTML text nodes is preserved as line breaks, for sources such as YouTube descriptions that put visible structure in raw newlines instead of block tags.
-- Flattened timestamp-link runs from sources such as YouTube descriptions are restored into one timestamp entry per line.
+- Flattened timestamp-link runs from sources such as YouTube descriptions are restored into one timestamp entry per line without adding blank lines between entries, including when the source wraps each link and description in separate inline spans.
 - Soft line wraps inside prose are collapsed to spaces so copied abstracts from sources such as arXiv do not paste with visual-wrap breaks in the middle of sentences.
 - Numeric `vertical-align` values are retained for inline spans so copied math superscripts/subscripts can preserve their visual position.
 
