@@ -9,19 +9,21 @@ description = "A minimalist single-user note-taking app with SSR, fast in-memory
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "argon2-cffi==23.1.0",
+    "argon2-cffi==25.1.0",
     "cryptography==50.0.0",
     "fastapi==0.141.1",
+    "httpx==0.28.1",
     "latex2mathml==3.81.0",
-    "loguru==0.7.2",
+    "loguru==0.7.3",
     "Mako==1.3.12",
-    "mutagen==1.47.0",
-    "pydantic==2.9.2",
+    "mutagen==1.48.1",
+    "pydantic==2.13.4",
     "python-multipart==0.0.32",
     "starlette==1.3.1",
+    "tqdm==4.70.0",
     "tree-sitter==0.25.2",
     "tree-sitter-javascript==0.25.0",
-    "uvicorn==0.27.1",
+    "uvicorn==0.52.0",
 ]
 
 [project.urls]
@@ -31,9 +33,9 @@ Issues = "https://github.com/evolvingstuff/metalist/issues"
 
 [project.optional-dependencies]
 dev = [
-    "hypothesis==6.112.0",
-    "pytest==8.0.0",
-    "pytest-cov==4.1.0",
+    "hypothesis==6.164.0",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
 ]
 
 [project.scripts]
