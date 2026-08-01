@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
+from app.db.settings_sql import insert_default_settings
 from app.services.exception_capture import CapturedExceptionContext
 
 
@@ -177,7 +178,8 @@ def _connect_namespace_database(
     create_if_missing: bool,
 ) -> sqlite3.Connection | None:
     database_path = resolve_namespaced_database_path(namespace=namespace)
-    if not database_path.exists():
+    database_was_missing = not database_path.exists()
+    if database_was_missing:
         if not create_if_missing:
             return None
         prepare_database_runtime_path(database_path=database_path)
@@ -185,6 +187,8 @@ def _connect_namespace_database(
         raise RuntimeError(f"Namespace database path is not a file: {database_path}")
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     initialize_schema(connection)
+    if database_was_missing:
+        insert_default_settings(connection)
     connection.commit()
     return connection
 

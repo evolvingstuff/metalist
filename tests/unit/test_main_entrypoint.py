@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import main as main_entrypoint
 import pytest
+from app import server_runtime
+from app.encryption_audit import audit_all_namespaces
 from app.server_runtime import DatabaseRuntimeConfig
 from app.server_runtime import MainCliArgs
 from app.server_runtime import MainServerConfig
@@ -27,6 +29,93 @@ def test_main_entrypoint_has_no_top_level_mcp_client_import() -> None:
                 assert alias.name != "mcp_client"
         if isinstance(node, ast.ImportFrom):
             assert node.module != "mcp_client"
+
+
+def test_installed_cli_bootstraps_default_namespace_before_main(monkeypatch) -> None:
+    calls: list[object] = []
+
+    monkeypatch.setattr(
+        main_entrypoint,
+        "ensure_default_tls_pair",
+        lambda *, environ: calls.append("ensure_default_tls_pair"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "build_namespace_catalog",
+        lambda *, environ, current_namespace: {
+            "namespaces": [
+                {
+                    "namespace": "default",
+                    "has_launch_profile": False,
+                    "default_profile": {
+                        "namespace": "default",
+                        "port": 8000,
+                        "https_port": 8443,
+                        "mcp_port": 8765,
+                    },
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "save_namespace_launch_profile",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "main",
+        lambda argv: calls.append(("main", argv)),
+    )
+
+    main_entrypoint.cli()
+
+    assert calls == [
+        "ensure_default_tls_pair",
+        {
+            "namespace": "default",
+            "port": 8000,
+            "https_port": 8443,
+            "mcp_port": 8765,
+        },
+        ("main", []),
+    ]
+
+
+def test_installed_default_bootstrap_creates_metalist_directory_tree(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    metalist_directory = tmp_path / "MetaList"
+    monkeypatch.setattr(
+        server_runtime,
+        "_DEFAULT_DATABASE_DIRECTORY",
+        metalist_directory,
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "ensure_default_tls_pair",
+        lambda *, environ: None,
+    )
+
+    main_entrypoint._bootstrap_installed_default_namespace(environ={})
+
+    namespace_directory = metalist_directory / "namespaces" / "default"
+    database_path = namespace_directory / "default.metalist.db"
+    profile = server_runtime.load_namespace_launch_profile(namespace="default")
+    assert metalist_directory.is_dir()
+    assert namespace_directory.is_dir()
+    assert database_path.is_file()
+    assert profile is not None
+    assert profile.namespace == "default"
+    assert profile.port == 8000
+    assert profile.mcp_port == 8765
+    audit_report = audit_all_namespaces(
+        namespaces_directory=metalist_directory / "namespaces",
+    )
+    assert audit_report.passed is True
+    assert audit_report.namespace_count == 1
+    assert audit_report.encrypted_namespace_count == 0
 
 
 def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Path) -> None:

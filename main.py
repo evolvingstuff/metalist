@@ -263,6 +263,33 @@ def _prompt_for_missing_namespace_launch_profiles(*, environ: dict[str, str]) ->
         _prompt_for_missing_namespace_launch_profile(entry=missing_entry)
 
 
+def _bootstrap_installed_default_namespace(*, environ: dict[str, str]) -> None:
+    ensure_default_tls_pair(environ=environ)
+    catalog = build_namespace_catalog(environ=environ, current_namespace=None)
+    raw_namespaces = catalog["namespaces"]
+    if not isinstance(raw_namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+
+    default_entry: dict[str, object] | None = None
+    for raw_entry in raw_namespaces:
+        if not isinstance(raw_entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        if raw_entry["namespace"] != "default":
+            continue
+        if default_entry is not None:
+            raise RuntimeError("Namespace catalog contains duplicate default entries")
+        default_entry = raw_entry
+
+    if default_entry is None:
+        raise RuntimeError("Namespace catalog missing default namespace")
+    has_launch_profile = default_entry["has_launch_profile"]
+    if has_launch_profile is True:
+        return
+    if has_launch_profile is not False:
+        raise RuntimeError("Default namespace launch-profile state must be boolean")
+    _save_missing_default_namespace_launch_profile(entry=default_entry)
+
+
 def _resolve_agent_web_browser_host(*, environ: dict[str, str]) -> str:
     if "MCP_AGENT_WEB_HOST" in environ:
         host = environ["MCP_AGENT_WEB_HOST"]
@@ -738,6 +765,7 @@ def main(argv: list[str]) -> None:
 
 
 def cli() -> None:
+    _bootstrap_installed_default_namespace(environ=os.environ)
     main([])
 
 
