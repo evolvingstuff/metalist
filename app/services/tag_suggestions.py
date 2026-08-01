@@ -209,16 +209,16 @@ def _collect_cooccurrence_candidates(
     explicit_anchors: Iterable[str],
     inherited_non_meta: FrozenSet[str],
     prefix: str,
-) -> tuple[List[str], Dict[str, int]]:
+) -> tuple[List[str], Dict[str, int], FrozenSet[str]]:
     if not candidate_terms:
-        return [], {}
+        return [], {}, frozenset()
 
     query_anchors = _build_cooccurrence_query_anchors(
         explicit_anchors=explicit_anchors,
         inherited_non_meta=inherited_non_meta,
     )
     if not query_anchors and prefix == "":
-        return [], {}
+        return [], {}, frozenset()
 
     query = _build_search_query_for_suggestions(
         anchors=query_anchors,
@@ -241,7 +241,24 @@ def _collect_cooccurrence_candidates(
             continue
         seen_casefold.add(canonical_casefold)
         filtered.append(canonical_term)
-    return filtered, {term: index for index, term in enumerate(filtered)}
+
+    if prefix == "":
+        overlap_terms = frozenset(filtered)
+    else:
+        overlap_query = _build_search_query_for_suggestions(
+            anchors=query_anchors,
+            prefix="",
+        )
+        ranked_overlap_terms = search_index.suggest_tag_completions(
+            query=overlap_query,
+            limit=max(1, len(all_terms)),
+        )
+        overlap_terms = frozenset(
+            canonical_term
+            for term in ranked_overlap_terms
+            if (canonical_term := candidate_by_casefold.get(term.casefold())) is not None
+        )
+    return filtered, {term: index for index, term in enumerate(filtered)}, overlap_terms
 
 
 def _score_content_match(match: TagContentMatch) -> int:
@@ -295,6 +312,12 @@ def _lookup_count(counts: Dict[str, int], term: str) -> int:
     if term in counts:
         return counts[term]
     return 0
+
+
+def _lookup_rank_after_ranked_terms(ranks: Dict[str, int], term: str) -> int:
+    if term in ranks:
+        return ranks[term]
+    return len(ranks)
 
 
 def _list_content_match_terms_for_candidate(*, term: str, ontology) -> Tuple[str, ...]:
@@ -773,7 +796,7 @@ def _rank_terms_by_local_context(
         key=lambda term: (
             -local_scores[term],
             -_lookup_count(exact_tag_counts, term),
-            cooccurrence_rank.get(term, len(cooccurrence_rank)),
+            _lookup_rank_after_ranked_terms(cooccurrence_rank, term),
             term,
         )
     )
@@ -879,7 +902,7 @@ def _content_match_sort_key(
         else len(term),
         match.raw_segment_count,
         -match.normalized_length,
-        cooccurrence_rank.get(term, len(cooccurrence_rank)),
+        _lookup_rank_after_ranked_terms(cooccurrence_rank, term),
         *_suggestion_tiebreak(term),
     )
 
@@ -1062,7 +1085,7 @@ def suggest_tags_for_note(
             if term in candidate_term_set
         }
 
-    cooccurrence, cooccurrence_rank = _collect_cooccurrence_candidates(
+    cooccurrence, cooccurrence_rank, cooccurrence_hit_terms = _collect_cooccurrence_candidates(
         all_terms=all_terms,
         candidate_terms=candidate_terms,
         explicit_anchors=anchor_list,
@@ -1166,7 +1189,16 @@ def suggest_tags_for_note(
     if is_single_character_non_meta_prefix:
         raw_tag_counts = search_index.list_raw_tag_frequencies_by_casefold()
         suggestions.sort(
-            key=lambda term: -raw_tag_counts.get(term.casefold(), 0)
+            key=lambda term: (
+                0
+                if term in cooccurrence_hit_terms
+                else 1
+                if term in direct_standalone_literal_terms
+                else 2,
+                cooccurrence_rank[term]
+                if term in cooccurrence_hit_terms
+                else -_lookup_count(raw_tag_counts, term.casefold()),
+            )
         )
 
     representative_by_term = _build_equivalent_term_representatives(

@@ -645,6 +645,43 @@ def test_single_letter_prefix_ranks_raw_inherited_usage_without_ontology_implica
     assert suggestions[:3] == ["ML3", "goat's-milk", "math"]
 
 
+def test_single_letter_prefix_prioritizes_inherited_tag_cooccurrence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tag_rows = [(f"drinks-{index}", "drinks") for index in range(5)]
+    tag_rows.extend((f"diet-{index}", "diet") for index in range(4))
+    tag_rows.extend((f"days-{index}", "days") for index in range(3))
+    tag_rows.extend((f"dreams-{index}", "sleep dreams") for index in range(2))
+    tag_rows.append(("probability", "Probability-The-Science-of-Uncertainty-and-Data"))
+    index = _build_index(tag_rows)
+
+    monkeypatch.setattr(
+        tag_suggestions_module,
+        "note_store",
+        SimpleNamespace(
+            get_inherited_non_meta_tag_terms=lambda _note_id: frozenset({"sleep"})
+        ),
+    )
+    monkeypatch.setattr(tag_suggestions_module, "get_ontology", lambda: _EmptyOntology())
+    monkeypatch.setattr(tag_suggestions_module, "search_index", index)
+
+    suggestions = _suggest_tags_for_note(
+        note_id="sleep-note",
+        anchors=[],
+        explicit_tags=[],
+        prefix="d",
+        content_html="<p>nice blocks. woke up very sweaty. vivid</p>",
+    )
+
+    assert suggestions[:5] == [
+        "dreams",
+        "drinks",
+        "diet",
+        "days",
+        "Probability-The-Science-of-Uncertainty-and-Data",
+    ]
+
+
 def test_tag_suggestions_promote_full_literal_phrase_match_even_when_it_includes_stopwords(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
