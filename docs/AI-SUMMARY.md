@@ -5,7 +5,7 @@
 
 ## Architecture
 - Entry: installed CLI `metalist` → `main.py:main()`; source-checkout `python main.py` still works, but plain `python main.py` now bootstraps every known namespace from the current checkout and exits after printing the per-namespace URLs.
-- Packaging: `app/version.py` is the single `0.2.1` version source consumed dynamically by `pyproject.toml` and runtime config; the package includes templates/static assets, and installed helper commands include `metalist-mcp`, `metalist-audit-encryption`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
+- Packaging: `app/version.py` is the single `0.3.2` version source consumed dynamically by `pyproject.toml` and runtime config; the package includes templates/static assets, and installed helper commands include `metalist-mcp`, `metalist-audit-encryption`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
 - Release workflow: `.github/workflows/publish-pypi.yml` builds the package and publishes it to PyPI via GitHub Trusted Publishing on `v*` tags or manual dispatch.
 - Prelaunch gate: `main.py` runs Python + JS startup sanity checks once in the parent process before any namespace restart/launch work. Python rules live in `app/startup_sanity.py`; JS rules live in `app/startup_js_sanity.py`; shared constants live in `app/startup_sanity_config.py`.
 - Startup bootstrap: `main.py` resolves `--namespace`, positional namespace shorthand (`metalist cla` or `python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so explicit single-namespace launches still expose the right DB path and listener ports at import time.
