@@ -408,7 +408,16 @@ def _verify_namespace_password(*, namespace: str, password: str) -> None:
         raise HTTPException(status_code=401, detail="Invalid password")
 
 
-def _run_hydration() -> None:
+def _run_hydration(*, rebuild_required: bool) -> None:
+    hydration_state.set_phase(
+        phase="database_check",
+        message="Database is up to date",
+        total=1,
+    )
+    hydration_state.update(1)
+    if not rebuild_required:
+        hydration_state.finish()
+        return
     session = SafeSession()
     try:
         prefetched_rows = populate_cache_from_db(session)
@@ -431,7 +440,7 @@ def _on_hydration_done(future: Future) -> None:
         hydration_state.fail(str(error))
 
 
-def _start_hydration(first_load: bool) -> None:
+def _start_hydration(*, first_load: bool, rebuild_required: bool) -> None:
     global _hydration_future
     with _hydration_lock:
         if _hydration_future is not None and not _hydration_future.done():
@@ -440,7 +449,10 @@ def _start_hydration(first_load: bool) -> None:
             first_load=first_load,
             message="Preparing encrypted data",
         )
-        _hydration_future = _hydration_executor.submit(_run_hydration)
+        _hydration_future = _hydration_executor.submit(
+            _run_hydration,
+            rebuild_required=rebuild_required,
+        )
         _hydration_future.add_done_callback(_on_hydration_done)
 
 
@@ -449,7 +461,7 @@ def _build_hydration_status() -> HydrationStatusResponse:
     if not auth_cache_state.cache_refresh_needed() and snapshot["status"] == "idle":
         snapshot["status"] = "ready"
         snapshot["phase"] = "complete"
-        snapshot["message"] = "Hydration complete"
+        snapshot["message"] = "Workspace ready"
         snapshot["overall_percent"] = 100
     return HydrationStatusResponse(**snapshot)
 
@@ -624,6 +636,7 @@ def login(
         raise HTTPException(status_code=401, detail="Invalid password")
 
     dek = auth.unwrap_dek_for_password(payload.password)
+    auth.run_authenticated_database_migrations(dek=dek)
 
     set_session_dek(dek)
     ensure_rules_decrypted_and_compiled(token="")
@@ -632,17 +645,13 @@ def login(
     reminder_store.ensure_decrypted(token="")
     search_history_store.ensure_decrypted(token="")
 
-    needs_hydration = auth_cache_state.cache_refresh_needed()
-    if not note_store.loaded:
-        needs_hydration = True
-
     token = token_service.create_token(_client_info(request), tab_id, dek=dek)
     set_auth_cookie(request=request, response=response, token=token)
     login_rate_limiter.record_success(rate_limit_key)
     clear_all_locks()
     return LoginResponse(
         message="Login successful",
-        hydration_required=needs_hydration,
+        hydration_required=True,
     )
 
 
@@ -746,6 +755,11 @@ def auth_status(
     database_user_version = database_user_version_row[0]
     if not isinstance(database_user_version, int) or database_user_version < 0:
         raise RuntimeError(f"Invalid database user_version: {database_user_version!r}")
+    client_preferences: dict[str, str] = {}
+    if not bool(settings and settings.encryption_enabled):
+        client_preferences = load_client_preferences(token="")
+    elif token is not None:
+        client_preferences = load_client_preferences(token=token)
     return {
         "version": VERSION,
         "database_user_version": database_user_version,
@@ -760,14 +774,13 @@ def auth_status(
         "cache_ready": not auth_cache_state.cache_refresh_needed(),
         "namespace": ACTIVE_NAMESPACE,
         "link_title_revision": link_title_store.get_revision(),
-        "client_preferences": load_client_preferences(),
+        "client_preferences": client_preferences,
     }
 
 
 @router.get("/client-state", response_model=ClientStateResponse)
 def get_client_state(token: Annotated[str, Depends(_require_auth)]):
-    del token
-    payload = load_client_state()
+    payload = load_client_state(token=token)
     return ClientStateResponse(**payload)
 
 
@@ -777,8 +790,7 @@ def put_client_preferences(
     payload: ClientPreferencesUpdateRequest,
     token: Annotated[str, Depends(_require_auth)],
 ):
-    del token
-    normalized = save_client_preferences(preferences=payload.preferences)
+    normalized = save_client_preferences(preferences=payload.preferences, token=token)
     return ClientPreferencesResponse(preferences=normalized)
 
 
@@ -788,8 +800,10 @@ def put_command_palette_usage(
     payload: CommandPaletteUsageUpdateRequest,
     token: Annotated[str, Depends(_require_auth)],
 ):
-    del token
-    normalized = save_command_palette_usage(usage_state=payload.command_palette_usage)
+    normalized = save_command_palette_usage(
+        usage_state=payload.command_palette_usage,
+        token=token,
+    )
     return CommandPaletteUsageResponse(command_palette_usage=normalized)
 
 
@@ -1067,8 +1081,10 @@ def hydrate_cache(
     if not note_store.loaded:
         needs_hydration = True
 
-    if needs_hydration:
-        _start_hydration(first_load=auth_cache_state.cache_refresh_needed())
+    _start_hydration(
+        first_load=auth_cache_state.cache_refresh_needed(),
+        rebuild_required=needs_hydration,
+    )
 
     return _build_hydration_status()
 

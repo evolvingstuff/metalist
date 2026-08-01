@@ -5,6 +5,7 @@ import builtins
 from pathlib import Path
 import sys
 from types import ModuleType
+from types import SimpleNamespace
 
 import main as main_entrypoint
 import pytest
@@ -48,6 +49,58 @@ def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Pat
         f"python:{tmp_path}",
         f"js:{tmp_path}",
     ]
+
+
+def test_startup_encryption_audit_prints_large_warning_and_continues(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    report = SimpleNamespace(
+        passed=False,
+        render_text=lambda: "Encrypted namespace audit: FAIL\n- cla: FAIL\n- default: PASS",
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "audit_all_namespaces",
+        lambda *, namespaces_directory: report,
+    )
+
+    returned_report = main_entrypoint._run_startup_encryption_audit(
+        namespaces_directory=tmp_path,
+    )
+
+    captured = capsys.readouterr()
+    assert returned_report is report
+    assert "ENCRYPTION AUDIT WARNING" in captured.err
+    assert "MetaList will continue starting" in captured.err
+    assert "- cla: FAIL" in captured.err
+    assert "- default: PASS" in captured.err
+
+
+def test_startup_encryption_audit_prints_pass_without_warning(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    report = SimpleNamespace(
+        passed=True,
+        render_text=lambda: "Encrypted namespace audit: PASS\n- default: PASS",
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "audit_all_namespaces",
+        lambda *, namespaces_directory: report,
+    )
+
+    returned_report = main_entrypoint._run_startup_encryption_audit(
+        namespaces_directory=tmp_path,
+    )
+
+    captured = capsys.readouterr()
+    assert returned_report is report
+    assert "Encrypted namespace audit: PASS" in captured.out
+    assert captured.err == ""
 
 
 def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch) -> None:
@@ -139,12 +192,14 @@ def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch
     monkeypatch.setattr(main_entrypoint, "_run_main_listener", fake_run_main_listener)
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_encryption_audit", lambda *, namespaces_directory: calls.append("_run_startup_encryption_audit"))
 
     main_entrypoint.main(argv=[])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
         "_run_startup_sanity_gates",
+        "_run_startup_encryption_audit",
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "prepare_database_runtime_path",
@@ -222,18 +277,47 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
     )
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_encryption_audit", lambda *, namespaces_directory: calls.append("_run_startup_encryption_audit"))
 
     main_entrypoint.main(argv=["--test"])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
         "_run_startup_sanity_gates",
+        "_run_startup_encryption_audit",
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "resolve_main_server_config",
         "resolve_main_mcp_url",
         "_start_agent_web_sidecar",
         "_run_main_listener",
+    ]
+
+
+def test_namespace_server_entrypoint_runs_encryption_audit_before_starting(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_run_startup_encryption_audit",
+        lambda *, namespaces_directory: calls.append("_run_startup_encryption_audit"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "apply_main_cli_args_to_environ",
+        lambda *, argv, environ: calls.append("apply_main_cli_args_to_environ"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_run_namespace_server_for_current_env",
+        lambda *, argv: calls.append("_run_namespace_server_for_current_env"),
+    )
+
+    main_entrypoint.run_namespace_server(argv=[])
+
+    assert calls == [
+        "_run_startup_encryption_audit",
+        "apply_main_cli_args_to_environ",
+        "_run_namespace_server_for_current_env",
     ]
 
 
@@ -332,6 +416,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
     )
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
+    monkeypatch.setattr(main_entrypoint, "_run_startup_encryption_audit", lambda *, namespaces_directory: calls.append("_run_startup_encryption_audit"))
     monkeypatch.setattr(main_entrypoint, "_resolve_current_entrypoint", lambda: "/tmp/main.py")
     monkeypatch.setattr(
         main_entrypoint,
@@ -349,6 +434,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
     assert calls == [
         "_record_self_executable_for_namespace_launch",
         "_run_startup_sanity_gates",
+        "_run_startup_encryption_audit",
         "ensure_default_tls_pair",
         "_prompt_for_missing_namespace_launch_profiles",
         "open_or_launch_all_namespaces",

@@ -24,7 +24,10 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
 from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
+from app.server_runtime import resolve_namespaces_directory
 from app.server_runtime import save_namespace_launch_profile
+from app.encryption_audit import audit_all_namespaces
+from app.encryption_audit import EncryptionAuditReport
 from app.startup_js_sanity import assert_startup_js_sanity
 from app.startup_sanity import assert_startup_sanity
 from app.services.exception_capture import CapturedExceptionContext
@@ -57,6 +60,31 @@ def _load_mcp_client_module():
 def _run_startup_sanity_gates(*, repo_root: Path) -> None:
     assert_startup_sanity(repo_root)
     assert_startup_js_sanity(repo_root)
+
+
+def _run_startup_encryption_audit(
+    *,
+    namespaces_directory: Path,
+) -> EncryptionAuditReport:
+    print("[startup] Scanning encrypted namespaces for plaintext payloads...", flush=True)
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+    rendered_report = report.render_text()
+    if report.passed:
+        print(rendered_report, flush=True)
+        return report
+
+    warning_border = "!" * 96
+    print(warning_border, file=sys.stderr, flush=True)
+    print("!!! ENCRYPTION AUDIT WARNING: PLAINTEXT OR INVALID ENCRYPTION STORAGE DETECTED !!!", file=sys.stderr, flush=True)
+    print(
+        "MetaList will continue starting so password-dependent migrations can run, "
+        "but this database state must not be treated as secure.",
+        file=sys.stderr,
+        flush=True,
+    )
+    print(rendered_report, file=sys.stderr, flush=True)
+    print(warning_border, file=sys.stderr, flush=True)
+    return report
 
 
 class FilterCheckUpdates(logging.Filter):
@@ -684,6 +712,9 @@ def main(argv: list[str]) -> None:
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     _record_self_executable_for_namespace_launch()
     _run_startup_sanity_gates(repo_root=Path(__file__).resolve().parent)
+    _run_startup_encryption_audit(
+        namespaces_directory=resolve_namespaces_directory(),
+    )
     original_environ = dict(os.environ)
     if _should_bootstrap_all_namespaces_without_cli_parse(
         argv=argv,
@@ -712,6 +743,9 @@ def cli() -> None:
 
 def run_namespace_server(argv: list[str]) -> None:
     logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
+    _run_startup_encryption_audit(
+        namespaces_directory=resolve_namespaces_directory(),
+    )
     apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     _run_namespace_server_for_current_env(argv=argv)
 

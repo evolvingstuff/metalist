@@ -10,6 +10,9 @@ from .api.middleware.auth import AuthMiddleware
 from app.config import ACTIVE_NAMESPACE, STARTUP_ANIMATION_ENABLED, VERSION
 from .db.session import begin_writer, enable_read_guard
 from .db.schema import initialize_schema
+from .db.migrations import CURRENT_DATABASE_VERSION
+from .db.migrations import read_database_version
+from .db.migrations import run_database_migrations
 from .db.notes_sql import clear_encryption_metadata_for_empty_notes
 from .db.settings_sql import fetch_settings, insert_default_settings
 from .api.deps import get_db
@@ -153,6 +156,21 @@ with begin_writer() as connection:
     settings = fetch_settings(connection)
     if not settings:
         insert_default_settings(connection)
+        settings = fetch_settings(connection)
+    if settings is None:
+        raise RuntimeError("App settings missing after schema initialization")
+    database_version = read_database_version(connection.raw_connection)
+    if database_version > CURRENT_DATABASE_VERSION:
+        raise RuntimeError(
+            f"Database version {database_version} is newer than supported version "
+            f"{CURRENT_DATABASE_VERSION}"
+        )
+    if not bool(settings["encryption_enabled"]):
+        run_database_migrations(
+            connection=connection.raw_connection,
+            encryption_enabled=False,
+            encryption_service=None,
+        )
     bootstrap_ontology_rules_store(connection=connection)
     tab_state_store.bootstrap(connection=connection)
     link_title_store.bootstrap(connection=connection)

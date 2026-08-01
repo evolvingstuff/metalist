@@ -10,13 +10,23 @@ async function readResponsePayload(response, fallbackMessage) {
         throw new Error('readResponsePayload requires fallbackMessage');
     }
 
-    const payload = await response.json();
+    const responseText = await response.text();
+    const contentType = response.headers.get('content-type');
+    const isJson = typeof contentType === 'string'
+        && contentType.toLowerCase().includes('application/json');
     if (!response.ok) {
-        if (payload && typeof payload === 'object' && typeof payload.detail === 'string') {
-            throw new Error(`${fallbackMessage}: ${payload.detail}`);
+        if (isJson && responseText.length > 0) {
+            const errorPayload = JSON.parse(responseText);
+            if (errorPayload && typeof errorPayload === 'object' && typeof errorPayload.detail === 'string') {
+                throw new Error(`${fallbackMessage}: ${errorPayload.detail}`);
+            }
         }
         throw new Error(`${fallbackMessage} (${response.status})`);
     }
+    if (!isJson || responseText.length === 0) {
+        throw new Error(`${fallbackMessage}: response must be JSON`);
+    }
+    const payload = JSON.parse(responseText);
     if (!payload || typeof payload !== 'object') {
         throw new Error(`${fallbackMessage}: response payload missing`);
     }

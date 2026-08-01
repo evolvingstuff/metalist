@@ -106,7 +106,7 @@ def test_auth_status_reports_app_and_database_versions(monkeypatch) -> None:
 
     monkeypatch.setattr(auth_route, "AuthService", FakeAuthService)
     monkeypatch.setattr(auth_route.auth_cache_state, "cache_refresh_needed", lambda: False)
-    monkeypatch.setattr(auth_route, "load_client_preferences", lambda: {})
+    monkeypatch.setattr(auth_route, "load_client_preferences", lambda *, token: {})
 
     payload = auth_route.auth_status(db=_FakeDb(), token="token")
 

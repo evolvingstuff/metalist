@@ -9,8 +9,12 @@ from app.db.settings_sql import (
     insert_default_settings,
     update_client_preferences_json,
     update_command_palette_usage_json,
+    update_tag_prefix_settings_json,
 )
 from app.models.database import SafeSession
+from app.security.encryption import get_encryption_service
+from app.security.encryption import get_encryption_service_with_token
+from app.security.encryption import is_encryption_required
 
 
 _ALLOWED_CLIENT_PREFERENCES = {
@@ -72,6 +76,49 @@ def _serialize_json_object(*, payload: dict[str, object], label: str) -> str:
     if not isinstance(payload, dict):
         raise TypeError(f"{label} must be a dict")
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+
+def _resolve_encryption_service(*, token: str):
+    if not isinstance(token, str):
+        raise TypeError("token must be a string")
+    if token != "":
+        return get_encryption_service_with_token(token)
+    return get_encryption_service()
+
+
+def _decode_stored_json(
+    *,
+    stored_json: object,
+    nonce: object,
+    tag: object,
+    label: str,
+    token: str,
+) -> object:
+    if (nonce is None) != (tag is None):
+        raise RuntimeError(f"{label} has incomplete encryption metadata")
+    if stored_json is None or stored_json == "":
+        if nonce is not None:
+            raise RuntimeError(f"{label} has encryption metadata without a payload")
+        return stored_json
+    if not isinstance(stored_json, str):
+        raise RuntimeError(f"{label} must be stored as a string")
+    if nonce is None:
+        if is_encryption_required():
+            raise RuntimeError(f"{label} is plaintext in an encrypted namespace")
+        return stored_json
+    service = _resolve_encryption_service(token=token)
+    if service is None:
+        raise RuntimeError(f"{label} decryption requires an active DEK")
+    return service.decrypt_from_storage(stored_json, nonce, tag)
+
+
+def _encode_json_for_storage(*, plaintext_json: str, token: str) -> tuple[str, bytes | None, bytes | None]:
+    service = _resolve_encryption_service(token=token)
+    if service is not None:
+        return service.encrypt_for_storage(plaintext_json)
+    if is_encryption_required():
+        raise RuntimeError("Client-state persistence requires an active DEK")
+    return plaintext_json, None, None
 
 
 def _validate_client_preferences(preferences: dict[str, object]) -> dict[str, str]:
@@ -146,15 +193,22 @@ def _validate_usage_state(usage_state: dict[str, object]) -> dict[str, dict[str,
     return normalized
 
 
-def load_client_preferences() -> dict[str, str]:
+def load_client_preferences(*, token: str) -> dict[str, str]:
     session = SafeSession()
     try:
         with SafeSession.allow_reads("client_state:load_preferences"):
             settings = fetch_settings(session.connection())
         if settings is None:
             return {}
+        stored_json = _decode_stored_json(
+            stored_json=settings["client_preferences_json"],
+            nonce=settings["client_preferences_encryption_nonce"],
+            tag=settings["client_preferences_encryption_tag"],
+            label="client_preferences_json",
+            token=token,
+        )
         parsed = _parse_json_object(
-            raw_json=settings["client_preferences_json"],
+            raw_json=stored_json,
             label="client_preferences_json",
         )
         return _validate_client_preferences(parsed)
@@ -162,24 +216,40 @@ def load_client_preferences() -> dict[str, str]:
         session.close()
 
 
-def save_client_preferences(*, preferences: dict[str, object]) -> dict[str, str]:
+def save_client_preferences(*, preferences: dict[str, object], token: str) -> dict[str, str]:
     normalized = _validate_client_preferences(preferences)
     serialized = _serialize_json_object(payload=normalized, label="preferences")
+    stored_json, nonce, tag = _encode_json_for_storage(
+        plaintext_json=serialized,
+        token=token,
+    )
     with begin_writer() as connection:
         insert_default_settings(connection)
-        update_client_preferences_json(connection, client_preferences_json=serialized)
+        update_client_preferences_json(
+            connection,
+            client_preferences_json=stored_json,
+            client_preferences_encryption_nonce=nonce,
+            client_preferences_encryption_tag=tag,
+        )
     return normalized
 
 
-def load_command_palette_usage() -> dict[str, dict[str, object]]:
+def load_command_palette_usage(*, token: str) -> dict[str, dict[str, object]]:
     session = SafeSession()
     try:
         with SafeSession.allow_reads("client_state:load_usage"):
             settings = fetch_settings(session.connection())
         if settings is None:
             return {}
+        stored_json = _decode_stored_json(
+            stored_json=settings["command_palette_usage_json"],
+            nonce=settings["command_palette_usage_encryption_nonce"],
+            tag=settings["command_palette_usage_encryption_tag"],
+            label="command_palette_usage_json",
+            token=token,
+        )
         parsed = _parse_json_object(
-            raw_json=settings["command_palette_usage_json"],
+            raw_json=stored_json,
             label="command_palette_usage_json",
         )
         return _validate_usage_state(parsed)
@@ -187,17 +257,108 @@ def load_command_palette_usage() -> dict[str, dict[str, object]]:
         session.close()
 
 
-def save_command_palette_usage(*, usage_state: dict[str, object]) -> dict[str, dict[str, object]]:
+def save_command_palette_usage(
+    *,
+    usage_state: dict[str, object],
+    token: str,
+) -> dict[str, dict[str, object]]:
     normalized = _validate_usage_state(usage_state)
     serialized = _serialize_json_object(payload=normalized, label="usage_state")
+    stored_json, nonce, tag = _encode_json_for_storage(
+        plaintext_json=serialized,
+        token=token,
+    )
     with begin_writer() as connection:
         insert_default_settings(connection)
-        update_command_palette_usage_json(connection, command_palette_usage_json=serialized)
+        update_command_palette_usage_json(
+            connection,
+            command_palette_usage_json=stored_json,
+            command_palette_usage_encryption_nonce=nonce,
+            command_palette_usage_encryption_tag=tag,
+        )
     return normalized
 
 
-def load_client_state() -> dict[str, object]:
+def load_client_state(*, token: str) -> dict[str, object]:
     return {
-        "preferences": load_client_preferences(),
-        "command_palette_usage": load_command_palette_usage(),
+        "preferences": load_client_preferences(token=token),
+        "command_palette_usage": load_command_palette_usage(token=token),
     }
+
+
+def rewrite_client_state_storage(
+    *,
+    connection,
+    encryption_service: object,
+    force_plaintext: bool,
+) -> int:
+    if encryption_service is None:
+        raise RuntimeError("Client-state rewrite requires an active encryption service")
+    rewritten_count = 0
+    fields = (
+        (
+            "client_preferences_json",
+            "client_preferences_encryption_nonce",
+            "client_preferences_encryption_tag",
+        ),
+        (
+            "command_palette_usage_json",
+            "command_palette_usage_encryption_nonce",
+            "command_palette_usage_encryption_tag",
+        ),
+        (
+            "tag_prefix_settings_json",
+            "tag_prefix_settings_encryption_nonce",
+            "tag_prefix_settings_encryption_tag",
+        ),
+    )
+    settings = fetch_settings(connection)
+    if settings is None:
+        raise RuntimeError("Client-state rewrite requires app_settings row")
+    for value_column, nonce_column, tag_column in fields:
+        value = settings[value_column]
+        nonce = settings[nonce_column]
+        tag = settings[tag_column]
+        if value is None or value == "":
+            if nonce is not None or tag is not None:
+                raise RuntimeError(f"{value_column} has metadata without a payload")
+            continue
+        if not isinstance(value, str):
+            raise RuntimeError(f"{value_column} must be stored as a string")
+        if (nonce is None) != (tag is None):
+            raise RuntimeError(f"{value_column} has incomplete encryption metadata")
+        if force_plaintext:
+            if nonce is None:
+                continue
+            stored_value = encryption_service.decrypt_from_storage(value, nonce, tag)
+            next_nonce = None
+            next_tag = None
+        else:
+            if nonce is not None:
+                continue
+            stored_value, next_nonce, next_tag = encryption_service.encrypt_for_storage(value)
+        if value_column == "client_preferences_json":
+            update_client_preferences_json(
+                connection,
+                client_preferences_json=stored_value,
+                client_preferences_encryption_nonce=next_nonce,
+                client_preferences_encryption_tag=next_tag,
+            )
+        elif value_column == "command_palette_usage_json":
+            update_command_palette_usage_json(
+                connection,
+                command_palette_usage_json=stored_value,
+                command_palette_usage_encryption_nonce=next_nonce,
+                command_palette_usage_encryption_tag=next_tag,
+            )
+        else:
+            if value_column != "tag_prefix_settings_json":
+                raise RuntimeError(f"Unsupported client-state storage field: {value_column}")
+            update_tag_prefix_settings_json(
+                connection,
+                tag_prefix_settings_json=stored_value,
+                tag_prefix_settings_encryption_nonce=next_nonce,
+                tag_prefix_settings_encryption_tag=next_tag,
+            )
+        rewritten_count += 1
+    return rewritten_count

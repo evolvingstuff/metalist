@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "metalist"
-version = "0.3.1"
+dynamic = ["version"]
 description = "A minimalist single-user note-taking app with SSR, fast in-memory tree operations, and efficient sync."
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -39,11 +39,15 @@ dev = [
 [project.scripts]
 metalist = "main:cli"
 metalist-mcp = "mcp_client:main"
+metalist-audit-encryption = "app.encryption_audit:cli"
 
 [tool.setuptools]
 include-package-data = true
 py-modules = ["main", "mcp_client"]
 script-files = ["convert-from-legacy.py", "scripts/generate-lan-cert.sh"]
+
+[tool.setuptools.dynamic]
+version = {attr = "app.version.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["app*"]
