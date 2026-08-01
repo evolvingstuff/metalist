@@ -5,7 +5,7 @@
 
 ## Architecture
 - Entry: installed CLI `metalist` → `main.py:main()`; source-checkout `python main.py` still works, but plain `python main.py` now bootstraps every known namespace from the current checkout and exits after printing the per-namespace URLs.
-- Packaging: `app/version.py` is the single `0.2.0` version source consumed dynamically by `pyproject.toml` and runtime config; the package includes templates/static assets, and installed helper commands include `metalist-mcp`, `metalist-audit-encryption`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
+- Packaging: `app/version.py` is the single `0.2.1` version source consumed dynamically by `pyproject.toml` and runtime config; the package includes templates/static assets, and installed helper commands include `metalist-mcp`, `metalist-audit-encryption`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
 - Release workflow: `.github/workflows/publish-pypi.yml` builds the package and publishes it to PyPI via GitHub Trusted Publishing on `v*` tags or manual dispatch.
 - Prelaunch gate: `main.py` runs Python + JS startup sanity checks once in the parent process before any namespace restart/launch work. Python rules live in `app/startup_sanity.py`; JS rules live in `app/startup_js_sanity.py`; shared constants live in `app/startup_sanity_config.py`.
 - Startup bootstrap: `main.py` resolves `--namespace`, positional namespace shorthand (`metalist cla` or `python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so explicit single-namespace launches still expose the right DB path and listener ports at import time.
@@ -142,7 +142,7 @@ metalist
 - Security: `app/security/encryption.py` (encrypt/decrypt + key derivation).
 - Runtime hardening: `app/services/runtime_hardening.py` (core-dump disable by default; optional strict macOS swap/hibernation checks can fail startup when enabled).
 - Runtime diagnostics: `app/services/diagnostics.py` writes `~/MetaList/logs/<namespace>-server.log` and `~/MetaList/logs/<namespace>-server.fault.log`; Loguru logs rotate at 25 MB / 14 days, direct append logs (`namespace-*.log`, `namespace-delete-*.log`, `*-server.fault.log`) are compacted to a bounded tail when oversized, and startup crashes if managed logs remain outside the per-file cap or the logs directory exceeds 512 MB.
-- Startup sanity: `main._run_startup_sanity_gates(...)` runs Python AST/transaction checks plus the Python tree-sitter JS sanity pass; startup sanity no longer depends on the old `sanitycheck/` folder or Node.
+- Startup sanity: `main._run_startup_sanity_gates(...)` runs Python AST/transaction checks plus the Python tree-sitter JS sanity pass; source checkouts scan the full repository, while installed distributions scan only MetaList-owned `main.py`, `mcp_client.py`, and `app/` instead of neighboring `site-packages`; startup sanity no longer depends on the old `sanitycheck/` folder or Node.
 - DB guard: `app/db/session.py` (begin_writer/connect_reader + post-startup SELECT guard).
 - Undo: `app/services/undo_state.py`.
 - Ontology rules (v1): `app/services/tag_ontology.py` + `app/services/ontology_rules_store.py` (SQLite-backed, cached in memory).

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 
 EXCLUDE_DOT_FOLDERS = True
 IGNORE_GLOBS: tuple[str, ...] = ()
+
+INSTALLED_DISTRIBUTION_SOURCE_DIR_NAMES = frozenset({"app"})
+INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES = frozenset({"main.py", "mcp_client.py"})
 
 PY_ALLOWED_TRY_CALLEE_PREFIXES = (
     "requests.",
@@ -65,3 +70,12 @@ JS_TEST_SUFFIXES = (
 
 JS_TEST_BASENAMES = frozenset({"cypress.config.js", "cypress.config.ts"})
 JS_EXCLUDED_RELATIVE_PREFIXES = ("app/static/js/vendor/",)
+
+
+def is_installed_distribution_root(project_root: Path) -> bool:
+    assert isinstance(project_root, Path)
+    return (
+        not (project_root / "pyproject.toml").is_file()
+        and (project_root / "main.py").is_file()
+        and (project_root / "app").is_dir()
+    )

@@ -131,3 +131,15 @@ def test_assert_startup_js_sanity_raises_on_typescript_files(tmp_path: Path, cap
     captured = capsys.readouterr()
     assert "[startup] Running JS sanity checks..." in captured.out
     assert "[startup] JS sanity checks failed" in captured.out
+
+
+def test_installed_distribution_js_scan_excludes_neighboring_packages(tmp_path: Path) -> None:
+    _write_file(tmp_path / "main.py", "APP_NAME = 'MetaList'\n")
+    _write_file(tmp_path / "app" / "static" / "js" / "main.js", "const value = 1;\n")
+    _write_file(tmp_path / "dependency" / "external.js", "const value = first || second;\n")
+
+    paths, violations = collect_startup_js_sanity_violations(tmp_path)
+    relative_paths = [path.relative_to(tmp_path).as_posix() for path in paths]
+
+    assert relative_paths == ["app/static/js/main.js"]
+    assert violations == []

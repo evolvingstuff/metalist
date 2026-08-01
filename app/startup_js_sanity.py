@@ -13,6 +13,8 @@ import tree_sitter_javascript as tree_sitter_javascript
 
 from app.startup_sanity_config import EXCLUDE_DOT_FOLDERS
 from app.startup_sanity_config import IGNORE_GLOBS
+from app.startup_sanity_config import INSTALLED_DISTRIBUTION_SOURCE_DIR_NAMES
+from app.startup_sanity_config import INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES
 from app.startup_sanity_config import JS_ALLOWED_TRY_CALLEE_NAMES
 from app.startup_sanity_config import JS_ALLOWED_TRY_CALLEE_PREFIXES
 from app.startup_sanity_config import JS_EXCLUDED_RELATIVE_PREFIXES
@@ -20,6 +22,7 @@ from app.startup_sanity_config import JS_TEST_BASENAMES
 from app.startup_sanity_config import JS_TEST_DIR_NAMES
 from app.startup_sanity_config import JS_TEST_SUFFIXES
 from app.startup_sanity_config import SANITY_PRUNE_NAMES
+from app.startup_sanity_config import is_installed_distribution_root
 
 
 _JS_EXTENSIONS = frozenset({".js", ".jsx"})
@@ -85,16 +88,24 @@ def _discover_source_paths(
     extensions: frozenset[str],
 ) -> list[Path]:
     config = _load_js_sanity_config()
+    is_installed_distribution = is_installed_distribution_root(project_root)
     paths: list[Path] = []
 
     for current_root, directory_names, file_names in os.walk(project_root):
-        rel_root_path = Path(current_root).relative_to(project_root)
+        current_root_path = Path(current_root)
+        rel_root_path = current_root_path.relative_to(project_root)
         rel_root = rel_root_path.as_posix()
         if rel_root == ".":
             rel_root = ""
 
         kept_dirs: list[str] = []
         for directory_name in directory_names:
+            if (
+                is_installed_distribution
+                and current_root_path == project_root
+                and directory_name not in INSTALLED_DISTRIBUTION_SOURCE_DIR_NAMES
+            ):
+                continue
             if directory_name in SANITY_PRUNE_NAMES:
                 continue
             if config.exclude_dot_folders and directory_name.startswith("."):
@@ -116,6 +127,12 @@ def _discover_source_paths(
         directory_names[:] = kept_dirs
 
         for file_name in file_names:
+            if (
+                is_installed_distribution
+                and current_root_path == project_root
+                and file_name not in INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES
+            ):
+                continue
             if Path(file_name).suffix not in extensions:
                 continue
 

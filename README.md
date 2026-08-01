@@ -234,7 +234,7 @@ This repo now packages itself under the PyPI distribution name `metalist`. Curre
 
 Recommended release path:
 1. In the existing PyPI project `metalist`, configure GitHub Trusted Publishing for `evolvingstuff/metalist` and the workflow file `.github/workflows/publish-pypi.yml`.
-2. Push a tag such as `v0.2.0`.
+2. Push a tag such as `v0.2.1`.
 3. After the GitHub Actions workflow completes, users can run it with `uvx metalist`, install it persistently with `uv tool install metalist`, or install it with `pip install metalist`.
 
 If `--input` is omitted, a file picker opens (when `tkinter` is available).

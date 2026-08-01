@@ -6,9 +6,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.startup_sanity_config import INSTALLED_DISTRIBUTION_SOURCE_DIR_NAMES
+from app.startup_sanity_config import INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES
 from app.startup_sanity_config import PY_ALLOWED_EXCEPTION_NAMES
 from app.startup_sanity_config import PY_ALLOWED_TRY_CALLEE_PREFIXES
 from app.startup_sanity_config import SANITY_PRUNE_NAMES
+from app.startup_sanity_config import is_installed_distribution_root
+
+
 _MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _ROUTE_DECORATOR_METHODS = frozenset({"post", "put", "patch", "delete"})
 _MAX_VIOLATIONS = 200
@@ -545,10 +550,18 @@ def discover_python_source_paths(project_root: Path) -> list[Path]:
     if not isinstance(project_root, Path):
         raise TypeError(f"project_root must be a Path, got {type(project_root)}")
 
+    is_installed_distribution = is_installed_distribution_root(project_root)
     paths: list[Path] = []
     for current_root, directory_names, file_names in os.walk(project_root):
+        current_root_path = Path(current_root)
         kept_dirs: list[str] = []
         for directory_name in directory_names:
+            if (
+                is_installed_distribution
+                and current_root_path == project_root
+                and directory_name not in INSTALLED_DISTRIBUTION_SOURCE_DIR_NAMES
+            ):
+                continue
             if directory_name in SANITY_PRUNE_NAMES:
                 continue
             if directory_name.startswith("."):
@@ -557,9 +570,15 @@ def discover_python_source_paths(project_root: Path) -> list[Path]:
         directory_names[:] = kept_dirs
 
         for file_name in file_names:
+            if (
+                is_installed_distribution
+                and current_root_path == project_root
+                and file_name not in INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES
+            ):
+                continue
             if not file_name.endswith(".py"):
                 continue
-            path = Path(current_root) / file_name
+            path = current_root_path / file_name
             paths.append(path)
 
     paths.sort()
