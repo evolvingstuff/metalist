@@ -2,8 +2,9 @@
 """Import legacy MetaList JSON exports into the current SQLite schema.
 
 This script deletes the existing SQLite database referenced by
-`app.config.DATABASE_URL`, recreates the schema, and imports notes from the
-legacy JSON format. Use with care: this is destructive.
+`app.config.DATABASE_URL` and its files/sounds sidecar, recreates the schema,
+and imports notes from the legacy JSON format. Use with care: this is
+destructive.
 """
 
 from __future__ import annotations
@@ -35,6 +36,9 @@ from app.server_runtime import prepare_database_runtime_path
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import save_namespace_launch_profile
+from app.services.exception_capture import CapturedExceptionContext
+from app.services.tag_ontology import OntologyParseError
+from app.services.tag_ontology import parse_rules_text
 from app.utils.text_utils import strip_html
 
 
@@ -57,10 +61,12 @@ DATABASE_URL: str
 KDF_MAX_TIME_COST: int
 KDF_MIN_TIME_COST: int
 KDF_TIME_COST: int
+CURRENT_DATABASE_VERSION: int
 insert_note: Any
 update_links: Any
 insert_rule: Any
 insert_default_settings: Any
+resolve_file_database_path: Any
 SafeSession: Any
 AuthService: Any
 _RUNTIME_IMPORTS_READY = False
@@ -86,10 +92,12 @@ def _load_runtime_dependencies() -> None:
     global KDF_MAX_TIME_COST
     global KDF_MIN_TIME_COST
     global KDF_TIME_COST
+    global CURRENT_DATABASE_VERSION
     global insert_note
     global update_links
     global insert_rule
     global insert_default_settings
+    global resolve_file_database_path
     global SafeSession
     global AuthService
     global _RUNTIME_IMPORTS_READY
@@ -102,10 +110,12 @@ def _load_runtime_dependencies() -> None:
     from app.config import KDF_MAX_TIME_COST as runtime_kdf_max_time_cost
     from app.config import KDF_MIN_TIME_COST as runtime_kdf_min_time_cost
     from app.config import KDF_TIME_COST as runtime_kdf_time_cost
+    from app.db.migrations import CURRENT_DATABASE_VERSION as runtime_database_version
     from app.db.notes_sql import insert_note as runtime_insert_note
     from app.db.notes_sql import update_links as runtime_update_links
     from app.db.ontology_rules_sql import insert_rule as runtime_insert_rule
     from app.db.settings_sql import insert_default_settings as runtime_insert_default_settings
+    from app.db.file_session import resolve_file_database_path as runtime_resolve_file_database_path
     from app.models.database import SafeSession as runtime_safe_session
     from app.services.auth_service import AuthService as runtime_auth_service
 
@@ -113,10 +123,12 @@ def _load_runtime_dependencies() -> None:
     KDF_MAX_TIME_COST = runtime_kdf_max_time_cost
     KDF_MIN_TIME_COST = runtime_kdf_min_time_cost
     KDF_TIME_COST = runtime_kdf_time_cost
+    CURRENT_DATABASE_VERSION = runtime_database_version
     insert_note = runtime_insert_note
     update_links = runtime_update_links
     insert_rule = runtime_insert_rule
     insert_default_settings = runtime_insert_default_settings
+    resolve_file_database_path = runtime_resolve_file_database_path
     SafeSession = runtime_safe_session
     AuthService = runtime_auth_service
     _RUNTIME_IMPORTS_READY = True
@@ -288,7 +300,7 @@ def _configure_namespace_launch_profile(argv: list[str]) -> NamespaceLaunchProfi
     if mcp_port is None:
         mcp_port = _prompt_for_optional_port(label="MCP sidecar port", default_port=defaults.mcp_port)
 
-    return save_namespace_launch_profile(
+    return NamespaceLaunchProfile(
         namespace=namespace,
         port=port,
         https_port=https_port,
@@ -315,6 +327,16 @@ def _delete_existing_db(db_path: Path) -> None:
     shm_path = db_path.with_name(f"{db_path.name}-shm")
     if shm_path.exists():
         shm_path.unlink()
+
+
+def _delete_existing_namespace_databases(note_database_path: Path) -> None:
+    if not isinstance(note_database_path, Path):
+        raise TypeError(f"note_database_path must be a Path, got {type(note_database_path)}")
+    file_database_path = resolve_file_database_path(note_database_path)
+    if file_database_path == note_database_path:
+        raise RuntimeError("Files database path must differ from notes database path")
+    _delete_existing_db(note_database_path)
+    _delete_existing_db(file_database_path)
 
 
 def _pick_input_path() -> Path:
@@ -585,6 +607,26 @@ def _extract_rule_texts(raw_content: str, *, context: str) -> list[str]:
     return sorted(rules)
 
 
+def _legacy_rule_is_currently_valid(*, rule_text: str, context: str) -> bool:
+    parsed_rules = []
+    parse_capture = CapturedExceptionContext(OntologyParseError)
+    with parse_capture:
+        parsed_rules = parse_rules_text(text=rule_text, filename=context)
+    if parse_capture.captured_exception is not None:
+        print(
+            "Skipping invalid legacy ontology rule: "
+            f"context={context} rule={rule_text!r} error={parse_capture.captured_exception}",
+            file=sys.stderr,
+        )
+        return False
+    if len(parsed_rules) != 1:
+        raise RuntimeError(
+            "Generated legacy ontology implication must parse as exactly one current rule: "
+            f"context={context} rule={rule_text!r} parsed_count={len(parsed_rules)}"
+        )
+    return True
+
+
 
 
 def _is_effectively_empty(content: str) -> bool:
@@ -746,7 +788,7 @@ def _append_tag_token(tags: str, token: str) -> str:
 def _prepare_database() -> Path:
     db_path = _resolve_sqlite_path(DATABASE_URL)
     prepare_database_runtime_path(database_path=db_path)
-    _delete_existing_db(db_path)
+    _delete_existing_namespace_databases(db_path)
     SafeSession.use_file_db()
     session = SafeSession()
     try:
@@ -755,6 +797,27 @@ def _prepare_database() -> Path:
     finally:
         session.close()
     return db_path
+
+
+def _mark_database_current() -> None:
+    if not isinstance(CURRENT_DATABASE_VERSION, int) or CURRENT_DATABASE_VERSION <= 0:
+        raise RuntimeError(f"Invalid current database version: {CURRENT_DATABASE_VERSION!r}")
+    session = SafeSession()
+    try:
+        connection = session.connection()
+        row = connection.execute("PRAGMA user_version").fetchone()
+        if row is None:
+            raise RuntimeError("Converted database user_version PRAGMA returned no row")
+        existing_version = row[0]
+        if existing_version not in {0, CURRENT_DATABASE_VERSION}:
+            raise RuntimeError(
+                "Freshly converted database has unexpected user_version: "
+                f"{existing_version!r}"
+            )
+        connection.execute(f"PRAGMA user_version = {CURRENT_DATABASE_VERSION}")
+        session.commit()
+    finally:
+        session.close()
 
 
 def _assert_encryption_disabled(payload: dict[str, Any]) -> None:
@@ -831,6 +894,11 @@ def _import_item(
         if _has_implies_tag(tags) and not _is_effectively_empty(content):
             rule_texts = _extract_rule_texts(content, context=context)
             for rule_text in rule_texts:
+                if not _legacy_rule_is_currently_valid(
+                    rule_text=rule_text,
+                    context=context,
+                ):
+                    continue
                 insert_rule(
                     db.connection(),
                     rule_text=rule_text,
@@ -956,13 +1024,6 @@ def main(argv: list[str]) -> int:
     db_path = _prepare_database()
     print(f"Importing legacy data from {input_path}")
     print(f"Recreated database at {db_path}")
-    print(
-        "Saved namespace launch profile: "
-        f"namespace={launch_profile.namespace!r} "
-        f"http_port={launch_profile.port} "
-        f"https_port={launch_profile.https_port} "
-        f"mcp_port={launch_profile.mcp_port}"
-    )
 
     session = SafeSession()
     note_meta: dict[str, NoteMeta] = {}
@@ -984,6 +1045,25 @@ def main(argv: list[str]) -> int:
     if password is not None:
         _enable_password(password, args.kdf_iterations)
 
+    persisted_launch_profile = save_namespace_launch_profile(
+        namespace=launch_profile.namespace,
+        port=launch_profile.port,
+        https_port=launch_profile.https_port,
+        mcp_port=launch_profile.mcp_port,
+    )
+    if persisted_launch_profile != launch_profile:
+        raise RuntimeError(
+            "Persisted namespace launch profile does not match requested conversion profile"
+        )
+    _mark_database_current()
+
+    print(
+        "Saved namespace launch profile: "
+        f"namespace={launch_profile.namespace!r} "
+        f"http_port={launch_profile.port} "
+        f"https_port={launch_profile.https_port} "
+        f"mcp_port={launch_profile.mcp_port}"
+    )
     print(f"Imported {len(items)} root items, {total_notes} notes, {total_rules} rules.")
     return 0
 

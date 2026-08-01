@@ -9,6 +9,7 @@ import {
 } from '../login-namespace-picker.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
+import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js';
 
 
 const NAMESPACE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -862,7 +863,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
             if (typeof namespace !== 'string' || namespace.length === 0) {
                 throw new Error('Namespace catalog entry missing namespace');
             }
-            const profile = entry.default_profile;
+            const profile = selectNamespacePortsEditorProfile(entry);
             assertProfileShape(profile);
             return {
                 namespace,

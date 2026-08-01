@@ -5,7 +5,7 @@
 
 ## Architecture
 - Entry: installed CLI `metalist` → `main.py:main()`; source-checkout `python main.py` still works, but plain `python main.py` now bootstraps every known namespace from the current checkout and exits after printing the per-namespace URLs.
-- Packaging: `app/version.py` is the single `0.3.4` version source consumed dynamically by `pyproject.toml` and runtime config; the package includes templates/static assets, and installed helper commands include `metalist-mcp`, `metalist-audit-encryption`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
+- Packaging: `app/version.py` is the single `0.3.5` version source consumed dynamically by `pyproject.toml` and runtime config; the package includes templates/static assets, and installed helper commands include `metalist-mcp`, `metalist-audit-encryption`, `convert-from-legacy.py`, and `generate-lan-cert.sh`.
 - Release workflow: `.github/workflows/publish-pypi.yml` builds the package and publishes it to PyPI via GitHub Trusted Publishing on `v*` tags or manual dispatch.
 - Prelaunch gate: `main.py` runs Python + JS startup sanity checks once in the parent process before any namespace restart/launch work. Python rules live in `app/startup_sanity.py`; JS rules live in `app/startup_js_sanity.py`; shared constants live in `app/startup_sanity_config.py`.
 - Startup bootstrap: the installed `metalist` command creates `~/MetaList/namespaces/default/default.metalist.db`, its default settings row, and its suggested launch profile before the first encryption audit; `main.py` resolves `--namespace`, positional namespace shorthand (`metalist cla` or `python main.py cla`), `--port`, `--https-port`, and `--mcp-port` before importing `app.main`, so explicit single-namespace launches still expose the right DB path and listener ports at import time.
@@ -107,7 +107,7 @@
 - Undo/Redo: `/api2/notes/undo|redo` → `app/usecases/undo.py` / `app/usecases/redo.py` → `app/services/undo_state.py`.
 - Auth status: `GET /api2/auth/status` is polled by the client to detect session/auth changes.
 - Startup: explicit single-namespace `main.py` runs can select a namespaced DB (`METALIST_NAMESPACE` or `--namespace`) before importing `app.main`; `app/main.py` then initializes schema + settings for that selected DB. If encryption is disabled, it populates the content cache and hydrates NoteStore before enabling the read guard. If encryption is enabled, hydration is deferred until login (`POST /api2/auth/hydrate`) and the UI shows a first-load progress state. Plain source-checkout `python main.py` uses the namespace switcher to restart/start every known namespace instead of running just `default` in-process.
-- Legacy import: `convert-from-legacy.py` is a destructive fresh-import path that prompts for namespace/ports when omitted, persists that namespace launch profile, can prompt for password setup, and writes the same Argon2id vault metadata as runtime auth.
+- Legacy import: `convert-from-legacy.py` is a destructive fresh-import path that prompts for namespace/ports when omitted, deletes both the target notes DB and files/sounds sidecar, persists the launch profile after database recreation, stamps successful conversions at `CURRENT_DATABASE_VERSION`, validates generated ontology rules with the current parser while reporting/skipping invalid legacy rules, can prompt for password setup, and writes the same Argon2id vault metadata as runtime auth.
 
 ## Setup
 ```bash

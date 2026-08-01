@@ -25,6 +25,10 @@ test('encrypted login always shows and completes the database progress flow', as
     assert.ok(progressFlowIndex > loginRequestIndex);
     assert.match(loginSource, /data\.hydration_required !== true/);
     assert.doesNotMatch(loginSource, /if \(data\.hydration_required\)\s*\{/);
+    assert.match(
+        source,
+        /Hydration failed during \$\{failedPhase\}: \$\{failedMessage\}/,
+    );
 });
 
 
@@ -44,4 +48,21 @@ test('post-login startup failures do not return to the password form', async () 
         loginSource.slice(modeManagerInitialization),
         /this\.showLoginModal\(\)/,
     );
+});
+
+
+test('post-login startup failures expose the underlying browser error', async () => {
+    const source = await readFile(AUTH_SOURCE_URL, 'utf8');
+    const loginStart = source.indexOf('async handleLogin(event)');
+    const loginEnd = source.indexOf('async logout()', loginStart);
+    const loginSource = source.slice(loginStart, loginEnd);
+
+    assert.match(loginSource, /let startupPhase = 'reading the login response'/);
+    assert.match(loginSource, /startupPhase = 'hydrating the workspace'/);
+    assert.match(loginSource, /startupPhase = 'initializing the workspace UI'/);
+    assert.match(loginSource, /const errorMessage = error instanceof Error/);
+    assert.match(loginSource, /const diagnosticMessage = `\$\{startupPhase\}: \$\{errorMessage\}`/);
+    assert.match(loginSource, /loadingMessage\.textContent[\s\S]*\$\{diagnosticMessage\}/);
+    assert.match(loginSource, /window\.alert\(`[\s\S]*\$\{diagnosticMessage\}`\)/);
+    assert.match(loginSource, /throw new Error\(errorMessage\)/);
 });

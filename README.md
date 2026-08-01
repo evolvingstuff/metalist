@@ -205,9 +205,9 @@ Tool catalog and schemas:
 - `docs/mcp_tools.md`
 
 ### Legacy Import
-`convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL` and imports notes from a legacy JSON export.
+`convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL`, clears its files/sounds sidecar, and imports notes from a legacy JSON export.
 
-This is destructive. It deletes the existing DB file before rebuilding it.
+This is destructive. It deletes the existing notes DB and related files/sounds DB before rebuilding the namespace.
 
 Example usage:
 ```bash
@@ -234,11 +234,11 @@ This repo now packages itself under the PyPI distribution name `metalist`. Curre
 
 Recommended release path:
 1. In the existing PyPI project `metalist`, configure GitHub Trusted Publishing for `evolvingstuff/metalist` and the workflow file `.github/workflows/publish-pypi.yml`.
-2. Push a tag such as `v0.3.4`.
+2. Push a tag such as `v0.3.5`.
 3. After the GitHub Actions workflow completes, users can run it with `uvx metalist`, install it persistently with `uv tool install metalist`, or install it with `pip install metalist`.
 
 If `--input` is omitted, a file picker opens (when `tkinter` is available).
-Notes tagged with `@implies` are converted into ontology rules and are not imported as notes.
+Notes tagged with `@implies` are converted into ontology rules and are not imported as notes. Legacy rules that are invalid under the current ontology grammar are reported and skipped while valid rules continue importing.
 
 ### Run Tests
 

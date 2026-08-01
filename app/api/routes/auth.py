@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import sqlite3
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -88,6 +89,7 @@ from app.services.client_state_service import save_command_palette_usage
 
 
 router = APIRouter(prefix="/auth", tags=["auth2"])
+logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
@@ -437,7 +439,13 @@ def _on_hydration_done(future: Future) -> None:
         return
     error = future.exception()
     if error is not None:
-        hydration_state.fail(str(error))
+        error_message = f"{type(error).__name__}: {error}"
+        logger.error(
+            "Hydration worker failed: %s",
+            error_message,
+            exc_info=(type(error), error, error.__traceback__),
+        )
+        hydration_state.fail(error_message)
 
 
 def _start_hydration(*, first_load: bool, rebuild_required: bool) -> None:

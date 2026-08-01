@@ -533,7 +533,13 @@ export const Auth = {
                 if (typeof status.error === 'string' && status.error.length > 0) {
                     throw new Error(status.error);
                 }
-                throw new Error('Hydration failed');
+                const failedPhase = typeof status.phase === 'string' && status.phase.length > 0
+                    ? status.phase
+                    : 'unknown phase';
+                const failedMessage = typeof status.message === 'string' && status.message.length > 0
+                    ? status.message
+                    : 'server returned no error detail';
+                throw new Error(`Hydration failed during ${failedPhase}: ${failedMessage}`);
             }
             await new Promise((resolve) => setTimeout(resolve, 200));
             const pollResponse = await fetch(CONFIG.API.AUTH.HYDRATION_STATUS, { headers });
@@ -680,6 +686,7 @@ export const Auth = {
         }
 
         const responseText = await response.text();
+        let startupPhase = 'reading the login response';
         try {
             const data = JSON.parse(responseText);
 
@@ -691,28 +698,41 @@ export const Auth = {
             if (data.hydration_required !== true) {
                 throw new Error('Login response must require the progress flow');
             }
+            startupPhase = 'hydrating the workspace';
             await this._runHydrationFlow();
 
             console.log('[Auth] Login successful, initializing ModeManager');
             if (window.ModeManager) {
+                startupPhase = 'initializing the workspace UI';
                 await window.ModeManager.init({});
+                startupPhase = 'initializing the command palette';
                 await CommandPalette.init();
+                startupPhase = 'finishing the startup introduction';
                 await this.waitForStartupIntro();
+                startupPhase = 'revealing the workspace';
                 this.revealMainApp();
+                startupPhase = 'starting reminders';
                 await ReminderSurface.start();
                 document.body.dataset.appReady = 'true';
             } else {
+                startupPhase = 'reloading the workspace';
                 window.location.reload();
             }
         } catch (error) {
             document.body.classList.remove('loading');
             this._setLoginLoadingTitle('Workspace startup failed');
             const loadingMessage = this._requireElement('login-loading-message');
-            loadingMessage.textContent = 'Your password was accepted, but the workspace could not finish opening.';
+            const errorMessage = error instanceof Error
+                ? `${error.name}: ${error.message}`
+                : `Non-Error thrown: ${String(error)}`;
+            const diagnosticMessage = `${startupPhase}: ${errorMessage}`;
+            loadingMessage.textContent =
+                `Your password was accepted, but the workspace could not finish opening. ${diagnosticMessage}`;
+            window.alert(`MetaList workspace startup failed:\n\n${diagnosticMessage}`);
             if (error instanceof Error) {
                 throw error;
             }
-            throw new Error('Workspace startup failed');
+            throw new Error(errorMessage);
         }
         document.body.classList.remove('loading');
     },
