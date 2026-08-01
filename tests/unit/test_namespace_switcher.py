@@ -389,6 +389,53 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
     assert [result.namespace for result in results] == ["default", "cla"]
 
 
+def test_open_or_launch_all_namespaces_restarts_warm_running_processes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=None,
+        mcp_port=8765,
+    )
+
+    def _fake_open_or_launch_namespace(**kwargs) -> NamespaceOpenResult:
+        profile = NamespaceLaunchProfile(
+            namespace=kwargs["namespace"],
+            port=kwargs["port"],
+            https_port=kwargs["https_port"],
+            mcp_port=kwargs["mcp_port"],
+        )
+        return NamespaceOpenResult(
+            namespace=profile.namespace,
+            action="opened-running",
+            url=f"http://127.0.0.1:{profile.port}",
+            saved_profile=profile,
+            saved_for_next_launch=False,
+            message=f"Namespace {profile.namespace} is already running with a warm cache.",
+        )
+
+    restarted: list[tuple[str, int]] = []
+    monkeypatch.setattr(namespace_switcher, "open_or_launch_namespace", _fake_open_or_launch_namespace)
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_restart_running_namespace_process",
+        lambda *, environ, namespace, chosen_profile, running_port: restarted.append(
+            (namespace, running_port)
+        ),
+    )
+
+    results = open_or_launch_all_namespaces(environ={})
+
+    assert restarted == [("default", 8000)]
+    assert len(results) == 1
+    assert results[0].action == "restarted"
+    assert results[0].message == "Restarted namespace default."
+
+
 def test_open_or_launch_all_namespaces_rejects_missing_launch_profile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -646,6 +693,42 @@ def test_open_or_launch_namespace_restarts_running_namespace_and_updates_profile
     assert saved_profile is not None
     assert saved_profile.port == 8124
     assert saved_profile.mcp_port == 8767
+
+
+def test_open_or_launch_namespace_reuses_warm_running_namespace_when_profile_is_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="work",
+        port=8123,
+        https_port=None,
+        mcp_port=8766,
+    )
+    monkeypatch.setattr(namespace_switcher, "_find_running_namespace_port", lambda **kwargs: 8123)
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_restart_running_namespace_process",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("unchanged running namespace must not restart")
+        ),
+    )
+
+    result = open_or_launch_namespace(
+        environ={},
+        current_namespace="default",
+        namespace="work",
+        port=8123,
+        https_port=None,
+        mcp_port=8766,
+    )
+
+    assert result.action == "opened-running"
+    assert result.url == "http://127.0.0.1:8123"
+    assert result.saved_for_next_launch is False
+    assert result.message == "Namespace work is already running with a warm cache."
 
 
 def test_open_or_launch_namespace_short_circuits_current_namespace_process(
