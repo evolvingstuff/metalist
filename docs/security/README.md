@@ -63,11 +63,13 @@ Login Flow:
 3. Derive KEK (kek_salt + kek_iterations)
 4. Retrieve Encrypted DEK from database
 5. Decrypt DEK using KEK
-6. Discard KEK; keep only DEK in memory for session
-7. Use DEK for all note operations
-8. If the server started with encryption enabled, cache + note-store hydration is deferred.
+6. If `PRAGMA user_version` is behind, create an automatic namespace backup and run every database migration in order with the DEK.
+7. Verify migrated ciphertext metadata and advance the database version only after success.
+8. Discard KEK; keep only DEK in memory for session.
+9. Use DEK for all note operations.
+10. If the server started with encryption enabled, cache + note-store hydration is deferred.
    - The client calls `/api2/auth/hydrate` after login.
-   - A progress UI is shown while the cache + note store are populated.
+   - The progress UI is always shown after password submission, including when the database is already current and hydration is fast.
 
 Password Change Flow:
 1. Verify old password using stored Argon2id time-cost
@@ -120,6 +122,11 @@ app_settings table:
 - dek_tag: Authentication tag for DEK encryption
 - encryption_enabled: Boolean flag
 - encryption_algorithm: "AES-256-GCM"
+- client_preferences_json: Encrypted command-palette/UI preferences when password-protected
+- client_preferences_encryption_nonce / client_preferences_encryption_tag
+- command_palette_usage_json: Encrypted palette usage and query tokens when password-protected
+- command_palette_usage_encryption_nonce / command_palette_usage_encryption_tag
+- tag_prefix_settings_json + nonce/tag: Reserved encrypted tag-prefix settings payload
 
 notes table:
 - content: Encrypted note content (Base64)
@@ -145,6 +152,54 @@ writes).
 ```
 
 ## Security Properties
+
+### Application, Database, and Vault Versions
+
+- Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.2`.
+- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `1`.
+- Vault format: `VAULT_VERSION` remains an independent crypto compatibility number; current version is `3`.
+
+Passwordless namespaces run pending migrations during startup. Encrypted namespaces remain usable for password verification at their old database version, then create a backup and run all intermediate migrations after the password unwraps the DEK. Migration functions are ordered, transactional, idempotent, and refuse databases newer than the running application.
+
+Database migration `0 → 1` adds ciphertext metadata for client preferences, command-palette usage, and tag-prefix settings. Existing non-empty payloads are encrypted during the next successful namespace login. Password creation/removal also rewrites client state in the same direction as the rest of the namespace data.
+
+### Encrypted Namespace Storage Audit
+
+Run the read-only audit from a source checkout:
+
+```bash
+.venv/bin/python scripts/audit_encrypted_namespaces.py
+```
+
+Installed packages also expose `metalist-audit-encryption`. Both commands scan
+every canonical database under `~/MetaList/namespaces`. Use
+`--namespaces-dir /path/to/namespaces` to audit another namespace root.
+
+`main.py` runs the same read-only scan before every launcher startup, and
+`serve_namespace.py` runs it before every namespace-server startup. A passing
+scan is printed normally. A failing scan prints a large warning with explicit
+per-namespace `PASS`/`FAIL` results, then permits startup so an encrypted
+namespace can accept its password and complete a pending migration.
+
+For each namespace whose `app_settings.encryption_enabled` flag is set, the
+audit checks the main and sibling files databases. It validates every declared
+sensitive payload/ciphertext/nonce/tag tuple, AES-GCM nonce and tag sizes,
+cross-database DEK nonce uniqueness, encrypted-vault metadata, SQLite integrity,
+and the complete known table/column contract. Unknown tables or columns fail the
+audit so a new persisted feature cannot silently bypass review. Stored values
+and row identifiers are never printed. Plaintext namespaces are listed but not
+audited for ciphertext coverage.
+
+Exit status is `0` only when at least one namespace is found and every encrypted
+namespace passes; any unreadable database, schema drift, unprotected sensitive
+column, malformed encryption metadata, or reused DEK nonce exits `1`.
+
+This is a logical storage-contract audit and does not decrypt data. It proves
+that sensitive live SQLite values use the application's ciphertext storage
+format, but cannot authenticate ciphertext without each namespace password and
+does not inspect stale bytes in freelist pages, WAL files, backups, logs, swap,
+or filesystem snapshots. Stop namespace processes and use SQLite secure-delete
+and vacuum/checkpoint procedures when physical remanence is in scope.
 
 ### Strengths
 - **Strong Key Derivation**: Memory-hard Argon2id protects against brute force

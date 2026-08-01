@@ -138,6 +138,26 @@ test('client-state API helpers call the database-backed auth endpoints', async (
 });
 
 
+test('client-state API reports a server failure without parsing an HTML error page as JSON', async () => {
+    const restoreGlobals = installBrowserStorage();
+    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-500');
+    globalThis.fetch = async () => new Response('<html>Server error</html>', {
+        status: 500,
+        headers: {
+            'content-type': 'text/html; charset=utf-8',
+        },
+    });
+
+    const { loadClientState } = await import('../../app/static/js/modules/client-state-api.js');
+
+    await assert.rejects(
+        loadClientState(),
+        /Failed to load client state \(500\)/,
+    );
+    restoreGlobals();
+});
+
+
 test('migrateLegacyClientState persists merged legacy localStorage data and clears it', async () => {
     const restoreGlobals = installBrowserStorage();
     globalThis.localStorage.setItem('metalist.command_palette.pref.pref.theme', 'dark');

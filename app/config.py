@@ -5,8 +5,9 @@ from app.server_runtime import resolve_api_prefix
 from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_default_database_path
 from app.server_runtime import resolve_v1_api_prefix
+from app.version import __version__
 
-VERSION = "0.3.0"
+VERSION = __version__
 
 
 def _env_flag(name: str, default: bool) -> bool:

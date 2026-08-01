@@ -171,6 +171,7 @@ def test_delete_sound_rejects_default_sound_reference(memory_sound_db) -> None:
         token="",
     )
     save_client_preferences(
+        token="",
         preferences={
             "pref.reminder_default_popup_sound_enabled": "true",
             "pref.reminder_default_popup_sound_id": record.id,

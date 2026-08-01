@@ -248,7 +248,7 @@ export const Auth = {
                     return `${fallbackPrefix}: ${payload.message}`;
                 }
             }
-            return `${fallbackPrefix}: ${responseText}`;
+            return `${fallbackPrefix} (${response.status})`;
         }
         return `${fallbackPrefix} (${response.status})`;
     },
@@ -323,6 +323,15 @@ export const Auth = {
         bar.style.width = `${progressPercent}%`;
         this._clearLoginError();
         this._syncLoginNamespaceVisibility();
+    },
+
+    async _waitForBrowserPaint() {
+        await new Promise((resolveFirstFrame) => {
+            window.requestAnimationFrame(resolveFirstFrame);
+        });
+        await new Promise((resolveSecondFrame) => {
+            window.requestAnimationFrame(resolveSecondFrame);
+        });
     },
 
     _startStartupIntro() {
@@ -630,9 +639,17 @@ export const Auth = {
         }
         
         document.body.classList.add('loading');
+        this._showLoginLoadingPanel(
+            'Opening encrypted workspace…',
+            'Checking database version…',
+            'Verifying your password, backing up, and upgrading this namespace if needed…',
+            5,
+        );
+        await this._waitForBrowserPaint();
 
+        let response;
         try {
-            const response = await fetch(CONFIG.API.AUTH.LOGIN, {
+            response = await fetch(CONFIG.API.AUTH.LOGIN, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -640,54 +657,64 @@ export const Auth = {
                 },
                 body: JSON.stringify({ password })
             });
-
-            if (response.ok) {
-                const data = await response.json();
-
-                if (!data || typeof data !== 'object') {
-                    throw new Error('Login response missing body');
-                }
-                console.log('[Auth] Login successful');
-
-                if (data.hydration_required) {
-                    await this._runHydrationFlow();
-                }
-
-                console.log('[Auth] Login successful, initializing ModeManager');
-                if (window.ModeManager) {
-                    await window.ModeManager.init({});
-                    await CommandPalette.init();
-                    await this.waitForStartupIntro();
-                    this.revealMainApp();
-                    await ReminderSurface.start();
-                    document.body.dataset.appReady = 'true';
-                } else {
-                    window.location.reload();
-                }
-                return;
-            }
-
-            const errorBody = await response.json();
-            if (!errorBody || typeof errorBody !== 'object') {
-                throw new Error('Login error response missing body');
-            }
-            if (typeof errorBody.detail !== 'string') {
-                throw new Error('Login error response missing detail');
-            }
-            this.showLoginError(errorBody.detail);
         } catch (error) {
+            document.body.classList.remove('loading');
             this.showLoginModal();
             if (error instanceof Error) {
-                this.showLoginError(error.message);
+                this.showLoginError(`Login request failed: ${error.message}`);
+                throw error;
             }
-            if (!(error instanceof Error)) {
-                this.showLoginError('Login failed');
-                throw new Error('Login failed');
-            }
-            throw error;
-        } finally {
-            document.body.classList.remove('loading');
+            this.showLoginError('Login request failed');
+            throw new Error('Login request failed');
         }
+
+        if (!response.ok) {
+            const fallbackPrefix = response.status >= 500
+                ? 'Database check or login failed on the server'
+                : 'Login failed';
+            const errorDetail = await this._readResponseDetail(response, fallbackPrefix);
+            document.body.classList.remove('loading');
+            this.showLoginModal();
+            this.showLoginError(errorDetail);
+            return;
+        }
+
+        const responseText = await response.text();
+        try {
+            const data = JSON.parse(responseText);
+
+            if (!data || typeof data !== 'object') {
+                throw new Error('Login response missing body');
+            }
+            console.log('[Auth] Login successful');
+
+            if (data.hydration_required !== true) {
+                throw new Error('Login response must require the progress flow');
+            }
+            await this._runHydrationFlow();
+
+            console.log('[Auth] Login successful, initializing ModeManager');
+            if (window.ModeManager) {
+                await window.ModeManager.init({});
+                await CommandPalette.init();
+                await this.waitForStartupIntro();
+                this.revealMainApp();
+                await ReminderSurface.start();
+                document.body.dataset.appReady = 'true';
+            } else {
+                window.location.reload();
+            }
+        } catch (error) {
+            document.body.classList.remove('loading');
+            this._setLoginLoadingTitle('Workspace startup failed');
+            const loadingMessage = this._requireElement('login-loading-message');
+            loadingMessage.textContent = 'Your password was accepted, but the workspace could not finish opening.';
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Workspace startup failed');
+        }
+        document.body.classList.remove('loading');
     },
     
     /**

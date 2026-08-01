@@ -4,6 +4,7 @@ from threading import Lock
 from typing import Dict
 
 _PHASE_ORDER = (
+    "database_check",
     "decrypt",
     "note_store",
     "tag_inference",
@@ -94,7 +95,7 @@ class HydrationState:
                 self._processed = self._total
             self._status = "ready"
             self._phase = "complete"
-            self._message = "Hydration complete"
+            self._message = "Workspace ready"
 
     def fail(self, message: str) -> None:
         with self._lock:

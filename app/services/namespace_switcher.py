@@ -250,6 +250,17 @@ def open_or_launch_namespace(
         saved_profile=saved_profile,
     )
     if running_port is not None:
+        if not saved_for_next_launch and running_port == chosen_profile.port:
+            running_url = _build_browser_url(environ=environ, port=running_port)
+            assert running_url is not None
+            return NamespaceOpenResult(
+                namespace=normalized_namespace,
+                action="opened-running",
+                url=running_url,
+                saved_profile=chosen_profile,
+                saved_for_next_launch=False,
+                message=f"Namespace {normalized_namespace} is already running with a warm cache.",
+            )
         _restart_running_namespace_process(
             environ=environ,
             namespace=normalized_namespace,
@@ -309,16 +320,30 @@ def open_or_launch_all_namespaces(
     for entry in raw_namespaces:
         _assert_catalog_entry_has_launch_profile(entry=entry)
         profile = _catalog_default_profile(entry=entry)
-        results.append(
-            open_or_launch_namespace(
-                environ=environ,
-                current_namespace=None,
-                namespace=profile.namespace,
-                port=profile.port,
-                https_port=profile.https_port,
-                mcp_port=profile.mcp_port,
-            )
+        result = open_or_launch_namespace(
+            environ=environ,
+            current_namespace=None,
+            namespace=profile.namespace,
+            port=profile.port,
+            https_port=profile.https_port,
+            mcp_port=profile.mcp_port,
         )
+        if result.action == "opened-running":
+            _restart_running_namespace_process(
+                environ=environ,
+                namespace=result.namespace,
+                chosen_profile=result.saved_profile,
+                running_port=result.saved_profile.port,
+            )
+            result = NamespaceOpenResult(
+                namespace=result.namespace,
+                action="restarted",
+                url=result.url,
+                saved_profile=result.saved_profile,
+                saved_for_next_launch=result.saved_for_next_launch,
+                message=f"Restarted namespace {result.namespace}.",
+            )
+        results.append(result)
     return results
 
 

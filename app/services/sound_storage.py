@@ -741,7 +741,7 @@ def _decrypt_blob_field(
 def _assert_sound_not_selected(sound_id: str) -> None:
     if reminder_store.sound_is_referenced(sound_id=sound_id):
         raise ValueError("Sound is selected by a reminder; choose another sound before deleting it")
-    preferences = load_client_preferences()
+    preferences = load_client_preferences(token="")
     default_keys = {
         "pref.reminder_default_popup_sound_id": "default popup sound",
         "pref.reminder_default_ack_sound_id": "default Got it sound",

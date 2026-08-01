@@ -8,6 +8,8 @@ import pytest
 from app.db.settings_sql import fetch_settings
 from app.models.database import SafeSession
 from app.security.encryption import set_encryption_required
+from app.security.encryption import clear_encryption_key
+from app.security.encryption import set_session_dek
 from app.services.client_state_service import load_client_preferences
 from app.services.client_state_service import load_client_state
 from app.services.client_state_service import load_command_palette_usage
@@ -26,6 +28,7 @@ def memory_settings_db(
     try:
         yield
     finally:
+        clear_encryption_key()
         set_encryption_required(False)
         SafeSession.use_file_db()
 
@@ -35,9 +38,9 @@ def test_load_client_state_returns_empty_objects_when_settings_row_is_missing(
 ) -> None:
     del memory_settings_db
 
-    assert load_client_preferences() == {}
-    assert load_command_palette_usage() == {}
-    assert load_client_state() == {
+    assert load_client_preferences(token="") == {}
+    assert load_command_palette_usage(token="") == {}
+    assert load_client_state(token="") == {
         "preferences": {},
         "command_palette_usage": {},
     }
@@ -56,10 +59,10 @@ def test_save_client_preferences_round_trips_through_app_settings(
         "pref.theme": "dark",
     }
 
-    saved = save_client_preferences(preferences=expected_preferences)
+    saved = save_client_preferences(preferences=expected_preferences, token="")
 
     assert saved == expected_preferences
-    assert load_client_preferences() == expected_preferences
+    assert load_client_preferences(token="") == expected_preferences
 
     session = SafeSession()
     try:
@@ -77,6 +80,7 @@ def test_save_client_preferences_drops_obsolete_reminder_sound_keys(
     del memory_settings_db
 
     saved = save_client_preferences(
+        token="",
         preferences={
             "pref.theme": "dark",
             "pref.reminder_popup_sound_enabled": "true",
@@ -87,7 +91,7 @@ def test_save_client_preferences_drops_obsolete_reminder_sound_keys(
     )
 
     assert saved == {"pref.theme": "dark"}
-    assert load_client_preferences() == {"pref.theme": "dark"}
+    assert load_client_preferences(token="") == {"pref.theme": "dark"}
 
 
 def test_save_client_preferences_accepts_default_reminder_sound_keys(
@@ -102,10 +106,10 @@ def test_save_client_preferences_accepts_default_reminder_sound_keys(
         "pref.reminder_default_ack_sound_id": "11111111-1111-4111-8111-111111111111",
     }
 
-    saved = save_client_preferences(preferences=expected_preferences)
+    saved = save_client_preferences(preferences=expected_preferences, token="")
 
     assert saved == expected_preferences
-    assert load_client_preferences() == expected_preferences
+    assert load_client_preferences(token="") == expected_preferences
 
 
 def test_save_command_palette_usage_round_trips_through_app_settings(
@@ -121,11 +125,11 @@ def test_save_command_palette_usage_round_trips_through_app_settings(
         },
     }
 
-    saved = save_command_palette_usage(usage_state=expected_usage)
+    saved = save_command_palette_usage(usage_state=expected_usage, token="")
 
     assert saved == expected_usage
-    assert load_command_palette_usage() == expected_usage
-    assert load_client_state() == {
+    assert load_command_palette_usage(token="") == expected_usage
+    assert load_client_state(token="") == {
         "preferences": {},
         "command_palette_usage": expected_usage,
     }
@@ -140,13 +144,47 @@ def test_save_command_palette_usage_round_trips_through_app_settings(
         session.close()
 
 
+def test_encrypted_client_state_never_persists_plaintext(memory_settings_db) -> None:
+    del memory_settings_db
+    set_encryption_required(True)
+    set_session_dek(b"d" * 32)
+    preferences = {"pref.theme": "dark"}
+    usage = {
+        "command.logout": {
+            "count": 1,
+            "lastUsedAt": 42,
+            "lastQueryTokens": ["secret-query"],
+        },
+    }
+
+    save_client_preferences(preferences=preferences, token="")
+    save_command_palette_usage(usage_state=usage, token="")
+
+    session = SafeSession()
+    try:
+        with SafeSession.allow_reads("tests:client_state:encrypted"):
+            settings = fetch_settings(session.connection())
+        assert settings is not None
+        assert "dark" not in settings["client_preferences_json"]
+        assert "secret-query" not in settings["command_palette_usage_json"]
+        assert settings["client_preferences_encryption_nonce"] is not None
+        assert settings["client_preferences_encryption_tag"] is not None
+        assert settings["command_palette_usage_encryption_nonce"] is not None
+        assert settings["command_palette_usage_encryption_tag"] is not None
+    finally:
+        session.close()
+
+    assert load_client_preferences(token="") == preferences
+    assert load_command_palette_usage(token="") == usage
+
+
 def test_save_client_preferences_rejects_unknown_preference_key(
     memory_settings_db,
 ) -> None:
     del memory_settings_db
 
     with pytest.raises(RuntimeError, match="Unknown client preference key"):
-        save_client_preferences(preferences={"pref.not-real": "dark"})
+        save_client_preferences(preferences={"pref.not-real": "dark"}, token="")
 
 
 def test_save_command_palette_usage_rejects_invalid_usage_record(
@@ -156,6 +194,7 @@ def test_save_command_palette_usage_rejects_invalid_usage_record(
 
     with pytest.raises(RuntimeError, match="Usage count for command.logout must be a positive integer"):
         save_command_palette_usage(
+            token="",
             usage_state={
                 "command.logout": {
                     "count": 0,

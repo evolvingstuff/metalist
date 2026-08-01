@@ -23,7 +23,7 @@ sequenceDiagram
     end
     
     U->>Browser: Enter password
-    Browser->>Browser: Add loading cursor
+    Browser->>Browser: Show database/progress panel
     Browser->>API: POST /api2/auth/login {password}
     API->>API: Check login rate limiter (IP key)
     
@@ -43,6 +43,15 @@ sequenceDiagram
         Enc-->>AuthSvc: kek
         AuthSvc->>Enc: decrypt_dek(encrypted_dek, kek)
         Enc-->>AuthSvc: Decrypted DEK
+
+        AuthSvc->>DB: Read PRAGMA user_version
+        opt Database upgrade required
+            AuthSvc->>DB: Create automatic namespace backup
+            loop Each intermediate migration
+                AuthSvc->>DB: Apply idempotent schema/data rewrite with DEK
+                AuthSvc->>DB: Verify and advance user_version
+            end
+        end
         
         AuthSvc->>TokenSvc: create_token(client_info, dek)
         TokenSvc->>TokenSvc: secrets.token_urlsafe(32)
@@ -53,18 +62,18 @@ sequenceDiagram
         AuthSvc-->>API: {token, message, hydration_required}
         API-->>Browser: 200 OK + Set-Cookie: metalist_auth=<token> + hydration_required
         Browser->>Browser: Store HttpOnly auth cookie
-        alt hydration_required
-            Browser->>API: POST /api2/auth/hydrate
-            API-->>Browser: 200 {status: running}
-            loop Poll until ready
-                Browser->>API: GET /api2/auth/hydration-status
-                API-->>Browser: {status, processed, total, phase}
-            end
+        Browser->>API: POST /api2/auth/hydrate
+        API-->>Browser: 200 {status, phase: database_check}
+        loop Poll until ready
+            Browser->>API: GET /api2/auth/hydration-status
+            API-->>Browser: {status, processed, total, phase}
+        end
+        opt Cache rebuild required
             API->>Cache: populate_cache_from_db()
             Cache->>DB: Load all notes
             Cache->>Cache: Decrypt with DEK
-            API->>Browser: Hydration complete
         end
+        API->>Browser: Workspace ready
         Browser->>Browser: Remove loading cursor
         Browser->>Browser: Hide login, show app
     else Invalid Password

@@ -19,6 +19,10 @@ from app.config import (
     VAULT_VERSION,
 )
 from app.db.session import begin_writer
+from app.db.migrations import CURRENT_DATABASE_VERSION
+from app.db.migrations import MigrationResult
+from app.db.migrations import read_database_version
+from app.db.migrations import run_database_migrations
 from app.db.notes_sql import fetch_all_for_cache
 from app.db.notes_sql import update_note_fields_preserving_updated_at
 from app.db.ontology_rules_sql import fetch_all_rules as fetch_all_ontology_rules
@@ -44,6 +48,8 @@ from app.services.encryption import EncryptionService
 from app.services.maintenance_mode import maintenance_service
 from app.services.note_store import store as note_store
 from app.services.tab_state import tab_state_store
+from app.services.backup_service import create_timestamped_backup
+from app.services.client_state_service import rewrite_client_state_storage
 from app.security.encryption import set_encryption_required
 
 
@@ -196,6 +202,39 @@ class AuthService:
             settings.dek_tag,
             kek,
         )
+
+    def run_authenticated_database_migrations(self, *, dek: bytes) -> MigrationResult:
+        if not isinstance(dek, bytes) or len(dek) == 0:
+            raise ValueError("Database migrations require a non-empty DEK")
+        connection = self.db.connection()
+        initial_version = read_database_version(connection)
+        if initial_version > CURRENT_DATABASE_VERSION:
+            raise RuntimeError(
+                f"Database version {initial_version} is newer than supported version "
+                f"{CURRENT_DATABASE_VERSION}"
+            )
+        if initial_version == CURRENT_DATABASE_VERSION:
+            return MigrationResult(
+                initial_version=initial_version,
+                final_version=initial_version,
+                applied_versions=(),
+                rewritten_payload_count=0,
+            )
+        maintenance_service.enter_maintenance("Upgrading namespace database")
+        try:
+            create_timestamped_backup()
+            migration_encryption = EncryptionService()
+            migration_encryption.dek = dek
+            with SafeSession.allow_reads("auth:database_migrations"):
+                with connection:
+                    migration_result = run_database_migrations(
+                        connection=connection,
+                        encryption_enabled=True,
+                        encryption_service=migration_encryption,
+                    )
+            return migration_result
+        finally:
+            maintenance_service.exit_maintenance()
 
     def set_password(self, password: str, time_cost: int) -> Tuple[bool, str]:
         """Enable password protection by encrypting all existing content."""
@@ -375,6 +414,11 @@ class AuthService:
                     force_plaintext=False,
                 )
                 encrypted_reminder_count = reminder_store.rewrite_persisted_reminders(
+                    connection=connection,
+                    encryption_service=self.encryption,
+                    force_plaintext=False,
+                )
+                rewrite_client_state_storage(
                     connection=connection,
                     encryption_service=self.encryption,
                     force_plaintext=False,
@@ -651,6 +695,11 @@ class AuthService:
                 decrypted_reminder_count = reminder_store.rewrite_persisted_reminders(
                     connection=connection,
                     encryption_service=None,
+                    force_plaintext=True,
+                )
+                rewrite_client_state_storage(
+                    connection=connection,
+                    encryption_service=self.encryption,
                     force_plaintext=True,
                 )
                 clear_password_settings(connection)

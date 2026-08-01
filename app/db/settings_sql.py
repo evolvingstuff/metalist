@@ -51,7 +51,22 @@ def fetch_settings(connection: GuardedConnection | sqlite3.Connection) -> Option
         "backup_settings_encryption_nonce": row["backup_settings_encryption_nonce"],
         "backup_settings_encryption_tag": row["backup_settings_encryption_tag"],
         "client_preferences_json": row["client_preferences_json"],
+        "client_preferences_encryption_nonce": row["client_preferences_encryption_nonce"],
+        "client_preferences_encryption_tag": row["client_preferences_encryption_tag"],
         "command_palette_usage_json": row["command_palette_usage_json"],
+        "command_palette_usage_encryption_nonce": row[
+            "command_palette_usage_encryption_nonce"
+        ],
+        "command_palette_usage_encryption_tag": row[
+            "command_palette_usage_encryption_tag"
+        ],
+        "tag_prefix_settings_json": row["tag_prefix_settings_json"],
+        "tag_prefix_settings_encryption_nonce": row[
+            "tag_prefix_settings_encryption_nonce"
+        ],
+        "tag_prefix_settings_encryption_tag": row[
+            "tag_prefix_settings_encryption_tag"
+        ],
         "session_timeout_minutes": row["session_timeout_minutes"],
         "created_at": datetime.fromisoformat(row["created_at"]),
         "updated_at": datetime.fromisoformat(row["updated_at"]),
@@ -168,6 +183,8 @@ def update_client_preferences_json(
     connection: GuardedConnection | sqlite3.Connection,
     *,
     client_preferences_json: str,
+    client_preferences_encryption_nonce: bytes | None,
+    client_preferences_encryption_tag: bytes | None,
 ) -> None:
     if not isinstance(client_preferences_json, str):
         raise TypeError("client_preferences_json must be a string")
@@ -177,11 +194,15 @@ def update_client_preferences_json(
         f"""
         UPDATE {APP_SETTINGS_TABLE}
         SET client_preferences_json = ?,
+            client_preferences_encryption_nonce = ?,
+            client_preferences_encryption_tag = ?,
             updated_at = ?
         WHERE id = 1
         """,
         (
             client_preferences_json,
+            client_preferences_encryption_nonce,
+            client_preferences_encryption_tag,
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
     )
@@ -191,6 +212,8 @@ def update_command_palette_usage_json(
     connection: GuardedConnection | sqlite3.Connection,
     *,
     command_palette_usage_json: str,
+    command_palette_usage_encryption_nonce: bytes | None,
+    command_palette_usage_encryption_tag: bytes | None,
 ) -> None:
     if not isinstance(command_palette_usage_json, str):
         raise TypeError("command_palette_usage_json must be a string")
@@ -200,11 +223,44 @@ def update_command_palette_usage_json(
         f"""
         UPDATE {APP_SETTINGS_TABLE}
         SET command_palette_usage_json = ?,
+            command_palette_usage_encryption_nonce = ?,
+            command_palette_usage_encryption_tag = ?,
             updated_at = ?
         WHERE id = 1
         """,
         (
             command_palette_usage_json,
+            command_palette_usage_encryption_nonce,
+            command_palette_usage_encryption_tag,
+            _serialize_datetime(datetime.now(timezone.utc)),
+        ),
+    )
+
+
+def update_tag_prefix_settings_json(
+    connection: GuardedConnection | sqlite3.Connection,
+    *,
+    tag_prefix_settings_json: str,
+    tag_prefix_settings_encryption_nonce: bytes | None,
+    tag_prefix_settings_encryption_tag: bytes | None,
+) -> None:
+    if not isinstance(tag_prefix_settings_json, str):
+        raise TypeError("tag_prefix_settings_json must be a string")
+
+    conn = _conn(connection)
+    conn.execute(
+        f"""
+        UPDATE {APP_SETTINGS_TABLE}
+        SET tag_prefix_settings_json = ?,
+            tag_prefix_settings_encryption_nonce = ?,
+            tag_prefix_settings_encryption_tag = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            tag_prefix_settings_json,
+            tag_prefix_settings_encryption_nonce,
+            tag_prefix_settings_encryption_tag,
             _serialize_datetime(datetime.now(timezone.utc)),
         ),
     )
