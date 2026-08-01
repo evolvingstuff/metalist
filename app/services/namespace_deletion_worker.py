@@ -5,6 +5,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import traceback
 
@@ -14,6 +15,8 @@ from app.server_runtime import validate_namespace
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import mark_namespace_deletion_job_failed
 from app.services.namespace_deletion_jobs import mark_namespace_deletion_job_succeeded
+from app.services.windows_process_control import is_process_running as is_windows_process_running
+from app.services.windows_process_control import stop_process as stop_windows_process
 
 
 _WAIT_POLL_INTERVAL_SECONDS = 0.25
@@ -50,6 +53,8 @@ def _is_process_running(*, pid: int) -> bool:
         raise TypeError(f"pid must be an int, got {type(pid)}")
     if pid <= 0:
         raise ValueError(f"pid must be positive, got: {pid}")
+    if sys.platform == "win32":
+        return is_windows_process_running(pid=pid)
     kill_capture = CapturedExceptionContext(ProcessLookupError, PermissionError)
     with kill_capture:
         os.kill(pid, 0)
@@ -92,6 +97,9 @@ def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
 
 
 def _stop_process(*, pid: int) -> None:
+    if sys.platform == "win32":
+        stop_windows_process(pid=pid)
+        return
     if _wait_for_process_exit(pid=pid, timeout_seconds=_INITIAL_EXIT_GRACE_SECONDS):
         return
 

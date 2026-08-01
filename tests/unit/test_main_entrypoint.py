@@ -749,6 +749,22 @@ def test_find_listening_pids_for_port_returns_unique_listener_pids(monkeypatch) 
     assert main_entrypoint._find_listening_pids_for_port(port=8443) == [123, 456]
 
 
+def test_find_listening_pids_for_port_uses_windows_process_control_without_lsof(monkeypatch) -> None:
+    monkeypatch.setattr(main_entrypoint.sys, "platform", "win32")
+    monkeypatch.setattr(
+        main_entrypoint,
+        "find_windows_listening_pids_for_port",
+        lambda *, port: [4321],
+    )
+    monkeypatch.setattr(
+        main_entrypoint.shutil,
+        "which",
+        lambda name: (_ for _ in ()).throw(AssertionError("Windows startup must not require lsof")),
+    )
+
+    assert main_entrypoint._find_listening_pids_for_port(port=8443) == [4321]
+
+
 def test_evict_processes_listening_on_port_stops_foreign_pids(monkeypatch) -> None:
     stopped_pids: list[int] = []
 

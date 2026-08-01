@@ -30,6 +30,9 @@ from app.server_runtime import validate_namespace
 from app.services.diagnostics import recycle_direct_append_log_file
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import create_namespace_deletion_job
+from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
+from app.services.windows_process_control import is_process_running as is_windows_process_running
+from app.services.windows_process_control import stop_process as stop_windows_process
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -1086,6 +1089,8 @@ def _is_process_running(*, pid: int) -> bool:
         raise TypeError(f"pid must be an int, got {type(pid)}")
     if pid <= 0:
         raise ValueError(f"pid must be positive, got: {pid}")
+    if sys.platform == "win32":
+        return is_windows_process_running(pid=pid)
     kill_capture = CapturedExceptionContext(ProcessLookupError, PermissionError)
     with kill_capture:
         os.kill(pid, 0)
@@ -1128,6 +1133,9 @@ def _send_signal_if_running(*, pid: int, signal_number: int) -> None:
 
 
 def _stop_process(*, pid: int) -> None:
+    if sys.platform == "win32":
+        stop_windows_process(pid=pid)
+        return
     if not _is_process_running(pid=pid):
         return
 
@@ -1147,6 +1155,8 @@ def _find_listening_pids_for_port(*, port: int) -> list[int]:
         raise TypeError(f"port must be an int, got {type(port)}")
     if port <= 0 or port > 65535:
         raise ValueError(f"port must be between 1 and 65535, got: {port}")
+    if sys.platform == "win32":
+        return find_windows_listening_pids_for_port(port=port)
 
     lsof_path = shutil.which("lsof")
     if lsof_path is None:
