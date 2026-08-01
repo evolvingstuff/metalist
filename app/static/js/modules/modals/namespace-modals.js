@@ -3,7 +3,10 @@ import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { ErrorHandler } from '../error-handler.js';
 import { settleResult } from '../async-result.js';
-import { rewriteNamespaceUrlPreservingCurrentHost } from '../login-namespace-picker.js';
+import {
+    navigateNamespaceInCurrentTab,
+    rewriteNamespaceUrlPreservingCurrentHost,
+} from '../login-namespace-picker.js';
 import { buildSessionHeaders } from '../session-auth.js';
 import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
 
@@ -442,8 +445,6 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
             return;
         }
         const payload = payloadResult.value;
-        const pendingTab = window.open('about:blank', '_blank');
-        renderNamespaceLoadingTab(pendingTab, payload.namespace);
         this.updateModalState({
             submitting: true,
             error: '',
@@ -459,18 +460,10 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
             if (typeof response.url !== 'string' || response.url.length === 0) {
                 throw new Error('Namespace open response missing url');
             }
-            const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(response.url, window.location);
-            if (pendingTab && !pendingTab.closed) {
-                pendingTab.location.replace(navigationUrl);
-            } else {
-                window.open(navigationUrl, '_blank', 'noopener,noreferrer');
-            }
+            navigateNamespaceInCurrentTab(response.url, window);
             this.close();
         });
         if (!switchResult.ok) {
-            if (pendingTab && !pendingTab.closed) {
-                pendingTab.close();
-            }
             const error = switchResult.error;
             const message = error instanceof Error ? error.message : 'Failed to switch namespace';
             this.updateModalState({

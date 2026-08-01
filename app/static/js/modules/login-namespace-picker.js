@@ -86,3 +86,16 @@ export function rewriteNamespaceUrlPreservingCurrentHost(rawUrl, currentLocation
     parsedUrl.hostname = hostname;
     return parsedUrl.toString();
 }
+
+
+export function navigateNamespaceInCurrentTab(rawUrl, browserWindow) {
+    if (!browserWindow || typeof browserWindow !== 'object') {
+        throw new Error('navigateNamespaceInCurrentTab requires browserWindow object');
+    }
+    const currentLocation = browserWindow.location;
+    if (!currentLocation || typeof currentLocation.replace !== 'function') {
+        throw new Error('navigateNamespaceInCurrentTab requires location.replace');
+    }
+    const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(rawUrl, currentLocation);
+    currentLocation.replace(navigationUrl);
+}
