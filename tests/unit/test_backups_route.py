@@ -74,6 +74,46 @@ def test_serialize_settings_response_returns_folder_and_namespace_fields(
     }
 
 
+def test_serialize_settings_response_removes_deleted_saved_namespaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(backups_route, "_list_available_namespaces", lambda: ["cla", "thomas"])
+
+    response = backups_route._serialize_settings_response(
+        {
+            "folder_path": "/tmp/backups",
+            "selected_namespaces": ["default", "cla", "recovered", "thomas"],
+            "retention_count": 5,
+        }
+    )
+
+    assert response.available_namespaces == ["cla", "thomas"]
+    assert response.selected_namespaces == ["cla", "thomas"]
+
+
+def test_list_available_namespaces_requires_an_existing_namespace_database(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    for namespace in ("default", "recovered", "cla", "thomas"):
+        (namespaces_directory / namespace).mkdir(parents=True)
+    (namespaces_directory / "cla" / "cla.metalist.db").touch()
+    (namespaces_directory / "thomas" / "thomas.metalist.db").touch()
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaces_directory",
+        lambda: namespaces_directory,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: namespaces_directory / namespace / f"{namespace}.metalist.db",
+    )
+
+    assert backups_route._list_available_namespaces() == ["cla", "thomas"]
+
+
 def test_put_backup_settings_normalizes_and_passes_folder_path_and_namespaces(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -103,6 +143,7 @@ def test_put_backup_settings_normalizes_and_passes_folder_path_and_namespaces(
         }
 
     monkeypatch.setattr(backups_route, "update_backup_settings", _capture_update_settings)
+    monkeypatch.setattr(backups_route, "_list_available_namespaces", lambda: ["default", "work"])
     monkeypatch.setattr(
         backups_route,
         "resolve_namespaced_database_path",
@@ -189,6 +230,48 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
     assert response.results[1].namespace == "work"
     assert response.results[1].created_filename == work_backup.filename
     assert response.results[1].size_bytes == work_backup.size_bytes
+
+
+def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    cla_database = tmp_path / "cla.metalist.db"
+    cla_database.touch()
+    backup = BackupFileInfo(
+        filename="cla-20260801-194825-000000.metalist-backup.tar.gz",
+        created_at="2026-08-01T19:48:25+00:00",
+        size_bytes=128,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["default", "cla", "recovered"],
+            "retention_count": 5,
+        },
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: cla_database if namespace == "cla" else tmp_path / f"missing-{namespace}.db",
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "create_timestamped_backup_for_paths",
+        lambda database_path, backup_directory: backup,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "list_backups_in_directory",
+        lambda backup_directory, *, database_path=None: [backup],
+    )
+
+    response = backups_route.run_backup(token="token")
+
+    assert [result.namespace for result in response.results] == ["cla"]
 
 
 def test_run_backup_rejects_when_no_namespaces_are_selected(

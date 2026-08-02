@@ -193,13 +193,16 @@ def _serialize_settings_response(settings: dict[str, object]) -> BackupSettingsR
             raise RuntimeError("backup settings selected_namespaces entries must be strings")
         normalized_selected_namespaces.append(validate_namespace(namespace=selected_namespace))
     available_namespaces = _list_available_namespaces()
-    for selected_namespace in normalized_selected_namespaces:
-        if selected_namespace not in available_namespaces:
-            available_namespaces.append(selected_namespace)
+    available_namespace_set = set(available_namespaces)
+    existing_selected_namespaces = [
+        namespace
+        for namespace in normalized_selected_namespaces
+        if namespace in available_namespace_set
+    ]
     return BackupSettingsResponse(
         folder_path=folder_path,
-        selected_namespaces=normalized_selected_namespaces,
-        available_namespaces=_order_namespaces(namespaces=available_namespaces),
+        selected_namespaces=_order_namespaces(namespaces=existing_selected_namespaces),
+        available_namespaces=available_namespaces,
         retention_count=int(settings["retention_count"]),
     )
 
@@ -269,14 +272,18 @@ def _order_namespaces(*, namespaces: list[str]) -> list[str]:
 
 
 def _list_available_namespaces() -> list[str]:
-    discovered_namespaces = [ACTIVE_NAMESPACE]
+    discovered_namespaces: list[str] = []
     namespaces_directory = resolve_namespaces_directory()
     if namespaces_directory.exists():
         if not namespaces_directory.is_dir():
             raise RuntimeError(f"namespaces directory is not a directory: {namespaces_directory}")
         for child in namespaces_directory.iterdir():
-            if child.is_dir():
-                discovered_namespaces.append(child.name)
+            if not child.is_dir():
+                continue
+            namespace = validate_namespace(namespace=child.name)
+            database_path = resolve_namespaced_database_path(namespace=namespace)
+            if database_path.is_file():
+                discovered_namespaces.append(namespace)
     return _order_namespaces(namespaces=discovered_namespaces)
 
 
@@ -296,6 +303,21 @@ def _require_existing_selected_namespaces(*, selected_namespaces: list[str]) -> 
         if not database_path.is_file():
             raise HTTPException(status_code=400, detail=f"Selected namespace has no database yet: {namespace}")
     return normalized_selected_namespaces
+
+
+def _filter_deleted_selected_namespaces(*, selected_namespaces: list[str]) -> list[str]:
+    normalized_selected_namespaces = _normalize_selected_namespaces(selected_namespaces=selected_namespaces)
+    existing_selected_namespaces: list[str] = []
+    for namespace in normalized_selected_namespaces:
+        database_path = resolve_namespaced_database_path(namespace=namespace)
+        if database_path.is_file():
+            existing_selected_namespaces.append(namespace)
+    if len(existing_selected_namespaces) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="None of the selected backup namespaces still exist",
+        )
+    return existing_selected_namespaces
 
 
 def _run_native_folder_picker_command(*, command: list[str]) -> str | None:
@@ -873,7 +895,7 @@ def run_backup(token: Annotated[str, Depends(_require_auth)]):
         raise RuntimeError("backup settings selected_namespaces must be a list")
     if not isinstance(retention_count, int) or retention_count <= 0:
         raise RuntimeError("backup settings retention_count must be a positive integer")
-    normalized_selected_namespaces = _require_existing_selected_namespaces(
+    normalized_selected_namespaces = _filter_deleted_selected_namespaces(
         selected_namespaces=selected_namespaces,
     )
 
