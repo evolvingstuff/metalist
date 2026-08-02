@@ -45,6 +45,8 @@ _PROCESS_WAIT_POLL_INTERVAL_SECONDS = 0.25
 _TERMINATE_GRACE_SECONDS = 5.0
 _KILL_GRACE_SECONDS = 5.0
 _PROBE_TAB_ID = "namespace-switcher-probe"
+_LAUNCH_LOG_TAIL_BYTES = 16 * 1024
+ORCHESTRATED_CHILD_ENV_NAME = "METALIST_ORCHESTRATED_CHILD"
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,12 @@ class NamespaceOpenResult:
     saved_profile: NamespaceLaunchProfile
     saved_for_next_launch: bool
     message: str
+
+
+@dataclass(frozen=True)
+class NamespaceLaunchProcess:
+    process: subprocess.Popen[bytes]
+    log_path: Path
 
 
 @dataclass(frozen=True)
@@ -301,7 +309,7 @@ def open_or_launch_namespace(
         chosen_profile=chosen_profile,
         allowed_listener_pids=frozenset(),
     )
-    _launch_namespace_process(
+    launched_process = _launch_namespace_process(
         environ=environ,
         chosen_profile=chosen_profile,
     )
@@ -309,6 +317,7 @@ def open_or_launch_namespace(
         environ=environ,
         namespace=normalized_namespace,
         port=chosen_profile.port,
+        launched_process=launched_process,
     )
     launched_url = _build_browser_url(environ=environ, port=chosen_profile.port)
     assert launched_url is not None
@@ -1517,7 +1526,7 @@ def _launch_namespace_process(
     *,
     environ: Mapping[str, str],
     chosen_profile: NamespaceLaunchProfile,
-) -> None:
+) -> NamespaceLaunchProcess:
     child_environ = dict(environ)
     for name in (
         "METALIST_NAMESPACE",
@@ -1527,6 +1536,7 @@ def _launch_namespace_process(
     ):
         if name in child_environ:
             del child_environ[name]
+    child_environ[ORCHESTRATED_CHILD_ENV_NAME] = "1"
     command = _resolve_main_launch_command(environ=child_environ)
     command.extend(
         [
@@ -1546,7 +1556,7 @@ def _launch_namespace_process(
     recycle_direct_append_log_file(path=log_path)
     log_handle = open(log_path, "ab")
     try:
-        subprocess.Popen(
+        process = subprocess.Popen(
             command,
             env=child_environ,
             stdout=log_handle,
@@ -1555,6 +1565,7 @@ def _launch_namespace_process(
         )
     finally:
         log_handle.close()
+    return NamespaceLaunchProcess(process=process, log_path=log_path)
 
 
 def _stop_processes_listening_on_port(*, port: int) -> None:
@@ -1584,7 +1595,7 @@ def _restart_running_namespace_process(
         allowed_listener_pids=allowed_listener_pids,
     )
     _stop_processes_listening_on_port(port=running_port)
-    _launch_namespace_process(
+    launched_process = _launch_namespace_process(
         environ=environ,
         chosen_profile=chosen_profile,
     )
@@ -1592,7 +1603,23 @@ def _restart_running_namespace_process(
         environ=environ,
         namespace=namespace,
         port=chosen_profile.port,
+        launched_process=launched_process,
     )
+
+
+def _read_namespace_launch_log_tail(*, log_path: Path) -> str:
+    read_capture = CapturedExceptionContext(OSError)
+    log_bytes: bytes | None = None
+    with read_capture:
+        log_bytes = log_path.read_bytes()
+    if read_capture.captured_exception is not None:
+        return f"<unable to read child log: {read_capture.captured_exception}>"
+    if log_bytes is None:
+        raise RuntimeError("Namespace child log read produced no bytes")
+    tail = log_bytes[-_LAUNCH_LOG_TAIL_BYTES:].decode("utf-8", errors="replace").strip()
+    if tail == "":
+        return "<child log is empty>"
+    return tail
 
 
 def _wait_for_namespace_ready(
@@ -1600,12 +1627,20 @@ def _wait_for_namespace_ready(
     environ: Mapping[str, str],
     namespace: str,
     port: int,
+    launched_process: NamespaceLaunchProcess,
 ) -> None:
     main_server_config = resolve_main_server_config(environ=environ)
     connect_host = resolve_backend_connect_host(host=main_server_config.host)
     api_prefix = resolve_api_prefix(environ=environ)
     deadline = time.monotonic() + _LAUNCH_READY_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
+        exit_code = launched_process.process.poll()
+        if exit_code is not None:
+            log_tail = _read_namespace_launch_log_tail(log_path=launched_process.log_path)
+            raise RuntimeError(
+                f"Namespace {namespace} process exited with code {exit_code}. "
+                f"Child log: {launched_process.log_path}\n{log_tail}"
+            )
         status_payload = _probe_namespace_status(
             host=connect_host,
             port=port,
@@ -1614,7 +1649,11 @@ def _wait_for_namespace_ready(
         if status_payload is not None and status_payload.get("namespace") == namespace:
             return
         time.sleep(_READY_POLL_INTERVAL_SECONDS)
-    raise RuntimeError(f"Timed out waiting for namespace {namespace} on port {port}")
+    log_tail = _read_namespace_launch_log_tail(log_path=launched_process.log_path)
+    raise RuntimeError(
+        f"Timed out waiting for namespace {namespace} on port {port}. "
+        f"Child log: {launched_process.log_path}\n{log_tail}"
+    )
 
 
 def _probe_namespace_status(

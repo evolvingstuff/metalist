@@ -33,6 +33,7 @@ from app.startup_sanity import assert_startup_sanity
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import NamespaceOpenResult
+from app.services.namespace_switcher import ORCHESTRATED_CHILD_ENV_NAME
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.self_update import schedule_self_update
 from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
@@ -777,6 +778,13 @@ def main(argv: list[str]) -> None:
 
 def cli() -> None:
     argv = sys.argv[1:]
+    if ORCHESTRATED_CHILD_ENV_NAME in os.environ:
+        orchestrated_child = os.environ[ORCHESTRATED_CHILD_ENV_NAME]
+        if orchestrated_child != "1":
+            raise RuntimeError(f"{ORCHESTRATED_CHILD_ENV_NAME} must be '1' when set")
+        del os.environ[ORCHESTRATED_CHILD_ENV_NAME]
+        run_orchestrated_namespace_server(argv)
+        return
     if len(argv) != 0 and argv[0] == "update":
         if argv != ["update"]:
             raise RuntimeError("Usage: metalist update")
@@ -799,6 +807,12 @@ def run_namespace_server(argv: list[str]) -> None:
     _run_startup_encryption_audit(
         namespaces_directory=resolve_namespaces_directory(),
     )
+    apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
+    _run_namespace_server_for_current_env(argv=argv)
+
+
+def run_orchestrated_namespace_server(argv: list[str]) -> None:
+    logging.getLogger("uvicorn.access").addFilter(FilterCheckUpdates())
     apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
     _run_namespace_server_for_current_env(argv=argv)
 

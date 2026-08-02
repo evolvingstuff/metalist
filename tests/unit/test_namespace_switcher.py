@@ -264,13 +264,14 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     _disable_default_tls(monkeypatch, tmp_path)
     launched: list[tuple[str, int, int]] = []
-    waited: list[tuple[str, int]] = []
+    waited: list[tuple[str, int, object]] = []
 
     def _fake_launch(*, environ, chosen_profile):
         launched.append((chosen_profile.namespace, chosen_profile.port, chosen_profile.mcp_port))
+        return "launched-process"
 
-    def _fake_wait(*, environ, namespace, port):
-        waited.append((namespace, port))
+    def _fake_wait(*, environ, namespace, port, launched_process):
+        waited.append((namespace, port, launched_process))
 
     monkeypatch.setattr(namespace_switcher, "_find_running_namespace_port", lambda **kwargs: None)
     monkeypatch.setattr(namespace_switcher, "_assert_ports_are_available_for_launch", lambda **kwargs: None)
@@ -289,7 +290,7 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
     assert result.action == "launched"
     assert result.url == "http://127.0.0.1:8123"
     assert launched == [("work", 8123, 8766)]
-    assert waited == [("work", 8123)]
+    assert waited == [("work", 8123, "launched-process")]
     saved_profile = load_namespace_launch_profile(namespace="work")
     assert saved_profile is not None
     assert saved_profile.port == 8123
@@ -674,12 +675,14 @@ def test_restart_running_namespace_process_allows_existing_namespace_ports_befor
     monkeypatch.setattr(
         namespace_switcher,
         "_launch_namespace_process",
-        lambda *, environ, chosen_profile: checks.append(("launch", (chosen_profile.namespace, chosen_profile.port))),
+        lambda *, environ, chosen_profile: checks.append(("launch", (chosen_profile.namespace, chosen_profile.port))) or "launched-process",
     )
     monkeypatch.setattr(
         namespace_switcher,
         "_wait_for_namespace_ready",
-        lambda *, environ, namespace, port: checks.append(("wait", (namespace, port))),
+        lambda *, environ, namespace, port, launched_process: checks.append(
+            ("wait", (namespace, port, launched_process))
+        ),
     )
 
     namespace_switcher._restart_running_namespace_process(
@@ -698,7 +701,7 @@ def test_restart_running_namespace_process_allows_existing_namespace_ports_befor
         ("assert", ("work", 8123, 8766, frozenset({2345}))),
         ("stop", 8123),
         ("launch", ("work", 8123)),
-        ("wait", ("work", 8123)),
+        ("wait", ("work", 8123, "launched-process")),
     ]
 
 
@@ -855,6 +858,50 @@ def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
     assert "METALIST_PORT" not in launched_env
     assert "METALIST_HTTPS_PORT" not in launched_env
     assert "MCP_AGENT_WEB_PORT" not in launched_env
+    assert launched_env["METALIST_ORCHESTRATED_CHILD"] == "1"
+
+
+def test_wait_for_namespace_ready_reports_early_child_exit_and_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "namespace-default.log"
+    log_path.write_text("Traceback\nRuntimeError: child exploded\n", encoding="utf-8")
+
+    class _ExitedProcess:
+        def poll(self) -> int:
+            return 7
+
+    launched_process = namespace_switcher.NamespaceLaunchProcess(
+        process=_ExitedProcess(),
+        log_path=log_path,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "resolve_main_server_config",
+        lambda *, environ: server_runtime.MainServerConfig(
+            host="127.0.0.1",
+            port=8000,
+            https_port=None,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1,::1",
+            ssl_certfile=None,
+            ssl_keyfile=None,
+        ),
+    )
+    monkeypatch.setattr(namespace_switcher, "resolve_backend_connect_host", lambda *, host: host)
+    monkeypatch.setattr(namespace_switcher, "resolve_api_prefix", lambda *, environ: "/api2")
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"(?s)Namespace default process exited with code 7.*child exploded",
+    ):
+        namespace_switcher._wait_for_namespace_ready(
+            environ={},
+            namespace="default",
+            port=8000,
+            launched_process=launched_process,
+        )
 
 
 def test_open_or_launch_namespace_restarts_running_namespace_and_updates_profile(

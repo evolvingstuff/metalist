@@ -62,6 +62,33 @@ def test_installed_cli_forwards_namespace_and_port_arguments(monkeypatch) -> Non
     assert calls == [("main", argv)]
 
 
+def test_installed_cli_orchestrated_child_bypasses_parent_startup_gates(monkeypatch) -> None:
+    calls: list[object] = []
+    argv = ["--namespace", "default", "--port", "8000", "--mcp-port", "8765"]
+    monkeypatch.setattr(sys, "argv", ["metalist", *argv])
+    monkeypatch.setenv("METALIST_ORCHESTRATED_CHILD", "1")
+    monkeypatch.setattr(
+        main_entrypoint,
+        "main",
+        lambda child_argv: (_ for _ in ()).throw(AssertionError("parent startup gates must not run")),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "run_orchestrated_namespace_server",
+        lambda child_argv: calls.append(
+            (
+                "run_orchestrated_namespace_server",
+                child_argv,
+                "METALIST_ORCHESTRATED_CHILD" in main_entrypoint.os.environ,
+            )
+        ),
+    )
+
+    main_entrypoint.cli()
+
+    assert calls == [("run_orchestrated_namespace_server", argv, False)]
+
+
 def test_installed_cli_update_hands_off_without_starting_metalist(monkeypatch) -> None:
     calls: list[object] = []
     monkeypatch.setattr(sys, "argv", ["metalist", "update"])
