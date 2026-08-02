@@ -47,6 +47,12 @@ uv tool install metalist
 metalist
 ```
 
+After the first installation, update and restart MetaList with one cross-platform command:
+```bash
+metalist update
+```
+The updater stops running namespaces, hands off to an external PowerShell process on Windows or `/bin/sh` on macOS/Linux so the installed environment can unlock, runs the forced cache-refreshed uv update, and launches MetaList again.
+
 For pip, users can run `pip install metalist`. For a non-editable local install from this checkout, use `uv pip install .` or `pip install .` instead of the editable command below.
 
 ```bash
@@ -58,11 +64,11 @@ npm install
 ```
 
 ### Run
-The installed entrypoint starts Uvicorn with the FastAPI app:
+The installed entrypoint starts or restarts every known namespace, prints their URLs, and exits:
 ```bash
 metalist
 ```
-For source-checkout compatibility, `python main.py` still works. Plain `python main.py` is now an orchestration command: it restarts already-running namespaces from the current checkout, launches stopped namespaces, prints their URLs, and exits. Use `python main.py --namespace work` or `python main.py work` when you want one foreground namespace process.
+For source-checkout compatibility, `python main.py` performs the same orchestration. Use `metalist work`, `python main.py --namespace work`, or `python main.py work` when you want one foreground namespace process.
 
 `metalist` and explicit single-namespace source runs bind HTTP on `0.0.0.0:8000` by default, matching the old MetaList LAN-friendly behavior.
 On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on `0.0.0.0:8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
@@ -75,7 +81,7 @@ Database selection:
 - Launch precedence is: explicit CLI flags > env vars > saved namespace profile; if a namespace has no saved profile, launch it once with explicit ports or configure ports from the UI
 - Backups stay beside the namespace data under `~/MetaList/namespaces/work/backups/` and use one archive per snapshot with filenames like `work-<timestamp>.metalist-backup.tar.gz`
 - The Backup Settings modal targets one user-selected backup folder and can include multiple namespaces in a single run
-- Restoring `work` into `work` is the normal overwrite path; importing a backup under a different namespace name requires a new target namespace and rejects saved launch-port conflicts.
+- Restoring `work` into `work` is the normal overwrite path; importing a backup under a different namespace name can create a new target namespace with automatically selected conflict-free ports.
 
 Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors

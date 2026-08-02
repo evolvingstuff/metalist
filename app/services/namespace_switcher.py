@@ -388,6 +388,23 @@ def open_or_launch_all_namespaces(
     return results
 
 
+def stop_all_namespace_processes_for_update() -> int:
+    profiles = _load_saved_profiles_by_namespace()
+    reserved_ports: set[int] = set()
+    for profile in profiles.values():
+        for _, port in _profile_service_ports(profile=profile):
+            reserved_ports.add(port)
+
+    listener_pids: set[int] = set()
+    for port in sorted(reserved_ports):
+        listener_pids.update(_find_listening_pids_for_port(port=port))
+    current_pid = os.getpid()
+    listener_pids.discard(current_pid)
+    for pid in sorted(listener_pids):
+        _stop_process(pid=pid)
+    return len(listener_pids)
+
+
 def _resolve_conflict_free_profiles_for_all_namespaces(
     *,
     raw_namespaces: Sequence[object],

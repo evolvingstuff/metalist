@@ -22,6 +22,7 @@ from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.namespace_switcher import rename_current_namespace
 from app.services.namespace_switcher import save_namespace_port_profiles
+from app.services.namespace_switcher import stop_all_namespace_processes_for_update
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import _probe_namespace_status
 
@@ -542,6 +543,53 @@ def test_open_or_launch_all_namespaces_repairs_saved_port_conflicts(
         "[startup] WARNING: adjusted namespace henry ports to resolve a saved conflict: "
         "HTTP 8000 -> 8001, HTTPS 8443 -> 8444, MCP 8765 -> 8766."
     ) in capsys.readouterr().err
+
+
+def test_stop_all_namespace_processes_for_update_deduplicates_listener_pids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_load_saved_profiles_by_namespace",
+        lambda: {
+            "default": NamespaceLaunchProfile(
+                namespace="default",
+                port=8000,
+                https_port=8443,
+                mcp_port=8765,
+            ),
+            "henry": NamespaceLaunchProfile(
+                namespace="henry",
+                port=8000,
+                https_port=8444,
+                mcp_port=8766,
+            ),
+        },
+    )
+    listener_pids = {
+        8000: [111, 222],
+        8443: [111],
+        8765: [],
+        8444: [222],
+        8766: [333],
+    }
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_find_listening_pids_for_port",
+        lambda *, port: listener_pids[port],
+    )
+    monkeypatch.setattr(namespace_switcher.os, "getpid", lambda: 222)
+    stopped: list[int] = []
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_stop_process",
+        lambda *, pid: stopped.append(pid),
+    )
+
+    count = stop_all_namespace_processes_for_update()
+
+    assert count == 2
+    assert stopped == [111, 333]
 
 
 def test_open_or_launch_all_namespaces_restarts_warm_running_processes(

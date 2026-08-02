@@ -62,6 +62,47 @@ def test_installed_cli_forwards_namespace_and_port_arguments(monkeypatch) -> Non
     assert calls == [("main", argv)]
 
 
+def test_installed_cli_update_hands_off_without_starting_metalist(monkeypatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(sys, "argv", ["metalist", "update"])
+    monkeypatch.setattr(main_entrypoint.os, "getpid", lambda: 4321)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_resolve_current_entrypoint",
+        lambda: "C:/Users/hlaho/.local/bin/metalist.exe",
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "schedule_self_update",
+        lambda **kwargs: calls.append(kwargs) or SimpleNamespace(message="Updater started."),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "main",
+        lambda argv: (_ for _ in ()).throw(AssertionError("main must not start")),
+    )
+    monkeypatch.setattr(builtins, "print", lambda message: calls.append(message))
+
+    main_entrypoint.cli()
+
+    assert calls == [
+        {
+            "metalist_executable": "C:/Users/hlaho/.local/bin/metalist.exe",
+            "current_pid": 4321,
+            "platform_name": sys.platform,
+            "environ": main_entrypoint.os.environ,
+        },
+        "Updater started.",
+    ]
+
+
+def test_installed_cli_update_rejects_extra_arguments(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["metalist", "update", "unexpected"])
+
+    with pytest.raises(RuntimeError, match="Usage: metalist update"):
+        main_entrypoint.cli()
+
+
 def test_installed_default_bootstrap_creates_metalist_directory_tree(
     tmp_path: Path,
     monkeypatch,

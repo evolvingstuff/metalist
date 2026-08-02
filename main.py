@@ -34,6 +34,7 @@ from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import open_or_launch_all_namespaces
+from app.services.self_update import schedule_self_update
 from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
 from app.services.windows_process_control import is_process_running as is_windows_process_running
 from app.services.windows_process_control import stop_process as stop_windows_process
@@ -775,7 +776,22 @@ def main(argv: list[str]) -> None:
 
 
 def cli() -> None:
-    main(sys.argv[1:])
+    argv = sys.argv[1:]
+    if len(argv) != 0 and argv[0] == "update":
+        if argv != ["update"]:
+            raise RuntimeError("Usage: metalist update")
+        metalist_executable = _resolve_current_entrypoint()
+        if metalist_executable is None:
+            raise RuntimeError("Could not resolve the installed MetaList executable")
+        result = schedule_self_update(
+            metalist_executable=metalist_executable,
+            current_pid=os.getpid(),
+            platform_name=sys.platform,
+            environ=os.environ,
+        )
+        print(result.message)
+        return
+    main(argv)
 
 
 def run_namespace_server(argv: list[str]) -> None:
