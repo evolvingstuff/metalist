@@ -51,8 +51,9 @@ All modals extend BaseModal which provides:
    - Sets modal-specific state in `ModeContext.modalState`
 
 3. **Common Event Handling**
-   - Esc key to close
-   - Click-outside to close (optional)
+   - `Escape` closes every modal
+   - Clicking outside the modal content closes every modal
+   - `Enter` activates the modal's single declared primary action; modals with multi-step or input-specific behavior implement the equivalent explicitly
    - Focus management
 
 ### Modal Opening Flow

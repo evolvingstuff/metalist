@@ -110,7 +110,7 @@ export class NoteLayoutAppearanceModal extends BaseModal {
                 </div>
 
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="note-layout-save-btn"${disabled}>${saving ? 'Saving…' : 'Save'}</button>
+                    <button type="button" class="primary-btn" id="note-layout-save-btn" data-modal-enter-action${disabled}>${saving ? 'Saving…' : 'Save'}</button>
                     <button type="button" class="secondary-btn" id="note-layout-cancel-btn"${disabled}>Cancel</button>
                 </div>
                 <p class="error-message">${escapeHtml(error)}</p>

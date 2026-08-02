@@ -212,81 +212,12 @@ function showTagContextMenu(event, tag, source) {
     });
 }
 
-function showPreferenceContextMenu(event, itemId, itemLabel, preferenceKey, nextValue) {
-    if (!event) {
-        throw new Error('showPreferenceContextMenu called without event');
-    }
-    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
-        throw new Error('Context menu event missing coordinates');
-    }
-    if (typeof itemId !== 'string' || itemId.trim() === '') {
-        throw new Error('showPreferenceContextMenu requires itemId');
-    }
-    if (typeof itemLabel !== 'string' || itemLabel.trim() === '') {
-        throw new Error('showPreferenceContextMenu requires itemLabel');
-    }
-    if (typeof preferenceKey !== 'string' || preferenceKey.trim() === '') {
-        throw new Error('showPreferenceContextMenu requires preferenceKey');
-    }
-    if (typeof nextValue !== 'boolean') {
-        throw new Error('showPreferenceContextMenu requires boolean nextValue');
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    showContextMenu({
-        items: [
-            {
-                id: itemId,
-                label: itemLabel,
-                enabled: true,
-                onSelect: () => {
-                    void CommandPalette.applyPreference(preferenceKey, nextValue);
-                },
-            },
-            {
-                id: 'export-view-html',
-                label: 'Export View as HTML',
-                icon: 'download',
-                enabled: true,
-                separated: true,
-                onSelect: () => {
-                    void CommandGate.run('contextMenu.view.export_html', async () => {
-                        await exportHtmlFromContextMenu(null);
-                    }, {
-                        timeoutMs: 120000,
-                    });
-                },
-            },
-        ],
-        position: { x: event.clientX, y: event.clientY },
-        onClose: null,
-    });
-}
-
 function showCalendarRailContextMenu(event) {
-    const isCalendarVisible = document.body.classList.contains('pref-show-rhs-panel');
-    const itemLabel = isCalendarVisible ? 'Hide Calendar View' : 'Show Calendar View';
-    showPreferenceContextMenu(
-        event,
-        'toggle-calendar-view',
-        itemLabel,
-        'pref.show_rhs_panel',
-        !isCalendarVisible,
-    );
+    showViewContextMenu(event);
 }
 
 function showTabsRailContextMenu(event) {
-    const areTabsVisible = document.body.classList.contains('pref-show-tab-ui');
-    const itemLabel = areTabsVisible ? 'Hide Tabs' : 'Show Tabs';
-    showPreferenceContextMenu(
-        event,
-        'toggle-tabs',
-        itemLabel,
-        'pref.show_tab_ui',
-        !areTabsVisible,
-    );
+    showViewContextMenu(event);
 }
 
 function readCssPixelVariable(name) {
@@ -862,8 +793,18 @@ function showViewContextMenu(event) {
         throw new Error('Context menu event missing coordinates');
     }
 
-    const context = { kind: 'view' };
+    const context = {
+        kind: 'view',
+        areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
+        isCalendarVisible: document.body.classList.contains('pref-show-rhs-panel'),
+    };
     const items = buildContextMenuItems(context, {
+        onToggleTabs: (nextValue) => {
+            void CommandPalette.applyPreference('pref.show_tab_ui', nextValue);
+        },
+        onToggleCalendar: (nextValue) => {
+            void CommandPalette.applyPreference('pref.show_rhs_panel', nextValue);
+        },
         onExportViewHtml: () => {
             void CommandGate.run('contextMenu.view.export_html', async () => {
                 await exportHtmlFromContextMenu(null);

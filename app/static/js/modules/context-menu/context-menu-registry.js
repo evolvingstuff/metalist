@@ -371,16 +371,43 @@ function buildViewContextItems(context, handlers) {
     }
 
     const onExportViewHtml = handlers.onExportViewHtml;
+    const onToggleTabs = handlers.onToggleTabs;
+    const onToggleCalendar = handlers.onToggleCalendar;
     if (typeof onExportViewHtml !== 'function') {
         throw new Error('View context missing onExportViewHtml handler');
     }
+    if (typeof onToggleTabs !== 'function') {
+        throw new Error('View context missing onToggleTabs handler');
+    }
+    if (typeof onToggleCalendar !== 'function') {
+        throw new Error('View context missing onToggleCalendar handler');
+    }
+    if (typeof context.areTabsVisible !== 'boolean') {
+        throw new Error('View context missing areTabsVisible boolean');
+    }
+    if (typeof context.isCalendarVisible !== 'boolean') {
+        throw new Error('View context missing isCalendarVisible boolean');
+    }
 
     return [
+        {
+            id: 'toggle-tabs',
+            label: context.areTabsVisible ? 'Hide Tabs' : 'Show Tabs',
+            enabled: true,
+            onSelect: () => onToggleTabs(!context.areTabsVisible),
+        },
+        {
+            id: 'toggle-calendar-view',
+            label: context.isCalendarVisible ? 'Hide Calendar View' : 'Show Calendar View',
+            enabled: true,
+            onSelect: () => onToggleCalendar(!context.isCalendarVisible),
+        },
         {
             id: 'export-view-html',
             label: 'Export View as HTML',
             icon: 'download',
             enabled: true,
+            separated: true,
             onSelect: () => onExportViewHtml(),
         },
     ];

@@ -9,6 +9,34 @@ function requireAction(actions, key) {
     return fn;
 }
 
+function readBooleanPreference(preferencesStore, key, defaultValue) {
+    if (typeof key !== 'string' || key.length === 0) {
+        throw new Error('readBooleanPreference requires key');
+    }
+    if (typeof defaultValue !== 'boolean') {
+        throw new Error('readBooleanPreference requires boolean default');
+    }
+    const raw = preferencesStore.getRaw(key);
+    if (raw === null) {
+        return defaultValue;
+    }
+    if (raw === 'true') {
+        return true;
+    }
+    if (raw === 'false') {
+        return false;
+    }
+    throw new Error(`Invalid stored boolean for ${key}`);
+}
+
+function visibilityLabel(preferencesStore, key, defaultValue, subject) {
+    if (typeof subject !== 'string' || subject.length === 0) {
+        throw new Error('visibilityLabel requires subject');
+    }
+    const isVisible = readBooleanPreference(preferencesStore, key, defaultValue);
+    return `${isVisible ? 'Hide' : 'Show'} ${subject}`;
+}
+
 export function buildCommandPaletteEndpoints(deps) {
     if (!deps || typeof deps !== 'object') {
         throw new Error('buildCommandPaletteEndpoints requires deps object');
@@ -68,7 +96,9 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.show_backlinks',
             kind: 'boolean',
-            label: 'Show backlinks',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.show_backlinks', defaults.showBacklinks, 'backlinks');
+            },
             persistenceKey: 'pref.show_backlinks',
             defaultValue: defaults.showBacklinks,
             apply: (next) => applyPreference('pref.show_backlinks', next),
@@ -76,7 +106,9 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.show_note_tags',
             kind: 'boolean',
-            label: 'Show tags in list',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.show_note_tags', defaults.showNoteTags, 'tags in list');
+            },
             persistenceKey: 'pref.show_note_tags',
             defaultValue: defaults.showNoteTags,
             apply: (next) => applyPreference('pref.show_note_tags', next),
@@ -84,7 +116,9 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.show_tab_ui',
             kind: 'boolean',
-            label: 'Toggle tabs',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.show_tab_ui', defaults.showTabUi, 'tabs');
+            },
             persistenceKey: 'pref.show_tab_ui',
             defaultValue: defaults.showTabUi,
             apply: (next) => applyPreference('pref.show_tab_ui', next),
@@ -92,7 +126,9 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.show_rhs_panel',
             kind: 'boolean',
-            label: 'Toggle calendar view',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.show_rhs_panel', defaults.showRhsPanel, 'calendar view');
+            },
             persistenceKey: 'pref.show_rhs_panel',
             defaultValue: defaults.showRhsPanel,
             apply: (next) => applyPreference('pref.show_rhs_panel', next),
@@ -100,7 +136,9 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.show_perf_overlay',
             kind: 'boolean',
-            label: 'Toggle perf overlay',
+            get label() {
+                return visibilityLabel(preferencesStore, 'pref.show_perf_overlay', defaults.showPerfOverlay, 'performance overlay');
+            },
             persistenceKey: 'pref.show_perf_overlay',
             defaultValue: defaults.showPerfOverlay,
             apply: (next) => applyPreference('pref.show_perf_overlay', next),
@@ -108,7 +146,14 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'pref.animated_transitions',
             kind: 'boolean',
-            label: 'Animated transitions',
+            get label() {
+                return visibilityLabel(
+                    preferencesStore,
+                    'pref.animated_transitions',
+                    defaults.animatedTransitions,
+                    'animated transitions',
+                );
+            },
             persistenceKey: 'pref.animated_transitions',
             defaultValue: defaults.animatedTransitions,
             apply: (next) => applyPreference('pref.animated_transitions', next),

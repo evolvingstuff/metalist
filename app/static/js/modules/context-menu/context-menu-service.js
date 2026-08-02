@@ -381,6 +381,10 @@ function showSubmenuForButton(parentButton, submenuItems) {
     submenu.style.top = `${resolved.top}px`;
     submenu.style.visibility = 'visible';
     submenu.classList.add('is-visible');
+    const firstEnabledItem = submenu.querySelector('.context-menu-item:not(:disabled)');
+    if (firstEnabledItem instanceof HTMLButtonElement) {
+        firstEnabledItem.focus();
+    }
 }
 
 function hideSubmenu() {
@@ -480,8 +484,27 @@ function handleGlobalKeyDown(event) {
         throw new Error('handleGlobalKeyDown called without event');
     }
     if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
         hideContextMenu();
+        return;
     }
+    if (event.key !== 'Enter') {
+        return;
+    }
+    let actionButton = document.activeElement;
+    const isFocusedMenuButton = actionButton instanceof HTMLButtonElement
+        && ((menuElement && menuElement.contains(actionButton))
+            || (submenuElement && submenuElement.contains(actionButton)));
+    if (!isFocusedMenuButton) {
+        actionButton = menuElement.querySelector('.context-menu-item:not(:disabled)');
+    }
+    if (!(actionButton instanceof HTMLButtonElement)) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    actionButton.click();
 }
 
 function handleGlobalScroll() {

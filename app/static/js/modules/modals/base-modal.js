@@ -240,6 +240,34 @@ export class BaseModal {
         
         // Pass to subclass for modal-specific handling
         this.onKeyDown(event);
+        if (event.defaultPrevented || event.key !== 'Enter' || event.isComposing) {
+            return;
+        }
+        const target = event.target;
+        if (target instanceof HTMLTextAreaElement || target instanceof HTMLButtonElement) {
+            return;
+        }
+        const modalElement = document.getElementById(this.modalElementId);
+        if (!(modalElement instanceof HTMLElement)) {
+            throw new Error(`Modal element missing: ${this.modalElementId}`);
+        }
+        const enterActions = modalElement.querySelectorAll('[data-modal-enter-action]');
+        if (enterActions.length === 0) {
+            return;
+        }
+        if (enterActions.length !== 1) {
+            throw new Error(`${this.modalName} must have exactly one Enter action`);
+        }
+        const enterAction = enterActions[0];
+        if (!(enterAction instanceof HTMLButtonElement)) {
+            throw new Error(`${this.modalName} Enter action must be a button`);
+        }
+        if (enterAction.disabled) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        enterAction.click();
     }
     
     /**

@@ -13,6 +13,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 
 ## Results
 - Booleans toggle with `Enter`.
+- Boolean labels describe the next action: `Show …` while hidden and `Hide …` while visible.
 - Selects cycle with `Enter` (and adjust with `←`/`→`).
 - Actions run with `Enter`.
 

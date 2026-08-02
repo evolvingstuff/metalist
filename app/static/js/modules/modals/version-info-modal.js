@@ -120,7 +120,7 @@ export class VersionInfoModal extends BaseModal {
                 ${bodyHtml}
                 <p class="error-message">${escapeHtml(error)}</p>
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="version-info-close-btn">Close</button>
+                    <button type="button" class="primary-btn" id="version-info-close-btn" data-modal-enter-action>Close</button>
                 </div>
             </div>
         `;

@@ -142,6 +142,12 @@ export function promptForImageFileInsertMode(options) {
                 event.preventDefault();
                 event.stopPropagation();
                 finish(null);
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                finish('embed');
             }
         };
 

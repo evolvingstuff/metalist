@@ -959,7 +959,7 @@ export class ReminderModal extends BaseModal {
                         </div>
                         ${this._renderSoundSettings()}
                         <div class="reminder-form-actions">
-                            <button type="button" class="primary-btn" data-reminder-save ${this._state.saving ? 'disabled' : ''}>${this._state.editingId ? 'Save changes' : 'Add reminder'}</button>
+                            <button type="button" class="primary-btn" data-reminder-save data-modal-enter-action ${this._state.saving ? 'disabled' : ''}>${this._state.editingId ? 'Save changes' : 'Add reminder'}</button>
                             <button type="button" class="secondary-btn" data-reminder-new ${this._state.saving ? 'disabled' : ''}>Clear form</button>
                         </div>
                         <p class="reminder-modal-warning">${escapeHtml(formWarning)}</p>

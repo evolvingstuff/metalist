@@ -65,7 +65,7 @@ export class DeleteNamespaceModal extends BaseModal {
     }
 
     shouldCloseOnClickOutside() {
-        return false;
+        return true;
     }
 
     showModalElement() {
@@ -96,14 +96,10 @@ export class DeleteNamespaceModal extends BaseModal {
             return;
         }
 
-        const state = this.getModalState();
-        const deleting = Boolean(state.deleting);
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            if (!deleting) {
-                this.close();
-            }
+            this.close();
             return;
         }
 

@@ -129,7 +129,7 @@ export class BackupRestoreModal extends BaseModal {
     }
 
     shouldCloseOnClickOutside() {
-        return false;
+        return true;
     }
 
     showModalElement() {
@@ -165,6 +165,7 @@ export class BackupRestoreModal extends BaseModal {
             if (state && state.restored && Boolean(state.activeNamespaceRestarted)) {
                 event.preventDefault();
                 event.stopPropagation();
+                this._beginPostRestoreReconnectAndReload();
                 return;
             }
             event.preventDefault();
@@ -173,6 +174,19 @@ export class BackupRestoreModal extends BaseModal {
             return;
         }
         this.onKeyDown(event);
+    }
+
+    handleClickOutside(event) {
+        const modalContent = event.currentTarget.querySelector('.modal-content');
+        if (!modalContent || modalContent.contains(event.target)) {
+            return;
+        }
+        const state = this.getModalState();
+        if (state && state.restored && Boolean(state.activeNamespaceRestarted)) {
+            this._beginPostRestoreReconnectAndReload();
+            return;
+        }
+        this.close();
     }
 
     onKeyDown(event) {

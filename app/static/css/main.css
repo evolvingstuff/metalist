@@ -8,13 +8,17 @@
     --info-color: #17a2b8;
     --app-shell-width: 960px;
     --app-content-width: 800px;
+    --app-page-padding: 1rem;
     --app-control-top: calc(1.5rem - 6px);
     --side-rail-width: 260px;
     --side-rail-edge: 10px;
     --side-rail-clearance: 10px;
     --side-rail-scrollbar-width: 16px;
-    --rhs-rail-width: 160px;
+    --rhs-calendar-min-width: 160px;
+    --rhs-rail-width: var(--rhs-calendar-min-width);
     --rhs-controls-width: 38px;
+    --rhs-reserved-width: calc(var(--side-rail-edge) + var(--rhs-controls-width) + var(--rhs-calendar-min-width));
+    --app-note-right-offset: calc((var(--app-shell-width) + var(--app-content-width)) / 2);
     --rhs-rail-left: calc(50vw + (var(--app-content-width) / 2) + var(--side-rail-clearance));
     --side-rail-active-width: max(
         0px,
@@ -1840,7 +1844,7 @@ body {
     line-height: 1.5;
     max-width: none;
     margin: 0 auto;
-    padding: 1rem;
+    padding: var(--app-page-padding);
     color: var(--text-color);
     background: var(--bg-color);
 }
@@ -4023,6 +4027,38 @@ body.loading::after {
 .tab-context-action.is-hidden {
     visibility: hidden;
     pointer-events: none;
+}
+
+@media (min-width: 961px) and (max-width: 1235px) {
+    :root {
+        --side-rail-active-width: var(--rhs-calendar-min-width);
+    }
+
+    .rhs-panel,
+    .rhs-metric-toggle {
+        right: calc(var(--side-rail-edge) + var(--rhs-controls-width));
+        left: auto;
+        width: var(--rhs-calendar-min-width);
+    }
+
+    body.pref-show-rhs-panel #app {
+        width: min(var(--app-shell-width), calc(100vw - var(--rhs-reserved-width)));
+        margin-right: 0;
+        margin-left: max(
+            0px,
+            calc(
+                100vw
+                - var(--rhs-reserved-width)
+                - var(--side-rail-clearance)
+                - var(--app-note-right-offset)
+                - var(--app-page-padding)
+            )
+        );
+    }
+
+    .rhs-panel {
+        background: var(--bg-color);
+    }
 }
 
 @media (max-width: 960px) {

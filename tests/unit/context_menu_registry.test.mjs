@@ -248,8 +248,10 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
 test('buildContextMenuItems returns export view for view context', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'view' },
+        { kind: 'view', areTabsVisible: false, isCalendarVisible: true },
         {
+            onToggleTabs: (nextValue) => calls.push(['toggleTabs', nextValue]),
+            onToggleCalendar: (nextValue) => calls.push(['toggleCalendar', nextValue]),
             onExportViewHtml: () => calls.push(['exportViewHtml']),
         },
     );
@@ -257,12 +259,20 @@ test('buildContextMenuItems returns export view for view context', () => {
     assert.deepEqual(
         items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
+            { id: 'toggle-tabs', label: 'Show Tabs', enabled: true },
+            { id: 'toggle-calendar-view', label: 'Hide Calendar View', enabled: true },
             { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
 
-    items[0].onSelect();
-    assert.deepEqual(calls, [['exportViewHtml']]);
+    for (const item of items) {
+        item.onSelect();
+    }
+    assert.deepEqual(calls, [
+        ['toggleTabs', true],
+        ['toggleCalendar', false],
+        ['exportViewHtml'],
+    ]);
 });
 
 test('buildContextMenuItems returns only link actions for link context', () => {

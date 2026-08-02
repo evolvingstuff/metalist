@@ -129,7 +129,7 @@ export class SoundManagerModal extends BaseModal {
                             <span>Audio file</span>
                             <input id="sound-upload-file" type="file" accept="audio/*">
                         </label>
-                        <button type="button" class="primary-btn" data-sound-upload ${this._state.saving ? 'disabled' : ''}>Upload</button>
+                        <button type="button" class="primary-btn" data-sound-upload data-modal-enter-action ${this._state.saving ? 'disabled' : ''}>Upload</button>
                         <p class="sound-manager-status">${escapeHtml(this._state.status)}</p>
                         <p class="sound-manager-error">${escapeHtml(this._state.error)}</p>
                     </section>
