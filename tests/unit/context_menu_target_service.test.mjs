@@ -116,3 +116,17 @@ test('blank side-rail targets retain the rail context menus', async (t) => {
         { kind: 'calendar-rail' },
     );
 });
+
+test('note content wins over an overlapping coordinate-only rail', async (t) => {
+    const { FakeElement } = installFakeElementDom(t);
+    const { resolvePriorityContextMenuTarget } = await importTargetService();
+    const noteContent = new FakeElement({ selectors: ['.note-content'] });
+
+    assert.equal(
+        resolvePriorityContextMenuTarget(noteContent, {
+            isInLeftRail: true,
+            isInRightRail: false,
+        }),
+        null,
+    );
+});

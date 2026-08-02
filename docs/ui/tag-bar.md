@@ -9,7 +9,7 @@
 - Outside of `/* ... */` comments, tags are separated by whitespace.
 - Runs of whitespace are normalized to single spaces.
 - Wrapper tokens may contain internal spaces (e.g. `{{@red @monospace}}`), which are preserved (normalized) inside the wrapper. This means a wrapper token can contain multiple tags.
-- A normal tag token allows only ASCII-printable characters and disallows: `: " \\ > < = [ ] { } ( ) * | ; ~ ``.
+- A normal tag token allows only ASCII-printable characters and disallows: `: , " \\ > < = [ ] { } ( ) * | ; ~ ``.
 - Tag tokens also cannot start with `-`, `+`, or `/`.
 
 ## Wrapper Tags
@@ -136,3 +136,11 @@ Unclosed comments behave like unclosed wrappers:
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, note copy/cut/paste, and the password modal shortcut.
 - `Cmd/Ctrl+U` unformats the note content while preserving links, images, and the tag bar itself.
+
+## Add from Selected Text
+- Selecting 1–25 characters inside a note adds **Add as Tag** to that note's context menu.
+- The action always targets the note containing the selection, including when another note is being edited.
+- Existing explicit namespace tags are matched case-insensitively with spaces, `-`, `_`, `.`, and `/` treated as equivalent joiners. The most-used existing spelling and joiner style is reused.
+- If the note already has an equivalent explicit tag, the action is a no-op and does not add a duplicate.
+- If no equivalent tag exists, a new tag preserves the selection's capitalization, replaces whitespace with dashes, and removes characters disallowed by the tag-bar grammar. This preserves acronyms such as `GPT`.
+- Selections longer than 25 characters, blank selections, and selections with no usable tag characters do not show the action.

@@ -19,6 +19,7 @@ export const CONFIG = {
             CREATE_CHILD: (noteId) => `${API_NOTES_BASE}/new-child/${noteId}`,
             UPDATE: (noteId) => `${API_NOTES_BASE}/${noteId}`,
             SAVE: (noteId) => `${API_NOTES_BASE}/${noteId}/save`,
+            ADD_SELECTED_TEXT_TAG: (noteId) => `${API_NOTES_BASE}/${noteId}/add-selected-text-tag`,
             SPLIT: (noteId) => `${API_NOTES_BASE}/${noteId}/split`,
             TOGGLE_TODO: (noteId) => `${API_NOTES_BASE}/${noteId}/toggle-todo`,
             UNFORMAT: (noteId) => `${API_NOTES_BASE}/${noteId}/unformat`,

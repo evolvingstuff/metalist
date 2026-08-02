@@ -1,5 +1,6 @@
 const TAG_CONTAINS_DISALLOWED = new Set([
     ':',
+    ',',
     '"',
     '\\',
     '>',

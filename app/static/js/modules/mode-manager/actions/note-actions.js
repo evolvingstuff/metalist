@@ -5,7 +5,7 @@ import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { detachEditorSurface } from '../../editor-toolbar.js';
 import { ErrorHandler } from '../../error-handler.js';
-import { clearTagBar, getTagBarValue } from '../services/tag-bar-service.js';
+import { clearTagBar, getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
@@ -275,6 +275,45 @@ export async function toggleTodoDone(noteId) {
 
     await NotesAPI.toggleTodo(noteId);
     await actionRefreshAndMaybeSelect({ startedAt, context: 'toggleTodoDone' });
+}
+
+export async function addSelectedTextAsTag(noteId, selectedText) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('addSelectedTextAsTag requires noteId string');
+    }
+    if (typeof selectedText !== 'string' || selectedText.length === 0) {
+        throw new Error('addSelectedTextAsTag requires selectedText string');
+    }
+
+    const isEditingTarget = ModeContext.isEditing && ModeContext.currentNoteId === noteId;
+    if (isEditingTarget) {
+        await actionSaveNote(noteId);
+    }
+
+    const response = await NotesAPI.addSelectedTextTag(noteId, selectedText);
+    if (!response || typeof response !== 'object') {
+        throw new Error('Add-selected-text-tag response missing body');
+    }
+    if (response.status !== 'added' && response.status !== 'exists') {
+        throw new Error(`Unknown add-selected-text-tag status: ${response.status}`);
+    }
+    if (typeof response.tag !== 'string' || response.tag.length === 0) {
+        throw new Error('Add-selected-text-tag response missing resolved tag');
+    }
+    if (typeof response.tags !== 'string') {
+        throw new Error('Add-selected-text-tag response missing note tags');
+    }
+
+    if (isEditingTarget) {
+        const noteElement = DOMUtils.getNoteById(noteId);
+        setTagBarValue(noteElement, response.tags);
+    }
+
+    await actionRefreshAndMaybeSelect({
+        startedAt: performance.now(),
+        context: 'addSelectedTextAsTag',
+    });
+    return response;
 }
 
 export async function runShellNote(noteId, timeoutSeconds) {

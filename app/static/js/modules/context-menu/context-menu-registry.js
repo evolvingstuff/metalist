@@ -44,6 +44,7 @@ function buildNoteContextItems(context, handlers) {
     const onDeleteNote = handlers.onDeleteNote;
     const onMoveNoteToTop = handlers.onMoveNoteToTop;
     const onCopySelection = handlers.onCopySelection;
+    const onAddSelectionAsTag = handlers.onAddSelectionAsTag;
     const onCopyNote = handlers.onCopyNote;
     const onPasteNote = handlers.onPasteNote;
     const onPasteNoteChild = handlers.onPasteNoteChild;
@@ -69,6 +70,9 @@ function buildNoteContextItems(context, handlers) {
     }
     if (typeof onCopySelection !== 'function') {
         throw new Error('Note context missing onCopySelection handler');
+    }
+    if (typeof onAddSelectionAsTag !== 'function') {
+        throw new Error('Note context missing onAddSelectionAsTag handler');
     }
     if (typeof onCopyNote !== 'function') {
         throw new Error('Note context missing onCopyNote handler');
@@ -159,6 +163,23 @@ function buildNoteContextItems(context, handlers) {
         copyItem.separated = true;
     }
     items.push(copyItem);
+
+    const selectedTextForTag = context.selectedTextForTag;
+    if (selectedTextForTag !== undefined) {
+        if (typeof selectedTextForTag !== 'string' || selectedTextForTag.length === 0) {
+            throw new Error('Note context selectedTextForTag must be a non-empty string when provided');
+        }
+        if (!hasSelectedText) {
+            throw new Error('Note context cannot add selected text as tag without selected text');
+        }
+        items.push({
+            id: 'add-selection-as-tag',
+            label: 'Add as Tag',
+            icon: 'tag',
+            enabled: true,
+            onSelect: () => onAddSelectionAsTag(noteId, selectedTextForTag),
+        });
+    }
 
     if (hasNoteClipboard) {
         items.push(

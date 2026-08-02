@@ -6,6 +6,7 @@ import { buildContextMenuItems } from '../../app/static/js/modules/context-menu/
 function buildNoteHandlers(calls) {
     return {
         onCopySelection: (noteId) => calls.push(['copySelection', noteId]),
+        onAddSelectionAsTag: (noteId, selectedText) => calls.push(['addSelectionAsTag', noteId, selectedText]),
         onCopyNote: (noteId) => calls.push(['copyNote', noteId]),
         onPasteNote: (noteId) => calls.push(['pasteNote', noteId]),
         onPasteNoteChild: (noteId) => calls.push(['pasteNoteChild', noteId]),
@@ -121,6 +122,29 @@ test('buildContextMenuItems shows text copy when selected text is present', () =
     assert.equal(items[0].label, 'Copy');
     items[0].onSelect();
     assert.deepEqual(calls, [['copySelection', 'note-123']]);
+});
+
+test('buildContextMenuItems shows add-as-tag for an eligible text selection', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        {
+            kind: 'note',
+            noteId: 'note-123',
+            hasSelectedText: true,
+            selectedTextForTag: 'Neural Networks',
+        },
+        buildNoteHandlers(calls),
+    );
+
+    assert.deepEqual(
+        items.slice(0, 2).map((item) => ({ id: item.id, label: item.label })),
+        [
+            { id: 'copy-selection', label: 'Copy' },
+            { id: 'add-selection-as-tag', label: 'Add as Tag' },
+        ],
+    );
+    items[1].onSelect();
+    assert.deepEqual(calls, [['addSelectionAsTag', 'note-123', 'Neural Networks']]);
 });
 
 test('buildContextMenuItems shows paste actions when note clipboard is available', () => {

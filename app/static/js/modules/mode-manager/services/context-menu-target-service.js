@@ -66,6 +66,10 @@ export function resolvePriorityContextMenuTarget(element, options) {
         return { kind: 'tabs-rail' };
     }
 
+    if (element.closest('.note-content')) {
+        return null;
+    }
+
     if (isInRightRail) {
         return { kind: 'calendar-rail' };
     }

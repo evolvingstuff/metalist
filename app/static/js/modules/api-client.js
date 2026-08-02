@@ -249,6 +249,20 @@ export const NotesAPI = {
         }); 
     },
 
+    async addSelectedTextTag(noteId, selectedText) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.addSelectedTextTag requires noteId string');
+        }
+        if (typeof selectedText !== 'string' || selectedText.length === 0) {
+            throw new Error('NotesAPI.addSelectedTextTag requires selectedText string');
+        }
+        return this._apiCall(CONFIG.API.NOTES.ADD_SELECTED_TEXT_TAG(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ selectedText }),
+        });
+    },
+
     async splitNote(noteId, segments, tags) {
         if (typeof noteId !== 'string' || noteId.length === 0) {
             throw new Error('NotesAPI.splitNote requires noteId string');

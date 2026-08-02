@@ -9,6 +9,7 @@ import {
 import { actionSaveNote } from '../actions/content-actions.js';
 import {
     actionCopyNoteById,
+    addSelectedTextAsTag,
     actionPasteNoteChild,
     actionPasteNoteSibling,
     createChildNote,
@@ -45,6 +46,7 @@ import { buildContextMenuItems } from '../../context-menu/context-menu-registry.
 import { initContextMenuService, showContextMenu } from '../../context-menu/context-menu-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { NotesAPI } from '../../api-client.js';
+import { normalizeSelectedTextForTagAction } from '../services/selected-text-tag-service.js';
 
 const ontologyModal = new OntologyModal();
 
@@ -530,6 +532,9 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
     }
 
     const hasSelectedText = selectedTextRange instanceof Range;
+    const selectedTextForTag = hasSelectedText
+        ? normalizeSelectedTextForTagAction(selectedTextRange.toString())
+        : null;
     const hasNoteClipboard = (
         ModeContext.clipboardMode === 'note'
         && typeof ModeContext.clipboardNoteId === 'string'
@@ -542,10 +547,18 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         hasSelectedText,
         hasNoteClipboard,
     };
+    if (selectedTextForTag !== null) {
+        context.selectedTextForTag = selectedTextForTag;
+    }
     const items = buildContextMenuItems(context, {
         onCopySelection: () => {
             void CommandGate.run('contextMenu.selection.copy', async () => {
                 await copySelectedTextRange(selectedTextRange);
+            });
+        },
+        onAddSelectionAsTag: (targetNoteId, selectedText) => {
+            void CommandGate.run('contextMenu.selection.add_as_tag', async () => {
+                await addSelectedTextAsTag(targetNoteId, selectedText);
             });
         },
         onCopyNote: (targetNoteId) => {
@@ -795,17 +808,25 @@ function handleContextMenu(event) {
         return;
     }
 
+    const noteElement = resolveContextNoteElement(element);
+    if (noteElement) {
+        const selectedTextRange = resolveSelectedTextRangeForNote(noteElement);
+        if (selectedTextRange) {
+            const imageContext = resolveImageContextFromElement(element);
+            showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, selectedTextRange);
+            return;
+        }
+    }
+
     const linkContext = resolveLinkContextFromElement(element);
     if (linkContext) {
         showLinkContextMenu(event, linkContext);
         return;
     }
 
-    const noteElement = resolveContextNoteElement(element);
     if (noteElement) {
         const imageContext = resolveImageContextFromElement(element);
-        const selectedTextRange = resolveSelectedTextRangeForNote(noteElement);
-        showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, selectedTextRange);
+        showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, null);
         return;
     }
 

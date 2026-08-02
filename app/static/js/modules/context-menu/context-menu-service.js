@@ -61,6 +61,10 @@ const CONTEXT_MENU_ICONS = {
         'M10 19h8',
         'M14 15v8',
     ],
+    tag: [
+        'M4 4h7l9 9-7 7-9-9z',
+        'M8 8h.01',
+    ],
     trash: [
         'M5 7h14',
         'M9 7V4h6v3',

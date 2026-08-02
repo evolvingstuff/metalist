@@ -32,6 +32,10 @@ test('preserves standalone / tokens while editing (comment start)', () => {
     assert.equal(enforceTagBarInputForEditing('foo bar / '), 'foo bar / ');
 });
 
+test('removes commas from tag tokens', () => {
+    assert.equal(enforceTagBarInputForEditing('tag,-give'), 'tag-give');
+});
+
 test('does not warn on bare wrapper openers (but omits from sanitizedText)', () => {
     const analysis = analyzeTagBarInput('(');
     assert.equal(analysis.isValid, true);

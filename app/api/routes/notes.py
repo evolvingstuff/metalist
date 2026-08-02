@@ -19,6 +19,7 @@ from app.usecases.create_note import CmdCreateNote
 from app.usecases.create_sibling import CmdCreateSibling
 from app.usecases.create_child import CmdCreateChild
 from app.usecases.update_content import CmdUpdateContent
+from app.usecases.add_selected_text_tag import CmdAddSelectedTextTag
 from app.usecases.delete_subtree import CmdDeleteSubtree
 from app.usecases.move import CmdMove
 from app.usecases.move_to_top import CmdMoveToTop
@@ -67,6 +68,7 @@ from app.services.search_index import search_index
 from app.services.tag_suggestions import suggest_tags_for_note
 from app.services.undo_state import reset_undo_stack
 from app.usecases.prioritize import list_prioritize_tag_suggestions
+from app.services.selected_text_tag import SelectedTextTagValidationError
 from app.api.request_auth import require_request_auth_token
 
 
@@ -771,6 +773,36 @@ def save_note(request: Request, note_id: str, body: dict):
         viewport=viewport,
     )
     return cmd.execute()
+
+
+@router.post("/notes/{note_id}/add-selected-text-tag")
+@transactional_route
+def add_selected_text_tag(request: Request, note_id: str, body: dict):
+    selected_text = body["selectedText"]
+    if not isinstance(selected_text, str):
+        raise TypeError("selectedText must be a string")
+
+    token = _require_bearer_token(request)
+    viewport = _require_viewport(body)
+    _require_note_present(note_id, context="notes.add-selected-text-tag")
+    command = CmdAddSelectedTextTag(
+        note_id=note_id,
+        selected_text=selected_text,
+        token=token,
+        client_id=body["clientId"],
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    capture = CapturedExceptionContext(SelectedTextTagValidationError)
+    response = None
+    with capture:
+        response = command.execute()
+    if capture.captured_exception is not None:
+        exc = capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if response is None:
+        raise RuntimeError("CmdAddSelectedTextTag returned no response")
+    return response
 
 
 @router.post("/notes/{note_id}/split")
