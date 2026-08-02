@@ -45,7 +45,6 @@ from app.services.diagnostics import track_request
 from app.api.request_auth import clear_auth_cookie
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
-from app.api.routes.memory import router as api2_memory_router
 from app.api.routes.files import router as api2_files_router
 from app.api.routes.sounds import router as api2_sounds_router
 from app.api.routes.ontology import router as api2_ontology_router
@@ -287,7 +286,6 @@ app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
 app.include_router(api2_auth_router, prefix=API_PREFIX)
 app.include_router(api2_backup_router, prefix=API_PREFIX)
-app.include_router(api2_memory_router, prefix=API_PREFIX)
 app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_sounds_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)

@@ -35,11 +35,11 @@ body.html-export-body {
     transition: none;
 }
 
-.html-export-body .note:not(.editing):not(.memory-selected):not(.locked):hover:not(:has(.note:hover)) {
+.html-export-body .note:not(.editing):not(.locked):hover:not(:has(.note:hover)) {
     border-color: #e6e6e6;
 }
 
-html[data-theme="dark"] .html-export-body .note:not(.editing):not(.memory-selected):not(.locked):hover:not(:has(.note:hover)) {
+html[data-theme="dark"] .html-export-body .note:not(.editing):not(.locked):hover:not(:has(.note:hover)) {
     border-color: #2a2a2a;
 }
 

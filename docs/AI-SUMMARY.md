@@ -20,7 +20,6 @@
 - `app/api/routes`: JSON routers mounted under `API_PREFIX` (default `/api2`).
   - `app/api/routes/notes.py`
   - `app/api/routes/auth.py`
-  - `app/api/routes/memory.py`
   - `app/api/routes/files.py`
 - `app/api/middleware/auth.py`: Auth middleware gating routes when a password exists.
 - `app/usecases`: Cmd* application commands (transport-agnostic orchestration).

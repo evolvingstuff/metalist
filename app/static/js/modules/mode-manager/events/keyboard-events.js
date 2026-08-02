@@ -20,7 +20,6 @@ import { actionSaveNote } from '../actions/content-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
-import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
@@ -74,7 +73,6 @@ import { CommandPalette } from '../../command-palette/command-palette-controller
 import { CommandGate } from '../services/command-gate-service.js';
 import { captureSelectionSnapshot, getActiveEditable } from '../../editor-selection.js';
 
-const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
@@ -538,11 +536,6 @@ function handleKeyDown(event) {
         case 'y':
             if (event.metaKey || event.ctrlKey) {
                 handleRedoShortcut(event);
-            }
-            break;
-        case 'm':
-            if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
-                handleMemoryModalShortcut(event);
             }
             break;
         case '?':
@@ -1619,40 +1612,6 @@ function handlePasteNoteChildShortcut(event) {
     void CommandGate.run('keyboard.paste_child', async () => {
         await actionPasteNoteChild();
     });
-}
-
-function handleMemoryModalShortcut(event) {
-    if (!event) {
-        throw new Error('handleMemoryModalShortcut called without an event object');
-    }
-
-    if (ModeContext.isEditing || ModeContext.isSearching || ModeContext.isLoading) {
-        Logger.logNoop('Memory modal shortcut ignored: not in idle state', {
-            isEditing: ModeContext.isEditing,
-            isSearching: ModeContext.isSearching,
-            isLoading: ModeContext.isLoading
-        });
-        return;
-    }
-
-    if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
-        Logger.logNoop('Memory modal shortcut ignored: another modal already open', {
-            stackDepth: ModeContext.modalStack.length
-        });
-        return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-	let searchQuery = ModeContext.searchQuery;
-	if (typeof searchQuery !== 'string') {
-		searchQuery = '';
-	}
-	memoryModal.openWithSearch(searchQuery);
-    Logger.logDebug('Memory modal opened via keyboard shortcut', {
-        searchQuery
-    }, Logger.LogCategory.EVENT);
 }
 
 function handleHelpModalShortcut(event) {

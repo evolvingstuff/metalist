@@ -17,10 +17,6 @@
             css_classes += ' editing'
         if note['flags'].get('isCollapsed'):
             css_classes += ' collapsed'
-        if note['flags'].get('memoryMode'):
-            css_classes += ' memory-mode'
-        if note['flags'].get('memorySelected'):
-            css_classes += ' memory-selected'
         list_style = note['flags'].get('listStyle')
         if list_style == 'bulleted':
             css_classes += ' list-bulleted'

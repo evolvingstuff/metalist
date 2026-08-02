@@ -48,7 +48,6 @@
 | `⌘ + /` | Open command palette |
 | `Tab` | Focus the search input and select its full query (view mode only) |
 | `?` | Open keyboard shortcuts / cheatsheet (idle mode) |
-| `M` | Open memory/search contexts (idle mode) |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 

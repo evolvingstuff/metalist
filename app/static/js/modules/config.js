@@ -108,9 +108,6 @@ export const CONFIG = {
             RESTORE_IMPORT: `${API_BASE}/backup/restore/import`,
             FOLDER_PICK: `${API_BASE}/backup/folder/pick`,
         },
-        MEMORY: {
-            BASE: `${API_BASE}/memory`
-        },
         FILES: {
             UPLOAD: `${API_FILES_BASE}/upload`,
             DOWNLOAD: (fileId) => `${API_FILES_BASE}/${fileId}/download`,

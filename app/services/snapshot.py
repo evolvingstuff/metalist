@@ -562,8 +562,6 @@ def build_view_state(
                 "isEditing": bool(editing_note_id == rec.id),
                 "hasChildren": has_children,
                 "isCollapsible": is_collapsible,
-                "memoryMode": False,
-                "memorySelected": False,
                 "searchRedacted": bool(is_search_redacted),
                 "listStyle": find_list_style(rec.tags),
                 "createdAt": _timestamp_iso(rec, "created_at"),

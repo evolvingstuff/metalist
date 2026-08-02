@@ -785,8 +785,6 @@ export function applyDifferentialView(payload, options) {
         const existingFlags = {
             isEditing: noteElement.classList.contains(CONFIG.CLASSES.EDITING),
             isCollapsed: noteElement.classList.contains('collapsed'),
-            memoryMode: noteElement.classList.contains('memory-mode'),
-            memorySelected: noteElement.classList.contains('memory-selected'),
             searchRedacted: noteElement.dataset.searchRedacted === 'true',
         };
         let flags = existingFlags;
@@ -830,8 +828,6 @@ export function applyDifferentialView(payload, options) {
         noteElement.classList.toggle('interactive', !lockedByOther);
         noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditing && !lockedByOther);
         noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
-        noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
-        noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
         noteElement.classList.toggle('list-bulleted', flags.listStyle === 'bulleted');
         noteElement.classList.toggle('list-numbered', flags.listStyle === 'numbered');
         setNoteSearchRedactionState(noteElement, Boolean(flags.searchRedacted));
@@ -840,7 +836,7 @@ export function applyDifferentialView(payload, options) {
 
         const contentElement = getContentElement(noteElement);
 
-        const shouldBeEditable = isEditing && !lockedByOther && !Boolean(flags.memoryMode);
+        const shouldBeEditable = isEditing && !lockedByOther;
         const contentEditable = shouldBeEditable ? 'true' : 'false';
         contentElement.setAttribute('contenteditable', contentEditable);
         contentElement.contentEditable = contentEditable;
@@ -1050,8 +1046,6 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     noteElement.classList.toggle('interactive', !lockedByOther);
     noteElement.classList.toggle(CONFIG.CLASSES.EDITING, isEditing && !lockedByOther);
     noteElement.classList.toggle('collapsed', Boolean(flags.isCollapsed));
-    noteElement.classList.toggle('memory-mode', Boolean(flags.memoryMode));
-    noteElement.classList.toggle('memory-selected', Boolean(flags.memorySelected));
     noteElement.classList.toggle('list-bulleted', flags.listStyle === 'bulleted');
     noteElement.classList.toggle('list-numbered', flags.listStyle === 'numbered');
     setNoteSearchRedactionState(noteElement, Boolean(flags.searchRedacted));
@@ -1059,7 +1053,7 @@ function applyNoteDataFromPayload(noteElement, noteId, noteData, noteLocks, curr
     updateLockIcon(noteElement, lockedByOther);
 
     const contentElement = getContentElement(noteElement);
-    const shouldBeEditable = isEditing && !lockedByOther && !Boolean(flags.memoryMode);
+    const shouldBeEditable = isEditing && !lockedByOther;
     const contentEditable = shouldBeEditable ? 'true' : 'false';
     contentElement.setAttribute('contenteditable', contentEditable);
     contentElement.contentEditable = contentEditable;

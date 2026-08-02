@@ -56,9 +56,7 @@
         "tags": "tag1 tag2",
         "flags": {
           "isEditing": false,
-          "isCollapsed": false,
-          "memoryMode": false,
-          "memorySelected": false
+          "isCollapsed": false
         },
         "hash": "expandedHashWithFlags"
       }

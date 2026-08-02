@@ -582,16 +582,6 @@ html {
     color: var(--text-color);
 }
 
-body.memory-modal-open #main-app {
-    filter: blur(4px);
-    pointer-events: none;
-    user-select: none;
-}
-
-body.memory-modal-open #memory-modal {
-    pointer-events: auto;
-}
-
 body.ontology-modal-open #main-app {
     filter: blur(4px);
     pointer-events: none;
@@ -1213,130 +1203,6 @@ body.ontology-modal-open #ontology-modal {
     background: linear-gradient(135deg, rgba(129, 205, 255, 0.95), rgba(90, 170, 240, 0.95));
 }
 
-#memory-modal .modal-content.memory-modal {
-    width: min(960px, 90vw);
-    max-height: 90vh;
-    margin: 3vh auto;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    background: linear-gradient(135deg, rgba(25, 25, 35, 0.98), rgba(18, 18, 28, 0.98));
-    backdrop-filter: blur(16px);
-    color: var(--text-color);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.memory-modal-controls {
-    display: flex;
-    gap: 12px;
-    justify-content: stretch;
-    padding: 0 4px;
-}
-
-.memory-modal-note {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 24px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.3));
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.memory-modal-note .note {
-    background-color: #ffffff !important;
-}
-
-.memory-modal-footer {
-    display: flex;
-    gap: 20px;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.5);
-    padding: 0 4px 4px 4px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    padding-top: 12px;
-}
-
-.memory-btn {
-    flex: 1;
-    padding: 14px 20px;
-    border: none;
-    border-radius: 10px;
-    font-size: 1rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    position: relative;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.memory-btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent);
-    opacity: 0;
-    transition: opacity 0.15s ease;
-}
-
-.memory-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-}
-
-.memory-btn:not(:disabled):hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-}
-
-.memory-btn:not(:disabled):hover::before {
-    opacity: 1;
-}
-
-.memory-btn:not(:disabled):active {
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.memory-btn-less {
-    background: linear-gradient(135deg, #5a6575, #4a5568);
-    color: #fff;
-}
-
-.memory-btn-same {
-    background: linear-gradient(135deg, #8494a8, #718096);
-    color: #fff;
-}
-
-.memory-btn-more {
-    background: linear-gradient(135deg, #38a169, #2f855a);
-    color: #fff;
-}
-
-.memory-modal-placeholder,
-.memory-modal-error {
-    text-align: center;
-    padding: 48px 24px;
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 1.05rem;
-}
-
-.memory-modal-error {
-    color: #fc8181;
-    background: rgba(245, 101, 101, 0.1);
-    border-radius: 8px;
-    border: 1px solid rgba(245, 101, 101, 0.2);
-}
-
 .help-modal-content {
     width: min(920px, 95vw);
     max-width: 920px;
@@ -1900,16 +1766,6 @@ html[data-theme="dark"] .prioritize-modal-content input.prioritize-modal-tag-inp
     }
 }
 
-.note.memory-mode {
-    position: relative;
-}
-
-.note.memory-selected {
-    border: 2px solid #48bb78;
-    box-shadow: 0 0 12px rgba(72, 187, 120, 0.4);
-    background-color: rgba(72, 187, 120, 0.18);
-}
-
 body {
     font-family: system-ui, -apple-system, sans-serif;
     line-height: 1.5;
@@ -2280,7 +2136,7 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     transition: border-color 120ms ease;
 }
 
-.note:not(.editing):not(.memory-selected):not(.locked):hover:not(:has(.note:hover)) {
+.note:not(.editing):not(.locked):hover:not(:has(.note:hover)) {
     border-color: #b0b0b0;
 }
 
@@ -4918,15 +4774,14 @@ body.pref-show-note-tags .note-tags {
 }
 
 /* Dark theme overrides for the primary app chrome. */
-html[data-theme="dark"] .note,
-html[data-theme="dark"] .memory-modal-note .note {
+html[data-theme="dark"] .note {
     background-color: var(--app-surface-1) !important;
     border-color: var(--app-border-strong);
     color: var(--text-color);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
 }
 
-html[data-theme="dark"] .note:not(.editing):not(.memory-selected):not(.locked):hover:not(:has(.note:hover)) {
+html[data-theme="dark"] .note:not(.editing):not(.locked):hover:not(:has(.note:hover)) {
     border-color: rgba(138, 180, 255, 0.45);
 }
 
@@ -4939,11 +4794,6 @@ html[data-theme="dark"] .note.editing {
 html[data-theme="dark"] .note.locked {
     background-color: rgba(127, 29, 29, 0.26);
     border-left-color: #fb7185;
-}
-
-html[data-theme="dark"] .note.memory-selected {
-    background-color: rgba(72, 187, 120, 0.14);
-    border-color: rgba(72, 187, 120, 0.7);
 }
 
 html[data-theme="dark"] .note.search-redacted .note-content {

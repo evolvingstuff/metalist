@@ -373,9 +373,6 @@ Notes:
 - `POST /api2/notes/undo`
 - `POST /api2/notes/redo`
 
-Memory:
-- `POST /api2/memory`
-
 ## Monitoring and Logging
 
 ### Should Log:
