@@ -41,6 +41,7 @@ from app.usecases.paste_child import CmdPasteChild
 from app.usecases.split_note import CmdSplitNote
 from app.usecases.toggle_reference_mode import CmdToggleReferenceMode
 from app.usecases.unformat_content import CmdUnformatContent
+from app.usecases.resize_image import CmdResizeImage
 from app.usecases.undo import CmdUndo
 from app.usecases.redo import CmdRedo
 from app.usecases.record_edit_mode import CmdRecordEditMode
@@ -852,6 +853,26 @@ def unformat_note_content(request: Request, note_id: str, body: dict):
     _require_note_present(note_id, context="notes.unformat")
     cmd = CmdUnformatContent(
         note_id=note_id,
+        token=token,
+        client_id=client_id,
+        undo_context=body["undoContext"],
+        viewport=viewport,
+    )
+    return cmd.execute()
+
+
+@router.post("/notes/{note_id}/resize-image")
+@transactional_route
+def resize_note_image(request: Request, note_id: str, body: dict):
+    client_id = body["clientId"]
+    viewport = _require_viewport(body)
+    token = _require_bearer_token(request)
+    _require_note_present(note_id, context="notes.resize-image")
+    cmd = CmdResizeImage(
+        note_id=note_id,
+        source_kind=body["sourceKind"],
+        occurrence_index=body["occurrenceIndex"],
+        action=body["action"],
         token=token,
         client_id=client_id,
         undo_context=body["undoContext"],

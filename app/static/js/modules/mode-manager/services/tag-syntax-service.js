@@ -51,9 +51,20 @@ function enforceTagToken(rawToken) {
         token = token.slice(1);
     }
 
+    const assignmentSeparatorCount = Array.from(token).filter((char) => char === '=').length;
+    const assignmentSeparatorIndex = token.indexOf('=');
+    const canPreserveAssignmentSeparator = (
+        assignmentSeparatorCount === 1
+        && assignmentSeparatorIndex > 0
+        && assignmentSeparatorIndex < token.length - 1
+    );
     let out = '';
     for (const char of token) {
         if (!isAsciiPrintable(char)) {
+            continue;
+        }
+        if (char === '=' && canPreserveAssignmentSeparator) {
+            out += char;
             continue;
         }
         if (TAG_CONTAINS_DISALLOWED.has(char)) {

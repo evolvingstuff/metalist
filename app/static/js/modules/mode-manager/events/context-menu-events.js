@@ -7,6 +7,7 @@ import {
     actionSwitchNotes,
 } from '../actions/selection-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
+import { actionRefreshAndMaybeSelect } from '../actions/ui-actions.js';
 import {
     actionCopyNoteById,
     addSelectedTextAsTag,
@@ -56,6 +57,66 @@ import {
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 
 const ontologyModal = new OntologyModal();
+
+async function resizeImageFromContext(imageContext, action) {
+    if (imageContext === null || typeof imageContext !== 'object') {
+        throw new Error('resizeImageFromContext requires imageContext object');
+    }
+    if (action !== 'bigger' && action !== 'smaller' && action !== 'reset') {
+        throw new Error('resizeImageFromContext requires a supported action');
+    }
+    const hostNoteId = imageContext.hostNoteId;
+    const occurrenceIndex = imageContext.occurrenceIndex;
+    if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+        throw new Error('Image resize context requires hostNoteId');
+    }
+    if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) {
+        throw new Error('Image resize context requires non-negative occurrenceIndex');
+    }
+
+    if (ModeContext.isEditing && ModeContext.currentNoteId === hostNoteId) {
+        await actionSaveNote(hostNoteId);
+    }
+    const response = await NotesAPI.resizeImage(
+        hostNoteId,
+        imageContext.sourceKind,
+        occurrenceIndex,
+        action,
+    );
+    if (response === null || typeof response !== 'object') {
+        throw new Error('Image resize response must be an object');
+    }
+    if (typeof response.content !== 'string' || typeof response.tags !== 'string') {
+        throw new Error('Image resize response must include content and tags');
+    }
+    if (ModeContext.isEditing && ModeContext.currentNoteId === hostNoteId) {
+        const noteElement = document.querySelector(`.note[data-note-id="${hostNoteId}"]`);
+        if (!(noteElement instanceof HTMLElement)) {
+            throw new Error(`Editing note element missing after image resize: ${hostNoteId}`);
+        }
+        const noteContent = noteElement.querySelector('.note-content');
+        if (!(noteContent instanceof HTMLElement)) {
+            throw new Error(`Editing note content missing after image resize: ${hostNoteId}`);
+        }
+        noteContent.innerHTML = response.content;
+        setTagBarValue(noteElement, response.tags);
+        if (ModeContext.currentContent !== response.content) {
+            ModeContext.setCurrentContent(response.content);
+        }
+        if (ModeContext.lastSavedContent !== response.content) {
+            ModeContext.setLastSavedContent(response.content);
+        }
+        if (ModeContext.isDirty) {
+            ModeContext.setDirty(false);
+        }
+        ModeContext.markEditSessionHasEdits();
+        return;
+    }
+    await actionRefreshAndMaybeSelect({
+        startedAt: performance.now(),
+        context: `resizeImage.${action}`,
+    });
+}
 
 function resolveEffectiveTheme() {
     const explicitTheme = document.documentElement.getAttribute('data-theme');
@@ -658,6 +719,21 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         onCopyImage: (targetImageContext) => {
             void CommandGate.run('contextMenu.image.copy', async () => {
                 await copyImageFromContext(targetImageContext);
+            });
+        },
+        onMakeImageBigger: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.make_bigger', async () => {
+                await resizeImageFromContext(targetImageContext, 'bigger');
+            });
+        },
+        onMakeImageSmaller: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.make_smaller', async () => {
+                await resizeImageFromContext(targetImageContext, 'smaller');
+            });
+        },
+        onResetImageSize: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.reset_size', async () => {
+                await resizeImageFromContext(targetImageContext, 'reset');
             });
         },
         onSaveImage: (targetImageContext) => {

@@ -53,6 +53,9 @@ function buildNoteContextItems(context, handlers) {
     const onPasteReference = handlers.onPasteReference;
     const onPasteReferenceChild = handlers.onPasteReferenceChild;
     const onCopyImage = handlers.onCopyImage;
+    const onMakeImageBigger = handlers.onMakeImageBigger;
+    const onMakeImageSmaller = handlers.onMakeImageSmaller;
+    const onResetImageSize = handlers.onResetImageSize;
     const onSaveImage = handlers.onSaveImage;
     const onZoomImage = handlers.onZoomImage;
     const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
@@ -113,13 +116,44 @@ function buildNoteContextItems(context, handlers) {
         if (typeof onOpenImageInNewTab !== 'function') {
             throw new Error('Image note context missing onOpenImageInNewTab handler');
         }
+        if (typeof onMakeImageBigger !== 'function') {
+            throw new Error('Image note context missing onMakeImageBigger handler');
+        }
+        if (typeof onMakeImageSmaller !== 'function') {
+            throw new Error('Image note context missing onMakeImageSmaller handler');
+        }
+        if (typeof onResetImageSize !== 'function') {
+            throw new Error('Image note context missing onResetImageSize handler');
+        }
 
         items.push(
+            {
+                id: 'make-image-bigger',
+                label: 'Make Bigger',
+                icon: 'zoom_in',
+                enabled: true,
+                onSelect: () => onMakeImageBigger(imageContext),
+            },
+            {
+                id: 'make-image-smaller',
+                label: 'Make Smaller',
+                icon: 'zoom_out',
+                enabled: true,
+                onSelect: () => onMakeImageSmaller(imageContext),
+            },
+            {
+                id: 'reset-image-size',
+                label: 'Reset Size',
+                icon: 'restart_alt',
+                enabled: true,
+                onSelect: () => onResetImageSize(imageContext),
+            },
             {
                 id: 'copy-image',
                 label: 'Copy Image',
                 icon: 'image',
                 enabled: true,
+                separated: true,
                 onSelect: () => onCopyImage(imageContext),
             },
             {

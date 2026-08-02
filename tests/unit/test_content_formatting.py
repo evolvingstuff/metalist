@@ -204,6 +204,17 @@ def test_format_note_content_for_view_scoped_monospace_consumes_delimiters() -> 
     assert rendered == '<div><span class="meta-scope meta-monospace">hello</span></div>'
 
 
+def test_format_note_content_for_view_scoped_size_uses_layout_wrapper() -> None:
+    html = '<div>{<img src="example.png">}</div>'
+
+    rendered = format_note_content_for_view(content_html=html, tags="{@size=2.0}")
+
+    assert rendered == (
+        '<div><span class="meta-scope meta-box-inline meta-size meta-size-200">'
+        '<img src="example.png"></span></div>'
+    )
+
+
 def test_format_note_content_for_view_scoped_multiple_meta_tags_apply_union() -> None:
     html = "<div>{{hello}}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="{{@red @monospace}}")
