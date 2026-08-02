@@ -9,7 +9,8 @@
 - Outside of `/* ... */` comments, tags are separated by whitespace.
 - Runs of whitespace are normalized to single spaces.
 - Wrapper tokens may contain internal spaces (e.g. `{{@red @monospace}}`), which are preserved (normalized) inside the wrapper. This means a wrapper token can contain multiple tags.
-- A normal tag token allows only ASCII-printable characters and disallows: `: , " \\ > < = [ ] { } ( ) * | ; ~ ``.
+- A normal tag token allows only ASCII-printable characters and disallows: `: , " \\ > < [ ] { } ( ) * | ; ~ ``.
+- One `=` is allowed inside regular or meta tags when valid tag characters occur on both sides (for example `abc=xyz` or `@size=2.0`). It cannot appear at the start/end, and multiple `=` characters are removed during normalization.
 - Tag tokens also cannot start with `-`, `+`, or `/`.
 
 ## Wrapper Tags
@@ -38,6 +39,7 @@ Examples (autocorrected while typing):
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` apply text colors.
   - `@copyable` makes the rendered content clickable to copy its raw text to the clipboard.
+  - `@size=0.1`, `0.25`, `0.5`, `0.75`, `1.0`, `1.25`, `1.5`, `2.0`, or `3.0` scales a whole note or scoped region non-destructively in view mode.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 - List meta tags:
   - `@list-bulleted` renders the note's immediate children with bullet markers.
@@ -153,3 +155,4 @@ Unclosed comments behave like unclosed wrappers:
 - Scope allocation prefers single `{}`, `[]`, and `()` delimiters in that order, then depth-two and depth-three forms. A candidate is skipped when its delimiter already occurs in the note content or tag bar.
 - Basic styles can overlap. Applying a second style to a partially overlapping selection uses another delimiter pair, and view rendering splits the overlap into valid nested HTML.
 - Renderer tags (`@markdown`, `@LaTeX`, `@json`, `@csv`, and `@shell`) can be added globally or to a scoped selection.
+- Add Style also exposes fixed `@size=...` presets. Right-clicking an inline image in edit or view mode provides stepwise **Make Bigger**, **Make Smaller**, and **Reset Size** actions; stored image-file embeds expose those actions in view mode. Reset removes the size tag rather than retaining `@size=1.0`.
