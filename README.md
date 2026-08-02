@@ -6,7 +6,7 @@ A minimalist single-user note-taking app focused on server-side rendering (SSR),
 - Rich text editing (ContentEditable) with image support
 - Drag-and-drop note reordering
 - Real-time content saving
-- Keyboard shortcuts (press `?` in the app)
+- Keyboard shortcuts / cheatsheet (press `?` in the app)
 - Linked-list ordering model for efficient reorders
 - Optional password protection + encryption at rest (AES-GCM)
 - Multi-tab search contexts with server-persisted scroll/search state (survives browser restarts)

@@ -483,7 +483,7 @@ Undo/redo is **server-side** and scoped by a client-computed `undoContext` (curr
 
 Edit-mode transitions are recorded too:
 - Selecting a note (enter edit mode) records an `edit_mode` op.
-- Exiting edit mode (Esc/click-outside/Cmd+P/tab switches/etc) records an `edit_mode` op.
+- Exiting edit mode (Esc/click-outside/tab switches/etc) records an `edit_mode` op.
 - Undo/redo of these ops uses `scrollRestore.editingNoteId` (string or null) to enter/exit editing deterministically.
 
 Important UX rule:

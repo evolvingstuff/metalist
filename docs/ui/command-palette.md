@@ -44,7 +44,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Generate random password…`: opens a password generator modal with editable length/character set controls, explicit `Copy`, `Regenerate`, and `Close` actions, and a clipboard handoff that auto-adds `@password` when that copied value is pasted into an empty note.
 - `Session idle timeout…`: opens a modal for changing the namespace-scoped inactivity window before reauthentication is required again, or disabling idle timeout entirely.
 - `Reminders…`: opens the privacy-first in-app reminder registry and builder. Reminders are namespace-local, encrypted with the namespace when password protection is enabled, and never use browser/system push notifications. See `docs/ui/reminders.md`.
-- `Keyboard shortcuts help…`: opens the keyboard shortcuts modal from the command palette.
+- `Keyboard Shortcuts / Cheatsheet…`: opens the keyboard shortcuts cheatsheet from the command palette; `cheatsheet` is a searchable keyword.
 - `Version info…`: opens a read-only runtime/version modal with app version, SQLite `user_version`, namespace, auth, encryption, vault, KDF, and cache readiness fields.
 - `Switch namespace…`: opens a simple namespace picker and opens the selected non-current namespace. A running namespace with an unchanged launch profile keeps its process and warm cache; stopped namespaces launch, and changed port profiles restart the target.
 - `Create namespace…`: opens a namespace creation modal with defaulted HTTP / HTTPS ports, saves the profile, launches the namespace, and opens it.

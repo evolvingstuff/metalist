@@ -1,7 +1,7 @@
 /**
- * HelpModal - Display keyboard shortcuts and commands
+ * HelpModal - Display the keyboard shortcuts cheatsheet
  *
- * Shows comprehensive list of all available keyboard shortcuts
+ * Shows the available keyboard shortcuts and command reminders
  * Triggered by pressing '?' in idle mode
  */
 
@@ -33,7 +33,7 @@ export class HelpModal extends BaseModal {
         modalElement.innerHTML = `
             <div class="modal-content help-modal-content">
                 <span class="close">&times;</span>
-                <h2>Keyboard Shortcuts</h2>
+                <h2>Keyboard Shortcuts / Cheatsheet</h2>
                 <div class="help-shortcuts-container">
                     ${shortcutsHTML}
                 </div>
@@ -57,8 +57,6 @@ export class HelpModal extends BaseModal {
         const modKey = isMac ? 'Cmd' : 'Ctrl';
         const shiftKey = 'Shift';
         const enterKey = 'Enter';
-        const backspaceKey = isMac ? 'Delete' : 'Backspace';
-        const deleteKey = isMac ? 'Forward Delete' : 'Delete';
         const upArrowKey = 'Up';
         const downArrowKey = 'Down';
         const leftArrowKey = 'Left';
@@ -70,14 +68,12 @@ export class HelpModal extends BaseModal {
                 columnCount: 2,
                 items: [
                     { keys: `${modKey}+/`, description: 'Open command palette' },
-                    { keys: '?', description: 'Open keyboard shortcuts help (idle only)' },
+                    { keys: '?', description: 'Open keyboard shortcuts / cheatsheet (idle only)' },
                     { keys: 'Esc', description: 'Defocus search, exit edit mode, or close top modal' },
                     { keys: 'Enter', description: 'Create new root note (idle or from search)' },
-                    { keys: 'Space', description: 'Toggle collapse on hovered note' },
-                    { keys: `${backspaceKey} / ${deleteKey}`, description: 'Delete hovered note (idle)' },
+                    { keys: 'Tab', description: 'Focus search and select the current query (idle only)' },
                     { keys: `${modKey}+Z`, description: 'Undo' },
                     { keys: `${modKey}+${shiftKey}+Z / ${modKey}+Y`, description: 'Redo' },
-                    { keys: `${modKey}+;`, description: 'Edit tag relationships' },
                     { keys: 'M', description: 'Open memory/search contexts (idle)' },
                 ]
             },
@@ -101,8 +97,7 @@ export class HelpModal extends BaseModal {
                     { keys: `${modKey}+${shiftKey}+R`, description: 'Paste embedded reference as child note' },
                     { keys: `${modKey}+S`, description: 'Split note at selection/caret' },
                     { keys: `${modKey}+U`, description: 'Unformat note content but keep links and images' },
-                    { keys: `${modKey}+P`, description: 'Open password settings' },
-                    { keys: `${modKey}+${backspaceKey} / ${modKey}+${deleteKey}`, description: 'Delete selected note' },
+                    { keys: `${modKey}+Backspace/Delete`, description: 'Delete selected note' },
                 ]
             }
         ];

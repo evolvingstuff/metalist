@@ -338,7 +338,7 @@ export function buildCommandPaletteEndpoints(deps) {
         {
             id: 'action.open_keyboard_shortcuts_help',
             kind: 'action',
-            label: 'Keyboard shortcuts help…',
+            label: 'Keyboard Shortcuts / Cheatsheet…',
             execute: async () => openKeyboardShortcutsHelp(),
         },
     ];

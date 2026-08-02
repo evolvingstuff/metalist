@@ -1,6 +1,6 @@
 # Note App Controls
 
-## Keyboard Shortcuts
+## Keyboard Shortcuts / Cheatsheet
 
 ### When Editing a Note
 | Shortcut | Action |
@@ -14,7 +14,6 @@
 | `⌘ + ↑` | Move current note up (one visible sibling) |
 | `⇧ + ⌘ + ↑` | Move the selected root note to the top of the current root view (including filtered/search views), or move a child note to the top of its siblings |
 | `⌘ + ↓` | Move current note down (one visible sibling) |
-| `⌘ + P` | Save + exit edit mode, then open password modal |
 | `⌘ + C` | Copy selection (default), or copy whole note when no selection |
 | `⌘ + R` | Copy as embedded reference for the most recently copied note UUID |
 | `⌘ + S` | Split note at selection/caret into sibling notes; selected segment becomes its own note |
@@ -23,6 +22,7 @@
 | `⌘ + V` | Paste note as sibling (when note clipboard active; scrolls new note into view). If the selected note has no visible content and no children, paste replaces it. |
 | `⇧ + ⌘ + V` | Paste note as child (when note clipboard active; scrolls new note into view) |
 | `⇧ + ⌘ + R` | Paste embedded reference from the most recently copied note UUID as a new child note |
+| `⌘ + Backspace/Delete` | Delete the selected note |
 
 - If note clipboard conditions are **not** met and edit mode is active, `⌘ + V` uses browser clipboard paste and runs external HTML sanitization before insertion.
 - When note paste replaces an empty target, the target keeps its search-context tags and merges in copied root tags with case-insensitive dedupe.
@@ -39,18 +39,16 @@
 - `⌘ + U` does not remove meta-tags like `@bold`, `@todo`, or any other tag-bar formatting tags.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
 - In any non-normal sort order, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
-- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, note copy/cut/paste, and password modal.
+- While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.
 
 ### General Shortcuts
 | Shortcut | Action |
 |----------|--------|
 | `Enter` | Add new note at top (when not editing) |
-| `Space` | Toggle collapse/expand hovered note |
 | `⌘ + /` | Open command palette |
 | `Tab` | Focus the search input and select its full query (view mode only) |
-| `?` | Open keyboard shortcuts help (idle mode) |
+| `?` | Open keyboard shortcuts / cheatsheet (idle mode) |
 | `M` | Open memory/search contexts (idle mode) |
-| `⌘ + ;` | Open tag relationships editor |
 | `⌘ + Z` | Undo |
 | `⌘ + Y` | Redo |
 
@@ -148,7 +146,7 @@
 - Restore from backup…
 - Logout
 - Generate random password…
-- Keyboard shortcuts help…
+- Keyboard Shortcuts / Cheatsheet…
 - Version info…
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 

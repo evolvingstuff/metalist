@@ -40,3 +40,14 @@ test('animated transitions preference matches motion queries', () => {
     assert.equal(animatedTransitions.tags.includes('motion'), true);
     assert.equal(animatedTransitions.tags.includes('disable'), true);
 });
+
+test('keyboard shortcuts action matches cheatsheet queries', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const shortcuts = payload.endpoints.find(
+        (endpoint) => endpoint.id === 'action.open_keyboard_shortcuts_help',
+    );
+
+    assert.ok(shortcuts, 'expected keyboard shortcuts endpoint in command palette tag config');
+    assert.equal(shortcuts.tags.includes('cheatsheet'), true);
+});

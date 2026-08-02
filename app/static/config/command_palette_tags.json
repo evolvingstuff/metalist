@@ -158,7 +158,7 @@
     },
     {
       "id": "action.open_keyboard_shortcuts_help",
-      "tags": ["help", "shortcuts", "keyboard", "commands", "keys", "guide"]
+      "tags": ["help", "shortcuts", "keyboard", "commands", "keys", "guide", "cheatsheet"]
     }
   ]
 }

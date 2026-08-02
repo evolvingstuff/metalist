@@ -84,6 +84,10 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         'Prioritize tag to back (global)…',
     );
     assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'action.open_keyboard_shortcuts_help').label,
+        'Keyboard Shortcuts / Cheatsheet…',
+    );
     assert.equal(endpointIds.has('action.run_mcp_client'), false);
     assert.equal(endpointIds.has('view.sort_mode'), false);
     assert.equal(endpointIds.has('view.sort_mode.normal'), true);

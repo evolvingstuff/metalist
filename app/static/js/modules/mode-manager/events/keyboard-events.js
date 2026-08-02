@@ -4,7 +4,6 @@ import {
     createNote,
     createNoteAtTop,
     deleteNote,
-    deleteNoteOutsideEdit,
     createChildNote,
     moveNoteUp,
     moveNoteDown,
@@ -21,10 +20,8 @@ import { actionSaveNote } from '../actions/content-actions.js';
 import { actionDeselectNote, actionExitEditingWithoutSavingOrRefreshing, actionSaveAndExitEditingWithoutRefreshing } from '../actions/selection-actions.js';
 import { actionUndo, actionRedo } from '../actions/history-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
-import { PasswordModal } from '../../modals/password-modal.js';
 import { MemoryModal } from '../../modals/memory-modal.js';
 import { HelpModal } from '../../modals/help-modal.js';
-import { OntologyModal } from '../../modals/ontology-modal.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { CONFIG } from '../../config.js';
 import { ErrorHandler } from '../../error-handler.js';
@@ -65,6 +62,7 @@ import {
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
 import { attachPickedFileToCurrentNote, insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
 import { shouldCreateTopNoteForFileDrop } from '../services/file-drop-policy-service.js';
+import { shouldDeleteSelectedNoteFromKeyboard } from '../services/note-delete-shortcut-policy-service.js';
 import { syncBacklinksPanelPlacement } from '../services/backlinks-panel-service.js';
 import {
     hideSearchContextsOverlay,
@@ -78,7 +76,6 @@ import { captureSelectionSnapshot, getActiveEditable } from '../../editor-select
 
 const memoryModal = new MemoryModal();
 const helpModal = new HelpModal();
-const ontologyModal = new OntologyModal();
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 const NAVIGATION_KEYS = new Set([
@@ -170,28 +167,6 @@ function pushReferenceNavigationEntry(fromTabId, toTabId) {
     updateReferenceBackButtonState();
 }
 
-function isOntologyModalShortcut(event) {
-    if (!event) {
-        throw new Error('isOntologyModalShortcut called without event');
-    }
-    if (typeof event.key !== 'string') {
-        throw new Error('isOntologyModalShortcut requires event.key');
-    }
-
-    const keyMatches = event.key === ';';
-    const codeMatches = typeof event.code === 'string' && event.code === 'Semicolon';
-    if (!keyMatches && !codeMatches) {
-        return false;
-    }
-    if (!(event.metaKey || event.ctrlKey)) {
-        return false;
-    }
-    if (event.shiftKey) {
-        return false;
-    }
-    return true;
-}
-
 function isTagBarNoteShortcut(event) {
     if (!event) {
         throw new Error('isTagBarNoteShortcut called without event');
@@ -218,15 +193,6 @@ function isTagBarNoteShortcut(event) {
         return true;
     }
     return TAG_BAR_META_SHORTCUT_KEYS.has(event.key);
-}
-
-async function openOntologyModalFromShortcut() {
-    if (ontologyModal.isOpen) {
-        ontologyModal.focusSearchInput();
-        return;
-    }
-    ontologyModal.open();
-    ontologyModal.focusSearchInput();
 }
 
 export function initKeyboardEvents() {
@@ -338,10 +304,9 @@ function handleKeyDown(event) {
 	            const isSearchInput = tagName === 'INPUT' && target.id === 'search-input';
 	            const isTagBarInput = tagName === 'INPUT' && target.classList.contains('note-tag-bar-input');
 	            const isCommandPaletteShortcut = event.key === '/' && (event.metaKey || event.ctrlKey);
-	            const isTagEditorShortcut = isOntologyModalShortcut(event);
                 const isTagBarShortcut = isTagBarInput && ModeContext.isEditing && isTagBarNoteShortcut(event);
 
-	            if (isTextInput && !(isSearchInput && event.key === 'Enter') && !isCommandPaletteShortcut && !isTagEditorShortcut) {
+	            if (isTextInput && !(isSearchInput && event.key === 'Enter') && !isCommandPaletteShortcut) {
 	                if (!isTagBarShortcut) {
 	                    return;
 	                }
@@ -389,14 +354,6 @@ function handleKeyDown(event) {
     if (ModeContext.modalStack && ModeContext.modalStack.length > 0) {
         const targetElement = event.target instanceof HTMLElement ? event.target.closest('.modal') : null;
         if (targetElement) {
-            if (isOntologyModalShortcut(event)) {
-                event.preventDefault();
-                event.stopPropagation();
-                const topModal = ModeContext.topModal;
-                if (topModal === 'ontologyModal') {
-                    void openOntologyModalFromShortcut();
-                }
-            }
             return;
         }
 
@@ -435,24 +392,21 @@ function handleKeyDown(event) {
         }
     }
     
-	    const hoveredDetails = getHoveredNoteDetails(event);
-
 	    const isMoveKey = MOVE_KEYS.has(event.key);
-	    const isDeleteKey = DELETE_KEYS.has(event.key);
-	    const intendsHoverDelete = (
-	        isDeleteKey &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !ModeContext.isEditing &&
-        Boolean(hoveredDetails.noteId)
-    );
+    const isSelectedDeleteShortcut = shouldDeleteSelectedNoteFromKeyboard({
+        key: event.key,
+        metaKey: Boolean(event.metaKey),
+        ctrlKey: Boolean(event.ctrlKey),
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+    });
 
     // Check if we're disconnected from server for operations that need it
 	    if (!ModeContext.isConnected) {
         let needsServer = false;
         if (event.key === 'Enter' && (metaOrCtrl || !ModeContext.isEditing)) {
             needsServer = true;
-        } else if (isDeleteKey && (metaOrCtrl || intendsHoverDelete)) {
+        } else if (isSelectedDeleteShortcut) {
             needsServer = true;
 	        } else if (isMoveKey && metaOrCtrl) {
 	            needsServer = true;
@@ -478,12 +432,7 @@ function handleKeyDown(event) {
             event.stopPropagation();
             return;
         }
-        // Allow ESC, search, and password modal even when disconnected
-    }
-
-    if (isOntologyModalShortcut(event)) {
-        void handleOntologyModalShortcut(event);
-        return;
+        // Allow ESC and search while disconnected.
     }
 
     switch (event.key) {
@@ -508,12 +457,8 @@ function handleKeyDown(event) {
             break;
         case 'Backspace':
         case 'Delete':
-            if (event.metaKey) {
+            if (isSelectedDeleteShortcut) {
                 handleDeleteNoteShortcut(event);
-            } else if (event.ctrlKey) {
-                handleDeleteNoteShortcut(event);
-            } else if (!ModeContext.isEditing && hoveredDetails.noteId) {
-                handleDeleteHoveredNote(event, hoveredDetails);
             }
             break;
         case '/':
@@ -593,11 +538,6 @@ function handleKeyDown(event) {
         case 'y':
             if (event.metaKey || event.ctrlKey) {
                 handleRedoShortcut(event);
-            }
-            break;
-        case 'p':
-            if (event.metaKey || event.ctrlKey) {
-                void handlePasswordModalShortcut(event);
             }
             break;
         case 'm':
@@ -755,80 +695,6 @@ function revealCaretForCurrentNote() {
     const noteElement = DOMUtils.getNoteById(currentNoteId);
     DOMUtils.revealCaret(noteElement);
     ModeContext.markCaretVisible();
-}
-
-function getHoveredNoteDetails(event) {
-	const safeEvent = event ? event : {};
-
-    const currentHoveredId = ModeContext.hoveredNoteId;
-    if (currentHoveredId) {
-        const existingElement = document.querySelector(`[data-note-id="${currentHoveredId}"]`);
-        if (existingElement) {
-            return { noteId: currentHoveredId, element: existingElement };
-        }
-    }
-
-    if (typeof safeEvent.target?.closest === 'function') {
-        const elementFromEvent = safeEvent.target.closest('.note');
-        if (elementFromEvent && elementFromEvent.dataset?.noteId) {
-            return {
-                noteId: elementFromEvent.dataset.noteId,
-                element: elementFromEvent
-            };
-        }
-    }
-
-    const hoveredCandidates = Array.from(document.querySelectorAll('.note:hover'));
-    if (hoveredCandidates.length > 0) {
-        const deepest = hoveredCandidates[hoveredCandidates.length - 1];
-        if (deepest && deepest.dataset?.noteId) {
-            return {
-                noteId: deepest.dataset.noteId,
-                element: deepest
-            };
-        }
-    }
-
-    return { noteId: null, element: null };
-}
-
-function handleDeleteHoveredNote(event, prefetchedDetails) {
-    if (!event) {
-        throw new Error('handleDeleteHoveredNote called without an event object');
-    }
-
-    if (ModeContext.isEditing) {
-        return;
-    }
-
-	let resolvedDetails = prefetchedDetails;
-	if (!resolvedDetails) {
-		resolvedDetails = getHoveredNoteDetails(event);
-	}
-	const hoveredNoteId = resolvedDetails.noteId;
-	if (!hoveredNoteId) {
-		Logger.logNoop('Delete shortcut ignored: no hovered note');
-		return;
-	}
-
-    if (!ModeContext.isConnected) {
-        Logger.logNoop('Delete shortcut ignored while disconnected from server', {
-            hoveredNoteId
-        });
-        return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    Logger.logDebug('Delete hovered note shortcut triggered', {
-        hoveredNoteId,
-        currentNoteId: ModeContext.currentNoteId
-    }, Logger.LogCategory.EVENT);
-
-    void CommandGate.run('keyboard.delete_hovered', async () => {
-        await deleteNoteOutsideEdit(hoveredNoteId);
-    });
 }
 
 function handleEscapeKey() {
@@ -1753,62 +1619,6 @@ function handlePasteNoteChildShortcut(event) {
     void CommandGate.run('keyboard.paste_child', async () => {
         await actionPasteNoteChild();
     });
-}
-
-async function handlePasswordModalShortcut(event) {
-    if (!event) {
-        throw new Error('handlePasswordModalShortcut called without an event object');
-    }
-
-    Logger.logDebug('Password modal shortcut triggered (Cmd+P)', {}, Logger.LogCategory.EVENT);
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    // Exit search mode if active
-    if (ModeContext.isSearching) {
-        actionExitSearchMode();
-    }
-
-	// Exit editing mode if active
-	if (ModeContext.isEditing) {
-		const result = await CommandGate.run('keyboard.password_modal.exit_editing', async () => {
-			await actionSaveAndExitEditingWithoutRefreshing();
-		});
-		if (result === null) {
-			return;
-		}
-	}
-
-    // Open the password modal
-    const passwordModal = new PasswordModal();
-    passwordModal.open();
-}
-
-async function handleOntologyModalShortcut(event) {
-    if (!event) {
-        throw new Error('handleOntologyModalShortcut called without an event object');
-    }
-
-    Logger.logDebug('Ontology modal shortcut triggered (Cmd/Ctrl+;)', {}, Logger.LogCategory.EVENT);
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (ModeContext.isSearching) {
-        actionExitSearchMode();
-    }
-
-    if (ModeContext.isEditing) {
-        const result = await CommandGate.run('keyboard.ontology_modal.exit_editing', async () => {
-            await actionSaveAndExitEditingWithoutRefreshing();
-        });
-        if (result === null) {
-            return;
-        }
-    }
-
-    await openOntologyModalFromShortcut();
 }
 
 function handleMemoryModalShortcut(event) {
