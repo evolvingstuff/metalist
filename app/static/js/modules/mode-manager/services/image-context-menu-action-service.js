@@ -286,18 +286,55 @@ export function resolveImageContextFromElement(element) {
     const fileId = image.dataset.fileRefId;
     const alt = image.alt;
     if (typeof fileId === 'string' && fileId.length > 0) {
+        const referenceBlock = image.closest('.note-reference-block[data-ref-occurrence]');
+        if (!(referenceBlock instanceof HTMLElement)) {
+            throw new Error('Rendered file image is missing its reference occurrence');
+        }
+        const hostNoteId = referenceBlock.dataset.refHostNoteId;
+        const occurrenceIndex = Number.parseInt(referenceBlock.dataset.refOccurrence, 10);
+        if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+            throw new Error('Rendered file image is missing its host note id');
+        }
+        if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) {
+            throw new Error('Rendered file image has an invalid reference occurrence');
+        }
         return {
             sourceKind: 'file',
             fileId,
+            hostNoteId,
+            occurrenceIndex,
             src,
             alt: typeof alt === 'string' ? alt : '',
             filename: null,
         };
     }
 
+    let occurrenceIndex = Number.parseInt(image.dataset.inlineImageOccurrence, 10);
+    if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) {
+        const noteContent = image.closest('.note-content');
+        if (!(noteContent instanceof HTMLElement)) {
+            throw new Error('Inline image is missing its note content container');
+        }
+        const images = Array.from(noteContent.querySelectorAll('img'));
+        occurrenceIndex = images.indexOf(image);
+        if (occurrenceIndex < 0) {
+            throw new Error('Inline image occurrence could not be resolved');
+        }
+    }
+    const embeddedNote = image.closest('.note-embed-node[data-embed-note-id]');
+    const hostNote = image.closest('.note[data-note-id]');
+    const hostNoteId = embeddedNote instanceof HTMLElement
+        ? embeddedNote.dataset.embedNoteId
+        : hostNote?.dataset.noteId;
+    if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+        throw new Error('Inline image is missing its host note id');
+    }
+
     return {
         sourceKind: 'inline',
         fileId: null,
+        hostNoteId,
+        occurrenceIndex,
         src,
         alt: typeof alt === 'string' ? alt : '',
         filename: null,

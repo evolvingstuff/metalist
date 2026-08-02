@@ -13,6 +13,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 
 ## Results
 - Booleans toggle with `Enter`.
+- Boolean labels describe the next action: `Show …` while hidden and `Hide …` while visible.
 - Selects cycle with `Enter` (and adjust with `←`/`→`).
 - Actions run with `Enter`.
 
@@ -30,6 +31,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - Endpoint definitions (behavior/labels) live in code.
 - Palette preferences (`pref.*`) and command usage history are persisted per namespace in the main SQLite DB via `/api2/auth/client-state*`, not in browser `localStorage`.
 - `Animated transitions` is on by default and controls UI motion such as tag-bar edit transitions and note expand/collapse transitions.
+- `Note Layout & Appearance…` stores namespace-scoped presets for top-level note size, child indentation, and vertical spacing. The defaults are `Larger`, `Standard`, and `Comfortable` respectively.
 - Session idle timeout is a namespace-scoped server setting stored in `app_settings` and managed via `/api2/auth/settings/session-timeout`.
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
@@ -46,6 +48,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Reminders…`: opens the privacy-first in-app reminder registry and builder. Reminders are namespace-local, encrypted with the namespace when password protection is enabled, and never use browser/system push notifications. See `docs/ui/reminders.md`.
 - `Keyboard Shortcuts / Cheatsheet…`: opens the keyboard shortcuts cheatsheet from the command palette; `cheatsheet` is a searchable keyword.
 - `Version info…`: opens a read-only runtime/version modal with app version, SQLite `user_version`, namespace, auth, encryption, vault, KDF, and cache readiness fields.
+- `Note Layout & Appearance…`: previews and saves the note hierarchy presets. Search terms include `layout`, `appearance`, `font`, `size`, `spacing`, `indentation`, and `hierarchy`.
 - `Switch namespace…`: opens a simple namespace picker and opens the selected non-current namespace. A running namespace with an unchanged launch profile keeps its process and warm cache; stopped namespaces launch, and changed port profiles restart the target.
 - `Create namespace…`: opens a namespace creation modal with defaulted HTTP / HTTPS ports, saves the profile, launches the namespace, and opens it.
 - `Manage namespace ports…`: opens a table of saved launch profiles from each namespace's main DB; saving this table only updates future launch profiles and does not switch tabs, launch namespaces, or restart the current process. Current-namespace port edits apply on the next MetaList launch.

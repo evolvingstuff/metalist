@@ -32,6 +32,7 @@ import { ResetUpdatedAtModal } from '../modals/reset-updated-at-modal.js';
 import { ReminderModal } from '../modals/reminder-modal.js';
 import { SoundManagerModal } from '../modals/sound-manager-modal.js';
 import { VersionInfoModal } from '../modals/version-info-modal.js';
+import { NoteLayoutAppearanceModal } from '../modals/note-layout-appearance-modal.js';
 import { syncSearchInputValue } from '../mode-manager/services/search-input-service.js';
 import { CommandGate } from '../mode-manager/services/command-gate-service.js';
 import { cancelDebouncedSearchExecution } from '../mode-manager/services/search-debounce-service.js';
@@ -50,6 +51,13 @@ import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
 import { loadCommandPaletteTagMap } from './tag-config-loader.js';
 import { UsageStore } from './usage-store.js';
+import {
+    DEFAULT_NOTE_LAYOUT_SETTINGS,
+    NOTE_LAYOUT_OPTIONS,
+    NOTE_LAYOUT_PREFERENCE_KEYS,
+    applyNoteLayoutSettings,
+    validateNoteLayoutSettings,
+} from './note-layout-preferences.js';
 
 function trimToken(token) {
     if (typeof token !== 'string') {
@@ -270,6 +278,7 @@ class CommandPaletteController {
         this._reminderModal = null;
         this._soundManagerModal = null;
         this._versionInfoModal = null;
+        this._noteLayoutAppearanceModal = null;
 
         this._elements = null;
 
@@ -332,6 +341,7 @@ class CommandPaletteController {
                 openReminders: this.openReminders.bind(this),
                 openSoundManager: this.openSoundManager.bind(this),
                 openVersionInfo: this.openVersionInfo.bind(this),
+                openNoteLayoutAppearance: this.openNoteLayoutAppearance.bind(this),
                 getSortMode: this.getSortMode.bind(this),
                 setSortMode: this.setSortMode.bind(this),
             },
@@ -460,6 +470,8 @@ class CommandPaletteController {
         const animatedTransitions = this._getBoolean('pref.animated_transitions', true);
         document.body.classList.toggle('pref-animated-transitions', animatedTransitions);
 
+        applyNoteLayoutSettings(document.body, this._readNoteLayoutSettings());
+
         const theme = this._getSelect('pref.theme', ['system', 'light', 'dark'], 'system');
         if (theme === 'system') {
             document.documentElement.removeAttribute('data-theme');
@@ -527,6 +539,37 @@ class CommandPaletteController {
             throw new Error(`Invalid stored select value for ${key}`);
         }
         return raw;
+    }
+
+    _readNoteLayoutSettings() {
+        const allowedValues = (key) => NOTE_LAYOUT_OPTIONS[key].map((option) => option.value);
+        return validateNoteLayoutSettings({
+            topLevelNoteSize: this._getSelect(
+                NOTE_LAYOUT_PREFERENCE_KEYS.topLevelNoteSize,
+                allowedValues('topLevelNoteSize'),
+                DEFAULT_NOTE_LAYOUT_SETTINGS.topLevelNoteSize,
+            ),
+            childIndentation: this._getSelect(
+                NOTE_LAYOUT_PREFERENCE_KEYS.childIndentation,
+                allowedValues('childIndentation'),
+                DEFAULT_NOTE_LAYOUT_SETTINGS.childIndentation,
+            ),
+            verticalSpacing: this._getSelect(
+                NOTE_LAYOUT_PREFERENCE_KEYS.verticalSpacing,
+                allowedValues('verticalSpacing'),
+                DEFAULT_NOTE_LAYOUT_SETTINGS.verticalSpacing,
+            ),
+        });
+    }
+
+    async _saveNoteLayoutSettings(settings) {
+        const validated = validateNoteLayoutSettings(settings);
+        await this._preferences.setMany({
+            [NOTE_LAYOUT_PREFERENCE_KEYS.topLevelNoteSize]: validated.topLevelNoteSize,
+            [NOTE_LAYOUT_PREFERENCE_KEYS.childIndentation]: validated.childIndentation,
+            [NOTE_LAYOUT_PREFERENCE_KEYS.verticalSpacing]: validated.verticalSpacing,
+        });
+        this._applyPreferenceEffectsFromStorage();
     }
 
     isOpen() {
@@ -1972,6 +2015,20 @@ class CommandPaletteController {
             this._versionInfoModal = new VersionInfoModal();
         }
         this._versionInfoModal.open();
+    }
+
+    async openNoteLayoutAppearance() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openNoteLayoutAppearance');
+        if (!isReady) {
+            return;
+        }
+        if (this._noteLayoutAppearanceModal === null) {
+            this._noteLayoutAppearanceModal = new NoteLayoutAppearanceModal(
+                this._readNoteLayoutSettings.bind(this),
+                this._saveNoteLayoutSettings.bind(this),
+            );
+        }
+        this._noteLayoutAppearanceModal.open();
     }
 }
 

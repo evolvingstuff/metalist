@@ -73,6 +73,15 @@ test('normalizeTagBarInput preserves closed wrappers', () => {
     assert.equal(normalizeTagBarInput('((tag))   {{{tag}}}'), '((tag)) {{{tag}}}');
 });
 
+test('normalizeTagBarInput preserves one internal assignment separator for regular and meta tags', () => {
+    assert.equal(normalizeTagBarInput('abc=2 abc=xyz {@size=1.25} @foo=bar'), 'abc=2 abc=xyz {@size=1.25} @foo=bar');
+});
+
+test('normalizeTagBarInput strips illegal assignment separators and invalid tag characters', () => {
+    assert.equal(normalizeTagBarInput('a=b=c =abc abc='), 'abc abc abc');
+    assert.equal(normalizeTagBarInput('abc=<script>'), 'abc=script');
+});
+
 test('parseTagBarSuggestionContext exposes all explicit tags including the current token', () => {
     const rawInput = 'linux Pandoc';
     const context = parseTagBarSuggestionContext(rawInput, rawInput.length);

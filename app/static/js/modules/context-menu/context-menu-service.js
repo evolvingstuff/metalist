@@ -87,7 +87,29 @@ const CONTEXT_MENU_ICONS = {
         'M10 7v6',
         'M7 10h6',
     ],
+    zoom_in: [
+        'M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z',
+        'M15 15l5 5',
+        'M10 7v6',
+        'M7 10h6',
+    ],
+    zoom_out: [
+        'M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z',
+        'M15 15l5 5',
+        'M7 10h6',
+    ],
+    restart_alt: [
+        'M5 9V4h5',
+        'M5.8 8.7A7 7 0 1 1 5 15',
+    ],
 };
+
+export function isContextMenuIconSupported(iconName) {
+    if (typeof iconName !== 'string' || iconName.length === 0) {
+        return false;
+    }
+    return Object.prototype.hasOwnProperty.call(CONTEXT_MENU_ICONS, iconName);
+}
 
 let menuElement = null;
 let submenuElement = null;
@@ -381,6 +403,10 @@ function showSubmenuForButton(parentButton, submenuItems) {
     submenu.style.top = `${resolved.top}px`;
     submenu.style.visibility = 'visible';
     submenu.classList.add('is-visible');
+    const firstEnabledItem = submenu.querySelector('.context-menu-item:not(:disabled)');
+    if (firstEnabledItem instanceof HTMLButtonElement) {
+        firstEnabledItem.focus();
+    }
 }
 
 function hideSubmenu() {
@@ -403,10 +429,11 @@ function createMenuIcon(iconName) {
     if (typeof iconName !== 'string' || iconName.length === 0) {
         return null;
     }
-    const paths = CONTEXT_MENU_ICONS[iconName];
-    if (!Array.isArray(paths)) {
+    if (!isContextMenuIconSupported(iconName)) {
         throw new Error(`Unknown context menu icon: ${iconName}`);
     }
+    const paths = CONTEXT_MENU_ICONS[iconName];
+    assertMenuIconPaths(paths, iconName);
 
     const svg = document.createElementNS(SVG_NAMESPACE, 'svg');
     svg.classList.add('context-menu-item-icon');
@@ -420,6 +447,17 @@ function createMenuIcon(iconName) {
         svg.appendChild(path);
     });
     return svg;
+}
+
+function assertMenuIconPaths(paths, iconName) {
+    if (!Array.isArray(paths) || paths.length === 0) {
+        throw new Error(`Context menu icon has no paths: ${iconName}`);
+    }
+    for (const pathData of paths) {
+        if (typeof pathData !== 'string' || pathData.length === 0) {
+            throw new Error(`Context menu icon has an invalid path: ${iconName}`);
+        }
+    }
 }
 
 function isContextMenuOpen() {
@@ -480,8 +518,27 @@ function handleGlobalKeyDown(event) {
         throw new Error('handleGlobalKeyDown called without event');
     }
     if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
         hideContextMenu();
+        return;
     }
+    if (event.key !== 'Enter') {
+        return;
+    }
+    let actionButton = document.activeElement;
+    const isFocusedMenuButton = actionButton instanceof HTMLButtonElement
+        && ((menuElement && menuElement.contains(actionButton))
+            || (submenuElement && submenuElement.contains(actionButton)));
+    if (!isFocusedMenuButton) {
+        actionButton = menuElement.querySelector('.context-menu-item:not(:disabled)');
+    }
+    if (!(actionButton instanceof HTMLButtonElement)) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    actionButton.click();
 }
 
 function handleGlobalScroll() {

@@ -48,6 +48,26 @@ export class PreferencesStore {
         await persistClientPreferences(this._snapshot());
     }
 
+    async setMany(updates) {
+        if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+            throw new Error('PreferencesStore.setMany requires updates object');
+        }
+        const entries = Object.entries(updates);
+        if (entries.length === 0) {
+            throw new Error('PreferencesStore.setMany requires at least one update');
+        }
+        for (const [key, value] of entries) {
+            if (typeof key !== 'string' || key.length === 0) {
+                throw new Error('PreferencesStore.setMany requires non-empty keys');
+            }
+            if (typeof value !== 'string') {
+                throw new Error('PreferencesStore.setMany requires string values');
+            }
+        }
+        Object.assign(this._state, updates);
+        await persistClientPreferences(this._snapshot());
+    }
+
     async remove(key) {
         if (typeof key !== 'string' || key.length === 0) {
             throw new Error('PreferencesStore.remove requires non-empty key');

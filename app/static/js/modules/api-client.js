@@ -302,6 +302,26 @@ export const NotesAPI = {
         });
     },
 
+    async resizeImage(noteId, sourceKind, occurrenceIndex, action) {
+        if (typeof noteId !== 'string' || noteId.length === 0) {
+            throw new Error('NotesAPI.resizeImage requires noteId string');
+        }
+        if (sourceKind !== 'inline' && sourceKind !== 'file') {
+            throw new Error('NotesAPI.resizeImage requires inline or file sourceKind');
+        }
+        if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) {
+            throw new Error('NotesAPI.resizeImage requires non-negative occurrenceIndex');
+        }
+        if (action !== 'bigger' && action !== 'smaller' && action !== 'reset') {
+            throw new Error('NotesAPI.resizeImage requires bigger, smaller, or reset action');
+        }
+        return this._apiCall(CONFIG.API.NOTES.RESIZE_IMAGE(noteId), {
+            method: 'POST',
+            claimSession: true,
+            body: JSON.stringify({ sourceKind, occurrenceIndex, action }),
+        });
+    },
+
     async runShell(noteId, timeoutSeconds) {
         if (!noteId) {
             throw new Error('runShell requires noteId');

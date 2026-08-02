@@ -82,6 +82,11 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@grey`: renders text in grey.
 - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 
+## Size meta tags
+- `@size=0.1`, `@size=0.25`, `@size=0.5`, `@size=0.75`, `@size=1.0`, `@size=1.25`, `@size=1.5`, `@size=2.0`, and `@size=3.0` scale the whole note or matching scoped region in view mode without modifying image bytes or file metadata.
+- Inline-image context menus expose **Make Bigger**, **Make Smaller**, and **Reset Size** in both edit and view modes. View mode refreshes immediately; edit mode shows the updated raw delimiters and numeric tag.
+- Stored image-file embeds expose the same actions in view mode. Reset removes `@size` and removes delimiters only when no surviving tag owns that scope.
+
 ## List meta tags
 - `@list-bulleted`: renders the note's immediate children as a bulleted list in view mode.
 - `@list-numbered`: renders the note's immediate children as a numbered list in view mode.

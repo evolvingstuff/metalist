@@ -6,9 +6,10 @@ import { buildCommandPaletteEndpoints } from '../../app/static/js/modules/comman
 function noop() {}
 
 test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
+    const storedPreferences = new Map();
     const endpoints = buildCommandPaletteEndpoints({
         preferencesStore: {
-            getRaw: () => null,
+            getRaw: (key) => storedPreferences.has(key) ? storedPreferences.get(key) : null,
         },
         actions: {
             applyPreference: noop,
@@ -17,6 +18,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openReminders: noop,
             openSoundManager: noop,
             openVersionInfo: noop,
+            openNoteLayoutAppearance: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,
@@ -63,9 +65,14 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('form.session_timeout'), true);
     assert.equal(calendarEndpoint.defaultValue, false);
     assert.equal(animatedTransitionsEndpoint.defaultValue, true);
-    assert.equal(animatedTransitionsEndpoint.label, 'Animated transitions');
+    assert.equal(animatedTransitionsEndpoint.label, 'Hide animated transitions');
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('form.version_info'), true);
+    assert.equal(endpointIds.has('form.note_layout_appearance'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.note_layout_appearance').label,
+        'Note Layout & Appearance…',
+    );
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);
@@ -123,4 +130,24 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         endpoints.find((endpoint) => endpoint.id === 'action.open_keyboard_shortcuts_help').closeOnExecute,
         undefined,
     );
+
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_backlinks').label, 'Hide backlinks');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Show tags in list');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Show tabs');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel').label, 'Show calendar view');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_perf_overlay').label, 'Show performance overlay');
+
+    storedPreferences.set('pref.show_backlinks', 'false');
+    storedPreferences.set('pref.show_note_tags', 'true');
+    storedPreferences.set('pref.show_tab_ui', 'true');
+    storedPreferences.set('pref.show_rhs_panel', 'true');
+    storedPreferences.set('pref.show_perf_overlay', 'true');
+    storedPreferences.set('pref.animated_transitions', 'false');
+
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_backlinks').label, 'Show backlinks');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_note_tags').label, 'Hide tags in list');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_tab_ui').label, 'Hide tabs');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_rhs_panel').label, 'Hide calendar view');
+    assert.equal(endpoints.find((endpoint) => endpoint.id === 'pref.show_perf_overlay').label, 'Hide performance overlay');
+    assert.equal(animatedTransitionsEndpoint.label, 'Show animated transitions');
 });

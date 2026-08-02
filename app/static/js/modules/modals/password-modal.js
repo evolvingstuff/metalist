@@ -545,10 +545,7 @@ export class PasswordModal extends BaseModal {
         }, 200);
     }
     
-    /**
-     * Don't close on click outside for password modal (security)
-     */
     shouldCloseOnClickOutside() {
-        return false;
+        return true;
     }
 }

@@ -27,7 +27,6 @@
 - An actively edited note counts as the effective hovered note for the calendar. Its matching date stays highlighted while editing, and its date tooltip appears immediately instead of using the hover delay.
 
 ## Right-Click Controls
-- Right-click the left lane to show/hide tabs.
-- Right-click the right lane to show/hide the calendar view.
-- `Cmd/Ctrl+/` also exposes `Toggle tabs` and `Toggle calendar view`.
-- The left/right lanes hide at narrower desktop widths before they can overlap the centered note column.
+- Right-click either lane to open the shared view menu with both tabs and calendar visibility actions.
+- `Cmd/Ctrl+/` also exposes dynamic `Show/Hide tabs` and `Show/Hide calendar view` actions.
+- The visible calendar keeps a 160px minimum rail width. In the intermediate desktop range the app shell moves left and the note area narrows as needed, reserving a non-overlapping calendar column beside the global controls. The side rails still hide at the narrow/mobile breakpoint.

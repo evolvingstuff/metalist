@@ -35,7 +35,7 @@ export class BackupRetentionModal extends BaseModal {
     }
 
     shouldCloseOnClickOutside() {
-        return false;
+        return true;
     }
 
     showModalElement() {
@@ -142,7 +142,7 @@ export class BackupRetentionModal extends BaseModal {
                 <p id="backup-retention-preview"></p>
 
                 <div class="form-actions">
-                    <button type="button" class="primary-btn" id="backup-retention-apply-btn">Remove Older Backups</button>
+                    <button type="button" class="primary-btn" id="backup-retention-apply-btn" data-modal-enter-action>Remove Older Backups</button>
                     <button type="button" class="secondary-btn" id="backup-retention-keep-all-btn">Keep All Backups</button>
                 </div>
 

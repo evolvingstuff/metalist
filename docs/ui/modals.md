@@ -32,6 +32,7 @@ This document defines the standard pattern for implementing modal dialogs in the
 app/static/js/modules/modals/
 ├── base-modal.js       # BaseModal class with state enforcement
 └── password-modal.js   # Password management modal
+└── note-layout-appearance-modal.js # Namespace-scoped note layout presets + preview
 └── [future-modal].js   # Other modals follow same pattern
 ```
 
@@ -50,8 +51,9 @@ All modals extend BaseModal which provides:
    - Sets modal-specific state in `ModeContext.modalState`
 
 3. **Common Event Handling**
-   - Esc key to close
-   - Click-outside to close (optional)
+   - `Escape` closes every modal
+   - Clicking outside the modal content closes every modal
+   - `Enter` activates the modal's single declared primary action; modals with multi-step or input-specific behavior implement the equivalent explicitly
    - Focus management
 
 ### Modal Opening Flow

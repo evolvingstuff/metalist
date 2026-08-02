@@ -185,7 +185,7 @@ class NamespaceModalBase extends BaseModal {
     }
 
     shouldCloseOnClickOutside() {
-        return false;
+        return true;
     }
 
     showModalElement() {
@@ -211,17 +211,10 @@ class NamespaceModalBase extends BaseModal {
             return;
         }
 
-        const state = this.getModalState();
-        let busy = Boolean(state.submitting);
-        if (Boolean(state.saving)) {
-            busy = true;
-        }
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            if (!busy) {
-                this.close();
-            }
+            this.close();
             return;
         }
 

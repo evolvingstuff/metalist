@@ -58,7 +58,7 @@ export class BackupSettingsModal extends BaseModal {
     }
 
     shouldCloseOnClickOutside() {
-        return false;
+        return true;
     }
 
     showModalElement() {

@@ -121,10 +121,9 @@
 | Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`, `Export Note as HTML`, `Export View as HTML`). While actively editing that note, `Add Style` opens a connected formatting flyout and `Remove Formatting` performs the same operation as `Cmd/Ctrl+U`. Paste actions appear only when a note has been copied. |
 | Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note`; while editing, `Add Style` scopes the chosen formatting tag to that range and `Remove Formatting` removes formatting only from that range. |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
-| Right-click notes view background | Open the view context menu with `Export View as HTML` |
+| Right-click notes view background | Open the view context menu with dynamic `Show/Hide Tabs`, dynamic `Show/Hide Calendar View`, and `Export View as HTML` actions |
 | Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships) |
-| Right-click left lane | Toggle tabs visibility or export the current view as HTML |
-| Right-click right lane | Toggle calendar view visibility or export the current view as HTML |
+| Right-click left or right lane | Open the same view menu: show/hide tabs, show/hide calendar, or export the current view as HTML |
 | Hover left side of search bar | Show the tab/search-context overlay |
 | Hover/click search input | Hide the tab/search-context overlay |
 
@@ -138,16 +137,21 @@
 > Selecting a collapsed note for editing shows that note's full editable content but keeps its child subtree hidden until the note is explicitly expanded. If the collapsed note has hidden children, an inline `⋮` affordance appears under the tag bar and expands the note.
 
 ### Command Palette Utility Entries
-- Toggle tabs
-- Toggle calendar view
+- Show/Hide tabs (label reflects current visibility)
+- Show/Hide calendar view (label reflects current visibility)
 - Create backup now (opens Backup Settings, where you choose one backup folder, select the namespaces to include, set retention, and then run the backup; typing `backups` in the palette also matches it, and the completion modal shows archive size)
 - Restore from backup…
 - Logout
 - Generate random password…
 - Keyboard Shortcuts / Cheatsheet…
 - Version info…
+- Note Layout & Appearance… (top-level size, child indentation, and vertical spacing)
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
+
+App menus and modals close with `Escape` or an outside click. `Enter` activates the selected menu item or submits a modal's primary action in addition to the visible button.
+
+When `Show tags in list` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
 
 ## Tag Bar Syntax
 - See `docs/ui/tag-bar.md` for the full grammar (tokens, wrappers, and `/* ... */` comments).

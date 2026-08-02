@@ -7,6 +7,7 @@ import {
     actionSwitchNotes,
 } from '../actions/selection-actions.js';
 import { actionSaveNote } from '../actions/content-actions.js';
+import { actionRefreshAndMaybeSelect } from '../actions/ui-actions.js';
 import {
     actionCopyNoteById,
     addSelectedTextAsTag,
@@ -56,6 +57,66 @@ import {
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 
 const ontologyModal = new OntologyModal();
+
+async function resizeImageFromContext(imageContext, action) {
+    if (imageContext === null || typeof imageContext !== 'object') {
+        throw new Error('resizeImageFromContext requires imageContext object');
+    }
+    if (action !== 'bigger' && action !== 'smaller' && action !== 'reset') {
+        throw new Error('resizeImageFromContext requires a supported action');
+    }
+    const hostNoteId = imageContext.hostNoteId;
+    const occurrenceIndex = imageContext.occurrenceIndex;
+    if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
+        throw new Error('Image resize context requires hostNoteId');
+    }
+    if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) {
+        throw new Error('Image resize context requires non-negative occurrenceIndex');
+    }
+
+    if (ModeContext.isEditing && ModeContext.currentNoteId === hostNoteId) {
+        await actionSaveNote(hostNoteId);
+    }
+    const response = await NotesAPI.resizeImage(
+        hostNoteId,
+        imageContext.sourceKind,
+        occurrenceIndex,
+        action,
+    );
+    if (response === null || typeof response !== 'object') {
+        throw new Error('Image resize response must be an object');
+    }
+    if (typeof response.content !== 'string' || typeof response.tags !== 'string') {
+        throw new Error('Image resize response must include content and tags');
+    }
+    if (ModeContext.isEditing && ModeContext.currentNoteId === hostNoteId) {
+        const noteElement = document.querySelector(`.note[data-note-id="${hostNoteId}"]`);
+        if (!(noteElement instanceof HTMLElement)) {
+            throw new Error(`Editing note element missing after image resize: ${hostNoteId}`);
+        }
+        const noteContent = noteElement.querySelector('.note-content');
+        if (!(noteContent instanceof HTMLElement)) {
+            throw new Error(`Editing note content missing after image resize: ${hostNoteId}`);
+        }
+        noteContent.innerHTML = response.content;
+        setTagBarValue(noteElement, response.tags);
+        if (ModeContext.currentContent !== response.content) {
+            ModeContext.setCurrentContent(response.content);
+        }
+        if (ModeContext.lastSavedContent !== response.content) {
+            ModeContext.setLastSavedContent(response.content);
+        }
+        if (ModeContext.isDirty) {
+            ModeContext.setDirty(false);
+        }
+        ModeContext.markEditSessionHasEdits();
+        return;
+    }
+    await actionRefreshAndMaybeSelect({
+        startedAt: performance.now(),
+        context: `resizeImage.${action}`,
+    });
+}
 
 function resolveEffectiveTheme() {
     const explicitTheme = document.documentElement.getAttribute('data-theme');
@@ -212,81 +273,12 @@ function showTagContextMenu(event, tag, source) {
     });
 }
 
-function showPreferenceContextMenu(event, itemId, itemLabel, preferenceKey, nextValue) {
-    if (!event) {
-        throw new Error('showPreferenceContextMenu called without event');
-    }
-    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
-        throw new Error('Context menu event missing coordinates');
-    }
-    if (typeof itemId !== 'string' || itemId.trim() === '') {
-        throw new Error('showPreferenceContextMenu requires itemId');
-    }
-    if (typeof itemLabel !== 'string' || itemLabel.trim() === '') {
-        throw new Error('showPreferenceContextMenu requires itemLabel');
-    }
-    if (typeof preferenceKey !== 'string' || preferenceKey.trim() === '') {
-        throw new Error('showPreferenceContextMenu requires preferenceKey');
-    }
-    if (typeof nextValue !== 'boolean') {
-        throw new Error('showPreferenceContextMenu requires boolean nextValue');
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    showContextMenu({
-        items: [
-            {
-                id: itemId,
-                label: itemLabel,
-                enabled: true,
-                onSelect: () => {
-                    void CommandPalette.applyPreference(preferenceKey, nextValue);
-                },
-            },
-            {
-                id: 'export-view-html',
-                label: 'Export View as HTML',
-                icon: 'download',
-                enabled: true,
-                separated: true,
-                onSelect: () => {
-                    void CommandGate.run('contextMenu.view.export_html', async () => {
-                        await exportHtmlFromContextMenu(null);
-                    }, {
-                        timeoutMs: 120000,
-                    });
-                },
-            },
-        ],
-        position: { x: event.clientX, y: event.clientY },
-        onClose: null,
-    });
-}
-
 function showCalendarRailContextMenu(event) {
-    const isCalendarVisible = document.body.classList.contains('pref-show-rhs-panel');
-    const itemLabel = isCalendarVisible ? 'Hide Calendar View' : 'Show Calendar View';
-    showPreferenceContextMenu(
-        event,
-        'toggle-calendar-view',
-        itemLabel,
-        'pref.show_rhs_panel',
-        !isCalendarVisible,
-    );
+    showViewContextMenu(event);
 }
 
 function showTabsRailContextMenu(event) {
-    const areTabsVisible = document.body.classList.contains('pref-show-tab-ui');
-    const itemLabel = areTabsVisible ? 'Hide Tabs' : 'Show Tabs';
-    showPreferenceContextMenu(
-        event,
-        'toggle-tabs',
-        itemLabel,
-        'pref.show_tab_ui',
-        !areTabsVisible,
-    );
+    showViewContextMenu(event);
 }
 
 function readCssPixelVariable(name) {
@@ -729,6 +721,21 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
                 await copyImageFromContext(targetImageContext);
             });
         },
+        onMakeImageBigger: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.make_bigger', async () => {
+                await resizeImageFromContext(targetImageContext, 'bigger');
+            });
+        },
+        onMakeImageSmaller: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.make_smaller', async () => {
+                await resizeImageFromContext(targetImageContext, 'smaller');
+            });
+        },
+        onResetImageSize: (targetImageContext) => {
+            void CommandGate.run('contextMenu.image.reset_size', async () => {
+                await resizeImageFromContext(targetImageContext, 'reset');
+            });
+        },
         onSaveImage: (targetImageContext) => {
             void CommandGate.run('contextMenu.image.save', async () => {
                 await saveImageFromContext(targetImageContext);
@@ -862,8 +869,18 @@ function showViewContextMenu(event) {
         throw new Error('Context menu event missing coordinates');
     }
 
-    const context = { kind: 'view' };
+    const context = {
+        kind: 'view',
+        areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
+        isCalendarVisible: document.body.classList.contains('pref-show-rhs-panel'),
+    };
     const items = buildContextMenuItems(context, {
+        onToggleTabs: (nextValue) => {
+            void CommandPalette.applyPreference('pref.show_tab_ui', nextValue);
+        },
+        onToggleCalendar: (nextValue) => {
+            void CommandPalette.applyPreference('pref.show_rhs_panel', nextValue);
+        },
         onExportViewHtml: () => {
             void CommandGate.run('contextMenu.view.export_html', async () => {
                 await exportHtmlFromContextMenu(null);

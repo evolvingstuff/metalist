@@ -29,6 +29,9 @@ _ALLOWED_CLIENT_PREFERENCES = {
     "pref.reminder_default_popup_sound_id": "sound_id",
     "pref.reminder_default_ack_sound_enabled": {"true", "false"},
     "pref.reminder_default_ack_sound_id": "sound_id",
+    "pref.note_layout.top_level_note_size": {"same", "larger", "largest"},
+    "pref.note_layout.child_indentation": {"compact", "standard", "wide"},
+    "pref.note_layout.vertical_spacing": {"compact", "comfortable", "spacious"},
     "pref.theme": {"system", "light", "dark"},
 }
 

@@ -112,6 +112,23 @@ def test_save_client_preferences_accepts_default_reminder_sound_keys(
     assert load_client_preferences(token="") == expected_preferences
 
 
+def test_save_client_preferences_accepts_note_layout_keys(
+    memory_settings_db,
+) -> None:
+    del memory_settings_db
+
+    expected_preferences = {
+        "pref.note_layout.top_level_note_size": "largest",
+        "pref.note_layout.child_indentation": "wide",
+        "pref.note_layout.vertical_spacing": "spacious",
+    }
+
+    saved = save_client_preferences(preferences=expected_preferences, token="")
+
+    assert saved == expected_preferences
+    assert load_client_preferences(token="") == expected_preferences
+
+
 def test_save_command_palette_usage_round_trips_through_app_settings(
     memory_settings_db,
 ) -> None:

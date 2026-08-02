@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildContextMenuItems } from '../../app/static/js/modules/context-menu/context-menu-registry.js';
+import { isContextMenuIconSupported } from '../../app/static/js/modules/context-menu/context-menu-service.js';
 
 function buildNoteHandlers(calls) {
     return {
@@ -14,6 +15,9 @@ function buildNoteHandlers(calls) {
         onPasteNoteChild: (noteId) => calls.push(['pasteNoteChild', noteId]),
         onPasteReference: (noteId) => calls.push(['pasteReference', noteId]),
         onPasteReferenceChild: (noteId) => calls.push(['pasteReferenceChild', noteId]),
+        onMakeImageBigger: (context) => calls.push(['makeImageBigger', context]),
+        onMakeImageSmaller: (context) => calls.push(['makeImageSmaller', context]),
+        onResetImageSize: (context) => calls.push(['resetImageSize', context]),
         onExportNoteHtml: (noteId) => calls.push(['exportNoteHtml', noteId]),
         onExportViewHtml: () => calls.push(['exportViewHtml']),
         onAddSiblingNote: (noteId) => calls.push(['addSibling', noteId]),
@@ -65,6 +69,8 @@ test('buildContextMenuItems prepends image actions for note image context', () =
     const imageContext = {
         sourceKind: 'inline',
         fileId: null,
+        hostNoteId: 'note-123',
+        occurrenceIndex: 0,
         src: 'data:image/png;base64,AAAA',
         alt: 'Diagram',
         filename: null,
@@ -83,6 +89,9 @@ test('buildContextMenuItems prepends image actions for note image context', () =
     assert.deepEqual(
         items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
+            { id: 'make-image-bigger', label: 'Make Bigger', enabled: true },
+            { id: 'make-image-smaller', label: 'Make Smaller', enabled: true },
+            { id: 'reset-image-size', label: 'Reset Size', enabled: true },
             { id: 'copy-image', label: 'Copy Image', enabled: true },
             { id: 'save-image', label: 'Save Image', enabled: true },
             { id: 'zoom-image', label: 'Zoom Image', enabled: true },
@@ -96,16 +105,29 @@ test('buildContextMenuItems prepends image actions for note image context', () =
             { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
-    assert.equal(items[4].separated, true);
-    assert.equal(items[5].separated, undefined);
-    assert.equal(items[9].separated, true);
+    assert.equal(items[3].separated, true);
+    assert.equal(items[7].separated, true);
+    assert.equal(items[8].separated, undefined);
+    assert.equal(items[12].separated, true);
+
+    for (const item of items) {
+        if (typeof item.icon === 'string') {
+            assert.equal(isContextMenuIconSupported(item.icon), true, `unsupported icon: ${item.icon}`);
+        }
+    }
 
     items[0].onSelect();
     items[1].onSelect();
     items[2].onSelect();
     items[3].onSelect();
+    items[4].onSelect();
+    items[5].onSelect();
+    items[6].onSelect();
 
     assert.deepEqual(calls, [
+        ['makeImageBigger', imageContext],
+        ['makeImageSmaller', imageContext],
+        ['resetImageSize', imageContext],
         ['copyImage', imageContext],
         ['saveImage', imageContext],
         ['zoomImage', imageContext],
@@ -248,8 +270,10 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
 test('buildContextMenuItems returns export view for view context', () => {
     const calls = [];
     const items = buildContextMenuItems(
-        { kind: 'view' },
+        { kind: 'view', areTabsVisible: false, isCalendarVisible: true },
         {
+            onToggleTabs: (nextValue) => calls.push(['toggleTabs', nextValue]),
+            onToggleCalendar: (nextValue) => calls.push(['toggleCalendar', nextValue]),
             onExportViewHtml: () => calls.push(['exportViewHtml']),
         },
     );
@@ -257,12 +281,20 @@ test('buildContextMenuItems returns export view for view context', () => {
     assert.deepEqual(
         items.map((item) => ({ id: item.id, label: item.label, enabled: item.enabled })),
         [
+            { id: 'toggle-tabs', label: 'Show Tabs', enabled: true },
+            { id: 'toggle-calendar-view', label: 'Hide Calendar View', enabled: true },
             { id: 'export-view-html', label: 'Export View as HTML', enabled: true },
         ],
     );
 
-    items[0].onSelect();
-    assert.deepEqual(calls, [['exportViewHtml']]);
+    for (const item of items) {
+        item.onSelect();
+    }
+    assert.deepEqual(calls, [
+        ['toggleTabs', true],
+        ['toggleCalendar', false],
+        ['exportViewHtml'],
+    ]);
 });
 
 test('buildContextMenuItems returns only link actions for link context', () => {

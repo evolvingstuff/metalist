@@ -308,6 +308,48 @@ def test_edit_mode_keeps_literal_embed_token(monkeypatch: pytest.MonkeyPatch) ->
     assert "note-embed-block" not in rendered
 
 
+def test_view_mode_marks_inline_image_occurrences_for_context_actions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes = {
+        HOST_ID: _Note(
+            HOST_ID,
+            None,
+            None,
+            None,
+            False,
+            '<div><img src="one.png"><img src="two.png"></div>',
+            "",
+        ),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: [HOST_ID]},
+    )
+
+    rendered = state.payloads[HOST_ID]["content"]
+    assert 'data-inline-image-occurrence="0"' in rendered
+    assert 'data-inline-image-occurrence="1"' in rendered
+
+
+def test_edit_mode_keeps_inline_images_free_of_render_only_occurrence_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = '<div><img src="one.png"></div>'
+    notes = {
+        HOST_ID: _Note(HOST_ID, None, None, None, False, content, ""),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: [HOST_ID]},
+        editing_note_id=HOST_ID,
+    )
+
+    assert state.payloads[HOST_ID]["content"] == content
+
+
 def test_embed_host_hash_changes_when_referenced_note_changes(monkeypatch: pytest.MonkeyPatch) -> None:
     notes = {
         HOST_ID: _Note(HOST_ID, None, None, TARGET_ID, False, f"<div>![[{TARGET_ID}]]</div>", ""),

@@ -8,6 +8,7 @@ from typing import Callable, FrozenSet, List, Optional, Tuple
 from app.services.content_formatting import find_consumed_content_wrapper_keys
 from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import format_note_content_for_view
+from app.services.inline_image_occurrences import annotate_inline_image_occurrences
 from app.utils.text_utils import strip_html
 
 
@@ -161,9 +162,12 @@ def render_note_content_with_embeds(
     if not isinstance(redact_passwords, bool):
         raise TypeError("redact_passwords must be a bool")
 
+    annotated_content = content_html
+    if not static_export:
+        annotated_content = annotate_inline_image_occurrences(content_html)
     content_with_embeds = _replace_reference_tokens_in_html(
         host_note_id=note_id,
-        content_html=content_html,
+        content_html=annotated_content,
         tags=tags,
         context=context,
         ancestry=(note_id,),
@@ -745,9 +749,12 @@ def _render_embedded_note_node(
         raise TypeError("embedded note tags must be a string")
 
     is_collapsed = bool(record.is_collapsed) and not static_export
-    source_content = record_content
+    annotated_content = record_content
+    if not static_export:
+        annotated_content = annotate_inline_image_occurrences(record_content)
+    source_content = annotated_content
     if is_collapsed:
-        source_content = extract_collapsed_preview_source_html(record_content)
+        source_content = extract_collapsed_preview_source_html(annotated_content)
 
     rendered_content = _replace_reference_tokens_in_html(
         host_note_id=note_id,

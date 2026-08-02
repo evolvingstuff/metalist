@@ -41,6 +41,15 @@ _META_TAG_TO_CLASS = {
     "strikethrough": "meta-strikethrough",
     "serif": "meta-serif",
     "copyable": "meta-copyable",
+    "size=0.1": "meta-size meta-size-010",
+    "size=0.25": "meta-size meta-size-025",
+    "size=0.5": "meta-size meta-size-050",
+    "size=0.75": "meta-size meta-size-075",
+    "size=1.0": "meta-size meta-size-100",
+    "size=1.25": "meta-size meta-size-125",
+    "size=1.5": "meta-size meta-size-150",
+    "size=2.0": "meta-size meta-size-200",
+    "size=3.0": "meta-size meta-size-300",
 }
 
 _LIST_STYLE_TAGS = {
@@ -1232,7 +1241,13 @@ def _copyable_attr(formatting_tags: FrozenSet[str], raw_text: str) -> str:
 
 
 def _should_use_box_wrapper(tag_names: Set[str] | FrozenSet[str]) -> bool:
-    return "strikethrough" in tag_names
+    if "strikethrough" in tag_names:
+        return True
+    return any(tag_name.startswith("size=") for tag_name in tag_names)
+
+
+def _requires_layout_box(tag_names: Set[str] | FrozenSet[str]) -> bool:
+    return any(tag_name.startswith("size=") for tag_name in tag_names)
 
 
 def _html_contains_block_elements(content_html: str) -> bool:
@@ -1689,13 +1704,16 @@ def _process_text_segment(
                     ):
                         inner_parts = output[top.placeholder_index + 1 :]
                         inner_html = "".join(inner_parts)
-                        if not _html_contains_block_elements(inner_html):
+                        if (
+                            not _html_contains_block_elements(inner_html)
+                            or _requires_layout_box(top.formatting_tags)
+                        ):
                             rendered = _wrap_meta_html(
                                 inner_html=inner_html,
                                 tag_names=top.formatting_tags,
                                 wrapper_class="meta-scope",
                                 copy_attr="",
-                                allow_block_wrapper=False,
+                                allow_block_wrapper=_requires_layout_box(top.formatting_tags),
                             )
                             del output[top.placeholder_index :]
                             output.append(rendered)

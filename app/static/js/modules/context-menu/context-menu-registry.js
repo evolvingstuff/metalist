@@ -53,6 +53,9 @@ function buildNoteContextItems(context, handlers) {
     const onPasteReference = handlers.onPasteReference;
     const onPasteReferenceChild = handlers.onPasteReferenceChild;
     const onCopyImage = handlers.onCopyImage;
+    const onMakeImageBigger = handlers.onMakeImageBigger;
+    const onMakeImageSmaller = handlers.onMakeImageSmaller;
+    const onResetImageSize = handlers.onResetImageSize;
     const onSaveImage = handlers.onSaveImage;
     const onZoomImage = handlers.onZoomImage;
     const onOpenImageInNewTab = handlers.onOpenImageInNewTab;
@@ -113,13 +116,44 @@ function buildNoteContextItems(context, handlers) {
         if (typeof onOpenImageInNewTab !== 'function') {
             throw new Error('Image note context missing onOpenImageInNewTab handler');
         }
+        if (typeof onMakeImageBigger !== 'function') {
+            throw new Error('Image note context missing onMakeImageBigger handler');
+        }
+        if (typeof onMakeImageSmaller !== 'function') {
+            throw new Error('Image note context missing onMakeImageSmaller handler');
+        }
+        if (typeof onResetImageSize !== 'function') {
+            throw new Error('Image note context missing onResetImageSize handler');
+        }
 
         items.push(
+            {
+                id: 'make-image-bigger',
+                label: 'Make Bigger',
+                icon: 'zoom_in',
+                enabled: true,
+                onSelect: () => onMakeImageBigger(imageContext),
+            },
+            {
+                id: 'make-image-smaller',
+                label: 'Make Smaller',
+                icon: 'zoom_out',
+                enabled: true,
+                onSelect: () => onMakeImageSmaller(imageContext),
+            },
+            {
+                id: 'reset-image-size',
+                label: 'Reset Size',
+                icon: 'restart_alt',
+                enabled: true,
+                onSelect: () => onResetImageSize(imageContext),
+            },
             {
                 id: 'copy-image',
                 label: 'Copy Image',
                 icon: 'image',
                 enabled: true,
+                separated: true,
                 onSelect: () => onCopyImage(imageContext),
             },
             {
@@ -371,16 +405,43 @@ function buildViewContextItems(context, handlers) {
     }
 
     const onExportViewHtml = handlers.onExportViewHtml;
+    const onToggleTabs = handlers.onToggleTabs;
+    const onToggleCalendar = handlers.onToggleCalendar;
     if (typeof onExportViewHtml !== 'function') {
         throw new Error('View context missing onExportViewHtml handler');
     }
+    if (typeof onToggleTabs !== 'function') {
+        throw new Error('View context missing onToggleTabs handler');
+    }
+    if (typeof onToggleCalendar !== 'function') {
+        throw new Error('View context missing onToggleCalendar handler');
+    }
+    if (typeof context.areTabsVisible !== 'boolean') {
+        throw new Error('View context missing areTabsVisible boolean');
+    }
+    if (typeof context.isCalendarVisible !== 'boolean') {
+        throw new Error('View context missing isCalendarVisible boolean');
+    }
 
     return [
+        {
+            id: 'toggle-tabs',
+            label: context.areTabsVisible ? 'Hide Tabs' : 'Show Tabs',
+            enabled: true,
+            onSelect: () => onToggleTabs(!context.areTabsVisible),
+        },
+        {
+            id: 'toggle-calendar-view',
+            label: context.isCalendarVisible ? 'Hide Calendar View' : 'Show Calendar View',
+            enabled: true,
+            onSelect: () => onToggleCalendar(!context.isCalendarVisible),
+        },
         {
             id: 'export-view-html',
             label: 'Export View as HTML',
             icon: 'download',
             enabled: true,
+            separated: true,
             onSelect: () => onExportViewHtml(),
         },
     ];
