@@ -109,6 +109,7 @@ export class BackupRestoreModal extends BaseModal {
     getInitialModalState() {
         return {
             loading: true,
+            choosingFolder: false,
             restoring: false,
             confirming: false,
             restored: false,
@@ -121,7 +122,7 @@ export class BackupRestoreModal extends BaseModal {
             selectedBackupId: '',
             targetNamespaceText: '',
             preflight: null,
-            portDraft: null,
+            importLaunchProfile: null,
             overwriteConfirmText: '',
             targetPassword: '',
             error: '',
@@ -205,9 +206,9 @@ export class BackupRestoreModal extends BaseModal {
         const overwriteConfirmText = typeof state.overwriteConfirmText === 'string' ? state.overwriteConfirmText : '';
         const targetPassword = typeof state.targetPassword === 'string' ? state.targetPassword : '';
         const preflight = state.preflight && typeof state.preflight === 'object' ? state.preflight : null;
-        const portDraft = state.portDraft && typeof state.portDraft === 'object' ? state.portDraft : null;
         const error = typeof state.error === 'string' ? state.error : '';
         const loading = Boolean(state.loading);
+        const choosingFolder = Boolean(state.choosingFolder);
         const restoring = Boolean(state.restoring);
         const confirming = Boolean(state.confirming);
         const restored = Boolean(state.restored);
@@ -305,10 +306,6 @@ export class BackupRestoreModal extends BaseModal {
         const isImport = Boolean(preflight && preflight.same_namespace === false);
         const targetExists = Boolean(preflight && preflight.target_exists === true);
         const targetRequiresPassword = Boolean(preflight && preflight.target_requires_password === true);
-        const portConflicts = preflight && Array.isArray(preflight.port_conflicts) ? preflight.port_conflicts : [];
-        const conflictHtml = portConflicts.length > 0
-            ? `<ul>${portConflicts.map((conflict) => `<li>${escapeHtml(String(conflict))}</li>`).join('')}</ul>`
-            : '';
         const overwriteWarningHtml = confirming && isImport && targetExists ? `
             <div class="namespace-delete-warning backup-restore-danger-warning">
                 <p><strong>BIG WARNING:</strong> this will overwrite existing namespace <span class="namespace-delete-namespace">${escapeHtml(targetNamespaceText.trim())}</span> with backup data from <span class="namespace-delete-namespace">${escapeHtml(selectedNamespace)}</span>.</p>
@@ -320,32 +317,6 @@ export class BackupRestoreModal extends BaseModal {
                 ` : ''}
             </div>
         ` : '';
-        const portConfigHtml = confirming && isImport && portDraft ? `
-            <div class="backup-restore-port-config">
-                <h4>Launch Ports For Imported Namespace</h4>
-                ${portConflicts.length > 0 ? `<p>The restored backup uses ports already reserved by another namespace. Choose replacement ports before importing.</p>${conflictHtml}` : '<p>Review the launch ports that will be saved for the imported namespace.</p>'}
-                <div class="namespace-ports-table-wrap">
-                    <table class="namespace-ports-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Namespace</th>
-                                <th scope="col">HTTP</th>
-                                ${portDraft.httpsPort !== null ? '<th scope="col">HTTPS</th>' : ''}
-                                <th scope="col">MCP</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <th scope="row">${escapeHtml(targetNamespaceText.trim())}</th>
-                                <td><input class="backup-restore-port-input" data-field="port" type="number" min="1" max="65535" value="${escapeHtml(portDraft.port)}" ${restoring ? 'disabled' : ''}></td>
-                                ${portDraft.httpsPort !== null ? `<td><input class="backup-restore-port-input" data-field="httpsPort" type="number" min="1" max="65535" value="${escapeHtml(portDraft.httpsPort)}" ${restoring ? 'disabled' : ''}></td>` : ''}
-                                <td><input class="backup-restore-port-input" data-field="mcpPort" type="number" min="1" max="65535" value="${escapeHtml(portDraft.mcpPort)}" ${restoring ? 'disabled' : ''}></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        ` : '';
         let restoreButtonLabel = 'Restore Selected Backup';
         if (confirming && isImport && targetExists) {
             restoreButtonLabel = 'Import And Overwrite Namespace';
@@ -355,6 +326,13 @@ export class BackupRestoreModal extends BaseModal {
             restoreButtonLabel = 'Confirm Restore';
         }
         const restoreButtonClass = confirming && isImport && targetExists ? 'danger-btn' : 'primary-btn';
+        const emptyBackupsHtml = !loading && backups.length === 0 ? `
+            <div class="backup-restore-empty-state">
+                <p>No backups are available from this namespace's configured backup folder.</p>
+                <p>Choose the folder containing your MetaList backup archives.</p>
+                <button type="button" class="secondary-btn" id="backup-restore-choose-folder-btn" ${choosingFolder ? 'disabled' : ''}>${choosingFolder ? 'Choosing...' : 'Choose Backup Folder...'}</button>
+            </div>
+        ` : '';
 
         if (confirming) {
             if (selectedBackup === null) {
@@ -384,7 +362,6 @@ export class BackupRestoreModal extends BaseModal {
                     ${confirmationSummaryHtml}
                     ${sameNamespaceWarningHtml}
                     ${overwriteWarningHtml}
-                    ${portConfigHtml}
 
                     <div class="form-actions">
                         <button type="button" class="${restoreButtonClass}" id="restore-backup-btn" ${restoring || backups.length === 0 ? 'disabled' : ''}>${restoreButtonLabel}</button>
@@ -404,6 +381,7 @@ export class BackupRestoreModal extends BaseModal {
                 <h3>Restore From Backup</h3>
                 <p>Select a backup snapshot and restore the workspace data.</p>
                 <p>Same-name restores overwrite that namespace. Different-name imports create a namespace unless the target already exists.</p>
+                ${emptyBackupsHtml}
 
                 <div class="form-group">
                     <label for="backup-select">Available Backups</label>
@@ -424,7 +402,7 @@ export class BackupRestoreModal extends BaseModal {
                     <button type="button" class="secondary-btn" id="close-backup-modal-btn" ${restoring ? 'disabled' : ''}>${confirming ? 'Back' : 'Cancel'}</button>
                 </div>
 
-                <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${restoring ? ' Restoring backup...' : ''}</p>
+                <p id="backup-modal-status">${loading ? 'Loading backups...' : ''}${choosingFolder ? ' Choosing a backup folder...' : ''}${restoring ? ' Restoring backup...' : ''}</p>
                 <p id="backup-modal-error" class="error-message">${escapeHtml(error)}</p>
             </div>
         `;
@@ -441,7 +419,7 @@ export class BackupRestoreModal extends BaseModal {
                     this.updateModalState({
                         confirming: false,
                         preflight: null,
-                        portDraft: null,
+                        importLaunchProfile: null,
                         overwriteConfirmText: '',
                         targetPassword: '',
                         error: '',
@@ -460,6 +438,13 @@ export class BackupRestoreModal extends BaseModal {
             };
         }
 
+        const chooseFolderButton = document.getElementById('backup-restore-choose-folder-btn');
+        if (chooseFolderButton instanceof HTMLButtonElement) {
+            chooseFolderButton.onclick = async () => {
+                await this.chooseBackupFolder();
+            };
+        }
+
         const select = document.getElementById('backup-select');
         if (select instanceof HTMLSelectElement) {
             select.onchange = () => {
@@ -475,7 +460,7 @@ export class BackupRestoreModal extends BaseModal {
                     targetNamespaceText: nextNamespace,
                     confirming: false,
                     preflight: null,
-                    portDraft: null,
+                    importLaunchProfile: null,
                     overwriteConfirmText: '',
                     targetPassword: '',
                     error: '',
@@ -491,7 +476,7 @@ export class BackupRestoreModal extends BaseModal {
                     targetNamespaceText: targetNamespaceInput.value,
                     confirming: false,
                     preflight: null,
-                    portDraft: null,
+                    importLaunchProfile: null,
                     overwriteConfirmText: '',
                     targetPassword: '',
                     error: '',
@@ -519,30 +504,6 @@ export class BackupRestoreModal extends BaseModal {
             };
         }
 
-        const portInputs = document.querySelectorAll('.backup-restore-port-input');
-        portInputs.forEach((input) => {
-            if (!(input instanceof HTMLInputElement)) {
-                return;
-            }
-            input.oninput = () => {
-                const field = input.dataset.field;
-                if (field !== 'port' && field !== 'httpsPort' && field !== 'mcpPort') {
-                    throw new Error('Backup restore port input missing field');
-                }
-                const state = this.getModalState();
-                const portDraft = state.portDraft && typeof state.portDraft === 'object' ? state.portDraft : null;
-                if (portDraft === null) {
-                    throw new Error('Backup restore port draft missing');
-                }
-                this.updateModalState({
-                    portDraft: {
-                        ...portDraft,
-                        [field]: input.value,
-                    },
-                    error: '',
-                });
-            };
-        });
     }
 
     _buildAuthHeaders(includeContentType) {
@@ -584,6 +545,7 @@ export class BackupRestoreModal extends BaseModal {
     async loadBackups() {
         this.updateModalState({
             loading: true,
+            choosingFolder: false,
             restoring: false,
             confirming: false,
             restored: false,
@@ -597,7 +559,7 @@ export class BackupRestoreModal extends BaseModal {
             selectedBackupId: '',
             targetNamespaceText: '',
             preflight: null,
-            portDraft: null,
+            importLaunchProfile: null,
             overwriteConfirmText: '',
             targetPassword: '',
         });
@@ -621,12 +583,87 @@ export class BackupRestoreModal extends BaseModal {
             selectedBackupId,
             targetNamespaceText,
             preflight: null,
-            portDraft: null,
+            importLaunchProfile: null,
             overwriteConfirmText: '',
             targetPassword: '',
             error: '',
         });
         this.renderModalContent();
+    }
+
+    _parseBackupSettingsForFolderChoice(payload) {
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Backup settings response missing body');
+        }
+        if (!Array.isArray(payload.selected_namespaces) || payload.selected_namespaces.length === 0) {
+            throw new Error('Backup settings response missing selected_namespaces');
+        }
+        for (const namespace of payload.selected_namespaces) {
+            if (typeof namespace !== 'string' || namespace.length === 0) {
+                throw new Error('Backup settings selected_namespaces entries must be non-empty strings');
+            }
+        }
+        if (!Number.isInteger(payload.retention_count) || payload.retention_count <= 0) {
+            throw new Error('Backup settings response missing retention_count');
+        }
+        return {
+            selectedNamespaces: payload.selected_namespaces,
+            retentionCount: payload.retention_count,
+        };
+    }
+
+    _parseBackupFolderPick(payload) {
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Folder picker response missing body');
+        }
+        if (payload.selected === false) {
+            return null;
+        }
+        if (payload.selected !== true) {
+            throw new Error('Folder picker response missing selected state');
+        }
+        if (typeof payload.folder_path !== 'string' || payload.folder_path.length === 0) {
+            throw new Error('Folder picker response missing folder path');
+        }
+        return payload.folder_path;
+    }
+
+    async _pickAndPersistBackupFolder() {
+        const settingsPayload = await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'GET', null);
+        const settings = this._parseBackupSettingsForFolderChoice(settingsPayload);
+        const pickPayload = await this._authRequest(CONFIG.API.BACKUP.FOLDER_PICK, 'POST', {});
+        const folderPath = this._parseBackupFolderPick(pickPayload);
+        if (folderPath === null) {
+            return false;
+        }
+        await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'PUT', {
+            folder_path: folderPath,
+            selected_namespaces: settings.selectedNamespaces,
+            retention_count: settings.retentionCount,
+        });
+        return true;
+    }
+
+    async chooseBackupFolder() {
+        this.updateModalState({
+            choosingFolder: true,
+            error: '',
+        });
+        this.renderModalContent();
+        const choiceResult = await settleResult(() => this._pickAndPersistBackupFolder());
+        if (!choiceResult.ok) {
+            const error = choiceResult.error;
+            const message = error instanceof Error ? error.message : 'Failed to choose backup folder';
+            this.updateModalState({ choosingFolder: false, error: message });
+            this.renderModalContent();
+            return;
+        }
+        if (!choiceResult.value) {
+            this.updateModalState({ choosingFolder: false, error: '' });
+            this.renderModalContent();
+            return;
+        }
+        await this.loadBackups();
     }
 
     _buildRestoreBasePayload(selectedBackup, targetNamespace) {
@@ -642,22 +679,26 @@ export class BackupRestoreModal extends BaseModal {
         };
     }
 
-    _buildPortProfileFromDraft() {
+    _buildImportLaunchProfile() {
         const state = this.getModalState();
-        const portDraft = state.portDraft && typeof state.portDraft === 'object' ? state.portDraft : null;
-        if (portDraft === null) {
-            throw new Error('Launch ports must be configured before importing');
+        const importLaunchProfile = state.importLaunchProfile && typeof state.importLaunchProfile === 'object'
+            ? state.importLaunchProfile
+            : null;
+        if (importLaunchProfile === null) {
+            throw new Error('Restore preflight did not assign launch ports for the imported namespace');
         }
         const profile = {
-            port: parsePort(portDraft.port, 'HTTP port'),
-            https_port: portDraft.httpsPort === null ? null : parsePort(portDraft.httpsPort, 'HTTPS port'),
-            mcp_port: parsePort(portDraft.mcpPort, 'MCP port'),
+            port: parsePort(importLaunchProfile.port, 'HTTP port'),
+            https_port: importLaunchProfile.httpsPort === null
+                ? null
+                : parsePort(importLaunchProfile.httpsPort, 'HTTPS port'),
+            mcp_port: parsePort(importLaunchProfile.mcpPort, 'MCP port'),
         };
         validatePortsDoNotOverlap(profile);
         return profile;
     }
 
-    _portDraftFromProfile(profile) {
+    _importLaunchProfileFromResponse(profile) {
         if (!profile || typeof profile !== 'object') {
             throw new Error('Restore preflight missing suggested launch profile');
         }
@@ -717,15 +758,15 @@ export class BackupRestoreModal extends BaseModal {
             throw new Error('Restore preflight response missing body');
         }
         const sameNamespace = preflight.same_namespace === true;
-        let portDraft = null;
+        let importLaunchProfile = null;
         if (!sameNamespace) {
             const suggestedProfile = preflight.suggested_profile;
-            portDraft = this._portDraftFromProfile(suggestedProfile);
+            importLaunchProfile = this._importLaunchProfileFromResponse(suggestedProfile);
         }
         this.updateModalState({
             confirming: true,
             preflight,
-            portDraft,
+            importLaunchProfile,
             overwriteConfirmText: '',
             targetPassword: '',
             error: '',
@@ -741,6 +782,10 @@ export class BackupRestoreModal extends BaseModal {
             throw new Error('Restore preflight is required before restore');
         }
         const sameNamespace = preflight.same_namespace === true;
+        if (typeof preflight.target_is_active !== 'boolean') {
+            throw new Error('Restore preflight missing target_is_active');
+        }
+        const targetIsActive = preflight.target_is_active;
         const targetExists = preflight.target_exists === true;
         if (!sameNamespace && targetExists) {
             const confirmation = typeof state.overwriteConfirmText === 'string'
@@ -763,31 +808,50 @@ export class BackupRestoreModal extends BaseModal {
         this.renderModalContent();
 
         const basePayload = this._buildRestoreBasePayload(selection.selectedBackup, selection.targetNamespace);
-        let payload = null;
-        if (sameNamespace) {
-            payload = await this._authRequest(this.apiEndpoints.restore, 'POST', basePayload);
-        } else {
-            payload = await this._authRequest(this.apiEndpoints.restoreImport, 'POST', {
-                ...basePayload,
-                overwrite_existing_target: targetExists,
-                target_password: typeof state.targetPassword === 'string' ? state.targetPassword : '',
-                launch_profile: this._buildPortProfileFromDraft(),
-            });
+        if (targetIsActive) {
+            this._markRestoreTransitionActive();
         }
+        let restoreRequestResult = null;
+        if (sameNamespace) {
+            restoreRequestResult = await settleResult(
+                () => this._authRequest(this.apiEndpoints.restore, 'POST', basePayload),
+            );
+        } else {
+            restoreRequestResult = await settleResult(
+                () => this._authRequest(this.apiEndpoints.restoreImport, 'POST', {
+                    ...basePayload,
+                    overwrite_existing_target: targetExists,
+                    target_password: typeof state.targetPassword === 'string' ? state.targetPassword : '',
+                    launch_profile: this._buildImportLaunchProfile(),
+                }),
+            );
+        }
+        if (!restoreRequestResult.ok) {
+            if (targetIsActive) {
+                this._clearRestoreTransitionActive();
+            }
+            throw restoreRequestResult.error;
+        }
+        const payload = restoreRequestResult.value;
         if (!payload || typeof payload !== 'object') {
+            if (targetIsActive) {
+                this._clearRestoreTransitionActive();
+            }
             throw new Error('Restore response missing body');
         }
 
         const activeNamespaceRestarted = payload.active_namespace_restarted === true;
         if (activeNamespaceRestarted) {
             this._markRestoreTransitionActive();
+        } else if (targetIsActive) {
+            this._clearRestoreTransitionActive();
         }
         this.updateModalState({
             loading: false,
             restoring: false,
             confirming: false,
             preflight: null,
-            portDraft: null,
+            importLaunchProfile: null,
             overwriteConfirmText: '',
             targetPassword: '',
             restored: true,
@@ -824,6 +888,10 @@ export class BackupRestoreModal extends BaseModal {
     _markRestoreTransitionActive() {
         const transitionUntil = Date.now() + RESTORE_TRANSITION_SUPPRESS_MS;
         sessionStorage.setItem(RESTORE_TRANSITION_UNTIL_KEY, String(transitionUntil));
+    }
+
+    _clearRestoreTransitionActive() {
+        sessionStorage.removeItem(RESTORE_TRANSITION_UNTIL_KEY);
     }
 
     _beginPostRestoreReconnectAndReload() {

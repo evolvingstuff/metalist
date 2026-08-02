@@ -1472,19 +1472,6 @@ body.ontology-modal-open #ontology-modal {
     font-weight: 700;
 }
 
-.backup-restore-port-config {
-    margin: 16px 0;
-}
-
-.backup-restore-port-config h4 {
-    margin: 0 0 8px;
-}
-
-.backup-restore-port-config ul {
-    margin: 8px 0 0;
-    padding-left: 22px;
-}
-
 .backup-retention-modal-content {
     width: min(760px, 92vw);
 }

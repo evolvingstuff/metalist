@@ -295,6 +295,16 @@ def test_restore_preflight_reports_existing_different_target(
             mcp_port=8766,
         ),
     )
+    monkeypatch.setattr(
+        backups_route,
+        "load_namespace_launch_profile",
+        lambda *, namespace: backups_route.NamespaceLaunchProfile(
+            namespace=namespace,
+            port=8010,
+            https_port=8453,
+            mcp_port=8770,
+        ),
+    )
     monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
 
     response = backups_route.restore_backup_preflight(payload=payload, token="token")
@@ -306,7 +316,10 @@ def test_restore_preflight_reports_existing_different_target(
     assert response.restored_profile is not None
     assert response.restored_profile.port == 8001
     assert response.suggested_profile is not None
-    assert response.suggested_profile.port == 8001
+    assert response.suggested_profile.port == 8010
+    assert response.suggested_profile.https_port == 8453
+    assert response.suggested_profile.mcp_port == 8770
+    assert response.port_conflicts == []
 
 
 def test_restore_import_rejects_existing_target_without_overwrite_confirmation(
@@ -495,6 +508,104 @@ def test_restore_import_passes_source_namespace_for_new_target(
     }
 
 
+def test_restore_import_restarts_when_overwriting_active_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "source-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+    events: list[str] = []
+
+    monkeypatch.setattr(backups_route, "ACTIVE_NAMESPACE", "target")
+    monkeypatch.setattr(backups_route, "_restore_target_exists", lambda *, target_namespace: True)
+    monkeypatch.setattr(backups_route, "_verify_target_namespace_password", lambda **kwargs: None)
+    monkeypatch.setattr(
+        backups_route,
+        "load_namespace_launch_profile",
+        lambda *, namespace: backups_route.NamespaceLaunchProfile(
+            namespace=namespace,
+            port=8002,
+            https_port=8445,
+            mcp_port=8767,
+        ),
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["source"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
+    )
+    monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
+    monkeypatch.setattr(
+        backups_route,
+        "restore_backup_to_paths_from_namespace",
+        lambda *args, **kwargs: events.append("restore"),
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "save_namespace_launch_profile",
+        lambda **kwargs: events.append(f"save_profile:{kwargs}"),
+    )
+    monkeypatch.setattr(
+        backups_route.maintenance_service,
+        "enter_maintenance",
+        lambda message: events.append("enter_maintenance"),
+    )
+    monkeypatch.setattr(
+        backups_route.maintenance_service,
+        "exit_maintenance",
+        lambda: events.append("exit_maintenance"),
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "_reset_runtime_state_after_restore",
+        lambda: events.append("reset_runtime"),
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "_schedule_server_restart_after_restore",
+        lambda *, delay_seconds: events.append(f"schedule_restart:{delay_seconds}"),
+    )
+
+    payload = backups_route.BackupRestoreImportRequest(
+        backup_id=f"folder::source::{backup_filename}",
+        source="folder",
+        backup_filename=backup_filename,
+        backup_namespace="source",
+        target_namespace="target",
+        overwrite_existing_target=True,
+        target_password="",
+        launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
+            port=8010,
+            https_port=None,
+            mcp_port=8770,
+        ),
+    )
+
+    response = backups_route.import_backup(payload=payload, token="token")
+
+    assert response.active_namespace_restarted is True
+    assert response.open_namespace_suggested is False
+    assert events == [
+        "enter_maintenance",
+        "restore",
+        "save_profile:{'namespace': 'target', 'port': 8002, 'https_port': 8445, 'mcp_port': 8767}",
+        "reset_runtime",
+        "exit_maintenance",
+        "schedule_restart:0.5",
+    ]
+
+
 def test_restore_import_rejects_missing_password_for_existing_protected_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -624,6 +735,16 @@ def test_restore_import_accepts_correct_password_for_existing_protected_target(
         "resolve_namespaced_database_path",
         lambda *, namespace: tmp_path / "namespaces" / namespace / f"{namespace}.metalist.db",
     )
+    monkeypatch.setattr(
+        backups_route,
+        "load_namespace_launch_profile",
+        lambda *, namespace: backups_route.NamespaceLaunchProfile(
+            namespace=namespace,
+            port=8002,
+            https_port=8445,
+            mcp_port=8767,
+        ),
+    )
     monkeypatch.setattr(backups_route, "load_all_namespace_launch_profiles", lambda: [])
 
     def _capture_restore(backup_path: Path, database_path: Path, *, source_namespace: str | None) -> None:
@@ -660,3 +781,9 @@ def test_restore_import_accepts_correct_password_for_existing_protected_target(
     assert restored["backup_path"] == backup_path
     assert restored["database_path"] == target_database_path
     assert restored["source_namespace"] == "source"
+    assert restored["saved_profile"] == {
+        "namespace": "target",
+        "port": 8002,
+        "https_port": 8445,
+        "mcp_port": 8767,
+    }
