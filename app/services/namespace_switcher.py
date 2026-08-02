@@ -334,10 +334,33 @@ def open_or_launch_all_namespaces(
     if not isinstance(raw_namespaces, list):
         raise RuntimeError("Namespace catalog missing namespaces")
 
+    profiles = _resolve_conflict_free_profiles_for_all_namespaces(
+        raw_namespaces=raw_namespaces,
+    )
+    saved_profiles = _load_saved_profiles_by_namespace()
+    for profile in profiles:
+        saved_profile = saved_profiles.get(profile.namespace)
+        if saved_profile is None:
+            raise RuntimeError(f"Namespace {profile.namespace} launch profile disappeared")
+        if saved_profile == profile:
+            continue
+        save_namespace_launch_profile(
+            namespace=profile.namespace,
+            port=profile.port,
+            https_port=profile.https_port,
+            mcp_port=profile.mcp_port,
+        )
+        print(
+            f"[startup] WARNING: adjusted namespace {profile.namespace} ports to resolve "
+            f"a saved conflict: HTTP {saved_profile.port} -> {profile.port}, "
+            f"HTTPS {saved_profile.https_port} -> {profile.https_port}, "
+            f"MCP {saved_profile.mcp_port} -> {profile.mcp_port}.",
+            file=sys.stderr,
+            flush=True,
+        )
+
     results: list[NamespaceOpenResult] = []
-    for entry in raw_namespaces:
-        _assert_catalog_entry_has_launch_profile(entry=entry)
-        profile = _catalog_default_profile(entry=entry)
+    for profile in profiles:
         result = open_or_launch_namespace(
             environ=environ,
             current_namespace=None,
@@ -363,6 +386,74 @@ def open_or_launch_all_namespaces(
             )
         results.append(result)
     return results
+
+
+def _resolve_conflict_free_profiles_for_all_namespaces(
+    *,
+    raw_namespaces: Sequence[object],
+) -> list[NamespaceLaunchProfile]:
+    occupied_ports: set[int] = set()
+    profiles: list[NamespaceLaunchProfile] = []
+    for entry in raw_namespaces:
+        _assert_catalog_entry_has_launch_profile(entry=entry)
+        saved_profile = _catalog_default_profile(entry=entry)
+        profile = _repair_profile_port_conflicts(
+            profile=saved_profile,
+            occupied_ports=occupied_ports,
+        )
+        profiles.append(profile)
+        for _, port in _profile_service_ports(profile=profile):
+            occupied_ports.add(port)
+    return profiles
+
+
+def _repair_profile_port_conflicts(
+    *,
+    profile: NamespaceLaunchProfile,
+    occupied_ports: set[int],
+) -> NamespaceLaunchProfile:
+    working_ports = set(occupied_ports)
+    http_port = _keep_or_replace_port(
+        preferred_port=profile.port,
+        replacement_start=server_runtime._DEFAULT_HTTP_PORT,
+        occupied_ports=working_ports,
+    )
+    working_ports.add(http_port)
+
+    https_port = profile.https_port
+    if https_port is not None:
+        https_port = _keep_or_replace_port(
+            preferred_port=https_port,
+            replacement_start=server_runtime._DEFAULT_HTTPS_PORT,
+            occupied_ports=working_ports,
+        )
+        working_ports.add(https_port)
+
+    mcp_port = _keep_or_replace_port(
+        preferred_port=profile.mcp_port,
+        replacement_start=server_runtime._DEFAULT_MCP_AGENT_WEB_PORT,
+        occupied_ports=working_ports,
+    )
+    return NamespaceLaunchProfile(
+        namespace=profile.namespace,
+        port=http_port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
+
+
+def _keep_or_replace_port(
+    *,
+    preferred_port: int,
+    replacement_start: int,
+    occupied_ports: set[int],
+) -> int:
+    if preferred_port not in occupied_ports:
+        return preferred_port
+    return _next_free_port(
+        start_port=replacement_start,
+        occupied_ports=occupied_ports,
+    )
 
 
 def save_namespace_port_profiles(

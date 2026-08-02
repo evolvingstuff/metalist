@@ -31,72 +31,35 @@ def test_main_entrypoint_has_no_top_level_mcp_client_import() -> None:
             assert node.module != "mcp_client"
 
 
-def test_installed_cli_bootstraps_default_namespace_when_catalog_is_empty(monkeypatch) -> None:
+def test_installed_cli_forwards_empty_argument_list(monkeypatch) -> None:
     calls: list[object] = []
-
+    monkeypatch.setattr(sys, "argv", ["metalist"])
     monkeypatch.setattr(
         main_entrypoint,
-        "ensure_default_tls_pair",
-        lambda *, environ: calls.append("ensure_default_tls_pair"),
-    )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "build_namespace_catalog",
-        lambda *, environ, current_namespace: {
-            "namespaces": [],
-            "new_namespace_profile": {
-                "namespace": "new-namespace",
-                "port": 8000,
-                "https_port": 8443,
-                "mcp_port": 8765,
-            },
-        },
-    )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "save_namespace_launch_profile",
-        lambda **kwargs: calls.append(kwargs),
-    )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "main",
-        lambda argv: calls.append(("main", argv)),
-    )
-
-    main_entrypoint.cli()
-
-    assert calls == [
-        "ensure_default_tls_pair",
-        {
-            "namespace": "default",
-            "port": 8000,
-            "https_port": 8443,
-            "mcp_port": 8765,
-        },
-        ("main", []),
-    ]
-
-
-def test_installed_cli_does_not_create_default_when_another_namespace_exists(monkeypatch) -> None:
-    calls: list[object] = []
-    monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", lambda *, environ: None)
-    monkeypatch.setattr(
-        main_entrypoint,
-        "build_namespace_catalog",
-        lambda *, environ, current_namespace: {
-            "namespaces": [{"namespace": "henry", "has_launch_profile": True}],
-        },
-    )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "save_namespace_launch_profile",
-        lambda **kwargs: calls.append(kwargs),
+        "_bootstrap_default_namespace_if_empty",
+        lambda *, environ: calls.append("unexpected-bootstrap"),
     )
     monkeypatch.setattr(main_entrypoint, "main", lambda argv: calls.append(("main", argv)))
 
     main_entrypoint.cli()
 
     assert calls == [("main", [])]
+
+
+def test_installed_cli_forwards_namespace_and_port_arguments(monkeypatch) -> None:
+    calls: list[object] = []
+    argv = ["henry", "--port", "8001", "--https-port", "8444", "--mcp-port", "8766"]
+    monkeypatch.setattr(sys, "argv", ["metalist", *argv])
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_bootstrap_default_namespace_if_empty",
+        lambda *, environ: calls.append("unexpected-bootstrap"),
+    )
+    monkeypatch.setattr(main_entrypoint, "main", lambda argv: calls.append(("main", argv)))
+
+    main_entrypoint.cli()
+
+    assert calls == [("main", argv)]
 
 
 def test_installed_default_bootstrap_creates_metalist_directory_tree(
@@ -209,7 +172,7 @@ def test_startup_encryption_audit_prints_pass_without_warning(
     assert captured.err == ""
 
 
-def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch) -> None:
+def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path, monkeypatch) -> None:
     calls: list[str] = []
     fake_app_module = ModuleType("app.main")
     fake_app_object = object()
@@ -300,7 +263,7 @@ def test_main_generates_default_tls_pair_on_normal_startup(tmp_path, monkeypatch
     monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_encryption_audit", lambda *, namespaces_directory: calls.append("_run_startup_encryption_audit"))
 
-    main_entrypoint.main(argv=[])
+    main_entrypoint.main(argv=["--namespace", "default"])
 
     assert calls == [
         "_record_self_executable_for_namespace_launch",
@@ -479,7 +442,17 @@ def test_run_namespace_server_prints_resolved_config(
     )
 
 
-def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "entrypoint",
+    (
+        "/tmp/main.py",
+        "C:/Users/hlaho/.local/bin/metalist.exe",
+    ),
+)
+def test_main_run_without_explicit_namespace_bootstraps_all_namespaces(
+    monkeypatch,
+    entrypoint: str,
+) -> None:
     calls: list[str] = []
 
     def _fake_bootstrap_default_namespace_if_empty(*, environ) -> None:
@@ -527,7 +500,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_encryption_audit", lambda *, namespaces_directory: calls.append("_run_startup_encryption_audit"))
-    monkeypatch.setattr(main_entrypoint, "_resolve_current_entrypoint", lambda: "/tmp/main.py")
+    monkeypatch.setattr(main_entrypoint, "_resolve_current_entrypoint", lambda: entrypoint)
     monkeypatch.setattr(
         main_entrypoint,
         "resolve_database_runtime_config",

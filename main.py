@@ -155,8 +155,6 @@ def _should_bootstrap_all_namespaces_without_cli_parse(
 ) -> bool:
     if len(argv) != 0:
         return False
-    if not _is_source_main_entrypoint():
-        return False
     if "TEST_MODE" in original_environ and original_environ["TEST_MODE"] == "1":
         return False
     return not any(name in original_environ for name in _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES)
@@ -777,8 +775,7 @@ def main(argv: list[str]) -> None:
 
 
 def cli() -> None:
-    _bootstrap_default_namespace_if_empty(environ=os.environ)
-    main([])
+    main(sys.argv[1:])
 
 
 def run_namespace_server(argv: list[str]) -> None:

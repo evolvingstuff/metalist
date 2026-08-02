@@ -486,6 +486,64 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
     assert [result.namespace for result in results] == ["default", "cla"]
 
 
+def test_open_or_launch_all_namespaces_repairs_saved_port_conflicts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(namespace_switcher, "_supports_https", lambda *, environ: True)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=8443,
+        mcp_port=8765,
+    )
+    save_namespace_launch_profile(
+        namespace="henry",
+        port=8000,
+        https_port=8443,
+        mcp_port=8765,
+    )
+    opened: list[NamespaceLaunchProfile] = []
+
+    def _fake_open_or_launch_namespace(**kwargs) -> NamespaceOpenResult:
+        profile = NamespaceLaunchProfile(
+            namespace=kwargs["namespace"],
+            port=kwargs["port"],
+            https_port=kwargs["https_port"],
+            mcp_port=kwargs["mcp_port"],
+        )
+        opened.append(profile)
+        return NamespaceOpenResult(
+            namespace=profile.namespace,
+            action="launched",
+            url=f"http://127.0.0.1:{profile.port}",
+            saved_profile=profile,
+            saved_for_next_launch=False,
+            message=f"Started namespace {profile.namespace}.",
+        )
+
+    monkeypatch.setattr(namespace_switcher, "open_or_launch_namespace", _fake_open_or_launch_namespace)
+
+    open_or_launch_all_namespaces(environ={})
+
+    assert opened == [
+        NamespaceLaunchProfile(namespace="default", port=8000, https_port=8443, mcp_port=8765),
+        NamespaceLaunchProfile(namespace="henry", port=8001, https_port=8444, mcp_port=8766),
+    ]
+    assert load_namespace_launch_profile(namespace="henry") == NamespaceLaunchProfile(
+        namespace="henry",
+        port=8001,
+        https_port=8444,
+        mcp_port=8766,
+    )
+    assert (
+        "[startup] WARNING: adjusted namespace henry ports to resolve a saved conflict: "
+        "HTTP 8000 -> 8001, HTTPS 8443 -> 8444, MCP 8765 -> 8766."
+    ) in capsys.readouterr().err
+
+
 def test_open_or_launch_all_namespaces_restarts_warm_running_processes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
