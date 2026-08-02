@@ -7,6 +7,7 @@
   - Paste in native text-entry controls (such as search inputs and modal fields) keeps normal browser behavior and never creates a note behind the control.
   - Dropping into the actively edited note embeds the image there.
   - Dropping an image anywhere else creates a new top note, then embeds the image there.
+  - Dropping a PDF or other non-image file while a note is being edited attaches it to that active note, even when pointer hit-testing lands on note chrome instead of the inner editor.
   - Dropping any file while no note is selected creates a new top note, inserts its file reference, and saves the note.
   - For named image files, the user is prompted to either paste inline with compression or save the original file and insert its file UUID token.
 - Internal MetaList note clipboard paste (`class="note-content"` payload) still uses server note copy/paste actions.

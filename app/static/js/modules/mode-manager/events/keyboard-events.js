@@ -64,6 +64,7 @@ import {
 } from '../services/embedded-image-service.js';
 import { promptForImageFileInsertMode } from '../services/image-file-insert-choice-modal-service.js';
 import { attachPickedFileToCurrentNote, insertReferenceTokenIntoActiveEditor } from '../services/file-reference-service.js';
+import { shouldCreateTopNoteForFileDrop } from '../services/file-drop-policy-service.js';
 import { syncBacklinksPanelPlacement } from '../services/backlinks-panel-service.js';
 import {
     hideSearchContextsOverlay,
@@ -2667,6 +2668,12 @@ function handleDropEvent(event) {
     const target = resolveEditingDropTarget(event);
     const imageFiles = droppedFiles.filter((file) => isImageFile(file));
     const onlyImages = imageFiles.length === droppedFiles.length;
+    const shouldCreateTopNote = shouldCreateTopNoteForFileDrop({
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        hasNonImageFile: !onlyImages,
+        hasEditingDropTarget: target instanceof HTMLElement,
+    });
     let targetSelectionRange = null;
     if (target instanceof HTMLElement) {
         focusDropTargetForInsertion(target, event);
@@ -2730,7 +2737,7 @@ function handleDropEvent(event) {
 
         return await CommandGate.run('keyboard.dropFiles', async () => {
             return await processDroppedFiles(droppedFiles, {
-                createTopNote: !(target instanceof HTMLElement),
+                createTopNote: shouldCreateTopNote,
                 imageHandlingMode,
                 selectionRange: targetSelectionRange,
             });
@@ -2753,7 +2760,7 @@ function handleDropEvent(event) {
             }
             Logger.logDebug('Dropped files processed', {
                 fileCount: droppedFiles.length,
-                createTopNote: !(target instanceof HTMLElement),
+                createTopNote: shouldCreateTopNote,
                 inserted: result,
             }, Logger.LogCategory.EVENT);
         })
