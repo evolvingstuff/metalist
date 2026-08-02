@@ -94,7 +94,7 @@
     },
     {
       "id": "form.manage_namespace_ports",
-      "tags": ["namespace", "namespaces", "manage", "ports", "port", "configure", "settings", "http", "https", "mcp", "launch"]
+      "tags": ["namespace", "namespaces", "manage", "ports", "port", "configure", "settings", "http", "https", "launch"]
     },
     {
       "id": "form.rename_current_namespace",
@@ -159,10 +159,6 @@
     {
       "id": "action.open_keyboard_shortcuts_help",
       "tags": ["help", "shortcuts", "keyboard", "commands", "keys", "guide"]
-    },
-    {
-      "id": "action.run_mcp_client",
-      "tags": ["mcp", "client", "agent", "ollama", "web", "run", "open", "tab"]
     }
   ]
 }

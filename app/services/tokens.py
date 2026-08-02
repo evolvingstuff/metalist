@@ -209,6 +209,10 @@ class TokenService:
 
         return len(expired)
 
+    def has_active_tokens(self) -> bool:
+        self.cleanup_expired_tokens()
+        return bool(self.tokens)
+
     def get_token_info(self, token: str) -> Optional[Dict[str, Any]]:
         """Get information about a token.
 

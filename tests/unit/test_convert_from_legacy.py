@@ -46,7 +46,6 @@ def test_configure_namespace_launch_profile_does_not_save_before_database_recrea
             namespace="default",
             port=8000,
             https_port=8443,
-            mcp_port=8765,
         ),
     )
     monkeypatch.setattr(
@@ -207,7 +206,6 @@ def test_converter_creates_current_encrypted_database_with_launch_profile(tmp_pa
         "METALIST_NAMESPACE",
         "METALIST_PORT",
         "METALIST_HTTPS_PORT",
-        "MCP_AGENT_WEB_PORT",
     ):
         if name in environ:
             del environ[name]
@@ -222,8 +220,6 @@ def test_converter_creates_current_encrypted_database_with_launch_profile(tmp_pa
             "8000",
             "--https-port",
             "8443",
-            "--mcp-port",
-            "8765",
             "--kdf-iterations",
             "1",
             "--input",
@@ -254,7 +250,7 @@ def test_converter_creates_current_encrypted_database_with_launch_profile(tmp_pa
         file_count_row = connection.execute("SELECT COUNT(*) FROM files").fetchone()
         sound_count_row = connection.execute("SELECT COUNT(*) FROM sounds").fetchone()
     assert version_row == (CURRENT_DATABASE_VERSION,)
-    assert profile_row == ("default", 8000, 8443, 8765)
+    assert profile_row == ("default", 8000, 8443, None)
     assert settings_row[0] == 1
     assert isinstance(settings_row[1], int)
     assert stale_table_row is None

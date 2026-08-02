@@ -26,7 +26,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--https-port", type=int, required=True)
-    parser.add_argument("--mcp-port", type=int, required=True)
     return parser.parse_args()
 
 
@@ -133,7 +132,6 @@ def _launch_renamed_namespace(*, args: argparse.Namespace) -> None:
         namespace=args.target_namespace,
         port=args.port,
         https_port=https_port,
-        mcp_port=args.mcp_port,
     )
 
 

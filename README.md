@@ -90,12 +90,10 @@ Useful env flags:
 - `METALIST_HOST=0.0.0.0` (default): bind the main app to a different interface such as `127.0.0.1`
 - `METALIST_PORT=8000` (default): bind the main app to a different port
 - `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
-- `MCP_AGENT_WEB_PORT=8765` (default): bind the MCP sidecar web UI to a different port
 - `METALIST_TLS_CERT=/path/to/fullchain.pem` + `METALIST_TLS_KEY=/path/to/privkey.pem`: override TLS paths
 - `METALIST_AUTO_GENERATE_TLS=0`: disable automatic creation of the default self-signed TLS pair
 - default TLS paths: `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`
 - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
-- `MCP_AGENT_PUBLIC_ORIGIN=https://notes.example.com:8765`: public origin for the MCP sidecar redirect when it is exposed behind HTTPS or a separate hostname/port
 
 ### Remote Access / HTTPS
 Plain LAN or VPN HTTP works with a normal PyCharm run:
@@ -106,7 +104,7 @@ On a fresh machine, that first launch also creates the default TLS cert pair aut
 
 Namespaced launch example:
 ```bash
-metalist --namespace work --port 8001 --mcp-port 8766
+metalist --namespace work --port 8001
 ```
 This starts a separate process backed by `~/MetaList/namespaces/work/work.metalist.db` on `http://127.0.0.1:8001`.
 Its backup snapshots live under `~/MetaList/namespaces/work/backups/` with filenames like `work-<timestamp>.metalist-backup.tar.gz`. New backups are versioned `.tar.gz` workspace archives; legacy `.bak` backups remain restorable.
@@ -115,7 +113,7 @@ After you launch a namespace once with explicit ports, MetaList remembers them i
 ```bash
 metalist work
 ```
-and MetaList will reuse the saved HTTP / HTTPS / MCP sidecar ports for `work`. The same applies to the default namespace: `metalist` will reuse the saved default-namespace profile.
+and MetaList will reuse the saved HTTP / HTTPS ports for `work`. The same applies to the default namespace: `metalist` will reuse the saved default-namespace profile.
 
 Equivalent explicit launch, if you want it:
 ```bash
@@ -153,63 +151,6 @@ METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1 \
 metalist
 ```
 
-If you do not need the MCP sidecar remotely, disable it:
-```bash
-MCP_AGENT_WEB_ENABLED=0 metalist
-```
-
-### MCP (Phase 1 Read-Only)
-MCP is available automatically when you run:
-```bash
-metalist
-```
-
-`metalist` also auto-starts the agent web app sidecar and prints:
-- `Agent web app: http://127.0.0.1:8765`
-- The sidecar default MCP URL follows the resolved MetaList HTTP port for the current process.
-- Use `--mcp-port` when you want multiple MetaList instances to auto-start sidecars without colliding on `8765`.
-- On startup, local Ollama (`127.0.0.1`) is reset by default so a fresh runner is used.
-- Sidecar Ollama auto-start uses `OLLAMA_CONTEXT_LENGTH=16384` by default.
-
-Manual web mode (optional):
-```bash
-metalist-mcp web --port 8765
-```
-Then open `http://127.0.0.1:8765`.
-
-Run direct MCP CLI calls:
-```bash
-metalist-mcp cli tools/list
-metalist-mcp cli tools/call health_check '{}'
-```
-
-Compatibility shortcut (still works):
-```bash
-python mcp_client.py tools/list
-```
-
-Disable auto sidecar if needed:
-```bash
-MCP_AGENT_WEB_ENABLED=0 metalist
-```
-
-Control Ollama startup behavior:
-```bash
-# disable Ollama reset-on-start (default is enabled)
-MCP_AGENT_RESET_OLLAMA_ON_START=0 metalist
-
-# override auto-start context length (default 16384)
-MCP_AGENT_OLLAMA_CONTEXT_LENGTH=32768 metalist
-```
-
-Optional: direct stdio transport (advanced/manual):
-```bash
-python -m app.mcp
-```
-
-Tool catalog and schemas:
-- `docs/mcp_tools.md`
-
 ### Legacy Import
 `convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL`, clears its files/sounds sidecar, and imports notes from a legacy JSON export.
 
@@ -225,7 +166,7 @@ Target a namespaced database during import:
 convert-from-legacy.py --namespace work --input /path/to/legacy-export.json
 ```
 
-If `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the import script prompts for them and saves the resulting launch profile inside the target namespace DB. That means a one-time import into `work` can immediately seed later shorthand launches like `metalist work`.
+If `--namespace`, `--port`, or `--https-port` are omitted, the import script prompts for them and saves the resulting launch profile inside the target namespace DB. That means a one-time import into `work` can immediately seed later shorthand launches like `metalist work`.
 
 ### Publishing
 For the real user-facing install flow:

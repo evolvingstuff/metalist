@@ -10,10 +10,8 @@ from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import ensure_default_tls_pair
 from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_main_server_config
-from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_request_host_for_https_redirect
 from app.server_runtime import resolve_https_redirect_url
-from app.server_runtime import resolve_mcp_agent_public_origin
 from app.server_runtime import save_namespace_launch_profile
 
 
@@ -276,8 +274,6 @@ def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
             "8123",
             "--https-port",
             "8444",
-            "--mcp-port",
-            "8766",
         ],
         environ=environ,
     )
@@ -285,13 +281,11 @@ def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
     assert parsed.namespace == "work"
     assert parsed.port == 8123
     assert parsed.https_port == 8444
-    assert parsed.mcp_port == 8766
     assert parsed.test_mode is False
     assert parsed.namespace_requested is True
     assert environ["METALIST_NAMESPACE"] == "work"
     assert environ["METALIST_PORT"] == "8123"
     assert environ["METALIST_HTTPS_PORT"] == "8444"
-    assert environ["MCP_AGENT_WEB_PORT"] == "8766"
 
 
 def test_apply_main_cli_args_to_environ_rejects_namespace_in_test_mode() -> None:
@@ -332,12 +326,10 @@ def test_apply_main_cli_args_to_environ_loads_saved_profile_for_positional_names
     assert parsed.namespace == "cla"
     assert parsed.port is None
     assert parsed.https_port is None
-    assert parsed.mcp_port is None
     assert parsed.namespace_requested is True
     assert environ["METALIST_NAMESPACE"] == "cla"
     assert environ["METALIST_PORT"] == "9000"
     assert environ["METALIST_HTTPS_PORT"] == "9443"
-    assert environ["MCP_AGENT_WEB_PORT"] == "9776"
 
 
 def test_apply_main_cli_args_to_environ_skips_saved_https_port_when_tls_is_unavailable(
@@ -364,7 +356,6 @@ def test_apply_main_cli_args_to_environ_skips_saved_https_port_when_tls_is_unava
     assert parsed.namespace_requested is False
     assert environ["METALIST_PORT"] == "8000"
     assert "METALIST_HTTPS_PORT" not in environ
-    assert environ["MCP_AGENT_WEB_PORT"] == "8765"
 
 
 def test_apply_main_cli_args_to_environ_explicit_cli_port_overrides_saved_profile_and_persists_merge(
@@ -395,7 +386,6 @@ def test_apply_main_cli_args_to_environ_explicit_cli_port_overrides_saved_profil
     assert parsed.port == 9001
     assert environ["METALIST_PORT"] == "9001"
     assert environ["METALIST_HTTPS_PORT"] == "9443"
-    assert environ["MCP_AGENT_WEB_PORT"] == "9776"
 
     profile = load_namespace_launch_profile(namespace="cla")
     assert profile is not None
@@ -418,7 +408,6 @@ def test_apply_main_cli_args_to_environ_prefers_env_over_saved_profile(
     environ = {
         "METALIST_PORT": "9100",
         "METALIST_HTTPS_PORT": "9543",
-        "MCP_AGENT_WEB_PORT": "9876",
     }
 
     parsed = apply_main_cli_args_to_environ(
@@ -429,7 +418,6 @@ def test_apply_main_cli_args_to_environ_prefers_env_over_saved_profile(
     assert parsed.namespace == "cla"
     assert environ["METALIST_PORT"] == "9100"
     assert environ["METALIST_HTTPS_PORT"] == "9543"
-    assert environ["MCP_AGENT_WEB_PORT"] == "9876"
 
 
 def test_apply_main_cli_args_to_environ_saves_default_namespace_profile_when_ports_are_explicit(
@@ -440,7 +428,7 @@ def test_apply_main_cli_args_to_environ_saves_default_namespace_profile_when_por
     environ: dict[str, str] = {}
 
     parsed = apply_main_cli_args_to_environ(
-        argv=["--port", "9000", "--https-port", "9443", "--mcp-port", "9776"],
+        argv=["--port", "9000", "--https-port", "9443"],
         environ=environ,
     )
 
@@ -449,7 +437,7 @@ def test_apply_main_cli_args_to_environ_saves_default_namespace_profile_when_por
     assert profile is not None
     assert profile.port == 9000
     assert profile.https_port == 9443
-    assert profile.mcp_port == 9776
+    assert profile.mcp_port is None
 
 
 def test_apply_namespace_arg_to_environ_bootstraps_known_args_only() -> None:
@@ -518,16 +506,6 @@ def test_resolve_namespace_launch_defaults_ignores_saved_https_port_without_tls(
     assert defaults.mcp_port == 9776
 
 
-def test_resolve_main_mcp_url_tracks_main_app_port_and_prefix() -> None:
-    mcp_url = resolve_main_mcp_url(
-        environ={"API_PREFIX": "/api3"},
-        host="0.0.0.0",
-        port=8123,
-    )
-
-    assert mcp_url == "http://127.0.0.1:8123/api3/mcp"
-
-
 def test_resolve_request_host_for_https_redirect_prefers_browser_host_header() -> None:
     request_host = resolve_request_host_for_https_redirect(
         host_header="localhost:8000",
@@ -554,7 +532,6 @@ def test_resolve_https_redirect_url_does_not_redirect_localhost_host_header_when
     )
 
     assert redirect_url is None
-
 
 def test_resolve_https_redirect_url_redirects_remote_http_requests_by_hostname() -> None:
     redirect_url = resolve_https_redirect_url(
@@ -600,23 +577,3 @@ def test_resolve_https_redirect_url_does_not_redirect_localhost_http_requests() 
     )
 
     assert redirect_url is None
-
-
-def test_resolve_mcp_agent_public_origin_uses_explicit_origin() -> None:
-    origin = resolve_mcp_agent_public_origin(
-        environ={"MCP_AGENT_PUBLIC_ORIGIN": "https://notes.example.com"},
-        request_scheme="https",
-        request_host="notes.example.com",
-    )
-
-    assert origin == "https://notes.example.com"
-
-
-def test_resolve_mcp_agent_public_origin_maps_loopback_to_request_host() -> None:
-    origin = resolve_mcp_agent_public_origin(
-        environ={"MCP_AGENT_WEB_PORT": "8765"},
-        request_scheme="https",
-        request_host="laptop.example.com",
-    )
-
-    assert origin == "https://laptop.example.com:8765"

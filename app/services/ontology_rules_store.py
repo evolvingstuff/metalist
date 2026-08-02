@@ -280,6 +280,21 @@ def get_ontology_if_ready() -> TagOntology | None:
         return state.ontology
 
 
+def lock_ontology_rules_store() -> None:
+    """Discard decrypted rule text while retaining encrypted rows for the next login."""
+    global _STATE
+    with _LOCK:
+        state = _STATE
+        if state is None:
+            return
+        _STATE = OntologyRulesState(
+            rules=state.rules,
+            plaintext_by_id={},
+            ontology=TagOntology.empty(),
+            is_decrypted=False,
+        )
+
+
 def list_rule_lines() -> List[Tuple[int, str]]:
     with _LOCK:
         state = _STATE

@@ -48,7 +48,7 @@ def test_installed_cli_forwards_empty_argument_list(monkeypatch) -> None:
 
 def test_installed_cli_forwards_namespace_and_port_arguments(monkeypatch) -> None:
     calls: list[object] = []
-    argv = ["henry", "--port", "8001", "--https-port", "8444", "--mcp-port", "8766"]
+    argv = ["henry", "--port", "8001", "--https-port", "8444"]
     monkeypatch.setattr(sys, "argv", ["metalist", *argv])
     monkeypatch.setattr(
         main_entrypoint,
@@ -64,7 +64,7 @@ def test_installed_cli_forwards_namespace_and_port_arguments(monkeypatch) -> Non
 
 def test_installed_cli_orchestrated_child_bypasses_parent_startup_gates(monkeypatch) -> None:
     calls: list[object] = []
-    argv = ["--namespace", "default", "--port", "8000", "--mcp-port", "8765"]
+    argv = ["--namespace", "default", "--port", "8000"]
     monkeypatch.setattr(sys, "argv", ["metalist", *argv])
     monkeypatch.setenv("METALIST_ORCHESTRATED_CHILD", "1")
     monkeypatch.setattr(
@@ -157,7 +157,7 @@ def test_installed_default_bootstrap_creates_metalist_directory_tree(
     assert profile is not None
     assert profile.namespace == "default"
     assert profile.port == 8000
-    assert profile.mcp_port == 8765
+    assert profile.mcp_port is None
     audit_report = audit_all_namespaces(
         namespaces_directory=metalist_directory / "namespaces",
     )
@@ -253,7 +253,6 @@ def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path,
             namespace="default",
             port=None,
             https_port=None,
-            mcp_port=None,
             test_mode=False,
             namespace_requested=True,
         )
@@ -286,16 +285,6 @@ def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path,
             ssl_keyfile=None,
         )
 
-    def fake_resolve_main_mcp_url(*, environ, host: str, port: int) -> str:
-        assert host == "127.0.0.1"
-        assert port == 18000
-        calls.append("resolve_main_mcp_url")
-        return "http://127.0.0.1:18000/api2/mcp"
-
-    def fake_start_agent_web_sidecar(*, default_mcp_url: str) -> None:
-        assert default_mcp_url == "http://127.0.0.1:18000/api2/mcp"
-        calls.append("_start_agent_web_sidecar")
-
     def fake_run_main_listener(
         *,
         app_object,
@@ -324,8 +313,6 @@ def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path,
     monkeypatch.setattr(main_entrypoint, "prepare_database_runtime_path", fake_prepare_database_runtime_path)
     monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", fake_ensure_default_tls_pair)
     monkeypatch.setattr(main_entrypoint, "resolve_main_server_config", fake_resolve_main_server_config)
-    monkeypatch.setattr(main_entrypoint, "resolve_main_mcp_url", fake_resolve_main_mcp_url)
-    monkeypatch.setattr(main_entrypoint, "_start_agent_web_sidecar", fake_start_agent_web_sidecar)
     monkeypatch.setattr(main_entrypoint, "_run_main_listener", fake_run_main_listener)
     monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: calls.append("_record_self_executable_for_namespace_launch"))
     monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: calls.append("_run_startup_sanity_gates"))
@@ -342,8 +329,6 @@ def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path,
         "prepare_database_runtime_path",
         "ensure_default_tls_pair",
         "resolve_main_server_config",
-        "resolve_main_mcp_url",
-        "_start_agent_web_sidecar",
         "_run_main_listener",
     ]
 
@@ -387,7 +372,6 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
             namespace=None,
             port=None,
             https_port=None,
-            mcp_port=None,
             test_mode=True,
             namespace_requested=False,
         )
@@ -401,12 +385,6 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
     monkeypatch.setattr(main_entrypoint, "prepare_database_runtime_path", fail_prepare_database_runtime_path)
     monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", fail_ensure_default_tls_pair)
     monkeypatch.setattr(main_entrypoint, "resolve_main_server_config", fake_resolve_main_server_config)
-    monkeypatch.setattr(
-        main_entrypoint,
-        "resolve_main_mcp_url",
-        lambda *, environ, host, port: calls.append("resolve_main_mcp_url") or "http://127.0.0.1:18000/api2/mcp",
-    )
-    monkeypatch.setattr(main_entrypoint, "_start_agent_web_sidecar", lambda *, default_mcp_url: calls.append("_start_agent_web_sidecar"))
     monkeypatch.setattr(
         main_entrypoint,
         "_run_main_listener",
@@ -425,8 +403,6 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
         "apply_main_cli_args_to_environ",
         "resolve_database_runtime_config",
         "resolve_main_server_config",
-        "resolve_main_mcp_url",
-        "_start_agent_web_sidecar",
         "_run_main_listener",
     ]
 
@@ -493,19 +469,13 @@ def test_run_namespace_server_prints_resolved_config(
             ssl_keyfile=None,
         ),
     )
-    monkeypatch.setattr(
-        main_entrypoint,
-        "resolve_main_mcp_url",
-        lambda *, environ, host, port: "http://127.0.0.1:18000/api2/mcp",
-    )
-    monkeypatch.setattr(main_entrypoint, "_start_agent_web_sidecar", lambda *, default_mcp_url: None)
     monkeypatch.setattr(main_entrypoint, "_run_main_listener", lambda **kwargs: None)
     monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
 
     main_entrypoint._run_namespace_server_for_current_env(argv=[])
 
     assert any(
-        "MetaList resolved config:" in line and "namespace='default'" in line and "mcp_url=http://127.0.0.1:18000/api2/mcp" in line
+        "MetaList resolved config:" in line and "namespace='default'" in line and "http_port=18000" in line
         for line in printed
     )
 
@@ -609,7 +579,6 @@ def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(m
                             "namespace": "default",
                             "port": 8000,
                             "https_port": 8443,
-                            "mcp_port": 8765,
                         },
                     }
                 ]
@@ -623,7 +592,6 @@ def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(m
                         "namespace": "default",
                         "port": 8000,
                         "https_port": 8443,
-                        "mcp_port": 8765,
                     },
                 }
             ]
@@ -650,7 +618,7 @@ def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(m
             "namespace": "default",
             "port": 8000,
             "https_port": 8443,
-            "mcp_port": 8765,
+            "mcp_port": None,
         },
     ]
 
@@ -681,65 +649,7 @@ def test_main_aborts_before_namespace_bootstrap_when_sanity_fails(monkeypatch) -
     assert calls == ["_record_self_executable_for_namespace_launch"]
 
 
-def test_print_namespace_bootstrap_results_shows_http_https_and_mcp_urls(monkeypatch) -> None:
-    printed: list[str] = []
-
-    monkeypatch.setattr(
-        main_entrypoint,
-        "resolve_main_server_config",
-        lambda *, environ: MainServerConfig(
-            host="0.0.0.0",
-            port=8000,
-            https_port=8443,
-            proxy_headers=True,
-            forwarded_allow_ips="127.0.0.1,::1",
-            ssl_certfile=None,
-            ssl_keyfile=None,
-        ),
-    )
-    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
-
-    main_entrypoint._print_namespace_bootstrap_results(
-        environ={"MCP_AGENT_WEB_ENABLED": "1"},
-        launch_results=[
-            NamespaceOpenResult(
-                namespace="default",
-                action="launched",
-                url="http://127.0.0.1:8000",
-                saved_profile=NamespaceLaunchProfile(
-                    namespace="default",
-                    port=8000,
-                    https_port=8443,
-                    mcp_port=8765,
-                ),
-                saved_for_next_launch=False,
-                message="Started namespace default.",
-            ),
-            NamespaceOpenResult(
-                namespace="cla",
-                action="restarted",
-                url="http://127.0.0.1:8001",
-                saved_profile=NamespaceLaunchProfile(
-                    namespace="cla",
-                    port=8001,
-                    https_port=None,
-                    mcp_port=8766,
-                ),
-                saved_for_next_launch=False,
-                message="Restarted namespace cla.",
-            ),
-        ],
-    )
-
-    assert printed == [
-        "MetaList namespace bootstrap:",
-        "namespace\taction\thttp\thttps\tmcp",
-        "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443\thttp://127.0.0.1:8765",
-        "cla\trestarted\thttp://127.0.0.1:8001\tdisabled\thttp://127.0.0.1:8766",
-    ]
-
-
-def test_print_namespace_bootstrap_results_disables_mcp_urls_by_default(monkeypatch) -> None:
+def test_print_namespace_bootstrap_results_shows_http_and_https_urls(monkeypatch) -> None:
     printed: list[str] = []
 
     monkeypatch.setattr(
@@ -773,30 +683,28 @@ def test_print_namespace_bootstrap_results_disables_mcp_urls_by_default(monkeypa
                 saved_for_next_launch=False,
                 message="Started namespace default.",
             ),
+            NamespaceOpenResult(
+                namespace="cla",
+                action="restarted",
+                url="http://127.0.0.1:8001",
+                saved_profile=NamespaceLaunchProfile(
+                    namespace="cla",
+                    port=8001,
+                    https_port=None,
+                    mcp_port=8766,
+                ),
+                saved_for_next_launch=False,
+                message="Restarted namespace cla.",
+            ),
         ],
     )
 
     assert printed == [
         "MetaList namespace bootstrap:",
-        "namespace\taction\thttp\thttps\tmcp",
-        "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443\tdisabled",
+        "namespace\taction\thttp\thttps",
+        "default\tlaunched\thttp://127.0.0.1:8000\thttps://127.0.0.1:8443",
+        "cla\trestarted\thttp://127.0.0.1:8001\tdisabled",
     ]
-
-
-def test_start_agent_web_sidecar_disabled_by_default_without_loading_client(monkeypatch) -> None:
-    printed: list[str] = []
-
-    monkeypatch.delenv("MCP_AGENT_WEB_ENABLED", raising=False)
-    monkeypatch.setattr(
-        main_entrypoint,
-        "_load_mcp_client_module",
-        lambda: (_ for _ in ()).throw(AssertionError("disabled sidecar must not load mcp client")),
-    )
-    monkeypatch.setattr(builtins, "print", lambda text: printed.append(text))
-
-    main_entrypoint._start_agent_web_sidecar(default_mcp_url="http://127.0.0.1:8000/api2/mcp")
-
-    assert printed == ["Agent web app sidecar disabled (set MCP_AGENT_WEB_ENABLED=1 to enable)"]
 
 
 def test_find_listening_pids_for_port_returns_unique_listener_pids(monkeypatch) -> None:

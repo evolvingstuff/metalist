@@ -220,7 +220,6 @@ def open_or_launch_namespace(
     namespace: str,
     port: int,
     https_port: int | None,
-    mcp_port: int,
 ) -> NamespaceOpenResult:
     normalized_namespace = validate_namespace(namespace=namespace)
     current_profile = _build_current_profile(
@@ -228,15 +227,19 @@ def open_or_launch_namespace(
         current_namespace=current_namespace,
     )
     supports_https = _supports_https(environ=environ)
+    saved_profiles = _load_saved_profiles_by_namespace()
+    saved_profile = saved_profiles.get(normalized_namespace)
+    if saved_profile is None:
+        legacy_mcp_port = None
+    else:
+        legacy_mcp_port = saved_profile.mcp_port
     chosen_profile = _build_requested_profile(
         namespace=normalized_namespace,
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        legacy_mcp_port=legacy_mcp_port,
         supports_https=supports_https,
     )
-    saved_profiles = _load_saved_profiles_by_namespace()
-    saved_profile = saved_profiles.get(normalized_namespace)
     _assert_profile_is_conflict_free(
         chosen_profile=chosen_profile,
         saved_profiles=saved_profiles,
@@ -362,8 +365,7 @@ def open_or_launch_all_namespaces(
         print(
             f"[startup] WARNING: adjusted namespace {profile.namespace} ports to resolve "
             f"a saved conflict: HTTP {saved_profile.port} -> {profile.port}, "
-            f"HTTPS {saved_profile.https_port} -> {profile.https_port}, "
-            f"MCP {saved_profile.mcp_port} -> {profile.mcp_port}.",
+            f"HTTPS {saved_profile.https_port} -> {profile.https_port}.",
             file=sys.stderr,
             flush=True,
         )
@@ -376,7 +378,6 @@ def open_or_launch_all_namespaces(
             namespace=profile.namespace,
             port=profile.port,
             https_port=profile.https_port,
-            mcp_port=profile.mcp_port,
         )
         if result.action == "opened-running":
             _restart_running_namespace_process(
@@ -419,10 +420,21 @@ def _resolve_conflict_free_profiles_for_all_namespaces(
     raw_namespaces: Sequence[object],
 ) -> list[NamespaceLaunchProfile]:
     occupied_ports: set[int] = set()
+    saved_profiles = _load_saved_profiles_by_namespace()
     profiles: list[NamespaceLaunchProfile] = []
     for entry in raw_namespaces:
         _assert_catalog_entry_has_launch_profile(entry=entry)
-        saved_profile = _catalog_default_profile(entry=entry)
+        catalog_profile = _catalog_default_profile(entry=entry)
+        persisted_profile = saved_profiles.get(catalog_profile.namespace)
+        legacy_mcp_port = None
+        if persisted_profile is not None:
+            legacy_mcp_port = persisted_profile.mcp_port
+        saved_profile = NamespaceLaunchProfile(
+            namespace=catalog_profile.namespace,
+            port=catalog_profile.port,
+            https_port=catalog_profile.https_port,
+            mcp_port=legacy_mcp_port,
+        )
         profile = _repair_profile_port_conflicts(
             profile=saved_profile,
             occupied_ports=occupied_ports,
@@ -455,16 +467,11 @@ def _repair_profile_port_conflicts(
         )
         working_ports.add(https_port)
 
-    mcp_port = _keep_or_replace_port(
-        preferred_port=profile.mcp_port,
-        replacement_start=server_runtime._DEFAULT_MCP_AGENT_WEB_PORT,
-        occupied_ports=working_ports,
-    )
     return NamespaceLaunchProfile(
         namespace=profile.namespace,
         port=http_port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=profile.mcp_port,
     )
 
 
@@ -504,11 +511,16 @@ def save_namespace_port_profiles(
     for requested_profile in requested_profiles:
         if not isinstance(requested_profile, NamespaceLaunchProfile):
             raise TypeError("requested_profiles must contain NamespaceLaunchProfile values")
+        requested_namespace = validate_namespace(namespace=requested_profile.namespace)
+        saved_profile = saved_profiles.get(requested_namespace)
+        legacy_mcp_port = None
+        if saved_profile is not None:
+            legacy_mcp_port = saved_profile.mcp_port
         normalized_profile = _build_requested_profile(
-            namespace=validate_namespace(namespace=requested_profile.namespace),
+            namespace=requested_namespace,
             port=requested_profile.port,
             https_port=requested_profile.https_port,
-            mcp_port=requested_profile.mcp_port,
+            legacy_mcp_port=legacy_mcp_port,
             supports_https=supports_https,
         )
         if normalized_profile.namespace in seen_namespaces:
@@ -594,7 +606,6 @@ def open_login_namespace(
         namespace=chosen_profile.namespace,
         port=chosen_profile.port,
         https_port=chosen_profile.https_port,
-        mcp_port=chosen_profile.mcp_port,
     )
 
 
@@ -625,8 +636,6 @@ def rename_current_namespace(
         raise RuntimeError("Current namespace launch profile is unavailable")
     if current_profile.port is None:
         raise RuntimeError("Current namespace launch profile is missing HTTP port")
-    if current_profile.mcp_port is None:
-        raise RuntimeError("Current namespace launch profile is missing MCP port")
     renamed_profile = NamespaceLaunchProfile(
         namespace=normalized_target,
         port=current_profile.port,
@@ -767,7 +776,6 @@ def _delete_active_namespace(
             namespace=replacement_profile.namespace,
             port=replacement_profile.port,
             https_port=replacement_profile.https_port,
-            mcp_port=replacement_profile.mcp_port,
         )
         redirect_base_url = fallback_result.url
     job_record = create_namespace_deletion_job(
@@ -830,7 +838,6 @@ def _stop_processes_for_namespace_profile(*, profile: NamespaceLaunchProfile) ->
     ports = [
         profile.port,
         profile.https_port,
-        profile.mcp_port,
     ]
     stopped_ports: set[int] = set()
     for port in ports:
@@ -867,7 +874,6 @@ def _serialize_profile(*, profile: NamespaceLaunchProfile) -> dict[str, object]:
         "namespace": profile.namespace,
         "port": profile.port,
         "https_port": profile.https_port,
-        "mcp_port": profile.mcp_port,
     }
 
 
@@ -891,15 +897,11 @@ def _catalog_default_profile(*, entry: object) -> NamespaceLaunchProfile:
     if https_port is not None and not isinstance(https_port, int):
         raise RuntimeError(f"Namespace {namespace} profile has invalid https_port")
 
-    mcp_port = raw_profile.get("mcp_port")
-    if not isinstance(mcp_port, int):
-        raise RuntimeError(f"Namespace {namespace} profile missing mcp_port")
-
     return NamespaceLaunchProfile(
         namespace=namespace,
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=None,
     )
 
 
@@ -914,8 +916,8 @@ def _assert_catalog_entry_has_launch_profile(*, entry: object) -> None:
         return
     raise RuntimeError(
         f"Namespace {namespace} has no launch profile. "
-        "Configure its HTTP and MCP ports from Manage namespace ports, "
-        "or launch it once with explicit --port and --mcp-port values."
+        "Configure its HTTP/HTTPS ports from Manage namespace ports, "
+        "or launch it once with an explicit --port value."
     )
 
 
@@ -1014,17 +1016,11 @@ def _build_default_profile(
         working_ports.add(https_port)
     else:
         https_port = None
-    mcp_port = saved_profile.mcp_port
-    if mcp_port is None:
-        mcp_port = _next_free_port(
-            start_port=server_runtime._DEFAULT_MCP_AGENT_WEB_PORT,
-            occupied_ports=working_ports,
-        )
     return NamespaceLaunchProfile(
         namespace=namespace,
         port=http_port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=saved_profile.mcp_port,
     )
 
 
@@ -1048,15 +1044,11 @@ def _suggest_profile(
         working_ports.add(https_port)
     else:
         https_port = None
-    mcp_port = _next_free_port(
-        start_port=server_runtime._DEFAULT_MCP_AGENT_WEB_PORT,
-        occupied_ports=working_ports,
-    )
     return NamespaceLaunchProfile(
         namespace=namespace,
         port=http_port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=None,
     )
 
 
@@ -1106,7 +1098,6 @@ def _append_profile_reservations(
     port_pairs = [
         ("http", profile.port),
         ("https", profile.https_port),
-        ("mcp", profile.mcp_port),
     ]
     for service, port in port_pairs:
         if port is None:
@@ -1146,11 +1137,10 @@ def _build_requested_profile(
     namespace: str,
     port: int,
     https_port: int | None,
-    mcp_port: int,
+    legacy_mcp_port: int | None,
     supports_https: bool,
 ) -> NamespaceLaunchProfile:
     normalized_port = _validate_required_port(name="port", value=port)
-    normalized_mcp_port = _validate_required_port(name="mcp_port", value=mcp_port)
     if supports_https:
         if https_port is None:
             raise RuntimeError("HTTPS port is required because TLS is enabled for this app")
@@ -1163,7 +1153,7 @@ def _build_requested_profile(
         namespace=namespace,
         port=normalized_port,
         https_port=normalized_https_port,
-        mcp_port=normalized_mcp_port,
+        mcp_port=legacy_mcp_port,
     )
 
 
@@ -1184,7 +1174,6 @@ def _assert_profile_is_conflict_free(
     service_pairs = [
         ("http", chosen_profile.port),
         ("https", chosen_profile.https_port),
-        ("mcp", chosen_profile.mcp_port),
     ]
     seen_ports: dict[int, str] = {}
     for service, port in service_pairs:
@@ -1219,7 +1208,6 @@ def _profile_service_ports(*, profile: NamespaceLaunchProfile) -> list[tuple[str
     service_pairs = [
         ("http", profile.port),
         ("https", profile.https_port),
-        ("mcp", profile.mcp_port),
     ]
     ports: list[tuple[str, int]] = []
     for service, port in service_pairs:
@@ -1488,10 +1476,7 @@ def _assert_ports_are_available_for_launch(
     if not http_port_handled and _is_tcp_port_open(host=connect_host, port=chosen_profile.port):
         if not _port_is_owned_by_allowed_pids(port=chosen_profile.port):
             _stop_processes_listening_on_port(port=chosen_profile.port)
-    other_ports = [
-        ("HTTPS", chosen_profile.https_port),
-        ("MCP", chosen_profile.mcp_port),
-    ]
+    other_ports = [("HTTPS", chosen_profile.https_port)]
     for service, port in other_ports:
         if port is None:
             continue
@@ -1510,7 +1495,6 @@ def _save_profile_if_needed(
         if (
             saved_profile.port == chosen_profile.port
             and saved_profile.https_port == chosen_profile.https_port
-            and saved_profile.mcp_port == chosen_profile.mcp_port
         ):
             return False
     save_namespace_launch_profile(
@@ -1532,7 +1516,6 @@ def _launch_namespace_process(
         "METALIST_NAMESPACE",
         "METALIST_PORT",
         "METALIST_HTTPS_PORT",
-        "MCP_AGENT_WEB_PORT",
     ):
         if name in child_environ:
             del child_environ[name]
@@ -1544,8 +1527,6 @@ def _launch_namespace_process(
             chosen_profile.namespace,
             "--port",
             str(chosen_profile.port),
-            "--mcp-port",
-            str(chosen_profile.mcp_port),
         ]
     )
     if chosen_profile.https_port is not None:
@@ -1771,8 +1752,6 @@ def _spawn_namespace_deletion_worker(
         raise TypeError("recreate_default must be a boolean")
     if replacement_profile.port is None:
         raise RuntimeError("Replacement namespace profile missing HTTP port")
-    if replacement_profile.mcp_port is None:
-        raise RuntimeError("Replacement namespace profile missing MCP port")
 
     command = _resolve_delete_worker_command()
     command.extend(
@@ -1789,8 +1768,6 @@ def _spawn_namespace_deletion_worker(
             str(replacement_profile.port),
             "--replacement-https-port",
             "0" if replacement_profile.https_port is None else str(replacement_profile.https_port),
-            "--replacement-mcp-port",
-            str(replacement_profile.mcp_port),
         ]
     )
     if recreate_default:
@@ -1833,8 +1810,6 @@ def _spawn_namespace_rename_worker(
         raise RuntimeError("Rename worker profile namespace must match the target namespace")
     if profile.port is None:
         raise RuntimeError("Renamed namespace profile missing HTTP port")
-    if profile.mcp_port is None:
-        raise RuntimeError("Renamed namespace profile missing MCP port")
 
     command = _resolve_rename_worker_command()
     command.extend(
@@ -1851,8 +1826,6 @@ def _spawn_namespace_rename_worker(
             str(profile.port),
             "--https-port",
             "0" if profile.https_port is None else str(profile.https_port),
-            "--mcp-port",
-            str(profile.mcp_port),
         ]
     )
     logs_directory = resolve_runtime_logs_directory()

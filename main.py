@@ -1,6 +1,5 @@
 import uvicorn
 import http.client
-import importlib
 import logging
 import os
 import signal
@@ -22,7 +21,6 @@ from app.server_runtime import prepare_database_runtime_path
 from app.server_runtime import resolve_backend_connect_host
 from app.server_runtime import resolve_database_runtime_config
 from app.server_runtime import resolve_local_browser_host
-from app.server_runtime import resolve_main_mcp_url
 from app.server_runtime import resolve_main_server_config
 from app.server_runtime import resolve_namespaces_directory
 from app.server_runtime import save_namespace_launch_profile
@@ -53,13 +51,7 @@ _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES = (
     "METALIST_NAMESPACE",
     "METALIST_PORT",
     "METALIST_HTTPS_PORT",
-    "MCP_AGENT_WEB_PORT",
 )
-
-
-def _load_mcp_client_module():
-    # Delay importing mcp_client until after CLI/env namespace selection runs.
-    return importlib.import_module("mcp_client")
 
 
 def _run_startup_sanity_gates(*, repo_root: Path) -> None:
@@ -143,7 +135,7 @@ def _should_open_or_launch_all_namespaces(
         return False
     if cli_args.namespace_requested:
         return False
-    if cli_args.port is not None or cli_args.https_port is not None or cli_args.mcp_port is not None:
+    if cli_args.port is not None or cli_args.https_port is not None:
         return False
     if not _is_source_main_entrypoint():
         return False
@@ -204,16 +196,11 @@ def _prompt_for_missing_namespace_launch_profile(*, entry: dict[str, object]) ->
         namespace=namespace,
         suggested_port=raw_profile["https_port"],
     )
-    mcp_port = _read_prompted_port(
-        namespace=namespace,
-        service="MCP",
-        suggested_port=raw_profile["mcp_port"],
-    )
     save_namespace_launch_profile(
         namespace=namespace,
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=None,
     )
 
 
@@ -226,19 +213,16 @@ def _save_missing_default_namespace_launch_profile(*, entry: dict[str, object]) 
         raise RuntimeError("Namespace default missing default profile")
     port = raw_profile["port"]
     https_port = raw_profile["https_port"]
-    mcp_port = raw_profile["mcp_port"]
     if not isinstance(port, int):
         raise RuntimeError("Namespace default missing suggested HTTP port")
     if https_port is not None and not isinstance(https_port, int):
         raise RuntimeError("Namespace default has invalid suggested HTTPS port")
-    if not isinstance(mcp_port, int):
-        raise RuntimeError("Namespace default missing suggested MCP port")
     print("Namespace default has no saved launch profile. Saving suggested default ports.")
     save_namespace_launch_profile(
         namespace="default",
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=None,
     )
 
 
@@ -279,30 +263,17 @@ def _bootstrap_default_namespace_if_empty(*, environ: dict[str, str]) -> None:
         raise RuntimeError("Empty namespace catalog missing suggested launch profile")
     port = raw_profile["port"]
     https_port = raw_profile["https_port"]
-    mcp_port = raw_profile["mcp_port"]
     if not isinstance(port, int):
         raise RuntimeError("Suggested default namespace profile missing HTTP port")
     if https_port is not None and not isinstance(https_port, int):
         raise RuntimeError("Suggested default namespace profile has invalid HTTPS port")
-    if not isinstance(mcp_port, int):
-        raise RuntimeError("Suggested default namespace profile missing MCP port")
     print("No namespaces found. Creating a fresh default namespace.")
     save_namespace_launch_profile(
         namespace="default",
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=None,
     )
-
-
-def _resolve_agent_web_browser_host(*, environ: dict[str, str]) -> str:
-    if "MCP_AGENT_WEB_HOST" in environ:
-        host = environ["MCP_AGENT_WEB_HOST"]
-        if host.strip() == "":
-            raise RuntimeError("MCP_AGENT_WEB_HOST must not be empty")
-    else:
-        host = _load_mcp_client_module().DEFAULT_WEB_HOST
-    return resolve_local_browser_host(host=host)
 
 
 def _build_https_namespace_url(*, host: str, result: NamespaceOpenResult) -> str:
@@ -310,16 +281,6 @@ def _build_https_namespace_url(*, host: str, result: NamespaceOpenResult) -> str
     if https_port is None:
         return "disabled"
     return f"https://{host}:{https_port}"
-
-
-def _build_mcp_namespace_url(*, environ: dict[str, str], result: NamespaceOpenResult) -> str:
-    if not _env_flag_from_mapping(environ=environ, name="MCP_AGENT_WEB_ENABLED", default=False):
-        return "disabled"
-    mcp_port = result.saved_profile.mcp_port
-    if not isinstance(mcp_port, int):
-        raise RuntimeError(f"Namespace {result.namespace} is missing an MCP port")
-    mcp_host = _resolve_agent_web_browser_host(environ=environ)
-    return f"http://{mcp_host}:{mcp_port}"
 
 
 def _print_namespace_bootstrap_results(
@@ -330,10 +291,9 @@ def _print_namespace_bootstrap_results(
     main_server_config = resolve_main_server_config(environ=environ)
     browser_host = resolve_local_browser_host(host=main_server_config.host)
     print("MetaList namespace bootstrap:")
-    print("namespace\taction\thttp\thttps\tmcp")
+    print("namespace\taction\thttp\thttps")
     for result in launch_results:
         https_url = _build_https_namespace_url(host=browser_host, result=result)
-        mcp_url = _build_mcp_namespace_url(environ=environ, result=result)
         print(
             "\t".join(
                 [
@@ -341,56 +301,9 @@ def _print_namespace_bootstrap_results(
                     result.action,
                     result.url,
                     https_url,
-                    mcp_url,
                 ]
             )
         )
-
-
-def _env_flag(name: str, default: bool) -> bool:
-    if name not in os.environ:
-        return default
-
-    value = os.environ[name].strip().lower()
-    assert value != "", f"Empty env flag: {name}"
-
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"Invalid boolean env flag {name}={value!r}")
-
-
-def _env_flag_from_mapping(*, environ: dict[str, str], name: str, default: bool) -> bool:
-    if name not in environ:
-        return default
-    value = environ[name].strip().lower()
-    assert value != "", f"Empty env flag: {name}"
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"Invalid boolean env flag {name}={value!r}")
-
-
-def _env_int(name: str, default: int) -> int:
-    if name not in os.environ:
-        return default
-    value = os.environ[name].strip()
-    assert value != "", f"Empty env int: {name}"
-    if not value.isdigit():
-        raise ValueError(f"Invalid integer env {name}={value!r}")
-    return int(value)
-
-
-def _env_choice(name: str, default: str, allowed: set[str]) -> str:
-    if name not in os.environ:
-        return default
-    value = os.environ[name].strip().casefold()
-    assert value != "", f"Empty env choice: {name}"
-    if value not in allowed:
-        raise ValueError(f"Invalid choice env {name}={value!r}; allowed={sorted(allowed)}")
-    return value
 
 
 def _read_process_state(*, pid: int) -> str | None:
@@ -536,79 +449,6 @@ def _evict_processes_listening_on_port(*, port: int) -> None:
     for pid in foreign_listener_pids:
         print(f"Port {port} is in use; terminating pid {pid}")
         _stop_process(pid=pid)
-
-
-def _start_agent_web_sidecar(*, default_mcp_url: str) -> None:
-    enabled = _env_flag("MCP_AGENT_WEB_ENABLED", False)
-    if not enabled:
-        print("Agent web app sidecar disabled (set MCP_AGENT_WEB_ENABLED=1 to enable)")
-        return
-
-    mcp_client = _load_mcp_client_module()
-    if "MCP_AGENT_WEB_HOST" in os.environ:
-        host = os.environ["MCP_AGENT_WEB_HOST"]
-    else:
-        host = mcp_client.DEFAULT_WEB_HOST
-    port = _env_int("MCP_AGENT_WEB_PORT", mcp_client.DEFAULT_WEB_PORT)
-    _evict_processes_listening_on_port(port=port)
-    if "MCP_AGENT_OLLAMA_MODEL" in os.environ:
-        model = os.environ["MCP_AGENT_OLLAMA_MODEL"]
-    else:
-        model = mcp_client.DEFAULT_OLLAMA_MODEL
-    if "MCP_AGENT_MCP_URL" in os.environ:
-        mcp_url = os.environ["MCP_AGENT_MCP_URL"]
-    else:
-        mcp_url = default_mcp_url
-    if "MCP_AGENT_OLLAMA_CHAT_URL" in os.environ:
-        ollama_chat_url = os.environ["MCP_AGENT_OLLAMA_CHAT_URL"]
-    else:
-        ollama_chat_url = mcp_client.DEFAULT_OLLAMA_CHAT_URL
-    max_steps = _env_int("MCP_AGENT_MAX_STEPS", mcp_client.DEFAULT_MAX_STEPS)
-    max_expressions = _env_int(
-        "MCP_AGENT_MAX_EXPRESSIONS",
-        mcp_client.DEFAULT_MAX_EXPRESSIONS,
-    )
-    hydrate_top_k = _env_int(
-        "MCP_AGENT_HYDRATE_TOP_K",
-        mcp_client.DEFAULT_HYDRATE_TOP_K,
-    )
-    regex_engine = _env_choice(
-        "MCP_AGENT_REGEX_ENGINE",
-        mcp_client.DEFAULT_REGEX_ENGINE,
-        {"python-re", "re2"},
-    )
-    if "MCP_AGENT_SEARCH_CONTEXT_QUERY" in os.environ:
-        search_context_query = os.environ["MCP_AGENT_SEARCH_CONTEXT_QUERY"]
-    else:
-        search_context_query = mcp_client.DEFAULT_SEARCH_CONTEXT_QUERY
-    reset_ollama_on_start = _env_flag("MCP_AGENT_RESET_OLLAMA_ON_START", True)
-    if reset_ollama_on_start:
-        mcp_client.reset_local_ollama_server(ollama_chat_url=ollama_chat_url)
-
-    agent_app = mcp_client.create_web_app(
-        default_model=model,
-        default_max_steps=max_steps,
-        default_max_expressions=max_expressions,
-        default_hydrate_top_k=hydrate_top_k,
-        default_regex_engine=regex_engine,
-        default_search_context_query=search_context_query,
-        default_mcp_url=mcp_url,
-        default_ollama_chat_url=ollama_chat_url,
-    )
-
-    def _run() -> None:
-        uvicorn.run(
-            agent_app,
-            host=host,
-            port=port,
-            reload=False,
-            workers=1,
-        )
-
-    link = f"http://{host}:{port}"
-    print(f"Agent web app: {link}")
-    thread = threading.Thread(target=_run, name="mcp-agent-web", daemon=True)
-    thread.start()
 
 
 def _run_main_listener(
@@ -827,13 +667,7 @@ def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
         ensure_default_tls_pair(environ=os.environ)
 
     main_server_config = resolve_main_server_config(environ=os.environ)
-    default_mcp_url = resolve_main_mcp_url(
-        environ=os.environ,
-        host=main_server_config.host,
-        port=main_server_config.port,
-    )
     from app.main import app as metalist_app
-    _start_agent_web_sidecar(default_mcp_url=default_mcp_url)
     print(
         "MetaList resolved config: "
         f"namespace={database_runtime_config.namespace!r} "
@@ -841,7 +675,6 @@ def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
         f"host={main_server_config.host} "
         f"http_port={main_server_config.port} "
         f"https_port={main_server_config.https_port} "
-        f"mcp_url={default_mcp_url} "
         f"ssl_certfile={main_server_config.ssl_certfile!r} "
         f"ssl_keyfile={main_server_config.ssl_keyfile!r}"
     )

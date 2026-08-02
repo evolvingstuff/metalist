@@ -401,7 +401,6 @@ def test_restore_preflight_reports_existing_different_target(
     assert response.suggested_profile is not None
     assert response.suggested_profile.port == 8010
     assert response.suggested_profile.https_port == 8453
-    assert response.suggested_profile.mcp_port == 8770
     assert response.port_conflicts == []
 
 
@@ -478,7 +477,7 @@ def test_same_name_restore_into_new_namespace_assigns_conflict_free_ports(
             "namespace": "henry",
             "port": 8001,
             "https_port": 8444,
-            "mcp_port": 8766,
+            "mcp_port": None,
         }
     ]
 
@@ -714,7 +713,6 @@ def test_restore_import_passes_source_namespace_for_new_target(
         launch_profile=backups_route.BackupRestoreLaunchProfileRequest(
             port=8010,
             https_port=None,
-            mcp_port=8770,
         ),
     )
 
@@ -729,7 +727,7 @@ def test_restore_import_passes_source_namespace_for_new_target(
         "namespace": "target",
         "port": 8010,
         "https_port": None,
-        "mcp_port": 8770,
+        "mcp_port": None,
     }
 
 

@@ -69,7 +69,6 @@ def test_recreate_default_namespace_saves_profile_and_launches(monkeypatch) -> N
         replacement_namespace="default",
         replacement_port=8002,
         replacement_https_port=8445,
-        replacement_mcp_port=8767,
     )
 
     namespace_deletion_worker._recreate_default_namespace(args=args)
@@ -80,7 +79,7 @@ def test_recreate_default_namespace_saves_profile_and_launches(monkeypatch) -> N
             "namespace": "default",
             "port": 8002,
             "https_port": 8445,
-            "mcp_port": 8767,
+            "mcp_port": None,
         },
     )
     assert events[1][0] == "launch"

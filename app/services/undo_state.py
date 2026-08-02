@@ -319,6 +319,11 @@ class _ClientUndo:
 _clients: Dict[str, _ClientUndo] = {}
 
 
+def reset_all_undo_state() -> None:
+    """Discard every client's undo/redo payloads, which may contain plaintext notes."""
+    _clients.clear()
+
+
 def _ctx(client_id: str) -> _ClientUndo:
     if client_id not in _clients:
         _clients[client_id] = _ClientUndo()

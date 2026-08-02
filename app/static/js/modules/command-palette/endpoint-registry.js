@@ -32,7 +32,6 @@ export function buildCommandPaletteEndpoints(deps) {
     const resetViewFilters = requireAction(actions, 'resetViewFilters');
     const resetAllPreferences = requireAction(actions, 'resetAllPreferences');
     const openOntologyEditor = requireAction(actions, 'openOntologyEditor');
-    const runMcpClient = requireAction(actions, 'runMcpClient');
     const openKeyboardShortcutsHelp = requireAction(actions, 'openKeyboardShortcutsHelp');
     const attachFileToCurrentNote = requireAction(actions, 'attachFileToCurrentNote');
     const trimUnusedFiles = requireAction(actions, 'trimUnusedFiles');
@@ -341,12 +340,6 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'action',
             label: 'Keyboard shortcuts help…',
             execute: async () => openKeyboardShortcutsHelp(),
-        },
-        {
-            id: 'action.run_mcp_client',
-            kind: 'action',
-            label: 'Run MCP Client v2 (new tab)',
-            execute: async () => runMcpClient(),
         },
     ];
 }

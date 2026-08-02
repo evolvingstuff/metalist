@@ -256,7 +256,7 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 
 - Plain `python main.py` from a source checkout now restarts already-running namespaces from the current checkout, launches stopped namespaces with their saved profiles, prints their URLs, and exits.
 - `python main.py --namespace work` starts a separate process against `~/MetaList/namespaces/work/work.metalist.db`.
-- After a namespace has been launched once with explicit ports, `python main.py work` reuses that namespace's remembered HTTP / HTTPS / MCP sidecar ports from its main namespace DB.
+- After a namespace has been launched once with explicit ports, `python main.py work` reuses that namespace's remembered HTTP / HTTPS ports from its main namespace DB.
 - With no explicit namespace on a single-namespace launch, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
 - Deleting a namespace removes its namespace directory on disk, including the namespace SQLite databases, launch-profile metadata, and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
@@ -271,14 +271,16 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 - Login rate limiting already prefers the first `x-forwarded-for` hop, so when you deploy behind a trusted proxy you still get client-IP-based throttling.
 - Namespace selection is independent of listener ports. Use `--namespace` / `METALIST_NAMESPACE` for DB selection and `--port` / `METALIST_PORT` for listener selection.
 - Listener precedence is explicit CLI flags > env vars > saved namespace profile in the namespace DB. A namespace without a saved launch profile must be launched once with explicit ports or configured from the UI.
-- The MCP sidecar redirect now supports a public override via `MCP_AGENT_PUBLIC_ORIGIN=https://host:port`. The sidecar is disabled by default; enable it explicitly with `MCP_AGENT_WEB_ENABLED=1` only when needed.
-- When `main.py` auto-starts the MCP sidecar, its default MCP URL now follows the resolved MetaList HTTP port for that process.
-- If multiple MetaList processes auto-start sidecars on the same machine, use `--mcp-port` or `MCP_AGENT_WEB_PORT` to avoid sidecar port collisions.
+
+### Agent Access
+- MetaList does not expose an MCP endpoint, MCP client, agent sidecar, or agent-specific command-line entry point.
+- Legacy `mcp_port` values may remain in schema-v1 namespace launch-profile rows and backup metadata for compatibility, but no runtime listener or route consumes them.
 
 ### Multi-Client Support
 - Token issuance clears any previous tokens (single active session enforced)
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
+- Logout and session expiry fail closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, search history, attachment metadata, undo/sync state, and ontology state before serving the locked session.
 
 ### Login Rate Limiting
 - Enforced on `POST /api2/auth/login` before password verification.
@@ -315,7 +317,7 @@ For fresh imports using `convert-from-legacy.py`:
    - pass `--namespace work` to import into `~/MetaList/namespaces/work/work.metalist.db`
    - omit `--namespace` to import into `~/MetaList/namespaces/default/default.metalist.db`.
 7. Launch profile prompting:
-   - if `--namespace`, `--port`, `--https-port`, or `--mcp-port` are omitted, the importer prompts for them
+   - if `--namespace`, `--port`, or `--https-port` are omitted, the importer prompts for them
    - the chosen ports are saved in the namespace DB so later `python main.py work` can reuse them.
 
 ## API Endpoints

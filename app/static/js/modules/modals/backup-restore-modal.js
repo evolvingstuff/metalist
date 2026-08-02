@@ -80,7 +80,6 @@ function validatePortsDoNotOverlap(profile) {
     const pairs = [
         ['HTTP', profile.port],
         ['HTTPS', profile.https_port],
-        ['MCP', profile.mcp_port],
     ];
     const seen = new Map();
     for (const [service, port] of pairs) {
@@ -692,7 +691,6 @@ export class BackupRestoreModal extends BaseModal {
             https_port: importLaunchProfile.httpsPort === null
                 ? null
                 : parsePort(importLaunchProfile.httpsPort, 'HTTPS port'),
-            mcp_port: parsePort(importLaunchProfile.mcpPort, 'MCP port'),
         };
         validatePortsDoNotOverlap(profile);
         return profile;
@@ -708,13 +706,9 @@ export class BackupRestoreModal extends BaseModal {
         if (profile.https_port !== null && !Number.isInteger(profile.https_port)) {
             throw new Error('Restore preflight suggested profile missing HTTPS port');
         }
-        if (!Number.isInteger(profile.mcp_port)) {
-            throw new Error('Restore preflight suggested profile missing MCP port');
-        }
         return {
             port: stringifyPort(profile.port),
             httpsPort: profile.https_port === null ? null : stringifyPort(profile.https_port),
-            mcpPort: stringifyPort(profile.mcp_port),
         };
     }
 

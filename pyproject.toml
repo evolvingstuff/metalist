@@ -40,12 +40,11 @@ dev = [
 
 [project.scripts]
 metalist = "main:cli"
-metalist-mcp = "mcp_client:main"
 metalist-audit-encryption = "app.encryption_audit:cli"
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["main", "mcp_client"]
+py-modules = ["main"]
 script-files = ["convert-from-legacy.py", "scripts/generate-lan-cert.sh"]
 
 [tool.setuptools.dynamic]

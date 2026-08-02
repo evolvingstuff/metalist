@@ -35,7 +35,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--replacement-namespace", required=True)
     parser.add_argument("--replacement-port", type=int, required=True)
     parser.add_argument("--replacement-https-port", type=int, required=True)
-    parser.add_argument("--replacement-mcp-port", type=int, required=True)
     parser.add_argument("--recreate-default", action="store_true")
     return parser.parse_args()
 
@@ -141,7 +140,7 @@ def _recreate_default_namespace(*, args: argparse.Namespace) -> None:
         namespace=replacement_namespace,
         port=args.replacement_port,
         https_port=https_port,
-        mcp_port=args.replacement_mcp_port,
+        mcp_port=None,
     )
     open_or_launch_namespace(
         environ=os.environ,
@@ -149,7 +148,6 @@ def _recreate_default_namespace(*, args: argparse.Namespace) -> None:
         namespace=replacement_namespace,
         port=args.replacement_port,
         https_port=https_port,
-        mcp_port=args.replacement_mcp_port,
     )
 
 

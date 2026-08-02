@@ -77,7 +77,6 @@ class BootstrapArgs:
     namespace: str | None
     port: int | None
     https_port: int | None
-    mcp_port: int | None
 
 
 @dataclass(frozen=True)
@@ -168,13 +167,11 @@ def parse_bootstrap_args(argv: list[str]) -> BootstrapArgs:
     parser.add_argument("--namespace", dest="namespace", type=_parse_namespace_argument)
     parser.add_argument("--port", dest="port", type=_parse_port_argument)
     parser.add_argument("--https-port", dest="https_port", type=_parse_port_argument)
-    parser.add_argument("--mcp-port", dest="mcp_port", type=_parse_port_argument)
     parsed_args, _ = parser.parse_known_args(argv)
     return BootstrapArgs(
         namespace=parsed_args.namespace,
         port=parsed_args.port,
         https_port=parsed_args.https_port,
-        mcp_port=parsed_args.mcp_port,
     )
 
 
@@ -210,12 +207,6 @@ def parse_args(
         dest="https_port",
         type=_parse_port_argument,
         help="Remember this HTTPS port for the selected namespace.",
-    )
-    parser.add_argument(
-        "--mcp-port",
-        dest="mcp_port",
-        type=_parse_port_argument,
-        help="Remember this MCP sidecar port for the selected namespace.",
     )
     parser.add_argument(
         "--kdf-iterations",
@@ -296,15 +287,11 @@ def _configure_namespace_launch_profile(argv: list[str]) -> NamespaceLaunchProfi
     https_port = bootstrap_args.https_port
     if https_port is None:
         https_port = _prompt_for_optional_port(label="HTTPS port", default_port=defaults.https_port)
-    mcp_port = bootstrap_args.mcp_port
-    if mcp_port is None:
-        mcp_port = _prompt_for_optional_port(label="MCP sidecar port", default_port=defaults.mcp_port)
-
     return NamespaceLaunchProfile(
         namespace=namespace,
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=defaults.mcp_port,
     )
 
 
@@ -1061,8 +1048,7 @@ def main(argv: list[str]) -> int:
         "Saved namespace launch profile: "
         f"namespace={launch_profile.namespace!r} "
         f"http_port={launch_profile.port} "
-        f"https_port={launch_profile.https_port} "
-        f"mcp_port={launch_profile.mcp_port}"
+        f"https_port={launch_profile.https_port}"
     )
     print(f"Imported {len(items)} root items, {total_notes} notes, {total_rules} rules.")
     return 0

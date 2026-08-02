@@ -315,7 +315,6 @@ class CommandPaletteController {
                 expandAll: this.expandAll.bind(this),
                 resetViewFilters: this.resetViewFilters.bind(this),
                 resetAllPreferences: this.resetAllPreferences.bind(this),
-                runMcpClient: this.runMcpClient.bind(this),
                 openKeyboardShortcutsHelp: this.openKeyboardShortcutsHelp.bind(this),
                 exportCurrentViewAsHtml: this.exportCurrentViewAsHtml.bind(this),
                 attachFileToCurrentNote: this.attachFileToCurrentNote.bind(this),
@@ -1069,16 +1068,6 @@ class CommandPaletteController {
             startedAt: performance.now(),
             context: `sortMode.${normalizedSortMode}`,
         });
-    }
-
-    async runMcpClient() {
-        const mcpClientUrl = `${window.location.origin}/mcp-client-v2`;
-
-        if (this.isOpen()) {
-            this.close();
-        }
-
-        window.open(mcpClientUrl, '_blank', 'noopener,noreferrer');
     }
 
     async exportCurrentViewAsHtml() {

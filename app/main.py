@@ -31,7 +31,6 @@ from app.services.search_history import search_history_store
 from app.services.sound_storage import sound_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
-from app.server_runtime import resolve_mcp_agent_public_origin
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
 from app.server_runtime import validate_namespace
@@ -50,7 +49,6 @@ from app.api.routes.memory import router as api2_memory_router
 from app.api.routes.files import router as api2_files_router
 from app.api.routes.sounds import router as api2_sounds_router
 from app.api.routes.ontology import router as api2_ontology_router
-from app.api.routes.mcp import router as api2_mcp_router
 from app.api.routes.backups import router as api2_backup_router
 from app.api.routes.reminders import router as api2_reminders_router
 from app.api.routes.test import router as api2_test_router
@@ -293,7 +291,6 @@ app.include_router(api2_memory_router, prefix=API_PREFIX)
 app.include_router(api2_files_router, prefix=API_PREFIX)
 app.include_router(api2_sounds_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
-app.include_router(api2_mcp_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)
 if TEST_MODE:
     app.include_router(api2_test_router, prefix=API_PREFIX, tags=["api2-test"])
@@ -406,25 +403,6 @@ async def home(request: Request, db: Annotated[SafeSession, Depends(get_db)]):
     )
 
 
-def _resolve_agent_web_origin(*, request: Request) -> str:
-    return resolve_mcp_agent_public_origin(
-        environ=os.environ,
-        request_scheme=request.url.scheme,
-        request_host=request.url.hostname,
-    )
-
-
-@app.get("/mcp-client-v2", include_in_schema=False)
-async def open_mcp_client_v2(request: Request):
-    sidecar_origin = _resolve_agent_web_origin(request=request)
-    return RedirectResponse(url=f"{sidecar_origin}/v2", status_code=307)
-
-
-@app.get("/mcp-client", include_in_schema=False)
-async def open_mcp_client_legacy_redirect():
-    return RedirectResponse(url="/mcp-client-v2", status_code=307)
-
-
 @app.get("/maintenance", response_class=HTMLResponse)
 async def maintenance_page(request: Request):
     """Maintenance mode page shown during bulk operations."""
@@ -450,7 +428,7 @@ def _build_namespace_deleted_links(*, job_id: str, redirect_namespace: str) -> l
     ]
 
 
-def _resolve_catalog_profile(*, namespace: str) -> tuple[int, int | None, int]:
+def _resolve_catalog_profile(*, namespace: str) -> tuple[int, int | None]:
     catalog = build_namespace_catalog(
         environ=os.environ,
         current_namespace=ACTIVE_NAMESPACE,
@@ -468,14 +446,11 @@ def _resolve_catalog_profile(*, namespace: str) -> tuple[int, int | None, int]:
             raise RuntimeError(f"Namespace {namespace} is missing default profile")
         port = profile["port"]
         https_port = profile["https_port"]
-        mcp_port = profile["mcp_port"]
         if not isinstance(port, int):
             raise RuntimeError(f"Namespace {namespace} profile missing port")
         if https_port is not None and not isinstance(https_port, int):
             raise RuntimeError(f"Namespace {namespace} profile has invalid https_port")
-        if not isinstance(mcp_port, int):
-            raise RuntimeError(f"Namespace {namespace} profile missing mcp_port")
-        return port, https_port, mcp_port
+        return port, https_port
     raise RuntimeError(f"Unknown namespace: {namespace}")
 
 
@@ -586,14 +561,13 @@ async def namespace_deleted_open_page(request: Request):
     )
     result = None
     with launch_capture:
-        port, https_port, mcp_port = _resolve_catalog_profile(namespace=namespace)
+        port, https_port = _resolve_catalog_profile(namespace=namespace)
         result = open_or_launch_namespace(
             environ=os.environ,
             current_namespace=ACTIVE_NAMESPACE,
             namespace=namespace,
             port=port,
             https_port=https_port,
-            mcp_port=mcp_port,
         )
     if launch_capture.captured_exception is not None:
         exc = launch_capture.captured_exception

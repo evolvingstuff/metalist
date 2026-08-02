@@ -7,7 +7,7 @@ EXCLUDE_DOT_FOLDERS = True
 IGNORE_GLOBS: tuple[str, ...] = ()
 
 INSTALLED_DISTRIBUTION_SOURCE_DIR_NAMES = frozenset({"app"})
-INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES = frozenset({"main.py", "mcp_client.py"})
+INSTALLED_DISTRIBUTION_SOURCE_FILE_NAMES = frozenset({"main.py"})
 
 PY_ALLOWED_TRY_CALLEE_PREFIXES = (
     "requests.",

@@ -120,7 +120,6 @@ def bad():
 
 def test_installed_distribution_scan_excludes_neighboring_packages(tmp_path: Path) -> None:
     _write_file(tmp_path / "main.py", "APP_NAME = 'MetaList'\n")
-    _write_file(tmp_path / "mcp_client.py", "COMMAND_NAME = 'metalist-mcp'\n")
     _write_file(tmp_path / "app" / "owned.py", "VALUE = 1\n")
     _write_file(
         tmp_path / "argon2" / "dependency.py",
@@ -130,5 +129,5 @@ def test_installed_distribution_scan_excludes_neighboring_packages(tmp_path: Pat
     paths, violations = collect_startup_sanity_violations(tmp_path)
     relative_paths = [path.relative_to(tmp_path).as_posix() for path in paths]
 
-    assert relative_paths == ["app/owned.py", "main.py", "mcp_client.py"]
+    assert relative_paths == ["app/owned.py", "main.py"]
     assert violations == []

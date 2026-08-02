@@ -26,7 +26,6 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             expandAll: noop,
             resetViewFilters: noop,
             resetAllPreferences: noop,
-            runMcpClient: noop,
             openKeyboardShortcutsHelp: noop,
             exportCurrentViewAsHtml: noop,
             attachFileToCurrentNote: noop,
@@ -85,7 +84,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
         'Prioritize tag to back (global)…',
     );
     assert.equal(endpointIds.has('action.open_keyboard_shortcuts_help'), true);
-    assert.equal(endpointIds.has('action.run_mcp_client'), true);
+    assert.equal(endpointIds.has('action.run_mcp_client'), false);
     assert.equal(endpointIds.has('view.sort_mode'), false);
     assert.equal(endpointIds.has('view.sort_mode.normal'), true);
     assert.equal(endpointIds.has('view.sort_mode.created'), true);

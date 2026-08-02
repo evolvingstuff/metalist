@@ -33,7 +33,6 @@ from app.services.backup_service import (
 )
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import _DEFAULT_HTTP_PORT
-from app.server_runtime import _DEFAULT_MCP_AGENT_WEB_PORT
 from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import load_namespace_launch_profile
 from app.server_runtime import resolve_namespace_directory
@@ -113,13 +112,11 @@ class BackupRestoreRequest(BaseModel):
 class BackupRestoreLaunchProfileRequest(BaseModel):
     port: int
     https_port: int | None
-    mcp_port: int
 
 
 class BackupRestoreLaunchProfileResponse(BaseModel):
     port: int
     https_port: int | None
-    mcp_port: int
 
 
 class BackupRestorePreflightResponse(BaseModel):
@@ -422,7 +419,6 @@ def _backup_profile_ports(*, profile: BackupLaunchProfile) -> list[tuple[str, in
     service_pairs = [
         ("HTTP", profile.port),
         ("HTTPS", profile.https_port),
-        ("MCP", profile.mcp_port),
     ]
     ports: list[tuple[str, int]] = []
     for service, port in service_pairs:
@@ -436,7 +432,6 @@ def _runtime_profile_ports(*, profile: NamespaceLaunchProfile) -> list[tuple[str
     service_pairs = [
         ("HTTP", profile.port),
         ("HTTPS", profile.https_port),
-        ("MCP", profile.mcp_port),
     ]
     ports: list[tuple[str, int]] = []
     for service, port in service_pairs:
@@ -696,15 +691,9 @@ def _suggest_import_launch_profile(
     elif restored_profile.https_port is None:
         https_port = None
 
-    if restored_profile is None or restored_profile.mcp_port is None:
-        mcp_start = _DEFAULT_MCP_AGENT_WEB_PORT
-    else:
-        mcp_start = restored_profile.mcp_port
-    mcp_port = _next_available_port(start_port=mcp_start, occupied_ports=occupied_ports)
     return BackupRestoreLaunchProfileResponse(
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
     )
 
 
@@ -714,12 +703,11 @@ def _response_profile_from_backup_profile(
 ) -> BackupRestoreLaunchProfileResponse | None:
     if profile is None:
         return None
-    if profile.port is None or profile.mcp_port is None:
+    if profile.port is None:
         return None
     return BackupRestoreLaunchProfileResponse(
         port=profile.port,
         https_port=profile.https_port,
-        mcp_port=profile.mcp_port,
     )
 
 
@@ -729,8 +717,6 @@ def _required_existing_target_launch_profile(*, target_namespace: str) -> Backup
         raise RuntimeError(f"Existing target namespace has no saved launch profile: {target_namespace}")
     if profile.port is None:
         raise RuntimeError(f"Existing target namespace has no saved HTTP port: {target_namespace}")
-    if profile.mcp_port is None:
-        raise RuntimeError(f"Existing target namespace has no saved MCP port: {target_namespace}")
     return BackupLaunchProfile(
         namespace=target_namespace,
         port=profile.port,
@@ -761,7 +747,7 @@ def _resolve_same_name_restore_launch_profile(
         namespace=target_namespace,
         port=suggested_profile.port,
         https_port=suggested_profile.https_port,
-        mcp_port=suggested_profile.mcp_port,
+        mcp_port=None,
     )
 
 
@@ -774,7 +760,7 @@ def _backup_profile_from_request(
         namespace=namespace,
         port=profile.port,
         https_port=profile.https_port,
-        mcp_port=profile.mcp_port,
+        mcp_port=None,
     )
 
 

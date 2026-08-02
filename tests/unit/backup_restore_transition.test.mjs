@@ -43,7 +43,6 @@ test('different-name import into the active namespace suppresses errors before t
         importLaunchProfile: {
             port: '8002',
             httpsPort: '8445',
-            mcpPort: '8767',
         },
     });
     modal._validateRestoreSelection = () => ({

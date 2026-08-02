@@ -76,9 +76,6 @@ function assertProfileShape(profile) {
     if (profile.https_port !== null && !Number.isInteger(profile.https_port)) {
         throw new Error('Namespace profile missing https_port');
     }
-    if (!Number.isInteger(profile.mcp_port)) {
-        throw new Error('Namespace profile missing mcp_port');
-    }
 }
 
 
@@ -115,7 +112,6 @@ function profilePayloadFromEntry(entry) {
         namespace,
         port: profile.port,
         https_port: profile.https_port,
-        mcp_port: profile.mcp_port,
     };
 }
 
@@ -142,7 +138,6 @@ function validatePortsDoNotOverlap(portRows) {
         const localPorts = [
             { label: 'HTTP', value: row.port },
             { label: 'HTTPS', value: row.https_port },
-            { label: 'MCP', value: row.mcp_port },
         ];
         for (const localPort of localPorts) {
             if (localPort.value === null) {
@@ -493,7 +488,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             namespace: '',
             port: '',
             httpsPort: '',
-            mcpPort: '',
             error: '',
             status: 'Loading namespace defaults...',
         };
@@ -511,7 +505,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         const namespace = typeof state.namespace === 'string' ? state.namespace : '';
         const port = typeof state.port === 'string' ? state.port : '';
         const httpsPort = typeof state.httpsPort === 'string' ? state.httpsPort : '';
-        const mcpPort = typeof state.mcpPort === 'string' ? state.mcpPort : '';
         const error = typeof state.error === 'string' ? state.error : '';
         const status = typeof state.status === 'string' ? state.status : '';
 
@@ -539,10 +532,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                             <input id="create-namespace-https-port" type="number" min="1" max="65535" value="${escapeHtml(httpsPort)}" ${submitting ? 'disabled' : ''}>
                         </div>
                     ` : ''}
-                    <div class="form-group">
-                        <label for="create-namespace-mcp-port">MCP Port</label>
-                        <input id="create-namespace-mcp-port" type="number" min="1" max="65535" value="${escapeHtml(mcpPort)}" ${submitting ? 'disabled' : ''}>
-                    </div>
                 </div>
                 <div class="form-actions namespace-modal-actions">
                     <button type="button" class="primary-btn" id="create-namespace-submit-btn" ${submitting ? 'disabled' : ''}>Create and Open Namespace</button>
@@ -559,7 +548,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
         this._wireTextInput('create-namespace-name', 'namespace');
         this._wireTextInput('create-namespace-http-port', 'port');
         this._wireTextInput('create-namespace-https-port', 'httpsPort');
-        this._wireTextInput('create-namespace-mcp-port', 'mcpPort');
 
         const submitButton = document.getElementById('create-namespace-submit-btn');
         if (submitButton instanceof HTMLButtonElement) {
@@ -602,7 +590,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
                 namespace: '',
                 port: stringifyPort(profile.port),
                 httpsPort: stringifyPort(profile.https_port),
-                mcpPort: stringifyPort(profile.mcp_port),
                 error: '',
                 status: '',
             });
@@ -638,7 +625,6 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             namespace,
             port: parsePort(state.port, 'HTTP port'),
             https_port: Boolean(catalog.supports_https) ? parsePort(state.httpsPort, 'HTTPS port') : null,
-            mcp_port: parsePort(state.mcpPort, 'MCP port'),
         };
         validatePortsDoNotOverlap([payload]);
         return payload;
@@ -908,7 +894,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                     </th>
                     <td><input class="namespace-ports-input" data-namespace="${escapeHtml(row.namespace)}" data-field="port" type="number" min="1" max="65535" value="${escapeHtml(row.port)}" ${saving ? 'disabled' : ''}></td>
                     ${supportsHttps ? `<td><input class="namespace-ports-input" data-namespace="${escapeHtml(row.namespace)}" data-field="httpsPort" type="number" min="1" max="65535" value="${escapeHtml(row.httpsPort)}" ${saving ? 'disabled' : ''}></td>` : ''}
-                    <td><input class="namespace-ports-input" data-namespace="${escapeHtml(row.namespace)}" data-field="mcpPort" type="number" min="1" max="65535" value="${escapeHtml(row.mcpPort)}" ${saving ? 'disabled' : ''}></td>
                     <td>${escapeHtml(note)}</td>
                 </tr>
             `;
@@ -924,7 +909,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                                 <th scope="col">Namespace</th>
                                 <th scope="col">HTTP</th>
                                 ${supportsHttps ? '<th scope="col">HTTPS</th>' : ''}
-                                <th scope="col">MCP</th>
                                 <th scope="col">Applies</th>
                             </tr>
                         </thead>
@@ -968,7 +952,7 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         if (typeof namespace !== 'string' || namespace.length === 0) {
             throw new Error('Port input missing namespace');
         }
-        if (field !== 'port' && field !== 'httpsPort' && field !== 'mcpPort') {
+        if (field !== 'port' && field !== 'httpsPort') {
             throw new Error('Port input missing field');
         }
         const state = this.getModalState();
@@ -1035,7 +1019,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                 is_current: entry.is_current === true,
                 port: stringifyPort(profile.port),
                 httpsPort: stringifyPort(profile.https_port),
-                mcpPort: stringifyPort(profile.mcp_port),
             };
         });
     }
@@ -1057,7 +1040,6 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
                 namespace: row.namespace,
                 port: parsePort(row.port, `${row.namespace} HTTP port`),
                 https_port: supportsHttps ? parsePort(row.httpsPort, `${row.namespace} HTTPS port`) : null,
-                mcp_port: parsePort(row.mcpPort, `${row.namespace} MCP port`),
             };
         });
         validatePortsDoNotOverlap(profiles);

@@ -141,13 +141,11 @@ def test_build_namespace_catalog_suggests_next_free_ports(
         "namespace": "default",
         "port": 8000,
         "https_port": None,
-        "mcp_port": 8765,
     }
     assert catalog["new_namespace_profile"] == {
         "namespace": "new-namespace",
         "port": 8002,
         "https_port": None,
-        "mcp_port": 8767,
     }
 
     namespaces = {entry["namespace"]: entry for entry in catalog["namespaces"]}
@@ -155,13 +153,11 @@ def test_build_namespace_catalog_suggests_next_free_ports(
         "namespace": "default",
         "port": 8000,
         "https_port": None,
-        "mcp_port": 8765,
     }
     assert namespaces["cla"]["default_profile"] == {
         "namespace": "cla",
         "port": 8001,
         "https_port": None,
-        "mcp_port": 8766,
     }
 
 
@@ -187,7 +183,6 @@ def test_build_namespace_catalog_includes_existing_database_without_saved_profil
         "namespace": "work",
         "port": 8001,
         "https_port": None,
-        "mcp_port": 8766,
     }
 
 
@@ -253,7 +248,6 @@ def test_open_or_launch_namespace_rejects_reserved_current_port(
             namespace="work",
             port=8000,
             https_port=None,
-            mcp_port=8766,
         )
 
 
@@ -263,11 +257,11 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
     _disable_default_tls(monkeypatch, tmp_path)
-    launched: list[tuple[str, int, int]] = []
+    launched: list[tuple[str, int]] = []
     waited: list[tuple[str, int, object]] = []
 
     def _fake_launch(*, environ, chosen_profile):
-        launched.append((chosen_profile.namespace, chosen_profile.port, chosen_profile.mcp_port))
+        launched.append((chosen_profile.namespace, chosen_profile.port))
         return "launched-process"
 
     def _fake_wait(*, environ, namespace, port, launched_process):
@@ -284,18 +278,17 @@ def test_open_or_launch_namespace_launches_new_process_and_saves_profile(
         namespace="work",
         port=8123,
         https_port=None,
-        mcp_port=8766,
     )
 
     assert result.action == "launched"
     assert result.url == "http://127.0.0.1:8123"
-    assert launched == [("work", 8123, 8766)]
+    assert launched == [("work", 8123)]
     assert waited == [("work", 8123, "launched-process")]
     saved_profile = load_namespace_launch_profile(namespace="work")
     assert saved_profile is not None
     assert saved_profile.port == 8123
     assert saved_profile.https_port is None
-    assert saved_profile.mcp_port == 8766
+    assert saved_profile.mcp_port is None
 
 
 def test_save_namespace_port_profiles_updates_without_launching(
@@ -340,7 +333,7 @@ def test_save_namespace_port_profiles_updates_without_launching(
             namespace="cla",
             port=8011,
             https_port=None,
-            mcp_port=8776,
+            mcp_port=8766,
         )
     ]
     saved_profile = load_namespace_launch_profile(namespace="cla")
@@ -348,7 +341,7 @@ def test_save_namespace_port_profiles_updates_without_launching(
         namespace="cla",
         port=8011,
         https_port=None,
-        mcp_port=8776,
+        mcp_port=8766,
     )
 
 
@@ -395,7 +388,7 @@ def test_open_login_namespace_uses_catalog_default_profile(
         https_port=None,
         mcp_port=8766,
     )
-    opened: list[tuple[str | None, str, int, int | None, int]] = []
+    opened: list[tuple[str | None, str, int, int | None]] = []
 
     def _fake_open_or_launch_namespace(
         *,
@@ -404,9 +397,8 @@ def test_open_login_namespace_uses_catalog_default_profile(
         namespace,
         port,
         https_port,
-        mcp_port,
     ) -> NamespaceOpenResult:
-        opened.append((current_namespace, namespace, port, https_port, mcp_port))
+        opened.append((current_namespace, namespace, port, https_port))
         return NamespaceOpenResult(
             namespace=namespace,
             action="opened-running",
@@ -415,7 +407,7 @@ def test_open_login_namespace_uses_catalog_default_profile(
                 namespace=namespace,
                 port=port,
                 https_port=https_port,
-                mcp_port=mcp_port,
+                mcp_port=None,
             ),
             saved_for_next_launch=False,
             message=f"Opened namespace {namespace}.",
@@ -429,7 +421,7 @@ def test_open_login_namespace_uses_catalog_default_profile(
         namespace="cla",
     )
 
-    assert opened == [("default", "cla", 8001, None, 8766)]
+    assert opened == [("default", "cla", 8001, None)]
     assert result.url == "http://127.0.0.1:8001"
 
 
@@ -451,7 +443,7 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
         https_port=None,
         mcp_port=8766,
     )
-    opened: list[tuple[str | None, str, int, int | None, int]] = []
+    opened: list[tuple[str | None, str, int, int | None]] = []
 
     def _fake_open_or_launch_namespace(
         *,
@@ -460,9 +452,8 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
         namespace,
         port,
         https_port,
-        mcp_port,
     ) -> NamespaceOpenResult:
-        opened.append((current_namespace, namespace, port, https_port, mcp_port))
+        opened.append((current_namespace, namespace, port, https_port))
         return NamespaceOpenResult(
             namespace=namespace,
             action="launched",
@@ -471,7 +462,7 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
                 namespace=namespace,
                 port=port,
                 https_port=https_port,
-                mcp_port=mcp_port,
+                mcp_port=None,
             ),
             saved_for_next_launch=False,
             message=f"Started namespace {namespace}.",
@@ -482,8 +473,8 @@ def test_open_or_launch_all_namespaces_uses_catalog_default_profiles(
     results = open_or_launch_all_namespaces(environ={})
 
     assert opened == [
-        (None, "default", 8000, None, 8765),
-        (None, "cla", 8001, None, 8766),
+        (None, "default", 8000, None),
+        (None, "cla", 8001, None),
     ]
     assert [result.namespace for result in results] == ["default", "cla"]
 
@@ -514,7 +505,7 @@ def test_open_or_launch_all_namespaces_repairs_saved_port_conflicts(
             namespace=kwargs["namespace"],
             port=kwargs["port"],
             https_port=kwargs["https_port"],
-            mcp_port=kwargs["mcp_port"],
+            mcp_port=None,
         )
         opened.append(profile)
         return NamespaceOpenResult(
@@ -531,18 +522,18 @@ def test_open_or_launch_all_namespaces_repairs_saved_port_conflicts(
     open_or_launch_all_namespaces(environ={})
 
     assert opened == [
-        NamespaceLaunchProfile(namespace="default", port=8000, https_port=8443, mcp_port=8765),
-        NamespaceLaunchProfile(namespace="henry", port=8001, https_port=8444, mcp_port=8766),
+        NamespaceLaunchProfile(namespace="default", port=8000, https_port=8443, mcp_port=None),
+        NamespaceLaunchProfile(namespace="henry", port=8001, https_port=8444, mcp_port=None),
     ]
     assert load_namespace_launch_profile(namespace="henry") == NamespaceLaunchProfile(
         namespace="henry",
         port=8001,
         https_port=8444,
-        mcp_port=8766,
+        mcp_port=8765,
     )
     assert (
         "[startup] WARNING: adjusted namespace henry ports to resolve a saved conflict: "
-        "HTTP 8000 -> 8001, HTTPS 8443 -> 8444, MCP 8765 -> 8766."
+        "HTTP 8000 -> 8001, HTTPS 8443 -> 8444."
     ) in capsys.readouterr().err
 
 
@@ -570,9 +561,7 @@ def test_stop_all_namespace_processes_for_update_deduplicates_listener_pids(
     listener_pids = {
         8000: [111, 222],
         8443: [111],
-        8765: [],
         8444: [222],
-        8766: [333],
     }
     monkeypatch.setattr(
         namespace_switcher,
@@ -589,8 +578,8 @@ def test_stop_all_namespace_processes_for_update_deduplicates_listener_pids(
 
     count = stop_all_namespace_processes_for_update()
 
-    assert count == 2
-    assert stopped == [111, 333]
+    assert count == 1
+    assert stopped == [111]
 
 
 def test_open_or_launch_all_namespaces_restarts_warm_running_processes(
@@ -611,7 +600,7 @@ def test_open_or_launch_all_namespaces_restarts_warm_running_processes(
             namespace=kwargs["namespace"],
             port=kwargs["port"],
             https_port=kwargs["https_port"],
-            mcp_port=kwargs["mcp_port"],
+            mcp_port=None,
         )
         return NamespaceOpenResult(
             namespace=profile.namespace,
@@ -659,12 +648,12 @@ def test_restart_running_namespace_process_allows_existing_namespace_ports_befor
 ) -> None:
     checks: list[tuple[str, object]] = []
 
-    monkeypatch.setattr(namespace_switcher, "_find_listening_pids_for_port", lambda *, port: [2345] if port in {8123, 8766} else [])
+    monkeypatch.setattr(namespace_switcher, "_find_listening_pids_for_port", lambda *, port: [2345] if port == 8123 else [])
     monkeypatch.setattr(
         namespace_switcher,
         "_assert_ports_are_available_for_launch",
         lambda *, environ, namespace, chosen_profile, allowed_listener_pids: checks.append(
-            ("assert", (namespace, chosen_profile.port, chosen_profile.mcp_port, allowed_listener_pids))
+            ("assert", (namespace, chosen_profile.port, allowed_listener_pids))
         ),
     )
     monkeypatch.setattr(
@@ -698,14 +687,14 @@ def test_restart_running_namespace_process_allows_existing_namespace_ports_befor
     )
 
     assert checks == [
-        ("assert", ("work", 8123, 8766, frozenset({2345}))),
+        ("assert", ("work", 8123, frozenset({2345}))),
         ("stop", 8123),
         ("launch", ("work", 8123)),
         ("wait", ("work", 8123, "launched-process")),
     ]
 
 
-def test_assert_ports_are_available_for_launch_allows_namespace_owned_mcp_port_on_restart(
+def test_assert_ports_are_available_for_launch_ignores_legacy_port_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -805,7 +794,7 @@ def test_assert_ports_are_available_for_launch_evicts_conflicting_ports(
         allowed_listener_pids=frozenset(),
     )
 
-    assert evicted_ports == [8123, 8766]
+    assert evicted_ports == [8123]
 
 
 def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
@@ -848,8 +837,6 @@ def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
         "work",
         "--port",
         "8123",
-        "--mcp-port",
-        "8766",
     ]
     assert Path(str(launched["stdout_name"])).parent == tmp_path / "logs"
     launched_env = launched["env"]
@@ -932,7 +919,6 @@ def test_open_or_launch_namespace_restarts_running_namespace_and_updates_profile
         namespace="work",
         port=8124,
         https_port=None,
-        mcp_port=8767,
     )
 
     assert result.action == "restarted"
@@ -942,7 +928,7 @@ def test_open_or_launch_namespace_restarts_running_namespace_and_updates_profile
     saved_profile = load_namespace_launch_profile(namespace="work")
     assert saved_profile is not None
     assert saved_profile.port == 8124
-    assert saved_profile.mcp_port == 8767
+    assert saved_profile.mcp_port == 8766
 
 
 def test_open_or_launch_namespace_reuses_warm_running_namespace_when_profile_is_unchanged(
@@ -972,7 +958,6 @@ def test_open_or_launch_namespace_reuses_warm_running_namespace_when_profile_is_
         namespace="work",
         port=8123,
         https_port=None,
-        mcp_port=8766,
     )
 
     assert result.action == "opened-running"
@@ -1016,7 +1001,6 @@ def test_open_or_launch_namespace_short_circuits_current_namespace_process(
         namespace="default",
         port=8000,
         https_port=None,
-        mcp_port=8765,
     )
 
     assert result.action == "opened-running"
@@ -1079,11 +1063,11 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
         https_port=None,
         mcp_port=8766,
     )
-    launched: list[tuple[str, str, int, int | None, int]] = []
+    launched: list[tuple[str, str, int, int | None]] = []
     cleanup_requests: list[tuple[str, int, str, bool, str]] = []
 
-    def _fake_open_or_launch_namespace(*, environ, current_namespace, namespace, port, https_port, mcp_port):
-        launched.append((current_namespace, namespace, port, https_port, mcp_port))
+    def _fake_open_or_launch_namespace(*, environ, current_namespace, namespace, port, https_port):
+        launched.append((current_namespace, namespace, port, https_port))
         return NamespaceOpenResult(
             namespace=namespace,
             action="launched",
@@ -1092,7 +1076,7 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
                 namespace=namespace,
                 port=port,
                 https_port=https_port,
-                mcp_port=mcp_port,
+                mcp_port=None,
             ),
             saved_for_next_launch=False,
             message=f"Started namespace {namespace}.",
@@ -1135,7 +1119,7 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
     assert parsed_redirect.path == "/namespace-deleted"
     redirect_query = parse_qs(parsed_redirect.query)
     assert redirect_query == {"job": ["11111111-1111-1111-1111-111111111111"]}
-    assert launched == [("work", "default", 8001, None, 8766)]
+    assert launched == [("work", "default", 8001, None)]
     assert cleanup_requests == [
         ("work", 4321, "11111111-1111-1111-1111-111111111111", False, "default")
     ]

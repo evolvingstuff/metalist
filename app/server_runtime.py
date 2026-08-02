@@ -37,7 +37,6 @@ _DEFAULT_LOGS_DIRECTORY_NAME = "logs"
 _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
 _DEFAULT_HTTPS_PORT = 8443
-_DEFAULT_MCP_AGENT_WEB_PORT = 8765
 _DEFAULT_TEST_DATABASE_URL = "sqlite:///./test.db"
 _DEFAULT_TEST_DATABASE_PATH = Path("./test.db")
 _NAMESPACE_ENV_NAME = "METALIST_NAMESPACE"
@@ -68,7 +67,6 @@ class MainCliArgs:
     namespace: str | None
     port: int | None
     https_port: int | None
-    mcp_port: int | None
     test_mode: bool
     namespace_requested: bool
 
@@ -250,7 +248,7 @@ def _assert_launch_profile_rows_belong_to_namespace(
 def _missing_launch_profile_message(*, namespace: str) -> str:
     return (
         f"Namespace {namespace} has no launch profile. "
-        "Run this namespace once with explicit --port and --mcp-port values"
+        "Run this namespace once with an explicit --port value"
         " plus --https-port when TLS is enabled, or configure its ports from the namespace UI."
     )
 
@@ -262,13 +260,10 @@ def _read_profile_from_explicit_environment(
 ) -> NamespaceLaunchProfile | None:
     env_port = _read_optional_int(environ=environ, name="METALIST_PORT")
     env_https_port = _read_optional_int(environ=environ, name="METALIST_HTTPS_PORT")
-    env_mcp_port = _read_optional_int(environ=environ, name="MCP_AGENT_WEB_PORT")
-    if env_port is None and env_https_port is None and env_mcp_port is None:
+    if env_port is None and env_https_port is None:
         return None
     ssl_certfile, _ = _resolve_tls_pair(environ=environ)
     if env_port is None:
-        raise RuntimeError(_missing_launch_profile_message(namespace=namespace))
-    if env_mcp_port is None:
         raise RuntimeError(_missing_launch_profile_message(namespace=namespace))
     if ssl_certfile is not None and env_https_port is None:
         raise RuntimeError(_missing_launch_profile_message(namespace=namespace))
@@ -276,7 +271,7 @@ def _read_profile_from_explicit_environment(
         namespace=namespace,
         port=env_port,
         https_port=env_https_port,
-        mcp_port=env_mcp_port,
+        mcp_port=None,
     )
 
 
@@ -419,7 +414,6 @@ def resolve_namespace_launch_defaults(
     stored_profile = load_namespace_launch_profile(namespace=normalized_namespace)
     env_port = _read_optional_int(environ=environ, name="METALIST_PORT")
     env_https_port = _read_optional_int(environ=environ, name="METALIST_HTTPS_PORT")
-    env_mcp_port = _read_optional_int(environ=environ, name="MCP_AGENT_WEB_PORT")
     ssl_certfile, _ = _resolve_tls_pair(environ=environ)
 
     if stored_profile is not None and stored_profile.port is not None:
@@ -442,18 +436,16 @@ def resolve_namespace_launch_defaults(
     if env_https_port is not None:
         https_port = env_https_port
 
-    if stored_profile is not None and stored_profile.mcp_port is not None:
-        mcp_port = stored_profile.mcp_port
+    if stored_profile is None:
+        legacy_mcp_port = None
     else:
-        mcp_port = _DEFAULT_MCP_AGENT_WEB_PORT
-    if env_mcp_port is not None:
-        mcp_port = env_mcp_port
+        legacy_mcp_port = stored_profile.mcp_port
 
     return NamespaceLaunchProfile(
         namespace=normalized_namespace,
         port=port,
         https_port=https_port,
-        mcp_port=mcp_port,
+        mcp_port=legacy_mcp_port,
     )
 
 
@@ -463,7 +455,6 @@ def _apply_namespace_profile_to_environ(
     profile: NamespaceLaunchProfile | None,
     cli_port: int | None,
     cli_https_port: int | None,
-    cli_mcp_port: int | None,
 ) -> None:
     ssl_certfile, _ = _resolve_tls_pair(environ=environ)
     if cli_port is None and "METALIST_PORT" not in environ and profile is not None and profile.port is not None:
@@ -476,13 +467,6 @@ def _apply_namespace_profile_to_environ(
         and ssl_certfile is not None
     ):
         environ["METALIST_HTTPS_PORT"] = str(profile.https_port)
-    if (
-        cli_mcp_port is None
-        and "MCP_AGENT_WEB_PORT" not in environ
-        and profile is not None
-        and profile.mcp_port is not None
-    ):
-        environ["MCP_AGENT_WEB_PORT"] = str(profile.mcp_port)
 
 
 def resolve_api_prefix(*, environ: Mapping[str, str]) -> str:
@@ -578,11 +562,6 @@ def apply_main_cli_args_to_environ(
         type=_parse_port_argument,
         help="HTTPS port for this launch and remembered namespace profile.",
     )
-    parser.add_argument(
-        "--mcp-port",
-        type=_parse_port_argument,
-        help="MCP sidecar web port for this launch and remembered namespace profile.",
-    )
     parser.add_argument("--test", action="store_true", help="Run against the temporary test database.")
     parsed_args = parser.parse_args(list(argv))
 
@@ -619,9 +598,6 @@ def apply_main_cli_args_to_environ(
         environ["METALIST_PORT"] = str(parsed_args.port)
     if parsed_args.https_port is not None:
         environ["METALIST_HTTPS_PORT"] = str(parsed_args.https_port)
-    if parsed_args.mcp_port is not None:
-        environ["MCP_AGENT_WEB_PORT"] = str(parsed_args.mcp_port)
-
     if resolved_namespace is not None:
         if stored_profile is None:
             explicit_profile = _read_profile_from_explicit_environment(
@@ -641,12 +617,10 @@ def apply_main_cli_args_to_environ(
             profile=stored_profile,
             cli_port=parsed_args.port,
             cli_https_port=parsed_args.https_port,
-            cli_mcp_port=parsed_args.mcp_port,
         )
         if (
             parsed_args.port is not None
             or parsed_args.https_port is not None
-            or parsed_args.mcp_port is not None
         ):
             stored_port = None
             stored_https_port = None
@@ -661,21 +635,17 @@ def apply_main_cli_args_to_environ(
             resolved_https_port = stored_https_port
             if parsed_args.https_port is not None:
                 resolved_https_port = parsed_args.https_port
-            resolved_mcp_port = stored_mcp_port
-            if parsed_args.mcp_port is not None:
-                resolved_mcp_port = parsed_args.mcp_port
             save_namespace_launch_profile(
                 namespace=resolved_namespace,
                 port=resolved_port,
                 https_port=resolved_https_port,
-                mcp_port=resolved_mcp_port,
+                mcp_port=stored_mcp_port,
             )
 
     return MainCliArgs(
         namespace=resolved_namespace,
         port=parsed_args.port,
         https_port=parsed_args.https_port,
-        mcp_port=parsed_args.mcp_port,
         test_mode=parsed_args.test,
         namespace_requested=namespace_requested,
     )
@@ -701,12 +671,6 @@ def resolve_local_browser_host(*, host: str) -> str:
     if stripped_host in {"::", "::1"}:
         return "[::1]"
     return stripped_host
-
-
-def resolve_main_mcp_url(*, environ: Mapping[str, str], host: str, port: int) -> str:
-    formatted_host = _format_host_for_url(host=resolve_backend_connect_host(host=host))
-    api_prefix = resolve_api_prefix(environ=environ)
-    return f"http://{formatted_host}:{port}{api_prefix}/mcp"
 
 
 def resolve_request_host_for_https_redirect(
@@ -1049,50 +1013,3 @@ def resolve_https_redirect_url(
     if request_query != "":
         query_suffix = f"?{request_query}"
     return f"https://{formatted_host}:{https_port}{request_path}{query_suffix}"
-
-
-def resolve_mcp_agent_public_origin(
-    *,
-    environ: Mapping[str, str],
-    request_scheme: str,
-    request_host: str | None,
-) -> str:
-    public_origin = _read_optional_text(environ=environ, name="MCP_AGENT_PUBLIC_ORIGIN")
-    if public_origin is not None:
-        parsed = urlsplit(public_origin)
-        if parsed.scheme not in {"http", "https"}:
-            raise RuntimeError(
-                "MCP_AGENT_PUBLIC_ORIGIN must start with http:// or https://",
-            )
-        if parsed.netloc == "":
-            raise RuntimeError("MCP_AGENT_PUBLIC_ORIGIN must include a host")
-        if parsed.path not in {"", "/"}:
-            raise RuntimeError("MCP_AGENT_PUBLIC_ORIGIN must not include a path")
-        if parsed.query != "" or parsed.fragment != "":
-            raise RuntimeError("MCP_AGENT_PUBLIC_ORIGIN must not include query or fragment")
-        return public_origin.rstrip("/")
-
-    configured_host = _read_text(
-        environ=environ,
-        name="MCP_AGENT_WEB_HOST",
-        fallback="127.0.0.1",
-    )
-    configured_port = _read_int(
-        environ=environ,
-        name="MCP_AGENT_WEB_PORT",
-        fallback=_DEFAULT_MCP_AGENT_WEB_PORT,
-    )
-    resolved_host = configured_host
-    if configured_host in _LOOPBACK_BIND_HOSTS and request_host is not None:
-        stripped_request_host = request_host.strip()
-        if stripped_request_host != "":
-            resolved_host = stripped_request_host
-
-    scheme = request_scheme.strip().lower()
-    if scheme == "":
-        raise RuntimeError("request_scheme must not be empty")
-    if scheme not in {"http", "https"}:
-        raise RuntimeError(f"Unsupported request scheme: {request_scheme!r}")
-
-    formatted_host = _format_host_for_url(host=resolved_host)
-    return f"{scheme}://{formatted_host}:{configured_port}"

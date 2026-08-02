@@ -108,6 +108,16 @@ class HydrationState:
         with self._lock:
             return self._status == "running"
 
+    def reset(self) -> None:
+        with self._lock:
+            self._status = "idle"
+            self._phase = ""
+            self._message = ""
+            self._processed = 0
+            self._total = 0
+            self._first_load = False
+            self._error = ""
+
     def snapshot(self) -> Dict[str, object]:
         with self._lock:
             overall_percent = _calculate_overall_percent(

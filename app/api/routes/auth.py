@@ -52,6 +52,7 @@ from app.services.namespace_switcher import save_namespace_port_profiles
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
 from app.services.namespace_rename_jobs import load_namespace_rename_job
 from app.server_runtime import NamespaceLaunchProfile
+from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import validate_namespace
@@ -67,6 +68,7 @@ from app.services.link_titles import link_title_store
 from app.services.reminders import reminder_store
 from app.services.search_history import search_history_store
 from app.services.sound_storage import sound_store
+from app.services.runtime_lock import purge_decrypted_runtime_state
 from app.services.hydration_state import hydration_state
 from app.services.file_registry import file_registry
 from app.services.file_storage import bootstrap_file_registry
@@ -681,8 +683,9 @@ def logout(
     token: Annotated[str, Depends(_require_auth)],
 ):
     token_service.revoke_token(token)
-    clear_all_locks()
-    clear_encryption_key()
+    if not purge_decrypted_runtime_state():
+        clear_all_locks()
+        clear_encryption_key()
     clear_auth_cookie(response=response)
     return {"message": "Logout successful"}
 
@@ -882,7 +885,6 @@ def open_namespace(
     namespace = _require_string_field(body, "namespace")
     port = _require_int_field(body, "port")
     https_port = _optional_int_field(body, "https_port")
-    mcp_port = _require_int_field(body, "mcp_port")
     launch_capture = CapturedExceptionContext(
         RuntimeError,
         ValueError,
@@ -897,7 +899,6 @@ def open_namespace(
             namespace=namespace,
             port=port,
             https_port=https_port,
-            mcp_port=mcp_port,
         )
     if launch_capture.captured_exception is not None:
         exc = launch_capture.captured_exception
@@ -912,7 +913,6 @@ def open_namespace(
             "namespace": result.saved_profile.namespace,
             "port": result.saved_profile.port,
             "https_port": result.saved_profile.https_port,
-            "mcp_port": result.saved_profile.mcp_port,
         },
         "saved_for_next_launch": result.saved_for_next_launch,
         "message": result.message,
@@ -927,6 +927,10 @@ def save_namespace_ports(
 ):
     body = _require_body_object(payload)
     raw_profiles = _require_list_field(body, "profiles")
+    saved_profiles = {
+        profile.namespace: profile
+        for profile in load_all_namespace_launch_profiles()
+    }
     requested_profiles: list[NamespaceLaunchProfile] = []
     for raw_profile in raw_profiles:
         if not isinstance(raw_profile, dict):
@@ -934,13 +938,16 @@ def save_namespace_ports(
         namespace = _require_string_field(raw_profile, "namespace")
         port = _require_int_field(raw_profile, "port")
         https_port = _optional_int_field(raw_profile, "https_port")
-        mcp_port = _require_int_field(raw_profile, "mcp_port")
+        saved_profile = saved_profiles.get(namespace)
+        legacy_mcp_port = None
+        if saved_profile is not None:
+            legacy_mcp_port = saved_profile.mcp_port
         requested_profiles.append(
             NamespaceLaunchProfile(
                 namespace=namespace,
                 port=port,
                 https_port=https_port,
-                mcp_port=mcp_port,
+                mcp_port=legacy_mcp_port,
             )
         )
 
@@ -968,7 +975,6 @@ def save_namespace_ports(
                 "namespace": profile.namespace,
                 "port": profile.port,
                 "https_port": profile.https_port,
-                "mcp_port": profile.mcp_port,
             }
             for profile in result.saved_profiles
         ],

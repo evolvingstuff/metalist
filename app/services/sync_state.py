@@ -14,6 +14,14 @@ _note_locks: Dict[str, Dict[str, Any]] = {}
 _client_clipboards: Dict[str, Optional[Dict[str, Any]]] = {}
 
 
+def reset_state() -> None:
+    """Discard legacy locks and clipboard payloads."""
+    global _current_update_uuid
+    _note_locks.clear()
+    _client_clipboards.clear()
+    _current_update_uuid = str(uuid.uuid4())
+
+
 def generate_new_uuid() -> str:
     """Generate a new UUID (pure function, no side effects)."""
     return str(uuid.uuid4())
