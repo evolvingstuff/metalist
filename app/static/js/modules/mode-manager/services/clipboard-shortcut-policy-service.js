@@ -44,6 +44,36 @@ export function shouldAllowBrowserPasteForShortcut({
     return false;
 }
 
+export function shouldCreateTopNoteForPaste({
+    isEditing,
+    currentNoteId,
+    hasNativePasteTarget,
+    hasClipboardPayload,
+    isModalOpen,
+}) {
+    if (typeof isEditing !== 'boolean') {
+        throw new Error('isEditing must be a boolean');
+    }
+    if (currentNoteId !== null && typeof currentNoteId !== 'string') {
+        throw new Error('currentNoteId must be a string or null');
+    }
+    if (typeof hasNativePasteTarget !== 'boolean') {
+        throw new Error('hasNativePasteTarget must be a boolean');
+    }
+    if (typeof hasClipboardPayload !== 'boolean') {
+        throw new Error('hasClipboardPayload must be a boolean');
+    }
+    if (typeof isModalOpen !== 'boolean') {
+        throw new Error('isModalOpen must be a boolean');
+    }
+
+    const hasActiveNote = isEditing && typeof currentNoteId === 'string' && currentNoteId.length > 0;
+    return !hasActiveNote
+        && !hasNativePasteTarget
+        && hasClipboardPayload
+        && !isModalOpen;
+}
+
 export function resolveClipboardTrackingAfterPasteEvent({
     clipboardMode,
     noteClipboardRequiresBrowserValidation,

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     resolveClipboardTrackingAfterPasteEvent,
     shouldAllowBrowserPasteForShortcut,
+    shouldCreateTopNoteForPaste,
 } from '../../app/static/js/modules/mode-manager/services/clipboard-shortcut-policy-service.js';
 
 test('intercepts paste shortcut when note clipboard is trusted and a note is active', () => {
@@ -54,4 +55,64 @@ test('keeps note clipboard tracking when actual paste contents still contain a M
         noteClipboardRequiresBrowserValidation: false,
         hasNoteClipboardHtml: true,
     });
+});
+
+test('creates a top note when clipboard content is pasted with no active note', () => {
+    const shouldCreate = shouldCreateTopNoteForPaste({
+        isEditing: false,
+        currentNoteId: null,
+        hasNativePasteTarget: false,
+        hasClipboardPayload: true,
+        isModalOpen: false,
+    });
+
+    assert.equal(shouldCreate, true);
+});
+
+test('does not create a top note when a note is already active', () => {
+    const shouldCreate = shouldCreateTopNoteForPaste({
+        isEditing: true,
+        currentNoteId: 'note-123',
+        hasNativePasteTarget: false,
+        hasClipboardPayload: true,
+        isModalOpen: false,
+    });
+
+    assert.equal(shouldCreate, false);
+});
+
+test('preserves native paste behavior for text inputs when no note is active', () => {
+    const shouldCreate = shouldCreateTopNoteForPaste({
+        isEditing: false,
+        currentNoteId: null,
+        hasNativePasteTarget: true,
+        hasClipboardPayload: true,
+        isModalOpen: false,
+    });
+
+    assert.equal(shouldCreate, false);
+});
+
+test('does not create a top note behind an open modal', () => {
+    const shouldCreate = shouldCreateTopNoteForPaste({
+        isEditing: false,
+        currentNoteId: null,
+        hasNativePasteTarget: false,
+        hasClipboardPayload: true,
+        isModalOpen: true,
+    });
+
+    assert.equal(shouldCreate, false);
+});
+
+test('does not create an empty top note for a clipboard with no usable payload', () => {
+    const shouldCreate = shouldCreateTopNoteForPaste({
+        isEditing: false,
+        currentNoteId: null,
+        hasNativePasteTarget: false,
+        hasClipboardPayload: false,
+        isModalOpen: false,
+    });
+
+    assert.equal(shouldCreate, false);
 });

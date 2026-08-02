@@ -1,9 +1,13 @@
 # External HTML Paste Sanitization
 
 ## Scope
-- Applies to **system clipboard paste** and **drag/drop file images**.
+- Applies to **system clipboard paste** and **drag/drop files**.
+  - Pasting text, rich HTML, or an image while no note is selected creates a new top note and inserts the clipboard content there.
+  - Pasting an internally copied MetaList note while no note is selected creates an empty top destination and fills it with the copied note, including its tags and descendants.
+  - Paste in native text-entry controls (such as search inputs and modal fields) keeps normal browser behavior and never creates a note behind the control.
   - Dropping into the actively edited note embeds the image there.
   - Dropping an image anywhere else creates a new top note, then embeds the image there.
+  - Dropping any file while no note is selected creates a new top note, inserts its file reference, and saves the note.
   - For named image files, the user is prompted to either paste inline with compression or save the original file and insert its file UUID token.
 - Internal MetaList note clipboard paste (`class="note-content"` payload) still uses server note copy/paste actions.
 
@@ -17,20 +21,21 @@
   - `sanitizeExternalClipboardHtml(rawHtml)`
 
 ## Pipeline
-1. If clipboard contains image/file items (`image/*`) while editing, pick the largest image candidate and either paste it inline or save it as a file, depending on the image-file choice prompt.
-2. If a drag/drop payload contains image files, either embed them inline or save them as files after resolving the target note (current editor or a new top note).
-3. Downscale/re-encode to keep embedded payload in the configured KB range.
-4. Build inline `<img src="data:image/...">` HTML (embedded content, not file links).
-5. Otherwise read `text/html` from clipboard.
-6. Parse with `DOMParser`.
-7. Walk DOM and sanitize nodes/attributes/styles/URLs.
-8. Remove paste-only academic citation artifacts: unwrap Distill `d-cite`, remove `d-footnote`, and remove standalone numeric citation markers such as `[6]`.
-9. Normalize soft-wrapped prose line breaks from clipboard HTML into spaces, including hyphenated visual wraps such as `non-\nAC0`.
-10. Convert meaningful literal CR/LF text-node breaks from clipboard HTML into `<br>` nodes, while ignoring formatting-only indentation whitespace.
-11. Restore flattened timestamp-link runs from sources like YouTube descriptions by inserting breaks before later timestamp anchors in the same block, while recognizing breaks inside adjacent inline wrappers so one source newline never becomes two rendered breaks.
-12. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
-13. Insert sanitized HTML into current selection.
-14. If no usable HTML remains, fallback to `text/plain`.
+1. Resolve the paste destination: the active editor, a new top note when no note is selected, or native browser handling for a text-entry control/modal.
+2. If clipboard contains image/file items (`image/*`), pick the largest image candidate and either paste it inline or save it as a file, depending on the image-file choice prompt.
+3. If a drag/drop payload contains image files, either embed them inline or save them as files after resolving the target note (current editor or a new top note).
+4. Downscale/re-encode to keep embedded payload in the configured KB range.
+5. Build inline `<img src="data:image/...">` HTML (embedded content, not file links).
+6. Otherwise read `text/html` from clipboard.
+7. Parse with `DOMParser`.
+8. Walk DOM and sanitize nodes/attributes/styles/URLs.
+9. Remove paste-only academic citation artifacts: unwrap Distill `d-cite`, remove `d-footnote`, and remove standalone numeric citation markers such as `[6]`.
+10. Normalize soft-wrapped prose line breaks from clipboard HTML into spaces, including hyphenated visual wraps such as `non-\nAC0`.
+11. Convert meaningful literal CR/LF text-node breaks from clipboard HTML into `<br>` nodes, while ignoring formatting-only indentation whitespace.
+12. Restore flattened timestamp-link runs from sources like YouTube descriptions by inserting breaks before later timestamp anchors in the same block, while recognizing breaks inside adjacent inline wrappers so one source newline never becomes two rendered breaks.
+13. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
+14. Insert sanitized HTML into the resolved destination.
+15. If no usable HTML remains, fallback to `text/plain`.
 
 ## Security Policy
 
@@ -69,6 +74,7 @@
 
 ### Embedded image behavior
 - Clipboard image-pixel paste is embedded into note content as `data:image/...` (no `file://` links).
+- With no selected note, clipboard image-pixel paste creates and immediately saves a new top note.
 - Named image files from paste/drop can instead be preserved as file attachments via the image-file choice prompt.
 - Pasted external HTML that already contains inline `data:image/...` sources is recompressed before insertion, so copied rich content does not bypass the embedded-image size controls.
 - Embedded images remain stored with note content, so they are portable across machines with the DB.

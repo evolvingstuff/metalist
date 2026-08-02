@@ -45,6 +45,7 @@ import { sanitizeAndInsertExternalPaste } from '../services/html-paste-sanitizer
 import {
     resolveClipboardTrackingAfterPasteEvent,
     shouldAllowBrowserPasteForShortcut,
+    shouldCreateTopNoteForPaste,
 } from '../services/clipboard-shortcut-policy-service.js';
 import {
     writeRenderedNotePromiseToSystemClipboard,
@@ -2462,9 +2463,13 @@ async function handleClipboardImageFiles(imageFiles, options) {
         throw new Error('handleClipboardImageFiles options must be object');
     }
 
+    const createTopNote = options.createTopNote === true;
     const selectionRange = 'selectionRange' in options ? options.selectionRange : getSelectionRangeSnapshot();
     if (selectionRange !== null && !(selectionRange instanceof Range)) {
         throw new Error('handleClipboardImageFiles selectionRange must be Range or null');
+    }
+    if (createTopNote && selectionRange !== null) {
+        throw new Error('handleClipboardImageFiles cannot use selectionRange when creating a top note');
     }
     const imageHandlingMode = await resolveImageFileHandlingMode(imageFiles, 'paste', {
         forcePrompt: options.forcePrompt === true,
@@ -2478,10 +2483,20 @@ async function handleClipboardImageFiles(imageFiles, options) {
     }
     if (imageHandlingMode === 'attach') {
         const result = await CommandGate.run('keyboard.pasteImageFiles.attach', async () => {
-            return await attachFilesAsReferenceTokens(imageFiles, {
-                createTopNote: false,
+            const inserted = await attachFilesAsReferenceTokens(imageFiles, {
+                createTopNote,
                 selectionRange,
             });
+            if (
+                createTopNote
+                && inserted
+                && ModeContext.isDirty
+                && typeof ModeContext.currentNoteId === 'string'
+                && ModeContext.currentNoteId.length > 0
+            ) {
+                await actionSaveNote(ModeContext.currentNoteId);
+            }
+            return inserted;
         }, {
             timeoutMs: 120000,
         });
@@ -2491,6 +2506,29 @@ async function handleClipboardImageFiles(imageFiles, options) {
             wasBlocked: result === null,
         };
     }
+
+    if (createTopNote) {
+        const result = await CommandGate.run('keyboard.pasteImageFiles.embedNewTopNote', async () => {
+            const newNoteId = await createNoteAtTop();
+            focusCurrentEditableAtEnd();
+            const inserted = await pasteClipboardImagesAsEmbeddedContent(imageFiles, null);
+            if (inserted && !ModeContext.isDirty) {
+                ModeContext.setDirty(true);
+            }
+            if (inserted) {
+                await actionSaveNote(newNoteId);
+            }
+            return inserted;
+        }, {
+            timeoutMs: 120000,
+        });
+        return {
+            inserted: result === true,
+            imageHandlingMode,
+            wasBlocked: result === null,
+        };
+    }
+
     return {
         inserted: await pasteClipboardImagesAsEmbeddedContent(imageFiles, selectionRange),
         imageHandlingMode,
@@ -2744,6 +2782,73 @@ function handleDropEvent(event) {
         });
 }
 
+function pasteEventHasNativeTextTarget(event) {
+    if (!event) {
+        throw new Error('pasteEventHasNativeTextTarget expects event');
+    }
+
+    const nativeTargetSelector = 'input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]';
+    const eventTarget = event.target;
+    if (eventTarget instanceof Element && eventTarget.closest(nativeTargetSelector)) {
+        return true;
+    }
+
+    const activeElement = document.activeElement;
+    return Boolean(activeElement instanceof Element && activeElement.closest(nativeTargetSelector));
+}
+
+function markCurrentNoteDirtyFromPaste(logMessage) {
+    if (typeof logMessage !== 'string' || logMessage.length === 0) {
+        throw new Error('markCurrentNoteDirtyFromPaste requires logMessage');
+    }
+    if (ModeContext.isDirty) {
+        return;
+    }
+
+    ModeContext.setDirty(true);
+    Logger.logDebug(logMessage, {
+        noteId: ModeContext.currentNoteId,
+    }, Logger.LogCategory.STATE);
+}
+
+async function pasteExternalContentIntoNewTopNote(pasteEventSnapshot, plainText) {
+    if (!pasteEventSnapshot || !pasteEventSnapshot.clipboardData) {
+        throw new Error('pasteExternalContentIntoNewTopNote requires clipboard data');
+    }
+    if (typeof plainText !== 'string') {
+        throw new Error('pasteExternalContentIntoNewTopNote requires plainText string');
+    }
+
+    return await CommandGate.run('paste_event.external_new_top_note', async () => {
+        const newNoteId = await createNoteAtTop();
+        focusCurrentEditableAtEnd();
+        const autoTaggedPasswordPaste = maybeApplyPasswordTagForClipboardPaste(plainText);
+        const inserted = await sanitizeAndInsertExternalPaste(pasteEventSnapshot, null);
+        if (inserted) {
+            markCurrentNoteDirtyFromPaste('Content marked as dirty due to paste into new top note');
+        }
+        if (inserted || autoTaggedPasswordPaste) {
+            await actionSaveNote(newNoteId);
+        }
+        return {
+            inserted,
+            autoTaggedPasswordPaste,
+        };
+    }, {
+        timeoutMs: 120000,
+    });
+}
+
+async function pasteCopiedNoteIntoNewTopNote() {
+    return await CommandGate.run('paste_event.note_new_top_note', async () => {
+        await createNoteAtTop();
+        await actionPasteNoteSibling();
+        return true;
+    }, {
+        timeoutMs: 120000,
+    });
+}
+
 
 function handlePasteEvent(event) {
     if (!event || !event.clipboardData) {
@@ -2753,65 +2858,34 @@ function handlePasteEvent(event) {
 
     const activeElement = document.activeElement;
     const hasEditableTarget = Boolean(activeElement && activeElement.isContentEditable);
-    const shouldHandleInlinePaste = ModeContext.isEditing && hasEditableTarget;
-    const imageFiles = shouldHandleInlinePaste ? getImageFilesFromTransfer(event.clipboardData) : [];
+    const hasActiveNote = (
+        ModeContext.isEditing
+        && typeof ModeContext.currentNoteId === 'string'
+        && ModeContext.currentNoteId.length > 0
+    );
+    const shouldHandleInlinePaste = hasActiveNote && hasEditableTarget;
+    const imageFiles = getImageFilesFromTransfer(event.clipboardData);
     const clipboardContainsFileReference = clipboardHasFileUriReference(event.clipboardData);
-
-    if (shouldHandleInlinePaste) {
-        if (imageFiles.length > 0) {
-            event.preventDefault();
-            const selectionRange = getSelectionRangeSnapshot();
-            void handleClipboardImageFiles(imageFiles, {
-                selectionRange,
-                forcePrompt: clipboardContainsFileReference,
-            })
-                .then((result) => {
-                    const inserted = result.inserted;
-                    Logger.logDebug('Clipboard image paste handled', {
-                        imageCount: imageFiles.length,
-                        inserted,
-                        imageHandlingMode: result.imageHandlingMode,
-                        wasBlocked: result.wasBlocked,
-                        selectedImageBytes: imageFiles[0] ? imageFiles[0].size : null,
-                    }, Logger.LogCategory.EVENT);
-
-                    if (result.wasBlocked) {
-                        ErrorHandler.showErrorBanner(
-                            'Pasted image file did not start because another command is still running.',
-                            'error',
-                            10000,
-                            true,
-                        );
-                        return;
-                    }
-
-                    if (inserted && result.imageHandlingMode === 'embed' && !ModeContext.isDirty) {
-                        ModeContext.setDirty(true);
-                        Logger.logDebug('Content marked as dirty due to pasted embedded image', {
-                            noteId: ModeContext.currentNoteId,
-                        }, Logger.LogCategory.STATE);
-                    }
-                })
-                .catch((error) => {
-                    const message = error instanceof Error ? error.message : String(error);
-                    Logger.logDebug('Clipboard image paste failed', {
-                        error: message,
-                    }, Logger.LogCategory.EVENT);
-                    ErrorHandler.showErrorBanner(
-                        'Failed to handle pasted image file.',
-                        'error',
-                        6000,
-                        true,
-                    );
-                });
-            return;
-        }
-    }
 
     // Get HTML from clipboard if available
     const html = event.clipboardData.getData('text/html');
     const plainText = event.clipboardData.getData('text/plain');
     const hasTrackedNoteClipboardHtml = syncClipboardTrackingFromPasteEventHtml(html);
+    const hasClipboardPayload = (
+        imageFiles.length > 0
+        || hasTrackedNoteClipboardHtml
+        || html.length > 0
+        || plainText.length > 0
+    );
+    const hasNativePasteTarget = pasteEventHasNativeTextTarget(event);
+    const isModalOpen = Boolean(ModeContext.modalStack && ModeContext.modalStack.length > 0);
+    const shouldCreateTopNote = shouldCreateTopNoteForPaste({
+        isEditing: ModeContext.isEditing,
+        currentNoteId: ModeContext.currentNoteId,
+        hasNativePasteTarget,
+        hasClipboardPayload,
+        isModalOpen,
+    });
     const autoTaggedPasswordPaste = shouldHandleInlinePaste
         ? maybeApplyPasswordTagForClipboardPaste(plainText)
         : false;
@@ -2823,11 +2897,60 @@ function handlePasteEvent(event) {
         imageFileCount: imageFiles.length,
         hasFileUriReference: clipboardContainsFileReference,
         isEditing: ModeContext.isEditing,
+        shouldCreateTopNote,
         autoTaggedPasswordPaste,
     }, Logger.LogCategory.EVENT);
 
+    if ((shouldHandleInlinePaste || shouldCreateTopNote) && imageFiles.length > 0) {
+        event.preventDefault();
+        const selectionRange = shouldCreateTopNote ? null : getSelectionRangeSnapshot();
+        void handleClipboardImageFiles(imageFiles, {
+            createTopNote: shouldCreateTopNote,
+            selectionRange,
+            forcePrompt: clipboardContainsFileReference,
+        })
+            .then((result) => {
+                const inserted = result.inserted;
+                Logger.logDebug('Clipboard image paste handled', {
+                    imageCount: imageFiles.length,
+                    inserted,
+                    imageHandlingMode: result.imageHandlingMode,
+                    createdTopNote: shouldCreateTopNote,
+                    wasBlocked: result.wasBlocked,
+                    selectedImageBytes: imageFiles[0] ? imageFiles[0].size : null,
+                }, Logger.LogCategory.EVENT);
+
+                if (result.wasBlocked) {
+                    ErrorHandler.showErrorBanner(
+                        'Pasted image file did not start because another command is still running.',
+                        'error',
+                        10000,
+                        true,
+                    );
+                    return;
+                }
+
+                if (inserted && result.imageHandlingMode === 'embed' && !shouldCreateTopNote) {
+                    markCurrentNoteDirtyFromPaste('Content marked as dirty due to pasted embedded image');
+                }
+            })
+            .catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                Logger.logDebug('Clipboard image paste failed', {
+                    error: message,
+                }, Logger.LogCategory.EVENT);
+                ErrorHandler.showErrorBanner(
+                    'Failed to handle pasted image file.',
+                    'error',
+                    6000,
+                    true,
+                );
+            });
+        return;
+    }
+
     if (
-        shouldHandleInlinePaste
+        (shouldHandleInlinePaste || shouldCreateTopNote)
         && imageFiles.length === 0
         && typeof html === 'string'
         && html.includes('<img')
@@ -2848,7 +2971,7 @@ function handlePasteEvent(event) {
         Logger.logDebug('Detected note HTML in clipboard - using server clipboard', {}, Logger.LogCategory.EVENT);
         
         // This is our note HTML - prevent default and use server clipboard
-        if (ModeContext.isEditing && ModeContext.currentNoteId) {
+        if (hasActiveNote) {
             event.preventDefault();
             
 			// Determine if shift is held for child paste
@@ -2861,6 +2984,32 @@ function handlePasteEvent(event) {
 					await actionPasteNoteSibling();
 				});
 			}
+		} else if (shouldCreateTopNote) {
+            event.preventDefault();
+            void pasteCopiedNoteIntoNewTopNote()
+                .then((result) => {
+                    if (result !== null) {
+                        return;
+                    }
+                    ErrorHandler.showErrorBanner(
+                        'Copied note paste did not start because another command is still running.',
+                        'error',
+                        10000,
+                        true,
+                    );
+                })
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    Logger.logDebug('Copied note paste into new top note failed', {
+                        error: message,
+                    }, Logger.LogCategory.EVENT);
+                    ErrorHandler.showErrorBanner(
+                        'Failed to paste copied note into a new top note.',
+                        'error',
+                        6000,
+                        true,
+                    );
+                });
 		}
     } else {
         const shouldSanitizeExternalHtml = ModeContext.isEditing && hasEditableTarget && typeof html === 'string' && html.length > 0;
@@ -2877,10 +3026,7 @@ function handlePasteEvent(event) {
                     }, Logger.LogCategory.EVENT);
 
                     if (inserted && !ModeContext.isDirty) {
-                        ModeContext.setDirty(true);
-                        Logger.logDebug('Content marked as dirty due to sanitized external paste', {
-                            noteId: ModeContext.currentNoteId,
-                        }, Logger.LogCategory.STATE);
+                        markCurrentNoteDirtyFromPaste('Content marked as dirty due to sanitized external paste');
                     }
                 })
                 .catch((error) => {
@@ -2896,6 +3042,37 @@ function handlePasteEvent(event) {
                         true,
                     );
                 });
+        } else if (shouldCreateTopNote) {
+            const pasteEventSnapshot = buildClipboardPasteEventSnapshot(html, plainText);
+            event.preventDefault();
+            void pasteExternalContentIntoNewTopNote(pasteEventSnapshot, plainText)
+                .then((result) => {
+                    if (result === null) {
+                        ErrorHandler.showErrorBanner(
+                            'Paste did not start because another command is still running.',
+                            'error',
+                            10000,
+                            true,
+                        );
+                        return;
+                    }
+                    Logger.logDebug('External content pasted into new top note', {
+                        inserted: result.inserted,
+                        autoTaggedPasswordPaste: result.autoTaggedPasswordPaste,
+                    }, Logger.LogCategory.EVENT);
+                })
+                .catch((error) => {
+                    const message = error instanceof Error ? error.message : String(error);
+                    Logger.logDebug('External paste into new top note failed', {
+                        error: message,
+                    }, Logger.LogCategory.EVENT);
+                    ErrorHandler.showErrorBanner(
+                        'Failed to paste into a new top note.',
+                        'error',
+                        6000,
+                        true,
+                    );
+                });
         } else {
             Logger.logDebug('External content detected - using browser default paste', {
                 hasHtml: !!html,
@@ -2903,10 +3080,7 @@ function handlePasteEvent(event) {
             }, Logger.LogCategory.EVENT);
 
             if (ModeContext.isEditing && !ModeContext.isDirty) {
-                ModeContext.setDirty(true);
-                Logger.logDebug('Content marked as dirty due to paste', {
-                    noteId: ModeContext.currentNoteId
-                }, Logger.LogCategory.STATE);
+                markCurrentNoteDirtyFromPaste('Content marked as dirty due to paste');
             }
         }
     }

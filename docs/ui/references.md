@@ -46,6 +46,7 @@
 - Named image files dropped or pasted into the editor prompt for one of two paths:
   - `Paste Inline`: embed the image into note HTML as compressed `data:image/...`.
   - `Save as File`: upload the original file without recompression and insert its `![[UUID]]` token.
+- Pasting a named image while no note is active uses the same prompt and creates the destination note at the top.
 - Clipboard image-pixel paste with no meaningful source filename keeps the direct inline embed path by default.
 - The attach flow saves the note immediately after insertion so the new reference survives refresh/reload.
 - Files live in a sibling SQLite database derived from the main DB path (`*.files.db`).
