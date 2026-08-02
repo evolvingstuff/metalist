@@ -135,7 +135,7 @@ Unclosed comments behave like unclosed wrappers:
 - The tag bar expands into view when note editing starts and contracts out of view when editing ends, unless `Animated transitions` is off in the command palette.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.
-- `Cmd/Ctrl+U` unformats the note content while preserving links, images, and the tag bar itself.
+- `Cmd/Ctrl+U` removes formatting from the selected range, or from the entire note when no range is selected. Range removal rewrites scoped delimiters around the selection so formatting outside it remains; whole-note removal removes rich HTML and Add Style tags while preserving links, images, and semantic tags such as `@todo`.
 
 ## Add from Selected Text
 - Selecting 1–25 characters inside a note adds **Add as Tag** to that note's context menu.
@@ -147,6 +147,7 @@ Unclosed comments behave like unclosed wrappers:
 
 ## Add Style Context Menu
 - Right-clicking the actively edited note adds **Add Style**. Hovering or selecting it opens a connected flyout submenu containing the supported visual and renderer meta tags.
+- **Remove Formatting** appears directly beneath Add Style and performs the same selection-aware operation as `Cmd/Ctrl+U`. For example, selecting `baz` in content `foo {{bar baz}}` with tag `{{@red}}` rewrites the content to `foo {{bar }}baz` and keeps `{{@red}}` for the remaining red range.
 - With no selected range, the chosen unwrapped meta tag is added to the tag bar and applies to the entire note.
 - With a selected range, the text is wrapped and the matching scoped meta tag is added to the tag bar.
 - Scope allocation prefers single `{}`, `[]`, and `()` delimiters in that order, then depth-two and depth-three forms. A candidate is skipped when its delimiter already occurs in the note content or tag bar.

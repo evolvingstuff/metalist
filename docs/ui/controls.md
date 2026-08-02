@@ -35,8 +35,7 @@
 - `⌘ + S` no-ops when the entire note is selected or when split would produce no content segment.
 - `⌘ + S` trims selection-edge empty nodes/whitespace so generated split notes do not get a synthetic leading blank line.
 - `⌘ + S` records the full split as one undo/redo step.
-- `⌘ + U` rewrites the note's stored content HTML into plain HTML, removing inline/block formatting wrappers while preserving links and images.
-- `⌘ + U` does not remove meta-tags like `@bold`, `@todo`, or any other tag-bar formatting tags.
+- `⌘ + U` removes formatting from the selected range, or from the entire active note when no text is selected. Whole-note removal rewrites stored content into plain HTML while preserving links/images, removes global and scoped Add Style meta tags, and removes scope delimiters that no surviving wrapped tag still uses. Range removal splits scopes around the selection so formatting outside it remains. Semantic tags such as `@todo` remain.
 - `⇧ + ⌘ + ↑` is server-authoritative: for filtered/search views it inserts the root note at the top of the visible root view without corrupting the underlying root-order links.
 - In any non-normal sort order, root-note reordering is disabled for drag/drop, `⌘ + ↑`, `⌘ + ↓`, and `⇧ + ⌘ + ↑`. Child-note reordering still works.
 - While the single-note tag bar is focused, note-level edit shortcuts still target the current note: create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.
@@ -119,8 +118,8 @@
 | Drag note body (while not editing) | Reorder among visible siblings based on vertical drop position, or indent/outdent on horizontal drags. Once movement crosses the drag threshold, releasing back over the source note does not count as a click. |
 | Drag-select text in note | Available only in edit mode; releasing mouse outside note keeps edit mode + selection |
 | Right-click external link | Open a link-only context menu with `Copy Link` and `Open Link in New Tab`. Note actions are hidden for link targets. |
-| Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`, `Export Note as HTML`, `Export View as HTML`). While actively editing that note, `Add Style` opens a connected formatting flyout. Paste actions appear only when a note has been copied. |
-| Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note`; while editing, `Add Style` scopes the chosen formatting tag to that range. |
+| Right-click note | Open the note context menu (`Copy Note`, `Paste Sibling Note`, `Paste Child Note`, `Paste Sibling Reference`, `Paste Child Reference`, `Add Sibling Note`, `Add Child Note`, `Delete Note`, `Move Note to Top`, `Export Note as HTML`, `Export View as HTML`). While actively editing that note, `Add Style` opens a connected formatting flyout and `Remove Formatting` performs the same operation as `Cmd/Ctrl+U`. Paste actions appear only when a note has been copied. |
+| Right-click selected note text | Open the note context menu with `Copy` for the selected text instead of `Copy Note`; while editing, `Add Style` scopes the chosen formatting tag to that range and `Remove Formatting` removes formatting only from that range. |
 | Right-click image in note | Adds image actions to the note context menu: `Copy Image`, `Save Image`, `Zoom Image`, `Open Image in New Tab` |
 | Right-click notes view background | Open the view context menu with `Export View as HTML` |
 | Right-click tag in search input, tag bar, or their suggestion lists | Open tag context menu (Edit Tag Relationships) |

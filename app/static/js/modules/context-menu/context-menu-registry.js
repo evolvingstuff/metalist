@@ -46,6 +46,7 @@ function buildNoteContextItems(context, handlers) {
     const onCopySelection = handlers.onCopySelection;
     const onAddSelectionAsTag = handlers.onAddSelectionAsTag;
     const onAddStyle = handlers.onAddStyle;
+    const onRemoveFormatting = handlers.onRemoveFormatting;
     const onCopyNote = handlers.onCopyNote;
     const onPasteNote = handlers.onPasteNote;
     const onPasteNoteChild = handlers.onPasteNoteChild;
@@ -179,6 +180,19 @@ function buildNoteContextItems(context, handlers) {
             icon: 'tag',
             enabled: true,
             onSelect: () => onAddSelectionAsTag(noteId, selectedTextForTag),
+        });
+    }
+
+    if (context.canRemoveFormatting === true) {
+        if (typeof onRemoveFormatting !== 'function') {
+            throw new Error('Editing note context missing onRemoveFormatting handler');
+        }
+        items.unshift({
+            id: 'remove-formatting',
+            label: 'Remove Formatting',
+            icon: 'clear_formatting',
+            enabled: true,
+            onSelect: () => onRemoveFormatting(noteId),
         });
     }
 

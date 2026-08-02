@@ -95,7 +95,7 @@ export class HelpModal extends BaseModal {
                     { keys: `${modKey}+R`, description: 'Copy embedded reference from last copied note' },
                     { keys: `${modKey}+${shiftKey}+R`, description: 'Paste embedded reference as child note' },
                     { keys: `${modKey}+S`, description: 'Split note at selection/caret' },
-                    { keys: `${modKey}+U`, description: 'Unformat note content but keep links and images' },
+                    { keys: `${modKey}+U`, description: 'Remove formatting from selection, or whole note if none' },
                     { keys: `${modKey}+Backspace/Delete`, description: 'Delete selected note' },
                 ]
             }

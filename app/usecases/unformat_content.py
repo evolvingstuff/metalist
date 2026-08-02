@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 
+from app.services.content_formatting import (
+    remove_added_style_tags,
+    remove_formatting_scope_delimiters,
+)
 from app.services.html_unformatting import unformat_note_content_html
 from app.services.store import store
 from app.services.sync import generate_new_uuid
@@ -28,11 +32,16 @@ class CmdUnformatContent(QueryCommand):
         if not isinstance(record.tags, str):
             raise TypeError("note tags must be a string")
 
+        updated_tags, wrappers_to_remove = remove_added_style_tags(record.tags)
         updated_content = unformat_note_content_html(record.content)
-        if updated_content == record.content:
+        updated_content = remove_formatting_scope_delimiters(
+            updated_content,
+            wrappers_to_remove,
+        )
+        if updated_content == record.content and updated_tags == record.tags:
             return {"status": "noop", "updateUUID": generate_new_uuid()}
 
-        apply_update_content(self.note_id, updated_content, record.tags, self.token)
+        apply_update_content(self.note_id, updated_content, updated_tags, self.token)
 
         from app.services.undo_state import record_update
 
@@ -43,7 +52,7 @@ class CmdUnformatContent(QueryCommand):
             before=record.content,
             after=updated_content,
             before_tags=record.tags,
-            after_tags=record.tags,
+            after_tags=updated_tags,
             viewport=self.viewport,
         )
 

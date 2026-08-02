@@ -8,6 +8,7 @@ function buildNoteHandlers(calls) {
         onCopySelection: (noteId) => calls.push(['copySelection', noteId]),
         onAddSelectionAsTag: (noteId, selectedText) => calls.push(['addSelectionAsTag', noteId, selectedText]),
         onAddStyle: (noteId, styleTag) => calls.push(['addStyle', noteId, styleTag]),
+        onRemoveFormatting: (noteId) => calls.push(['removeFormatting', noteId]),
         onCopyNote: (noteId) => calls.push(['copyNote', noteId]),
         onPasteNote: (noteId) => calls.push(['pasteNote', noteId]),
         onPasteNoteChild: (noteId) => calls.push(['pasteNoteChild', noteId]),
@@ -182,6 +183,29 @@ test('buildContextMenuItems adds a connected Add Style submenu only for the edit
         buildNoteHandlers([]),
     );
     assert.equal(viewItems.some((item) => item.id === 'add-style'), false);
+});
+
+test('buildContextMenuItems places Remove Formatting directly beneath Add Style while editing', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        {
+            kind: 'note',
+            noteId: 'note-123',
+            canAddStyle: true,
+            canRemoveFormatting: true,
+            styleOptions: [
+                { id: 'red', label: 'Red', tag: '@red' },
+            ],
+        },
+        buildNoteHandlers(calls),
+    );
+
+    assert.deepEqual(items.slice(0, 2).map((item) => item.id), [
+        'add-style',
+        'remove-formatting',
+    ]);
+    items[1].onSelect();
+    assert.deepEqual(calls, [['removeFormatting', 'note-123']]);
 });
 
 test('buildContextMenuItems shows paste actions when note clipboard is available', () => {

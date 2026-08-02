@@ -22,6 +22,10 @@ const CONTEXT_MENU_ICONS = {
         'M8 8h10v12H8z',
         'M6 16H4V4h10v2',
     ],
+    clear_formatting: [
+        'M5 15 14 6l5 5-9 9H5z',
+        'M12 18h8',
+    ],
     download: [
         'M12 4v10',
         'M7 10l5 5 5-5',

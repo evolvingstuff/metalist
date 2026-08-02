@@ -6,6 +6,8 @@ from app.db.schema import initialize_schema
 from app.services.link_titles import link_title_store
 from app.services.content_formatting import find_list_style
 from app.services.content_formatting import format_note_content_for_view as _format_note_content_for_view
+from app.services.content_formatting import remove_added_style_tags
+from app.services.content_formatting import remove_formatting_scope_delimiters
 
 
 def format_note_content_for_view(*, content_html: str, tags: str) -> str:
@@ -14,6 +16,26 @@ def format_note_content_for_view(*, content_html: str, tags: str) -> str:
         tags=tags,
         redact_passwords=False,
     )
+
+
+def test_remove_added_style_tags_preserves_comments_semantic_tags_and_remaining_scopes() -> None:
+    updated_tags, wrappers_to_remove = remove_added_style_tags(
+        "foo /* @red keep */ @red [[@bold @markdown]] {{@red project}} @todo"
+    )
+
+    assert updated_tags == "foo /* @red keep */ {{project}} @todo"
+    assert wrappers_to_remove == frozenset({("[", 2)})
+
+
+def test_remove_formatting_scope_delimiters_handles_crossing_scopes_without_touching_html() -> None:
+    content = '<a href="https://example.com/?q=[value]">blah [[blah {both]] italic}</a>'
+
+    updated_content = remove_formatting_scope_delimiters(
+        content,
+        frozenset({("[", 2), ("{", 1)}),
+    )
+
+    assert updated_content == '<a href="https://example.com/?q=[value]">blah blah both italic</a>'
 
 
 def test_format_note_content_for_view_no_matching_tag_keeps_delimiters() -> None:

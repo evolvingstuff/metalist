@@ -1456,7 +1456,7 @@ async function handleUnformatNoteShortcut(event) {
     event.stopPropagation();
 
     await CommandGate.run('keyboard.unformat_note', async () => {
-        await unformatCurrentNoteContent();
+        await unformatCurrentNoteContent(null);
     });
 }
 

@@ -49,6 +49,7 @@ _LIST_STYLE_TAGS = {
 }
 
 _RENDERER_TAGS = frozenset({"markdown", "latex", "json", "csv", "shell"})
+_REMOVABLE_FORMATTING_TAGS = frozenset(set(_META_TAG_TO_CLASS) | set(_RENDERER_TAGS))
 
 _CREDENTIAL_TAGS = frozenset({"username", "password"})
 _EMAIL_TAGS = frozenset({"email"})
@@ -159,6 +160,81 @@ def find_consumed_content_wrapper_keys(tags: str) -> FrozenSet[Tuple[str, int]]:
     if not isinstance(tags, str):
         raise TypeError(f"tags must be a string, got {type(tags)}")
     return _parse_meta_tags(tags).wrappers_to_consume
+
+
+def remove_added_style_tags(tags: str) -> tuple[str, FrozenSet[Tuple[str, int]]]:
+    if not isinstance(tags, str):
+        raise TypeError(f"tags must be a string, got {type(tags)}")
+
+    retained_tokens: List[str] = []
+    removed_wrapper_keys: Set[Tuple[str, int]] = set()
+    retained_wrapper_keys: Set[Tuple[str, int]] = set()
+
+    for token in _tokenize_tag_bar_preserving_comments(tags):
+        if token.startswith("/*"):
+            retained_tokens.append(token)
+            continue
+
+        base, wrapper = _unwrap_tag_token(token)
+        if wrapper is None:
+            if _is_removable_formatting_tag(base):
+                continue
+            retained_tokens.append(token)
+            continue
+
+        inner_tokens = [inner for inner in base.split() if inner]
+        retained_inner = [
+            inner for inner in inner_tokens if not _is_removable_formatting_tag(inner)
+        ]
+        if len(retained_inner) == len(inner_tokens):
+            retained_tokens.append(token)
+            retained_wrapper_keys.add(wrapper)
+            continue
+
+        removed_wrapper_keys.add(wrapper)
+        if retained_inner:
+            opener, depth = wrapper
+            open_token = opener * depth
+            close_token = _OPEN_TO_CLOSE[opener] * depth
+            retained_tokens.append(f"{open_token}{' '.join(retained_inner)}{close_token}")
+            retained_wrapper_keys.add(wrapper)
+
+    wrappers_to_remove = removed_wrapper_keys - retained_wrapper_keys
+    return " ".join(retained_tokens), frozenset(wrappers_to_remove)
+
+
+def remove_formatting_scope_delimiters(
+    content_html: str,
+    wrappers_to_remove: FrozenSet[Tuple[str, int]],
+) -> str:
+    if not isinstance(content_html, str):
+        raise TypeError(f"content_html must be a string, got {type(content_html)}")
+    if not isinstance(wrappers_to_remove, frozenset):
+        raise TypeError("wrappers_to_remove must be a frozenset")
+    if not wrappers_to_remove:
+        return content_html
+
+    for opener, depth in wrappers_to_remove:
+        if opener not in _OPEN_TO_CLOSE:
+            raise ValueError(f"Unsupported formatting scope opener: {opener}")
+        if not isinstance(depth, int) or not 1 <= depth <= _MAX_DELIMITER_DEPTH:
+            raise ValueError(f"Unsupported formatting scope depth: {depth}")
+
+    return _apply_scoped_meta_tags(
+        content_html=content_html,
+        wrappers_to_consume=wrappers_to_remove,
+        scoped_tags={},
+        scoped_renderers={},
+        preserve_latex_placeholders=False,
+    )
+
+
+def _is_removable_formatting_tag(token: str) -> bool:
+    if not isinstance(token, str):
+        raise TypeError(f"token must be a string, got {type(token)}")
+    if not token.startswith("@"):
+        return False
+    return token[1:].casefold() in _REMOVABLE_FORMATTING_TAGS
 
 
 @dataclass(frozen=True, slots=True)
@@ -1309,6 +1385,45 @@ def _tokenize_tag_bar(tags: str) -> List[str]:
         token = tags[start:index]
         if token:
             tokens.append(token)
+    return tokens
+
+
+def _tokenize_tag_bar_preserving_comments(tags: str) -> List[str]:
+    tokens: List[str] = []
+    index = 0
+    while index < len(tags):
+        while index < len(tags) and tags[index].isspace():
+            index += 1
+        if index >= len(tags):
+            break
+
+        start = index
+        if tags.startswith("/*", index):
+            end = tags.find("*/", index + 2)
+            if end == -1:
+                tokens.append(tags[start:])
+                break
+            index = end + 2
+            tokens.append(tags[start:index])
+            continue
+
+        opener = tags[index]
+        if opener in _OPEN_TO_CLOSE:
+            opener_run = 1
+            while index + opener_run < len(tags) and tags[index + opener_run] == opener:
+                opener_run += 1
+            if opener_run <= _MAX_DELIMITER_DEPTH:
+                closer = _OPEN_TO_CLOSE[opener]
+                needle = closer * opener_run
+                close_at = tags.find(needle, index + opener_run)
+                if close_at != -1:
+                    index = close_at + opener_run
+                    tokens.append(tags[start:index])
+                    continue
+
+        while index < len(tags) and not tags[index].isspace():
+            index += 1
+        tokens.append(tags[start:index])
     return tokens
 
 

@@ -17,6 +17,7 @@ import {
     deleteNote,
     deleteNoteOutsideEdit,
     moveNoteToTop,
+    unformatCurrentNoteContent,
 } from '../actions/note-actions.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import {
@@ -664,6 +665,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         hasSelectedText,
         hasNoteClipboard,
         canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
+        canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
     };
     if (context.canAddStyle) {
         context.styleOptions = ADD_STYLE_OPTIONS;
@@ -685,6 +687,14 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         onAddStyle: (targetNoteId, styleTag) => {
             void CommandGate.run('contextMenu.note.add_style', async () => {
                 await addStyleFromContextMenu(targetNoteId, styleTag, selectedTextRange);
+            });
+        },
+        onRemoveFormatting: (targetNoteId) => {
+            void CommandGate.run('contextMenu.note.remove_formatting', async () => {
+                if (!ModeContext.isEditing || ModeContext.currentNoteId !== targetNoteId) {
+                    throw new Error('Remove Formatting requires the target note to be actively edited');
+                }
+                await unformatCurrentNoteContent(selectedTextRange);
             });
         },
         onCopyNote: (targetNoteId) => {

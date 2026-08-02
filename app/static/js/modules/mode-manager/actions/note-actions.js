@@ -12,6 +12,11 @@ import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { exitEditingBeforeTodoToggle } from '../services/todo-toggle-editing-service.js';
 import { shouldExitEditingBeforeCollapseToggle } from '../services/collapse-editing-policy-service.js';
+import {
+    removeFormattingFromSelectedRange,
+    resolveActiveFormattingRemovalRange,
+    restoreFormattingRemovalSelection,
+} from '../services/selected-formatting-removal-service.js';
 import { actionSaveNote } from './content-actions.js';
 import { actionSaveAndExitEditingWithoutRefreshing, actionSwitchNotes, actionSelectNote } from './selection-actions.js';
 import { actionRefreshAndMaybeSelect } from './ui-actions.js';
@@ -929,7 +934,10 @@ export async function splitCurrentNoteFromSelection() {
     return true;
 }
 
-export async function unformatCurrentNoteContent() {
+export async function unformatCurrentNoteContent(selectedTextRange) {
+    if (selectedTextRange !== null && !(selectedTextRange instanceof Range)) {
+        throw new Error('unformatCurrentNoteContent selection must be Range or null');
+    }
     const currentNoteId = ModeContext.currentNoteId;
     Logger.logAction('unformatCurrentNoteContent', {
         currentNoteId,
@@ -950,9 +958,45 @@ export async function unformatCurrentNoteContent() {
         await actionSaveNote(currentNoteId);
     }
 
+    const noteElement = DOMUtils.getNoteById(currentNoteId);
+    const noteContent = noteElement.querySelector('.note-content');
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error(`Unformat note content element missing: ${currentNoteId}`);
+    }
+    const activeSelection = selectedTextRange === null
+        ? resolveActiveFormattingRemovalRange(noteContent)
+        : selectedTextRange;
+    if (activeSelection instanceof Range && !activeSelection.collapsed) {
+        const selectedResult = removeFormattingFromSelectedRange(
+            noteElement,
+            noteContent,
+            activeSelection,
+        );
+        if (!selectedResult.changed) {
+            Logger.logNoop('Remove Formatting selection already has no removable formatting');
+            return false;
+        }
+
+        const updatedContent = noteContent.innerHTML;
+        if (updatedContent !== ModeContext.currentContent) {
+            ModeContext.setCurrentContent(updatedContent);
+        }
+        ModeContext.markEditSessionHasEdits();
+        if (!ModeContext.isDirty) {
+            ModeContext.setDirty(true);
+        }
+        await actionSaveNote(currentNoteId);
+        restoreFormattingRemovalSelection(
+            noteContent,
+            selectedResult.selectionStart,
+            selectedResult.selectionEnd,
+        );
+        return true;
+    }
+
     const response = await NotesAPI.unformatNote(currentNoteId);
     if (response && response.status === 'noop') {
-        Logger.logNoop('Unformat shortcut ignored: content already plain');
+        Logger.logNoop('Remove Formatting ignored: note already has no removable formatting');
         return false;
     }
 
