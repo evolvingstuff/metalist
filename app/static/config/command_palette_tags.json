@@ -85,6 +85,10 @@
       "tags": ["version", "versions", "schema", "database", "sqlite", "migration", "migrations", "about", "info", "debug"]
     },
     {
+      "id": "form.note_layout_appearance",
+      "tags": ["note", "notes", "layout", "appearance", "font", "size", "spacing", "indentation", "hierarchy", "display", "settings"]
+    },
+    {
       "id": "form.switch_namespace",
       "tags": ["namespace", "namespaces", "switch", "switcher", "change", "open", "launch", "select", "database", "instance", "workspace"]
     },

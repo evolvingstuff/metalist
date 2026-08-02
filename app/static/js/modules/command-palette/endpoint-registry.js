@@ -49,6 +49,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openReminders = requireAction(actions, 'openReminders');
     const openSoundManager = requireAction(actions, 'openSoundManager');
     const openVersionInfo = requireAction(actions, 'openVersionInfo');
+    const openNoteLayoutAppearance = requireAction(actions, 'openNoteLayoutAppearance');
     const getSortMode = requireAction(actions, 'getSortMode');
     const setSortMode = requireAction(actions, 'setSortMode');
 
@@ -219,6 +220,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Version info…',
             execute: async () => openVersionInfo(),
+        },
+        {
+            id: 'form.note_layout_appearance',
+            kind: 'form',
+            label: 'Note Layout & Appearance…',
+            execute: async () => openNoteLayoutAppearance(),
         },
         {
             id: 'form.switch_namespace',

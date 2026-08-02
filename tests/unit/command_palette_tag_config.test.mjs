@@ -51,3 +51,17 @@ test('keyboard shortcuts action matches cheatsheet queries', () => {
     assert.ok(shortcuts, 'expected keyboard shortcuts endpoint in command palette tag config');
     assert.equal(shortcuts.tags.includes('cheatsheet'), true);
 });
+
+
+test('note layout action matches appearance and hierarchy queries', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const noteLayout = payload.endpoints.find(
+        (endpoint) => endpoint.id === 'form.note_layout_appearance',
+    );
+
+    assert.ok(noteLayout, 'expected note layout endpoint in command palette tag config');
+    assert.equal(noteLayout.tags.includes('layout'), true);
+    assert.equal(noteLayout.tags.includes('appearance'), true);
+    assert.equal(noteLayout.tags.includes('hierarchy'), true);
+});

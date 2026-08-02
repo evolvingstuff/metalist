@@ -17,6 +17,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openReminders: noop,
             openSoundManager: noop,
             openVersionInfo: noop,
+            openNoteLayoutAppearance: noop,
             openOntologyEditor: noop,
             createBackup: noop,
             openBackupRestore: noop,
@@ -66,6 +67,11 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(animatedTransitionsEndpoint.label, 'Animated transitions');
     assert.equal(endpointIds.has('form.reminders'), true);
     assert.equal(endpointIds.has('form.version_info'), true);
+    assert.equal(endpointIds.has('form.note_layout_appearance'), true);
+    assert.equal(
+        endpoints.find((endpoint) => endpoint.id === 'form.note_layout_appearance').label,
+        'Note Layout & Appearance…',
+    );
     assert.equal(endpointIds.has('action.logout'), true);
     assert.equal(endpointIds.has('form.random_password_generator'), true);
     assert.equal(endpointIds.has('pref.auto_collapse_long_notes'), false);

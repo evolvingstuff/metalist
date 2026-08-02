@@ -32,6 +32,7 @@ This document defines the standard pattern for implementing modal dialogs in the
 app/static/js/modules/modals/
 ├── base-modal.js       # BaseModal class with state enforcement
 └── password-modal.js   # Password management modal
+└── note-layout-appearance-modal.js # Namespace-scoped note layout presets + preview
 └── [future-modal].js   # Other modals follow same pattern
 ```
 

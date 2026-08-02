@@ -25,7 +25,7 @@
     %>
     <div class="${css_classes}" 
          data-note-id="${note['id']}" 
-         data-parent-id="${note.get('parent_id', '')}"
+         data-parent-id="${note.get('parent_id') or ''}"
          data-is-collapsed="${'true' if note['flags'].get('isCollapsed') else 'false'}"
          data-has-children="${'true' if note['flags'].get('hasChildren') else 'false'}"
          data-note-tags="${note['tags'] | h}">

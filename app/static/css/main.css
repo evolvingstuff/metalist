@@ -29,6 +29,9 @@
     --rhs-calendar-grid-padding: var(--rhs-calendar-grid-gap);
     --rhs-calendar-toggle-button-width: 70px;
     --rhs-calendar-toggle-height: 34px;
+    --top-level-note-font-size: 1.1875rem;
+    --note-child-indentation: 2rem;
+    --note-vertical-spacing: 2px;
 }
 
 html {
@@ -431,6 +434,72 @@ html {
 
 .version-info-modal-content {
     width: min(520px, 92vw);
+}
+
+.note-layout-appearance-modal-content {
+    width: min(560px, 92vw);
+}
+
+.note-layout-description {
+    margin: 0 0 18px;
+    color: #6b7280;
+    line-height: 1.45;
+}
+
+.note-layout-controls {
+    display: grid;
+    gap: 14px;
+}
+
+.note-layout-controls label {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
+    align-items: center;
+    gap: 16px;
+    font-weight: 600;
+}
+
+.note-layout-controls select {
+    width: 100%;
+    padding: 9px 34px 9px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font: inherit;
+}
+
+.note-layout-preview {
+    margin: 20px 0;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(127, 127, 127, 0.06);
+}
+
+.note-layout-preview-root,
+.note-layout-preview-child {
+    padding: 5px 8px;
+    border: 1px solid rgba(127, 127, 127, 0.22);
+    border-radius: 4px;
+    background: var(--bg-color);
+}
+
+.note-layout-preview-root {
+    font-size: var(--top-level-note-font-size);
+}
+
+.note-layout-preview-child {
+    margin-top: var(--note-vertical-spacing);
+    margin-bottom: var(--note-vertical-spacing);
+    margin-left: var(--note-child-indentation);
+}
+
+@media (max-width: 600px) {
+    .note-layout-controls label {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
 }
 
 .version-info-table {
@@ -2402,6 +2471,60 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
     min-width: 0;
 }
 
+body[data-top-level-note-size="same"],
+.note-layout-preview[data-top-level-note-size="same"] {
+    --top-level-note-font-size: 1rem;
+}
+
+body[data-top-level-note-size="larger"],
+.note-layout-preview[data-top-level-note-size="larger"] {
+    --top-level-note-font-size: 1.1875rem;
+}
+
+body[data-top-level-note-size="largest"],
+.note-layout-preview[data-top-level-note-size="largest"] {
+    --top-level-note-font-size: 1.375rem;
+}
+
+.note[data-parent-id=""] > .note-content {
+    font-size: var(--top-level-note-font-size);
+}
+
+body[data-child-indentation="compact"],
+.note-layout-preview[data-child-indentation="compact"] {
+    --note-child-indentation: 1rem;
+}
+
+body[data-child-indentation="standard"],
+.note-layout-preview[data-child-indentation="standard"] {
+    --note-child-indentation: 2rem;
+}
+
+body[data-child-indentation="wide"],
+.note-layout-preview[data-child-indentation="wide"] {
+    --note-child-indentation: 3rem;
+}
+
+body[data-note-vertical-spacing="compact"],
+.note-layout-preview[data-note-vertical-spacing="compact"] {
+    --note-vertical-spacing: 0;
+}
+
+body[data-note-vertical-spacing="comfortable"],
+.note-layout-preview[data-note-vertical-spacing="comfortable"] {
+    --note-vertical-spacing: 2px;
+}
+
+body[data-note-vertical-spacing="spacious"],
+.note-layout-preview[data-note-vertical-spacing="spacious"] {
+    --note-vertical-spacing: 6px;
+}
+
+body[data-note-vertical-spacing] .note {
+    margin-top: var(--note-vertical-spacing);
+    margin-bottom: var(--note-vertical-spacing);
+}
+
 .note-content.caret-hidden {
     caret-color: transparent;
 }
@@ -3121,8 +3244,8 @@ body:not(.pref-show-rhs-panel) .rhs-panel {
 
 .note-children {
     flex-basis: 100%;
-    margin-left: 2rem;
-    width: calc(100% - 2rem);
+    margin-left: var(--note-child-indentation);
+    width: calc(100% - var(--note-child-indentation));
     margin-top: 0;
     margin-bottom: 0;
 }
@@ -4779,6 +4902,14 @@ html[data-theme="light"] {
 
 body.pref-show-note-tags .note-tags {
     display: block;
+    flex: 0 1 auto;
+    max-width: 25%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin-left: auto;
+    text-align: right;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .note-tags {

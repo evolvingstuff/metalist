@@ -146,8 +146,11 @@
 - Generate random password…
 - Keyboard Shortcuts / Cheatsheet…
 - Version info…
+- Note Layout & Appearance… (top-level size, child indentation, and vertical spacing)
 
 > Note: On Windows/Linux, use `Ctrl` instead of `⌘` (Command) 
+
+When `Show tags in list` is enabled, the grey right-aligned tag column wraps and is capped at 25% of its note row so note content retains the majority of the available width.
 
 ## Tag Bar Syntax
 - See `docs/ui/tag-bar.md` for the full grammar (tokens, wrappers, and `/* ... */` comments).
