@@ -47,6 +47,12 @@ import { initContextMenuService, showContextMenu } from '../../context-menu/cont
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
 import { NotesAPI } from '../../api-client.js';
 import { normalizeSelectedTextForTagAction } from '../services/selected-text-tag-service.js';
+import {
+    ADD_STYLE_OPTIONS,
+    appendStyleTagToken,
+    buildStyleApplicationPlan,
+} from '../services/add-style-service.js';
+import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 
 const ontologyModal = new OntologyModal();
 
@@ -409,6 +415,117 @@ async function copySelectedTextRange(selectedTextRange) {
     }
 }
 
+function insertStyleScopeAroundRange(noteContent, selectedTextRange, plan) {
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error('insertStyleScopeAroundRange requires note content element');
+    }
+    if (!(selectedTextRange instanceof Range) || selectedTextRange.collapsed) {
+        throw new Error('insertStyleScopeAroundRange requires a non-collapsed Range');
+    }
+    if (!noteContent.contains(selectedTextRange.startContainer) || !noteContent.contains(selectedTextRange.endContainer)) {
+        throw new Error('Add Style selection must remain inside the editing note');
+    }
+    if (!plan || typeof plan !== 'object') {
+        throw new Error('insertStyleScopeAroundRange requires style plan');
+    }
+    if (typeof plan.openToken !== 'string' || plan.openToken.length === 0) {
+        throw new Error('Scoped style plan missing openToken');
+    }
+    if (typeof plan.closeToken !== 'string' || plan.closeToken.length === 0) {
+        throw new Error('Scoped style plan missing closeToken');
+    }
+
+    const startBoundary = selectedTextRange.cloneRange();
+    startBoundary.collapse(true);
+    const endBoundary = selectedTextRange.cloneRange();
+    endBoundary.collapse(false);
+
+    const closeNode = document.createTextNode(plan.closeToken);
+    endBoundary.insertNode(closeNode);
+    const openNode = document.createTextNode(plan.openToken);
+    startBoundary.insertNode(openNode);
+
+    const styledRange = document.createRange();
+    styledRange.setStartAfter(openNode);
+    styledRange.setEndBefore(closeNode);
+    return styledRange;
+}
+
+function restoreStyleSelection(noteContent, styledRange) {
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error('restoreStyleSelection requires note content element');
+    }
+    if (styledRange !== null && !(styledRange instanceof Range)) {
+        throw new Error('restoreStyleSelection requires Range or null');
+    }
+    noteContent.focus();
+    if (styledRange === null) {
+        return;
+    }
+    const selection = window.getSelection();
+    if (!selection) {
+        throw new Error('Selection API unavailable after Add Style');
+    }
+    selection.removeAllRanges();
+    selection.addRange(styledRange);
+}
+
+async function addStyleFromContextMenu(noteId, styleTag, selectedTextRange) {
+    if (typeof noteId !== 'string' || noteId.length === 0) {
+        throw new Error('addStyleFromContextMenu requires noteId');
+    }
+    if (typeof styleTag !== 'string' || styleTag.length === 0) {
+        throw new Error('addStyleFromContextMenu requires styleTag');
+    }
+    if (!ModeContext.isEditing || ModeContext.currentNoteId !== noteId) {
+        throw new Error('Add Style requires the target note to be actively edited');
+    }
+    if (selectedTextRange !== null && !(selectedTextRange instanceof Range)) {
+        throw new Error('Add Style selection must be Range or null');
+    }
+
+    const noteElement = document.querySelector(`.note[data-note-id="${noteId}"]`);
+    if (!(noteElement instanceof HTMLElement)) {
+        throw new Error(`Add Style note element missing: ${noteId}`);
+    }
+    const noteContent = noteElement.querySelector('.note-content');
+    if (!(noteContent instanceof HTMLElement)) {
+        throw new Error(`Add Style note content missing: ${noteId}`);
+    }
+
+    const tagBarText = getTagBarValue(noteElement);
+    const contentText = typeof noteContent.textContent === 'string' ? noteContent.textContent : '';
+    const hasSelection = selectedTextRange instanceof Range && !selectedTextRange.collapsed;
+    const plan = buildStyleApplicationPlan({
+        styleTag,
+        contentText,
+        tagBarText,
+        hasSelection,
+    });
+    const nextTags = appendStyleTagToken(tagBarText, plan.tagToken);
+    if (!hasSelection && nextTags === tagBarText) {
+        restoreStyleSelection(noteContent, null);
+        return;
+    }
+
+    let styledRange = null;
+    if (hasSelection) {
+        styledRange = insertStyleScopeAroundRange(noteContent, selectedTextRange, plan);
+    }
+    setTagBarValue(noteElement, nextTags);
+
+    const nextContent = noteContent.innerHTML;
+    if (nextContent !== ModeContext.currentContent) {
+        ModeContext.setCurrentContent(nextContent);
+    }
+    if (!ModeContext.isDirty) {
+        ModeContext.setDirty(true);
+    }
+    restoreStyleSelection(noteContent, styledRange);
+    await actionSaveNote(noteId);
+    restoreStyleSelection(noteContent, styledRange);
+}
+
 function markContextMenuNoteClipboard(noteId) {
     if (typeof noteId !== 'string' || noteId.length === 0) {
         throw new Error('markContextMenuNoteClipboard requires noteId');
@@ -546,7 +663,11 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         imageContext,
         hasSelectedText,
         hasNoteClipboard,
+        canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
     };
+    if (context.canAddStyle) {
+        context.styleOptions = ADD_STYLE_OPTIONS;
+    }
     if (selectedTextForTag !== null) {
         context.selectedTextForTag = selectedTextForTag;
     }
@@ -559,6 +680,11 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         onAddSelectionAsTag: (targetNoteId, selectedText) => {
             void CommandGate.run('contextMenu.selection.add_as_tag', async () => {
                 await addSelectedTextAsTag(targetNoteId, selectedText);
+            });
+        },
+        onAddStyle: (targetNoteId, styleTag) => {
+            void CommandGate.run('contextMenu.note.add_style', async () => {
+                await addStyleFromContextMenu(targetNoteId, styleTag, selectedTextRange);
             });
         },
         onCopyNote: (targetNoteId) => {

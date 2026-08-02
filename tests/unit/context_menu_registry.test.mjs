@@ -7,6 +7,7 @@ function buildNoteHandlers(calls) {
     return {
         onCopySelection: (noteId) => calls.push(['copySelection', noteId]),
         onAddSelectionAsTag: (noteId, selectedText) => calls.push(['addSelectionAsTag', noteId, selectedText]),
+        onAddStyle: (noteId, styleTag) => calls.push(['addStyle', noteId, styleTag]),
         onCopyNote: (noteId) => calls.push(['copyNote', noteId]),
         onPasteNote: (noteId) => calls.push(['pasteNote', noteId]),
         onPasteNoteChild: (noteId) => calls.push(['pasteNoteChild', noteId]),
@@ -145,6 +146,42 @@ test('buildContextMenuItems shows add-as-tag for an eligible text selection', ()
     );
     items[1].onSelect();
     assert.deepEqual(calls, [['addSelectionAsTag', 'note-123', 'Neural Networks']]);
+});
+
+test('buildContextMenuItems adds a connected Add Style submenu only for the editing note', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        {
+            kind: 'note',
+            noteId: 'note-123',
+            canAddStyle: true,
+            styleOptions: [
+                { id: 'red', label: 'Red', tag: '@red' },
+                { id: 'markdown', label: 'Markdown', tag: '@markdown' },
+            ],
+        },
+        buildNoteHandlers(calls),
+    );
+
+    const addStyle = items.find((item) => item.id === 'add-style');
+    assert.ok(addStyle);
+    assert.equal(items[0].id, 'add-style');
+    assert.equal(addStyle.onSelect, undefined);
+    assert.deepEqual(
+        addStyle.submenu.map((item) => ({ id: item.id, label: item.label })),
+        [
+            { id: 'add-style-red', label: 'Red' },
+            { id: 'add-style-markdown', label: 'Markdown' },
+        ],
+    );
+    addStyle.submenu[0].onSelect();
+    assert.deepEqual(calls, [['addStyle', 'note-123', '@red']]);
+
+    const viewItems = buildContextMenuItems(
+        { kind: 'note', noteId: 'note-123' },
+        buildNoteHandlers([]),
+    );
+    assert.equal(viewItems.some((item) => item.id === 'add-style'), false);
 });
 
 test('buildContextMenuItems shows paste actions when note clipboard is available', () => {

@@ -37,6 +37,11 @@ const CONTEXT_MENU_ICONS = {
         'M8 10h.01',
         'M4 16l4-4 3 3 3-4 6 5',
     ],
+    style: [
+        'M4 17.5V20h2.5L18 8.5 15.5 6z',
+        'M14 4l2-2 6 6-2 2',
+        'M3 3l3 3',
+    ],
     link: [
         'M9 12a3 3 0 0 1 3-3h3',
         'M15 12a3 3 0 0 1-3 3H9',
@@ -81,7 +86,10 @@ const CONTEXT_MENU_ICONS = {
 };
 
 let menuElement = null;
+let submenuElement = null;
 let activeItems = [];
+let activeSubmenuItems = [];
+let activeSubmenuParent = null;
 let activeOnClose = null;
 let initialized = false;
 
@@ -102,6 +110,23 @@ function ensureMenuElement() {
     return element;
 }
 
+function ensureSubmenuElement() {
+    if (submenuElement) {
+        return submenuElement;
+    }
+
+    const element = document.createElement('div');
+    element.id = 'context-submenu';
+    element.className = 'context-menu context-menu-submenu';
+    element.setAttribute('role', 'menu');
+    element.style.display = 'none';
+    document.body.appendChild(element);
+
+    element.addEventListener('click', handleMenuClick);
+    submenuElement = element;
+    return element;
+}
+
 function handleMenuClick(event) {
     if (!event) {
         throw new Error('handleMenuClick called without event');
@@ -116,24 +141,38 @@ function handleMenuClick(event) {
         return;
     }
 
+    const menuLevel = button.dataset.menuLevel;
+    if (menuLevel !== 'root' && menuLevel !== 'submenu') {
+        throw new Error('Context menu item missing menu level');
+    }
+    const items = menuLevel === 'submenu' ? activeSubmenuItems : activeItems;
     const indexAttr = button.dataset.index;
     if (typeof indexAttr !== 'string' || indexAttr.trim() === '') {
         throw new Error('Context menu item missing index');
     }
     const index = Number.parseInt(indexAttr, 10);
-    if (!Number.isInteger(index) || index < 0 || index >= activeItems.length) {
+    if (!Number.isInteger(index) || index < 0 || index >= items.length) {
         throw new Error(`Context menu item index invalid: ${indexAttr}`);
     }
 
-    const item = activeItems[index];
+    const item = items[index];
     if (!item) {
         throw new Error('Context menu item missing in active items');
     }
     if (!item.enabled) {
         return;
     }
+    if (Array.isArray(item.submenu)) {
+        if (menuLevel !== 'root') {
+            throw new Error('Nested context submenus are not supported');
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        showSubmenuForButton(button, item.submenu);
+        return;
+    }
     if (typeof item.onSelect !== 'function') {
-        throw new Error('Context menu item missing onSelect handler');
+        throw new Error('Context menu leaf item missing onSelect handler');
     }
 
     event.preventDefault();
@@ -142,7 +181,10 @@ function handleMenuClick(event) {
     item.onSelect();
 }
 
-function validateMenuItems(items) {
+function validateMenuItems(items, depth) {
+    if (!Number.isInteger(depth) || depth < 0) {
+        throw new Error('validateMenuItems requires non-negative depth');
+    }
     if (!Array.isArray(items) || items.length === 0) {
         throw new Error('Context menu requires non-empty items array');
     }
@@ -160,7 +202,16 @@ function validateMenuItems(items) {
         if (typeof item.enabled !== 'boolean') {
             throw new Error(`Context menu item ${index} missing enabled boolean`);
         }
-        if (typeof item.onSelect !== 'function') {
+        const hasSubmenu = item.submenu !== undefined;
+        if (hasSubmenu) {
+            if (depth > 0) {
+                throw new Error('Nested context submenus are not supported');
+            }
+            if (item.onSelect !== undefined) {
+                throw new Error(`Context menu submenu item ${index} cannot have onSelect`);
+            }
+            validateMenuItems(item.submenu, depth + 1);
+        } else if (typeof item.onSelect !== 'function') {
             throw new Error(`Context menu item ${index} missing onSelect handler`);
         }
         if (item.separated !== undefined && typeof item.separated !== 'boolean') {
@@ -212,13 +263,44 @@ function resolvePosition(position, menuRect) {
     return { left, top };
 }
 
-function renderMenuItems(menu, items) {
+function resolveSubmenuPosition(parentRect, submenuRect) {
+    if (!parentRect || !submenuRect) {
+        throw new Error('resolveSubmenuPosition requires menu rectangles');
+    }
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    if (typeof viewportWidth !== 'number' || typeof viewportHeight !== 'number') {
+        throw new Error('Viewport dimensions missing');
+    }
+
+    let left = parentRect.right - 1;
+    if (left + submenuRect.width + MENU_PADDING_PX > viewportWidth) {
+        left = parentRect.left - submenuRect.width + 1;
+    }
+    let top = parentRect.top - 6;
+    if (top + submenuRect.height + MENU_PADDING_PX > viewportHeight) {
+        top = viewportHeight - submenuRect.height - MENU_PADDING_PX;
+    }
+    if (left < MENU_PADDING_PX) {
+        left = MENU_PADDING_PX;
+    }
+    if (top < MENU_PADDING_PX) {
+        top = MENU_PADDING_PX;
+    }
+    return { left, top };
+}
+
+function renderMenuItems(menu, items, menuLevel) {
+    if (menuLevel !== 'root' && menuLevel !== 'submenu') {
+        throw new Error('renderMenuItems requires a valid menu level');
+    }
     menu.innerHTML = '';
     items.forEach((item, index) => {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'context-menu-item';
         button.dataset.index = String(index);
+        button.dataset.menuLevel = menuLevel;
         button.setAttribute('role', 'menuitem');
 
         const icon = createMenuIcon(item.icon);
@@ -231,6 +313,17 @@ function renderMenuItems(menu, items) {
         label.textContent = item.label;
         button.appendChild(label);
 
+        if (Array.isArray(item.submenu)) {
+            button.classList.add('has-submenu');
+            button.setAttribute('aria-haspopup', 'menu');
+            button.setAttribute('aria-expanded', 'false');
+            const arrow = document.createElement('span');
+            arrow.className = 'context-menu-submenu-arrow';
+            arrow.textContent = '›';
+            arrow.setAttribute('aria-hidden', 'true');
+            button.appendChild(arrow);
+        }
+
         if (item.separated === true) {
             button.classList.add('is-separated');
         }
@@ -238,8 +331,68 @@ function renderMenuItems(menu, items) {
             button.disabled = true;
             button.classList.add('is-disabled');
         }
+        if (menuLevel === 'root') {
+            button.addEventListener('mouseenter', () => {
+                if (Array.isArray(item.submenu) && item.enabled) {
+                    showSubmenuForButton(button, item.submenu);
+                    return;
+                }
+                hideSubmenu();
+            });
+            button.addEventListener('focus', () => {
+                if (Array.isArray(item.submenu) && item.enabled) {
+                    showSubmenuForButton(button, item.submenu);
+                    return;
+                }
+                hideSubmenu();
+            });
+        }
         menu.appendChild(button);
     });
+}
+
+function showSubmenuForButton(parentButton, submenuItems) {
+    if (!(parentButton instanceof HTMLButtonElement)) {
+        throw new Error('showSubmenuForButton requires parent button');
+    }
+    validateMenuItems(submenuItems, 1);
+
+    hideSubmenu();
+    const submenu = ensureSubmenuElement();
+    activeSubmenuItems = submenuItems;
+    activeSubmenuParent = parentButton;
+    parentButton.classList.add('is-submenu-open');
+    parentButton.setAttribute('aria-expanded', 'true');
+
+    renderMenuItems(submenu, submenuItems, 'submenu');
+    submenu.style.display = 'block';
+    submenu.style.visibility = 'hidden';
+    submenu.style.left = '0px';
+    submenu.style.top = '0px';
+
+    const parentRect = parentButton.getBoundingClientRect();
+    const submenuRect = submenu.getBoundingClientRect();
+    const resolved = resolveSubmenuPosition(parentRect, submenuRect);
+    submenu.style.left = `${resolved.left}px`;
+    submenu.style.top = `${resolved.top}px`;
+    submenu.style.visibility = 'visible';
+    submenu.classList.add('is-visible');
+}
+
+function hideSubmenu() {
+    if (activeSubmenuParent) {
+        activeSubmenuParent.classList.remove('is-submenu-open');
+        activeSubmenuParent.setAttribute('aria-expanded', 'false');
+    }
+    activeSubmenuParent = null;
+    activeSubmenuItems = [];
+    if (!submenuElement) {
+        return;
+    }
+    submenuElement.classList.remove('is-visible');
+    submenuElement.style.display = 'none';
+    submenuElement.style.visibility = 'hidden';
+    submenuElement.innerHTML = '';
 }
 
 function createMenuIcon(iconName) {
@@ -286,7 +439,7 @@ function handleGlobalMouseDown(event) {
         hideContextMenu();
         return;
     }
-    if (menu.contains(target)) {
+    if (menu.contains(target) || (submenuElement && submenuElement.contains(target))) {
         return;
     }
     hideContextMenu();
@@ -309,7 +462,7 @@ function handleGlobalContextMenu(event) {
         hideContextMenu();
         return;
     }
-    if (menu.contains(target)) {
+    if (menu.contains(target) || (submenuElement && submenuElement.contains(target))) {
         return;
     }
     hideContextMenu();
@@ -359,13 +512,14 @@ export function showContextMenu(payload) {
 
     const items = payload.items;
     const position = payload.position;
-    validateMenuItems(items);
+    validateMenuItems(items, 0);
 
     const menu = ensureMenuElement();
     activeItems = items;
     activeOnClose = payload.onClose;
 
-    renderMenuItems(menu, items);
+    hideSubmenu();
+    renderMenuItems(menu, items, 'root');
     menu.style.display = 'block';
     menu.style.visibility = 'hidden';
     menu.style.left = '0px';
@@ -381,6 +535,7 @@ export function showContextMenu(payload) {
 }
 
 export function hideContextMenu() {
+    hideSubmenu();
     if (!menuElement) {
         return;
     }

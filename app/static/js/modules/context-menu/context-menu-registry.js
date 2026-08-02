@@ -45,6 +45,7 @@ function buildNoteContextItems(context, handlers) {
     const onMoveNoteToTop = handlers.onMoveNoteToTop;
     const onCopySelection = handlers.onCopySelection;
     const onAddSelectionAsTag = handlers.onAddSelectionAsTag;
+    const onAddStyle = handlers.onAddStyle;
     const onCopyNote = handlers.onCopyNote;
     const onPasteNote = handlers.onPasteNote;
     const onPasteNoteChild = handlers.onPasteNoteChild;
@@ -178,6 +179,44 @@ function buildNoteContextItems(context, handlers) {
             icon: 'tag',
             enabled: true,
             onSelect: () => onAddSelectionAsTag(noteId, selectedTextForTag),
+        });
+    }
+
+    if (context.canAddStyle === true) {
+        if (typeof onAddStyle !== 'function') {
+            throw new Error('Editing note context missing onAddStyle handler');
+        }
+        const styleOptions = context.styleOptions;
+        if (!Array.isArray(styleOptions) || styleOptions.length === 0) {
+            throw new Error('Editing note context requires styleOptions');
+        }
+        const submenu = styleOptions.map((styleOption) => {
+            if (!styleOption || typeof styleOption !== 'object') {
+                throw new Error('Add Style option must be an object');
+            }
+            const { id, label, tag } = styleOption;
+            if (typeof id !== 'string' || id.length === 0) {
+                throw new Error('Add Style option missing id');
+            }
+            if (typeof label !== 'string' || label.length === 0) {
+                throw new Error('Add Style option missing label');
+            }
+            if (typeof tag !== 'string' || !tag.startsWith('@')) {
+                throw new Error('Add Style option missing meta tag');
+            }
+            return {
+                id: `add-style-${id}`,
+                label,
+                enabled: true,
+                onSelect: () => onAddStyle(noteId, tag),
+            };
+        });
+        items.unshift({
+            id: 'add-style',
+            label: 'Add Style',
+            icon: 'style',
+            enabled: true,
+            submenu,
         });
     }
 

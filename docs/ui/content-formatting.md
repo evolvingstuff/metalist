@@ -65,6 +65,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ### Nesting
 - Scoped regions can be nested within each other.
 - If the tag bar contains multiple scoped meta tags, the rendered view content may contain nested spans.
+- Crossing basic-format scopes are supported as well. A range such as `[[bold {both]] italic}` is rendered by closing and reopening the crossing style so the overlap becomes valid nested HTML.
 
 ## Initial meta tags
 - `@monospace`: renders the (scoped) region using a monospace/code font.
@@ -100,6 +101,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 
 ## Markdown meta tags
 - `@markdown`: renders the note content as Markdown in view mode on the server.
+- Scoped Markdown renders only the matching wrapped region.
 - Paired LaTeX delimiters inside Markdown render automatically as server-side MathML: `\(...\)` and `$...$` are inline; `\[...\]` and `$$...$$` are display math.
 - Math detection skips inline code and fenced code blocks. Unpaired delimiters and currency-like dollar text remain literal.
 - Explicit scoped LaTeX such as content `(((\frac{1}{2})))` with tag-bar token `(((@LaTeX)))` remains supported and can coexist with automatic math in the same Markdown note.
@@ -115,12 +117,14 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.
+- Scoped shell rendering applies only to the matching wrapped region.
 - Clicking the block starts a background shell session on the connected server and streams stdout/stderr inline while it runs.
 - Finished shell feedback stays inline until the user dismisses it with the `Close` button in the output header.
 - The transport is cross-platform (Windows/macOS/Linux), but the script itself still runs inside the server host's shell, so command syntax must match that host environment.
 
 ## JSON meta tags
 - `@json`: parses the note content as JSON and pretty-prints it in view mode.
+- Scoped JSON rendering applies only to the matching wrapped region.
 - Invalid JSON shows a red "Invalid JSON" badge and the raw content.
 
 ## CSV meta tags

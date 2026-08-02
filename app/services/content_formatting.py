@@ -982,6 +982,21 @@ def _render_scoped_renderer(
             cell_scoped_tags=filtered_scoped,
             cell_scoped_renderers=filtered_renderers,
         )
+    if render_tag == "markdown":
+        return _render_markdown_meta(
+            content_html=content_html,
+            formatting_tags=formatting_tags,
+        )
+    if render_tag == "json":
+        return _render_json_meta(
+            content_html=content_html,
+            formatting_tags=formatting_tags,
+        )
+    if render_tag == "shell":
+        return _render_shell_meta(
+            content_html=content_html,
+            formatting_tags=formatting_tags,
+        )
     raise KeyError(f"Unknown scoped renderer: {render_tag}")
 
 
@@ -1231,7 +1246,7 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
                 continue
             tag_name = inner[1:].casefold()
             if tag_name not in _META_TAG_TO_CLASS:
-                if tag_name in {"csv", "latex"}:
+                if tag_name in _RENDERER_TAGS:
                     existing = None
                     if key in scoped_renderers:
                         existing = scoped_renderers[key]
@@ -1348,6 +1363,7 @@ class _OpenFrame:
     formatting_tags: FrozenSet[str] | None
     render_key: Tuple[str, int] | None
     renderer_nested_delimiter_depth: int
+    was_crossed: bool
 
 
 def _apply_scoped_meta_tags(
@@ -1505,6 +1521,7 @@ def _process_text_segment(
                         formatting_tags=formatting_tags,
                         render_key=render_key,
                         renderer_nested_delimiter_depth=0,
+                        was_crossed=False,
                     )
                 )
                 index += run
@@ -1521,12 +1538,38 @@ def _process_text_segment(
         if char in _CLOSE_TO_OPEN:
             run = _count_run(text=text, index=index, char=char)
             if run <= _MAX_DELIMITER_DEPTH and stack:
-                top = stack[-1]
-                if top.closer == char and top.depth == run:
+                matching_index = None
+                for stack_index in range(len(stack) - 1, -1, -1):
+                    candidate = stack[stack_index]
+                    if candidate.closer == char and candidate.depth == run:
+                        matching_index = stack_index
+                        break
+                if matching_index is not None and matching_index < len(stack) - 1:
+                    crossing_frames = stack[matching_index + 1 :]
+                    matching_frame = stack[matching_index]
+                    crossing_has_renderer = any(
+                        frame.render_tag is not None
+                        for frame in stack[matching_index:]
+                    )
+                    if not crossing_has_renderer:
+                        for frame in reversed(crossing_frames):
+                            frame.was_crossed = True
+                            output[frame.placeholder_index] = frame.open_html
+                            output.append(frame.close_html)
+                        output[matching_frame.placeholder_index] = matching_frame.open_html
+                        output.append(matching_frame.close_html)
+                        for frame in crossing_frames:
+                            output.append(frame.open_html)
+                        del stack[matching_index]
+                        index += run
+                        continue
+                if matching_index == len(stack) - 1:
+                    top = stack[-1]
                     stack.pop()
                     if (
                         top.render_tag is None
                         and top.formatting_tags is not None
+                        and not top.was_crossed
                         and _should_use_box_wrapper(top.formatting_tags)
                     ):
                         inner_parts = output[top.placeholder_index + 1 :]

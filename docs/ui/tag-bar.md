@@ -134,7 +134,7 @@ Unclosed comments behave like unclosed wrappers:
 - Clicking the visible tag bar while editing focuses the tag input directly instead of treating the click as a note-shell selection.
 - The tag bar expands into view when note editing starts and contracts out of view when editing ends, unless `Animated transitions` is off in the command palette.
 - When leaving the tag bar (Tab or click-away), the tag string is sanitized so only valid, fully-formed tokens/comments remain.
-- While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, note copy/cut/paste, and the password modal shortcut.
+- While the single-note tag bar is focused, note-level edit shortcuts still target the current note, including create sibling/child, delete, move up/down, move to top, indent/outdent, split, unformat, and note copy/cut/paste.
 - `Cmd/Ctrl+U` unformats the note content while preserving links, images, and the tag bar itself.
 
 ## Add from Selected Text
@@ -144,3 +144,11 @@ Unclosed comments behave like unclosed wrappers:
 - If the note already has an equivalent explicit tag, the action is a no-op and does not add a duplicate.
 - If no equivalent tag exists, a new tag preserves the selection's capitalization, replaces whitespace with dashes, and removes characters disallowed by the tag-bar grammar. This preserves acronyms such as `GPT`.
 - Selections longer than 25 characters, blank selections, and selections with no usable tag characters do not show the action.
+
+## Add Style Context Menu
+- Right-clicking the actively edited note adds **Add Style**. Hovering or selecting it opens a connected flyout submenu containing the supported visual and renderer meta tags.
+- With no selected range, the chosen unwrapped meta tag is added to the tag bar and applies to the entire note.
+- With a selected range, the text is wrapped and the matching scoped meta tag is added to the tag bar.
+- Scope allocation prefers single `{}`, `[]`, and `()` delimiters in that order, then depth-two and depth-three forms. A candidate is skipped when its delimiter already occurs in the note content or tag bar.
+- Basic styles can overlap. Applying a second style to a partially overlapping selection uses another delimiter pair, and view rendering splits the overlap into valid nested HTML.
+- Renderer tags (`@markdown`, `@LaTeX`, `@json`, `@csv`, and `@shell`) can be added globally or to a scoped selection.

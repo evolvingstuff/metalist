@@ -16,6 +16,7 @@ import {
 } from '../services/search-contexts-overlay-service.js';
 import { CommandGate } from '../services/command-gate-service.js';
 import { CommandPalette } from '../../command-palette/command-palette-controller.js';
+import { isContextMenuInteractionTarget } from '../../context-menu/context-menu-target-service.js';
 import { downloadFileReference } from '../services/file-reference-service.js';
 import { revealRedactedNoteWithScrollPreservation } from '../services/search-redaction-reveal-service.js';
 import { resolveVerticalSiblingDropDestination, updateMoveDragGestureState } from '../services/note-drag-service.js';
@@ -140,10 +141,12 @@ function isMouseDownOutsideEditExclusion(target) {
     if (!(target instanceof Element)) {
         return false;
     }
+    if (isContextMenuInteractionTarget(target)) {
+        return true;
+    }
     return target.closest(
         [
             '.modal',
-            '#context-menu',
             '#rich-text-toolbar',
             '#file-reference-input',
             '.note-tag-bar',
@@ -316,7 +319,7 @@ function handleImmediateMouseDown(event) {
         return;
     }
 
-    if (event.target.closest('.modal') || event.target.closest('#context-menu') || isShellInteractiveTarget(event.target)) {
+    if (event.target.closest('.modal') || isContextMenuInteractionTarget(event.target) || isShellInteractiveTarget(event.target)) {
         return;
     }
 
@@ -824,8 +827,7 @@ function handleClick(event) {
         return;
     }
 
-    const contextMenu = event.target.closest('#context-menu');
-    if (contextMenu) {
+    if (isContextMenuInteractionTarget(event.target)) {
         return;
     }
     if (isShellInteractiveTarget(event.target)) {

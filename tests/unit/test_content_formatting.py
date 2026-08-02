@@ -206,6 +206,32 @@ def test_format_note_content_for_view_nested_scopes() -> None:
     )
 
 
+def test_format_note_content_for_view_crossing_scopes_split_overlapping_styles() -> None:
+    html = "<div>start [[bold {both]] italic}</div>"
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="[[@bold]] {@italic}",
+    )
+    assert rendered == (
+        '<div>start <span class="meta-scope meta-bold">bold '
+        '<span class="meta-scope meta-italic">both</span></span>'
+        '<span class="meta-scope meta-italic"> italic</span></div>'
+    )
+
+
+def test_format_note_content_for_view_crossing_strikethrough_keeps_both_ranges() -> None:
+    html = "<div>[[bold {both]] struck}</div>"
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="[[@bold]] {@strikethrough}",
+    )
+    assert rendered == (
+        '<div><span class="meta-scope meta-bold">bold '
+        '<span class="meta-scope meta-strikethrough">both</span></span>'
+        '<span class="meta-scope meta-strikethrough"> struck</span></div>'
+    )
+
+
 def test_format_note_content_for_view_wrapper_spanning_tags() -> None:
     html = "<div>{{hello <b>world</b>}}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="{{@red}}")
@@ -559,6 +585,29 @@ def test_format_note_content_for_view_scoped_csv_meta_renders_table() -> None:
     assert "<td>1</td>" in rendered
     assert "<td>2</td>" in rendered
     assert "<td>3</td>" in rendered
+
+
+def test_format_note_content_for_view_scoped_markdown_meta_renders_selection() -> None:
+    html = "<div>{{**bold**}}</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="{{@markdown}}")
+    assert 'class="meta-markdown"' in rendered
+    assert "<strong>bold</strong>" in rendered
+    assert "{{" not in rendered
+
+
+def test_format_note_content_for_view_scoped_json_meta_renders_selection() -> None:
+    html = '<div>[{"name":"scarlet"}]</div>'
+    rendered = format_note_content_for_view(content_html=html, tags="[@json]")
+    assert 'class="meta-json"' in rendered
+    assert 'json-key' in rendered
+    assert "scarlet" in rendered
+
+
+def test_format_note_content_for_view_scoped_shell_meta_renders_selection() -> None:
+    html = "<div>{echo scarlet}</div>"
+    rendered = format_note_content_for_view(content_html=html, tags="{@shell}")
+    assert 'class="meta-shell"' in rendered
+    assert "echo scarlet" in rendered
 
 
 def test_format_note_content_for_view_scoped_csv_meta_applies_scoped_formatting() -> None:
