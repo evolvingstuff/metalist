@@ -34,8 +34,10 @@ from app.security.encryption import set_encryption_required
 from app.server_runtime import resolve_mcp_agent_public_origin
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
+from app.server_runtime import validate_namespace
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
+from app.services.namespace_rename_jobs import load_namespace_rename_job
 from app.services.namespace_switcher import build_namespace_catalog
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.diagnostics import configure_process_diagnostics
@@ -435,36 +437,17 @@ async def maintenance_page(request: Request):
     )
 
 
-def _build_namespace_deleted_links(*, job_id: str, deleted_namespace: str) -> list[dict[str, str]]:
-    catalog = build_namespace_catalog(
-        environ=os.environ,
-        current_namespace=ACTIVE_NAMESPACE,
-    )
-    raw_namespaces = catalog["namespaces"]
-    if not isinstance(raw_namespaces, list):
-        raise RuntimeError("Namespace catalog missing namespaces")
-    links: list[dict[str, str]] = []
-    for entry in raw_namespaces:
-        if not isinstance(entry, dict):
-            raise RuntimeError("Namespace catalog entry must be an object")
-        namespace = entry["namespace"]
-        if not isinstance(namespace, str) or namespace == "":
-            raise RuntimeError("Namespace catalog entry missing namespace")
-        if namespace == deleted_namespace:
-            continue
-        query = urlencode({"job": job_id, "namespace": namespace})
-        link_meta = "Open namespace"
-        if namespace == ACTIVE_NAMESPACE:
-            link_meta = "Already running"
-        links.append(
-            {
-                "namespace": namespace,
-                "label": namespace,
-                "meta": link_meta,
-                "href": f"/namespace-deleted/open?{query}",
-            }
-        )
-    return links
+def _build_namespace_deleted_links(*, job_id: str, redirect_namespace: str) -> list[dict[str, str]]:
+    normalized_redirect_namespace = validate_namespace(namespace=redirect_namespace)
+    query = urlencode({"job": job_id, "namespace": normalized_redirect_namespace})
+    return [
+        {
+            "namespace": normalized_redirect_namespace,
+            "label": normalized_redirect_namespace,
+            "meta": "Selected destination",
+            "href": f"/namespace-deleted/open?{query}",
+        }
+    ]
 
 
 def _resolve_catalog_profile(*, namespace: str) -> tuple[int, int | None, int]:
@@ -543,7 +526,7 @@ async def namespace_deleted_page(request: Request):
     template = templates.get_template("namespace_deleted.html")
     namespace_links = _build_namespace_deleted_links(
         job_id=job_record["job_id"],
-        deleted_namespace=job_record["deleted_namespace"],
+        redirect_namespace=job_record["redirect_namespace"],
     )
     page_state = json.dumps(
         {
@@ -551,6 +534,7 @@ async def namespace_deleted_page(request: Request):
             "deletedNamespace": job_record["deleted_namespace"],
             "initialStatus": job_record["status"],
             "initialError": job_record["error"],
+            "redirectNamespace": job_record["redirect_namespace"],
         }
     )
     return template.render(
@@ -588,7 +572,10 @@ async def namespace_deleted_open_page(request: Request):
         return HTMLResponse(f"Namespace deletion job not found: {job_id}", status_code=404)
     if job_record["status"] == "pending":
         return HTMLResponse("Namespace deletion is still in progress", status_code=409)
-    if namespace == job_record["deleted_namespace"]:
+    if (
+        namespace == job_record["deleted_namespace"]
+        and namespace != job_record["redirect_namespace"]
+    ):
         return HTMLResponse("Deleted namespace is unavailable", status_code=400)
 
     launch_capture = CapturedExceptionContext(
@@ -614,6 +601,75 @@ async def namespace_deleted_open_page(request: Request):
     if result is None:
         raise RuntimeError("Namespace launch did not return a result")
     response = RedirectResponse(url=_build_force_reauth_url(url=result.url), status_code=307)
+    clear_auth_cookie(response=response)
+    return response
+
+
+@app.get("/namespace-renamed", response_class=HTMLResponse)
+async def namespace_renamed_page(request: Request):
+    job_id = request.query_params.get("job")
+    if not isinstance(job_id, str) or job_id.strip() == "":
+        return HTMLResponse("Missing namespace rename job", status_code=400)
+    job_record_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    job_record: dict[str, object] | None = None
+    with job_record_capture:
+        job_record = load_namespace_rename_job(job_id=job_id)
+    if job_record_capture.captured_exception is not None:
+        exc = job_record_capture.captured_exception
+        return HTMLResponse(str(exc), status_code=400)
+    if job_record is None:
+        return HTMLResponse(f"Namespace rename job not found: {job_id}", status_code=404)
+
+    page_state = json.dumps(
+        {
+            "jobId": job_record["job_id"],
+            "sourceNamespace": job_record["source_namespace"],
+            "targetNamespace": job_record["target_namespace"],
+            "initialStatus": job_record["status"],
+            "initialError": job_record["error"],
+        }
+    )
+    template = templates.get_template("namespace_renamed.html")
+    return template.render(
+        request=request,
+        version=VERSION,
+        asset_version=ASSET_VERSION,
+        page_title="MetaList - Namespace Renamed",
+        source_namespace=job_record["source_namespace"],
+        target_namespace=job_record["target_namespace"],
+        page_state_json=page_state,
+    )
+
+
+@app.get("/namespace-renamed/open")
+async def namespace_renamed_open_page(request: Request):
+    job_id = request.query_params.get("job")
+    if not isinstance(job_id, str) or job_id.strip() == "":
+        return HTMLResponse("Missing namespace rename job", status_code=400)
+    job_record_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    job_record: dict[str, object] | None = None
+    with job_record_capture:
+        job_record = load_namespace_rename_job(job_id=job_id)
+    if job_record_capture.captured_exception is not None:
+        exc = job_record_capture.captured_exception
+        return HTMLResponse(str(exc), status_code=400)
+    if job_record is None:
+        return HTMLResponse(f"Namespace rename job not found: {job_id}", status_code=404)
+    if job_record["status"] != "succeeded":
+        return HTMLResponse("Namespace rename is not complete", status_code=409)
+    if ACTIVE_NAMESPACE != job_record["target_namespace"]:
+        return HTMLResponse("Renamed namespace is not running here", status_code=409)
+    response = RedirectResponse(url="/?force_reauth=1", status_code=307)
     clear_auth_cookie(response=response)
     return response
 

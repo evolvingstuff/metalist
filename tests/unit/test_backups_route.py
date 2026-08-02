@@ -322,6 +322,148 @@ def test_restore_preflight_reports_existing_different_target(
     assert response.port_conflicts == []
 
 
+def test_same_name_restore_into_new_namespace_assigns_conflict_free_ports(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "henry-20260419-090000-000000.metalist-backup.tar.gz"
+    backup_path = folder_directory / backup_filename
+    backup_path.write_bytes(b"backup")
+    target_database_path = tmp_path / "namespaces" / "henry" / "henry.metalist.db"
+    saved_profiles: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["default"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(backups_route, "_restore_target_exists", lambda *, target_namespace: False)
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: target_database_path,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "read_backup_launch_profile",
+        lambda path, *, expected_namespace: backups_route.BackupLaunchProfile(
+            namespace="henry",
+            port=8000,
+            https_port=8443,
+            mcp_port=8765,
+        ),
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "load_all_namespace_launch_profiles",
+        lambda: [
+            backups_route.NamespaceLaunchProfile(
+                namespace="default",
+                port=8000,
+                https_port=8443,
+                mcp_port=8765,
+            )
+        ],
+    )
+    monkeypatch.setattr(backups_route, "restore_backup_to_paths", lambda path, database_path: None)
+    monkeypatch.setattr(
+        backups_route,
+        "save_namespace_launch_profile",
+        lambda **kwargs: saved_profiles.append(kwargs),
+    )
+
+    response = backups_route.restore_backup(
+        payload=backups_route.BackupRestoreRequest(
+            backup_id=f"folder::henry::{backup_filename}",
+            source="folder",
+            backup_filename=backup_filename,
+            backup_namespace="henry",
+            target_namespace="henry",
+        ),
+        token="token",
+    )
+
+    assert response.target_namespace == "henry"
+    assert saved_profiles == [
+        {
+            "namespace": "henry",
+            "port": 8001,
+            "https_port": 8444,
+            "mcp_port": 8766,
+        }
+    ]
+
+
+def test_same_name_restore_into_existing_namespace_retains_target_ports(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder_directory = tmp_path / "backups"
+    folder_directory.mkdir()
+    backup_filename = "henry-20260419-090000-000000.metalist-backup.tar.gz"
+    (folder_directory / backup_filename).write_bytes(b"backup")
+    target_database_path = tmp_path / "namespaces" / "henry" / "henry.metalist.db"
+    saved_profiles: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        backups_route,
+        "load_backup_settings",
+        lambda *, token: {
+            "folder_path": str(folder_directory),
+            "selected_namespaces": ["henry"],
+            "retention_count": 30,
+        },
+    )
+    monkeypatch.setattr(backups_route, "_restore_target_exists", lambda *, target_namespace: True)
+    monkeypatch.setattr(
+        backups_route,
+        "resolve_namespaced_database_path",
+        lambda *, namespace: target_database_path,
+    )
+    monkeypatch.setattr(
+        backups_route,
+        "load_namespace_launch_profile",
+        lambda *, namespace: backups_route.NamespaceLaunchProfile(
+            namespace="henry",
+            port=8002,
+            https_port=8445,
+            mcp_port=8767,
+        ),
+    )
+    monkeypatch.setattr(backups_route, "restore_backup_to_paths", lambda path, database_path: None)
+    monkeypatch.setattr(
+        backups_route,
+        "save_namespace_launch_profile",
+        lambda **kwargs: saved_profiles.append(kwargs),
+    )
+
+    backups_route.restore_backup(
+        payload=backups_route.BackupRestoreRequest(
+            backup_id=f"folder::henry::{backup_filename}",
+            source="folder",
+            backup_filename=backup_filename,
+            backup_namespace="henry",
+            target_namespace="henry",
+        ),
+        token="token",
+    )
+
+    assert saved_profiles == [
+        {
+            "namespace": "henry",
+            "port": 8002,
+            "https_port": 8445,
+            "mcp_port": 8767,
+        }
+    ]
+
+
 def test_restore_import_rejects_existing_target_without_overwrite_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

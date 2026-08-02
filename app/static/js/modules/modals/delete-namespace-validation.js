@@ -3,15 +3,20 @@ export function validateNamespaceDeletionSubmission({
     confirmationText,
     currentPassword,
     hasPassword,
+    isCurrentNamespace,
+    redirectNamespace,
 }) {
     if (typeof namespace !== 'string' || namespace.trim().length === 0) {
         throw new Error('Current namespace is unavailable');
     }
-    if (namespace === 'default') {
-        throw new Error('Default namespace cannot be deleted');
-    }
     if (typeof hasPassword !== 'boolean') {
         throw new Error('Password state is unavailable');
+    }
+    if (typeof isCurrentNamespace !== 'boolean') {
+        throw new Error('Current namespace state is unavailable');
+    }
+    if (typeof redirectNamespace !== 'string' || redirectNamespace.trim().length === 0) {
+        throw new Error('Choose where to redirect after deletion');
     }
     if (typeof confirmationText !== 'string') {
         throw new Error(`Type '${namespace}' to confirm deletion`);
@@ -23,6 +28,7 @@ export function validateNamespaceDeletionSubmission({
     if (!hasPassword) {
         return {
             confirmed_namespace: normalizedConfirmationText,
+            redirect_namespace: redirectNamespace.trim(),
         };
     }
     if (typeof currentPassword !== 'string' || currentPassword.length === 0) {
@@ -31,5 +37,6 @@ export function validateNamespaceDeletionSubmission({
     return {
         confirmed_namespace: normalizedConfirmationText,
         current_password: currentPassword,
+        redirect_namespace: redirectNamespace.trim(),
     };
 }

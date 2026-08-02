@@ -40,6 +40,7 @@ export function buildCommandPaletteEndpoints(deps) {
     const openSwitchNamespace = requireAction(actions, 'openSwitchNamespace');
     const openCreateNamespace = requireAction(actions, 'openCreateNamespace');
     const openManageNamespacePorts = requireAction(actions, 'openManageNamespacePorts');
+    const openRenameCurrentNamespace = requireAction(actions, 'openRenameCurrentNamespace');
     const openDeleteCurrentNamespace = requireAction(actions, 'openDeleteCurrentNamespace');
     const prioritizeTagToFront = requireAction(actions, 'prioritizeTagToFront');
     const prioritizeTagToBack = requireAction(actions, 'prioritizeTagToBack');
@@ -237,6 +238,12 @@ export function buildCommandPaletteEndpoints(deps) {
             kind: 'form',
             label: 'Manage namespace ports…',
             execute: async () => openManageNamespacePorts(),
+        },
+        {
+            id: 'form.rename_current_namespace',
+            kind: 'form',
+            label: 'Rename current namespace…',
+            execute: async () => openRenameCurrentNamespace(),
         },
         {
             id: 'form.delete_current_namespace',

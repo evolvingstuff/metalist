@@ -1,3 +1,4 @@
 recursive-include app/static *
 recursive-include app/templates *.html
+prune app/__pycache__
 global-exclude .DS_Store

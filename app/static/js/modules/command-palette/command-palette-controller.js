@@ -22,6 +22,7 @@ import { HelpModal } from '../modals/help-modal.js';
 import {
     CreateNamespaceModal,
     ManageNamespacePortsModal,
+    RenameNamespaceModal,
     SwitchNamespaceModal,
 } from '../modals/namespace-modals.js';
 import { DeleteNamespaceModal } from '../modals/delete-namespace-modal.js';
@@ -261,6 +262,7 @@ class CommandPaletteController {
         this._switchNamespaceModal = null;
         this._createNamespaceModal = null;
         this._manageNamespacePortsModal = null;
+        this._renameNamespaceModal = null;
         this._deleteNamespaceModal = null;
         this._prioritizeModal = null;
         this._alphabetizeRootNotesModal = null;
@@ -321,6 +323,7 @@ class CommandPaletteController {
                 openSwitchNamespace: this.openSwitchNamespace.bind(this),
                 openCreateNamespace: this.openCreateNamespace.bind(this),
                 openManageNamespacePorts: this.openManageNamespacePorts.bind(this),
+                openRenameCurrentNamespace: this.openRenameCurrentNamespace.bind(this),
                 openDeleteCurrentNamespace: this.openDeleteCurrentNamespace.bind(this),
                 prioritizeTagToFront: this.prioritizeTagToFront.bind(this),
                 prioritizeTagToBack: this.prioritizeTagToBack.bind(this),
@@ -1889,6 +1892,18 @@ class CommandPaletteController {
             this._manageNamespacePortsModal = new ManageNamespacePortsModal();
         }
         this._manageNamespacePortsModal.open();
+    }
+
+    async openRenameCurrentNamespace() {
+        const isReady = await this._prepareForModalOpen('commandPalette.openRenameCurrentNamespace');
+        if (!isReady) {
+            return;
+        }
+
+        if (this._renameNamespaceModal === null) {
+            this._renameNamespaceModal = new RenameNamespaceModal();
+        }
+        this._renameNamespaceModal.open();
     }
 
     async openDeleteCurrentNamespace() {

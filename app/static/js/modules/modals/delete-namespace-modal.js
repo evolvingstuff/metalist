@@ -56,6 +56,9 @@ export class DeleteNamespaceModal extends BaseModal {
             confirmationText: '',
             currentPassword: '',
             activeNamespaceDeleted: false,
+            redirectNamespaces: [],
+            redirectNamespace: '',
+            recreatesDefault: false,
             error: '',
             status: '',
         };
@@ -145,6 +148,9 @@ export class DeleteNamespaceModal extends BaseModal {
         const confirmationText = typeof state.confirmationText === 'string' ? state.confirmationText : '';
         const currentPassword = typeof state.currentPassword === 'string' ? state.currentPassword : '';
         const activeNamespaceDeleted = state.activeNamespaceDeleted === true;
+        const redirectNamespaces = Array.isArray(state.redirectNamespaces) ? state.redirectNamespaces : [];
+        const redirectNamespace = typeof state.redirectNamespace === 'string' ? state.redirectNamespace : '';
+        const recreatesDefault = state.recreatesDefault === true;
         const error = typeof state.error === 'string' ? state.error : '';
         const status = typeof state.status === 'string' ? state.status : '';
 
@@ -222,9 +228,25 @@ export class DeleteNamespaceModal extends BaseModal {
                 <div class="namespace-delete-warning">
                     <p>This permanently deletes the namespace, its notes database, file database, backups, and saved ports.</p>
                     <p class="namespace-delete-namespace">Namespace: <strong>${escapeHtml(namespace)}</strong></p>
-                    ${activeNamespaceDeleted ? '<p>Because this is the active namespace, this tab moves to a namespace-removal page that shows progress and lets you choose where to go next.</p>' : ''}
+                    ${activeNamespaceDeleted ? '<p>Because this is the active namespace, choose where MetaList should redirect after deletion.</p>' : ''}
                     <p>Type <span class="namespace-delete-phrase">${escapeHtml(namespace)}</span> to confirm.</p>
                 </div>
+
+                ${activeNamespaceDeleted ? `
+                    <div class="form-group">
+                        <label for="delete-namespace-redirect">Redirect after deletion</label>
+                        ${recreatesDefault ? `
+                            <p>A fresh <strong>default</strong> namespace will be created because this is the final namespace.</p>
+                            <input id="delete-namespace-redirect" type="hidden" value="default" />
+                        ` : `
+                            <select id="delete-namespace-redirect" ${deleting ? 'disabled' : ''}>
+                                ${redirectNamespaces.map((candidate) => `
+                                    <option value="${escapeHtml(candidate)}" ${candidate === redirectNamespace ? 'selected' : ''}>${escapeHtml(candidate)}</option>
+                                `).join('')}
+                            </select>
+                        `}
+                    </div>
+                ` : ''}
 
                 <div class="form-group">
                     <label for="delete-namespace-confirmation">Namespace name</label>
@@ -310,6 +332,17 @@ export class DeleteNamespaceModal extends BaseModal {
             };
         }
 
+        const redirectInput = document.getElementById('delete-namespace-redirect');
+        if (redirectInput instanceof HTMLSelectElement) {
+            redirectInput.onchange = () => {
+                this.updateModalState({
+                    redirectNamespace: redirectInput.value,
+                    error: '',
+                    status: '',
+                });
+            };
+        }
+
         const submitButton = document.getElementById('delete-namespace-submit-btn');
         if (submitButton instanceof HTMLButtonElement) {
             submitButton.onclick = async () => {
@@ -327,6 +360,9 @@ export class DeleteNamespaceModal extends BaseModal {
                     confirmationText: '',
                     currentPassword: '',
                     activeNamespaceDeleted: false,
+                    redirectNamespaces: [],
+                    redirectNamespace: '',
+                    recreatesDefault: false,
                     error: '',
                     status: '',
                 });
@@ -381,11 +417,19 @@ export class DeleteNamespaceModal extends BaseModal {
             if (typeof preflight.is_current_namespace !== 'boolean') {
                 throw new Error('Namespace delete preflight response missing is_current_namespace');
             }
+            if (!Array.isArray(preflight.redirect_namespaces) || preflight.redirect_namespaces.length === 0) {
+                throw new Error('Namespace delete preflight response missing redirect_namespaces');
+            }
+            for (const candidate of preflight.redirect_namespaces) {
+                if (typeof candidate !== 'string' || candidate.length === 0) {
+                    throw new Error('Namespace delete redirect options must be non-empty strings');
+                }
+            }
+            if (typeof preflight.recreates_default !== 'boolean') {
+                throw new Error('Namespace delete preflight response missing recreates_default');
+            }
             if (!preflight.target_exists) {
                 throw new Error(`Namespace ${preflight.target_namespace} is unavailable`);
-            }
-            if (preflight.target_namespace === 'default') {
-                throw new Error('Default namespace cannot be deleted');
             }
             this.updateModalState({
                 loading: false,
@@ -396,6 +440,9 @@ export class DeleteNamespaceModal extends BaseModal {
                 confirmationText: '',
                 currentPassword: '',
                 activeNamespaceDeleted: preflight.is_current_namespace,
+                redirectNamespaces: preflight.redirect_namespaces,
+                redirectNamespace: preflight.redirect_namespaces[0],
+                recreatesDefault: preflight.recreates_default,
                 error: '',
                 status: '',
             });
@@ -421,6 +468,8 @@ export class DeleteNamespaceModal extends BaseModal {
                 confirmationText: state.confirmationText,
                 currentPassword: state.currentPassword,
                 hasPassword: state.hasPassword === true,
+                isCurrentNamespace: state.activeNamespaceDeleted === true,
+                redirectNamespace: state.redirectNamespace,
             });
         });
         if (!payloadResult.ok) {

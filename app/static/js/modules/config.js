@@ -82,6 +82,8 @@ export const CONFIG = {
                 LIST: `${API_AUTH_BASE}/namespaces`,
                 OPEN: `${API_AUTH_BASE}/namespaces/open`,
                 SAVE_PORTS: `${API_AUTH_BASE}/namespaces/ports`,
+                RENAME_CURRENT: `${API_AUTH_BASE}/namespaces/rename-current`,
+                RENAME_JOB_STATUS: (jobId) => `${API_AUTH_BASE}/namespaces/rename-jobs/${jobId}`,
                 DELETE: `${API_AUTH_BASE}/namespaces/delete`,
                 DELETE_PREFLIGHT: `${API_AUTH_BASE}/namespaces/delete/preflight`,
                 DELETE_CURRENT: `${API_AUTH_BASE}/namespaces/delete-current`,

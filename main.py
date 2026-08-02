@@ -266,31 +266,33 @@ def _prompt_for_missing_namespace_launch_profiles(*, environ: dict[str, str]) ->
         _prompt_for_missing_namespace_launch_profile(entry=missing_entry)
 
 
-def _bootstrap_installed_default_namespace(*, environ: dict[str, str]) -> None:
+def _bootstrap_default_namespace_if_empty(*, environ: dict[str, str]) -> None:
     ensure_default_tls_pair(environ=environ)
     catalog = build_namespace_catalog(environ=environ, current_namespace=None)
     raw_namespaces = catalog["namespaces"]
     if not isinstance(raw_namespaces, list):
         raise RuntimeError("Namespace catalog missing namespaces")
-
-    default_entry: dict[str, object] | None = None
-    for raw_entry in raw_namespaces:
-        if not isinstance(raw_entry, dict):
-            raise RuntimeError("Namespace catalog entry must be an object")
-        if raw_entry["namespace"] != "default":
-            continue
-        if default_entry is not None:
-            raise RuntimeError("Namespace catalog contains duplicate default entries")
-        default_entry = raw_entry
-
-    if default_entry is None:
-        raise RuntimeError("Namespace catalog missing default namespace")
-    has_launch_profile = default_entry["has_launch_profile"]
-    if has_launch_profile is True:
+    if len(raw_namespaces) > 0:
         return
-    if has_launch_profile is not False:
-        raise RuntimeError("Default namespace launch-profile state must be boolean")
-    _save_missing_default_namespace_launch_profile(entry=default_entry)
+    raw_profile = catalog["new_namespace_profile"]
+    if not isinstance(raw_profile, dict):
+        raise RuntimeError("Empty namespace catalog missing suggested launch profile")
+    port = raw_profile["port"]
+    https_port = raw_profile["https_port"]
+    mcp_port = raw_profile["mcp_port"]
+    if not isinstance(port, int):
+        raise RuntimeError("Suggested default namespace profile missing HTTP port")
+    if https_port is not None and not isinstance(https_port, int):
+        raise RuntimeError("Suggested default namespace profile has invalid HTTPS port")
+    if not isinstance(mcp_port, int):
+        raise RuntimeError("Suggested default namespace profile missing MCP port")
+    print("No namespaces found. Creating a fresh default namespace.")
+    save_namespace_launch_profile(
+        namespace="default",
+        port=port,
+        https_port=https_port,
+        mcp_port=mcp_port,
+    )
 
 
 def _resolve_agent_web_browser_host(*, environ: dict[str, str]) -> str:
@@ -757,7 +759,7 @@ def main(argv: list[str]) -> None:
         argv=argv,
         original_environ=original_environ,
     ):
-        ensure_default_tls_pair(environ=os.environ)
+        _bootstrap_default_namespace_if_empty(environ=os.environ)
         _prompt_for_missing_namespace_launch_profiles(environ=os.environ)
         launch_results = open_or_launch_all_namespaces(environ=os.environ)
         _print_namespace_bootstrap_results(environ=os.environ, launch_results=launch_results)
@@ -775,7 +777,7 @@ def main(argv: list[str]) -> None:
 
 
 def cli() -> None:
-    _bootstrap_installed_default_namespace(environ=os.environ)
+    _bootstrap_default_namespace_if_empty(environ=os.environ)
     main([])
 
 

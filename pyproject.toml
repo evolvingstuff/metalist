@@ -53,10 +53,12 @@ version = {attr = "app.version.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+exclude = ["app.__pycache__*"]
 
 [tool.setuptools.exclude-package-data]
 app = [
     ".DS_Store",
+    "__pycache__/*",
     "static/.DS_Store",
     "static/js/.DS_Store",
 ]

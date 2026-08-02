@@ -32,6 +32,7 @@ _DEFAULT_KEY_PATH = _DEFAULT_DATABASE_DIRECTORY / "certs" / "metalist-key.pem"
 _DEFAULT_RUNTIME_DIRECTORY = Path(tempfile.gettempdir()) / "metalist-runtime"
 _DEFAULT_NAMESPACES_DIRECTORY_NAME = "namespaces"
 _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME = "namespace-delete-jobs"
+_DEFAULT_NAMESPACE_RENAME_JOBS_DIRECTORY_NAME = "namespace-rename-jobs"
 _DEFAULT_LOGS_DIRECTORY_NAME = "logs"
 _DEFAULT_NAMESPACE = "default"
 _DEFAULT_HTTP_PORT = 8000
@@ -124,6 +125,10 @@ def resolve_namespaces_directory() -> Path:
 
 def resolve_namespace_delete_jobs_directory() -> Path:
     return _DEFAULT_RUNTIME_DIRECTORY / _DEFAULT_NAMESPACE_DELETE_JOBS_DIRECTORY_NAME
+
+
+def resolve_namespace_rename_jobs_directory() -> Path:
+    return _DEFAULT_RUNTIME_DIRECTORY / _DEFAULT_NAMESPACE_RENAME_JOBS_DIRECTORY_NAME
 
 
 def resolve_runtime_logs_directory() -> Path:

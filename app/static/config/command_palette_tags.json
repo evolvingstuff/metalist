@@ -97,6 +97,10 @@
       "tags": ["namespace", "namespaces", "manage", "ports", "port", "configure", "settings", "http", "https", "mcp", "launch"]
     },
     {
+      "id": "form.rename_current_namespace",
+      "tags": ["namespace", "namespaces", "rename", "name", "current", "workspace"]
+    },
+    {
       "id": "form.delete_current_namespace",
       "tags": ["namespace", "namespaces", "delete", "remove", "destroy", "permanent", "current", "workspace", "database"]
     },

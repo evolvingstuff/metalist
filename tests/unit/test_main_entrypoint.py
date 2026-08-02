@@ -31,7 +31,7 @@ def test_main_entrypoint_has_no_top_level_mcp_client_import() -> None:
             assert node.module != "mcp_client"
 
 
-def test_installed_cli_bootstraps_default_namespace_before_main(monkeypatch) -> None:
+def test_installed_cli_bootstraps_default_namespace_when_catalog_is_empty(monkeypatch) -> None:
     calls: list[object] = []
 
     monkeypatch.setattr(
@@ -43,18 +43,13 @@ def test_installed_cli_bootstraps_default_namespace_before_main(monkeypatch) -> 
         main_entrypoint,
         "build_namespace_catalog",
         lambda *, environ, current_namespace: {
-            "namespaces": [
-                {
-                    "namespace": "default",
-                    "has_launch_profile": False,
-                    "default_profile": {
-                        "namespace": "default",
-                        "port": 8000,
-                        "https_port": 8443,
-                        "mcp_port": 8765,
-                    },
-                }
-            ]
+            "namespaces": [],
+            "new_namespace_profile": {
+                "namespace": "new-namespace",
+                "port": 8000,
+                "https_port": 8443,
+                "mcp_port": 8765,
+            },
         },
     )
     monkeypatch.setattr(
@@ -82,6 +77,28 @@ def test_installed_cli_bootstraps_default_namespace_before_main(monkeypatch) -> 
     ]
 
 
+def test_installed_cli_does_not_create_default_when_another_namespace_exists(monkeypatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", lambda *, environ: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "build_namespace_catalog",
+        lambda *, environ, current_namespace: {
+            "namespaces": [{"namespace": "henry", "has_launch_profile": True}],
+        },
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "save_namespace_launch_profile",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setattr(main_entrypoint, "main", lambda argv: calls.append(("main", argv)))
+
+    main_entrypoint.cli()
+
+    assert calls == [("main", [])]
+
+
 def test_installed_default_bootstrap_creates_metalist_directory_tree(
     tmp_path: Path,
     monkeypatch,
@@ -98,7 +115,7 @@ def test_installed_default_bootstrap_creates_metalist_directory_tree(
         lambda *, environ: None,
     )
 
-    main_entrypoint._bootstrap_installed_default_namespace(environ={})
+    main_entrypoint._bootstrap_default_namespace_if_empty(environ={})
 
     namespace_directory = metalist_directory / "namespaces" / "default"
     database_path = namespace_directory / "default.metalist.db"
@@ -465,8 +482,8 @@ def test_run_namespace_server_prints_resolved_config(
 def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(monkeypatch) -> None:
     calls: list[str] = []
 
-    def _fake_ensure_default_tls_pair(*, environ) -> None:
-        calls.append("ensure_default_tls_pair")
+    def _fake_bootstrap_default_namespace_if_empty(*, environ) -> None:
+        calls.append("_bootstrap_default_namespace_if_empty")
 
     def _fake_prompt_for_missing_namespace_launch_profiles(*, environ) -> None:
         calls.append("_prompt_for_missing_namespace_launch_profiles")
@@ -491,7 +508,11 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
         "apply_main_cli_args_to_environ",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("apply_main_cli_args_to_environ should not run")),
     )
-    monkeypatch.setattr(main_entrypoint, "ensure_default_tls_pair", _fake_ensure_default_tls_pair)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_bootstrap_default_namespace_if_empty",
+        _fake_bootstrap_default_namespace_if_empty,
+    )
     monkeypatch.setattr(
         main_entrypoint,
         "_prompt_for_missing_namespace_launch_profiles",
@@ -524,7 +545,7 @@ def test_main_source_run_without_explicit_namespace_bootstraps_all_namespaces(mo
         "_record_self_executable_for_namespace_launch",
         "_run_startup_sanity_gates",
         "_run_startup_encryption_audit",
-        "ensure_default_tls_pair",
+        "_bootstrap_default_namespace_if_empty",
         "_prompt_for_missing_namespace_launch_profiles",
         "open_or_launch_all_namespaces",
         "_print_namespace_bootstrap_results",

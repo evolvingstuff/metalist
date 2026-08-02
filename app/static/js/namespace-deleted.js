@@ -79,10 +79,10 @@ function updatePageForSuccess(deletedNamespace) {
     statusElement.dataset.state = 'succeeded';
     requireElement('namespace-deleted-status-label').textContent = 'Completed';
     requireElement('namespace-deleted-status-body').textContent = (
-        'Choose another namespace below.'
+        'Redirecting to the namespace you selected.'
     );
     requireElement('namespace-deleted-error').classList.add('namespace-deleted-hidden');
-    updateLinksState('ready', 'Open another namespace when you are ready.');
+    updateLinksState('ready', 'Continue manually if the automatic redirect does not begin.');
 }
 
 
@@ -118,13 +118,26 @@ function requirePageState() {
     if (typeof pageState.jobId !== 'string' || pageState.jobId.length === 0) {
         throw new Error('Namespace deleted page missing jobId');
     }
+    if (typeof pageState.redirectNamespace !== 'string' || pageState.redirectNamespace.length === 0) {
+        throw new Error('Namespace deleted page missing redirectNamespace');
+    }
     return pageState;
+}
+
+
+function redirectToSelectedNamespace(pageState) {
+    const query = new URLSearchParams({
+        job: pageState.jobId,
+        namespace: pageState.redirectNamespace,
+    });
+    window.location.replace(`/namespace-deleted/open?${query.toString()}`);
 }
 
 
 async function run(pageState) {
     if (pageState.initialStatus === 'succeeded') {
         updatePageForSuccess(pageState.deletedNamespace);
+        redirectToSelectedNamespace(pageState);
         return;
     }
     if (pageState.initialStatus === 'failed') {
@@ -137,13 +150,26 @@ async function run(pageState) {
 
     updatePageForPending(pageState.deletedNamespace);
     for (;;) {
-        const payload = await fetchDeleteJob(pageState.jobId);
+        const fetchResult = await fetchDeleteJob(pageState.jobId).then(
+            (value) => ({ ok: true, value }),
+            (error) => ({ ok: false, error }),
+        );
+        if (!fetchResult.ok) {
+            const error = fetchResult.error;
+            if (!(error instanceof TypeError)) {
+                throw error;
+            }
+            await sleep(DELETE_JOB_POLL_INTERVAL_MS);
+            continue;
+        }
+        const payload = fetchResult.value;
         if (payload.status === 'pending') {
             await sleep(DELETE_JOB_POLL_INTERVAL_MS);
             continue;
         }
         if (payload.status === 'succeeded') {
             updatePageForSuccess(pageState.deletedNamespace);
+            redirectToSelectedNamespace(pageState);
             return;
         }
         const errorText = typeof payload.error === 'string' && payload.error !== ''

@@ -20,10 +20,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         f"{API_PREFIX}/auth/status",
         f"{API_PREFIX}/auth/session",
         f"{API_PREFIX}/auth/namespaces/delete-jobs/",
+        f"{API_PREFIX}/auth/namespaces/rename-jobs/",
         f"{API_PREFIX}/mcp",
         "/mcp-client-v2",
         "/mcp-client",
         "/namespace-deleted",
+        "/namespace-renamed",
         "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
         "/locked",

@@ -30,6 +30,7 @@ from app.server_runtime import validate_namespace
 from app.services.diagnostics import recycle_direct_append_log_file
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import create_namespace_deletion_job
+from app.services.namespace_rename_jobs import create_namespace_rename_job
 from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
 from app.services.windows_process_control import is_process_running as is_windows_process_running
 from app.services.windows_process_control import stop_process as stop_windows_process
@@ -84,6 +85,15 @@ class NamespaceDeleteResult:
 
 
 @dataclass(frozen=True)
+class NamespaceRenameResult:
+    source_namespace: str
+    target_namespace: str
+    redirect_url: str
+    rename_job_id: str
+    message: str
+
+
+@dataclass(frozen=True)
 class NamespacePortsSaveResult:
     saved_profiles: list[NamespaceLaunchProfile]
     message: str
@@ -114,6 +124,11 @@ def _resolve_main_launch_command(*, environ: Mapping[str, str]) -> list[str]:
 
 def _resolve_delete_worker_command() -> list[str]:
     worker_path = Path(__file__).resolve().with_name("namespace_deletion_worker.py")
+    return [sys.executable, str(worker_path)]
+
+
+def _resolve_rename_worker_command() -> list[str]:
+    worker_path = Path(__file__).resolve().with_name("namespace_rename_worker.py")
     return [sys.executable, str(worker_path)]
 
 
@@ -315,7 +330,7 @@ def open_or_launch_all_namespaces(
         environ=environ,
         current_namespace=None,
     )
-    raw_namespaces = catalog.get("namespaces")
+    raw_namespaces = catalog["namespaces"]
     if not isinstance(raw_namespaces, list):
         raise RuntimeError("Namespace catalog missing namespaces")
 
@@ -415,11 +430,11 @@ def build_login_namespace_catalog(
         environ=environ,
         current_namespace=current_namespace,
     )
-    raw_current_namespace = catalog.get("current_namespace")
+    raw_current_namespace = catalog["current_namespace"]
     if not isinstance(raw_current_namespace, str) or raw_current_namespace == "":
         raise RuntimeError("Namespace catalog missing current_namespace")
 
-    raw_namespaces = catalog.get("namespaces")
+    raw_namespaces = catalog["namespaces"]
     if not isinstance(raw_namespaces, list):
         raise RuntimeError("Namespace catalog missing namespaces")
 
@@ -466,12 +481,76 @@ def open_login_namespace(
     )
 
 
+def rename_current_namespace(
+    *,
+    environ: Mapping[str, str],
+    current_namespace: str | None,
+    target_namespace: str,
+) -> NamespaceRenameResult:
+    if current_namespace is None:
+        raise RuntimeError("Current namespace is unavailable")
+    normalized_source = validate_namespace(namespace=current_namespace)
+    normalized_target = validate_namespace(namespace=target_namespace)
+    if normalized_target == normalized_source:
+        raise RuntimeError("New namespace name must differ from the current name")
+    target_directory = server_runtime.resolve_namespace_directory(namespace=normalized_target)
+    if target_directory.exists():
+        raise RuntimeError(f"Namespace {normalized_target} already exists")
+    source_directory = server_runtime.resolve_namespace_directory(namespace=normalized_source)
+    if not source_directory.is_dir():
+        raise RuntimeError(f"Namespace {normalized_source} is unavailable")
+
+    current_profile = _build_current_profile(
+        environ=environ,
+        current_namespace=normalized_source,
+    )
+    if current_profile is None:
+        raise RuntimeError("Current namespace launch profile is unavailable")
+    if current_profile.port is None:
+        raise RuntimeError("Current namespace launch profile is missing HTTP port")
+    if current_profile.mcp_port is None:
+        raise RuntimeError("Current namespace launch profile is missing MCP port")
+    renamed_profile = NamespaceLaunchProfile(
+        namespace=normalized_target,
+        port=current_profile.port,
+        https_port=current_profile.https_port,
+        mcp_port=current_profile.mcp_port,
+    )
+    current_url = _build_browser_url(environ=environ, port=current_profile.port)
+    if current_url is None:
+        raise RuntimeError("Current namespace URL is unavailable")
+    job_record = create_namespace_rename_job(
+        source_namespace=normalized_source,
+        target_namespace=normalized_target,
+    )
+    redirect_url = _build_namespace_renamed_page_url(
+        url=current_url,
+        job_id=job_record["job_id"],
+    )
+    _spawn_namespace_rename_worker(
+        environ=environ,
+        source_namespace=normalized_source,
+        target_namespace=normalized_target,
+        current_pid=os.getpid(),
+        job_id=job_record["job_id"],
+        profile=renamed_profile,
+    )
+    return NamespaceRenameResult(
+        source_namespace=normalized_source,
+        target_namespace=normalized_target,
+        redirect_url=redirect_url,
+        rename_job_id=job_record["job_id"],
+        message=f"Renaming namespace {normalized_source} to {normalized_target}.",
+    )
+
+
 def delete_namespace(
     *,
     environ: Mapping[str, str],
     current_namespace: str | None,
     target_namespace: str,
     confirmed_namespace: str,
+    redirect_namespace: str,
 ) -> NamespaceDeleteResult:
     normalized_target_namespace = validate_namespace(namespace=target_namespace)
     if current_namespace is None:
@@ -482,6 +561,7 @@ def delete_namespace(
             environ=environ,
             current_namespace=normalized_current_namespace,
             confirmed_namespace=confirmed_namespace,
+            redirect_namespace=redirect_namespace,
         )
     return _delete_inactive_namespace(
         target_namespace=normalized_target_namespace,
@@ -494,6 +574,7 @@ def delete_current_namespace(
     environ: Mapping[str, str],
     current_namespace: str | None,
     confirmed_namespace: str,
+    redirect_namespace: str,
 ) -> NamespaceDeleteResult:
     if current_namespace is None:
         raise RuntimeError("Current namespace is unavailable")
@@ -501,6 +582,7 @@ def delete_current_namespace(
         environ=environ,
         current_namespace=validate_namespace(namespace=current_namespace),
         confirmed_namespace=confirmed_namespace,
+        redirect_namespace=redirect_namespace,
     )
 
 
@@ -509,38 +591,82 @@ def _delete_active_namespace(
     environ: Mapping[str, str],
     current_namespace: str,
     confirmed_namespace: str,
+    redirect_namespace: str,
 ) -> NamespaceDeleteResult:
     normalized_namespace = validate_namespace(namespace=current_namespace)
-    if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
-        raise RuntimeError("Default namespace cannot be deleted")
     if confirmed_namespace.strip() != normalized_namespace:
         raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
+    normalized_redirect_namespace = validate_namespace(namespace=redirect_namespace)
+    catalog = build_namespace_catalog(
+        environ=environ,
+        current_namespace=normalized_namespace,
+    )
+    raw_entries = catalog["namespaces"]
+    if not isinstance(raw_entries, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+    remaining_namespaces: list[str] = []
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        entry_namespace = raw_entry["namespace"]
+        if not isinstance(entry_namespace, str) or entry_namespace == "":
+            raise RuntimeError("Namespace catalog entry missing namespace")
+        if entry_namespace != normalized_namespace:
+            remaining_namespaces.append(entry_namespace)
 
-    fallback_profile = _resolve_fallback_profile(
-        environ=environ,
-        current_namespace=normalized_namespace,
-        fallback_namespace=server_runtime._DEFAULT_NAMESPACE,
-    )
-    fallback_result = open_or_launch_namespace(
-        environ=environ,
-        current_namespace=normalized_namespace,
-        namespace=fallback_profile.namespace,
-        port=fallback_profile.port,
-        https_port=fallback_profile.https_port,
-        mcp_port=fallback_profile.mcp_port,
-    )
+    recreate_default = len(remaining_namespaces) == 0
+    if recreate_default:
+        if normalized_redirect_namespace != server_runtime._DEFAULT_NAMESPACE:
+            raise RuntimeError("Deleting the final namespace must redirect to a fresh default namespace")
+        current_profile = _build_current_profile(
+            environ=environ,
+            current_namespace=normalized_namespace,
+        )
+        if current_profile is None:
+            raise RuntimeError("Current namespace launch profile is unavailable")
+        replacement_profile = NamespaceLaunchProfile(
+            namespace=server_runtime._DEFAULT_NAMESPACE,
+            port=current_profile.port,
+            https_port=current_profile.https_port,
+            mcp_port=current_profile.mcp_port,
+        )
+        current_url = _build_browser_url(environ=environ, port=current_profile.port)
+        if current_url is None:
+            raise RuntimeError("Current namespace URL is unavailable")
+        redirect_base_url = current_url
+    else:
+        if normalized_redirect_namespace not in remaining_namespaces:
+            raise RuntimeError(
+                f"Redirect namespace must be one of: {', '.join(sorted(remaining_namespaces))}"
+            )
+        replacement_profile = _resolve_fallback_profile(
+            environ=environ,
+            current_namespace=normalized_namespace,
+            fallback_namespace=normalized_redirect_namespace,
+        )
+        fallback_result = open_or_launch_namespace(
+            environ=environ,
+            current_namespace=normalized_namespace,
+            namespace=replacement_profile.namespace,
+            port=replacement_profile.port,
+            https_port=replacement_profile.https_port,
+            mcp_port=replacement_profile.mcp_port,
+        )
+        redirect_base_url = fallback_result.url
     job_record = create_namespace_deletion_job(
         deleted_namespace=normalized_namespace,
-        redirect_namespace=fallback_profile.namespace,
+        redirect_namespace=replacement_profile.namespace,
     )
     redirect_url = _build_namespace_deleted_page_url(
-        url=fallback_result.url,
+        url=redirect_base_url,
         job_id=job_record["job_id"],
     )
     _spawn_namespace_deletion_worker(
         namespace=normalized_namespace,
         current_pid=os.getpid(),
         job_id=job_record["job_id"],
+        recreate_default=recreate_default,
+        replacement_profile=replacement_profile,
     )
     return NamespaceDeleteResult(
         deleted_namespace=normalized_namespace,
@@ -560,8 +686,6 @@ def _delete_inactive_namespace(
     confirmed_namespace: str,
 ) -> NamespaceDeleteResult:
     normalized_namespace = validate_namespace(namespace=target_namespace)
-    if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
-        raise RuntimeError("Default namespace cannot be deleted")
     if confirmed_namespace.strip() != normalized_namespace:
         raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
 
@@ -691,7 +815,7 @@ def _discover_namespaces(
     saved_profiles: Mapping[str, NamespaceLaunchProfile],
     current_namespace: str | None,
 ) -> list[str]:
-    discovered = {server_runtime._DEFAULT_NAMESPACE}
+    discovered: set[str] = set()
     for namespace in saved_profiles:
         discovered.add(namespace)
     if current_namespace is not None:
@@ -1468,7 +1592,7 @@ def _resolve_catalog_profile(
         environ=environ,
         current_namespace=current_namespace,
     )
-    namespaces = catalog.get("namespaces")
+    namespaces = catalog["namespaces"]
     if not isinstance(namespaces, list):
         raise RuntimeError("Namespace catalog missing namespaces")
     for entry in namespaces:
@@ -1481,7 +1605,14 @@ def _resolve_catalog_profile(
     raise RuntimeError(f"Namespace {normalized_namespace} is unavailable")
 
 
-def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id: str) -> None:
+def _spawn_namespace_deletion_worker(
+    *,
+    namespace: str,
+    current_pid: int,
+    job_id: str,
+    recreate_default: bool,
+    replacement_profile: NamespaceLaunchProfile,
+) -> None:
     normalized_namespace = validate_namespace(namespace=namespace)
     if not isinstance(current_pid, int):
         raise TypeError(f"current_pid must be an int, got {type(current_pid)}")
@@ -1489,6 +1620,12 @@ def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id
         raise ValueError(f"current_pid must be positive, got: {current_pid}")
     if not isinstance(job_id, str) or job_id == "":
         raise TypeError("job_id must be a non-empty string")
+    if not isinstance(recreate_default, bool):
+        raise TypeError("recreate_default must be a boolean")
+    if replacement_profile.port is None:
+        raise RuntimeError("Replacement namespace profile missing HTTP port")
+    if replacement_profile.mcp_port is None:
+        raise RuntimeError("Replacement namespace profile missing MCP port")
 
     command = _resolve_delete_worker_command()
     command.extend(
@@ -1499,8 +1636,18 @@ def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id
             normalized_namespace,
             "--job-id",
             job_id,
+            "--replacement-namespace",
+            replacement_profile.namespace,
+            "--replacement-port",
+            str(replacement_profile.port),
+            "--replacement-https-port",
+            "0" if replacement_profile.https_port is None else str(replacement_profile.https_port),
+            "--replacement-mcp-port",
+            str(replacement_profile.mcp_port),
         ]
     )
+    if recreate_default:
+        command.append("--recreate-default")
     logs_directory = resolve_runtime_logs_directory()
     logs_directory.mkdir(parents=True, exist_ok=True)
     log_path = logs_directory / f"namespace-delete-{normalized_namespace}.log"
@@ -1510,6 +1657,66 @@ def _spawn_namespace_deletion_worker(*, namespace: str, current_pid: int, job_id
         subprocess.Popen(
             command,
             env=dict(os.environ),
+            stdout=log_handle,
+            stderr=log_handle,
+            start_new_session=True,
+        )
+    finally:
+        log_handle.close()
+
+
+def _spawn_namespace_rename_worker(
+    *,
+    environ: Mapping[str, str],
+    source_namespace: str,
+    target_namespace: str,
+    current_pid: int,
+    job_id: str,
+    profile: NamespaceLaunchProfile,
+) -> None:
+    normalized_source = validate_namespace(namespace=source_namespace)
+    normalized_target = validate_namespace(namespace=target_namespace)
+    if not isinstance(current_pid, int):
+        raise TypeError(f"current_pid must be an int, got {type(current_pid)}")
+    if current_pid <= 0:
+        raise ValueError(f"current_pid must be positive, got: {current_pid}")
+    if not isinstance(job_id, str) or job_id == "":
+        raise TypeError("job_id must be a non-empty string")
+    if profile.namespace != normalized_target:
+        raise RuntimeError("Rename worker profile namespace must match the target namespace")
+    if profile.port is None:
+        raise RuntimeError("Renamed namespace profile missing HTTP port")
+    if profile.mcp_port is None:
+        raise RuntimeError("Renamed namespace profile missing MCP port")
+
+    command = _resolve_rename_worker_command()
+    command.extend(
+        [
+            "--pid",
+            str(current_pid),
+            "--source-namespace",
+            normalized_source,
+            "--target-namespace",
+            normalized_target,
+            "--job-id",
+            job_id,
+            "--port",
+            str(profile.port),
+            "--https-port",
+            "0" if profile.https_port is None else str(profile.https_port),
+            "--mcp-port",
+            str(profile.mcp_port),
+        ]
+    )
+    logs_directory = resolve_runtime_logs_directory()
+    logs_directory.mkdir(parents=True, exist_ok=True)
+    log_path = logs_directory / f"namespace-rename-{normalized_source}-to-{normalized_target}.log"
+    recycle_direct_append_log_file(path=log_path)
+    log_handle = open(log_path, "ab")
+    try:
+        subprocess.Popen(
+            command,
+            env=dict(environ),
             stdout=log_handle,
             stderr=log_handle,
             start_new_session=True,
@@ -1529,6 +1736,23 @@ def _build_namespace_deleted_page_url(*, url: str, job_id: str) -> str:
             parsed.scheme,
             parsed.netloc,
             "/namespace-deleted",
+            urlencode((("job", job_id),)),
+            "",
+        )
+    )
+
+
+def _build_namespace_renamed_page_url(*, url: str, job_id: str) -> str:
+    if not isinstance(url, str) or url == "":
+        raise TypeError("url must be a non-empty string")
+    if not isinstance(job_id, str) or job_id == "":
+        raise TypeError("job_id must be a non-empty string")
+    parsed = urlsplit(url)
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            "/namespace-renamed",
             urlencode((("job", job_id),)),
             "",
         )

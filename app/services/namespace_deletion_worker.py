@@ -10,11 +10,13 @@ import time
 import traceback
 
 import app.server_runtime as server_runtime
+from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import validate_namespace
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import mark_namespace_deletion_job_failed
 from app.services.namespace_deletion_jobs import mark_namespace_deletion_job_succeeded
+from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.windows_process_control import is_process_running as is_windows_process_running
 from app.services.windows_process_control import stop_process as stop_windows_process
 
@@ -30,6 +32,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--namespace", required=True)
     parser.add_argument("--job-id", required=True)
+    parser.add_argument("--replacement-namespace", required=True)
+    parser.add_argument("--replacement-port", type=int, required=True)
+    parser.add_argument("--replacement-https-port", type=int, required=True)
+    parser.add_argument("--replacement-mcp-port", type=int, required=True)
+    parser.add_argument("--recreate-default", action="store_true")
     return parser.parse_args()
 
 
@@ -123,16 +130,38 @@ def _delete_namespace_directory(*, namespace: str) -> None:
     shutil.rmtree(namespace_directory)
 
 
+def _recreate_default_namespace(*, args: argparse.Namespace) -> None:
+    replacement_namespace = validate_namespace(namespace=args.replacement_namespace)
+    if replacement_namespace != server_runtime._DEFAULT_NAMESPACE:
+        raise RuntimeError("Final namespace deletion must recreate default")
+    https_port = args.replacement_https_port
+    if https_port == 0:
+        https_port = None
+    save_namespace_launch_profile(
+        namespace=replacement_namespace,
+        port=args.replacement_port,
+        https_port=https_port,
+        mcp_port=args.replacement_mcp_port,
+    )
+    open_or_launch_namespace(
+        environ=os.environ,
+        current_namespace=None,
+        namespace=replacement_namespace,
+        port=args.replacement_port,
+        https_port=https_port,
+        mcp_port=args.replacement_mcp_port,
+    )
+
+
 def main() -> None:
     args = _parse_args()
     main_capture = CapturedExceptionContext(Exception)
     with main_capture:
         normalized_namespace = validate_namespace(namespace=args.namespace)
-        if normalized_namespace == server_runtime._DEFAULT_NAMESPACE:
-            raise RuntimeError("Default namespace cannot be deleted")
-
         _stop_process(pid=args.pid)
         _delete_namespace_directory(namespace=normalized_namespace)
+        if args.recreate_default:
+            _recreate_default_namespace(args=args)
         mark_namespace_deletion_job_succeeded(job_id=args.job_id)
     if main_capture.captured_exception is not None:
         mark_namespace_deletion_job_failed(

@@ -717,6 +717,32 @@ def _required_existing_target_launch_profile(*, target_namespace: str) -> Backup
     )
 
 
+def _resolve_same_name_restore_launch_profile(
+    *,
+    backup_path: Path,
+    target_namespace: str,
+    target_exists: bool,
+) -> BackupLaunchProfile:
+    if target_exists:
+        return _required_existing_target_launch_profile(
+            target_namespace=target_namespace,
+        )
+    restored_profile = read_backup_launch_profile(
+        backup_path,
+        expected_namespace=target_namespace,
+    )
+    suggested_profile = _suggest_import_launch_profile(
+        target_namespace=target_namespace,
+        restored_profile=restored_profile,
+    )
+    return BackupLaunchProfile(
+        namespace=target_namespace,
+        port=suggested_profile.port,
+        https_port=suggested_profile.https_port,
+        mcp_port=suggested_profile.mcp_port,
+    )
+
+
 def _backup_profile_from_request(
     *,
     namespace: str,
@@ -920,22 +946,22 @@ def restore_backup_preflight(
     target_exists = _restore_target_exists(target_namespace=target_namespace)
     suggested_profile = None
     port_conflicts: list[str] = []
-    if target_namespace != backup_namespace:
-        if target_exists:
-            target_profile = _required_existing_target_launch_profile(
-                target_namespace=target_namespace,
-            )
-            suggested_profile = _response_profile_from_backup_profile(profile=target_profile)
-            assert suggested_profile is not None
-        else:
+    if target_exists:
+        target_profile = _required_existing_target_launch_profile(
+            target_namespace=target_namespace,
+        )
+        suggested_profile = _response_profile_from_backup_profile(profile=target_profile)
+        assert suggested_profile is not None
+    else:
+        if restored_profile is not None:
             port_conflicts = _collect_import_profile_port_conflicts(
                 target_namespace=target_namespace,
                 launch_profile=restored_profile,
             )
-            suggested_profile = _suggest_import_launch_profile(
-                target_namespace=target_namespace,
-                restored_profile=restored_profile,
-            )
+        suggested_profile = _suggest_import_launch_profile(
+            target_namespace=target_namespace,
+            restored_profile=restored_profile,
+        )
 
     return BackupRestorePreflightResponse(
         backup_namespace=backup_namespace,
@@ -983,10 +1009,22 @@ def restore_backup(
     backup_path = folder_directory / folder_filename
     if not backup_path.exists():
         raise HTTPException(status_code=404, detail=f"Backup not found: {folder_filename}")
+    target_exists = _restore_target_exists(target_namespace=target_namespace)
+    launch_profile = _resolve_same_name_restore_launch_profile(
+        backup_path=backup_path,
+        target_namespace=target_namespace,
+        target_exists=target_exists,
+    )
     if target_namespace == ACTIVE_NAMESPACE:
         maintenance_service.enter_maintenance("Restoring backup")
         try:
             restore_backup_to_paths(backup_path, target_database_path)
+            save_namespace_launch_profile(
+                namespace=target_namespace,
+                port=launch_profile.port,
+                https_port=launch_profile.https_port,
+                mcp_port=launch_profile.mcp_port,
+            )
             _reset_runtime_state_after_restore()
         finally:
             maintenance_service.exit_maintenance()
@@ -995,6 +1033,12 @@ def restore_backup(
         open_namespace_suggested = False
     else:
         restore_backup_to_paths(backup_path, target_database_path)
+        save_namespace_launch_profile(
+            namespace=target_namespace,
+            port=launch_profile.port,
+            https_port=launch_profile.https_port,
+            mcp_port=launch_profile.mcp_port,
+        )
     return BackupRestoreResponse(
         backup_id=payload.backup_id,
         source=payload.source,

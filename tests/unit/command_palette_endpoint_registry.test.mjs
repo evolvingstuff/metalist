@@ -34,6 +34,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
             openSwitchNamespace: noop,
             openCreateNamespace: noop,
             openManageNamespacePorts: noop,
+            openRenameCurrentNamespace: noop,
             openDeleteCurrentNamespace: noop,
             prioritizeTagToFront: noop,
             prioritizeTagToBack: noop,
@@ -53,6 +54,7 @@ test('buildCommandPaletteEndpoints includes utility action endpoints', () => {
     assert.equal(endpointIds.has('form.switch_namespace'), true);
     assert.equal(endpointIds.has('form.create_namespace'), true);
     assert.equal(endpointIds.has('form.manage_namespace_ports'), true);
+    assert.equal(endpointIds.has('form.rename_current_namespace'), true);
     assert.equal(endpointIds.has('form.delete_current_namespace'), true);
     assert.equal(
         endpoints.find((endpoint) => endpoint.id === 'form.delete_current_namespace').label,

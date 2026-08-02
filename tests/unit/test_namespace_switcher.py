@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import sys
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,9 +20,90 @@ from app.services.namespace_switcher import delete_namespace
 from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.namespace_switcher import open_or_launch_all_namespaces
+from app.services.namespace_switcher import rename_current_namespace
 from app.services.namespace_switcher import save_namespace_port_profiles
 from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import _probe_namespace_status
+
+
+def test_rename_current_namespace_preserves_ports_and_starts_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(
+        namespace="default",
+        port=8000,
+        https_port=None,
+        mcp_port=8765,
+    )
+    worker_requests: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        namespace_switcher,
+        "create_namespace_rename_job",
+        lambda *, source_namespace, target_namespace: {
+            "job_id": "11111111-1111-1111-1111-111111111111",
+            "status": "pending",
+            "source_namespace": source_namespace,
+            "target_namespace": target_namespace,
+            "error": "",
+        },
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_spawn_namespace_rename_worker",
+        lambda **kwargs: worker_requests.append(kwargs),
+    )
+    monkeypatch.setattr(namespace_switcher.os, "getpid", lambda: 4321)
+
+    result = rename_current_namespace(
+        environ={},
+        current_namespace="default",
+        target_namespace="personal",
+    )
+
+    assert result.source_namespace == "default"
+    assert result.target_namespace == "personal"
+    assert result.rename_job_id == "11111111-1111-1111-1111-111111111111"
+    parsed_redirect = urlsplit(result.redirect_url)
+    assert parsed_redirect.netloc == "127.0.0.1:8000"
+    assert parsed_redirect.path == "/namespace-renamed"
+    assert parse_qs(parsed_redirect.query) == {
+        "job": ["11111111-1111-1111-1111-111111111111"]
+    }
+    assert worker_requests == [
+        {
+            "environ": {},
+            "source_namespace": "default",
+            "target_namespace": "personal",
+            "current_pid": 4321,
+            "job_id": "11111111-1111-1111-1111-111111111111",
+            "profile": NamespaceLaunchProfile(
+                namespace="personal",
+                port=8000,
+                https_port=None,
+                mcp_port=8765,
+            ),
+        }
+    ]
+
+
+def test_rename_current_namespace_rejects_existing_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(namespace="default", port=8000, https_port=None, mcp_port=8765)
+    save_namespace_launch_profile(namespace="personal", port=8001, https_port=None, mcp_port=8766)
+
+    with pytest.raises(RuntimeError, match="Namespace personal already exists"):
+        rename_current_namespace(
+            environ={},
+            current_namespace="default",
+            target_namespace="personal",
+        )
 
 
 def _disable_default_tls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -106,6 +188,21 @@ def test_build_namespace_catalog_includes_existing_database_without_saved_profil
         "https_port": None,
         "mcp_port": 8766,
     }
+
+
+def test_build_namespace_catalog_does_not_recreate_deleted_default_when_henry_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    _disable_default_tls(monkeypatch, tmp_path)
+    save_namespace_launch_profile(namespace="default", port=8000, https_port=None, mcp_port=8765)
+    save_namespace_launch_profile(namespace="henry", port=8001, https_port=None, mcp_port=8766)
+    shutil.rmtree(server_runtime.resolve_namespace_directory(namespace="default"))
+
+    catalog = build_namespace_catalog(environ={}, current_namespace=None)
+
+    assert [entry["namespace"] for entry in catalog["namespaces"]] == ["henry"]
 
 
 def test_build_login_namespace_catalog_returns_plain_namespace_names(
@@ -446,7 +543,7 @@ def test_open_or_launch_all_namespaces_rejects_missing_launch_profile(
     server_runtime.prepare_database_runtime_path(database_path=database_path)
     database_path.touch()
 
-    with pytest.raises(RuntimeError, match="Namespace default has no launch profile"):
+    with pytest.raises(RuntimeError, match="Namespace work has no launch profile"):
         open_or_launch_all_namespaces(environ={})
 
 
@@ -830,7 +927,7 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
         mcp_port=8766,
     )
     launched: list[tuple[str, str, int, int | None, int]] = []
-    cleanup_requests: list[tuple[str, int, str]] = []
+    cleanup_requests: list[tuple[str, int, str, bool, str]] = []
 
     def _fake_open_or_launch_namespace(*, environ, current_namespace, namespace, port, https_port, mcp_port):
         launched.append((current_namespace, namespace, port, https_port, mcp_port))
@@ -863,7 +960,9 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
     monkeypatch.setattr(
         namespace_switcher,
         "_spawn_namespace_deletion_worker",
-        lambda *, namespace, current_pid, job_id: cleanup_requests.append((namespace, current_pid, job_id)),
+        lambda *, namespace, current_pid, job_id, recreate_default, replacement_profile: cleanup_requests.append(
+            (namespace, current_pid, job_id, recreate_default, replacement_profile.namespace)
+        ),
     )
     monkeypatch.setattr(namespace_switcher.os, "getpid", lambda: 4321)
 
@@ -871,6 +970,7 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
         environ={},
         current_namespace="work",
         confirmed_namespace=" work ",
+        redirect_namespace="default",
     )
 
     assert result.deleted_namespace == "work"
@@ -883,16 +983,9 @@ def test_delete_current_namespace_launches_default_and_spawns_cleanup_worker(
     redirect_query = parse_qs(parsed_redirect.query)
     assert redirect_query == {"job": ["11111111-1111-1111-1111-111111111111"]}
     assert launched == [("work", "default", 8001, None, 8766)]
-    assert cleanup_requests == [("work", 4321, "11111111-1111-1111-1111-111111111111")]
-
-
-def test_delete_current_namespace_rejects_default_namespace() -> None:
-    with pytest.raises(RuntimeError, match="Default namespace cannot be deleted"):
-        delete_current_namespace(
-            environ={},
-            current_namespace="default",
-            confirmed_namespace="default",
-        )
+    assert cleanup_requests == [
+        ("work", 4321, "11111111-1111-1111-1111-111111111111", False, "default")
+    ]
 
 
 def test_delete_current_namespace_requires_confirmed_namespace_name() -> None:
@@ -901,7 +994,60 @@ def test_delete_current_namespace_requires_confirmed_namespace_name() -> None:
             environ={},
             current_namespace="work",
             confirmed_namespace="permanently delete",
+            redirect_namespace="default",
         )
+
+
+def test_delete_final_default_recreates_default_on_current_ports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_profile = NamespaceLaunchProfile(
+        namespace="default",
+        port=8002,
+        https_port=8445,
+        mcp_port=8767,
+    )
+    cleanup_requests: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        namespace_switcher,
+        "build_namespace_catalog",
+        lambda *, environ, current_namespace: {
+            "namespaces": [{"namespace": "default"}],
+        },
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_build_current_profile",
+        lambda *, environ, current_namespace: current_profile,
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "create_namespace_deletion_job",
+        lambda *, deleted_namespace, redirect_namespace: {
+            "job_id": "11111111-1111-1111-1111-111111111111",
+            "deleted_namespace": deleted_namespace,
+            "redirect_namespace": redirect_namespace,
+        },
+    )
+    monkeypatch.setattr(
+        namespace_switcher,
+        "_spawn_namespace_deletion_worker",
+        lambda **kwargs: cleanup_requests.append(kwargs),
+    )
+    monkeypatch.setattr(namespace_switcher.os, "getpid", lambda: 4321)
+
+    result = delete_current_namespace(
+        environ={},
+        current_namespace="default",
+        confirmed_namespace="default",
+        redirect_namespace="default",
+    )
+
+    assert result.redirect_url == (
+        "http://127.0.0.1:8002/namespace-deleted?job=11111111-1111-1111-1111-111111111111"
+    )
+    assert cleanup_requests[0]["recreate_default"] is True
+    assert cleanup_requests[0]["replacement_profile"] == current_profile
 
 
 def test_delete_namespace_removes_inactive_namespace_without_redirect(
@@ -935,6 +1081,7 @@ def test_delete_namespace_removes_inactive_namespace_without_redirect(
         current_namespace="test",
         target_namespace="cla",
         confirmed_namespace=" cla ",
+        redirect_namespace="test",
     )
 
     assert result.deleted_namespace == "cla"

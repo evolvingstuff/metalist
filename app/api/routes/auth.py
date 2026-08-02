@@ -47,8 +47,10 @@ from app.services.namespace_switcher import delete_current_namespace
 from app.services.namespace_switcher import delete_namespace
 from app.services.namespace_switcher import open_login_namespace
 from app.services.namespace_switcher import open_or_launch_namespace
+from app.services.namespace_switcher import rename_current_namespace
 from app.services.namespace_switcher import save_namespace_port_profiles
 from app.services.namespace_deletion_jobs import load_namespace_deletion_job
+from app.services.namespace_rename_jobs import load_namespace_rename_job
 from app.server_runtime import NamespaceLaunchProfile
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
@@ -590,6 +592,15 @@ def _require_string_field(payload: dict[str, object], field_name: str) -> str:
     return value
 
 
+def _require_string_field_allow_empty(payload: dict[str, object], field_name: str) -> str:
+    if field_name not in payload:
+        raise HTTPException(status_code=400, detail=f"{field_name} is required")
+    value = payload[field_name]
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a string")
+    return value
+
+
 def _require_int_field(payload: dict[str, object], field_name: str) -> int:
     if field_name not in payload:
         raise HTTPException(status_code=400, detail=f"{field_name} is required")
@@ -968,7 +979,8 @@ def save_namespace_ports(
 def _delete_namespace_from_body(*, body: dict[str, object], target_namespace: str) -> dict[str, object]:
     normalized_target_namespace = validate_namespace(namespace=target_namespace)
     confirmed_namespace = _require_string_field(body, "confirmed_namespace")
-    current_password = _require_string_field(body, "current_password")
+    current_password = _require_string_field_allow_empty(body, "current_password")
+    redirect_namespace = _require_string_field(body, "redirect_namespace")
 
     if _namespace_requires_password(namespace=normalized_target_namespace):
         _verify_namespace_password(
@@ -989,6 +1001,7 @@ def _delete_namespace_from_body(*, body: dict[str, object], target_namespace: st
             current_namespace=ACTIVE_NAMESPACE,
             target_namespace=normalized_target_namespace,
             confirmed_namespace=confirmed_namespace,
+            redirect_namespace=redirect_namespace,
         )
     if delete_capture.captured_exception is not None:
         exc = delete_capture.captured_exception
@@ -1019,11 +1032,33 @@ def namespace_delete_preflight(
     target_requires_password = False
     if target_exists:
         target_requires_password = _namespace_requires_password(namespace=target_namespace)
+    catalog = build_namespace_catalog(
+        environ=os.environ,
+        current_namespace=ACTIVE_NAMESPACE,
+    )
+    raw_namespaces = catalog["namespaces"]
+    if not isinstance(raw_namespaces, list):
+        raise RuntimeError("Namespace catalog missing namespaces")
+    redirect_namespaces: list[str] = []
+    for raw_entry in raw_namespaces:
+        if not isinstance(raw_entry, dict):
+            raise RuntimeError("Namespace catalog entry must be an object")
+        namespace = raw_entry["namespace"]
+        if not isinstance(namespace, str) or namespace == "":
+            raise RuntimeError("Namespace catalog entry missing namespace")
+        if namespace != target_namespace:
+            redirect_namespaces.append(namespace)
+    redirect_namespaces.sort()
+    recreates_default = target_namespace == ACTIVE_NAMESPACE and len(redirect_namespaces) == 0
+    if recreates_default:
+        redirect_namespaces.append("default")
     return {
         "target_namespace": target_namespace,
         "target_exists": target_exists,
         "target_requires_password": target_requires_password,
         "is_current_namespace": target_namespace == ACTIVE_NAMESPACE,
+        "redirect_namespaces": redirect_namespaces,
+        "recreates_default": recreates_default,
     }
 
 
@@ -1054,6 +1089,41 @@ def delete_active_namespace(
     )
 
 
+@router.post("/namespaces/rename-current")
+@transactional_route
+def rename_active_namespace(
+    payload: dict[str, object],
+    token: Annotated[str, Depends(_require_auth)],
+):
+    body = _require_body_object(payload)
+    target_namespace = _require_string_field(body, "target_namespace")
+    rename_capture = CapturedExceptionContext(
+        RuntimeError,
+        ValueError,
+        TypeError,
+        FileNotFoundError,
+    )
+    result = None
+    with rename_capture:
+        result = rename_current_namespace(
+            environ=os.environ,
+            current_namespace=ACTIVE_NAMESPACE,
+            target_namespace=target_namespace,
+        )
+    if rename_capture.captured_exception is not None:
+        exc = rename_capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise RuntimeError("Namespace rename did not return a result")
+    return {
+        "source_namespace": result.source_namespace,
+        "target_namespace": result.target_namespace,
+        "redirect_url": result.redirect_url,
+        "rename_job_id": result.rename_job_id,
+        "message": result.message,
+    }
+
+
 @router.get("/namespaces/delete-jobs/{job_id}")
 def namespace_delete_job_status(
     job_id: str,
@@ -1072,6 +1142,25 @@ def namespace_delete_job_status(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if job_record is None:
         raise HTTPException(status_code=404, detail=f"Namespace deletion job not found: {job_id}")
+    return job_record
+
+
+@router.get("/namespaces/rename-jobs/{job_id}")
+def namespace_rename_job_status(job_id: str):
+    job_record_capture = CapturedExceptionContext(
+        RuntimeError,
+        TypeError,
+        ValueError,
+        FileNotFoundError,
+    )
+    job_record: dict[str, object] | None = None
+    with job_record_capture:
+        job_record = load_namespace_rename_job(job_id=job_id)
+    if job_record_capture.captured_exception is not None:
+        exc = job_record_capture.captured_exception
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if job_record is None:
+        raise HTTPException(status_code=404, detail=f"Namespace rename job not found: {job_id}")
     return job_record
 
 

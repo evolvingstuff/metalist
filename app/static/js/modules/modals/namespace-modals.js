@@ -10,6 +10,7 @@ import {
 import { buildSessionHeaders } from '../session-auth.js';
 import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
 import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js';
+import { buildNamespaceRenamePayload } from './namespace-rename-validation.js';
 
 
 const NAMESPACE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -184,6 +185,7 @@ class NamespaceModalBase extends BaseModal {
             list: CONFIG.API.AUTH.NAMESPACES.LIST,
             open: CONFIG.API.AUTH.NAMESPACES.OPEN,
             savePorts: CONFIG.API.AUTH.NAMESPACES.SAVE_PORTS,
+            renameCurrent: CONFIG.API.AUTH.NAMESPACES.RENAME_CURRENT,
         };
     }
 
@@ -686,6 +688,169 @@ export class CreateNamespaceModal extends NamespaceModalBase {
             this.updateModalState({
                 submitting: false,
                 error: message,
+                status: '',
+            });
+            this.renderModalContent();
+        }
+    }
+}
+
+
+export class RenameNamespaceModal extends NamespaceModalBase {
+    constructor() {
+        super('renameNamespaceModal', 'rename-namespace-modal');
+    }
+
+    getInitialModalState() {
+        return {
+            loading: true,
+            submitting: false,
+            catalog: null,
+            targetNamespace: '',
+            error: '',
+            status: 'Loading namespace...',
+        };
+    }
+
+    async onOpen() {
+        await this.loadCatalog();
+    }
+
+    renderModalContent() {
+        const state = this.getModalState();
+        const catalog = state.catalog;
+        if (Boolean(state.loading) || !catalog) {
+            this._renderLoading('Rename Current Namespace', 'rename-namespace-cancel-loading-btn');
+            return;
+        }
+        assertCatalogShape(catalog);
+        const currentNamespace = catalog.current_namespace;
+        if (typeof currentNamespace !== 'string' || currentNamespace.length === 0) {
+            throw new Error('Namespace catalog missing current_namespace');
+        }
+        const submitting = Boolean(state.submitting);
+        const targetNamespace = typeof state.targetNamespace === 'string' ? state.targetNamespace : '';
+        const error = typeof state.error === 'string' ? state.error : '';
+        const status = typeof state.status === 'string' ? state.status : '';
+        this._renderIntoModal(`
+            <div class="modal-content namespace-modal-content create-namespace-modal-content">
+                <h3>Rename Current Namespace</h3>
+                <p>Rename <strong>${escapeHtml(currentNamespace)}</strong>. Its database, files, backups, and saved ports move together.</p>
+                <p>MetaList will restart this namespace on the same ports and ask you to log in again.</p>
+                <div class="form-group">
+                    <label for="rename-namespace-name">New Namespace Name</label>
+                    <input id="rename-namespace-name" type="text" value="${escapeHtml(targetNamespace)}" placeholder="personal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" ${submitting ? 'disabled' : ''}>
+                </div>
+                <div class="form-actions namespace-modal-actions">
+                    <button type="button" class="primary-btn" id="rename-namespace-submit-btn" ${submitting ? 'disabled' : ''}>Rename and Restart</button>
+                    <button type="button" class="secondary-btn" id="rename-namespace-cancel-btn" ${submitting ? 'disabled' : ''}>Cancel</button>
+                </div>
+                <p class="namespace-modal-status">${escapeHtml(status)}</p>
+                <p class="error-message" ${error.length === 0 ? 'style="display:none;"' : ''}>${escapeHtml(error)}</p>
+            </div>
+        `);
+        this.setupFormEventListeners();
+    }
+
+    setupFormEventListeners() {
+        const input = document.getElementById('rename-namespace-name');
+        if (input instanceof HTMLInputElement) {
+            input.oninput = () => this.updateModalState({
+                targetNamespace: input.value,
+                error: '',
+                status: '',
+            });
+        }
+        const submitButton = document.getElementById('rename-namespace-submit-btn');
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.onclick = async () => this.handleSubmit();
+        }
+        this._wireCancelButton('rename-namespace-cancel-btn');
+    }
+
+    async loadCatalog() {
+        this.updateModalState({
+            loading: true,
+            submitting: false,
+            error: '',
+            status: 'Loading namespace...',
+        });
+        this.renderModalContent();
+        const result = await settleResult(async () => {
+            const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            assertCatalogShape(catalog);
+            this.updateModalState({
+                loading: false,
+                catalog,
+                targetNamespace: '',
+                error: '',
+                status: '',
+            });
+        });
+        if (!result.ok) {
+            const error = result.error;
+            this.updateModalState({
+                loading: false,
+                error: error instanceof Error ? error.message : 'Failed to load namespace',
+                status: '',
+            });
+        }
+        this.renderModalContent();
+    }
+
+    _validateSubmission() {
+        const state = this.getModalState();
+        const catalog = state.catalog;
+        assertCatalogShape(catalog);
+        const currentNamespace = catalog.current_namespace;
+        if (typeof currentNamespace !== 'string' || currentNamespace.length === 0) {
+            throw new Error('Namespace catalog missing current_namespace');
+        }
+        const existingNamespaces = catalog.namespaces.map((entry) => {
+            if (!entry || typeof entry !== 'object' || typeof entry.namespace !== 'string') {
+                throw new Error('Namespace catalog entry missing namespace');
+            }
+            return entry.namespace;
+        });
+        return buildNamespaceRenamePayload({
+            currentNamespace,
+            targetNamespace: state.targetNamespace,
+            existingNamespaces,
+        });
+    }
+
+    async handleSubmit() {
+        const payloadResult = await settleResult(() => this._validateSubmission());
+        if (!payloadResult.ok) {
+            const error = payloadResult.error;
+            this.updateModalState({
+                error: error instanceof Error ? error.message : 'Invalid namespace name',
+                status: '',
+            });
+            this.renderModalContent();
+            return;
+        }
+        this.updateModalState({ submitting: true, error: '', status: 'Preparing namespace rename...' });
+        this.renderModalContent();
+        const result = await settleResult(async () => {
+            const response = await this._authRequest(
+                this.apiEndpoints.renameCurrent,
+                'POST',
+                payloadResult.value,
+            );
+            if (!response || typeof response !== 'object') {
+                throw new Error('Namespace rename response missing body');
+            }
+            if (typeof response.redirect_url !== 'string' || response.redirect_url.length === 0) {
+                throw new Error('Namespace rename response missing redirect_url');
+            }
+            window.location.assign(response.redirect_url);
+        });
+        if (!result.ok) {
+            const error = result.error;
+            this.updateModalState({
+                submitting: false,
+                error: error instanceof Error ? error.message : 'Failed to rename namespace',
                 status: '',
             });
             this.renderModalContent();
