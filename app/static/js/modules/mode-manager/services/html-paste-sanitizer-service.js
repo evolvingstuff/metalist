@@ -3,6 +3,10 @@ import {
     estimateDataUrlPayloadBytes,
     recompressDataImageUrlForEmbedding,
 } from './embedded-image-service.js';
+import {
+    hydrateRemoteImageProxies,
+    prepareRemoteImageElementsForEditing,
+} from './remote-image-proxy-service.js';
 
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
@@ -1722,6 +1726,7 @@ export async function sanitizeExternalClipboardHtml(rawHtml) {
     preserveLiteralTextLineBreaks(parsed.body);
     preserveFlattenedTimestampLinkRuns(parsed.body);
     await recompressEmbeddedDataImageElements(parsed.body);
+    await prepareRemoteImageElementsForEditing(parsed.body);
     return parsed.body.innerHTML;
 }
 
@@ -1820,7 +1825,11 @@ export async function sanitizeAndInsertExternalPaste(event, selectionRange) {
         const sanitizedHtml = await sanitizeExternalClipboardHtml(rawHtml);
         if (sanitizedHtml.length > 0) {
             restoreSelectionRange(selectionRange);
-            return insertHtmlAtSelection(sanitizedHtml);
+            const inserted = insertHtmlAtSelection(sanitizedHtml);
+            if (inserted) {
+                hydrateRemoteImageProxies(document);
+            }
+            return inserted;
         }
     }
 

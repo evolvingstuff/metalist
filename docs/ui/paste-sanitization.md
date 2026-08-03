@@ -37,6 +37,7 @@
 13. Recompress any pasted external HTML `data:image/...` sources through the same embedded-image footprint controls used for direct image paste/drop.
 14. Insert sanitized HTML into the resolved destination.
 15. If no usable HTML remains, fallback to `text/plain`.
+16. Before sanitized HTML enters the editor, remote HTTP(S) `<img>` sources are registered with the authenticated in-memory proxy and replaced with opaque same-origin proxy references. The editor displays the fetched image through a temporary `blob:` URL, while storage sanitization restores the original remote URL in the encrypted note content.
 
 ## Security Policy
 
@@ -78,6 +79,8 @@
 - With no selected note, clipboard image-pixel paste creates and immediately saves a new top note.
 - Named image files from paste/drop can instead be preserved as file attachments via the image-file choice prompt.
 - Pasted external HTML that already contains inline `data:image/...` sources is recompressed before insertion, so copied rich content does not bypass the embedded-image size controls.
+- Pasted HTML containing remote HTTP(S) image references keeps the original URL in encrypted note content; MetaList never copies those image bytes into databases or backups.
+- Browser CSP prevents direct remote image requests during paste/editing. During paste and active editing, MetaList registers remote sources before displaying them; storage serialization restores the original URL instead of persisting temporary proxy or `blob:` references. In view mode, MetaList removes remote `src` values from rendered output and emits only opaque same-origin proxy paths. Both editor and view hydration fetch those paths with the tab-bound session header and display in-memory `blob:` URLs. The proxy revalidates public network targets across redirects, caps transfers at 10 MiB and decoded dimensions at 16 megapixels, validates supported image formats, returns `no-store` responses, and persists no image bytes.
 - Embedded images remain stored with note content, so they are portable across machines with the DB.
 - If the user chooses `Save as File` in the image-file prompt, the original file is uploaded without inline recompression and the editor receives the file UUID token instead.
 - In view mode, embedded image-file references render as an authenticated image preview with a `download image` control beneath it instead of the generic file card used for non-image attachments.

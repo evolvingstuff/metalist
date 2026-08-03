@@ -2,6 +2,10 @@ import { CONFIG } from '../../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import { updateCollapseAffordancesForNotes } from './collapse-affordance-service.js';
 import { hydrateImageFilePreviews } from './file-image-preview-service.js';
+import {
+    hydrateRemoteImageProxies,
+    prepareRemoteImageElementsForEditing,
+} from './remote-image-proxy-service.js';
 import { ensureAnchorsOpenInNewTabs } from './markdown-render-service.js';
 import {
     animateNoteCollapseChanges,
@@ -15,6 +19,15 @@ import { setNoteSearchRedactionState } from './search-redaction-reveal-service.j
 
 const CONTENT_ELEMENT_CACHE = new WeakMap();
 const CHILD_CONTAINER_CACHE = new WeakMap();
+
+function hydrateRemoteImagesForCurrentMode(notesContainer) {
+    hydrateRemoteImageProxies(notesContainer);
+    void prepareRemoteImageElementsForEditing(notesContainer).then((prepared) => {
+        if (prepared) {
+            hydrateRemoteImageProxies(notesContainer);
+        }
+    });
+}
 const COLLAPSE_TOGGLE_CACHE = new WeakMap();
 const LOCK_ICON_CACHE = new WeakMap();
 const TAGS_ELEMENT_CACHE = new WeakMap();
@@ -324,6 +337,7 @@ function applyServerDiffOps(payload, animateNoteChanges) {
     }
 
     hydrateImageFilePreviews(notesContainer);
+    hydrateRemoteImagesForCurrentMode(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
     animateNoteCollapseChanges(collapseAnimationCaptures);
 
@@ -908,6 +922,7 @@ export function applyDifferentialView(payload, options) {
     }
 
     hydrateImageFilePreviews(notesContainer);
+    hydrateRemoteImagesForCurrentMode(notesContainer);
     ensureAnchorsOpenInNewTabs(notesContainer);
     updateCollapseAffordancesForNotes(affordanceDirtyElements);
     animateNoteCollapseChanges(collapseAnimationCaptures);

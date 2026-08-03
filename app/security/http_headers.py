@@ -15,7 +15,7 @@ def build_content_security_policy(*, nonce: str) -> str:
         "default-src 'self'",
         f"script-src 'self' 'nonce-{nonce}'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https: http:",
+        "img-src 'self' data: blob:",
         "media-src 'self' data: blob:",
         "font-src 'self' data:",
         "connect-src 'self' data: blob: https: http:",

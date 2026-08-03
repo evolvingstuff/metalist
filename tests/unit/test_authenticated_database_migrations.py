@@ -73,7 +73,7 @@ def test_authenticated_migration_backs_up_before_rewriting(
     result = auth.run_authenticated_database_migrations(dek=b"d" * 32)
 
     assert backup_observations == ['{"pref.theme":"dark"}']
-    assert result.applied_versions == (CURRENT_DATABASE_VERSION,)
+    assert result.applied_versions == (1, 2)
     assert result.rewritten_payload_count == 2
     assert read_database_version(connection) == CURRENT_DATABASE_VERSION
     stored_on_migration_connection = connection.execute(

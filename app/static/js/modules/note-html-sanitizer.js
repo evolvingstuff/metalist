@@ -2,6 +2,7 @@ import {
     sanitizeStyleAttributeValue,
     sanitizeUrlAttributeValue,
 } from './mode-manager/services/html-paste-sanitizer-service.js';
+import { restoreRemoteImageElementsForStorage } from './mode-manager/services/remote-image-proxy-service.js';
 
 const POLICY_URL = '/static/note-html-policy.json';
 const INTEGER_ATTRIBUTE_PATTERN = /^-?\d+$/;
@@ -178,5 +179,15 @@ export function sanitizeNoteHtmlForStorage(content) {
     if (sanitizeWithPolicy === null) {
         throw new Error('Note HTML sanitizer has not been initialized');
     }
-    return sanitizeWithPolicy(content);
+    let storageContent = content;
+    if (content.includes('data-remote-image-source-url')) {
+        if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
+            throw new Error('Document is required to restore remote image sources for storage');
+        }
+        const container = document.createElement('div');
+        container.innerHTML = content;
+        restoreRemoteImageElementsForStorage(container);
+        storageContent = container.innerHTML;
+    }
+    return sanitizeWithPolicy(storageContent);
 }

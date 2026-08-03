@@ -9,6 +9,10 @@ from app.services.content_formatting import find_consumed_content_wrapper_keys
 from app.services.content_formatting import find_global_credential_tag
 from app.services.content_formatting import format_note_content_for_view
 from app.services.inline_image_occurrences import annotate_inline_image_occurrences
+from app.services.remote_image_proxy import (
+    remote_image_proxy_registry,
+    rewrite_remote_image_sources_for_proxy,
+)
 from app.utils.text_utils import strip_html
 
 
@@ -174,10 +178,16 @@ def render_note_content_with_embeds(
         static_export=static_export,
         redact_passwords=redact_passwords,
     )
-    return format_note_content_for_view(
+    rendered_content = format_note_content_for_view(
         content_html=content_with_embeds,
         tags=tags,
         redact_passwords=redact_passwords,
+    )
+    if static_export:
+        return rendered_content
+    return rewrite_remote_image_sources_for_proxy(
+        content_html=rendered_content,
+        registry=remote_image_proxy_registry,
     )
 
 

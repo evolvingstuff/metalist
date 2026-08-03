@@ -240,12 +240,16 @@ recording decrypted user data:
 ### Application, Database, and Vault Versions
 
 - Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.11`.
-- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `1`.
+- Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `2`.
 - Vault format: `VAULT_VERSION` remains an independent crypto compatibility number; current version is `3`.
 
 Passwordless namespaces run pending migrations during startup. Encrypted namespaces remain usable for password verification at their old database version, then create a backup and run all intermediate migrations after the password unwraps the DEK. Migration functions are ordered, transactional, idempotent, and refuse databases newer than the running application.
 
 Database migration `0 → 1` adds ciphertext metadata for client preferences, command-palette usage, and tag-prefix settings. Existing non-empty payloads are encrypted during the next successful namespace login. Password creation/removal also rewrites client state in the same direction as the rest of the namespace data.
+
+Database migration `1 → 2` adds `namespace_content_migrations`, a namespace-local ledger for resumable content transformations. The ledger stores migration identity, status, timestamps, and aggregate counts only; it never stores note text or remote URLs.
+
+No remote-image content migration is active. Remote HTTP(S) image URLs remain encrypted note content and image bytes are never added to namespace databases or backups. Browser CSP restricts image loads to same-origin, `data:`, and `blob:` sources, so a remote `<img>` inserted during paste or editing cannot contact its host directly. Before pasted HTML enters the editor, MetaList registers remote image URLs with the authenticated in-memory proxy, replaces their load-bearing `src` with opaque process-local `/api2/remote-images/{token}` references, and displays the response through an in-memory `blob:` URL. Storage sanitization restores the original remote URL in the encrypted note instead of persisting either temporary reference. View rendering likewise removes remote `src` values and exposes only opaque proxy paths. The authenticated proxy resolves tokens from memory, validates public DNS targets, pins connections, repeats validation after redirects, strips ambient browser credentials/referrers, caps transfers at 10 MiB and decoded dimensions at 16 megapixels, and verifies an explicit image-format allowlist with Pillow. Proxy mappings and downloaded bytes are not persisted, responses use `Cache-Control: no-store`, in-page object URLs are revoked on unload, and mappings are purged when an encrypted namespace locks.
 
 ### Encrypted Namespace Storage Audit
 

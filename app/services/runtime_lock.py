@@ -15,6 +15,7 @@ from app.services.link_titles import link_title_store
 from app.services.note_store import store as note_store
 from app.services.ontology_rules_store import lock_ontology_rules_store
 from app.services.reminders import reminder_store
+from app.services.remote_image_proxy import remote_image_proxy_registry
 from app.services.search_history import search_history_store
 from app.services.sound_storage import sound_store
 from app.services.sync import reset_state as reset_sync_state
@@ -48,6 +49,7 @@ def purge_decrypted_runtime_state() -> bool:
     tab_state_store.reset()
     link_title_store.reset()
     reminder_store.reset()
+    remote_image_proxy_registry.reset()
     search_history_store.reset()
     sound_store.reset()
     reset_sync_state()

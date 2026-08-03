@@ -667,6 +667,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         imageContext,
         hasSelectedText,
         hasNoteClipboard,
+        canResizeImage: !ModeContext.isEditing,
         canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canAddNoteAtTop: !ModeContext.isEditing,

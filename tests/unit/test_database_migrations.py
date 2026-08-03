@@ -77,7 +77,7 @@ def test_plaintext_namespace_advances_through_migrations_without_rewriting(tmp_p
 
     assert result.initial_version == 0
     assert result.final_version == CURRENT_DATABASE_VERSION
-    assert result.applied_versions == (1,)
+    assert result.applied_versions == (1, 2)
     assert result.rewritten_payload_count == 0
     assert read_database_version(connection) == CURRENT_DATABASE_VERSION
     row = connection.execute(
@@ -161,6 +161,52 @@ def test_migrations_are_idempotent_after_version_advances(tmp_path: Path) -> Non
 
     assert second_result.applied_versions == ()
     assert second_result.rewritten_payload_count == 0
+    connection.close()
+
+
+def test_database_version_two_adds_namespace_content_migration_ledger(
+    tmp_path: Path,
+) -> None:
+    connection = _connection(tmp_path / "content-migrations.db")
+    _insert_settings(
+        connection,
+        encryption_enabled=False,
+        preferences_json="{}",
+        usage_json="{}",
+        tag_prefix_json="{}",
+    )
+    initialized_columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(namespace_content_migrations)"
+        ).fetchall()
+    }
+    assert "migration_id" in initialized_columns
+
+    result = run_database_migrations(
+        connection=connection,
+        encryption_enabled=False,
+        encryption_service=None,
+    )
+
+    assert CURRENT_DATABASE_VERSION == 2
+    assert result.applied_versions == (1, 2)
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(namespace_content_migrations)"
+        ).fetchall()
+    }
+    assert columns == {
+        "migration_id",
+        "status",
+        "converted_count",
+        "unresolved_count",
+        "last_attempt_at",
+        "completed_at",
+        "created_at",
+        "updated_at",
+    }
     connection.close()
 
 

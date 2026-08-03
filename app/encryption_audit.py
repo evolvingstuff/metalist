@@ -206,7 +206,7 @@ class _AuditState:
         )
 
 
-_MAIN_SCHEMA = {
+_MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS = {
     "notes": frozenset(
         {
             "id", "content", "tags", "is_collapsed", "encryption_nonce",
@@ -266,6 +266,16 @@ _MAIN_SCHEMA = {
     ),
     "namespace_launch_profile": frozenset(
         {"namespace", "port", "https_port", "mcp_port", "created_at", "updated_at"}
+    ),
+}
+
+_MAIN_SCHEMA = {
+    **_MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS,
+    "namespace_content_migrations": frozenset(
+        {
+            "migration_id", "status", "converted_count", "unresolved_count",
+            "last_attempt_at", "completed_at", "created_at", "updated_at",
+        }
     ),
 }
 
@@ -345,6 +355,7 @@ _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = {
             ("app_settings", "tag_prefix_settings_json"),
         }
     ),
+    1: frozenset(),
 }
 
 
@@ -730,6 +741,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
     try:
         is_encrypted = _encryption_enabled(main_connection)
         database_version = _database_version(main_connection)
+        main_table_names = _table_names(main_connection)
     finally:
         main_connection.close()
     if not is_encrypted:
@@ -740,9 +752,15 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
             checked_payload_count=0,
             findings=(),
         )
+    expected_main_schema = _MAIN_SCHEMA_BEFORE_CONTENT_MIGRATIONS
+    if (
+        database_version >= 2
+        or "namespace_content_migrations" in main_table_names
+    ):
+        expected_main_schema = _MAIN_SCHEMA
     _audit_database(
         database_path=database_path,
-        expected_schema=_MAIN_SCHEMA,
+        expected_schema=expected_main_schema,
         payload_specs=_MAIN_PAYLOADS,
         state=state,
         is_main_database=True,

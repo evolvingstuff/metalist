@@ -23,9 +23,11 @@ def test_content_security_policy_allows_only_nonce_or_self_scripts() -> None:
     assert "base-uri 'none'" in policy
 
 
-def test_content_security_policy_allows_remote_image_blob_fetches() -> None:
+def test_content_security_policy_blocks_direct_remote_images() -> None:
     policy = build_content_security_policy(nonce=NONCE)
 
+    assert "img-src 'self' data: blob:" in policy
+    assert "img-src 'self' data: blob: https: http:" not in policy
     assert "connect-src 'self' data: blob: https: http:" in policy
 
 

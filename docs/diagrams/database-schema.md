@@ -1,6 +1,6 @@
 # Database Schema
 
-SQLite database structure with two tables: AppSettings (singleton) and DBNote (hierarchical linked list).
+Core SQLite structures include AppSettings (singleton), DBNote (hierarchical linked list), and a namespace-local content-migration ledger. Additional feature tables are documented with their owning services.
 
 ```mermaid
 erDiagram
@@ -36,6 +36,17 @@ erDiagram
         string parent_id FK "Parent note (self-ref)"
         string prev_id FK "Previous sibling (self-ref)"
         string next_id FK "Next sibling (self-ref)"
+        datetime created_at
+        datetime updated_at
+    }
+
+    NamespaceContentMigration {
+        string migration_id PK "Named content migration identity"
+        string status "pending, running, complete, or error"
+        int converted_count "Atomically recorded replacements"
+        int unresolved_count "Remote references still present"
+        datetime last_attempt_at
+        datetime completed_at "NULL until complete"
         datetime created_at
         datetime updated_at
     }

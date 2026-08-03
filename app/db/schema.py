@@ -12,6 +12,7 @@ LINK_TITLES_TABLE = "link_titles"
 REMINDERS_TABLE = "reminders"
 SEARCH_HISTORY_TABLE = "search_interaction_history"
 NAMESPACE_LAUNCH_PROFILE_TABLE = "namespace_launch_profile"
+NAMESPACE_CONTENT_MIGRATIONS_TABLE = "namespace_content_migrations"
 
 _CREATE_NOTES_TABLE = f"""
 CREATE TABLE IF NOT EXISTS {NOTES_TABLE} (
@@ -167,6 +168,28 @@ CREATE TABLE IF NOT EXISTS {NAMESPACE_LAUNCH_PROFILE_TABLE} (
 );
 """
 
+_CREATE_NAMESPACE_CONTENT_MIGRATIONS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {NAMESPACE_CONTENT_MIGRATIONS_TABLE} (
+    migration_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    converted_count INTEGER NOT NULL,
+    unresolved_count INTEGER NOT NULL,
+    last_attempt_at TEXT NOT NULL,
+    completed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (status IN ('pending', 'running', 'complete', 'error')),
+    CHECK (converted_count >= 0),
+    CHECK (unresolved_count >= 0)
+);
+"""
+
+
+def create_namespace_content_migrations_table(connection: Connection) -> None:
+    """Create the v2 content-migration ledger inside the active namespace DB."""
+    connection.execute(_CREATE_NAMESPACE_CONTENT_MIGRATIONS_TABLE)
+
+
 def _ensure_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
     existing = {
         row[1]
@@ -191,6 +214,7 @@ def initialize_schema(connection: Connection) -> None:
     connection.execute(_CREATE_REMINDERS_TABLE)
     connection.execute(_CREATE_SEARCH_HISTORY_TABLE)
     connection.execute(_CREATE_NAMESPACE_LAUNCH_PROFILE_TABLE)
+    connection.execute(_CREATE_NAMESPACE_CONTENT_MIGRATIONS_TABLE)
     _ensure_columns(
         connection,
         NOTES_TABLE,

@@ -105,6 +105,10 @@ function buildNoteContextItems(context, handlers) {
     const items = [];
     const imageContext = context.imageContext;
     if (imageContext !== null && typeof imageContext === 'object') {
+        const canResizeImage = context.canResizeImage;
+        if (typeof canResizeImage !== 'boolean') {
+            throw new Error('Image note context missing canResizeImage boolean');
+        }
         if (typeof onCopyImage !== 'function') {
             throw new Error('Image note context missing onCopyImage handler');
         }
@@ -117,46 +121,49 @@ function buildNoteContextItems(context, handlers) {
         if (typeof onOpenImageInNewTab !== 'function') {
             throw new Error('Image note context missing onOpenImageInNewTab handler');
         }
-        if (typeof onMakeImageBigger !== 'function') {
-            throw new Error('Image note context missing onMakeImageBigger handler');
-        }
-        if (typeof onMakeImageSmaller !== 'function') {
-            throw new Error('Image note context missing onMakeImageSmaller handler');
-        }
-        if (typeof onResetImageSize !== 'function') {
-            throw new Error('Image note context missing onResetImageSize handler');
-        }
-
-        items.push(
-            {
+        if (canResizeImage) {
+            if (typeof onMakeImageBigger !== 'function') {
+                throw new Error('Image note context missing onMakeImageBigger handler');
+            }
+            if (typeof onMakeImageSmaller !== 'function') {
+                throw new Error('Image note context missing onMakeImageSmaller handler');
+            }
+            if (typeof onResetImageSize !== 'function') {
+                throw new Error('Image note context missing onResetImageSize handler');
+            }
+            items.push({
                 id: 'make-image-bigger',
                 label: 'Make Bigger',
                 icon: 'zoom_in',
                 enabled: true,
                 onSelect: () => onMakeImageBigger(imageContext),
-            },
-            {
+            }, {
                 id: 'make-image-smaller',
                 label: 'Make Smaller',
                 icon: 'zoom_out',
                 enabled: true,
                 onSelect: () => onMakeImageSmaller(imageContext),
-            },
-            {
+            }, {
                 id: 'reset-image-size',
                 label: 'Reset Size',
                 icon: 'restart_alt',
                 enabled: true,
                 onSelect: () => onResetImageSize(imageContext),
-            },
-            {
-                id: 'copy-image',
-                label: 'Copy Image',
-                icon: 'image',
-                enabled: true,
-                separated: true,
-                onSelect: () => onCopyImage(imageContext),
-            },
+            });
+        }
+
+        const copyImageItem = {
+            id: 'copy-image',
+            label: 'Copy Image',
+            icon: 'image',
+            enabled: true,
+            onSelect: () => onCopyImage(imageContext),
+        };
+        if (canResizeImage) {
+            copyImageItem.separated = true;
+        }
+        items.push(
+            copyImageItem,
             {
                 id: 'save-image',
                 label: 'Save Image',

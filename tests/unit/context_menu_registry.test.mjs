@@ -77,7 +77,7 @@ test('buildContextMenuItems prepends image actions for note image context', () =
         filename: null,
     };
     const items = buildContextMenuItems(
-        { kind: 'note', noteId: 'note-123', imageContext },
+        { kind: 'note', noteId: 'note-123', imageContext, canResizeImage: true },
         {
             ...buildNoteHandlers(calls),
             onCopyImage: (context) => calls.push(['copyImage', context]),
@@ -134,6 +134,40 @@ test('buildContextMenuItems prepends image actions for note image context', () =
         ['zoomImage', imageContext],
         ['openImage', imageContext],
     ]);
+});
+
+test('buildContextMenuItems hides image sizing actions while editing', () => {
+    const calls = [];
+    const imageContext = {
+        sourceKind: 'inline',
+        fileId: null,
+        hostNoteId: 'note-123',
+        occurrenceIndex: 0,
+        src: 'data:image/png;base64,AAAA',
+        alt: 'Diagram',
+        filename: null,
+    };
+    const items = buildContextMenuItems(
+        { kind: 'note', noteId: 'note-123', imageContext, canResizeImage: false },
+        {
+            ...buildNoteHandlers(calls),
+            onCopyImage: (context) => calls.push(['copyImage', context]),
+            onSaveImage: (context) => calls.push(['saveImage', context]),
+            onZoomImage: (context) => calls.push(['zoomImage', context]),
+            onOpenImageInNewTab: (context) => calls.push(['openImage', context]),
+        },
+    );
+
+    assert.equal(items.some((item) => item.id === 'make-image-bigger'), false);
+    assert.equal(items.some((item) => item.id === 'make-image-smaller'), false);
+    assert.equal(items.some((item) => item.id === 'reset-image-size'), false);
+    assert.deepEqual(items.slice(0, 4).map((item) => item.id), [
+        'copy-image',
+        'save-image',
+        'zoom-image',
+        'open-image-new-tab',
+    ]);
+    assert.equal(items[0].separated, undefined);
 });
 
 test('buildContextMenuItems shows text copy when selected text is present', () => {

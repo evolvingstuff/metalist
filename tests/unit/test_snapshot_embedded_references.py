@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Dict, List, Optional
 
 import pytest
@@ -90,6 +91,36 @@ def test_embed_reference_renders_as_block_and_includes_descendants(monkeypatch: 
     assert "embedded child" in rendered
     assert rendered.index("blah") < rendered.index("note-embed-block")
     assert rendered.index("note-embed-block") < rendered.index("yada")
+
+
+def test_view_rendering_never_exposes_remote_image_source_to_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote_url = "https://images.example/private-tracker.png"
+    notes = {
+        HOST_ID: _Note(
+            HOST_ID,
+            None,
+            None,
+            None,
+            False,
+            f'<div><img src="{remote_url}" alt="remote"></div>',
+            "",
+        ),
+    }
+    state = _state_for(
+        monkeypatch=monkeypatch,
+        notes=notes,
+        children_by_parent={None: [HOST_ID]},
+    )
+
+    rendered = state.payloads[HOST_ID]["content"]
+    assert remote_url not in rendered
+    assert re.search(
+        r'data-remote-image-proxy-src="/api2/remote-images/[A-Za-z0-9_-]{32}"',
+        rendered,
+    ) is not None
+    assert re.search(r"<img[^>]+\ssrc=", rendered) is None
 
 
 def test_embed_reference_respects_collapsed_source_state(monkeypatch: pytest.MonkeyPatch) -> None:

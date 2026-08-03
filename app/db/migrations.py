@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import sqlite3
 
 from app.db.version import CURRENT_DATABASE_VERSION
+from app.db.schema import create_namespace_content_migrations_table
 from app.services.encryption import EncryptionService
 
 
@@ -122,11 +123,22 @@ def _migration_0_to_1(
     return rewritten_count
 
 
+def _migration_1_to_2(
+    *,
+    connection: sqlite3.Connection,
+    encryption_enabled: bool,  # noqa: ARG001
+    encryption_service: EncryptionService | None,  # noqa: ARG001
+) -> int:
+    create_namespace_content_migrations_table(connection)
+    return 0
+
+
 _MIGRATIONS: dict[
     int,
     Callable[..., int],
 ] = {
     0: _migration_0_to_1,
+    1: _migration_1_to_2,
 }
 
 
