@@ -75,7 +75,7 @@
             <p class="hint">Reopening the app in this tab immediately makes it the active session.</p>
         % endif
     </div>
-    <script>
+    <script nonce="${request.state.csp_nonce}">
         window.__METALIST_LOCKED__ = {
             hasPassword: ${'true' if has_password else 'false'}
         };

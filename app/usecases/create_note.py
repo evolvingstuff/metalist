@@ -16,6 +16,7 @@ from app.db.session import begin_writer
 from app.db.notes_sql import insert_note as db_insert_note
 from app.db.notes_sql import update_links_preserving_updated_at as db_update_links_preserving_updated_at
 from app.security.encryption import encrypt
+from app.security.note_html import sanitize_note_html
 
 
 def apply_insert_note(
@@ -28,7 +29,10 @@ def apply_insert_note(
     content: str,
     tags: str,
 ) -> None:
-    ciphertext, nonce, tag = encrypt(content, token)
+    if not isinstance(content, str):
+        raise TypeError("content must be a string")
+    sanitized_content = sanitize_note_html(content)
+    ciphertext, nonce, tag = encrypt(sanitized_content, token)
     tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
     now = datetime.now(timezone.utc)
     with begin_writer() as connection:
@@ -56,7 +60,7 @@ def apply_insert_note(
     store.insert_after(
         SimpleNamespace(
             id=note_id,
-            content=content,
+            content=sanitized_content,
             tags=tags,
             is_collapsed=False,
             created_at=now,

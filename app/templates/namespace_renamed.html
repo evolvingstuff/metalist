@@ -59,7 +59,7 @@
         </section>
         <pre id="namespace-rename-error" class="hidden"></pre>
     </main>
-    <script>
+    <script nonce="${request.state.csp_nonce}">
         window.__METALIST_NAMESPACE_RENAMED__ = ${page_state_json | n};
     </script>
     <script type="module" src="/static/js/namespace-renamed.js?v=${asset_version}"></script>

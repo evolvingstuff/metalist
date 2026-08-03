@@ -22,6 +22,7 @@ from ..services.content_cache import (
 )
 from app.utils.text_utils import strip_html
 from ..services.note_store import store as note_store
+from app.security.note_html import sanitize_note_html
 
 
 class NoteCRUD:
@@ -155,7 +156,8 @@ class NoteCRUD:
         else:
             record = NoteCRUD.get_note(db, note_id)
 
-        ciphertext, nonce, tag = encrypt(content, "")
+        sanitized_content = sanitize_note_html(content)
+        ciphertext, nonce, tag = encrypt(sanitized_content, "")
         timestamp = datetime.now(timezone.utc)
 
         update_note_content(
@@ -167,8 +169,8 @@ class NoteCRUD:
             updated_at=timestamp,
         )
 
-        cache_note(note_id, content)
-        cache_note_text(note_id, strip_html(content))
+        cache_note(note_id, sanitized_content)
+        cache_note_text(note_id, strip_html(sanitized_content))
 
         if note_store.loaded:
             note_store.update_note_from_db(
@@ -181,7 +183,7 @@ class NoteCRUD:
                     created_at=record.created_at,
                     updated_at=timestamp,
                 ),
-                content,
+                sanitized_content,
                 record.tags,
             )
 

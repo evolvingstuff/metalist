@@ -9,6 +9,7 @@ import { clearTagBar, getTagBarValue, setTagBarValue } from '../services/tag-bar
 import { scrollWindowToYFastAnimated } from '../services/animated-scroll-service.js';
 import { isRootReorderLocked } from '../services/root-sort-service.js';
 import { selectSplitSegmentHtmls } from '../services/note-split-service.js';
+import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 import { scrollNoteIntoView, scheduleScrollNoteIntoView } from '../services/scroll-restoration-service.js';
 import { exitEditingBeforeTodoToggle } from '../services/todo-toggle-editing-service.js';
 import { shouldExitEditingBeforeCollapseToggle } from '../services/collapse-editing-policy-service.js';
@@ -902,7 +903,8 @@ export async function splitCurrentNoteFromSelection() {
         throw new Error('Current note missing editable content element for split');
     }
 
-    const splitSegments = buildSplitSegmentsFromSelection(contentElement);
+    const splitSegments = buildSplitSegmentsFromSelection(contentElement)
+        .map(segment => sanitizeNoteHtmlForStorage(segment));
     if (splitSegments.length <= 1) {
         Logger.logNoop('Split shortcut ignored: selection/caret produced no split', {
             segmentCount: splitSegments.length,

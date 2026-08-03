@@ -56,6 +56,7 @@ from app.services.tab_state import tab_state_store
 from app.services.backup_service import create_timestamped_backup
 from app.services.client_state_service import rewrite_client_state_storage
 from app.security.encryption import set_encryption_required
+from app.security.note_html import sanitize_note_html
 
 
 class AuthService:
@@ -343,7 +344,10 @@ class AuthService:
                     update_payload: dict[str, object] = {}
 
                     if not content_encrypted:
-                        ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(content)
+                        sanitized_content = sanitize_note_html(content)
+                        ciphertext_base64, nonce_bytes, tag_bytes = self.encryption.encrypt_for_storage(
+                            sanitized_content
+                        )
                         update_payload.update(
                             {
                                 "content": ciphertext_base64,
@@ -619,7 +623,9 @@ class AuthService:
                             raise RuntimeError(
                                 f"Password removal failed: encrypted note {note_id} has NULL content"
                             )
-                        plaintext = self.encryption.decrypt_from_storage(content, nonce, tag)
+                        plaintext = sanitize_note_html(
+                            self.encryption.decrypt_from_storage(content, nonce, tag)
+                        )
                         update_payload.update(
                             {
                                 "content": plaintext,

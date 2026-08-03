@@ -14,6 +14,7 @@ from app.db.session import begin_writer
 from app.db.notes_sql import update_note_fields as db_update_note_fields
 from app.db.notes_sql import update_note_fields_preserving_updated_at as db_update_note_fields_preserving_updated_at
 from app.security.encryption import encrypt
+from app.security.note_html import sanitize_note_html
 
 
 def apply_update_content(note_id: str, content: str, tags: str, token: str) -> None:
@@ -22,20 +23,21 @@ def apply_update_content(note_id: str, content: str, tags: str, token: str) -> N
         raise TypeError("content must be a string")
     if not isinstance(tags, str):
         raise TypeError("tags must be a string")
+    sanitized_content = sanitize_note_html(content)
 
     # Validate existence without DB reads
     if not store.contains(note_id):
         raise KeyError(f"Note not found: {note_id}")
 
     record = store.get(note_id)
-    content_changed = record.content != content
+    content_changed = record.content != sanitized_content
     tags_changed = record.tags != tags
     if not content_changed and not tags_changed:
         return
 
     tags_ciphertext, tags_nonce, tags_tag = encrypt(tags, token)
     if content_changed:
-        ciphertext, nonce, tag = encrypt(content, token)
+        ciphertext, nonce, tag = encrypt(sanitized_content, token)
         updated_at = datetime.now(timezone.utc)
     else:
         updated_at = record.updated_at
@@ -66,7 +68,7 @@ def apply_update_content(note_id: str, content: str, tags: str, token: str) -> N
             )
 
     # Update in-memory store only after commit
-    store.update_content_and_tags(note_id, content, tags, updated_at=updated_at)
+    store.update_content_and_tags(note_id, sanitized_content, tags, updated_at=updated_at)
 
 
 def _record_added_tag_activity(*, before_tags: str, after_tags: str, token: str) -> None:
@@ -104,7 +106,8 @@ class CmdUpdateContent(QueryCommand):
         record = store.get(self.note_id)
         prev = record.content
         prev_tags = record.tags
-        apply_update_content(self.note_id, self.content, self.tags, self.token)
+        sanitized_content = sanitize_note_html(self.content)
+        apply_update_content(self.note_id, sanitized_content, self.tags, self.token)
         _record_added_tag_activity(
             before_tags=prev_tags,
             after_tags=self.tags,
@@ -118,7 +121,7 @@ class CmdUpdateContent(QueryCommand):
             self.undo_context,
             self.note_id,
             before=prev,
-            after=self.content,
+            after=sanitized_content,
             before_tags=prev_tags,
             after_tags=self.tags,
             viewport=self.viewport,

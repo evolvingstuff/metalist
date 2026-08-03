@@ -147,7 +147,12 @@ def test_apply_update_content_bumps_updated_at_for_body_change(monkeypatch: pyte
         ),
     )
 
-    update_content_module.apply_update_content("note-a", "<div>new</div>", "alpha", "token")
+    update_content_module.apply_update_content(
+        "note-a",
+        "<div>new</div><script>alert(1)</script>",
+        "alpha",
+        "token",
+    )
 
     assert preserved_calls == []
     assert timestamped_calls == [

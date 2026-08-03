@@ -4,6 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from pathlib import Path
 from typing import Annotated
 import json
+import secrets
 from app.presentation.templates import get_templates
 from .api import dev
 from .api.middleware.auth import AuthMiddleware
@@ -31,6 +32,7 @@ from app.services.search_history import search_history_store
 from app.services.sound_storage import sound_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
+from app.security.http_headers import apply_security_headers
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
 from app.server_runtime import validate_namespace
@@ -372,6 +374,17 @@ async def log_requests(request: Request, call_next):
             duration=duration_ms,
             size=size,
         )
+    return response
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    nonce = secrets.token_urlsafe(24)
+    if len(nonce) != 32:
+        raise RuntimeError("Generated CSP nonce has unexpected length")
+    request.state.csp_nonce = nonce
+    response = await call_next(request)
+    apply_security_headers(response=response, nonce=nonce)
     return response
 
 @app.get("/", response_class=HTMLResponse)

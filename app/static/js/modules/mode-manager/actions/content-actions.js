@@ -4,6 +4,7 @@ import { NotesAPI } from '../../api-client.js';
 import { DOMUtils } from '../../dom-utils.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
 import { persistExpandedEditSessionIfNeeded } from '../services/edit-session-collapse-service.js';
+import { sanitizeNoteHtmlForStorage } from '../../note-html-sanitizer.js';
 
 function getNoteElementIfPresent(noteId) {
     if (!noteId) {
@@ -30,7 +31,7 @@ export async function actionSaveNote(noteId) {
         Logger.logDebug('Skipping save for missing note element', { noteId });
         return Promise.resolve();
     }
-    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
+    const contentHTML = sanitizeNoteHtmlForStorage(DOMUtils.getNoteContentHTML(noteElement));
     const tags = getTagBarValue(noteElement);
     const previousTags = typeof noteElement.dataset.noteTags === 'string' ? noteElement.dataset.noteTags : '';
     const tagsChanged = tags !== previousTags;
@@ -89,7 +90,7 @@ export async function actionSaveNoteOnIdle(noteId) {
         Logger.logDebug('Skipping idle save for missing note element', { noteId });
         return Promise.resolve();
     }
-    const contentHTML = DOMUtils.getNoteContentHTML(noteElement);
+    const contentHTML = sanitizeNoteHtmlForStorage(DOMUtils.getNoteContentHTML(noteElement));
     const tags = getTagBarValue(noteElement);
     
     Logger.logDebug('Auto-saving note during idle period', {

@@ -6,9 +6,12 @@ import { ErrorHandler } from './modules/error-handler.js';
 import { ActivityTracker } from './modules/activity-tracker.js';
 import { CommandPalette } from './modules/command-palette/command-palette-controller.js';
 import { ReminderSurface } from './modules/reminder-surface-service.js';
+import { initializeNoteHtmlSanitizer } from './modules/note-html-sanitizer.js';
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOMContentLoaded fired');
     document.body.dataset.appReady = 'false';
+
+    await initializeNoteHtmlSanitizer();
 
     // Make ModeManager available globally for post-login initialization
     window.ModeManager = ModeManager;

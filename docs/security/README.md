@@ -169,6 +169,31 @@ host process. Passwordless namespaces and launches without `--enable-shell`
 can still render shell-tagged notes, but attempting to run one returns an
 inline error response.
 
+### Stored Note HTML
+
+Stored note bodies use a strict shared allowlist in
+`app/static/note-html-policy.json`:
+
+- The browser loads the vendored DOMPurify build at startup and sanitizes note
+  HTML before save, update, or split requests.
+- The server independently sanitizes every create, update, restore, and legacy
+  model write with nh3 before encryption/database persistence. Browser output
+  is never trusted as the authoritative check.
+- Decrypted historical rows are sanitized again before entering the in-memory
+  content cache, preventing previously stored executable markup from reaching
+  note rendering even before that row is saved again.
+- Scripts, event handlers, forms, frames, SVG/MathML, arbitrary classes/data
+  attributes, unsafe URL schemes, and unsafe CSS are removed. Formatting tags,
+  links, tables, indentation, and bounded embedded image markup remain supported.
+
+HTTP responses also receive a nonce-based Content Security Policy. Scripts are
+limited to same-origin files and explicitly nonced inline startup blocks;
+objects, frames, base-tag replacement, and cross-origin form submission are
+blocked. `X-Content-Type-Options`, deny-framing, no-referrer, and restrictive
+Permissions Policy headers provide additional browser hardening. Inline styles
+remain enabled because note formatting and existing templates require them, so
+the sanitizer's CSS-property/value allowlist remains an important layer.
+
 ### Application, Database, and Vault Versions
 
 - Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.11`.

@@ -12,6 +12,7 @@ from app.services.store import NodeRecord
 from app.services.store import store
 from app.services.sync import generate_new_uuid
 from app.services.undo_state import record_split_note
+from app.security.note_html import sanitize_note_html
 
 
 def _validate_split_segments(segments: List[str]) -> None:
@@ -47,7 +48,8 @@ class CmdSplitNote(QueryCommand):
         before_tags = before_record.tags
         parent_id = before_record.parent_id
 
-        apply_update_content(self.note_id, self.segments[0], self.tags, self.token)
+        sanitized_segments = [sanitize_note_html(segment) for segment in self.segments]
+        apply_update_content(self.note_id, sanitized_segments[0], self.tags, self.token)
         _record_added_tag_activity(
             before_tags=before_tags,
             after_tags=self.tags,
@@ -56,7 +58,7 @@ class CmdSplitNote(QueryCommand):
 
         inserted_records: List[NodeRecord] = []
         anchor_note_id = self.note_id
-        for segment in self.segments[1:]:
+        for segment in sanitized_segments[1:]:
             anchor_record = store.get(anchor_note_id)
             next_id = anchor_record.next_id
             new_note_id = str(uuid.uuid4())
@@ -81,7 +83,7 @@ class CmdSplitNote(QueryCommand):
             note_id=self.note_id,
             before_content=before_content,
             before_tags=before_tags,
-            after_content=self.segments[0],
+            after_content=sanitized_segments[0],
             after_tags=self.tags,
             inserted_records=inserted_records,
             viewport=self.viewport,

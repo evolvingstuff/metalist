@@ -77,7 +77,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="${request.state.csp_nonce}">
         // Auto-retry every 200ms to check if maintenance is complete
         function checkMaintenanceStatus() {
             fetch('/?v=${asset_version}', {

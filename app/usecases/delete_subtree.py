@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Dict, List
 
 from app.usecases.base import QueryCommand
@@ -15,6 +16,7 @@ from app.db.notes_sql import (
     update_links_preserving_updated_at as db_update_links_preserving_updated_at,
 )
 from app.security.encryption import encrypt
+from app.security.note_html import sanitize_note_html
 
 
 def _collect_subtree_ids(root_id: str) -> List[str]:
@@ -77,12 +79,21 @@ def apply_delete_subtree(note_id: str) -> None:
 def apply_restore_records(records: List[NodeRecord], token: str) -> None:
     # Reinsert records in preorder; rely on stored prev/next pointers
     # Insert in DB
+    sanitized_records: List[NodeRecord] = []
     with begin_writer() as connection:
         now = datetime.now(timezone.utc)
         for rec in records:
             assert isinstance(rec.content, str)
             assert isinstance(rec.tags, str)
-            ciphertext, nonce, tag = encrypt(rec.content, token)
+            sanitized_content = sanitize_note_html(rec.content)
+            if isinstance(rec, NodeRecord):
+                sanitized_record = replace(rec, content=sanitized_content)
+            else:
+                record_values = vars(rec).copy()
+                record_values["content"] = sanitized_content
+                sanitized_record = SimpleNamespace(**record_values)
+            sanitized_records.append(sanitized_record)
+            ciphertext, nonce, tag = encrypt(sanitized_content, token)
             tags_ciphertext, tags_nonce, tags_tag = encrypt(rec.tags, token)
             created_at = rec.created_at
             if created_at is None:
@@ -113,7 +124,7 @@ def apply_restore_records(records: List[NodeRecord], token: str) -> None:
                 db_update_links_preserving_updated_at(connection, rec.next_id, prev_id=rec.id)
 
     # Update in-memory store after commit
-    store.restore_subtree(records)
+    store.restore_subtree(sanitized_records)
 
 
 @dataclass

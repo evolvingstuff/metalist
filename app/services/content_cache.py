@@ -16,6 +16,7 @@ from ..models.database import SafeSession
 from ..utils.encryption import get_encryption_service
 from app.services.hydration_state import hydration_state
 from app.utils.text_utils import strip_html
+from app.security.note_html import sanitize_note_html
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def cache_note(note_id: str, decrypted_content: str) -> None:
         note_id: ID of note to cache
         decrypted_content: Plain text content to store in cache
     """
-    _search_cache[note_id] = decrypted_content
+    _search_cache[note_id] = sanitize_note_html(decrypted_content)
     logger.debug(f"Cached content for note {note_id[:8]}...")
 
 
@@ -204,6 +205,7 @@ def populate_cache_from_db(db: SafeSession | None) -> Sequence[Mapping[str, obje
         else:
             decrypted_tags = tags
 
+        decrypted_content = sanitize_note_html(decrypted_content)
         raw_text = strip_html(decrypted_content)
 
         cache_note(note_id, decrypted_content)
@@ -310,6 +312,7 @@ def refresh_encrypted_cache(db: SafeSession) -> None:
                 nonce,
                 tag,
             )
+            decrypted_content = sanitize_note_html(decrypted_content)
             cache_note(note_id, decrypted_content)
             raw_text = strip_html(decrypted_content)
             cache_note_text(note_id, raw_text)

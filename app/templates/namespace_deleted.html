@@ -222,7 +222,7 @@
         </section>
     </main>
 
-    <script>
+    <script nonce="${request.state.csp_nonce}">
         window.__METALIST_NAMESPACE_DELETED__ = ${page_state_json | n};
     </script>
     <script type="module" src="/static/js/namespace-deleted.js?v=${asset_version}"></script>

@@ -5,6 +5,7 @@ import { ErrorHandler } from './error-handler.js';
 import { computeScrollAnchor } from './mode-manager/services/scroll-anchor-service.js';
 import { CommandGate } from './mode-manager/services/command-gate-service.js';
 import { buildSessionHeaders } from './session-auth.js';
+import { sanitizeNoteHtmlForStorage } from './note-html-sanitizer.js';
 
 function buildAuthHeaders(includeContentType) {
     return buildSessionHeaders(includeContentType);
@@ -234,18 +235,20 @@ export const NotesAPI = {
     },
 
     async updateNote(noteId, content, tags) {
+        const sanitizedContent = sanitizeNoteHtmlForStorage(content);
         return this._apiCall(CONFIG.API.NOTES.UPDATE(noteId), {
             method: 'PUT',
             claimSession: true,
-            body: JSON.stringify({ content, tags })
+            body: JSON.stringify({ content: sanitizedContent, tags })
         });
     },
 
     async saveNote(noteId, content, tags) {
+        const sanitizedContent = sanitizeNoteHtmlForStorage(content);
         return this._apiCall(CONFIG.API.NOTES.SAVE(noteId), {
             method: 'PUT',
             claimSession: true,
-            body: JSON.stringify({ content, tags })
+            body: JSON.stringify({ content: sanitizedContent, tags })
         }); 
     },
 
@@ -278,10 +281,11 @@ export const NotesAPI = {
         if (typeof tags !== 'string') {
             throw new Error('NotesAPI.splitNote requires tags string');
         }
+        const sanitizedSegments = segments.map(segment => sanitizeNoteHtmlForStorage(segment));
         return this._apiCall(CONFIG.API.NOTES.SPLIT(noteId), {
             method: 'POST',
             claimSession: true,
-            body: JSON.stringify({ segments, tags }),
+            body: JSON.stringify({ segments: sanitizedSegments, tags }),
         });
     },
 
