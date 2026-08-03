@@ -22,8 +22,6 @@ from app.db.schema import initialize_schema
 from app.db.settings_sql import insert_default_settings
 from app.services.exception_capture import CapturedExceptionContext
 from app.security.shell_execution import enable_shell_execution_for_launch
-from app.security.shell_execution import is_loopback_host
-from app.security.shell_execution import is_shell_execution_enabled_for_environ
 from app.security.shell_execution import SHELL_EXECUTION_ENV_NAME
 
 
@@ -570,7 +568,7 @@ def apply_main_cli_args_to_environ(
     parser.add_argument(
         "--enable-shell",
         action="store_true",
-        help="Enable @shell execution for this loopback-only launch.",
+        help="Enable @shell execution for authenticated loopback requests.",
     )
     parser.add_argument("--test", action="store_true", help="Run against the temporary test database.")
     parsed_args = parser.parse_args(list(argv))
@@ -692,13 +690,9 @@ def resolve_local_browser_host(*, host: str) -> str:
 def resolve_request_host_for_https_redirect(
     *,
     host_header: str | None,
-    forwarded_host_header: str | None,
     fallback_host: str | None,
 ) -> str | None:
-    candidate_header: str | None
-    if forwarded_host_header is not None and forwarded_host_header.strip() != "":
-        candidate_header = forwarded_host_header.split(",", 1)[0].strip()
-    elif host_header is not None and host_header.strip() != "":
+    if host_header is not None and host_header.strip() != "":
         candidate_header = host_header.strip()
     else:
         candidate_header = None
@@ -971,7 +965,7 @@ def _resolve_https_port(*, environ: Mapping[str, str], ssl_certfile: str | None)
 def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfig:
     ssl_certfile, ssl_keyfile = _resolve_tls_pair(environ=environ)
 
-    host = _read_text(environ=environ, name="METALIST_HOST", fallback="0.0.0.0")
+    host = _read_text(environ=environ, name="METALIST_HOST", fallback="127.0.0.1")
     port = _read_int(environ=environ, name="METALIST_PORT", fallback=_DEFAULT_HTTP_PORT)
     https_port = _resolve_https_port(environ=environ, ssl_certfile=ssl_certfile)
     proxy_headers = _read_flag(environ=environ, name="METALIST_PROXY_HEADERS", fallback=True)
@@ -980,8 +974,6 @@ def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfi
         name="METALIST_FORWARDED_ALLOW_IPS",
         fallback="127.0.0.1,::1",
     )
-    if is_shell_execution_enabled_for_environ(environ=environ) and not is_loopback_host(host=host):
-        raise RuntimeError("Shell execution requires a loopback-only METALIST_HOST")
     if https_port is not None and ssl_certfile is None:
         raise RuntimeError(
             "METALIST_HTTPS_PORT requires TLS certs via "

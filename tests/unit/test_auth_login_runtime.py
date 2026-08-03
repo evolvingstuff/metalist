@@ -2,8 +2,48 @@ from __future__ import annotations
 
 from starlette.requests import Request
 from starlette.responses import Response
+import pytest
 
 import app.api.routes.auth as auth_route
+
+
+def test_login_rate_limit_key_ignores_untrusted_forwarded_for_header() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api2/auth/login",
+            "raw_path": b"/api2/auth/login",
+            "query_string": b"",
+            "headers": [(b"x-forwarded-for", b"203.0.113.45")],
+            "client": ("198.51.100.20", 1234),
+            "server": ("127.0.0.1", 8000),
+        }
+    )
+
+    rate_limit_key = auth_route._login_rate_limit_key(request)
+
+    assert rate_limit_key == "ip:198.51.100.20"
+
+
+def test_login_rate_limit_key_requires_client_metadata() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api2/auth/login",
+            "raw_path": b"/api2/auth/login",
+            "query_string": b"",
+            "headers": [(b"user-agent", b"attacker-controlled")],
+            "client": None,
+            "server": ("127.0.0.1", 8000),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="client metadata"):
+        auth_route._login_rate_limit_key(request)
 
 
 def test_login_does_not_decrypt_file_metadata_before_hydration(monkeypatch) -> None:

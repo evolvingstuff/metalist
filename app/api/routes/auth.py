@@ -540,17 +540,9 @@ def _client_info(request: Request) -> str:
 
 
 def _login_rate_limit_key(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for is not None:
-        forwarded_for = forwarded_for.strip()
-    if forwarded_for:
-        first_hop = forwarded_for.split(",")[0].strip()
-        if first_hop:
-            return f"ip:{first_hop}"
-    if request.client and request.client.host:
-        return f"ip:{request.client.host}"
-    user_agent = request.headers.get("user-agent", "Unknown")
-    return f"ua:{user_agent[:128]}"
+    if request.client is None or request.client.host == "":
+        raise RuntimeError("Login request is missing client metadata")
+    return f"ip:{request.client.host}"
 
 
 def _require_tab_id(

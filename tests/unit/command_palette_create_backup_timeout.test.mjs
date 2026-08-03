@@ -18,4 +18,14 @@ test('createBackup configures a longer CommandGate watchdog timeout', () => {
 
     assert.ok(match, 'createBackup should pass explicit timeoutMs to CommandGate.run');
     assert.equal(Number(match[1]), 120000);
+
+    const waitIndex = source.indexOf('await waitForCommandAvailability({', source.indexOf('async createBackup()'));
+    const runIndex = source.indexOf("CommandGate.run('commandPalette.createBackup'", source.indexOf('async createBackup()'));
+    assert.ok(waitIndex >= 0, 'createBackup should wait for browser command availability');
+    assert.ok(waitIndex < runIndex, 'createBackup should wait before entering CommandGate');
+    assert.match(
+        source.slice(runIndex, source.indexOf('async logout()', runIndex)),
+        /if \(backupResult === null\) \{\s*throw new Error\(/,
+        'createBackup must not silently discard a dropped command',
+    );
 });

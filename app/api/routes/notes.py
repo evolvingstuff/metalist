@@ -102,6 +102,12 @@ def _require_loopback_shell_request(request: Request) -> None:
             status_code=403,
             detail="Shell execution is restricted to loopback clients",
         )
+    request_hostname = request.url.hostname
+    if request_hostname is None or not is_loopback_host(host=request_hostname):
+        raise HTTPException(
+            status_code=403,
+            detail="Shell execution requires a loopback request host",
+        )
 
 
 def _resolve_tab_sort_mode(tab_id: object) -> str:

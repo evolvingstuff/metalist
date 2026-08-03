@@ -48,6 +48,7 @@ import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/s
 
 import { shouldActivateCommandPaletteRowClick } from './click-activation-service.js';
 import { persistUsageBeforeActivation } from './activation-auth-policy.js';
+import { waitForCommandAvailability } from './backup-command-availability.js';
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
 import { loadCommandPaletteTagMap } from './tag-config-loader.js';
@@ -66,6 +67,9 @@ function trimToken(token) {
     }
     return token.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
 }
+
+const BACKUP_COMMAND_AVAILABILITY_TIMEOUT_MS = 30000;
+const BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS = 50;
 
 function resolveEffectiveTheme() {
     const explicitTheme = document.documentElement.getAttribute('data-theme');
@@ -1806,6 +1810,12 @@ class CommandPaletteController {
             return;
         }
 
+        await waitForCommandAvailability({
+            isBusy: () => CommandGate.isBusy(),
+            isLoading: () => ModeContext.isLoading,
+            timeoutMs: BACKUP_COMMAND_AVAILABILITY_TIMEOUT_MS,
+            pollIntervalMs: BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS,
+        });
         const backupResult = await CommandGate.run('commandPalette.createBackup', async () => {
             const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', {});
             if (!payload || typeof payload !== 'object') {
@@ -1819,7 +1829,7 @@ class CommandPaletteController {
             timeoutMs: 120000,
         });
         if (backupResult === null) {
-            return;
+            throw new Error('Backup command was dropped after waiting for browser availability');
         }
         if (!Array.isArray(backupResult) || backupResult.length === 0) {
             throw new Error('Backup run expected results array from CommandGate');

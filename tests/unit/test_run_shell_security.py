@@ -12,14 +12,14 @@ from app.usecases.run_shell import CmdRunShellStart
 from app.usecases.run_shell import CmdRunShellStatus
 
 
-def _request_from_host(host: str) -> Request:
+def _request_from_host(*, client_host: str, request_host: str) -> Request:
     return Request(
         {
             "type": "http",
             "method": "POST",
             "path": "/api2/notes/note-123/run-shell",
-            "headers": [],
-            "client": (host, 43210),
+            "headers": [(b"host", request_host.encode("ascii"))],
+            "client": (client_host, 43210),
             "server": ("127.0.0.1", 8000),
             "scheme": "http",
             "query_string": b"",
@@ -28,16 +28,32 @@ def _request_from_host(host: str) -> Request:
 
 
 def test_shell_route_accepts_loopback_clients() -> None:
-    notes_route._require_loopback_shell_request(_request_from_host("127.0.0.1"))
-    notes_route._require_loopback_shell_request(_request_from_host("::1"))
+    notes_route._require_loopback_shell_request(
+        _request_from_host(client_host="127.0.0.1", request_host="127.0.0.1:8000")
+    )
+    notes_route._require_loopback_shell_request(
+        _request_from_host(client_host="::1", request_host="[::1]:8000")
+    )
 
 
 def test_shell_route_rejects_non_loopback_clients() -> None:
     with pytest.raises(HTTPException) as exc_info:
-        notes_route._require_loopback_shell_request(_request_from_host("192.168.1.50"))
+        notes_route._require_loopback_shell_request(
+            _request_from_host(client_host="192.168.1.50", request_host="127.0.0.1:8000")
+        )
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Shell execution is restricted to loopback clients"
+
+
+def test_shell_route_rejects_public_host_even_when_proxy_client_looks_loopback() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        notes_route._require_loopback_shell_request(
+            _request_from_host(client_host="127.0.0.1", request_host="10.0.0.31:8444")
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Shell execution requires a loopback request host"
 
 
 def test_passwordless_namespace_rejects_shell_before_loading_note(

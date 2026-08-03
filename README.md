@@ -78,15 +78,14 @@ metalist --enable-shell
 python main.py --enable-shell
 ```
 
-This flag automatically changes the default bind host to `127.0.0.1`, is
-propagated to every namespace child process, and is rejected if
-`METALIST_HOST` explicitly names a wildcard, LAN, or other non-loopback host.
-The top-level process prints a conspicuous shell-enabled banner before its
-namespace launch results. Use `python main.py work --enable-shell` for one
-foreground namespace.
+This flag is propagated to every namespace child process. The top-level process
+prints a conspicuous shell-enabled banner before its namespace launch results.
+Use `python main.py work --enable-shell` for one foreground namespace. Shell
+routes remain restricted to loopback clients using a loopback request host,
+even when the rest of MetaList is intentionally exposed to a LAN.
 
-`metalist` and explicit single-namespace source runs bind HTTP on `0.0.0.0:8000` by default, matching the old MetaList LAN-friendly behavior.
-On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on `0.0.0.0:8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
+`metalist` and explicit single-namespace source runs bind to loopback at `127.0.0.1:8000` by default. This keeps a normal laptop launch off LAN and public interfaces unless remote access is explicitly configured.
+On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on the same bind host at port `8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
 
 Database selection:
 - No explicit namespace on a single-namespace launch: `~/MetaList/namespaces/default/default.metalist.db`
@@ -102,21 +101,36 @@ Useful env flags:
 - `CRASH_SERVER_ON_FAIL=1` (default): fail-fast on validation errors
 - `API_PREFIX=/api2`: override API prefix (client assumes `/api2` by default)
 - `METALIST_NAMESPACE=work`: select `~/MetaList/namespaces/work/work.metalist.db`
-- `METALIST_HOST=0.0.0.0` (default): bind the main app to a different interface such as `127.0.0.1`
+- `METALIST_HOST=127.0.0.1` (default): bind the main app to a specific interface; use a LAN IP or `0.0.0.0` only for intentional remote access
+- `METALIST_ALLOWED_HOSTS=notes.example.com,192.168.1.20`: comma-separated public/LAN hostnames accepted in HTTP `Host` headers; loopback aliases and a specific non-wildcard `METALIST_HOST` are accepted automatically
 - `METALIST_PORT=8000` (default): bind the main app to a different port
 - `METALIST_HTTPS_PORT=8443`: override the HTTPS port when TLS is enabled
 - `METALIST_TLS_CERT=/path/to/fullchain.pem` + `METALIST_TLS_KEY=/path/to/privkey.pem`: override TLS paths
 - `METALIST_AUTO_GENERATE_TLS=0`: disable automatic creation of the default self-signed TLS pair
 - default TLS paths: `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`
 - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
-- `--enable-shell`: opt in to local `@shell` execution for this launch; valid only with a loopback bind and never persisted in namespace data
+- `--enable-shell`: opt in to local `@shell` execution for this launch; shell routes require a loopback client and loopback request host, and the capability is never persisted in namespace data
 
 ### Remote Access / HTTPS
-Plain LAN or VPN HTTP works with a normal PyCharm run:
+LAN or VPN access must be enabled explicitly. Prefer binding the machine's specific LAN address, which also adds that address to the accepted-host set:
 ```bash
-metalist
+METALIST_HOST=192.168.1.20 metalist
 ```
-On a fresh machine, that first launch also creates the default TLS cert pair automatically. Then open either `http://<laptop-ip>:8000` or `https://<laptop-ip>:8443` from the other machine.
+On a fresh machine, that first launch also creates the default TLS cert pair automatically. Then open either `http://192.168.1.20:8000` or `https://192.168.1.20:8443` from the other machine.
+
+To keep `@shell` available on the host laptop while allowing another laptop to
+use normal MetaList features, bind both interfaces and explicitly allow the LAN
+address:
+
+```bash
+METALIST_HOST=0.0.0.0 \
+METALIST_ALLOWED_HOSTS=10.0.0.31 \
+metalist --enable-shell
+```
+
+Use `http://127.0.0.1:<namespace-http-port>` on the host laptop when running
+`@shell`. Other devices may use `https://10.0.0.31:<namespace-https-port>`, but
+their shell start/status requests receive `403`.
 
 Namespaced launch example:
 ```bash
@@ -134,6 +148,7 @@ and MetaList will reuse the saved HTTP / HTTPS ports for `work`. The same applie
 Equivalent explicit launch, if you want it:
 ```bash
 METALIST_HOST=0.0.0.0 \
+METALIST_ALLOWED_HOSTS=192.168.1.20 \
 METALIST_PORT=8000 \
 METALIST_HTTPS_PORT=8443 \
 metalist
@@ -143,6 +158,7 @@ From the other machine, open `https://<laptop-ip>:8443`.
 If you already have a real certificate and key, use the same dual-listener flow:
 ```bash
 METALIST_HOST=0.0.0.0 \
+METALIST_ALLOWED_HOSTS=192.168.1.20 \
 METALIST_PORT=8000 \
 METALIST_HTTPS_PORT=8443 \
 METALIST_TLS_CERT=/path/to/fullchain.pem \
@@ -162,10 +178,16 @@ When HTTPS is enabled:
 If TLS is terminated by a reverse proxy on the same machine instead, keep MetaList on loopback and let the proxy forward to it:
 ```bash
 METALIST_HOST=127.0.0.1 \
+METALIST_ALLOWED_HOSTS=notes.example.com \
 METALIST_PORT=8000 \
 METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1 \
 metalist
 ```
+
+The reverse proxy must preserve the browser-facing `Host` header and set
+`X-Forwarded-Proto`. MetaList never trusts `X-Forwarded-Host`; forwarded
+scheme/client metadata is accepted only from `METALIST_FORWARDED_ALLOW_IPS`.
+Do not widen that list beyond the actual proxy addresses.
 
 ### Legacy Import
 `convert-from-legacy.py` replaces the SQLite database referenced by `app.config.DATABASE_URL`, clears its files/sounds sidecar, and imports notes from a legacy JSON export.

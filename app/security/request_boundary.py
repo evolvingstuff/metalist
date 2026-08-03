@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+import ipaddress
+import re
+from urllib.parse import urlsplit
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.api.request_auth import AUTH_COOKIE_NAME
+from app.services.exception_capture import CapturedExceptionContext
+
+
+_LOOPBACK_REQUEST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_WILDCARD_BIND_HOSTS = frozenset({"0.0.0.0", "::"})
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_DNS_HOSTNAME_PATTERN = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
+)
+
+
+@dataclass(frozen=True)
+class RequestBoundaryRejection:
+    status_code: int
+    detail: str
+
+
+def _normalize_hostname(*, hostname: str, context: str) -> str:
+    normalized = hostname.strip().casefold().rstrip(".")
+    if normalized == "":
+        raise ValueError(f"{context} hostname must not be empty")
+
+    ip_capture = CapturedExceptionContext(ValueError)
+    parsed_ip: ipaddress._BaseAddress | None = None
+    with ip_capture:
+        parsed_ip = ipaddress.ip_address(normalized)
+    if ip_capture.captured_exception is None:
+        if parsed_ip is None:
+            raise RuntimeError("IP parser returned no address")
+        return parsed_ip.compressed.casefold()
+
+    if _DNS_HOSTNAME_PATTERN.fullmatch(normalized) is None:
+        raise ValueError(f"{context} contains an invalid hostname: {hostname!r}")
+    return normalized
+
+
+def _normalize_configured_hostname(*, raw_value: str) -> str:
+    value = raw_value.strip()
+    if value == "":
+        raise RuntimeError("METALIST_ALLOWED_HOSTS contains an empty entry")
+    if value == "*":
+        raise RuntimeError("METALIST_ALLOWED_HOSTS must not contain '*'")
+    if "://" in value or "/" in value or "@" in value:
+        raise RuntimeError(
+            "METALIST_ALLOWED_HOSTS entries must be hostnames without schemes, ports, or paths"
+        )
+
+    unbracketed_value = value
+    if value.startswith("[") and value.endswith("]"):
+        unbracketed_value = value[1:-1]
+    normalize_capture = CapturedExceptionContext(ValueError)
+    normalized_hostname: str | None = None
+    with normalize_capture:
+        normalized_hostname = _normalize_hostname(
+            hostname=unbracketed_value,
+            context="METALIST_ALLOWED_HOSTS",
+        )
+    if normalize_capture.captured_exception is not None:
+        exc = normalize_capture.captured_exception
+        raise RuntimeError(str(exc)) from exc
+    if normalized_hostname is None:
+        raise RuntimeError("METALIST_ALLOWED_HOSTS parser returned no hostname")
+    return normalized_hostname
+
+
+def resolve_allowed_request_hosts(*, environ: Mapping[str, str]) -> frozenset[str]:
+    allowed_hosts = set(_LOOPBACK_REQUEST_HOSTS)
+    bind_host = environ.get("METALIST_HOST", "127.0.0.1").strip()
+    if bind_host == "":
+        raise RuntimeError("METALIST_HOST must not be empty")
+    normalized_bind_host = _normalize_configured_hostname(raw_value=bind_host)
+    if normalized_bind_host not in _WILDCARD_BIND_HOSTS:
+        allowed_hosts.add(normalized_bind_host)
+
+    configured_hosts = environ.get("METALIST_ALLOWED_HOSTS")
+    if configured_hosts is not None:
+        if configured_hosts.strip() == "":
+            raise RuntimeError("METALIST_ALLOWED_HOSTS must not be empty when set")
+        for raw_host in configured_hosts.split(","):
+            allowed_hosts.add(_normalize_configured_hostname(raw_value=raw_host))
+    return frozenset(allowed_hosts)
+
+
+def _parse_host_header(host_header: str) -> tuple[str, int | None] | None:
+    raw_host = host_header.strip()
+    if raw_host == "":
+        return None
+    if any(character in raw_host for character in (",", "/", "\\", "@", "?", "#")):
+        return None
+    if any(character.isspace() for character in raw_host):
+        return None
+
+    parsed = urlsplit(f"//{raw_host}")
+    if parsed.hostname is None:
+        return None
+    parse_capture = CapturedExceptionContext(ValueError)
+    port: int | None = None
+    hostname: str | None = None
+    with parse_capture:
+        port = parsed.port
+        hostname = _normalize_hostname(hostname=parsed.hostname, context="Host header")
+    if parse_capture.captured_exception is not None:
+        return None
+    if hostname is None:
+        raise RuntimeError("Host header parser returned no hostname")
+    return hostname, port
+
+
+def _parse_origin(origin_header: str) -> tuple[str, str, int] | None:
+    parsed = urlsplit(origin_header.strip())
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    if parsed.hostname is None or parsed.username is not None or parsed.password is not None:
+        return None
+    if parsed.path not in {"", "/"} or parsed.query != "" or parsed.fragment != "":
+        return None
+    parse_capture = CapturedExceptionContext(ValueError)
+    hostname: str | None = None
+    parsed_port: int | None = None
+    with parse_capture:
+        hostname = _normalize_hostname(hostname=parsed.hostname, context="Origin header")
+        parsed_port = parsed.port
+    if parse_capture.captured_exception is not None:
+        return None
+    if hostname is None:
+        raise RuntimeError("Origin header parser returned no hostname")
+    if parsed_port is None:
+        if parsed.scheme == "https":
+            parsed_port = 443
+        else:
+            parsed_port = 80
+    return parsed.scheme, hostname, parsed_port
+
+
+def _resolve_request_authority(*, scheme: str, host_header: str) -> tuple[str, str, int] | None:
+    normalized_scheme = scheme.strip().casefold()
+    if normalized_scheme not in {"http", "https"}:
+        return None
+    parsed_host = _parse_host_header(host_header)
+    if parsed_host is None:
+        return None
+    hostname, port = parsed_host
+    if port is None:
+        if normalized_scheme == "https":
+            port = 443
+        else:
+            port = 80
+    return normalized_scheme, hostname, port
+
+
+def _is_bearer_authorization(authorization_header: str | None) -> bool:
+    if authorization_header is None:
+        return False
+    parts = authorization_header.split()
+    return len(parts) == 2 and parts[0].casefold() == "bearer" and parts[1] != ""
+
+
+def evaluate_request_boundary(
+    *,
+    method: str,
+    request_scheme: str,
+    host_header: str | None,
+    origin_header: str | None,
+    authorization_header: str | None,
+    has_auth_cookie: bool,
+    allowed_hosts: frozenset[str],
+) -> RequestBoundaryRejection | None:
+    if not isinstance(method, str) or method == "":
+        raise TypeError("method must be a non-empty string")
+    if not isinstance(request_scheme, str) or request_scheme == "":
+        raise TypeError("request_scheme must be a non-empty string")
+    if not isinstance(has_auth_cookie, bool):
+        raise TypeError("has_auth_cookie must be a bool")
+    if not isinstance(allowed_hosts, frozenset) or len(allowed_hosts) == 0:
+        raise TypeError("allowed_hosts must be a non-empty frozenset")
+
+    if host_header is None:
+        return RequestBoundaryRejection(400, "Host header required")
+    request_authority = _resolve_request_authority(
+        scheme=request_scheme,
+        host_header=host_header,
+    )
+    if request_authority is None:
+        return RequestBoundaryRejection(400, "Malformed Host header")
+    _, request_hostname, _ = request_authority
+    if request_hostname not in allowed_hosts:
+        return RequestBoundaryRejection(400, "Unrecognized Host header")
+
+    if method.upper() in _SAFE_METHODS:
+        return None
+
+    if origin_header is None:
+        is_bearer_client = _is_bearer_authorization(authorization_header)
+        if is_bearer_client and not has_auth_cookie:
+            return None
+        return RequestBoundaryRejection(403, "Origin header required for state-changing request")
+
+    origin = _parse_origin(origin_header)
+    if origin is None:
+        return RequestBoundaryRejection(403, "Invalid Origin header")
+    if origin != request_authority:
+        return RequestBoundaryRejection(403, "Origin does not match request host")
+    return None
+
+
+class RequestBoundaryMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, *, allowed_hosts: frozenset[str]) -> None:
+        super().__init__(app)
+        if not isinstance(allowed_hosts, frozenset) or len(allowed_hosts) == 0:
+            raise TypeError("allowed_hosts must be a non-empty frozenset")
+        self._allowed_hosts = allowed_hosts
+
+    async def dispatch(self, request: Request, call_next):
+        host_headers = request.headers.getlist("host")
+        if len(host_headers) != 1:
+            return JSONResponse(status_code=400, content={"detail": "Exactly one Host header required"})
+        rejection = evaluate_request_boundary(
+            method=request.method,
+            request_scheme=request.url.scheme,
+            host_header=host_headers[0],
+            origin_header=request.headers.get("origin"),
+            authorization_header=request.headers.get("authorization"),
+            has_auth_cookie=AUTH_COOKIE_NAME in request.cookies,
+            allowed_hosts=self._allowed_hosts,
+        )
+        if rejection is not None:
+            return JSONResponse(
+                status_code=rejection.status_code,
+                content={"detail": rejection.detail},
+            )
+        return await call_next(request)

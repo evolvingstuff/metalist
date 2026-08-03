@@ -15,13 +15,13 @@ from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import save_namespace_launch_profile
 
 
-def test_resolve_main_server_config_defaults_to_lan_http_without_tls(tmp_path, monkeypatch) -> None:
+def test_resolve_main_server_config_defaults_to_loopback_http_without_tls(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
     monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
 
     config = resolve_main_server_config(environ={})
 
-    assert config.host == "0.0.0.0"
+    assert config.host == "127.0.0.1"
     assert config.port == 8000
     assert config.https_port is None
     assert config.proxy_headers is True
@@ -95,7 +95,7 @@ def test_resolve_main_server_config_uses_default_cert_paths(tmp_path, monkeypatc
         environ={},
     )
 
-    assert config.host == "0.0.0.0"
+    assert config.host == "127.0.0.1"
     assert config.port == 8000
     assert config.https_port == 8443
     assert config.ssl_certfile == str(cert_path)
@@ -309,17 +309,27 @@ def test_apply_main_cli_args_to_environ_enables_shell_and_defaults_to_loopback(
     assert environ["METALIST_HOST"] == "127.0.0.1"
 
 
-def test_apply_main_cli_args_to_environ_rejects_shell_on_non_loopback_host(
+def test_apply_main_cli_args_to_environ_allows_shell_on_explicit_lan_bind(
     tmp_path,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
+    environ = {
+        "METALIST_HOST": "0.0.0.0",
+        "METALIST_ALLOWED_HOSTS": "10.0.0.31",
+    }
 
-    with pytest.raises(RuntimeError, match="requires a loopback-only METALIST_HOST"):
-        apply_main_cli_args_to_environ(
-            argv=["--enable-shell", "--port", "8123"],
-            environ={"METALIST_HOST": "0.0.0.0"},
-        )
+    parsed = apply_main_cli_args_to_environ(
+        argv=["--enable-shell", "--port", "8123"],
+        environ=environ,
+    )
+
+    assert parsed.shell_enabled is True
+    assert environ["METALIST_SHELL_ENABLED"] == "1"
+    assert environ["METALIST_HOST"] == "0.0.0.0"
+    assert environ["METALIST_ALLOWED_HOSTS"] == "10.0.0.31"
 
 
 def test_apply_main_cli_args_to_environ_clears_unbacked_shell_capability() -> None:
@@ -555,7 +565,6 @@ def test_resolve_namespace_launch_defaults_ignores_saved_https_port_without_tls(
 def test_resolve_request_host_for_https_redirect_prefers_browser_host_header() -> None:
     request_host = resolve_request_host_for_https_redirect(
         host_header="localhost:8000",
-        forwarded_host_header=None,
         fallback_host="0.0.0.0",
     )
 
@@ -565,7 +574,6 @@ def test_resolve_request_host_for_https_redirect_prefers_browser_host_header() -
 def test_resolve_https_redirect_url_does_not_redirect_localhost_host_header_when_bind_host_is_wildcard() -> None:
     request_host = resolve_request_host_for_https_redirect(
         host_header="localhost:8000",
-        forwarded_host_header=None,
         fallback_host="0.0.0.0",
     )
 

@@ -1,4 +1,6 @@
 import uvicorn
+from collections.abc import Iterable
+from dataclasses import dataclass
 import http.client
 import logging
 import os
@@ -9,7 +11,6 @@ import sys
 import threading
 import time
 import ssl
-from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -53,6 +54,22 @@ _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES = (
     "METALIST_NAMESPACE",
     "METALIST_PORT",
     "METALIST_HTTPS_PORT",
+)
+_HTTPS_PROXY_STRIPPED_REQUEST_HEADERS = frozenset(
+    {
+        "connection",
+        "forwarded",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-forwarded-proto",
+    }
 )
 
 
@@ -486,6 +503,29 @@ def _run_main_listener(
     )
 
 
+def _build_https_proxy_forward_headers(
+    *,
+    incoming_headers: Iterable[tuple[str, str]],
+    client_ip: str,
+) -> dict[str, str]:
+    if not isinstance(client_ip, str) or client_ip.strip() == "":
+        raise TypeError("client_ip must be a non-empty string")
+
+    forwarded_headers: dict[str, str] = {}
+    for key, value in incoming_headers:
+        if not isinstance(key, str) or key.strip() == "":
+            raise TypeError("Incoming proxy header names must be non-empty strings")
+        if not isinstance(value, str):
+            raise TypeError("Incoming proxy header values must be strings")
+        if key.casefold() in _HTTPS_PROXY_STRIPPED_REQUEST_HEADERS:
+            continue
+        forwarded_headers[key] = value
+
+    forwarded_headers["X-Forwarded-For"] = client_ip
+    forwarded_headers["X-Forwarded-Proto"] = "https"
+    return forwarded_headers
+
+
 def _start_https_proxy_server(
     *,
     host: str,
@@ -495,19 +535,6 @@ def _start_https_proxy_server(
     ssl_certfile: str,
     ssl_keyfile: str,
 ) -> None:
-    hop_by_hop_headers = frozenset(
-        {
-            "connection",
-            "keep-alive",
-            "proxy-authenticate",
-            "proxy-authorization",
-            "te",
-            "trailers",
-            "transfer-encoding",
-            "upgrade",
-        }
-    )
-
     class ProxyHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -517,19 +544,11 @@ def _start_https_proxy_server(
             if content_length is not None:
                 request_body = self.rfile.read(int(content_length))
 
-            forwarded_headers: dict[str, str] = {}
-            for key, value in self.headers.items():
-                if key.lower() in hop_by_hop_headers:
-                    continue
-                forwarded_headers[key] = value
-
             client_ip = self.client_address[0]
-            existing_forwarded_for = self.headers.get("X-Forwarded-For")
-            if existing_forwarded_for is not None and existing_forwarded_for.strip() != "":
-                forwarded_headers["X-Forwarded-For"] = f"{existing_forwarded_for}, {client_ip}"
-            else:
-                forwarded_headers["X-Forwarded-For"] = client_ip
-            forwarded_headers["X-Forwarded-Proto"] = "https"
+            forwarded_headers = _build_https_proxy_forward_headers(
+                incoming_headers=self.headers.items(),
+                client_ip=client_ip,
+            )
 
             connection = http.client.HTTPConnection(
                 host=backend_host,
@@ -548,7 +567,10 @@ def _start_https_proxy_server(
             self.send_response(response.status, response.reason)
             for key, value in response.getheaders():
                 lower_key = key.lower()
-                if lower_key in hop_by_hop_headers or lower_key == "content-length":
+                if (
+                    lower_key in _HTTPS_PROXY_STRIPPED_REQUEST_HEADERS
+                    or lower_key == "content-length"
+                ):
                     continue
                 self.send_header(key, value)
             self.send_header("Content-Length", str(len(response_body)))

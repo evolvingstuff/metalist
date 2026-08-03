@@ -19,8 +19,8 @@ def is_loopback_host(*, host: str) -> bool:
 def enable_shell_execution_for_launch(*, environ: MutableMapping[str, str]) -> None:
     if "METALIST_HOST" not in environ:
         environ["METALIST_HOST"] = "127.0.0.1"
-    elif not is_loopback_host(host=environ["METALIST_HOST"]):
-        raise RuntimeError("--enable-shell requires a loopback-only METALIST_HOST")
+    elif not isinstance(environ["METALIST_HOST"], str) or environ["METALIST_HOST"].strip() == "":
+        raise TypeError("METALIST_HOST must be a non-empty string")
     environ[SHELL_EXECUTION_ENV_NAME] = "1"
 
 

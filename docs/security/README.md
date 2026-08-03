@@ -159,15 +159,22 @@ The server rejects `@shell` execution and shell-output polling unless the
 top-level process was explicitly launched with `--enable-shell`. The source
 or installed orchestrator propagates that capability to every namespace child without
 persisting it in namespace data. Enabling shell defaults `METALIST_HOST` to
-`127.0.0.1` and fails startup if an explicit wildcard, LAN, or other
-non-loopback host is configured.
+`127.0.0.1`, but an explicit LAN/wildcard bind may be used so other clients can
+access non-shell features.
 
-Shell start and status routes independently reject non-loopback clients. They
-also require password protection for the active namespace. The execution check
-runs before the note is loaded and before the shell-session service can start a
-host process. Passwordless namespaces and launches without `--enable-shell`
-can still render shell-tagged notes, but attempting to run one returns an
-inline error response.
+Shell start and status routes independently require both a loopback client and
+a loopback request host. They also require password protection for the active
+namespace. The execution check runs before the note is loaded and before the
+shell-session service can start a host process. Passwordless namespaces,
+remote clients, LAN-host requests, and launches without `--enable-shell` can
+still render shell-tagged notes, but attempting to run one returns an inline
+error response.
+
+The built-in HTTPS proxy discards incoming `Forwarded` and `X-Forwarded-*`
+headers, then writes `X-Forwarded-For` from the actual socket peer and
+`X-Forwarded-Proto=https`. This prevents a LAN client from claiming a loopback
+identity. On a combined LAN/shell launch, use loopback HTTP on the host laptop
+for shell actions and the LAN HTTPS address for remote non-shell access.
 
 ### Stored Note HTML
 
@@ -301,15 +308,19 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 - With no explicit namespace on a single-namespace launch, the default namespace DB is `~/MetaList/namespaces/default/default.metalist.db`.
 - Deleting a namespace removes its namespace directory on disk, including the namespace SQLite databases, launch-profile metadata, and backups under `~/MetaList/namespaces/<namespace>/`.
 - HTTPS is opt-in via existing PEM files at `certs/metalist-cert.pem` and `certs/metalist-key.pem`, or explicit `METALIST_TLS_CERT` and `METALIST_TLS_KEY`.
-- When those PEMs exist, MetaList also starts `0.0.0.0:8443` and redirects non-loopback HTTP hostnames to HTTPS.
+- The default listener is loopback-only (`127.0.0.1`). When PEMs exist, MetaList starts HTTPS on the same bind host at port `8443` and redirects non-loopback HTTP hostnames to HTTPS.
 - For direct HTTPS from an explicit single-namespace `python main.py ...` run, set both:
   - `METALIST_TLS_CERT=/path/to/fullchain.pem`
   - `METALIST_TLS_KEY=/path/to/privkey.pem`
 - For a quick LAN cert, use `./scripts/generate-lan-cert.sh` and then open `https://<lan-ip>:8443` from the other machine.
 - For HTTPS terminated by a reverse proxy, keep MetaList on loopback and trust forwarded headers only from the proxy IPs:
   - `METALIST_HOST=127.0.0.1`
+  - `METALIST_ALLOWED_HOSTS=notes.example.com`
   - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default)
-- Login rate limiting already prefers the first `x-forwarded-for` hop, so when you deploy behind a trusted proxy you still get client-IP-based throttling.
+- An external proxy must preserve the original `Host` header and replace `X-Forwarded-For`/`X-Forwarded-Proto` with authoritative values. MetaList ignores `X-Forwarded-Host`; Uvicorn accepts forwarded scheme/client metadata only from `METALIST_FORWARDED_ALLOW_IPS`.
+- Every request must use a loopback host, the specific non-wildcard `METALIST_HOST`, or a hostname/IP explicitly listed in `METALIST_ALLOWED_HOSTS`. This blocks hostile DNS-rebinding `Host` values.
+- State-changing browser requests must carry an `Origin` that exactly matches the effective request scheme, host, and port. Bearer-token clients without the auth cookie may omit `Origin`; cookie-authenticated requests may not.
+- Login rate limiting uses Uvicorn's resolved client address. A trusted proxy can supply that address through `X-Forwarded-For`; an untrusted sender's header is ignored by Uvicorn and never parsed directly by application code.
 - Namespace selection is independent of listener ports. Use `--namespace` / `METALIST_NAMESPACE` for DB selection and `--port` / `METALIST_PORT` for listener selection.
 - Listener precedence is explicit CLI flags > env vars > saved namespace profile in the namespace DB. A namespace without a saved launch profile must be launched once with explicit ports or configured from the UI.
 

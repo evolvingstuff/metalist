@@ -33,6 +33,8 @@ from app.services.sound_storage import sound_store
 from app.services.runtime_hardening import apply_runtime_hardening
 from app.security.encryption import set_encryption_required
 from app.security.http_headers import apply_security_headers
+from app.security.request_boundary import evaluate_request_boundary
+from app.security.request_boundary import resolve_allowed_request_hosts
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
 from app.server_runtime import validate_namespace
@@ -44,7 +46,7 @@ from app.services.namespace_switcher import open_or_launch_namespace
 from app.services.diagnostics import configure_process_diagnostics
 from app.services.diagnostics import start_asyncio_diagnostics
 from app.services.diagnostics import track_request
-from app.api.request_auth import clear_auth_cookie
+from app.api.request_auth import AUTH_COOKIE_NAME, clear_auth_cookie
 from app.api.routes.notes import router as api2_router
 from app.api.routes.auth import router as api2_auth_router
 from app.api.routes.files import router as api2_files_router
@@ -281,6 +283,7 @@ app.mount("/static", NoCacheStaticFiles(directory=str(Path(__file__).parent / "s
 ASSET_VERSION = str(int(time.time()))
 
 templates = get_templates()
+allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ)
 
 # Legacy v1 routers removed; keep dev utilities mounted separately.
 app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
@@ -311,7 +314,6 @@ async def block_v1_root():
 async def redirect_remote_http_to_https(request: Request, call_next):
     request_host = resolve_request_host_for_https_redirect(
         host_header=request.headers.get("host"),
-        forwarded_host_header=request.headers.get("x-forwarded-host"),
         fallback_host=request.url.hostname,
     )
     redirect_url = resolve_https_redirect_url(
@@ -375,6 +377,31 @@ async def log_requests(request: Request, call_next):
             size=size,
         )
     return response
+
+
+@app.middleware("http")
+async def validate_request_boundary(request: Request, call_next):
+    host_headers = request.headers.getlist("host")
+    if len(host_headers) != 1:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Exactly one Host header required"},
+        )
+    rejection = evaluate_request_boundary(
+        method=request.method,
+        request_scheme=request.url.scheme,
+        host_header=host_headers[0],
+        origin_header=request.headers.get("origin"),
+        authorization_header=request.headers.get("authorization"),
+        has_auth_cookie=AUTH_COOKIE_NAME in request.cookies,
+        allowed_hosts=allowed_request_hosts,
+    )
+    if rejection is not None:
+        return JSONResponse(
+            status_code=rejection.status_code,
+            content={"detail": rejection.detail},
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")

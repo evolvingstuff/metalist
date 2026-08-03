@@ -903,6 +903,28 @@ def test_start_https_proxy_server_evicts_port_conflicts_before_bind(monkeypatch)
     assert started_proxy.thread.started is True
 
 
+def test_https_proxy_replaces_caller_supplied_forwarding_headers() -> None:
+    forwarded_headers = main_entrypoint._build_https_proxy_forward_headers(
+        incoming_headers=(
+            ("Host", "10.0.0.31:8444"),
+            ("Origin", "https://10.0.0.31:8444"),
+            ("X-Forwarded-For", "127.0.0.1"),
+            ("x-forwarded-proto", "http"),
+            ("X-Forwarded-Host", "localhost:8444"),
+            ("Forwarded", "for=127.0.0.1;proto=http"),
+            ("Connection", "keep-alive"),
+        ),
+        client_ip="10.0.0.52",
+    )
+
+    assert forwarded_headers == {
+        "Host": "10.0.0.31:8444",
+        "Origin": "https://10.0.0.31:8444",
+        "X-Forwarded-For": "10.0.0.52",
+        "X-Forwarded-Proto": "https",
+    }
+
+
 def test_evict_processes_listening_on_port_raises_if_current_process_owns_listener(monkeypatch) -> None:
     monkeypatch.setattr(main_entrypoint, "_find_listening_pids_for_port", lambda *, port: [4321])
     monkeypatch.setattr(main_entrypoint.os, "getpid", lambda: 4321)
