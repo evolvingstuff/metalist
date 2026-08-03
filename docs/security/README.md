@@ -201,6 +201,17 @@ Permissions Policy headers provide additional browser hardening. Inline styles
 remain enabled because note formatting and existing templates require them, so
 the sanitizer's CSS-property/value allowlist remains an important layer.
 
+### Outbound Link-Title Requests
+
+Automatic link titles fetch only normalized HTTP(S) URLs. For every initial URL
+and redirect, MetaList resolves DNS once, rejects the entire result if any
+address is loopback, private, link-local, reserved, or otherwise non-global,
+and pins the actual TCP connection to the validated public address. The
+original hostname remains in the HTTP request and TLS SNI/certificate check.
+DNS failures stop the request instead of falling through to a second,
+unvalidated lookup, and proxy environment variables cannot reroute the pinned
+connection.
+
 ### Sensitive Telemetry
 
 Runtime logs and browser diagnostics describe application structure without
