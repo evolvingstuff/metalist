@@ -4130,42 +4130,6 @@ body.loading::after {
     display: block;
 }
 
-.meta-size-010 {
-    --meta-size-factor: 0.1;
-}
-
-.meta-size-025 {
-    --meta-size-factor: 0.25;
-}
-
-.meta-size-050 {
-    --meta-size-factor: 0.5;
-}
-
-.meta-size-075 {
-    --meta-size-factor: 0.75;
-}
-
-.meta-size-100 {
-    --meta-size-factor: 1;
-}
-
-.meta-size-125 {
-    --meta-size-factor: 1.25;
-}
-
-.meta-size-150 {
-    --meta-size-factor: 1.5;
-}
-
-.meta-size-200 {
-    --meta-size-factor: 2;
-}
-
-.meta-size-300 {
-    --meta-size-factor: 3;
-}
-
 .note.collapsed .meta-size,
 .note-embed-node.collapsed .meta-size {
     max-width: 100%;
@@ -4649,6 +4613,17 @@ body.loading::after {
     padding: 6px 10px;
     vertical-align: top;
     white-space: pre-wrap;
+}
+
+.meta-csv-table td.meta-csv-media-cell {
+    padding: 0;
+}
+
+.meta-csv-media-cell img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
 }
 
 .meta-csv-table tr:nth-child(even) td {

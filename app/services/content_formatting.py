@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+from decimal import Decimal
 import html
 import io
 import json
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
 from app.services.latex_rendering import render_latex_to_html
+from app.services.inline_image_occurrences import INLINE_IMAGE_TAG_RE
 from app.utils.text_utils import strip_html
 from app.services.markdown_rendering import render_markdown_to_html
 from app.services.ontology_rules_store import get_ontology_if_ready
@@ -41,16 +43,19 @@ _META_TAG_TO_CLASS = {
     "strikethrough": "meta-strikethrough",
     "serif": "meta-serif",
     "copyable": "meta-copyable",
-    "size=0.1": "meta-size meta-size-010",
-    "size=0.25": "meta-size meta-size-025",
-    "size=0.5": "meta-size meta-size-050",
-    "size=0.75": "meta-size meta-size-075",
-    "size=1.0": "meta-size meta-size-100",
-    "size=1.25": "meta-size meta-size-125",
-    "size=1.5": "meta-size meta-size-150",
-    "size=2.0": "meta-size meta-size-200",
-    "size=3.0": "meta-size meta-size-300",
 }
+
+_SUGGESTED_SIZE_TAG_NAMES = (
+    "size=0.1",
+    "size=0.25",
+    "size=0.5",
+    "size=0.75",
+    "size=1",
+    "size=1.25",
+    "size=1.5",
+    "size=2",
+    "size=3",
+)
 
 _LIST_STYLE_TAGS = {
     "list-bulleted": "bulleted",
@@ -143,10 +148,56 @@ _BLOCK_HTML_TAG_RE = re.compile(
     r"<(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|hr|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b",
     re.IGNORECASE,
 )
+_SIZE_TAG_VALUE_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
+_CSV_IMAGE_PLACEHOLDER_PREFIX = "MLCSVIMAGEPLACEHOLDER"
+_CSV_IMAGE_PLACEHOLDER_SUFFIX = "TOKEN"
+
+
+def _canonical_meta_tag_name(tag_name: str) -> str:
+    if not isinstance(tag_name, str) or tag_name == "":
+        raise TypeError("tag_name must be a non-empty string")
+    size_factor = _parse_size_factor(tag_name)
+    if size_factor is None:
+        return tag_name
+    return f"size={_format_size_factor(size_factor)}"
+
+
+def _parse_size_factor(tag_name: str) -> Decimal | None:
+    if not isinstance(tag_name, str) or tag_name == "":
+        raise TypeError("tag_name must be a non-empty string")
+    if not tag_name.startswith("size="):
+        return None
+    raw_size_value = tag_name[len("size="):]
+    if _SIZE_TAG_VALUE_RE.fullmatch(raw_size_value) is None:
+        return None
+    size_factor = Decimal(raw_size_value)
+    if size_factor <= 0:
+        return None
+    return size_factor
+
+
+def _format_size_factor(size_factor: Decimal) -> str:
+    if not isinstance(size_factor, Decimal) or size_factor <= 0:
+        raise TypeError("size_factor must be a positive Decimal")
+    formatted = format(size_factor, "f")
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+    if formatted == "":
+        raise AssertionError("Positive size factor formatted as empty text")
+    return formatted
+
+
+def _is_formatting_meta_tag_name(tag_name: str) -> bool:
+    if not isinstance(tag_name, str) or tag_name == "":
+        raise TypeError("tag_name must be a non-empty string")
+    if tag_name in _META_TAG_TO_CLASS:
+        return True
+    return _parse_size_factor(tag_name) is not None
 
 
 def list_known_meta_tag_terms() -> FrozenSet[str]:
     terms = {f"@{name}" for name in _META_TAG_TO_CLASS.keys()}
+    terms.update(f"@{name}" for name in _SUGGESTED_SIZE_TAG_NAMES)
     terms.update(f"@{name}" for name in _LIST_STYLE_TAGS.keys())
     terms.update(f"@{name}" for name in _CREDENTIAL_TAGS)
     terms.update(f"@{name}" for name in _EMAIL_TAGS)
@@ -243,7 +294,10 @@ def _is_removable_formatting_tag(token: str) -> bool:
         raise TypeError(f"token must be a string, got {type(token)}")
     if not token.startswith("@"):
         return False
-    return token[1:].casefold() in _REMOVABLE_FORMATTING_TAGS
+    tag_name = _canonical_meta_tag_name(token[1:].casefold())
+    if tag_name in _REMOVABLE_FORMATTING_TAGS:
+        return True
+    return _parse_size_factor(tag_name) is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -583,8 +637,8 @@ def _infer_implied_meta_tags(tags: str) -> FrozenSet[str]:
     for term in implied:
         if not term.startswith("@"):
             continue
-        tag_name = term[1:]
-        if tag_name in _META_TAG_TO_CLASS:
+        tag_name = _canonical_meta_tag_name(term[1:].casefold())
+        if _is_formatting_meta_tag_name(tag_name):
             meta.add(tag_name)
     return frozenset(meta)
 
@@ -681,12 +735,13 @@ def _render_credential_meta(
     value_class = "meta-credential-value"
     if extra_classes:
         value_class = f"{value_class} {extra_classes}"
+    size_style_attr = _meta_size_style_attr(formatting_tags)
 
     return (
         f'<div class="meta-credential meta-credential-{credential_tag}">'
         f'<span class="meta-credential-icon">{icon_html}</span>'
         f'<span class="meta-credential-label">{label_text}:</span>'
-        f'<span class="{value_class}" data-copy-value="{escaped_value}">'
+        f'<span class="{value_class}"{size_style_attr} data-copy-value="{escaped_value}">'
         f"{escaped_value}"
         "</span>"
         "</div>"
@@ -717,12 +772,13 @@ def _render_email_meta(
     value_class = "meta-email-value"
     if extra_classes:
         value_class = f"{value_class} {extra_classes}"
+    size_style_attr = _meta_size_style_attr(formatting_tags)
 
     return (
         '<div class="meta-email">'
         f'<span class="meta-email-icon">{icon_html}</span>'
         f'<span class="meta-email-label">{label_text}:</span>'
-        f'<a class="{value_class}" href="mailto:{href_value}">{escaped_value}</a>'
+        f'<a class="{value_class}"{size_style_attr} href="mailto:{href_value}">{escaped_value}</a>'
         "</div>"
     )
 
@@ -800,10 +856,11 @@ def _render_shell_meta(*, content_html: str, formatting_tags: FrozenSet[str]) ->
     code_class = "meta-shell-code"
     if extra_classes:
         code_class = f"{code_class} {extra_classes}"
+    size_style_attr = _meta_size_style_attr(formatting_tags)
 
     return (
         f'<div class="meta-shell"{copy_attr}>'
-        f'<pre class="meta-shell-script"><code class="{code_class}">{escaped_text}</code></pre>'
+        f'<pre class="meta-shell-script"><code class="{code_class}"{size_style_attr}>{escaped_text}</code></pre>'
         '<div class="meta-shell-output" aria-live="polite"></div>'
         "</div>"
     )
@@ -822,9 +879,10 @@ def _render_markdown_meta(*, content_html: str, formatting_tags: FrozenSet[str])
     block_class = "meta-markdown"
     if extra_classes:
         block_class = f"{block_class} {extra_classes}"
+    size_style_attr = _meta_size_style_attr(formatting_tags)
 
     return (
-        f'<div class="{block_class}" data-markdown-rendered="true"{copy_attr}>'
+        f'<div class="{block_class}"{size_style_attr} data-markdown-rendered="true"{copy_attr}>'
         f"{_linkify_view_links(rendered_markdown)}"
         "</div>"
     )
@@ -860,10 +918,11 @@ def _render_json_meta(*, content_html: str, formatting_tags: FrozenSet[str]) -> 
     code_class = "meta-json-code"
     if extra_classes:
         code_class = f"{code_class} {extra_classes}"
+    size_style_attr = _meta_size_style_attr(formatting_tags)
 
     return (
         f'<div class="meta-json"{copy_attr}>'
-        f'<pre class="meta-json-pre"><code class="{code_class}">{highlighted}</code></pre>'
+        f'<pre class="meta-json-pre"><code class="{code_class}"{size_style_attr}>{highlighted}</code></pre>'
         "</div>"
     )
 
@@ -960,18 +1019,26 @@ def _render_csv_meta(
     cell_scoped_tags: Mapping[Tuple[str, int], FrozenSet[str]],
     cell_scoped_renderers: Mapping[Tuple[str, int], str],
 ) -> str:
-    raw_text = _extract_plain_text(content_html)
+    protected_html, image_placeholders = _extract_csv_image_placeholders(content_html)
+    parse_raw_text = _extract_plain_text(protected_html)
+    raw_text = _remove_csv_image_placeholders(
+        text=parse_raw_text,
+        image_placeholders=image_placeholders,
+    )
     copy_attr = _copyable_attr(formatting_tags, raw_text)
 
     placeholder_map: Dict[str, str] = {}
-    parse_text = raw_text
+    parse_text = parse_raw_text
     if cell_wrappers:
         parse_text, placeholder_map = _extract_wrapper_placeholders(
-            text=raw_text,
+            text=parse_text,
             wrappers_to_consume=cell_wrappers,
         )
 
-    rows, error = _parse_csv_rows(parse_text)
+    rows, error = _parse_csv_rows(
+        parse_text,
+        full_width_cell_tokens=frozenset(image_placeholders),
+    )
     if error is not None:
         return _render_csv_error(
             raw_text=raw_text,
@@ -987,6 +1054,7 @@ def _render_csv_meta(
     table_class = "meta-csv-table"
     if extra_classes:
         table_class = f"{table_class} {extra_classes}"
+    size_style_attr = _meta_size_style_attr(formatting_tags)
 
     meta_classes = ["meta-csv"]
     if inline:
@@ -995,14 +1063,29 @@ def _render_csv_meta(
     output: List[str] = [
         f'<div class="{" ".join(meta_classes)}"{copy_attr}>',
         '<div class="meta-csv-table-wrap">',
-        f'<table class="{table_class}">',
+        f'<table class="{table_class}"{size_style_attr}>',
         "<tbody>",
     ]
     effective_scoped_tags = cell_scoped_tags
     apply_cell_wrappers = bool(cell_wrappers)
 
+    csv_column_count = _csv_column_count(
+        rows=rows,
+        full_width_cell_tokens=frozenset(image_placeholders),
+    )
     for row in rows:
         output.append("<tr>")
+        if _is_full_width_csv_media_row(
+            row=row,
+            full_width_cell_tokens=frozenset(image_placeholders),
+        ):
+            image_html = image_placeholders[row[0]]
+            output.append(
+                f'<td class="meta-csv-media-cell" colspan="{csv_column_count}">'
+                f"{image_html}</td>"
+            )
+            output.append("</tr>")
+            continue
         for cell in row:
             cell_text = cell
             if placeholder_map:
@@ -1017,6 +1100,10 @@ def _render_csv_meta(
                 )
             else:
                 cell_html = html.escape(cell_text, quote=False)
+            cell_html = _restore_csv_image_placeholders(
+                text=cell_html,
+                image_placeholders=image_placeholders,
+            )
             output.append(f"<td>{cell_html}</td>")
         output.append("</tr>")
 
@@ -1085,7 +1172,83 @@ def _render_scoped_renderer(
     raise KeyError(f"Unknown scoped renderer: {render_tag}")
 
 
-def _parse_csv_rows(text: str) -> tuple[list[list[str]], str | None]:
+def _extract_csv_image_placeholders(content_html: str) -> tuple[str, Dict[str, str]]:
+    if not isinstance(content_html, str):
+        raise TypeError("content_html must be a string")
+
+    output: List[str] = []
+    image_placeholders: Dict[str, str] = {}
+    cursor = 0
+    for image_index, match in enumerate(INLINE_IMAGE_TAG_RE.finditer(content_html)):
+        token = (
+            f"{_CSV_IMAGE_PLACEHOLDER_PREFIX}{image_index}"
+            f"{_CSV_IMAGE_PLACEHOLDER_SUFFIX}"
+        )
+        while token in content_html:
+            token = f"{token}X"
+        output.append(content_html[cursor:match.start()])
+        output.append(token)
+        image_placeholders[token] = match.group(0)
+        cursor = match.end()
+    output.append(content_html[cursor:])
+    return "".join(output), image_placeholders
+
+
+def _remove_csv_image_placeholders(
+    *,
+    text: str,
+    image_placeholders: Mapping[str, str],
+) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    output = text
+    for token in image_placeholders:
+        output = output.replace(token, "")
+    return output
+
+
+def _restore_csv_image_placeholders(
+    *,
+    text: str,
+    image_placeholders: Mapping[str, str],
+) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    output = text
+    for token, image_html in image_placeholders.items():
+        output = output.replace(token, image_html)
+    return output
+
+
+def _is_full_width_csv_media_row(
+    *,
+    row: List[str],
+    full_width_cell_tokens: FrozenSet[str],
+) -> bool:
+    return len(row) == 1 and row[0] in full_width_cell_tokens
+
+
+def _csv_column_count(
+    *,
+    rows: List[List[str]],
+    full_width_cell_tokens: FrozenSet[str],
+) -> int:
+    for row in rows:
+        if not _is_full_width_csv_media_row(
+            row=row,
+            full_width_cell_tokens=full_width_cell_tokens,
+        ):
+            return len(row)
+    return 1
+
+
+def _parse_csv_rows(
+    text: str,
+    *,
+    full_width_cell_tokens: FrozenSet[str],
+) -> tuple[list[list[str]], str | None]:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 
@@ -1098,11 +1261,19 @@ def _parse_csv_rows(text: str) -> tuple[list[list[str]], str | None]:
     if not rows:
         return [], "CSV is empty"
 
-    expected_len = len(rows[0])
+    expected_len = _csv_column_count(
+        rows=rows,
+        full_width_cell_tokens=full_width_cell_tokens,
+    )
     if expected_len == 0:
         return [], "CSV has no columns"
 
     for idx, row in enumerate(rows[1:], start=2):
+        if _is_full_width_csv_media_row(
+            row=row,
+            full_width_cell_tokens=full_width_cell_tokens,
+        ):
+            continue
         if len(row) != expected_len:
             return [], f"Row {idx} has {len(row)} columns, expected {expected_len}"
 
@@ -1285,7 +1456,11 @@ def _wrap_meta_html(
             class_names.append("meta-box-inline")
     class_names.append(classes)
     class_attr = " ".join(class_names)
-    return f'<{wrapper_tag} class="{class_attr}"{copy_attr}>{inner_html}</{wrapper_tag}>'
+    size_style_attr = _meta_size_style_attr(tag_names)
+    return (
+        f'<{wrapper_tag} class="{class_attr}"{size_style_attr}{copy_attr}>'
+        f"{inner_html}</{wrapper_tag}>"
+    )
 
 
 def _encode_latex_placeholder(rendered_html: str) -> str:
@@ -1319,8 +1494,8 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
         if wrapper is None:
             if not base.startswith("@"):
                 continue
-            tag_name = base[1:].casefold()
-            if tag_name not in _META_TAG_TO_CLASS:
+            tag_name = _canonical_meta_tag_name(base[1:].casefold())
+            if not _is_formatting_meta_tag_name(tag_name):
                 continue
             global_tags.add(tag_name)
             continue
@@ -1335,8 +1510,8 @@ def _parse_meta_tags(tags: str) -> MetaTagConfig:
         for inner in inner_tokens:
             if not inner.startswith("@"):
                 continue
-            tag_name = inner[1:].casefold()
-            if tag_name not in _META_TAG_TO_CLASS:
+            tag_name = _canonical_meta_tag_name(inner[1:].casefold())
+            if not _is_formatting_meta_tag_name(tag_name):
                 if tag_name in _RENDERER_TAGS:
                     existing = None
                     if key in scoped_renderers:
@@ -1633,7 +1808,8 @@ def _process_text_segment(
                     formatting_tags = scoped_tags[key]
                     classes = _meta_classes_for_tag_names(scoped_tags[key])
                     assert classes, "Scoped meta tags must resolve to at least one CSS class"
-                    open_html = f'<span class="meta-scope {classes}">'
+                    size_style_attr = _meta_size_style_attr(scoped_tags[key])
+                    open_html = f'<span class="meta-scope {classes}"{size_style_attr}>'
                     close_html = "</span>"
                 opener_text = text[index : index + run]
                 placeholder_index = len(output)
@@ -1938,11 +2114,28 @@ def _restore_wrapper_placeholders(text: str, placeholders: Dict[str, str]) -> st
 def _meta_classes_for_tag_names(tag_names: Set[str] | FrozenSet[str]) -> str:
     classes: List[str] = []
     for name in sorted(tag_names):
+        size_factor = _parse_size_factor(name)
+        if size_factor is not None:
+            classes.append("meta-size")
+            continue
         if name not in _META_TAG_TO_CLASS:
             raise KeyError(f"Unknown meta tag name: {name}")
         css_class = _META_TAG_TO_CLASS[name]
         classes.append(css_class)
     return " ".join(classes)
+
+
+def _meta_size_style_attr(tag_names: Set[str] | FrozenSet[str]) -> str:
+    size_factors: List[Decimal] = []
+    for tag_name in tag_names:
+        size_factor = _parse_size_factor(tag_name)
+        if size_factor is not None:
+            size_factors.append(size_factor)
+    if not size_factors:
+        return ""
+    effective_size_factor = max(size_factors)
+    factor_text = _format_size_factor(effective_size_factor)
+    return f' style="--meta-size-factor:{factor_text}"'
 
 
 def _render_latex_container(
@@ -1971,4 +2164,8 @@ def _render_latex_container(
         class_names.append(_meta_classes_for_tag_names(formatting_tags))
 
     class_attr = " ".join(class_names)
-    return f'<{wrapper_tag} class="{class_attr}"{copy_attr}>{render_result.html}</{wrapper_tag}>'
+    size_style_attr = _meta_size_style_attr(formatting_tags)
+    return (
+        f'<{wrapper_tag} class="{class_attr}"{size_style_attr}{copy_attr}>'
+        f"{render_result.html}</{wrapper_tag}>"
+    )

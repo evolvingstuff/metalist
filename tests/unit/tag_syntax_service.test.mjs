@@ -36,6 +36,15 @@ test('removes commas from tag tokens', () => {
     assert.equal(enforceTagBarInputForEditing('tag,-give'), 'tag-give');
 });
 
+test('preserves one trailing assignment separator while typing its value', () => {
+    assert.equal(enforceTagBarInputForEditing('@size='), '@size=');
+    assert.equal(enforceTagBarInputForEditing('{{@size='), '{{@size=');
+    assert.equal(enforceTagBarInputForEditing('{{@size=2'), '{{@size=2');
+    assert.equal(enforceTagBarInputForEditing('{{@size=2}}'), '{{@size=2}}');
+    assert.equal(enforceTagBarInputForEditing('@size= '), '@size ');
+    assert.equal(enforceTagBarInputForEditing('{{@size= }}'), '{{@size}}');
+});
+
 test('does not warn on bare wrapper openers (but omits from sanitizedText)', () => {
     const analysis = analyzeTagBarInput('(');
     assert.equal(analysis.isValid, true);

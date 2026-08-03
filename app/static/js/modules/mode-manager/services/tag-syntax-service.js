@@ -41,9 +41,12 @@ function isWhitespace(char) {
     return typeof char === 'string' && char.length === 1 && /\s/.test(char);
 }
 
-function enforceTagToken(rawToken) {
+function enforceTagTokenInternal(rawToken, allowTrailingAssignmentSeparator) {
     if (typeof rawToken !== 'string') {
-        throw new Error('enforceTagToken expects a string');
+        throw new Error('enforceTagTokenInternal expects a string');
+    }
+    if (typeof allowTrailingAssignmentSeparator !== 'boolean') {
+        throw new Error('enforceTagTokenInternal expects allowTrailingAssignmentSeparator boolean');
     }
 
     let token = rawToken;
@@ -56,7 +59,10 @@ function enforceTagToken(rawToken) {
     const canPreserveAssignmentSeparator = (
         assignmentSeparatorCount === 1
         && assignmentSeparatorIndex > 0
-        && assignmentSeparatorIndex < token.length - 1
+        && (
+            assignmentSeparatorIndex < token.length - 1
+            || (allowTrailingAssignmentSeparator && assignmentSeparatorIndex === token.length - 1)
+        )
     );
     let out = '';
     for (const char of token) {
@@ -75,12 +81,23 @@ function enforceTagToken(rawToken) {
     return out;
 }
 
-function enforceWrappedTagTokenInternal(rawToken, preserveTrailingSpaceWhenUnclosed) {
+function enforceTagToken(rawToken) {
+    return enforceTagTokenInternal(rawToken, false);
+}
+
+function enforceWrappedTagTokenInternal(
+    rawToken,
+    preserveTrailingSpaceWhenUnclosed,
+    allowTrailingAssignmentSeparator,
+) {
     if (typeof rawToken !== 'string') {
         throw new Error('enforceWrappedTagToken expects a string');
     }
     if (typeof preserveTrailingSpaceWhenUnclosed !== 'boolean') {
         throw new Error('enforceWrappedTagTokenInternal expects preserveTrailingSpaceWhenUnclosed boolean');
+    }
+    if (typeof allowTrailingAssignmentSeparator !== 'boolean') {
+        throw new Error('enforceWrappedTagTokenInternal expects allowTrailingAssignmentSeparator boolean');
     }
 
     if (rawToken.length === 0) {
@@ -89,7 +106,7 @@ function enforceWrappedTagTokenInternal(rawToken, preserveTrailingSpaceWhenUnclo
 
     const opener = rawToken[0];
     if (!TAG_WRAPPER_OPENERS.has(opener)) {
-        return enforceTagToken(rawToken);
+        return enforceTagTokenInternal(rawToken, allowTrailingAssignmentSeparator);
     }
 
     const closer = TAG_WRAPPER_PAIRS.get(opener);
@@ -116,12 +133,18 @@ function enforceWrappedTagTokenInternal(rawToken, preserveTrailingSpaceWhenUnclo
         remainder = remainder.slice(0, -1);
     }
 
-    const innerParts = remainder
-        .split(/\s+/)
-        .map((part) => enforceTagToken(part))
+    const wrapperIsUnclosed = closerCount < openerCount;
+    const rawInnerParts = remainder.split(/\s+/).filter((part) => part.length > 0);
+    const innerParts = rawInnerParts
+        .map((part, partIndex) => enforceTagTokenInternal(
+            part,
+            allowTrailingAssignmentSeparator
+                && wrapperIsUnclosed
+                && !remainderHadTrailingWhitespace
+                && partIndex === rawInnerParts.length - 1,
+        ))
         .filter((part) => part.length > 0);
     let sanitizedInner = innerParts.join(' ');
-    const wrapperIsUnclosed = closerCount < openerCount;
     if (preserveTrailingSpaceWhenUnclosed && wrapperIsUnclosed && remainderHadTrailingWhitespace && sanitizedInner.length > 0) {
         sanitizedInner += ' ';
     }
@@ -138,11 +161,11 @@ function enforceWrappedTagTokenInternal(rawToken, preserveTrailingSpaceWhenUnclo
 }
 
 function enforceWrappedTagToken(rawToken) {
-    return enforceWrappedTagTokenInternal(rawToken, false);
+    return enforceWrappedTagTokenInternal(rawToken, false, false);
 }
 
-function enforceWrappedTagTokenForEditing(rawToken) {
-    return enforceWrappedTagTokenInternal(rawToken, true);
+function enforceWrappedTagTokenForEditing(rawToken, allowTrailingAssignmentSeparator) {
+    return enforceWrappedTagTokenInternal(rawToken, true, allowTrailingAssignmentSeparator);
 }
 
 function analyzeUnclosedWrapperTokenInfo(token) {
@@ -216,7 +239,7 @@ function enforceTagBarInputInternal(rawInput, options) {
             output += currentToken;
         } else {
             if (allowTrailingCommentStart) {
-                output += enforceWrappedTagTokenForEditing(currentToken);
+                output += enforceWrappedTagTokenForEditing(currentToken, isFinal);
             } else {
                 output += enforceWrappedTagToken(currentToken);
             }

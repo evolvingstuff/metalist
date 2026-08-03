@@ -210,8 +210,61 @@ def test_format_note_content_for_view_scoped_size_uses_layout_wrapper() -> None:
     rendered = format_note_content_for_view(content_html=html, tags="{@size=2.0}")
 
     assert rendered == (
-        '<div><span class="meta-scope meta-box-inline meta-size meta-size-200">'
+        '<div><span class="meta-scope meta-box-inline meta-size" '
+        'style="--meta-size-factor:2">'
         '<img src="example.png"></span></div>'
+    )
+
+
+def test_format_note_content_for_view_scoped_size_parses_equivalent_numbers() -> None:
+    for tag in ("{{@size=2}}", "{{@size=2.0}}", "{{@size=2.00}}"):
+        rendered = format_note_content_for_view(
+            content_html="<div>{{hello}}</div>",
+            tags=tag,
+        )
+
+        assert rendered == (
+            '<div><span class="meta-scope meta-box-inline meta-size" '
+            'style="--meta-size-factor:2">'
+            "hello</span></div>"
+        )
+
+
+def test_format_note_content_for_view_global_size_parses_equivalent_numbers() -> None:
+    for tag in ("@size=2", "@size=2.0", "@size=2.00"):
+        rendered = format_note_content_for_view(
+            content_html="<div>hello</div>",
+            tags=tag,
+        )
+
+        assert rendered == (
+            '<div class="meta-global meta-box-block meta-size" '
+            'style="--meta-size-factor:2">'
+            "<div>hello</div></div>"
+        )
+
+
+def test_format_note_content_for_view_scoped_size_accepts_arbitrary_positive_decimal() -> None:
+    rendered = format_note_content_for_view(
+        content_html="<div>{{hello}}</div>",
+        tags="{{@size=0.4}}",
+    )
+
+    assert rendered == (
+        '<div><span class="meta-scope meta-box-inline meta-size" '
+        'style="--meta-size-factor:0.4">hello</span></div>'
+    )
+
+
+def test_format_note_content_for_view_global_size_accepts_arbitrary_positive_decimal() -> None:
+    rendered = format_note_content_for_view(
+        content_html="<div>hello</div>",
+        tags="@size=0.4",
+    )
+
+    assert rendered == (
+        '<div class="meta-global meta-box-block meta-size" '
+        'style="--meta-size-factor:0.4"><div>hello</div></div>'
     )
 
 
@@ -654,6 +707,27 @@ def test_format_note_content_for_view_scoped_csv_meta_supports_nested_csv() -> N
     rendered = format_note_content_for_view(content_html=html, tags="((@csv)) [@csv]")
     assert 'meta-csv-error' not in rendered
     assert rendered.count("<table") >= 2
+
+
+def test_format_note_content_for_view_scoped_csv_preserves_standalone_image_row() -> None:
+    html = (
+        "<div>[[{{a,b,c</div>"
+        '<div><img src="dog.png" alt="Dog"></div>'
+        "<div>1,2,3</div>"
+        "<div>4,5,6}}]]</div>"
+    )
+
+    rendered = format_note_content_for_view(
+        content_html=html,
+        tags="scratchpad {{@csv}} [[@size=2]]",
+    )
+
+    assert 'class="meta-scope meta-box-block meta-size"' in rendered
+    assert 'style="--meta-size-factor:2"' in rendered
+    assert '<td class="meta-csv-media-cell" colspan="3">' in rendered
+    assert '<img src="dog.png" alt="Dog">' in rendered
+    assert "[[" not in rendered
+    assert "{{" not in rendered
 
 
 def test_format_note_content_for_view_csv_meta_invalid_shows_error_badge() -> None:
