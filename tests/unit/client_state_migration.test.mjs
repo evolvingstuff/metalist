@@ -158,6 +158,36 @@ test('client-state API reports a server failure without parsing an HTML error pa
 });
 
 
+test('client-state API identifies an expired authenticated session', async () => {
+    const restoreGlobals = installBrowserStorage();
+    globalThis.sessionStorage.setItem('metalist_tab_id', 'tab-expired');
+    globalThis.fetch = async () => new Response(
+        JSON.stringify({ detail: 'Authentication required' }),
+        {
+            status: 401,
+            headers: {
+                'content-type': 'application/json',
+            },
+        },
+    );
+
+    const {
+        AuthenticationRequiredError,
+        persistCommandPaletteUsage,
+    } = await import('../../app/static/js/modules/client-state-api.js');
+
+    await assert.rejects(
+        persistCommandPaletteUsage({ 'command.generate_random_password': { count: 1 } }),
+        (error) => {
+            assert.ok(error instanceof AuthenticationRequiredError);
+            assert.match(error.message, /Authentication required/);
+            return true;
+        },
+    );
+    restoreGlobals();
+});
+
+
 test('migrateLegacyClientState persists merged legacy localStorage data and clears it', async () => {
     const restoreGlobals = installBrowserStorage();
     globalThis.localStorage.setItem('metalist.command_palette.pref.pref.theme', 'dark');

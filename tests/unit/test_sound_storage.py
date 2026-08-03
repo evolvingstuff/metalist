@@ -212,7 +212,7 @@ def test_sound_password_transition_rewrites_rows(
         session = SafeSession()
         try:
             auth = AuthService(session)
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             with connect_file_reader() as connection:
@@ -222,12 +222,12 @@ def test_sound_password_transition_rewrites_rows(
             assert isinstance(encrypted_row["title_encryption_nonce"], bytes)
             assert encrypted_row["blob_data"] != content
 
-            set_session_dek(auth.unwrap_dek_for_password("abcd"))
+            set_session_dek(auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4"))
             sound_store.reset()
             sound_store.bootstrap(token="")
             assert sound_store.get_sound(sound_id=record.id).content_bytes == content
 
-            success, message = auth.remove_password("abcd")
+            success, message = auth.remove_password("aQ7!mZ2#vL9@xR4")
             assert success, message
         finally:
             session.close()

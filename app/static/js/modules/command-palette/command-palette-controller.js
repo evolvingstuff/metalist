@@ -47,6 +47,7 @@ import { isValidTagToken } from '../tag-token.js';
 import { updateSearchContextsOverlayPlacement } from '../mode-manager/services/search-contexts-overlay-service.js';
 
 import { shouldActivateCommandPaletteRowClick } from './click-activation-service.js';
+import { persistUsageBeforeActivation } from './activation-auth-policy.js';
 import { buildCommandPaletteEndpoints } from './endpoint-registry.js';
 import { PreferencesStore } from './preferences-store.js';
 import { loadCommandPaletteTagMap } from './tag-config-loader.js';
@@ -969,7 +970,13 @@ class CommandPaletteController {
         if (typeof tokenization.prefix === 'string' && tokenization.prefix.length > 0) {
             usageTokens.push(tokenization.prefix);
         }
-        await this._usage.recordUse(endpoint.id, usageTokens);
+        const canActivate = await persistUsageBeforeActivation({
+            persistUsage: () => this._usage.recordUse(endpoint.id, usageTokens),
+            handleAuthenticationRequired: (message) => ErrorHandler.handleAuthError(message),
+        });
+        if (!canActivate) {
+            return;
+        }
 
         if (endpoint.kind === 'boolean') {
             const current = this._getBoolean(endpoint.persistenceKey, endpoint.defaultValue);

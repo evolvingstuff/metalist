@@ -57,7 +57,7 @@ def test_set_password_persists_vault_metadata(
         session = SafeSession()
         try:
             auth = AuthService(session)
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             with SafeSession.allow_reads("tests:auth_vault_metadata:fetch_settings"):
@@ -71,8 +71,8 @@ def test_set_password_persists_vault_metadata(
             assert settings["kdf_memory_cost_kib"] == KDF_MEMORY_COST_KIB
             assert settings["kdf_parallelism"] == KDF_PARALLELISM
 
-            assert auth.verify_password("abcd") is True
-            dek = auth.unwrap_dek_for_password("abcd")
+            assert auth.verify_password("aQ7!mZ2#vL9@xR4") is True
+            dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             assert len(dek) == 32
         finally:
             session.close()
@@ -92,7 +92,7 @@ def test_verify_password_fails_for_unsupported_kdf_profile(
         session = SafeSession()
         try:
             auth = AuthService(session)
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             with begin_writer() as connection:
@@ -106,7 +106,7 @@ def test_verify_password_fails_for_unsupported_kdf_profile(
                 )
 
             with pytest.raises(RuntimeError, match="Unsupported kdf_algorithm"):
-                auth.verify_password("abcd")
+                auth.verify_password("aQ7!mZ2#vL9@xR4")
         finally:
             session.close()
     finally:
@@ -125,7 +125,7 @@ def test_verify_password_fails_when_kdf_memory_metadata_missing(
         session = SafeSession()
         try:
             auth = AuthService(session)
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             with begin_writer() as connection:
@@ -139,7 +139,7 @@ def test_verify_password_fails_when_kdf_memory_metadata_missing(
                 )
 
             with pytest.raises(RuntimeError, match="kdf_memory_cost_kib is NULL"):
-                auth.verify_password("abcd")
+                auth.verify_password("aQ7!mZ2#vL9@xR4")
         finally:
             session.close()
     finally:
@@ -174,7 +174,7 @@ def test_password_transitions_rewrite_file_storage_rows(
             assert row["metadata_encryption_nonce"] is None
             assert row["blob_encryption_nonce"] is None
 
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             with connect_file_reader() as connection:
@@ -185,12 +185,12 @@ def test_password_transitions_rewrite_file_storage_rows(
             assert isinstance(encrypted_row["metadata_encryption_nonce"], bytes)
             assert isinstance(encrypted_row["blob_encryption_nonce"], bytes)
 
-            dek = auth.unwrap_dek_for_password("abcd")
+            dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             set_session_dek(dek)
             encrypted_record = get_file_reference_record(record.id, token=None)
             assert encrypted_record.title == "transition.pdf"
 
-            success, message = auth.remove_password("abcd")
+            success, message = auth.remove_password("aQ7!mZ2#vL9@xR4")
             assert success, message
 
             clear_encryption_key()
@@ -253,7 +253,7 @@ def test_password_transitions_rewrite_search_history_rows(
             assert row["query_key_encryption_nonce"] is None
             assert row["tags_json_encryption_nonce"] is None
 
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             encrypted_row = _fetch_search_history_row()
@@ -262,11 +262,11 @@ def test_password_transitions_rewrite_search_history_rows(
             assert isinstance(encrypted_row["query_key_encryption_nonce"], bytes)
             assert isinstance(encrypted_row["tags_json_encryption_nonce"], bytes)
 
-            dek = auth.unwrap_dek_for_password("abcd")
+            dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             set_session_dek(dek)
             assert list_recent_search_tags(limit=3, token="token") == ["journal"]
 
-            success, message = auth.remove_password("abcd")
+            success, message = auth.remove_password("aQ7!mZ2#vL9@xR4")
             assert success, message
 
             clear_encryption_key()
@@ -318,7 +318,7 @@ def test_password_transitions_rewrite_tab_state_rows(
             assert row["state_encryption_tag"] is None
 
             auth = AuthService(session)
-            success, message = auth.set_password("abcd", KDF_TIME_COST)
+            success, message = auth.set_password("aQ7!mZ2#vL9@xR4", KDF_TIME_COST)
             assert success, message
 
             with SafeSession.allow_reads("tests:auth_vault_metadata:fetch_tab_state_encrypted"):
@@ -335,14 +335,14 @@ def test_password_transitions_rewrite_tab_state_rows(
             prelogin_snapshot = encrypted_store.snapshot()
             assert prelogin_snapshot["tabs"][prelogin_snapshot["activeTabId"]]["searchQuery"] == ""
 
-            dek = auth.unwrap_dek_for_password("abcd")
+            dek = auth.unwrap_dek_for_password("aQ7!mZ2#vL9@xR4")
             set_session_dek(dek)
             encrypted_store.ensure_decrypted(token="")
             decrypted_snapshot = encrypted_store.snapshot()
             assert decrypted_snapshot["tabs"][tab_id]["searchQuery"] == "focus-tag"
             assert decrypted_snapshot["tabs"][tab_id]["anchorRootId"] == "root-77"
 
-            success, message = auth.remove_password("abcd")
+            success, message = auth.remove_password("aQ7!mZ2#vL9@xR4")
             assert success, message
 
             clear_encryption_key()

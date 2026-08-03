@@ -310,12 +310,18 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
   - fallback to user-agent prefix when IP is unavailable.
 
 ### Password Requirements
-- Current enforced rule: password length must be `> 3` characters.
-- This is intentionally permissive for development convenience.
-- For production hardening, enforce stricter server-side requirements:
-  - minimum length (e.g., 12+)
-  - complexity rules
-  - common/breached-password rejection.
+- New and changed passwords must contain 12-72 characters.
+- No character-class composition rules are imposed; spaces and passphrases are supported.
+- The server uses the offline `zxcvbn` estimator and requires score 3 or higher,
+  rejecting common words, known password patterns, dates, repeats, keyboard walks,
+  and similarly predictable choices. Passwords are never sent to a third party.
+- Existing passwords are grandfathered: login verifies them against their stored
+  Argon2id profile without applying the newer creation policy.
+- The 72-character ceiling is applied before estimation to bound estimator work.
+- The random-password generator uses browser `crypto.getRandomValues()` and scores
+  results locally with the official JavaScript zxcvbn build. The browser scorer is
+  lazy-loaded only when the generator opens; generated passwords are not submitted
+  to a server for scoring.
 
 ## Data Import Strategy
 

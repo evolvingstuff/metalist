@@ -2,6 +2,17 @@ import { CONFIG } from './config.js';
 import { buildSessionHeaders } from './session-auth.js';
 
 
+export class AuthenticationRequiredError extends Error {
+    constructor(message) {
+        if (typeof message !== 'string' || message.length === 0) {
+            throw new Error('AuthenticationRequiredError requires message string');
+        }
+        super(message);
+        this.name = 'AuthenticationRequiredError';
+    }
+}
+
+
 async function readResponsePayload(response, fallbackMessage) {
     if (!(response instanceof Response)) {
         throw new Error('readResponsePayload requires Response');
@@ -15,13 +26,17 @@ async function readResponsePayload(response, fallbackMessage) {
     const isJson = typeof contentType === 'string'
         && contentType.toLowerCase().includes('application/json');
     if (!response.ok) {
+        let errorMessage = `${fallbackMessage} (${response.status})`;
         if (isJson && responseText.length > 0) {
             const errorPayload = JSON.parse(responseText);
             if (errorPayload && typeof errorPayload === 'object' && typeof errorPayload.detail === 'string') {
-                throw new Error(`${fallbackMessage}: ${errorPayload.detail}`);
+                errorMessage = `${fallbackMessage}: ${errorPayload.detail}`;
             }
         }
-        throw new Error(`${fallbackMessage} (${response.status})`);
+        if (response.status === 401) {
+            throw new AuthenticationRequiredError(errorMessage);
+        }
+        throw new Error(errorMessage);
     }
     if (!isJson || responseText.length === 0) {
         throw new Error(`${fallbackMessage}: response must be JSON`);

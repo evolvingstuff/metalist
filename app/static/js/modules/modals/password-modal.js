@@ -10,6 +10,11 @@
 import { BaseModal } from './base-modal.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import { CONFIG } from '../config.js';
+import {
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    validateNewPasswordLength,
+} from '../password-policy.js';
 import { buildSessionHeaders } from '../session-auth.js';
 
 export class PasswordModal extends BaseModal {
@@ -141,7 +146,7 @@ export class PasswordModal extends BaseModal {
         return `
             <div class="modal-content">
                 <h3>Create Password</h3>
-                <p>Set a password to encrypt your notes. This password will be required to access your notes in the future.</p>
+                <p>Set a password to encrypt your notes. Use ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters; spaces and passphrases are welcome. Common or predictable passwords will be rejected.</p>
                 
                 <form id="password-form">
                     <div class="form-group">
@@ -174,7 +179,7 @@ export class PasswordModal extends BaseModal {
         return `
             <div class="modal-content">
                 <h3>Change Password</h3>
-                <p>Enter your current password and choose a new one.</p>
+                <p>Enter your current password and choose a new one. Use ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters; spaces and passphrases are welcome. Common or predictable passwords will be rejected.</p>
                 
                 <form id="password-form" autocomplete="off">
                     <div class="form-group">
@@ -424,8 +429,9 @@ export class PasswordModal extends BaseModal {
                 if (formData.newPassword !== formData.confirmPassword) {
                     return { valid: false, error: 'Passwords do not match' };
                 }
-                if (formData.newPassword.length < 4) {
-                    return { valid: false, error: 'Password must be at least 4 characters' };
+                const createLengthValidation = validateNewPasswordLength(formData.newPassword);
+                if (!createLengthValidation.valid) {
+                    return createLengthValidation;
                 }
                 break;
                 
@@ -439,8 +445,9 @@ export class PasswordModal extends BaseModal {
                 if (formData.newPassword !== formData.confirmPassword) {
                     return { valid: false, error: 'New passwords do not match' };
                 }
-                if (formData.newPassword.length < 4) {
-                    return { valid: false, error: 'New password must be at least 4 characters' };
+                const changeLengthValidation = validateNewPasswordLength(formData.newPassword);
+                if (!changeLengthValidation.valid) {
+                    return changeLengthValidation;
                 }
                 break;
                 

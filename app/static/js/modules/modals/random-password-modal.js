@@ -5,6 +5,10 @@ import {
     generateRandomPassword,
     normalizePasswordCharset,
 } from '../password-generator.js';
+import {
+    evaluatePasswordStrength,
+    loadPasswordStrengthEstimator,
+} from '../password-strength.js';
 import { rememberGeneratedPasswordCopy } from '../mode-manager/services/password-clipboard-service.js';
 
 const COPY_HINT_DEFAULT = 'Copy to clipboard. Pasting into an empty note will add @password automatically.';
@@ -40,6 +44,24 @@ export class RandomPasswordModal extends BaseModal {
     onOpen() {
         this.renderModalContent();
         this.regeneratePassword();
+        loadPasswordStrengthEstimator()
+            .then(() => {
+                if (!this.isOpen) {
+                    return;
+                }
+                const resultOutput = document.getElementById('password-result-output');
+                if (!(resultOutput instanceof HTMLInputElement)) {
+                    throw new Error('password-result-output missing');
+                }
+                this.renderPasswordStrength(resultOutput.value);
+            })
+            .catch((error) => {
+                console.error('Password strength estimator failed:', error);
+                if (!this.isOpen) {
+                    return;
+                }
+                this.renderPasswordStrengthUnavailable();
+            });
     }
 
     onClose() {
@@ -88,7 +110,7 @@ export class RandomPasswordModal extends BaseModal {
                     <p class="random-password-modal-eyebrow">Utility</p>
                     <h3>Generate Random Password</h3>
                     <p class="random-password-modal-description">
-                        Adjust the length or character set, then copy the result into a note when you need it.
+                        Generate a password, or type or paste your own candidate to test its strength locally.
                     </p>
                 </div>
 
@@ -106,7 +128,7 @@ export class RandomPasswordModal extends BaseModal {
                     </div>
                     <div class="random-password-summary-card" aria-hidden="true">
                         <span class="random-password-summary-label">Characters</span>
-                        <strong>${lengthValue}</strong>
+                        <strong id="password-character-count">${lengthValue}</strong>
                     </div>
                 </div>
 
@@ -117,14 +139,14 @@ export class RandomPasswordModal extends BaseModal {
                 </div>
 
                 <div class="form-group">
-                    <label for="password-result-output">Generated password</label>
+                    <label for="password-result-output">Password candidate</label>
                     <div class="random-password-result-row">
                         <input
                             type="text"
                             id="password-result-output"
-                            readonly
                             spellcheck="false"
                             autocomplete="off"
+                            autocapitalize="none"
                         >
                         <button
                             type="button"
@@ -136,6 +158,27 @@ export class RandomPasswordModal extends BaseModal {
                         </button>
                     </div>
                     <small id="password-result-copy-hint" class="form-help">${copyStatus}</small>
+                </div>
+
+                <div class="random-password-strength" id="password-strength" data-score="pending">
+                    <div class="random-password-strength-header">
+                        <span>Strength</span>
+                        <strong id="password-strength-label">Calculating...</strong>
+                    </div>
+                    <div
+                        class="random-password-strength-meter"
+                        id="password-strength-meter"
+                        role="meter"
+                        aria-label="Password candidate strength"
+                        aria-valuemin="0"
+                        aria-valuemax="4"
+                    >
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <small class="form-help" id="password-strength-policy">Loading the local strength estimator.</small>
                 </div>
 
                 <div class="form-actions random-password-modal-actions">
@@ -165,7 +208,74 @@ export class RandomPasswordModal extends BaseModal {
         }
         resultOutput.value = result;
 
+        this.renderPasswordStrength(result);
         this.setupFormEventListeners();
+    }
+
+    renderPasswordStrength(password) {
+        const strengthContainer = document.getElementById('password-strength');
+        const strengthLabel = document.getElementById('password-strength-label');
+        const strengthMeter = document.getElementById('password-strength-meter');
+        const strengthPolicy = document.getElementById('password-strength-policy');
+        if (!(strengthContainer instanceof HTMLElement)) {
+            throw new Error('password-strength missing');
+        }
+        if (!(strengthLabel instanceof HTMLElement)) {
+            throw new Error('password-strength-label missing');
+        }
+        if (!(strengthMeter instanceof HTMLElement)) {
+            throw new Error('password-strength-meter missing');
+        }
+        if (!(strengthPolicy instanceof HTMLElement)) {
+            throw new Error('password-strength-policy missing');
+        }
+
+        if (password.length === 0) {
+            strengthContainer.dataset.score = 'pending';
+            strengthLabel.textContent = 'Enter a password';
+            strengthMeter.removeAttribute('aria-valuenow');
+            strengthPolicy.textContent = 'Type or paste a candidate to test it locally.';
+            return;
+        }
+        if (typeof globalThis.zxcvbn !== 'function') {
+            strengthContainer.dataset.score = 'pending';
+            strengthLabel.textContent = 'Calculating...';
+            strengthMeter.removeAttribute('aria-valuenow');
+            strengthPolicy.textContent = 'Loading the local strength estimator.';
+            return;
+        }
+
+        const strength = evaluatePasswordStrength(password, globalThis.zxcvbn);
+        strengthContainer.dataset.score = String(strength.score);
+        strengthLabel.textContent = `${strength.label} · ${strength.score}/4`;
+        strengthMeter.setAttribute('aria-valuenow', String(strength.score));
+        strengthPolicy.textContent = strength.meetsScoreThreshold
+            ? 'Meets the MetaList zxcvbn score threshold.'
+            : 'Below the MetaList zxcvbn score threshold.';
+    }
+
+    renderPasswordStrengthUnavailable() {
+        const strengthContainer = document.getElementById('password-strength');
+        const strengthLabel = document.getElementById('password-strength-label');
+        const strengthMeter = document.getElementById('password-strength-meter');
+        const strengthPolicy = document.getElementById('password-strength-policy');
+        if (!(strengthContainer instanceof HTMLElement)) {
+            throw new Error('password-strength missing');
+        }
+        if (!(strengthLabel instanceof HTMLElement)) {
+            throw new Error('password-strength-label missing');
+        }
+        if (!(strengthMeter instanceof HTMLElement)) {
+            throw new Error('password-strength-meter missing');
+        }
+        if (!(strengthPolicy instanceof HTMLElement)) {
+            throw new Error('password-strength-policy missing');
+        }
+
+        strengthContainer.dataset.score = 'unavailable';
+        strengthLabel.textContent = 'Unavailable';
+        strengthMeter.removeAttribute('aria-valuenow');
+        strengthPolicy.textContent = 'The local strength estimator could not be loaded.';
     }
 
     setupFormEventListeners() {
@@ -188,12 +298,34 @@ export class RandomPasswordModal extends BaseModal {
 
         const resultOutput = document.getElementById('password-result-output');
         if (resultOutput instanceof HTMLInputElement) {
-            resultOutput.onclick = () => {
-                resultOutput.focus();
-                resultOutput.select();
-            };
-            resultOutput.onfocus = () => {
-                resultOutput.select();
+            resultOutput.oninput = () => {
+                const password = resultOutput.value;
+                const characterCountOutput = document.getElementById('password-character-count');
+                const copyHintOutput = document.getElementById('password-result-copy-hint');
+                const errorOutput = document.getElementById('password-generator-error');
+                if (!(characterCountOutput instanceof HTMLElement)) {
+                    throw new Error('password-character-count missing');
+                }
+                if (!(copyButton instanceof HTMLButtonElement)) {
+                    throw new Error('password-copy-btn missing');
+                }
+                if (!(copyHintOutput instanceof HTMLElement)) {
+                    throw new Error('password-result-copy-hint missing');
+                }
+                if (!(errorOutput instanceof HTMLElement)) {
+                    throw new Error('password-generator-error missing');
+                }
+
+                characterCountOutput.textContent = String(password.length);
+                copyButton.disabled = password.length === 0;
+                copyHintOutput.textContent = COPY_HINT_DEFAULT;
+                errorOutput.textContent = '';
+                this.updateModalState({
+                    result: password,
+                    error: '',
+                    copyStatus: COPY_HINT_DEFAULT,
+                });
+                this.renderPasswordStrength(resultOutput.value);
             };
         }
     }
@@ -233,6 +365,7 @@ export class RandomPasswordModal extends BaseModal {
     regeneratePassword() {
         const lengthInput = document.getElementById('password-length-input');
         const charsetInput = document.getElementById('password-charset-input');
+        const characterCountOutput = document.getElementById('password-character-count');
         const resultOutput = document.getElementById('password-result-output');
         const errorOutput = document.getElementById('password-generator-error');
 
@@ -241,6 +374,9 @@ export class RandomPasswordModal extends BaseModal {
         }
         if (!(charsetInput instanceof HTMLTextAreaElement)) {
             throw new Error('password-charset-input missing');
+        }
+        if (!(characterCountOutput instanceof HTMLElement)) {
+            throw new Error('password-character-count missing');
         }
         if (!(resultOutput instanceof HTMLInputElement)) {
             throw new Error('password-result-output missing');
@@ -261,6 +397,9 @@ export class RandomPasswordModal extends BaseModal {
 
         const lengthValue = Number.parseInt(lengthInput.value, 10);
         const charsetValue = charsetInput.value;
+        characterCountOutput.textContent = Number.isInteger(lengthValue)
+            ? String(lengthValue)
+            : '—';
         if (!Number.isInteger(lengthValue) || lengthValue <= 0) {
             errorOutput.textContent = 'Password length must be a positive integer.';
             resultOutput.value = '';
@@ -309,6 +448,7 @@ export class RandomPasswordModal extends BaseModal {
         const normalizedCharset = normalizePasswordCharset(charsetValue);
         const generated = generateRandomPassword(lengthValue, normalizedCharset, null);
         resultOutput.value = generated;
+        this.renderPasswordStrength(generated);
         copyButton.disabled = false;
         copyHintOutput.textContent = COPY_HINT_DEFAULT;
         errorOutput.textContent = '';

@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Optional, Tuple
 
+from zxcvbn import zxcvbn
+
 from app.models.database import SafeSession
 from app.config import (
     KDF_ALGORITHM,
@@ -16,6 +18,9 @@ from app.config import (
     KDF_MIN_PARALLELISM,
     KDF_MIN_TIME_COST,
     KDF_PARALLELISM,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    PASSWORD_MIN_ZXCVBN_SCORE,
     VAULT_VERSION,
 )
 from app.db.session import begin_writer
@@ -129,8 +134,30 @@ class AuthService:
         return secrets.compare_digest(candidate, settings.auth_verifier)
 
     def check_password_strength(self, password: str) -> bool:
-        """Return True when password meets minimal strength requirements."""
-        return len(password) > 3
+        """Return True when a new password meets the current policy."""
+        return self.password_policy_error(password) is None
+
+    def password_policy_error(self, password: str) -> str | None:
+        """Return a user-facing policy error for a new password, if any."""
+        if not isinstance(password, str):
+            raise TypeError("password must be a string")
+        if len(password) < PASSWORD_MIN_LENGTH:
+            return f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
+        if len(password) > PASSWORD_MAX_LENGTH:
+            return f"Password must be no more than {PASSWORD_MAX_LENGTH} characters"
+
+        strength = zxcvbn(password, user_inputs=["metalist"])
+        if "score" not in strength:
+            raise RuntimeError("zxcvbn result is missing score")
+        score = strength["score"]
+        if not isinstance(score, int):
+            raise RuntimeError("zxcvbn score must be an integer")
+        if score < PASSWORD_MIN_ZXCVBN_SCORE:
+            return (
+                "Password is too common or predictable. "
+                "Use a longer passphrase or a less predictable password."
+            )
+        return None
 
     def has_password(self) -> bool:
         """Return True if password protection is enabled."""
@@ -240,8 +267,9 @@ class AuthService:
         """Enable password protection by encrypting all existing content."""
         if self.has_password():
             return False, "Password already exists. Use change_password instead."
-        if not self.check_password_strength(password):
-            return False, "Password is too weak (must be > 3 characters)"
+        password_policy_error = self.password_policy_error(password)
+        if password_policy_error is not None:
+            return False, password_policy_error
         if not (KDF_MIN_TIME_COST <= time_cost <= KDF_MAX_TIME_COST):
             return (
                 False,
@@ -452,8 +480,9 @@ class AuthService:
             return False, "No password is currently set. Use set_password instead."
         if not self.verify_password(current_password):
             return False, "Current password is incorrect"
-        if not self.check_password_strength(new_password):
-            return False, "New password is too weak (must be > 3 characters)"
+        password_policy_error = self.password_policy_error(new_password)
+        if password_policy_error is not None:
+            return False, password_policy_error
 
         settings = self.get_settings()
         if not settings:
