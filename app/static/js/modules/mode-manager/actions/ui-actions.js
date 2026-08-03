@@ -191,6 +191,7 @@ export async function actionRefreshAndMaybeSelect(options) {
     const requireExecution = options.requireExecution === true;
     const resetViewCacheBeforeFetch = options.resetViewCacheBeforeFetch === true;
     const scrollToTopAfterRender = options.scrollToTopAfterRender === true;
+    const animateNoteChanges = options.animateNoteChanges !== false;
 
     if (resetViewCacheBeforeFetch) {
         ModeContext.resetTabDiffCache(requestTabId, { preserveRootAnchor: false });
@@ -285,7 +286,7 @@ export async function actionRefreshAndMaybeSelect(options) {
         }
 
         const renderStartedAt = performance.now();
-        const diffResult = applyDifferentialView(snapshot, { previousHashes });
+        const diffResult = applyDifferentialView(snapshot, { previousHashes, animateNoteChanges });
         const notesContainer = diffResult.notesContainer;
         if (!notesContainer) {
             throw new Error('Notes container not found after diff application');

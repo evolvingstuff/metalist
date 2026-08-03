@@ -509,6 +509,81 @@ test('diff refresh animates note collapse from pre-diff height', async (t) => {
     env.runTimeout();
 });
 
+test('diff refresh removes collapsed descendants immediately when note animations are disabled', async (t) => {
+    const env = installBrowserEnvironment(t, { animatedTransitions: true });
+    const { applyDifferentialView } = await import(
+        '../../app/static/js/modules/mode-manager/services/differential-view-service.js'
+    );
+
+    const parentElement = env.createElement('div');
+    parentElement.classList.add('note', 'interactive');
+    parentElement.dataset.noteId = 'parent-note';
+    parentElement.dataset.parentId = '';
+    parentElement.dataset.contentHash = 'parent-expanded';
+    parentElement.dataset.snapshotHash = 'parent-expanded';
+    parentElement.dataset.lockOwner = '';
+    parentElement.dataset.isCollapsed = 'false';
+    parentElement.dataset.hasChildren = 'true';
+    parentElement.dataset.isCollapsible = 'true';
+    parentElement.dataset.noteTags = '';
+    parentElement.dataset.searchRedacted = 'false';
+
+    const parentToggle = env.createElement('button');
+    parentToggle.classList.add('note-collapse-toggle');
+    parentElement.appendChild(parentToggle);
+
+    const parentContent = env.createElement('div');
+    parentContent.classList.add('note-content');
+    parentContent.innerHTML = 'expanded parent';
+    parentElement.appendChild(parentContent);
+
+    const parentTags = env.createElement('div');
+    parentTags.classList.add('note-tags');
+    parentElement.appendChild(parentTags);
+
+    const childContainer = env.createElement('div');
+    childContainer.classList.add('note-children');
+    parentElement.appendChild(childContainer);
+
+    const childElement = env.createElement('div');
+    childElement.classList.add('note', 'interactive');
+    childElement.dataset.noteId = 'child-note';
+    childElement.dataset.parentId = 'parent-note';
+    childElement.dataset.isCollapsed = 'false';
+    childContainer.appendChild(childElement);
+
+    env.notesContainer.appendChild(parentElement);
+    env.elementByNoteId.set('parent-note', parentElement);
+    env.elementByNoteId.set('child-note', childElement);
+
+    applyDifferentialView({
+        currentClientId: 'client-1',
+        editingNoteId: null,
+        diffOps: [
+            { type: 'remove', noteId: 'child-note', parentId: 'parent-note' },
+        ],
+        locks: {},
+        lockDiffs: {},
+        notes: {
+            'parent-note': {
+                content: 'collapsed parent',
+                hash: 'parent-collapsed',
+                tags: '',
+                flags: {
+                    isEditing: false,
+                    isCollapsed: true,
+                    hasChildren: true,
+                    isCollapsible: true,
+                },
+            },
+        },
+    }, { animateNoteChanges: false });
+
+    assert.equal(childContainer.children.includes(childElement), false);
+    assert.equal(parentElement.classList.contains('is-collapse-transitioning'), false);
+    assert.equal(parentElement.style.height, undefined);
+});
+
 test('diff remove animates disappearing note while clearing cached identity immediately', async (t) => {
     const env = installBrowserEnvironment(t, { animatedTransitions: true });
     const { ModeContextInstance: ModeContext } = await import(

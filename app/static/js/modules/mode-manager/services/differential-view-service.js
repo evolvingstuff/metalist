@@ -52,6 +52,16 @@ function captureCollapseAnimationsFromNotePayload(notePayload) {
     return captures;
 }
 
+function buildCollapseAnimationCaptures(notePayload, animateNoteChanges) {
+    if (typeof animateNoteChanges !== 'boolean') {
+        throw new Error('buildCollapseAnimationCaptures requires animateNoteChanges boolean');
+    }
+    if (!animateNoteChanges) {
+        return [];
+    }
+    return captureCollapseAnimationsFromNotePayload(notePayload);
+}
+
 function buildCollapsingCaptureByNoteId(collapseAnimationCaptures) {
     if (!Array.isArray(collapseAnimationCaptures)) {
         throw new Error('buildCollapsingCaptureByNoteId requires captures array');
@@ -99,9 +109,16 @@ function deferRemovalForCollapsingParent(collapsingCaptureByNoteId, parentId, no
     return true;
 }
 
-function removeNoteElementWithAnimation(noteElement) {
+function removeNoteElement(noteElement, animateNoteChanges) {
     if (!(noteElement instanceof HTMLElement)) {
-        throw new Error('removeNoteElementWithAnimation requires HTMLElement');
+        throw new Error('removeNoteElement requires HTMLElement');
+    }
+    if (typeof animateNoteChanges !== 'boolean') {
+        throw new Error('removeNoteElement requires animateNoteChanges boolean');
+    }
+    if (!animateNoteChanges) {
+        noteElement.remove();
+        return;
     }
     const capture = captureNoteRemovalAnimation(noteElement);
     if (capture === null) {
@@ -111,7 +128,10 @@ function removeNoteElementWithAnimation(noteElement) {
     animateNoteRemovalAndRemove(capture);
 }
 
-function applyServerDiffOps(payload) {
+function applyServerDiffOps(payload, animateNoteChanges) {
+    if (typeof animateNoteChanges !== 'boolean') {
+        throw new Error('applyServerDiffOps requires animateNoteChanges boolean');
+    }
     const notesContainer = document.getElementById('notes-container');
     if (!notesContainer) {
         throw new Error('Notes container not found');
@@ -131,7 +151,7 @@ function applyServerDiffOps(payload) {
     }
     const touchedParentIds = new Set();
     const affordanceDirtyElements = new Set();
-    const collapseAnimationCaptures = captureCollapseAnimationsFromNotePayload(noteUpdates);
+    const collapseAnimationCaptures = buildCollapseAnimationCaptures(noteUpdates, animateNoteChanges);
     const collapsingCaptureByNoteId = buildCollapsingCaptureByNoteId(collapseAnimationCaptures);
     const noteElements = new Map();
     let vdomOperations = 0;
@@ -196,7 +216,7 @@ function applyServerDiffOps(payload) {
                 element,
             );
             if (!isRemovalDeferred) {
-                removeNoteElementWithAnimation(element);
+                removeNoteElement(element, animateNoteChanges);
             }
             ids.forEach((id) => {
                 noteElements.delete(id);
@@ -537,8 +557,10 @@ export function applyDifferentialView(payload, options) {
         throw new Error('Invalid differential payload');
     }
 
+    const animateNoteChanges = options.animateNoteChanges !== false;
+
     if (Array.isArray(payload.diffOps)) {
-        return applyServerDiffOps(payload);
+        return applyServerDiffOps(payload, animateNoteChanges);
     }
 
     if (!Array.isArray(payload.structure)) {
@@ -561,7 +583,7 @@ export function applyDifferentialView(payload, options) {
     if (!notePayload || typeof notePayload !== 'object') {
         notePayload = {};
     }
-    const collapseAnimationCaptures = captureCollapseAnimationsFromNotePayload(notePayload);
+    const collapseAnimationCaptures = buildCollapseAnimationCaptures(notePayload, animateNoteChanges);
     const collapsingCaptureByNoteId = buildCollapsingCaptureByNoteId(collapseAnimationCaptures);
     const desired = buildDesiredForest(payload.structure, notePayload);
     const desiredIds = new Set(desired.nodeById.keys());
@@ -625,7 +647,7 @@ export function applyDifferentialView(payload, options) {
                     element,
                 );
                 if (!isRemovalDeferred) {
-                    removeNoteElementWithAnimation(element);
+                    removeNoteElement(element, animateNoteChanges);
                 }
                 ids.forEach((id) => {
                     elementCache.delete(id);

@@ -1530,7 +1530,7 @@ class CommandPaletteController {
             }
 
             await NotesAPI.setCollapsedInContext(searchQuery, true);
-            await actionRefreshAndMaybeSelect({});
+            await actionRefreshAndMaybeSelect({ animateNoteChanges: false });
         });
         if (result === null) {
             return;
@@ -1551,7 +1551,7 @@ class CommandPaletteController {
             }
 
             await NotesAPI.setCollapsedInContext(searchQuery, false);
-            await actionRefreshAndMaybeSelect({});
+            await actionRefreshAndMaybeSelect({ animateNoteChanges: false });
         });
         if (result === null) {
             return;
