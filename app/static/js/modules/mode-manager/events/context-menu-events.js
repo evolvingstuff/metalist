@@ -15,6 +15,7 @@ import {
     actionPasteNoteSibling,
     createChildNote,
     createNote,
+    createNoteAtTop,
     deleteNote,
     deleteNoteOutsideEdit,
     moveNoteToTop,
@@ -630,6 +631,16 @@ async function pasteReferenceAsChildFromContextMenu(noteId) {
     insertReferenceTokenIntoActiveEditor(`![[${referenceNoteId}]]`);
 }
 
+async function addNoteAtTopFromContextMenu() {
+    if (ModeContext.isEditing) {
+        throw new Error('Add Note at Top context action requires non-editing mode');
+    }
+    if (ModeContext.isSearching) {
+        actionExitSearchMode();
+    }
+    await createNoteAtTop();
+}
+
 function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
@@ -658,6 +669,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         hasNoteClipboard,
         canAddStyle: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
+        canAddNoteAtTop: !ModeContext.isEditing,
     };
     if (context.canAddStyle) {
         context.styleOptions = ADD_STYLE_OPTIONS;
@@ -777,6 +789,11 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
                 await createChildNote();
             });
         },
+        onAddNoteAtTop: () => {
+            void CommandGate.run('contextMenu.note.add_at_top', async () => {
+                await addNoteAtTopFromContextMenu();
+            });
+        },
         onDeleteNote: (targetNoteId) => {
             void CommandGate.run('contextMenu.note.delete', async () => {
                 const deleteMode = await prepareDeleteNoteContextAction({
@@ -873,6 +890,7 @@ function showViewContextMenu(event) {
         kind: 'view',
         areTabsVisible: document.body.classList.contains('pref-show-tab-ui'),
         isCalendarVisible: document.body.classList.contains('pref-show-rhs-panel'),
+        canAddNoteAtTop: !ModeContext.isEditing,
     };
     const items = buildContextMenuItems(context, {
         onToggleTabs: (nextValue) => {
@@ -880,6 +898,11 @@ function showViewContextMenu(event) {
         },
         onToggleCalendar: (nextValue) => {
             void CommandPalette.applyPreference('pref.show_rhs_panel', nextValue);
+        },
+        onAddNoteAtTop: () => {
+            void CommandGate.run('contextMenu.view.add_at_top', async () => {
+                await addNoteAtTopFromContextMenu();
+            });
         },
         onExportViewHtml: () => {
             void CommandGate.run('contextMenu.view.export_html', async () => {

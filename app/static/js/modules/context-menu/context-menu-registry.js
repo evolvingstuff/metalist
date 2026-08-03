@@ -41,6 +41,7 @@ function buildNoteContextItems(context, handlers) {
 
     const onAddSiblingNote = handlers.onAddSiblingNote;
     const onAddChildNote = handlers.onAddChildNote;
+    const onAddNoteAtTop = handlers.onAddNoteAtTop;
     const onDeleteNote = handlers.onDeleteNote;
     const onMoveNoteToTop = handlers.onMoveNoteToTop;
     const onCopySelection = handlers.onCopySelection;
@@ -308,6 +309,18 @@ function buildNoteContextItems(context, handlers) {
         enabled: true,
         onSelect: () => onAddSiblingNote(noteId),
     };
+    if (context.canAddNoteAtTop === true) {
+        if (typeof onAddNoteAtTop !== 'function') {
+            throw new Error('Non-editing note context missing onAddNoteAtTop handler');
+        }
+        items.push({
+            id: 'add-note-at-top',
+            label: 'Add Note at Top',
+            icon: 'arrow_top',
+            enabled: true,
+            onSelect: () => onAddNoteAtTop(),
+        });
+    }
     items.push(
         addSiblingItem,
         {
@@ -405,6 +418,7 @@ function buildViewContextItems(context, handlers) {
     }
 
     const onExportViewHtml = handlers.onExportViewHtml;
+    const onAddNoteAtTop = handlers.onAddNoteAtTop;
     const onToggleTabs = handlers.onToggleTabs;
     const onToggleCalendar = handlers.onToggleCalendar;
     if (typeof onExportViewHtml !== 'function') {
@@ -423,7 +437,7 @@ function buildViewContextItems(context, handlers) {
         throw new Error('View context missing isCalendarVisible boolean');
     }
 
-    return [
+    const items = [
         {
             id: 'toggle-tabs',
             label: context.areTabsVisible ? 'Hide Tabs' : 'Show Tabs',
@@ -445,6 +459,19 @@ function buildViewContextItems(context, handlers) {
             onSelect: () => onExportViewHtml(),
         },
     ];
+    if (context.canAddNoteAtTop === true) {
+        if (typeof onAddNoteAtTop !== 'function') {
+            throw new Error('Non-editing view context missing onAddNoteAtTop handler');
+        }
+        items.unshift({
+            id: 'add-note-at-top',
+            label: 'Add Note at Top',
+            icon: 'arrow_top',
+            enabled: true,
+            onSelect: () => onAddNoteAtTop(),
+        });
+    }
+    return items;
 }
 
 export function buildContextMenuItems(context, handlers) {

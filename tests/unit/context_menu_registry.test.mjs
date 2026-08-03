@@ -20,6 +20,7 @@ function buildNoteHandlers(calls) {
         onResetImageSize: (context) => calls.push(['resetImageSize', context]),
         onExportNoteHtml: (noteId) => calls.push(['exportNoteHtml', noteId]),
         onExportViewHtml: () => calls.push(['exportViewHtml']),
+        onAddNoteAtTop: () => calls.push(['addNoteAtTop']),
         onAddSiblingNote: (noteId) => calls.push(['addSibling', noteId]),
         onAddChildNote: (noteId) => calls.push(['addChild', noteId]),
         onDeleteNote: (noteId) => calls.push(['delete', noteId]),
@@ -267,6 +268,20 @@ test('buildContextMenuItems shows paste actions when note clipboard is available
     ]);
 });
 
+test('buildContextMenuItems adds a top note action to non-editing note context', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        { kind: 'note', noteId: 'note-123', canAddNoteAtTop: true },
+        buildNoteHandlers(calls),
+    );
+
+    const addNoteAtTop = items.find((item) => item.id === 'add-note-at-top');
+    assert.ok(addNoteAtTop);
+    assert.equal(addNoteAtTop.label, 'Add Note at Top');
+    addNoteAtTop.onSelect();
+    assert.deepEqual(calls, [['addNoteAtTop']]);
+});
+
 test('buildContextMenuItems returns export view for view context', () => {
     const calls = [];
     const items = buildContextMenuItems(
@@ -295,6 +310,29 @@ test('buildContextMenuItems returns export view for view context', () => {
         ['toggleCalendar', false],
         ['exportViewHtml'],
     ]);
+});
+
+test('buildContextMenuItems adds a top note action to non-editing blank view context', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        {
+            kind: 'view',
+            areTabsVisible: true,
+            isCalendarVisible: true,
+            canAddNoteAtTop: true,
+        },
+        {
+            onAddNoteAtTop: () => calls.push(['addNoteAtTop']),
+            onToggleTabs: () => {},
+            onToggleCalendar: () => {},
+            onExportViewHtml: () => {},
+        },
+    );
+
+    assert.equal(items[0].id, 'add-note-at-top');
+    assert.equal(items[0].label, 'Add Note at Top');
+    items[0].onSelect();
+    assert.deepEqual(calls, [['addNoteAtTop']]);
 });
 
 test('buildContextMenuItems returns only link actions for link context', () => {
