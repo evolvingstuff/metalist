@@ -63,6 +63,7 @@
 - Undo boundaries: client includes an `epoch` in `undoContext` (`tab/search/epoch`); global actions bump the epoch so undo/redo cannot cross those boundaries. Sort-mode changes are one of those global boundaries and blank undo/redo for the active tab context.
 - Error handling: fail-fast (internal errors crash; DB rollback triggers immediate process exit; request-validation crash toggle).
 - Auth: Argon2id password verifier protecting the DEK; encrypted settings require `vault_version` + full KDF profile (`kdf_algorithm`, `kdf_memory_cost_kib`, `kdf_parallelism`); `/api2/auth/login` is rate-limited; pre-login namespace selection uses `GET /api2/auth/login-namespaces` + `POST /api2/auth/login-namespaces/open` to redirect into another namespace without widening the authenticated namespace APIs; tokens are short-lived and kept in-memory on the server, but the browser now carries them via an HttpOnly `metalist_auth` cookie instead of `localStorage`; token issuance enforces a single active session.
+- Shell security: `CmdRunShellStart` and `CmdRunShellStatus` reject execution/output access unless password protection is enabled for the active namespace; start rejects before loading the note or reaching the host-process service.
 
 ## Workflows
 - View/diff: `POST /api2/notes/view` → `app/services/snapshot.build_view_snapshot()` → returns `snapshot{structure,notes,locks,...}` + `updateUUID`.

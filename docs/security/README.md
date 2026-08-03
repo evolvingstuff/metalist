@@ -153,6 +153,14 @@ writes).
 
 ## Security Properties
 
+### Shell Execution
+
+The server rejects `@shell` execution and shell-output polling unless password
+protection is enabled for the active namespace. The execution check runs before
+the note is loaded and before the shell-session service can start a host
+process. Passwordless namespaces can still render shell-tagged notes, but
+attempting to run one returns an inline error response.
+
 ### Application, Database, and Vault Versions
 
 - Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.11`.
@@ -357,6 +365,7 @@ Backup:
 
 Notes:
 - `POST /api2/notes/view`
+- `POST /api2/notes/{note_id}/run-shell` - Run an `@shell` note only when the active namespace is password-protected
 - `POST /api2/notes/new`
 - `POST /api2/notes/new-sibling/{note_id}`
 - `POST /api2/notes/new-child/{note_id}`

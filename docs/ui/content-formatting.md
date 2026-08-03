@@ -124,7 +124,8 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 ## Shell meta tags
 - `@shell`: renders the note content as a terminal-style script block in view mode.
 - Scoped shell rendering applies only to the matching wrapped region.
-- Clicking the block starts a background shell session on the connected server and streams stdout/stderr inline while it runs.
+- Shell execution requires password protection on the active namespace. In a passwordless namespace, clicking the block shows an inline error and no process is started.
+- In a password-protected namespace, clicking the block starts a background shell session on the connected server and streams stdout/stderr inline while it runs.
 - Finished shell feedback stays inline until the user dismisses it with the `Close` button in the output header.
 - The transport is cross-platform (Windows/macOS/Linux), but the script itself still runs inside the server host's shell, so command syntax must match that host environment.
 

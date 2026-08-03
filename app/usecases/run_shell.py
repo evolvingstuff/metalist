@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 
+from app.security.encryption import is_encryption_required
 from app.usecases.base import QueryCommand
 from app.services.content_formatting import _extract_plain_text, _find_first_renderer_tag
 from app.services.shell_session_service import shell_session_service
@@ -34,6 +35,10 @@ class CmdRunShellStart(QueryCommand):
     def execute(self) -> Dict[str, object]:
         if not isinstance(self.timeout_seconds, int) or self.timeout_seconds < 0:
             raise TypeError("timeout_seconds must be a non-negative integer")
+        if not is_encryption_required():
+            return _invalid_shell_response(
+                error_message="Shell execution requires password protection"
+            )
 
         record = store.get(self.note_id)
         if _find_first_renderer_tag(record.tags) != "shell":
@@ -57,6 +62,10 @@ class CmdRunShellStatus(QueryCommand):
         return f"CmdRunShellStatus(note={self.note_id}, run={self.run_id})"
 
     def execute(self) -> Dict[str, object]:
+        if not is_encryption_required():
+            return _invalid_shell_response(
+                error_message="Shell execution requires password protection"
+            )
         return shell_session_service.get_snapshot(
             note_id=self.note_id,
             run_id=self.run_id,
