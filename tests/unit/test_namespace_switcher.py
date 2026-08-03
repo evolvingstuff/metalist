@@ -821,7 +821,10 @@ def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
     monkeypatch.setattr(namespace_switcher.subprocess, "Popen", _fake_popen)
 
     namespace_switcher._launch_namespace_process(
-        environ={"METALIST_SELF_EXECUTABLE": "/tmp/metalist/main.py"},
+        environ={
+            "METALIST_SELF_EXECUTABLE": "/tmp/metalist/main.py",
+            "METALIST_SHELL_ENABLED": "1",
+        },
         chosen_profile=NamespaceLaunchProfile(
             namespace="work",
             port=8123,
@@ -837,6 +840,7 @@ def test_launch_namespace_process_uses_recorded_python_script_entrypoint(
         "work",
         "--port",
         "8123",
+        "--enable-shell",
     ]
     assert Path(str(launched["stdout_name"])).parent == tmp_path / "logs"
     launched_env = launched["env"]

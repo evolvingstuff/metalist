@@ -70,6 +70,21 @@ metalist
 ```
 For source-checkout compatibility, `python main.py` performs the same orchestration. Use `metalist work`, `python main.py --namespace work`, or `python main.py work` when you want one foreground namespace process.
 
+Shell execution is disabled by default. To enable `@shell` for every namespace
+started by the top-level orchestrator, use either:
+
+```bash
+metalist --enable-shell
+python main.py --enable-shell
+```
+
+This flag automatically changes the default bind host to `127.0.0.1`, is
+propagated to every namespace child process, and is rejected if
+`METALIST_HOST` explicitly names a wildcard, LAN, or other non-loopback host.
+The top-level process prints a conspicuous shell-enabled banner before its
+namespace launch results. Use `python main.py work --enable-shell` for one
+foreground namespace.
+
 `metalist` and explicit single-namespace source runs bind HTTP on `0.0.0.0:8000` by default, matching the old MetaList LAN-friendly behavior.
 On first startup, MetaList also auto-generates a self-signed TLS pair at `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`, then enables HTTPS on `0.0.0.0:8443`. If you already have real PEM files, point `METALIST_TLS_CERT` and `METALIST_TLS_KEY` at them instead. Set `METALIST_AUTO_GENERATE_TLS=0` only if you explicitly want HTTP-only startup.
 
@@ -94,6 +109,7 @@ Useful env flags:
 - `METALIST_AUTO_GENERATE_TLS=0`: disable automatic creation of the default self-signed TLS pair
 - default TLS paths: `~/MetaList/certs/metalist-cert.pem` and `~/MetaList/certs/metalist-key.pem`
 - `METALIST_FORWARDED_ALLOW_IPS=127.0.0.1,::1` (default): trust proxy headers only from those reverse-proxy IPs
+- `--enable-shell`: opt in to local `@shell` execution for this launch; valid only with a loopback bind and never persisted in namespace data
 
 ### Remote Access / HTTPS
 Plain LAN or VPN HTTP works with a normal PyCharm run:

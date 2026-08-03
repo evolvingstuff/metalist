@@ -27,6 +27,7 @@ from app.server_runtime import resolve_namespace_launch_defaults
 from app.server_runtime import resolve_runtime_logs_directory
 from app.server_runtime import save_namespace_launch_profile
 from app.server_runtime import validate_namespace
+from app.security.shell_execution import is_shell_execution_enabled_for_environ
 from app.services.diagnostics import recycle_direct_append_log_file
 from app.services.exception_capture import CapturedExceptionContext
 from app.services.namespace_deletion_jobs import create_namespace_deletion_job
@@ -1531,6 +1532,8 @@ def _launch_namespace_process(
     )
     if chosen_profile.https_port is not None:
         command.extend(["--https-port", str(chosen_profile.https_port)])
+    if is_shell_execution_enabled_for_environ(environ=child_environ):
+        command.append("--enable-shell")
     logs_directory = resolve_runtime_logs_directory()
     logs_directory.mkdir(parents=True, exist_ok=True)
     log_path = logs_directory / f"namespace-{chosen_profile.namespace}.log"

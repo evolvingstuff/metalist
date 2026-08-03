@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 from app.security.encryption import is_encryption_required
+from app.security.shell_execution import is_shell_execution_enabled
 from app.usecases.base import QueryCommand
 from app.services.content_formatting import _extract_plain_text, _find_first_renderer_tag
 from app.services.shell_session_service import shell_session_service
@@ -35,6 +36,10 @@ class CmdRunShellStart(QueryCommand):
     def execute(self) -> Dict[str, object]:
         if not isinstance(self.timeout_seconds, int) or self.timeout_seconds < 0:
             raise TypeError("timeout_seconds must be a non-negative integer")
+        if not is_shell_execution_enabled():
+            return _invalid_shell_response(
+                error_message="Shell execution is disabled for this server"
+            )
         if not is_encryption_required():
             return _invalid_shell_response(
                 error_message="Shell execution requires password protection"
@@ -62,6 +67,10 @@ class CmdRunShellStatus(QueryCommand):
         return f"CmdRunShellStatus(note={self.note_id}, run={self.run_id})"
 
     def execute(self) -> Dict[str, object]:
+        if not is_shell_execution_enabled():
+            return _invalid_shell_response(
+                error_message="Shell execution is disabled for this server"
+            )
         if not is_encryption_required():
             return _invalid_shell_response(
                 error_message="Shell execution requires password protection"

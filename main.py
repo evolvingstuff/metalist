@@ -34,6 +34,8 @@ from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import ORCHESTRATED_CHILD_ENV_NAME
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.self_update import schedule_self_update
+from app.security.shell_execution import enable_shell_execution_for_launch
+from app.security.shell_execution import is_shell_execution_enabled
 from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
 from app.services.windows_process_control import is_process_running as is_windows_process_running
 from app.services.windows_process_control import stop_process as stop_windows_process
@@ -52,6 +54,15 @@ _EXPLICIT_NAMESPACE_LAUNCH_ENV_NAMES = (
     "METALIST_PORT",
     "METALIST_HTTPS_PORT",
 )
+
+
+def _print_shell_execution_enabled_banner() -> None:
+    border = "!" * 78
+    print(border, flush=True)
+    print("!!! MetaList @shell execution ENABLED for this launch !!!", flush=True)
+    print("Host commands are available to authenticated loopback clients only.", flush=True)
+    print("This capability is not persisted; omit --enable-shell on the next launch to disable it.", flush=True)
+    print(border, flush=True)
 
 
 def _run_startup_sanity_gates(*, repo_root: Path) -> None:
@@ -147,7 +158,7 @@ def _should_bootstrap_all_namespaces_without_cli_parse(
     argv: list[str],
     original_environ: dict[str, str],
 ) -> bool:
-    if len(argv) != 0:
+    if argv not in ([], ["--enable-shell"]):
         return False
     if "TEST_MODE" in original_environ and original_environ["TEST_MODE"] == "1":
         return False
@@ -599,12 +610,17 @@ def main(argv: list[str]) -> None:
         argv=argv,
         original_environ=original_environ,
     ):
+        if argv == ["--enable-shell"]:
+            enable_shell_execution_for_launch(environ=os.environ)
+            _print_shell_execution_enabled_banner()
         _bootstrap_default_namespace_if_empty(environ=os.environ)
         _prompt_for_missing_namespace_launch_profiles(environ=os.environ)
         launch_results = open_or_launch_all_namespaces(environ=os.environ)
         _print_namespace_bootstrap_results(environ=os.environ, launch_results=launch_results)
         return
     cli_args = apply_main_cli_args_to_environ(argv=argv, environ=os.environ)
+    if cli_args.shell_enabled:
+        _print_shell_execution_enabled_banner()
     if _should_open_or_launch_all_namespaces(
         original_environ=original_environ,
         cli_args=cli_args,
@@ -675,6 +691,7 @@ def _run_namespace_server_for_current_env(*, argv: list[str]) -> None:
         f"host={main_server_config.host} "
         f"http_port={main_server_config.port} "
         f"https_port={main_server_config.https_port} "
+        f"shell_enabled={is_shell_execution_enabled()} "
         f"ssl_certfile={main_server_config.ssl_certfile!r} "
         f"ssl_keyfile={main_server_config.ssl_keyfile!r}"
     )

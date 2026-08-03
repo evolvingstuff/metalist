@@ -264,6 +264,8 @@ def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
     environ: dict[str, str] = {}
 
     parsed = apply_main_cli_args_to_environ(
@@ -286,6 +288,50 @@ def test_apply_main_cli_args_to_environ_sets_namespace_and_ports(
     assert environ["METALIST_NAMESPACE"] == "work"
     assert environ["METALIST_PORT"] == "8123"
     assert environ["METALIST_HTTPS_PORT"] == "8444"
+
+
+def test_apply_main_cli_args_to_environ_enables_shell_and_defaults_to_loopback(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_CERT_PATH", tmp_path / "missing-cert.pem")
+    monkeypatch.setattr(server_runtime, "_DEFAULT_KEY_PATH", tmp_path / "missing-key.pem")
+    environ: dict[str, str] = {}
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=["--enable-shell", "--port", "8123"],
+        environ=environ,
+    )
+
+    assert parsed.shell_enabled is True
+    assert environ["METALIST_SHELL_ENABLED"] == "1"
+    assert environ["METALIST_HOST"] == "127.0.0.1"
+
+
+def test_apply_main_cli_args_to_environ_rejects_shell_on_non_loopback_host(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+
+    with pytest.raises(RuntimeError, match="requires a loopback-only METALIST_HOST"):
+        apply_main_cli_args_to_environ(
+            argv=["--enable-shell", "--port", "8123"],
+            environ={"METALIST_HOST": "0.0.0.0"},
+        )
+
+
+def test_apply_main_cli_args_to_environ_clears_unbacked_shell_capability() -> None:
+    environ = {"METALIST_SHELL_ENABLED": "1"}
+
+    parsed = apply_main_cli_args_to_environ(
+        argv=["--test"],
+        environ=environ,
+    )
+
+    assert parsed.shell_enabled is False
+    assert "METALIST_SHELL_ENABLED" not in environ
 
 
 def test_apply_main_cli_args_to_environ_rejects_namespace_in_test_mode() -> None:

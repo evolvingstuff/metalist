@@ -255,6 +255,7 @@ def test_main_generates_default_tls_pair_on_explicit_namespace_startup(tmp_path,
             https_port=None,
             test_mode=False,
             namespace_requested=True,
+            shell_enabled=False,
         )
 
     def fake_resolve_database_runtime_config(*, environ, argv) -> DatabaseRuntimeConfig:
@@ -374,6 +375,7 @@ def test_main_skips_default_tls_generation_in_test_mode(tmp_path, monkeypatch) -
             https_port=None,
             test_mode=True,
             namespace_requested=False,
+            shell_enabled=False,
         )
 
     monkeypatch.setattr(main_entrypoint, "apply_main_cli_args_to_environ", _fake_apply_main_cli_args_to_environ)
@@ -561,6 +563,66 @@ def test_main_run_without_explicit_namespace_bootstraps_all_namespaces(
         "open_or_launch_all_namespaces",
         "_print_namespace_bootstrap_results",
     ]
+
+
+def test_main_enable_shell_launches_all_namespaces_with_shared_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_enable_shell_execution_for_launch(*, environ) -> None:
+        environ["METALIST_HOST"] = "127.0.0.1"
+        environ["METALIST_SHELL_ENABLED"] = "1"
+        calls.append("enable_shell_execution_for_launch")
+
+    def fake_open_or_launch_all_namespaces(*, environ):
+        assert environ["METALIST_HOST"] == "127.0.0.1"
+        assert environ["METALIST_SHELL_ENABLED"] == "1"
+        calls.append("open_or_launch_all_namespaces")
+        return []
+
+    monkeypatch.setattr(main_entrypoint, "_record_self_executable_for_namespace_launch", lambda: None)
+    monkeypatch.setattr(main_entrypoint, "_run_startup_sanity_gates", lambda *, repo_root: None)
+    monkeypatch.setattr(main_entrypoint, "_run_startup_encryption_audit", lambda *, namespaces_directory: None)
+    monkeypatch.setattr(main_entrypoint, "enable_shell_execution_for_launch", fake_enable_shell_execution_for_launch)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_print_shell_execution_enabled_banner",
+        lambda: calls.append("_print_shell_execution_enabled_banner"),
+    )
+    monkeypatch.setattr(main_entrypoint, "_bootstrap_default_namespace_if_empty", lambda *, environ: calls.append("_bootstrap_default_namespace_if_empty"))
+    monkeypatch.setattr(main_entrypoint, "_prompt_for_missing_namespace_launch_profiles", lambda *, environ: calls.append("_prompt_for_missing_namespace_launch_profiles"))
+    monkeypatch.setattr(main_entrypoint, "open_or_launch_all_namespaces", fake_open_or_launch_all_namespaces)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_print_namespace_bootstrap_results",
+        lambda *, environ, launch_results: calls.append("_print_namespace_bootstrap_results"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "_run_namespace_server_for_current_env",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("single namespace server must not start")),
+    )
+
+    main_entrypoint.main(argv=["--enable-shell"])
+
+    assert calls == [
+        "enable_shell_execution_for_launch",
+        "_print_shell_execution_enabled_banner",
+        "_bootstrap_default_namespace_if_empty",
+        "_prompt_for_missing_namespace_launch_profiles",
+        "open_or_launch_all_namespaces",
+        "_print_namespace_bootstrap_results",
+    ]
+
+
+def test_shell_execution_enabled_banner_is_conspicuous(capsys) -> None:
+    main_entrypoint._print_shell_execution_enabled_banner()
+
+    output = capsys.readouterr().out
+    assert "@shell execution ENABLED" in output
+    assert "loopback clients only" in output
+    assert "not persisted" in output
 
 
 def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(monkeypatch) -> None:

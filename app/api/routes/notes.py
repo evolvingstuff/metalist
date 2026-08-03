@@ -71,6 +71,7 @@ from app.services.undo_state import reset_undo_stack
 from app.usecases.prioritize import list_prioritize_tag_suggestions
 from app.services.selected_text_tag import SelectedTextTagValidationError
 from app.api.request_auth import require_request_auth_token
+from app.security.shell_execution import is_loopback_host
 
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,16 @@ def _require_note_present(note_id: str, *, context: str) -> None:
         return
 
     raise HTTPException(status_code=404, detail=f"Note not found: {note_id}")
+
+
+def _require_loopback_shell_request(request: Request) -> None:
+    if not isinstance(request, Request):
+        raise TypeError("request must be a Request")
+    if request.client is None or not is_loopback_host(host=request.client.host):
+        raise HTTPException(
+            status_code=403,
+            detail="Shell execution is restricted to loopback clients",
+        )
 
 
 def _resolve_tab_sort_mode(tab_id: object) -> str:
@@ -883,7 +894,8 @@ def resize_note_image(request: Request, note_id: str, body: dict):
 
 @router.post("/notes/{note_id}/run-shell")
 @transactional_route
-def run_shell_endpoint(note_id: str, body: dict) -> Dict[str, object]:
+def run_shell_endpoint(request: Request, note_id: str, body: dict) -> Dict[str, object]:
+    _require_loopback_shell_request(request)
     _require_note_present(note_id, context="notes.run-shell")
     timeout_seconds = body["timeoutSeconds"]
     cmd = CmdRunShellStart(
@@ -894,7 +906,8 @@ def run_shell_endpoint(note_id: str, body: dict) -> Dict[str, object]:
 
 
 @router.get("/notes/{note_id}/run-shell/{run_id}")
-def run_shell_status_endpoint(note_id: str, run_id: str) -> Dict[str, object]:
+def run_shell_status_endpoint(request: Request, note_id: str, run_id: str) -> Dict[str, object]:
+    _require_loopback_shell_request(request)
     run_capture = CapturedExceptionContext(RuntimeError, TypeError, ValueError)
     result: Dict[str, object] | None = None
     with run_capture:

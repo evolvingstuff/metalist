@@ -21,6 +21,10 @@ from app.db.schema import NAMESPACE_LAUNCH_PROFILE_TABLE
 from app.db.schema import initialize_schema
 from app.db.settings_sql import insert_default_settings
 from app.services.exception_capture import CapturedExceptionContext
+from app.security.shell_execution import enable_shell_execution_for_launch
+from app.security.shell_execution import is_loopback_host
+from app.security.shell_execution import is_shell_execution_enabled_for_environ
+from app.security.shell_execution import SHELL_EXECUTION_ENV_NAME
 
 
 _LOOPBACK_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "0.0.0.0", "::1"})
@@ -69,6 +73,7 @@ class MainCliArgs:
     https_port: int | None
     test_mode: bool
     namespace_requested: bool
+    shell_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -562,8 +567,18 @@ def apply_main_cli_args_to_environ(
         type=_parse_port_argument,
         help="HTTPS port for this launch and remembered namespace profile.",
     )
+    parser.add_argument(
+        "--enable-shell",
+        action="store_true",
+        help="Enable @shell execution for this loopback-only launch.",
+    )
     parser.add_argument("--test", action="store_true", help="Run against the temporary test database.")
     parsed_args = parser.parse_args(list(argv))
+
+    if parsed_args.enable_shell:
+        enable_shell_execution_for_launch(environ=environ)
+    elif SHELL_EXECUTION_ENV_NAME in environ:
+        del environ[SHELL_EXECUTION_ENV_NAME]
 
     if parsed_args.namespace is not None and parsed_args.namespace_shorthand is not None:
         raise RuntimeError("Specify namespace either positionally or with --namespace, not both")
@@ -648,6 +663,7 @@ def apply_main_cli_args_to_environ(
         https_port=parsed_args.https_port,
         test_mode=parsed_args.test,
         namespace_requested=namespace_requested,
+        shell_enabled=parsed_args.enable_shell,
     )
 
 
@@ -964,6 +980,8 @@ def resolve_main_server_config(*, environ: Mapping[str, str]) -> MainServerConfi
         name="METALIST_FORWARDED_ALLOW_IPS",
         fallback="127.0.0.1,::1",
     )
+    if is_shell_execution_enabled_for_environ(environ=environ) and not is_loopback_host(host=host):
+        raise RuntimeError("Shell execution requires a loopback-only METALIST_HOST")
     if https_port is not None and ssl_certfile is None:
         raise RuntimeError(
             "METALIST_HTTPS_PORT requires TLS certs via "

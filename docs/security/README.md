@@ -155,11 +155,19 @@ writes).
 
 ### Shell Execution
 
-The server rejects `@shell` execution and shell-output polling unless password
-protection is enabled for the active namespace. The execution check runs before
-the note is loaded and before the shell-session service can start a host
-process. Passwordless namespaces can still render shell-tagged notes, but
-attempting to run one returns an inline error response.
+The server rejects `@shell` execution and shell-output polling unless the
+top-level process was explicitly launched with `--enable-shell`. The source
+or installed orchestrator propagates that capability to every namespace child without
+persisting it in namespace data. Enabling shell defaults `METALIST_HOST` to
+`127.0.0.1` and fails startup if an explicit wildcard, LAN, or other
+non-loopback host is configured.
+
+Shell start and status routes independently reject non-loopback clients. They
+also require password protection for the active namespace. The execution check
+runs before the note is loaded and before the shell-session service can start a
+host process. Passwordless namespaces and launches without `--enable-shell`
+can still render shell-tagged notes, but attempting to run one returns an
+inline error response.
 
 ### Application, Database, and Vault Versions
 
