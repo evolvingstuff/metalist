@@ -285,8 +285,6 @@ ASSET_VERSION = str(int(time.time()))
 templates = get_templates()
 allowed_request_hosts = resolve_allowed_request_hosts(environ=os.environ)
 
-# Legacy v1 routers removed; keep dev utilities mounted separately.
-app.include_router(dev.router, prefix="/dev", tags=["dev"])  # unchanged
 # v2 routers mounted under configured API_PREFIX
 app.include_router(api2_router, prefix=API_PREFIX, tags=["api2"]) 
 app.include_router(api2_auth_router, prefix=API_PREFIX)
@@ -296,6 +294,7 @@ app.include_router(api2_sounds_router, prefix=API_PREFIX)
 app.include_router(api2_ontology_router, prefix=API_PREFIX)
 app.include_router(api2_reminders_router, prefix=API_PREFIX)
 if TEST_MODE:
+    app.include_router(dev.router, prefix="/dev", tags=["dev"])
     app.include_router(api2_test_router, prefix=API_PREFIX, tags=["api2-test"])
 
 # Catch-all guard for any v1 API access (hard exit)

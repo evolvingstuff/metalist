@@ -14,23 +14,28 @@ from app.config import API_PREFIX, TEST_MODE
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Middleware to check authentication on protected routes."""
-    
-    # Paths that don't require authentication
-    PUBLIC_PATHS = [
+
+    PUBLIC_EXACT_PATHS = frozenset({
+        "/",
         f"{API_PREFIX}/auth/login",
+        f"{API_PREFIX}/auth/login-namespaces",
+        f"{API_PREFIX}/auth/login-namespaces/open",
         f"{API_PREFIX}/auth/status",
         f"{API_PREFIX}/auth/session",
-        f"{API_PREFIX}/auth/namespaces/delete-jobs/",
-        f"{API_PREFIX}/auth/namespaces/rename-jobs/",
-        "/namespace-deleted",
-        "/namespace-renamed",
-        "/static/",  # CSS/JS files needed for login page
         "/favicon.ico",
         "/locked",
-    ]
+        "/namespace-deleted",
+        "/namespace-deleted/open",
+        "/namespace-renamed",
+        "/namespace-renamed/open",
+    } | ({f"{API_PREFIX}/test/reset"} if TEST_MODE else set()))
 
-    if TEST_MODE:
-        PUBLIC_PATHS.append(f"{API_PREFIX}/test/reset")
+    PUBLIC_PREFIX_PATHS = (
+        f"{API_PREFIX}/auth/namespaces/delete-jobs/",
+        f"{API_PREFIX}/auth/namespaces/rename-jobs/",
+        "/static/",  # CSS/JS files needed for login page
+    )
+    assert all(path.endswith("/") for path in PUBLIC_PREFIX_PATHS)
     
     # Paths to suppress verbose logging for (frequent polling endpoints)
     QUIET_PATHS = [
@@ -44,6 +49,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ]
     
     # Note: /api/notes/* paths are NOT in this list - they require auth when password is set
+
+    @classmethod
+    def is_public_path(cls, *, path: str) -> bool:
+        if not isinstance(path, str) or not path.startswith("/"):
+            raise TypeError("path must be an absolute URL path")
+        if path in cls.PUBLIC_EXACT_PATHS:
+            return True
+        return any(path.startswith(prefix) for prefix in cls.PUBLIC_PREFIX_PATHS)
     
     async def dispatch(self, request: Request, call_next):
         """Check authentication for protected routes."""
@@ -74,22 +87,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not is_quiet:
             print(f"Middleware checking path: {path}")
         
-        # Skip authentication for public paths
-        public_match = None
-        
-        # Handle exact root path match
-        if path == "/":
-            public_match = "/ (root)"
-        else:
-            # Check other public paths with startswith
-            for public in self.PUBLIC_PATHS:
-                if path.startswith(public):
-                    public_match = public
-                    break
-                
-        if public_match:
+        if self.is_public_path(path=path):
             if not is_quiet:
-                print(f"Path {path} is public (matched '{public_match}'), skipping auth")
+                print(f"Path {path} is explicitly public, skipping auth")
             return await call_next(request)
         
         if not is_quiet:

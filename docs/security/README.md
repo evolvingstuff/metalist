@@ -334,6 +334,14 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
 - Logout and session expiry fail closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, search history, attachment metadata, undo/sync state, and ontology state before serving the locked session.
 
+### Authentication Route Boundary
+
+- Public application/API endpoints are matched by exact path. Login, passwordless session creation, status, pre-login namespace selection, and the namespace restart landing pages are individually allowlisted.
+- Prefix matching is reserved for static assets and opaque namespace delete/rename job polling paths.
+- Similar-looking paths do not inherit public access: for example, `/api2/auth/session` is public while `/api2/auth/sessions` remains authenticated.
+- The authentication-router inventory test fails if a future auth endpoint crosses the public boundary without an explicit test update.
+- `/dev/use-dev-db` and `/dev/use-file-db` are mounted only in `TEST_MODE`; production processes do not expose those routes.
+
 ### Login Rate Limiting
 - Enforced on `POST /api2/auth/login` before password verification.
 - Default configuration:

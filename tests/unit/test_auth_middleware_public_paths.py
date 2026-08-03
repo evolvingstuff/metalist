@@ -8,25 +8,74 @@ from starlette.responses import Response
 
 import app.api.middleware.auth as auth_middleware
 from app.api.middleware.auth import AuthMiddleware
+from app.api.routes.auth import router as auth_router
+from app.config import API_PREFIX
+
+
+def test_auth_router_public_route_inventory_is_explicit_and_complete() -> None:
+    expected_public_paths = {
+        f"{API_PREFIX}/auth/login",
+        f"{API_PREFIX}/auth/login-namespaces",
+        f"{API_PREFIX}/auth/login-namespaces/open",
+        f"{API_PREFIX}/auth/namespaces/delete-jobs/{{job_id}}",
+        f"{API_PREFIX}/auth/namespaces/rename-jobs/{{job_id}}",
+        f"{API_PREFIX}/auth/session",
+        f"{API_PREFIX}/auth/status",
+    }
+    declared_paths = {
+        f"{API_PREFIX}{route.path}"
+        for route in auth_router.routes
+    }
+    actual_public_paths = {
+        path
+        for path in declared_paths
+        if AuthMiddleware.is_public_path(path=path)
+    }
+
+    assert actual_public_paths == expected_public_paths
 
 
 @pytest.mark.parametrize(
     "path",
     (
+        "/",
+        "/api2/auth/login",
+        "/api2/auth/login-namespaces",
+        "/api2/auth/login-namespaces/open",
+        "/api2/auth/session",
+        "/api2/auth/status",
+        "/locked",
         "/namespace-renamed?job=11111111-1111-1111-1111-111111111111",
         "/namespace-renamed/open?job=11111111-1111-1111-1111-111111111111",
         "/api2/auth/namespaces/rename-jobs/11111111-1111-1111-1111-111111111111",
+        "/namespace-deleted?job=11111111-1111-1111-1111-111111111111",
+        "/namespace-deleted/open?job=11111111-1111-1111-1111-111111111111",
+        "/api2/auth/namespaces/delete-jobs/11111111-1111-1111-1111-111111111111",
+        "/static/js/main.js",
     ),
 )
-def test_namespace_rename_restart_routes_do_not_require_tab_auth(path: str) -> None:
+def test_explicit_pre_authentication_routes_are_public(path: str) -> None:
     request_path = path.partition("?")[0]
 
-    assert any(request_path.startswith(public_path) for public_path in AuthMiddleware.PUBLIC_PATHS)
+    assert AuthMiddleware.is_public_path(path=request_path) is True
 
 
-@pytest.mark.parametrize("path", ("/api2/mcp", "/mcp-client", "/mcp-client-v2"))
-def test_removed_agent_routes_are_not_public(path: str) -> None:
-    assert not any(path.startswith(public_path) for public_path in AuthMiddleware.PUBLIC_PATHS)
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api2/auth/sessions",
+        "/api2/auth/login-evil",
+        "/api2/auth/status-details",
+        "/api2/auth/session/claim",
+        "/api2/mcp",
+        "/dev/use-dev-db",
+        "/dev/use-file-db",
+        "/mcp-client",
+        "/mcp-client-v2",
+    ),
+)
+def test_routes_outside_the_exact_allowlist_are_not_public(path: str) -> None:
+    assert AuthMiddleware.is_public_path(path=path) is False
 
 
 def test_request_after_session_expiry_purges_decrypted_runtime_state(monkeypatch) -> None:
