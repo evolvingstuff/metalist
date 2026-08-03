@@ -13,6 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from app.security.sensitive_logging import traceback_frame_summary
 from app.server_runtime import resolve_runtime_logs_directory
 
 
@@ -45,7 +46,7 @@ class ActiveRequest:
     request_id: str
     method: str
     path: str
-    query: str
+    has_query: bool
     client: str
     user_agent: str
     started_at: float
@@ -57,7 +58,7 @@ class SlowRequestLog:
     request_id: str
     method: str
     path: str
-    query: str
+    has_query: bool
     client: str
     user_agent: str
     duration_seconds: float
@@ -259,19 +260,22 @@ def _direct_append_log_recycler_loop() -> None:
 
 
 def _log_unhandled_exception(exc_type, exc_value, exc_traceback) -> None:
-    logger.opt(exception=(exc_type, exc_value, exc_traceback)).critical(
-        "[diagnostics] unhandled process exception"
+    logger.critical(
+        "[diagnostics] unhandled process exception error_type={error_type} frames={frames}",
+        error_type=exc_type.__name__,
+        frames=traceback_frame_summary(exc_traceback),
     )
 
 
 def _log_unhandled_thread_exception(args: threading.ExceptHookArgs) -> None:
     if args.thread is None:
         raise RuntimeError("Thread exception hook missing thread")
-    logger.opt(
-        exception=(args.exc_type, args.exc_value, args.exc_traceback)
-    ).critical(
-        "[diagnostics] unhandled thread exception thread={thread_name}",
+    logger.critical(
+        "[diagnostics] unhandled thread exception thread={thread_name} "
+        "error_type={error_type} frames={frames}",
         thread_name=args.thread.name,
+        error_type=args.exc_type.__name__,
+        frames=traceback_frame_summary(args.exc_traceback),
     )
 
 
@@ -304,7 +308,7 @@ class TrackedRequest:
         request_id: str,
         method: str,
         path: str,
-        query: str,
+        has_query: bool,
         client: str,
         user_agent: str,
         started_at: float,
@@ -314,7 +318,7 @@ class TrackedRequest:
             request_id=request_id,
             method=method,
             path=path,
-            query=query,
+            has_query=has_query,
             client=client,
             user_agent=user_agent,
             started_at=started_at,
@@ -334,10 +338,13 @@ class TrackedRequest:
             ended_at=time.perf_counter(),
         )
         if exc_type is not None:
-            logger.opt(exception=(exc_type, exc, exc_traceback)).error(
-                "[diagnostics] request crashed request_id={request_id} duration={duration:.2f} ms",
+            logger.error(
+                "[diagnostics] request crashed request_id={request_id} "
+                "duration={duration:.2f} ms error_type={error_type} frames={frames}",
                 request_id=self._request_id,
                 duration=duration_ms,
+                error_type=exc_type.__name__,
+                frames=traceback_frame_summary(exc_traceback),
             )
         return False
 
@@ -347,7 +354,7 @@ def track_request(
     request_id: str,
     method: str,
     path: str,
-    query: str,
+    has_query: bool,
     client: str,
     user_agent: str,
     started_at: float,
@@ -356,7 +363,7 @@ def track_request(
         request_id=request_id,
         method=method,
         path=path,
-        query=query,
+        has_query=has_query,
         client=client,
         user_agent=user_agent,
         started_at=started_at,
@@ -368,7 +375,7 @@ def begin_request(
     request_id: str,
     method: str,
     path: str,
-    query: str,
+    has_query: bool,
     client: str,
     user_agent: str,
     started_at: float,
@@ -376,11 +383,13 @@ def begin_request(
     assert request_id != ""
     assert method != ""
     assert path.startswith("/")
+    if not isinstance(has_query, bool):
+        raise TypeError("has_query must be a bool")
     request = ActiveRequest(
         request_id=request_id,
         method=method,
         path=path,
-        query=query,
+        has_query=has_query,
         client=client,
         user_agent=user_agent,
         started_at=started_at,
@@ -420,7 +429,7 @@ def collect_slow_request_logs(*, now: float, threshold_seconds: float) -> list[S
                     request_id=request.request_id,
                     method=request.method,
                     path=request.path,
-                    query=request.query,
+                    has_query=request.has_query,
                     client=request.client,
                     user_agent=request.user_agent,
                     duration_seconds=duration_seconds,
@@ -452,11 +461,11 @@ def _request_watchdog_loop() -> None:
         )
         for request in slow_requests:
             logger.warning(
-                "[diagnostics] slow in-flight request request_id={request_id} method={method} path={path} query={query} client={client} duration={duration:.2f}s user_agent={user_agent}",
+                "[diagnostics] slow in-flight request request_id={request_id} method={method} path={path} has_query={has_query} client={client} duration={duration:.2f}s user_agent={user_agent}",
                 request_id=request.request_id,
                 method=request.method,
                 path=request.path,
-                query=request.query,
+                has_query=request.has_query,
                 client=request.client,
                 duration=request.duration_seconds,
                 user_agent=request.user_agent,
@@ -519,11 +528,11 @@ class EventLoopWatchdog:
         )
         for request in active_requests.values():
             logger.error(
-                "[diagnostics] active during loop stall request_id={request_id} method={method} path={path} query={query} client={client} duration={duration:.2f}s",
+                "[diagnostics] active during loop stall request_id={request_id} method={method} path={path} has_query={has_query} client={client} duration={duration:.2f}s",
                 request_id=request.request_id,
                 method=request.method,
                 path=request.path,
-                query=request.query,
+                has_query=request.has_query,
                 client=request.client,
                 duration=now - request.started_at,
             )
@@ -549,16 +558,15 @@ def _handle_asyncio_exception(
     loop: asyncio.AbstractEventLoop,
     context: dict[str, object],
 ) -> None:
-    message = context.get("message")
     exception = context.get("exception")
     if isinstance(exception, BaseException):
-        logger.opt(exception=exception).error(
-            "[diagnostics] unhandled asyncio exception message={message}",
-            message=message,
+        logger.error(
+            "[diagnostics] unhandled asyncio exception error_type={error_type} frames={frames}",
+            error_type=type(exception).__name__,
+            frames=traceback_frame_summary(exception.__traceback__),
         )
         return
     logger.error(
-        "[diagnostics] asyncio error message={message} context={context}",
-        message=message,
-        context=context,
+        "[diagnostics] asyncio error without exception context_keys={context_keys}",
+        context_keys=sorted(str(key) for key in context),
     )

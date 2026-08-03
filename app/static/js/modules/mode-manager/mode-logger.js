@@ -19,28 +19,22 @@ export function logDebug(message, data, category, modes) {
         modes = null;
     }
 
-    console.log(`[${category}]: ${message}`, {
-        ...(modes && { modes }),
-        ...data
-    });
+    console.log(`[${category}]: ${message}`);
 }
 
 export function logAction(actionName, data) {
     if (typeof data === 'undefined' || data === null) {
         data = {};
     }
-    console.log(`[${LogCategory.ACTION}]: ${actionName}`, data);
+    console.log(`[${LogCategory.ACTION}]: ${actionName}`);
 }
 
 export function logState(property, newValue, oldValue) {
-    console.log(`[${LogCategory.STATE}]: ${property} changed`, {
-        from: oldValue,
-        to: newValue
-    });
+    console.log(`[${LogCategory.STATE}]: ${property} changed`);
 }
 
 export function logFullState(stateObj) {
-    console.log(`[${LogCategory.STATE}]: Current State:`, stateObj);
+    console.log(`[${LogCategory.STATE}]: Current State requested`);
 }
 
 export function logInit(componentName) {
@@ -51,12 +45,13 @@ export function logError(message, error) {
     if (typeof error === 'undefined' || error === null) {
         error = {};
     }
-    console.error(`[${LogCategory.ERROR}]: ${message}`, error);
+    const errorName = error instanceof Error ? error.name : typeof error;
+    console.error(`[${LogCategory.ERROR}]: ${message}`, { errorName });
 }
 
 export function logNoop(message, data) {
     if (typeof data === 'undefined' || data === null) {
         data = {};
     }
-    console.log(`[${LogCategory.NOOP}]: ${message}`, data);
+    console.log(`[${LogCategory.NOOP}]: ${message}`);
 }

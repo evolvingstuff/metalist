@@ -218,7 +218,6 @@ export const DOMUtils = {
         offset = selectedText.length;
 
         console.log("[DEBUG] Range-based offset:", offset);
-        console.log("[DEBUG] Selected text:", selectedText);
         console.log("[DEBUG] Clicked node:", range.startContainer.nodeName);
 
         return offset;

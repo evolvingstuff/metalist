@@ -1611,7 +1611,7 @@ class ModeContext {
 
         // Update search query to match new tab
         const newQuery = targetEntry.searchQuery;
-        console.log('Setting search query from tab', tabId, 'query:', newQuery);
+        console.log('Setting search query from tab', tabId);
         this._searchQuery = newQuery;
         // Switching tabs can land on a tab whose executed query already matches its saved query.
         if (this.getExecutedSearchQuery(tabId) !== this._searchQuery) {

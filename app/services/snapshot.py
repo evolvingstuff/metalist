@@ -648,7 +648,6 @@ def build_view_state(
                 "payload_count": len(payloads),
                 "root_count": len(children_by_parent[None]) if None in children_by_parent else 0,
             },
-            query=search,
         ).info("notes.view_state.finish")
 
     return ViewState(

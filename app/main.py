@@ -35,6 +35,7 @@ from app.security.encryption import set_encryption_required
 from app.security.http_headers import apply_security_headers
 from app.security.request_boundary import evaluate_request_boundary
 from app.security.request_boundary import resolve_allowed_request_hosts
+from app.security.validation_errors import summarize_validation_errors
 from app.server_runtime import resolve_https_redirect_url
 from app.server_runtime import resolve_request_host_for_https_redirect
 from app.server_runtime import validate_namespace
@@ -91,9 +92,12 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
+        error_type = ""
+        if record.exc_info is not None:
+            error_type = f" error_type={record.exc_info[0].__name__}"
+        logger.opt(depth=depth).log(
             level,
-            record.getMessage(),
+            f"{record.getMessage()}{error_type}",
         )
 
 
@@ -123,14 +127,18 @@ async def start_diagnostics_watchdogs():
 # CRASH SERVER ON VALIDATION ERRORS - FAIL FAST AND LOUD
 @app.exception_handler(RequestValidationError)
 async def crash_on_validation_error(request: Request, exc: RequestValidationError):
+    validation_summary = summarize_validation_errors(exc.errors())
     if CRASH_SERVER_ON_FAIL:
-        logger.error(f"🚨 FATAL: Validation error on {request.method} {request.url}")
-        logger.error(f"🚨 Validation errors: {exc.errors()}")
+        logger.error(f"🚨 FATAL: Validation error on {request.method} {request.url.path}")
+        logger.error(f"🚨 Validation errors: {validation_summary}")
         logger.error(f"🚨 CRASHING SERVER IMMEDIATELY")
-        raise RuntimeError(f"VALIDATION FAILED - CRASHING: {request.method} {request.url}: {exc.errors()}") from exc
+        raise RuntimeError(
+            f"VALIDATION FAILED - CRASHING: {request.method} "
+            f"{request.url.path}: {validation_summary}"
+        ) from exc
     else:
         # Normal behavior - return 422
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return JSONResponse(status_code=422, content={"detail": validation_summary})
 
 
 @app.exception_handler(OntologyParseError)
@@ -355,7 +363,7 @@ async def log_requests(request: Request, call_next):
         request_id=request_id,
         method=request.method,
         path=path,
-        query=request.url.query,
+        has_query=request.url.query != "",
         client=client_host,
         user_agent=request.headers.get("user-agent", "-"),
         started_at=start,

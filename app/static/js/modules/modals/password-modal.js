@@ -65,7 +65,7 @@ export class PasswordModal extends BaseModal {
             // Setup the UI for the determined mode
             this.renderModalContent();
         })().catch((error) => {
-            console.error('Failed to determine password modal mode:', error);
+            console.error('Failed to determine password modal mode');
             this.updateModalState({ 
                 error: 'Failed to load password settings. Please try again.' 
             });
@@ -386,7 +386,7 @@ export class PasswordModal extends BaseModal {
             // Refresh the app to reflect new encryption state
             window.location.reload();
         })().catch((error) => {
-            console.error('Password operation failed:', error);
+            console.error('Password operation failed');
             
             // Remove waiting cursor on error
             document.body.classList.remove('loading');

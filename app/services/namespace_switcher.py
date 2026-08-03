@@ -46,7 +46,8 @@ _PROCESS_WAIT_POLL_INTERVAL_SECONDS = 0.25
 _TERMINATE_GRACE_SECONDS = 5.0
 _KILL_GRACE_SECONDS = 5.0
 _PROBE_TAB_ID = "namespace-switcher-probe"
-_LAUNCH_LOG_TAIL_BYTES = 16 * 1024
+_LAUNCH_LOG_TAIL_BYTES = 4 * 1024
+_LAUNCH_LOG_TAIL_LINES = 20
 ORCHESTRATED_CHILD_ENV_NAME = "METALIST_ORCHESTRATED_CHILD"
 
 
@@ -82,6 +83,7 @@ class NamespaceOpenResult:
 class NamespaceLaunchProcess:
     process: subprocess.Popen[bytes]
     log_path: Path
+    log_start_offset: int
 
 
 @dataclass(frozen=True)
@@ -721,8 +723,10 @@ def _delete_active_namespace(
     redirect_namespace: str,
 ) -> NamespaceDeleteResult:
     normalized_namespace = validate_namespace(namespace=current_namespace)
-    if confirmed_namespace.strip() != normalized_namespace:
-        raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
+    _assert_namespace_deletion_confirmation(
+        namespace=normalized_namespace,
+        confirmed_namespace=confirmed_namespace,
+    )
     normalized_redirect_namespace = validate_namespace(namespace=redirect_namespace)
     catalog = build_namespace_catalog(
         environ=environ,
@@ -812,8 +816,10 @@ def _delete_inactive_namespace(
     confirmed_namespace: str,
 ) -> NamespaceDeleteResult:
     normalized_namespace = validate_namespace(namespace=target_namespace)
-    if confirmed_namespace.strip() != normalized_namespace:
-        raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
+    _assert_namespace_deletion_confirmation(
+        namespace=normalized_namespace,
+        confirmed_namespace=confirmed_namespace,
+    )
 
     namespace_directory = server_runtime.resolve_namespace_directory(namespace=normalized_namespace)
     if not namespace_directory.exists():
@@ -826,13 +832,27 @@ def _delete_inactive_namespace(
     if saved_profile is not None:
         _stop_processes_for_namespace_profile(profile=saved_profile)
     shutil.rmtree(namespace_directory)
+    if namespace_directory.exists():
+        raise RuntimeError(
+            f"Namespace {normalized_namespace} directory still exists after deletion"
+        )
     return NamespaceDeleteResult(
         deleted_namespace=normalized_namespace,
         redirect_url="",
         delete_job_id="",
         active_namespace_deleted=False,
-        message=f"Deleted namespace {normalized_namespace}.",
+        message=f"{normalized_namespace} namespace successfully deleted.",
     )
+
+
+def _assert_namespace_deletion_confirmation(
+    *,
+    namespace: str,
+    confirmed_namespace: str,
+) -> None:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    if confirmed_namespace.strip() != normalized_namespace:
+        raise RuntimeError(f"Type '{normalized_namespace}' to confirm namespace deletion")
 
 
 def _stop_processes_for_namespace_profile(*, profile: NamespaceLaunchProfile) -> None:
@@ -1540,6 +1560,8 @@ def _launch_namespace_process(
     recycle_direct_append_log_file(path=log_path)
     log_handle = open(log_path, "ab")
     try:
+        log_handle.seek(0, os.SEEK_END)
+        log_start_offset = log_handle.tell()
         process = subprocess.Popen(
             command,
             env=child_environ,
@@ -1549,7 +1571,11 @@ def _launch_namespace_process(
         )
     finally:
         log_handle.close()
-    return NamespaceLaunchProcess(process=process, log_path=log_path)
+    return NamespaceLaunchProcess(
+        process=process,
+        log_path=log_path,
+        log_start_offset=log_start_offset,
+    )
 
 
 def _stop_processes_listening_on_port(*, port: int) -> None:
@@ -1591,16 +1617,21 @@ def _restart_running_namespace_process(
     )
 
 
-def _read_namespace_launch_log_tail(*, log_path: Path) -> str:
+def _read_namespace_launch_log_tail(*, log_path: Path, log_start_offset: int) -> str:
+    if log_start_offset < 0:
+        raise ValueError("log_start_offset must not be negative")
     read_capture = CapturedExceptionContext(OSError)
     log_bytes: bytes | None = None
     with read_capture:
-        log_bytes = log_path.read_bytes()
+        with log_path.open("rb") as log_file:
+            log_file.seek(log_start_offset)
+            log_bytes = log_file.read()
     if read_capture.captured_exception is not None:
         return f"<unable to read child log: {read_capture.captured_exception}>"
     if log_bytes is None:
         raise RuntimeError("Namespace child log read produced no bytes")
-    tail = log_bytes[-_LAUNCH_LOG_TAIL_BYTES:].decode("utf-8", errors="replace").strip()
+    tail_text = log_bytes[-_LAUNCH_LOG_TAIL_BYTES:].decode("utf-8", errors="replace")
+    tail = "\n".join(tail_text.splitlines()[-_LAUNCH_LOG_TAIL_LINES:]).strip()
     if tail == "":
         return "<child log is empty>"
     return tail
@@ -1620,7 +1651,10 @@ def _wait_for_namespace_ready(
     while time.monotonic() < deadline:
         exit_code = launched_process.process.poll()
         if exit_code is not None:
-            log_tail = _read_namespace_launch_log_tail(log_path=launched_process.log_path)
+            log_tail = _read_namespace_launch_log_tail(
+                log_path=launched_process.log_path,
+                log_start_offset=launched_process.log_start_offset,
+            )
             raise RuntimeError(
                 f"Namespace {namespace} process exited with code {exit_code}. "
                 f"Child log: {launched_process.log_path}\n{log_tail}"
@@ -1633,7 +1667,10 @@ def _wait_for_namespace_ready(
         if status_payload is not None and status_payload.get("namespace") == namespace:
             return
         time.sleep(_READY_POLL_INTERVAL_SECONDS)
-    log_tail = _read_namespace_launch_log_tail(log_path=launched_process.log_path)
+    log_tail = _read_namespace_launch_log_tail(
+        log_path=launched_process.log_path,
+        log_start_offset=launched_process.log_start_offset,
+    )
     raise RuntimeError(
         f"Timed out waiting for namespace {namespace} on port {port}. "
         f"Child log: {launched_process.log_path}\n{log_tail}"

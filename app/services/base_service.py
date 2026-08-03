@@ -52,7 +52,10 @@ class BaseTransactionService(ABC):
             else:
                 # Exception occurred, rollback
                 self._rollback()
-                logger.error(f"Transaction rolled back due to: {exc_val}")
+                logger.error(
+                    "Transaction rolled back",
+                    extra={"error_type": exc_type.__name__},
+                )
         finally:
             # Always clean up the transaction
             self.transaction_manager.end_transaction()
@@ -61,7 +64,7 @@ class BaseTransactionService(ABC):
                 extra={
                     "service": type(self).__name__,
                     "client": self.client_id,
-                    "exception": exc_val,
+                    "error_type": None if exc_type is None else exc_type.__name__,
                 },
             )
             logger.debug(f"Transaction {self.transaction.uuid if self.transaction else 'None'} cleaned up")

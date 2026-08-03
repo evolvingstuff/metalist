@@ -74,12 +74,11 @@ _HTTPS_PROXY_STRIPPED_REQUEST_HEADERS = frozenset(
 
 
 def _print_shell_execution_enabled_banner() -> None:
-    border = "!" * 78
-    print(border, flush=True)
-    print("!!! MetaList @shell execution ENABLED for this launch !!!", flush=True)
-    print("Host commands are available to authenticated loopback clients only.", flush=True)
-    print("This capability is not persisted; omit --enable-shell on the next launch to disable it.", flush=True)
-    print(border, flush=True)
+    print(
+        "[startup] @shell enabled for authenticated loopback clients "
+        "(this launch only).",
+        flush=True,
+    )
 
 
 def _run_startup_sanity_gates(*, repo_root: Path) -> None:
@@ -99,17 +98,36 @@ def _run_startup_encryption_audit(
         return report
 
     warning_border = "!" * 96
+    if report.startup_allowed:
+        print(warning_border, file=sys.stderr, flush=True)
+        print(
+            "!!! ENCRYPTION AUDIT: AUTHENTICATED DATABASE MIGRATION REQUIRED !!!",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            "MetaList will continue only so the known password-dependent migration can run.",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(rendered_report, file=sys.stderr, flush=True)
+        print(warning_border, file=sys.stderr, flush=True)
+        return report
+
     print(warning_border, file=sys.stderr, flush=True)
-    print("!!! ENCRYPTION AUDIT WARNING: PLAINTEXT OR INVALID ENCRYPTION STORAGE DETECTED !!!", file=sys.stderr, flush=True)
     print(
-        "MetaList will continue starting so password-dependent migrations can run, "
-        "but this database state must not be treated as secure.",
+        "!!! ENCRYPTION AUDIT FATAL: PLAINTEXT OR INVALID ENCRYPTION STORAGE DETECTED !!!",
+        file=sys.stderr,
+        flush=True,
+    )
+    print(
+        "MetaList refuses to start because the findings are not an allowlisted migration state.",
         file=sys.stderr,
         flush=True,
     )
     print(rendered_report, file=sys.stderr, flush=True)
     print(warning_border, file=sys.stderr, flush=True)
-    return report
+    raise RuntimeError(f"Encrypted namespace audit failed:\n{rendered_report}")
 
 
 class FilterCheckUpdates(logging.Filter):
@@ -500,6 +518,7 @@ def _run_main_listener(
         forwarded_allow_ips=forwarded_allow_ips,
         ssl_certfile=ssl_certfile,
         ssl_keyfile=ssl_keyfile,
+        access_log=False,
     )
 
 

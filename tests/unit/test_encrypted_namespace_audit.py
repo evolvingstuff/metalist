@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+import subprocess
+import sys
 
 from app.db.file_schema import initialize_file_schema
 from app.db.file_session import resolve_file_database_path
@@ -10,6 +12,27 @@ from app.encryption_audit import audit_all_namespaces, main
 
 
 _NOW = "2026-08-01T00:00:00+00:00"
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_importing_encryption_audit_does_not_initialize_runtime_config() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "import app.encryption_audit; "
+                "assert 'app.config' not in sys.modules"
+            ),
+        ],
+        cwd=_PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def _create_namespace_database(
@@ -157,6 +180,90 @@ def test_audit_reports_plaintext_without_disclosing_values(tmp_path: Path) -> No
     assert "- private: FAIL" in rendered
     assert "TOP SECRET" not in rendered
     assert "note-secret" not in rendered
+    assert report.startup_allowed is False
+
+
+def test_startup_allows_only_known_password_dependent_migration_payloads(
+    tmp_path: Path,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(
+        namespaces_directory,
+        namespace="private",
+        encryption_enabled=True,
+    )
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "UPDATE app_settings SET client_preferences_json = ? WHERE id = 1",
+        ('{"pref.theme":"dark"}',),
+    )
+    connection.execute("PRAGMA user_version = 0")
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.passed is False
+    assert report.startup_allowed is True
+    assert len(report.migration_findings) == 1
+    assert report.fatal_findings == ()
+    assert report.migration_findings[0].field == "client_preferences_json"
+
+
+def test_current_database_plaintext_is_fatal_even_for_a_former_migration_field(
+    tmp_path: Path,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(
+        namespaces_directory,
+        namespace="private",
+        encryption_enabled=True,
+    )
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "UPDATE app_settings SET client_preferences_json = ? WHERE id = 1",
+        ('{"pref.theme":"dark"}',),
+    )
+    connection.execute("PRAGMA user_version = 1")
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert len(report.fatal_findings) == 1
+    assert report.migration_findings == ()
+
+
+def test_incomplete_migration_field_encryption_metadata_is_fatal(
+    tmp_path: Path,
+) -> None:
+    namespaces_directory = tmp_path / "namespaces"
+    database_path = _create_namespace_database(
+        namespaces_directory,
+        namespace="private",
+        encryption_enabled=True,
+    )
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        """
+        UPDATE app_settings
+        SET client_preferences_json = ?,
+            client_preferences_encryption_nonce = ?,
+            client_preferences_encryption_tag = NULL
+        WHERE id = 1
+        """,
+        ('{"pref.theme":"dark"}', b"n" * 12),
+    )
+    connection.execute("PRAGMA user_version = 0")
+    connection.commit()
+    connection.close()
+
+    report = audit_all_namespaces(namespaces_directory=namespaces_directory)
+
+    assert report.startup_allowed is False
+    assert len(report.fatal_findings) == 1
+    assert "incomplete encryption metadata" in report.fatal_findings[0].message
 
 
 def test_audit_checks_file_database_and_nonce_reuse_across_databases(tmp_path: Path) -> None:

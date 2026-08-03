@@ -56,6 +56,7 @@ from app.server_runtime import load_all_namespace_launch_profiles
 from app.server_runtime import resolve_namespace_directory
 from app.server_runtime import resolve_namespaced_database_path
 from app.server_runtime import validate_namespace
+from app.security.sensitive_logging import traceback_frame_summary
 from app.services.encryption import EncryptionService
 from app.services.tokens import token_service
 from app.services.note_store import store as note_store
@@ -443,11 +444,11 @@ def _on_hydration_done(future: Future) -> None:
         return
     error = future.exception()
     if error is not None:
-        error_message = f"{type(error).__name__}: {error}"
+        error_message = type(error).__name__
         logger.error(
-            "Hydration worker failed: %s",
+            "Hydration worker failed: %s frames=%s",
             error_message,
-            exc_info=(type(error), error, error.__traceback__),
+            traceback_frame_summary(error.__traceback__),
         )
         hydration_state.fail(error_message)
 

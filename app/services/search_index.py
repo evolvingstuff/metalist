@@ -532,7 +532,6 @@ class SearchIndex:
                 if cached_revision == self._revision:
                     total_ms = (time.perf_counter() - t0) * 1000
                     logger.bind(
-                        query=search,
                         metrics={
                             "cache_hit": True,
                             "total_ms": total_ms,
@@ -566,7 +565,6 @@ class SearchIndex:
                 candidate_ms = (time.perf_counter() - t1) * 1000
                 total_ms = (time.perf_counter() - t0) * 1000
                 logger.bind(
-                    query=search,
                     metrics={
                         "cache_hit": False,
                         "parse_ms": parse_ms,
@@ -604,7 +602,6 @@ class SearchIndex:
             self._result_cache[search] = (self._revision, frozen)
 
         logger.bind(
-            query=search,
             metrics={
                 "cache_hit": False,
                 "parse_ms": parse_ms,

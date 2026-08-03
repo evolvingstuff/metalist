@@ -184,9 +184,9 @@ class SafeSession:
                 extra={"stack": stack},
             )
         else:
-            logger.opt(exception=True).error(
+            logger.error(
                 "FATAL: DB rollback executed; crashing process",
-                extra={"stack": stack},
+                extra={"stack": stack, "error_type": exc_type.__name__},
             )
         sys.stderr.write("FATAL: DB rollback executed; crashing process\n")
         sys.stderr.flush()

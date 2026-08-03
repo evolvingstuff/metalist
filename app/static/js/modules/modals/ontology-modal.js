@@ -2707,7 +2707,7 @@ export class OntologyModal extends BaseModal {
             }
         })().catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
-            console.error('Ontology modal action failed', error);
+            console.error('Ontology modal action failed');
             this.renderError(
                 message +
                 (message.includes('single tag')

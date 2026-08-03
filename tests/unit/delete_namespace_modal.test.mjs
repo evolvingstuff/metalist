@@ -2,8 +2,30 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    extractDeletableNamespaceNames,
     validateNamespaceDeletionSubmission,
 } from '../../app/static/js/modules/modals/delete-namespace-validation.js';
+
+
+test('extractDeletableNamespaceNames builds the server-provided selection list', () => {
+    const names = extractDeletableNamespaceNames({
+        namespaces: [
+            { namespace: 'default' },
+            { namespace: 'cla' },
+            { namespace: 'thomas' },
+        ],
+    });
+
+    assert.deepEqual(names, ['default', 'cla', 'thomas']);
+});
+
+
+test('extractDeletableNamespaceNames rejects malformed catalog entries', () => {
+    assert.throws(
+        () => extractDeletableNamespaceNames({ namespaces: [{ namespace: '' }] }),
+        /namespace name/,
+    );
+});
 
 
 test('validateNamespaceDeletionSubmission requires the exact namespace name', () => {

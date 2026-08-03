@@ -13,7 +13,7 @@ const CONNECTIVITY_CHECK_INTERVAL = 2000; // Check every 2 seconds
 
 export const ConnectivityMonitor = {
     handleConnectivityFailure(error) {
-        console.log('[ConnectivityMonitor] Connectivity check failed:', error.message);
+        console.log('[ConnectivityMonitor] Connectivity check failed');
         ErrorHandler.handleApiError(error, null);
     },
 

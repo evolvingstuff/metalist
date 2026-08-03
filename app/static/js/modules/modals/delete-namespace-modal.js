@@ -2,6 +2,7 @@ import { BaseModal } from './base-modal.js';
 import { CONFIG } from '../config.js';
 import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context.js';
 import {
+    extractDeletableNamespaceNames,
     validateNamespaceDeletionSubmission,
 } from './delete-namespace-validation.js';
 import { settleResult } from '../async-result.js';
@@ -39,6 +40,7 @@ export class DeleteNamespaceModal extends BaseModal {
     constructor() {
         super('deleteNamespaceModal', 'delete-namespace-modal');
         this.apiEndpoints = {
+            list: CONFIG.API.AUTH.NAMESPACES.LIST,
             preflight: CONFIG.API.AUTH.NAMESPACES.DELETE_PREFLIGHT,
             deleteNamespace: CONFIG.API.AUTH.NAMESPACES.DELETE,
         };
@@ -46,11 +48,12 @@ export class DeleteNamespaceModal extends BaseModal {
 
     getInitialModalState() {
         return {
-            loading: false,
+            loading: true,
             deleting: false,
             confirming: false,
             deleted: false,
             namespace: '',
+            selectableNamespaces: [],
             targetNamespaceText: '',
             hasPassword: false,
             confirmationText: '',
@@ -60,7 +63,8 @@ export class DeleteNamespaceModal extends BaseModal {
             redirectNamespace: '',
             recreatesDefault: false,
             error: '',
-            status: '',
+            status: 'Loading namespaces...',
+            successMessage: '',
         };
     }
 
@@ -82,7 +86,31 @@ export class DeleteNamespaceModal extends BaseModal {
     }
 
     async onOpen() {
-        this.updateModalState(this.getInitialModalState());
+        this.updateModalState({
+            ...this.getInitialModalState(),
+            loading: true,
+            status: 'Loading namespaces...',
+        });
+        this.renderModalContent();
+        const catalogResult = await settleResult(async () => {
+            const catalog = await this._authRequest(this.apiEndpoints.list, 'GET', null);
+            const selectableNamespaces = extractDeletableNamespaceNames(catalog);
+            this.updateModalState({
+                loading: false,
+                selectableNamespaces,
+                status: '',
+                error: '',
+            });
+        });
+        if (!catalogResult.ok) {
+            const error = catalogResult.error;
+            const message = error instanceof Error ? error.message : 'Failed to load namespaces';
+            this.updateModalState({
+                loading: false,
+                error: message,
+                status: '',
+            });
+        }
         this.renderModalContent();
     }
 
@@ -139,6 +167,7 @@ export class DeleteNamespaceModal extends BaseModal {
         const confirming = Boolean(state.confirming);
         const deleted = Boolean(state.deleted);
         const namespace = typeof state.namespace === 'string' ? state.namespace : '';
+        const selectableNamespaces = Array.isArray(state.selectableNamespaces) ? state.selectableNamespaces : [];
         const targetNamespaceText = typeof state.targetNamespaceText === 'string' ? state.targetNamespaceText : '';
         const hasPassword = state.hasPassword === true;
         const confirmationText = typeof state.confirmationText === 'string' ? state.confirmationText : '';
@@ -149,12 +178,16 @@ export class DeleteNamespaceModal extends BaseModal {
         const recreatesDefault = state.recreatesDefault === true;
         const error = typeof state.error === 'string' ? state.error : '';
         const status = typeof state.status === 'string' ? state.status : '';
+        const successMessage = typeof state.successMessage === 'string' ? state.successMessage : '';
 
         if (deleted) {
+            if (successMessage.length === 0) {
+                throw new Error('Deleted namespace confirmation missing success message');
+            }
             modalElement.innerHTML = `
                 <div class="modal-content namespace-delete-modal-content">
                     <h3>Delete namespace</h3>
-                    <p>Namespace <strong>${escapeHtml(namespace)}</strong> was deleted.</p>
+                    <p>${escapeHtml(successMessage)}</p>
                     <div class="form-actions">
                         <button type="button" class="primary-btn" id="delete-namespace-done-btn">OK</button>
                     </div>
@@ -162,7 +195,7 @@ export class DeleteNamespaceModal extends BaseModal {
             `;
             const doneButton = document.getElementById('delete-namespace-done-btn');
             if (doneButton instanceof HTMLButtonElement) {
-                doneButton.onclick = () => this.close();
+                doneButton.onclick = () => window.location.reload();
             }
             return;
         }
@@ -186,22 +219,23 @@ export class DeleteNamespaceModal extends BaseModal {
         }
 
         if (!confirming) {
+            if (selectableNamespaces.length === 0 && error.length === 0) {
+                throw new Error('Delete namespace modal has no namespace choices');
+            }
             modalElement.innerHTML = `
                 <div class="modal-content namespace-delete-modal-content">
                     <h3>Delete namespace</h3>
-                    <p>Enter the namespace to delete.</p>
+                    <p>Select the namespace to delete.</p>
                     <div class="form-group">
                         <label for="delete-namespace-target">Namespace</label>
-                        <input
+                        <select
                             id="delete-namespace-target"
-                            type="text"
-                            value="${escapeHtml(targetNamespaceText)}"
-                            placeholder="namespace"
-                            autocomplete="off"
-                            autocorrect="off"
-                            autocapitalize="off"
-                            spellcheck="false"
-                        />
+                        >
+                            <option value="">Choose namespace</option>
+                            ${selectableNamespaces.map((candidate) => `
+                                <option value="${escapeHtml(candidate)}" ${candidate === targetNamespaceText ? 'selected' : ''}>${escapeHtml(candidate)}</option>
+                            `).join('')}
+                        </select>
                     </div>
                     <div class="form-actions">
                         <button type="button" class="danger-btn" id="delete-namespace-continue-btn">Continue</button>
@@ -289,8 +323,8 @@ export class DeleteNamespaceModal extends BaseModal {
 
     setupFormEventListeners() {
         const targetInput = document.getElementById('delete-namespace-target');
-        if (targetInput instanceof HTMLInputElement) {
-            targetInput.oninput = () => {
+        if (targetInput instanceof HTMLSelectElement) {
+            targetInput.onchange = () => {
                 this.updateModalState({
                     targetNamespaceText: targetInput.value,
                     error: '',
@@ -499,12 +533,16 @@ export class DeleteNamespaceModal extends BaseModal {
             if (typeof response.active_namespace_deleted !== 'boolean') {
                 throw new Error('Namespace delete response missing active_namespace_deleted');
             }
+            if (typeof response.message !== 'string' || response.message.length === 0) {
+                throw new Error('Namespace delete response missing message');
+            }
             if (!response.active_namespace_deleted) {
                 this.updateModalState({
                     deleting: false,
                     confirming: false,
                     deleted: true,
                     namespace: response.deleted_namespace,
+                    successMessage: response.message,
                     error: '',
                     status: '',
                 });

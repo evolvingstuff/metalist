@@ -83,14 +83,17 @@ class TransactionManager:
         
         if normalized_current != normalized_last:
             if self.command_stack_size:
-                logger.info(f"Search context changed ('{normalized_last}' → '{normalized_current}'), clearing undo stack (was {self.command_stack_size} commands)")
+                logger.info(
+                    "Search context changed, clearing undo stack "
+                    f"(was {self.command_stack_size} commands)"
+                )
                 self.command_stack_size = 0
             else:
-                logger.debug(f"Search context changed ('{normalized_last}' → '{normalized_current}'), undo stack was already empty")
+                logger.debug("Search context changed; undo stack was already empty")
             
             self.last_search_query = current_search_query
         else:
-            logger.debug(f"Search context unchanged: '{normalized_current}'")
+            logger.debug("Search context unchanged")
 
     def check_client_ownership(self, client_id: str):
         """

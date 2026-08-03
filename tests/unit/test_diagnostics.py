@@ -72,7 +72,7 @@ def test_request_tracking_records_and_removes_active_request() -> None:
         request_id="abc123",
         method="POST",
         path="/api2/notes/view",
-        query="",
+        has_query=False,
         client="127.0.0.1",
         user_agent="pytest",
         started_at=100.0,
@@ -81,6 +81,8 @@ def test_request_tracking_records_and_removes_active_request() -> None:
     snapshot = diagnostics.snapshot_active_requests()
     assert "abc123" in snapshot
     assert snapshot["abc123"].path == "/api2/notes/view"
+    assert snapshot["abc123"].has_query is False
+    assert not hasattr(snapshot["abc123"], "query")
 
     duration_ms = diagnostics.finish_request(request_id="abc123", ended_at=100.25)
 
@@ -93,7 +95,7 @@ def test_collect_slow_request_logs_rate_limits_repeated_reports() -> None:
         request_id="slow1",
         method="PUT",
         path="/api2/notes/root/save",
-        query="tab=main",
+        has_query=True,
         client="127.0.0.1",
         user_agent="pytest",
         started_at=10.0,
@@ -115,6 +117,8 @@ def test_collect_slow_request_logs_rate_limits_repeated_reports() -> None:
 
     assert len(first_logs) == 1
     assert first_logs[0].request_id == "slow1"
+    assert first_logs[0].has_query is True
+    assert not hasattr(first_logs[0], "query")
     assert first_logs[0].duration_seconds == 15.0
     assert repeated_logs == []
     assert len(later_logs) == 1

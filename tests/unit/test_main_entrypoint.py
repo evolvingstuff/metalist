@@ -188,14 +188,61 @@ def test_run_startup_sanity_gates_runs_python_then_js(monkeypatch, tmp_path: Pat
     ]
 
 
-def test_startup_encryption_audit_prints_large_warning_and_continues(
+def test_startup_encryption_audit_crashes_for_fatal_findings(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    report = SimpleNamespace(
+        passed=False,
+        startup_allowed=False,
+        render_text=lambda: "fatal encrypted storage finding",
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "audit_all_namespaces",
+        lambda *, namespaces_directory: report,
+    )
+
+    with pytest.raises(RuntimeError, match="fatal encrypted storage finding"):
+        main_entrypoint._run_startup_encryption_audit(
+            namespaces_directory=tmp_path,
+        )
+
+
+def test_startup_encryption_audit_allows_only_deferred_migration_findings(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    report = SimpleNamespace(
+        passed=False,
+        startup_allowed=True,
+        render_text=lambda: "password-dependent migration required",
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "audit_all_namespaces",
+        lambda *, namespaces_directory: report,
+    )
+
+    returned = main_entrypoint._run_startup_encryption_audit(
+        namespaces_directory=tmp_path,
+    )
+
+    assert returned is report
+
+
+def test_startup_encryption_audit_prints_migration_warning_and_continues(
     monkeypatch,
     tmp_path: Path,
     capsys,
 ) -> None:
     report = SimpleNamespace(
         passed=False,
-        render_text=lambda: "Encrypted namespace audit: FAIL\n- cla: FAIL\n- default: PASS",
+        startup_allowed=True,
+        render_text=lambda: (
+            "Encrypted namespace audit: MIGRATION REQUIRED\n"
+            "- cla: MIGRATION REQUIRED\n- default: PASS"
+        ),
     )
     monkeypatch.setattr(
         main_entrypoint,
@@ -209,9 +256,9 @@ def test_startup_encryption_audit_prints_large_warning_and_continues(
 
     captured = capsys.readouterr()
     assert returned_report is report
-    assert "ENCRYPTION AUDIT WARNING" in captured.err
-    assert "MetaList will continue starting" in captured.err
-    assert "- cla: FAIL" in captured.err
+    assert "AUTHENTICATED DATABASE MIGRATION REQUIRED" in captured.err
+    assert "known password-dependent migration" in captured.err
+    assert "- cla: MIGRATION REQUIRED" in captured.err
     assert "- default: PASS" in captured.err
 
 
@@ -616,13 +663,14 @@ def test_main_enable_shell_launches_all_namespaces_with_shared_capability(
     ]
 
 
-def test_shell_execution_enabled_banner_is_conspicuous(capsys) -> None:
+def test_shell_execution_enabled_notice_is_concise(capsys) -> None:
     main_entrypoint._print_shell_execution_enabled_banner()
 
     output = capsys.readouterr().out
-    assert "@shell execution ENABLED" in output
-    assert "loopback clients only" in output
-    assert "not persisted" in output
+    assert output == (
+        "[startup] @shell enabled for authenticated loopback clients "
+        "(this launch only).\n"
+    )
 
 
 def test_prompt_for_missing_namespace_launch_profiles_auto_saves_default_ports(monkeypatch) -> None:

@@ -201,6 +201,31 @@ Permissions Policy headers provide additional browser hardening. Inline styles
 remain enabled because note formatting and existing templates require them, so
 the sanitizer's CSS-property/value allowlist remains an important layer.
 
+### Sensitive Telemetry
+
+Runtime logs and browser diagnostics describe application structure without
+recording decrypted user data:
+
+- Server request telemetry records method, route path, timing, client address,
+  and whether a query string exists; it never retains the query-string value or
+  request body.
+- Search telemetry records counts and timings without search expressions, tags,
+  or note text.
+- Validation failures retain only the error type and field location. Rejected
+  input, validation messages, and validation context are discarded before logging
+  or returning a 422 response.
+- Persistent exception diagnostics retain the exception type and traceback frame
+  locations, not the exception message or local values. Uvicorn's raw access log
+  is disabled because request targets can contain searches.
+- Browser API/state debug logging is disabled by default. If enabled for
+  development, it reports only request/response structure; shared mode logging
+  discards caller-provided state and payload objects, and direct console calls do
+  not serialize raw `Error` objects.
+- Browser `sessionStorage` contains opaque tab/client identifiers and transition
+  counters only. Legacy authentication keys are removed during authentication
+  initialization; legacy preferences and command-palette usage are removed after
+  successful migration into encrypted server storage.
+
 ### Application, Database, and Vault Versions
 
 - Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.11`.
@@ -225,9 +250,15 @@ every canonical database under `~/MetaList/namespaces`. Use
 
 `main.py` runs the same read-only scan before every launcher startup, and
 `serve_namespace.py` runs it before every namespace-server startup. A passing
-scan is printed normally. A failing scan prints a large warning with explicit
-per-namespace `PASS`/`FAIL` results, then permits startup so an encrypted
-namespace can accept its password and complete a pending migration.
+scan is printed normally. Findings are classified as `MIGRATION` or `FATAL`.
+Only the three known version-0 client-state payloads handled by the authenticated
+`0 → 1` migration may defer encryption until login; startup continues solely so
+that migration can unwrap the DEK and rewrite them. Plaintext anywhere else,
+incomplete/malformed encryption metadata, unknown storage, nonce reuse, schema
+damage, discovery failures, and current-version plaintext stop startup before
+any namespace listener launches. The standalone audit command still exits
+nonzero for migration findings so backup gates never treat a plaintext archive
+as fully protected.
 
 For each namespace whose `app_settings.encryption_enabled` flag is set, the
 audit checks the main and sibling files databases. It validates every declared

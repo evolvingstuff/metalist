@@ -38,7 +38,7 @@ export const ErrorHandler = {
         if (typeof response === 'undefined') {
             throw new Error('ErrorHandler.handleApiError requires response (use null)');
         }
-        console.error('[ErrorHandler] Handling error:', error, response);
+        console.error('[ErrorHandler] Handling API failure');
         
         if (response !== null) {
             // HTTP response error
@@ -85,7 +85,7 @@ export const ErrorHandler = {
         if (typeof message !== 'string' || message.length === 0) {
             throw new Error('ErrorHandler.handleAuthError requires message string');
         }
-        console.log('[ErrorHandler] Auth error:', message);
+        console.log('[ErrorHandler] Authentication error');
         Auth.forceLogout(message);
     },
     
@@ -97,10 +97,10 @@ export const ErrorHandler = {
             throw new Error('ErrorHandler.handleNetworkError requires message string');
         }
         if (_isRestoreTransitionActive()) {
-            console.log('[ErrorHandler] Suppressed network error during restore transition:', message);
+            console.log('[ErrorHandler] Suppressed network error during restore transition');
             return;
         }
-        console.log('[ErrorHandler] Network error:', message);
+        console.log('[ErrorHandler] Network error');
         
         // Check if we're already showing a connection error banner
         if (!ModeContext.connectionErrorBannerVisible) {

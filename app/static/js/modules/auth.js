@@ -71,7 +71,7 @@ export const Auth = {
         this.hasPassword = Boolean(status.has_password);
         this._setCurrentNamespace(status.namespace);
         this._applyThemePreference(status.client_preferences);
-        console.log('[Auth] Status response:', status);
+        console.log('[Auth] Status response received');
 
         if (this.hasPassword) {
             if (!status.authenticated) {
@@ -366,7 +366,7 @@ export const Auth = {
             const playPromise = video.play();
             if (playPromise !== undefined && playPromise !== null && typeof playPromise.then === 'function') {
                 playPromise.catch((error) => {
-                    console.warn('[Auth] Startup intro playback failed:', error);
+                    console.warn('[Auth] Startup intro playback failed');
                     finishIntro();
                 });
             }

@@ -99,23 +99,10 @@ export const NotesAPI = {
             }
                                                 
             if (CONFIG.DEBUG.LOG_API_CALLS) {
-                const isNotesView = url === CONFIG.API.NOTES.VIEW;
-                const bodySummary = isNotesView && requestPayload
-                    ? {
-                        editingNoteId: requestPayload.editingNoteId,
-                        search: requestPayload.search,
-                        clientNoteUuidHashesCount: requestPayload.clientNoteUuidHashes && typeof requestPayload.clientNoteUuidHashes === 'object'
-                            ? Object.keys(requestPayload.clientNoteUuidHashes).length
-                            : 0,
-                        lastUpdateUUID: requestPayload.lastUpdateUUID,
-                    }
-                    : requestPayload;
-
                 console.log(' [API] Request:', {
                     url: url,
                     method: fetchOptions.method || 'GET',
-                    body: bodySummary,
-                    headers: fetchOptions.headers
+                    hasBody: requestBody !== null && typeof requestBody !== 'undefined',
                 });
             }
 
@@ -126,10 +113,6 @@ export const NotesAPI = {
 
             if (claimSession) {
                 headers['X-Metalist-Claim'] = '1';
-            }
-
-            if (CONFIG.DEBUG.LOG_API_CALLS) {
-                console.log('[API] Final headers:', headers);
             }
 
             const response = await fetch(url, {
@@ -151,21 +134,9 @@ export const NotesAPI = {
             }
 
             if (CONFIG.DEBUG.LOG_API_CALLS) {
-                const isNotesView = url === CONFIG.API.NOTES.VIEW;
-                const responseSummary = isNotesView && data && typeof data === 'object'
-                    ? {
-                        updateUUID: data.updateUUID,
-                        snapshotStructureCount: Array.isArray(data.snapshot?.structure) ? data.snapshot.structure.length : 0,
-                        snapshotNotesCount: data.snapshot?.notes && typeof data.snapshot.notes === 'object'
-                            ? Object.keys(data.snapshot.notes).length
-                            : 0,
-                    }
-                    : data;
-
                 console.log(' [API] Response:', {
                     url: url,
                     status: response.status,
-                    data: responseSummary
                 });
             }
             
@@ -185,7 +156,7 @@ export const NotesAPI = {
             if (error && error.name === 'AbortError') {
                 throw error;
             }
-            console.error(' [API] Error:', error);
+            console.error(' [API] request failed');
             
             // Handle network errors (when fetch throws)
 			if (!error.message.includes('API call failed:')) {
@@ -401,7 +372,6 @@ export const NotesAPI = {
         console.log('Moving note:', { noteId, direction });
                                 
         const noteElement = DOMUtils.getNoteById(noteId);
-        console.log('Note element:', noteElement);
         if (!noteElement) {
             throw new Error('Note element not found');
         }

@@ -56,7 +56,7 @@ export class RandomPasswordModal extends BaseModal {
                 this.renderPasswordStrength(resultOutput.value);
             })
             .catch((error) => {
-                console.error('Password strength estimator failed:', error);
+                console.error('Password strength estimator failed');
                 if (!this.isOpen) {
                     return;
                 }

@@ -866,6 +866,7 @@ def test_wait_for_namespace_ready_reports_early_child_exit_and_log(
     launched_process = namespace_switcher.NamespaceLaunchProcess(
         process=_ExitedProcess(),
         log_path=log_path,
+        log_start_offset=0,
     )
     monkeypatch.setattr(
         namespace_switcher,
@@ -893,6 +894,21 @@ def test_wait_for_namespace_ready_reports_early_child_exit_and_log(
             port=8000,
             launched_process=launched_process,
         )
+
+
+def test_read_namespace_launch_log_tail_excludes_previous_launches(tmp_path: Path) -> None:
+    log_path = tmp_path / "namespace-default.log"
+    previous_launch = "old query value that must not be repeated\n"
+    current_launch = "RuntimeError: current launch failed\n"
+    log_path.write_text(previous_launch + current_launch, encoding="utf-8")
+
+    log_tail = namespace_switcher._read_namespace_launch_log_tail(
+        log_path=log_path,
+        log_start_offset=len(previous_launch.encode("utf-8")),
+    )
+
+    assert log_tail == "RuntimeError: current launch failed"
+    assert "old query value" not in log_tail
 
 
 def test_open_or_launch_namespace_restarts_running_namespace_and_updates_profile(
@@ -1229,9 +1245,29 @@ def test_delete_namespace_removes_inactive_namespace_without_redirect(
     assert result.redirect_url == ""
     assert result.delete_job_id == ""
     assert result.active_namespace_deleted is False
-    assert result.message == "Deleted namespace cla."
+    assert result.message == "cla namespace successfully deleted."
     assert namespace_directory.exists() is False
     assert stopped_profiles == [target_profile]
+
+
+def test_delete_inactive_namespace_fails_if_directory_remains(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace_directory = tmp_path / "namespaces" / "default"
+    namespace_directory.mkdir(parents=True)
+    monkeypatch.setattr(server_runtime, "_DEFAULT_DATABASE_DIRECTORY", tmp_path)
+    monkeypatch.setattr(namespace_switcher, "_load_saved_profiles_by_namespace", lambda: {})
+    monkeypatch.setattr(namespace_switcher.shutil, "rmtree", lambda path: None)
+
+    with pytest.raises(RuntimeError, match="still exists after deletion"):
+        delete_namespace(
+            environ={},
+            current_namespace="cla",
+            target_namespace="default",
+            confirmed_namespace="default",
+            redirect_namespace="cla",
+        )
 
 
 def test_delete_namespace_launch_profile_removes_saved_entry(

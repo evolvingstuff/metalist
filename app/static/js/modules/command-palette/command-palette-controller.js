@@ -1155,7 +1155,7 @@ class CommandPaletteController {
         if (!exportResult.ok) {
             const error = exportResult.error;
             const message = error instanceof Error ? error.message : 'Unknown error';
-            console.error('HTML export failed:', error);
+            console.error('HTML export failed');
             ErrorHandler.showErrorBanner(
                 `Export as HTML failed: ${message}`,
                 'error',
@@ -1219,7 +1219,7 @@ class CommandPaletteController {
                 throw error;
             }
             const message = error instanceof Error ? error.message : 'Unknown error';
-            console.error('Attach file failed:', error);
+            console.error('Attach file failed');
             ErrorHandler.showErrorBanner(
                 `Attach file failed: ${message}`,
                 'error',

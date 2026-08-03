@@ -31,8 +31,21 @@ test('BaseModal supports Escape, outside click, and declared Enter actions', () 
     const source = readFileSync(BASE_MODAL_URL, 'utf8');
 
     assert.match(source, /event\.key === 'Escape'/);
-    assert.match(source, /!modalContent\.contains\(event\.target\)/);
+    assert.match(source, /event\.target === event\.currentTarget/);
     assert.match(source, /\[data-modal-enter-action\]/);
+});
+
+
+test('BaseModal outside-click detection survives modal content replacement during a click', () => {
+    const source = readFileSync(BASE_MODAL_URL, 'utf8');
+    const handlerStart = source.indexOf('    handleClickOutside(event) {');
+    const handlerEnd = source.indexOf('    // Subclass hooks', handlerStart);
+    assert.notEqual(handlerStart, -1);
+    assert.notEqual(handlerEnd, -1);
+    const handlerSource = source.slice(handlerStart, handlerEnd);
+
+    assert.match(handlerSource, /event\.target === event\.currentTarget/);
+    assert.doesNotMatch(handlerSource, /querySelector/);
 });
 
 
@@ -71,6 +84,18 @@ test('formerly blocking modals allow outside-click closing', () => {
             `${filename} must allow outside-click closing`,
         );
     }
+});
+
+
+test('delete namespace modal starts in loading state before its async onOpen hook', () => {
+    const source = readModalSource('delete-namespace-modal.js');
+    const initialStateStart = source.indexOf('    getInitialModalState() {');
+    const initialStateEnd = source.indexOf('    shouldCloseOnClickOutside()', initialStateStart);
+    assert.notEqual(initialStateStart, -1);
+    assert.notEqual(initialStateEnd, -1);
+    const initialStateSource = source.slice(initialStateStart, initialStateEnd);
+
+    assert.match(initialStateSource, /loading:\s*true,/);
 });
 
 

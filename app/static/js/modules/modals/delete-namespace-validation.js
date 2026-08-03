@@ -1,3 +1,22 @@
+export function extractDeletableNamespaceNames(catalog) {
+    if (!catalog || typeof catalog !== 'object') {
+        throw new Error('Namespace catalog response is missing');
+    }
+    if (!Array.isArray(catalog.namespaces) || catalog.namespaces.length === 0) {
+        throw new Error('Namespace catalog has no namespaces');
+    }
+    return catalog.namespaces.map((entry) => {
+        if (!entry || typeof entry !== 'object') {
+            throw new Error('Namespace catalog entry is invalid');
+        }
+        if (typeof entry.namespace !== 'string' || entry.namespace.length === 0) {
+            throw new Error('Namespace catalog entry is missing namespace name');
+        }
+        return entry.namespace;
+    });
+}
+
+
 export function validateNamespaceDeletionSubmission({
     namespace,
     confirmationText,

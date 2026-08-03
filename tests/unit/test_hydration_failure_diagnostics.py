@@ -6,7 +6,7 @@ import logging
 from app.api.routes import auth as auth_routes
 
 
-def test_hydration_worker_failure_keeps_exception_type_and_traceback(
+def test_hydration_worker_failure_keeps_type_without_exception_message(
     monkeypatch,
     caplog,
 ) -> None:
@@ -18,6 +18,6 @@ def test_hydration_worker_failure_keeps_exception_type_and_traceback(
     with caplog.at_level(logging.ERROR, logger=auth_routes.__name__):
         auth_routes._on_hydration_done(future)
 
-    assert captured_messages == ["AssertionError: "]
-    assert "Hydration worker failed: AssertionError:" in caplog.text
+    assert captured_messages == ["AssertionError"]
+    assert "Hydration worker failed: AssertionError" in caplog.text
     assert "AssertionError" in caplog.text

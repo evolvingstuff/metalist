@@ -152,8 +152,8 @@ export const CONFIG = {
     },
 
     DEBUG: {
-        LOG_API_CALLS: true,
-        LOG_STATE_CHANGES: true
+        LOG_API_CALLS: false,
+        LOG_STATE_CHANGES: false
     },
     
     LOADING: {

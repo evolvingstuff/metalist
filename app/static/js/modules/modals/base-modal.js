@@ -274,8 +274,7 @@ export class BaseModal {
      * Handle click outside modal content
      */
     handleClickOutside(event) {
-        const modalContent = event.currentTarget.querySelector('.modal-content');
-        if (modalContent && !modalContent.contains(event.target)) {
+        if (event.target === event.currentTarget) {
             this.close();
         }
     }

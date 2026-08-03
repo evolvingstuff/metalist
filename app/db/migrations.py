@@ -6,10 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import sqlite3
 
+from app.db.version import CURRENT_DATABASE_VERSION
 from app.services.encryption import EncryptionService
-
-
-CURRENT_DATABASE_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)

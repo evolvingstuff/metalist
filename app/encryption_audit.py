@@ -10,6 +10,8 @@ import re
 import sqlite3
 import sys
 
+from app.db.version import CURRENT_DATABASE_VERSION
+
 
 _NONCE_BYTES = 12
 _TAG_BYTES = 16
@@ -36,6 +38,7 @@ class AuditFinding:
     table: str
     field: str
     message: str
+    is_migration_deferred: bool
     occurrences: int = 1
 
 
@@ -68,6 +71,14 @@ class EncryptionAuditReport:
         return len(self.results)
 
     @property
+    def migration_findings(self) -> tuple[AuditFinding, ...]:
+        return tuple(finding for finding in self.findings if finding.is_migration_deferred)
+
+    @property
+    def fatal_findings(self) -> tuple[AuditFinding, ...]:
+        return tuple(finding for finding in self.findings if not finding.is_migration_deferred)
+
+    @property
     def encrypted_namespace_count(self) -> int:
         return sum(result.is_encrypted for result in self.results)
 
@@ -79,10 +90,16 @@ class EncryptionAuditReport:
     def passed(self) -> bool:
         return self.namespace_count > 0 and len(self.findings) == 0
 
+    @property
+    def startup_allowed(self) -> bool:
+        return self.namespace_count > 0 and len(self.fatal_findings) == 0
+
     def render_text(self) -> str:
         status = "FAIL"
         if self.passed:
             status = "PASS"
+        elif self.startup_allowed:
+            status = "MIGRATION REQUIRED"
         lines = [
             f"Encrypted namespace audit: {status}",
             f"Namespace directory: {self.namespaces_directory}",
@@ -98,16 +115,21 @@ class EncryptionAuditReport:
             if result.is_encrypted:
                 result_status = "PASS"
                 if result.findings:
-                    result_status = "FAIL"
+                    result_status = "MIGRATION REQUIRED"
+                    if any(not finding.is_migration_deferred for finding in result.findings):
+                        result_status = "FAIL"
             lines.append(f"- {result.namespace}: {result_status}")
         if self.findings:
             lines.append("Findings:")
             for finding in self.findings:
+                disposition = "FATAL"
+                if finding.is_migration_deferred:
+                    disposition = "MIGRATION"
                 count_suffix = ""
                 if finding.occurrences > 1:
                     count_suffix = f" ({finding.occurrences} occurrences)"
                 lines.append(
-                    f"- {finding.namespace} | {finding.database_path.name} | "
+                    f"- [{disposition}] {finding.namespace} | {finding.database_path.name} | "
                     f"{finding.table}.{finding.field}: {finding.message}{count_suffix}"
                 )
         return "\n".join(lines)
@@ -118,7 +140,7 @@ class _AuditState:
         self.namespace = namespace
         self.database_path = database_path
         self.checked_payload_count = 0
-        self._finding_counts: dict[tuple[Path, str, str, str], int] = {}
+        self._finding_counts: dict[tuple[Path, str, str, str, bool], int] = {}
         self._used_nonces: dict[bytes, tuple[Path, str, str]] = {}
 
     def add_finding(
@@ -129,7 +151,18 @@ class _AuditState:
         field: str,
         message: str,
     ) -> None:
-        key = (database_path, table, field, message)
+        key = (database_path, table, field, message, False)
+        self._finding_counts[key] = self._finding_counts.get(key, 0) + 1
+
+    def add_migration_finding(
+        self,
+        *,
+        database_path: Path,
+        table: str,
+        field: str,
+        message: str,
+    ) -> None:
+        key = (database_path, table, field, message, True)
         self._finding_counts[key] = self._finding_counts.get(key, 0) + 1
 
     def record_nonce(
@@ -163,9 +196,10 @@ class _AuditState:
                 table=table,
                 field=field,
                 message=message,
+                is_migration_deferred=is_migration_deferred,
                 occurrences=count,
             )
-            for (database_path, table, field, message), count in sorted(
+            for (database_path, table, field, message, is_migration_deferred), count in sorted(
                 self._finding_counts.items(),
                 key=lambda entry: tuple(str(part) for part in entry[0]),
             )
@@ -303,6 +337,31 @@ _FILE_PAYLOADS = tuple(
     )
 )
 
+_MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION = {
+    0: frozenset(
+        {
+            ("app_settings", "client_preferences_json"),
+            ("app_settings", "command_palette_usage_json"),
+            ("app_settings", "tag_prefix_settings_json"),
+        }
+    ),
+}
+
+
+def _migration_deferred_plaintext_fields(
+    *,
+    database_version: int,
+) -> frozenset[tuple[str, str]]:
+    if not isinstance(database_version, int) or database_version < 0:
+        raise ValueError("database_version must be a non-negative integer")
+    if database_version in _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION:
+        return _MIGRATION_DEFERRED_PLAINTEXT_FIELDS_BY_DATABASE_VERSION[database_version]
+    if database_version == CURRENT_DATABASE_VERSION:
+        return frozenset()
+    raise RuntimeError(
+        f"No encryption-audit migration classification for database version {database_version}"
+    )
+
 def _connect_read_only(database_path: Path) -> sqlite3.Connection:
     uri = f"{database_path.resolve().as_uri()}?mode=ro"
     connection = sqlite3.connect(uri, uri=True)
@@ -395,6 +454,7 @@ def _audit_payload_row(
     spec: _PayloadSpec,
     database_path: Path,
     state: _AuditState,
+    migration_deferred_plaintext_fields: frozenset[tuple[str, str]],
 ) -> None:
     value = row[spec.value_column]
     nonce = row[spec.nonce_column]
@@ -402,12 +462,29 @@ def _audit_payload_row(
     if value in (None, "") and spec.is_nullable and nonce is None and tag is None:
         return
     state.checked_payload_count += 1
+    if nonce is None and tag is None:
+        field_key = (spec.table, spec.value_column)
+        if field_key in migration_deferred_plaintext_fields:
+            state.add_migration_finding(
+                database_path=database_path,
+                table=spec.table,
+                field=spec.value_column,
+                message="plaintext payload requires authenticated database migration",
+            )
+            return
+        state.add_finding(
+            database_path=database_path,
+            table=spec.table,
+            field=spec.value_column,
+            message="sensitive value has no encryption metadata",
+        )
+        return
     if nonce is None or tag is None:
         state.add_finding(
             database_path=database_path,
             table=spec.table,
             field=spec.value_column,
-            message="sensitive value is not protected by complete encryption metadata",
+            message="sensitive value has incomplete encryption metadata",
         )
         return
     if not isinstance(nonce, bytes) or len(nonce) != _NONCE_BYTES:
@@ -454,6 +531,7 @@ def _audit_payloads(
     specs: tuple[_PayloadSpec, ...],
     actual_tables: set[str],
     state: _AuditState,
+    migration_deferred_plaintext_fields: frozenset[tuple[str, str]],
 ) -> None:
     for spec in specs:
         if spec.table not in actual_tables:
@@ -471,6 +549,7 @@ def _audit_payloads(
                 spec=spec,
                 database_path=database_path,
                 state=state,
+                migration_deferred_plaintext_fields=migration_deferred_plaintext_fields,
             )
 
 
@@ -590,6 +669,16 @@ def _encryption_enabled(connection: sqlite3.Connection) -> bool:
     return bool(value)
 
 
+def _database_version(connection: sqlite3.Connection) -> int:
+    row = connection.execute("PRAGMA user_version").fetchone()
+    if row is None:
+        raise sqlite3.DatabaseError("Database user_version PRAGMA returned no row")
+    version = row[0]
+    if not isinstance(version, int) or version < 0:
+        raise sqlite3.DatabaseError("Database user_version must be a non-negative integer")
+    return version
+
+
 def _audit_database(
     *,
     database_path: Path,
@@ -597,6 +686,7 @@ def _audit_database(
     payload_specs: tuple[_PayloadSpec, ...],
     state: _AuditState,
     is_main_database: bool,
+    migration_deferred_plaintext_fields: frozenset[tuple[str, str]],
 ) -> None:
     connection = _connect_read_only(database_path)
     try:
@@ -613,6 +703,7 @@ def _audit_database(
             specs=payload_specs,
             actual_tables=tables,
             state=state,
+            migration_deferred_plaintext_fields=migration_deferred_plaintext_fields,
         )
         if is_main_database:
             if "app_settings" in tables:
@@ -638,6 +729,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
     main_connection = _connect_read_only(database_path)
     try:
         is_encrypted = _encryption_enabled(main_connection)
+        database_version = _database_version(main_connection)
     finally:
         main_connection.close()
     if not is_encrypted:
@@ -654,6 +746,9 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
         payload_specs=_MAIN_PAYLOADS,
         state=state,
         is_main_database=True,
+        migration_deferred_plaintext_fields=_migration_deferred_plaintext_fields(
+            database_version=database_version,
+        ),
     )
     file_database_path = _resolve_file_database_path(database_path)
     if file_database_path.exists():
@@ -663,6 +758,7 @@ def _audit_namespace(*, namespace: str, database_path: Path) -> NamespaceAuditRe
             payload_specs=_FILE_PAYLOADS,
             state=state,
             is_main_database=False,
+            migration_deferred_plaintext_fields=frozenset(),
         )
     return NamespaceAuditResult(
         namespace=namespace,
@@ -680,6 +776,7 @@ def _scan_finding(*, namespaces_directory: Path, message: str) -> AuditFinding:
         table="<discovery>",
         field="path",
         message=message,
+        is_migration_deferred=False,
     )
 
 
