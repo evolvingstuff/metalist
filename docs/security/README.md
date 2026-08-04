@@ -240,6 +240,10 @@ recording decrypted user data:
   MetaList's own origin plus local `data:` and `blob:` resources. External image
   and link-title retrieval therefore crosses the authenticated server boundary;
   browser JavaScript cannot directly send note data to arbitrary HTTP(S) hosts.
+- Every response carries `Cache-Control: no-store, private`, `Pragma: no-cache`,
+  and an expired `Expires` value. Browsers therefore must not retain decrypted
+  API responses, file downloads, exports, pages, redirects, or error bodies in
+  their HTTP caches.
 
 ### Application, Database, and Vault Versions
 

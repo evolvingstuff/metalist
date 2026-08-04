@@ -34,6 +34,7 @@ export class BackupSettingsModal extends BaseModal {
         super('backupSettingsModal', 'backup-settings-modal');
         this._pendingResolve = null;
         this._closeResult = { action: 'cancel' };
+        this._pendingRunBackup = null;
     }
 
     _errorMessage(error) {
@@ -59,6 +60,33 @@ export class BackupSettingsModal extends BaseModal {
 
     shouldCloseOnClickOutside() {
         return true;
+    }
+
+    _hasActiveOperation() {
+        const state = this.getModalState();
+        return [state.loading, state.saving, state.pickingFolder].includes(true);
+    }
+
+    handleKeyDown(event) {
+        if (!(event instanceof KeyboardEvent)) {
+            throw new Error('BackupSettingsModal.handleKeyDown requires KeyboardEvent');
+        }
+        if (this._hasActiveOperation() && (event.key === 'Escape' || event.key === 'Enter')) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        super.handleKeyDown(event);
+    }
+
+    handleClickOutside(event) {
+        if (!event || typeof event !== 'object') {
+            throw new Error('BackupSettingsModal.handleClickOutside requires event object');
+        }
+        if (this._hasActiveOperation() && event.target === event.currentTarget) {
+            return;
+        }
+        super.handleClickOutside(event);
     }
 
     showModalElement() {
@@ -175,7 +203,7 @@ export class BackupSettingsModal extends BaseModal {
 
                 <div class="form-actions">
                     <button type="button" class="primary-btn" id="backup-settings-run-btn" ${loading || saving ? 'disabled' : ''}>${saving ? 'Saving...' : 'Back Up Now'}</button>
-                    <button type="button" class="secondary-btn" id="backup-settings-cancel-btn" ${saving ? 'disabled' : ''}>Cancel</button>
+                    <button type="button" class="secondary-btn" id="backup-settings-cancel-btn" ${loading || saving || pickingFolder ? 'disabled' : ''}>Cancel</button>
                 </div>
 
                 <p id="backup-settings-status">${escapeHtml(effectiveStatusMessage)}</p>
@@ -448,7 +476,31 @@ export class BackupSettingsModal extends BaseModal {
         this.renderModalContent();
     }
 
-    async handleRunBackup() {
+    handleRunBackup() {
+        if (this._pendingRunBackup !== null) {
+            return this._pendingRunBackup;
+        }
+        const pendingRunBackup = this._runBackupOnce();
+        this._pendingRunBackup = pendingRunBackup;
+        return pendingRunBackup.then(
+            (result) => {
+                if (this._pendingRunBackup !== pendingRunBackup) {
+                    throw new Error('Backup settings run promise changed before completion');
+                }
+                this._pendingRunBackup = null;
+                return result;
+            },
+            (error) => {
+                if (this._pendingRunBackup !== pendingRunBackup) {
+                    throw new Error('Backup settings run promise changed before failure');
+                }
+                this._pendingRunBackup = null;
+                throw error;
+            },
+        );
+    }
+
+    async _runBackupOnce() {
         const state = this.getModalState();
         const folderPath = typeof state.folderPath === 'string' ? state.folderPath.trim() : '';
         const selectedNamespaces = Array.isArray(state.selectedNamespaces) ? state.selectedNamespaces : [];

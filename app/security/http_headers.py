@@ -38,3 +38,6 @@ def apply_security_headers(*, response: Response, nonce: str) -> None:
     response.headers["Permissions-Policy"] = (
         "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
     )
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"

@@ -47,6 +47,9 @@ def test_apply_security_headers_sets_browser_defenses() -> None:
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "camera=()" in response.headers["permissions-policy"]
+    assert response.headers["cache-control"] == "no-store, private"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["expires"] == "0"
 
 
 @pytest.mark.parametrize("nonce", ["", "too-short", "!" * 32])

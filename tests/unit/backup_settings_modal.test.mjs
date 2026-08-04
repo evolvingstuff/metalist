@@ -187,3 +187,94 @@ test('BackupSettingsModal selects every available namespace by default', async (
         ['default', 'cla', 'test'],
     );
 });
+
+test('BackupSettingsModal coalesces duplicate run submissions', async () => {
+    const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
+    const modal = new BackupSettingsModal();
+    const state = {
+        folderPath: '/tmp/metalist-backups',
+        selectedNamespaces: ['default'],
+        saving: false,
+        error: '',
+    };
+    let requestCount = 0;
+    let closeCount = 0;
+    let resolveRequest;
+    const requestPromise = new Promise((resolve) => {
+        resolveRequest = resolve;
+    });
+
+    modal.getModalState = () => state;
+    modal.updateModalState = (patch) => Object.assign(state, patch);
+    modal.renderModalContent = () => {};
+    modal._parseRetentionCount = () => 30;
+    modal._authRequest = async () => {
+        requestCount += 1;
+        return await requestPromise;
+    };
+    modal.close = () => {
+        closeCount += 1;
+    };
+
+    const firstSubmission = modal.handleRunBackup();
+    const duplicateSubmission = modal.handleRunBackup();
+    await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+
+    assert.equal(requestCount, 1);
+    resolveRequest({ status: 'saved' });
+    await Promise.all([firstSubmission, duplicateSubmission]);
+    assert.equal(closeCount, 1);
+});
+
+test('BackupSettingsModal ignores Escape and backdrop dismissal during active operations', async (t) => {
+    const originalKeyboardEvent = globalThis.KeyboardEvent;
+    class TestKeyboardEvent {
+        constructor(key) {
+            this.key = key;
+            this.defaultPrevented = false;
+            this.propagationStopped = false;
+        }
+
+        preventDefault() {
+            this.defaultPrevented = true;
+        }
+
+        stopPropagation() {
+            this.propagationStopped = true;
+        }
+    }
+    globalThis.KeyboardEvent = TestKeyboardEvent;
+    t.after(() => {
+        if (typeof originalKeyboardEvent === 'undefined') {
+            delete globalThis.KeyboardEvent;
+        } else {
+            globalThis.KeyboardEvent = originalKeyboardEvent;
+        }
+    });
+
+    const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
+    const modal = new BackupSettingsModal();
+    let closeCount = 0;
+    let activeState = { loading: true, saving: false, pickingFolder: false };
+    modal.getModalState = () => activeState;
+    modal.close = () => {
+        closeCount += 1;
+    };
+
+    for (const nextState of [
+        { loading: true, saving: false, pickingFolder: false },
+        { loading: false, saving: false, pickingFolder: true },
+        { loading: false, saving: true, pickingFolder: false },
+    ]) {
+        activeState = nextState;
+        const escapeEvent = new TestKeyboardEvent('Escape');
+        modal.handleKeyDown(escapeEvent);
+        const backdrop = {};
+        modal.handleClickOutside({ target: backdrop, currentTarget: backdrop });
+        assert.equal(escapeEvent.defaultPrevented, true);
+        assert.equal(escapeEvent.propagationStopped, true);
+    }
+    assert.equal(closeCount, 0);
+});
