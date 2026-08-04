@@ -1,5 +1,9 @@
 # Security Architecture
 
+Deferred, non-blocking security improvements and the conditions that should
+trigger a new threat-model review are tracked in
+[`FUTURE-SECURITY-WORK.md`](FUTURE-SECURITY-WORK.md).
+
 ## Overview
 
 This document describes the security architecture for MetaList3's password protection and note encryption system. The system uses a two-key architecture to provide strong security while maintaining good performance.
