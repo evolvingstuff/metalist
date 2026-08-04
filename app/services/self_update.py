@@ -4,18 +4,27 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
+
+import httpx
 
 from app.services.namespace_switcher import stop_all_namespace_processes_for_update
 
 
 _WINDOWS_CREATE_NEW_CONSOLE = 0x00000010
+_PYPI_PROJECT_URL = "https://pypi.org/pypi/metalist/json"
+_PYPI_REQUEST_TIMEOUT_SECONDS = 10.0
+_RELEASE_VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 
 @dataclass(frozen=True)
 class SelfUpdateScheduleResult:
+    current_version: str
+    target_version: str
+    update_scheduled: bool
     stopped_process_count: int
     platform_name: str
     message: str
@@ -23,16 +32,38 @@ class SelfUpdateScheduleResult:
 
 def schedule_self_update(
     *,
+    current_version: str,
     metalist_executable: str,
     current_pid: int,
     platform_name: str,
     environ: Mapping[str, str],
 ) -> SelfUpdateScheduleResult:
     _validate_schedule_inputs(
+        current_version=current_version,
         metalist_executable=metalist_executable,
         current_pid=current_pid,
         platform_name=platform_name,
     )
+    target_version = _fetch_latest_pypi_version()
+    current_version_key = _release_version_key(current_version)
+    target_version_key = _release_version_key(target_version)
+    if current_version_key >= target_version_key:
+        if current_version_key == target_version_key:
+            message = f"MetaList is already up to date (v{current_version})."
+        else:
+            message = (
+                f"MetaList v{current_version} is newer than the latest PyPI release "
+                f"(v{target_version}); no update was performed."
+            )
+        return SelfUpdateScheduleResult(
+            current_version=current_version,
+            target_version=target_version,
+            update_scheduled=False,
+            stopped_process_count=0,
+            platform_name=platform_name,
+            message=message,
+        )
+
     uv_executable = shutil.which("uv")
     if uv_executable is None:
         raise RuntimeError("uv executable was not found on PATH; MetaList was not stopped")
@@ -46,6 +77,7 @@ def schedule_self_update(
             uv_executable=uv_executable,
             metalist_executable=metalist_executable,
             current_pid=current_pid,
+            target_version=target_version,
         )
         updater_options = {
             "creationflags": _WINDOWS_CREATE_NEW_CONSOLE,
@@ -61,6 +93,7 @@ def schedule_self_update(
             uv_executable=uv_executable,
             metalist_executable=metalist_executable,
             current_pid=current_pid,
+            target_version=target_version,
         )
         updater_options = {
             "start_new_session": True,
@@ -71,21 +104,59 @@ def schedule_self_update(
     stopped_process_count = stop_all_namespace_processes_for_update()
     subprocess.Popen(updater_command, **updater_options)
     return SelfUpdateScheduleResult(
+        current_version=current_version,
+        target_version=target_version,
+        update_scheduled=True,
         stopped_process_count=stopped_process_count,
         platform_name=platform_name,
         message=(
-            f"Stopped {stopped_process_count} MetaList process(es). "
-            "The updater will install the latest release and restart MetaList."
+            f"Updating MetaList from v{current_version} to v{target_version}. "
+            f"Stopped {stopped_process_count} MetaList process(es); "
+            "the updater will finish installation and restart MetaList."
         ),
     )
 
 
+def _fetch_latest_pypi_version() -> str:
+    response = httpx.get(
+        _PYPI_PROJECT_URL,
+        follow_redirects=False,
+        timeout=_PYPI_REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("PyPI returned invalid MetaList release metadata; MetaList was not stopped")
+    project_info = payload.get("info")
+    if not isinstance(project_info, dict):
+        raise RuntimeError("PyPI returned invalid MetaList release metadata; MetaList was not stopped")
+    target_version = project_info.get("version")
+    if (
+        not isinstance(target_version, str)
+        or _RELEASE_VERSION_PATTERN.fullmatch(target_version) is None
+    ):
+        raise RuntimeError(
+            "PyPI returned an invalid MetaList release version; MetaList was not stopped"
+        )
+    return target_version
+
+
+def _release_version_key(version: object) -> tuple[int, int, int]:
+    if not isinstance(version, str) or _RELEASE_VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError("MetaList release versions must use the MAJOR.MINOR.PATCH format")
+    major, minor, patch = version.split(".")
+    return int(major), int(minor), int(patch)
+
+
 def _validate_schedule_inputs(
     *,
+    current_version: str,
     metalist_executable: str,
     current_pid: int,
     platform_name: str,
 ) -> None:
+    _release_version_key(current_version)
     if not isinstance(metalist_executable, str) or metalist_executable.strip() == "":
         raise ValueError("metalist_executable must be a non-empty string")
     if not isinstance(current_pid, int) or current_pid <= 0:
@@ -114,21 +185,24 @@ def _build_windows_updater_command(
     uv_executable: str,
     metalist_executable: str,
     current_pid: int,
+    target_version: str,
 ) -> list[str]:
     quoted_uv = _quote_powershell_literal(uv_executable)
     quoted_metalist = _quote_powershell_literal(metalist_executable)
+    quoted_package = _quote_powershell_literal(f"metalist=={target_version}")
     script = (
         f"while (Get-Process -Id {current_pid} -ErrorAction SilentlyContinue) "
         "{ Start-Sleep -Milliseconds 100 }; "
-        f"& {quoted_uv} tool install --force --reinstall --refresh metalist; "
+        f"& {quoted_uv} tool install --force --reinstall --refresh {quoted_package}; "
         "if ($LASTEXITCODE -ne 0) { "
         "Write-Host 'MetaList update failed. Review the uv output above.' -ForegroundColor Red; "
         "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
         f"& {quoted_metalist}; "
         "if ($LASTEXITCODE -ne 0) { "
-        "Write-Host 'MetaList updated, but restart failed.' -ForegroundColor Red; "
+        f"Write-Host 'MetaList updated to v{target_version}, but restart failed.' "
+        "-ForegroundColor Red; "
         "Start-Sleep -Seconds 10; exit $LASTEXITCODE }; "
-        "Write-Host 'MetaList update complete.' -ForegroundColor Green; "
+        f"Write-Host 'MetaList updated to v{target_version}.' -ForegroundColor Green; "
         "Start-Sleep -Seconds 3"
     )
     return [
@@ -147,9 +221,18 @@ def _build_posix_updater_command(
     uv_executable: str,
     metalist_executable: str,
     current_pid: int,
+    target_version: str,
 ) -> list[str]:
     uv_command = shlex.join(
-        [uv_executable, "tool", "install", "--force", "--reinstall", "--refresh", "metalist"]
+        [
+            uv_executable,
+            "tool",
+            "install",
+            "--force",
+            "--reinstall",
+            "--refresh",
+            f"metalist=={target_version}",
+        ]
     )
     metalist_command = shlex.join([metalist_executable])
     script = (
@@ -159,9 +242,9 @@ def _build_posix_updater_command(
         "  exit 1\n"
         "fi\n"
         f"if ! {metalist_command}; then\n"
-        "  echo 'MetaList updated, but restart failed.' >&2\n"
+        f"  echo 'MetaList updated to v{target_version}, but restart failed.' >&2\n"
         "  exit 1\n"
         "fi\n"
-        "echo 'MetaList update complete.'\n"
+        f"echo 'MetaList updated to v{target_version}.'\n"
     )
     return [shell_executable, "-c", script]

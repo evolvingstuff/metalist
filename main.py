@@ -35,6 +35,7 @@ from app.services.namespace_switcher import NamespaceOpenResult
 from app.services.namespace_switcher import ORCHESTRATED_CHILD_ENV_NAME
 from app.services.namespace_switcher import open_or_launch_all_namespaces
 from app.services.self_update import schedule_self_update
+from app.version import __version__
 from app.security.shell_execution import enable_shell_execution_for_launch
 from app.security.shell_execution import is_shell_execution_enabled
 from app.services.windows_process_control import find_listening_pids_for_port as find_windows_listening_pids_for_port
@@ -689,6 +690,7 @@ def cli() -> None:
         if metalist_executable is None:
             raise RuntimeError("Could not resolve the installed MetaList executable")
         result = schedule_self_update(
+            current_version=__version__,
             metalist_executable=metalist_executable,
             current_pid=os.getpid(),
             platform_name=sys.platform,
