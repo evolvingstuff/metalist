@@ -33,11 +33,13 @@ Examples (autocorrected while typing):
 - Scoped meta tags apply only to regions of note content wrapped with the same bracket type + depth.
   - Example: tag bar `{{@monospace}}` applies monospace styling to `{{...}}` regions in the note.
   - Depth must match exactly: `[[...]]` matches `[[@tag]]`, not `[@tag]` or `[[[@tag]]]`.
+  - Scopes may cross multiple editor blocks/lines; visual styles are rendered as valid per-block spans across the full selected range.
 - Basic formatting tags:
   - `@heading` increases font size and weight.
   - `@bold`, `@italic`, `@strikethrough` apply basic text styling.
   - `@serif` switches to a serif font.
   - `@red`, `@green`, `@blue`, `@grey` apply text colors.
+  - `@highlighter` adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
   - `@copyable` makes the rendered content clickable to copy its raw text to the clipboard.
   - `@size=0.1`, `0.25`, `0.5`, `0.75`, `1.0`, `1.25`, `1.5`, `2.0`, or `3.0` scales a whole note or scoped region non-destructively in view mode.
   - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).

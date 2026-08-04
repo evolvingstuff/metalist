@@ -38,6 +38,7 @@ _META_TAG_TO_CLASS = {
     "green": "meta-green",
     "blue": "meta-blue",
     "grey": "meta-grey",
+    "highlighter": "meta-highlighter",
     "bold": "meta-bold",
     "italic": "meta-italic",
     "strikethrough": "meta-strikethrough",
@@ -146,6 +147,10 @@ _ANCHOR_REL_ATTR_RE = re.compile(r'(\brel\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE)
 _NEW_TAB_REL_TOKENS = ("noopener", "noreferrer")
 _BLOCK_HTML_TAG_RE = re.compile(
     r"<(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|hr|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b",
+    re.IGNORECASE,
+)
+_BLOCK_HTML_CLOSE_TAG_RE = re.compile(
+    r"</(?:blockquote|div|dl|fieldset|figure|figcaption|footer|form|h[1-6]|header|li|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\s*>",
     re.IGNORECASE,
 )
 _SIZE_TAG_VALUE_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
@@ -1412,7 +1417,7 @@ def _copyable_attr(formatting_tags: FrozenSet[str], raw_text: str) -> str:
 
 
 def _should_use_box_wrapper(tag_names: Set[str] | FrozenSet[str]) -> bool:
-    if "strikethrough" in tag_names:
+    if "strikethrough" in tag_names or "highlighter" in tag_names:
         return True
     return any(tag_name.startswith("size=") for tag_name in tag_names)
 
@@ -1663,12 +1668,15 @@ class _OpenFrame:
     placeholder_index: int
     opener_text: str
     open_html: str
+    block_open_html: str
     close_html: str
     render_tag: str | None
     formatting_tags: FrozenSet[str] | None
     render_key: Tuple[str, int] | None
     renderer_nested_delimiter_depth: int
     was_crossed: bool
+    block_close_placeholder_indices: List[int]
+    block_open_placeholder_indices: List[int]
 
 
 def _apply_scoped_meta_tags(
@@ -1682,11 +1690,35 @@ def _apply_scoped_meta_tags(
     parts = re.split(r"(<[^>]+>)", content_html)
     output: List[str] = []
     stack: List[_OpenFrame] = []
+    suspended_formatting_frames: List[_OpenFrame] = []
 
     for part in parts:
         if part.startswith("<") and part.endswith(">"):
+            if _BLOCK_HTML_CLOSE_TAG_RE.fullmatch(part) is not None:
+                has_active_renderer = any(frame.render_tag is not None for frame in stack)
+                if not suspended_formatting_frames and not has_active_renderer:
+                    suspended_formatting_frames = [
+                        frame
+                        for frame in stack
+                        if frame.render_tag is None and frame.open_html != ""
+                    ]
+                    for frame in reversed(suspended_formatting_frames):
+                        placeholder_index = len(output)
+                        output.append("")
+                        frame.block_close_placeholder_indices.append(placeholder_index)
             output.append(part)
             continue
+        if suspended_formatting_frames and part.strip() != "":
+            live_suspended_frames = [
+                frame
+                for frame in suspended_formatting_frames
+                if any(active_frame is frame for active_frame in stack)
+            ]
+            for frame in live_suspended_frames:
+                placeholder_index = len(output)
+                output.append("")
+                frame.block_open_placeholder_indices.append(placeholder_index)
+            suspended_formatting_frames = []
         _process_text_segment(
             text=part,
             output=output,
@@ -1793,6 +1825,7 @@ def _process_text_segment(
             if run <= _MAX_DELIMITER_DEPTH and (char, run) in wrappers_to_consume:
                 key = (char, run)
                 open_html = ""
+                block_open_html = ""
                 close_html = ""
                 render_tag = None
                 formatting_tags = None
@@ -1809,7 +1842,13 @@ def _process_text_segment(
                     classes = _meta_classes_for_tag_names(scoped_tags[key])
                     assert classes, "Scoped meta tags must resolve to at least one CSS class"
                     size_style_attr = _meta_size_style_attr(scoped_tags[key])
+                    class_names = ["meta-scope"]
+                    if _should_use_box_wrapper(scoped_tags[key]):
+                        class_names.append("meta-box-inline")
+                    class_names.append(classes)
+                    class_attr = " ".join(class_names)
                     open_html = f'<span class="meta-scope {classes}"{size_style_attr}>'
+                    block_open_html = f'<span class="{class_attr}"{size_style_attr}>'
                     close_html = "</span>"
                 opener_text = text[index : index + run]
                 placeholder_index = len(output)
@@ -1822,12 +1861,15 @@ def _process_text_segment(
                         placeholder_index=placeholder_index,
                         opener_text=opener_text,
                         open_html=open_html,
+                        block_open_html=block_open_html,
                         close_html=close_html,
                         render_tag=render_tag,
                         formatting_tags=formatting_tags,
                         render_key=render_key,
                         renderer_nested_delimiter_depth=0,
                         was_crossed=False,
+                        block_close_placeholder_indices=[],
+                        block_open_placeholder_indices=[],
                     )
                 )
                 index += run
@@ -1860,9 +1902,9 @@ def _process_text_segment(
                     if not crossing_has_renderer:
                         for frame in reversed(crossing_frames):
                             frame.was_crossed = True
-                            output[frame.placeholder_index] = frame.open_html
+                            _materialize_frame_html(output=output, frame=frame)
                             output.append(frame.close_html)
-                        output[matching_frame.placeholder_index] = matching_frame.open_html
+                        _materialize_frame_html(output=output, frame=matching_frame)
                         output.append(matching_frame.close_html)
                         for frame in crossing_frames:
                             output.append(frame.open_html)
@@ -1876,6 +1918,7 @@ def _process_text_segment(
                         top.render_tag is None
                         and top.formatting_tags is not None
                         and not top.was_crossed
+                        and not top.block_close_placeholder_indices
                         and _should_use_box_wrapper(top.formatting_tags)
                     ):
                         inner_parts = output[top.placeholder_index + 1 :]
@@ -1895,7 +1938,7 @@ def _process_text_segment(
                             output.append(rendered)
                             index += run
                             continue
-                    output[top.placeholder_index] = top.open_html
+                    _materialize_frame_html(output=output, frame=top)
                     output.append(top.close_html)
                     index += run
                     continue
@@ -1914,6 +1957,21 @@ def _process_text_segment(
             escape_text=escape_text,
         )
         index += 1
+
+
+def _materialize_frame_html(*, output: List[str], frame: _OpenFrame) -> None:
+    if not isinstance(output, list):
+        raise TypeError("output must be a list")
+    if not isinstance(frame, _OpenFrame):
+        raise TypeError("frame must be an _OpenFrame")
+    initial_open_html = frame.open_html
+    if frame.block_close_placeholder_indices:
+        initial_open_html = frame.block_open_html
+    output[frame.placeholder_index] = initial_open_html
+    for placeholder_index in frame.block_close_placeholder_indices:
+        output[placeholder_index] = frame.close_html
+    for placeholder_index in frame.block_open_placeholder_indices:
+        output[placeholder_index] = frame.block_open_html
 
 
 def _process_active_latex_renderer_text(

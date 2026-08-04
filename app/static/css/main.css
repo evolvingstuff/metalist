@@ -4283,6 +4283,24 @@ body.loading::after {
     color: #9ca3af;
 }
 
+.meta-highlighter {
+    color: inherit;
+    padding: 0.03em 0.12em 0.08em;
+    margin: 0 -0.03em;
+    border-radius: 13% 7% 11% 5% / 24% 18% 27% 16%;
+    background:
+        linear-gradient(
+            178deg,
+            transparent 7%,
+            rgba(255, 247, 0, 0.72) 10%,
+            rgba(249, 255, 0, 0.88) 82%,
+            rgba(255, 239, 0, 0.7) 91%,
+            transparent 94%
+        );
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
 /* Credential meta tags */
 .meta-credential {
     display: inline-flex;

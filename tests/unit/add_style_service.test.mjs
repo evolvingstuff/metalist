@@ -14,6 +14,7 @@ test('Add Style exposes the supported formatting and renderer tags', () => {
     assert.equal(tags.includes('@heading'), true);
     assert.equal(tags.includes('@red'), true);
     assert.equal(tags.includes('@blue'), true);
+    assert.equal(tags.includes('@highlighter'), true);
     assert.equal(tags.includes('@markdown'), true);
     assert.equal(tags.includes('@csv'), true);
     assert.equal(tags.includes('@size=0.1'), true);

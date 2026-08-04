@@ -57,6 +57,7 @@ Scoped wrapper tags do not need to be meta tags:
 - Depth must match exactly:
   - `[[...]]` matches `[[@tag]]`
   - `[[...]]` does **not** match `[@tag]` or `[[[@tag]]]`
+- A selected scope may cross multiple editor blocks/lines. View rendering closes and reopens visual formatting spans at each block boundary so every selected line keeps the style without producing invalid HTML.
 
 Multiple tags can appear inside the same wrapper token (space-separated), and all recognized meta tags apply:
 - Example: `{{@red @monospace}}`
@@ -80,6 +81,7 @@ Other (non-meta) tags may also appear inside wrapper tokens (e.g. `{{foo bar}}`)
 - `@green`: renders text in green.
 - `@blue`: renders text in blue.
 - `@grey`: renders text in grey.
+- `@highlighter`: adds a fluorescent-yellow, slightly irregular marker stroke behind the text.
 - Ontology implication rules can add these formatting tags implicitly (e.g. `bug => @red`).
 
 ## Size meta tags

@@ -27,6 +27,15 @@ def test_remove_added_style_tags_preserves_comments_semantic_tags_and_remaining_
     assert wrappers_to_remove == frozenset({("[", 2)})
 
 
+def test_remove_added_style_tags_removes_highlighter_style() -> None:
+    updated_tags, wrappers_to_remove = remove_added_style_tags(
+        "@todo @highlighter {@highlighter}"
+    )
+
+    assert updated_tags == "@todo"
+    assert wrappers_to_remove == frozenset({("{", 1)})
+
+
 def test_remove_formatting_scope_delimiters_handles_crossing_scopes_without_touching_html() -> None:
     content = '<a href="https://example.com/?q=[value]">blah [[blah {both]] italic}</a>'
 
@@ -272,6 +281,79 @@ def test_format_note_content_for_view_scoped_multiple_meta_tags_apply_union() ->
     html = "<div>{{hello}}</div>"
     rendered = format_note_content_for_view(content_html=html, tags="{{@red @monospace}}")
     assert rendered == '<div><span class="meta-scope meta-monospace meta-red">hello</span></div>'
+
+
+def test_format_note_content_for_view_scoped_highlighter_uses_inline_box_wrapper() -> None:
+    rendered = format_note_content_for_view(
+        content_html="<div>{highlighted text}</div>",
+        tags="{@highlighter}",
+    )
+
+    assert rendered == (
+        '<div><span class="meta-scope meta-box-inline meta-highlighter">'
+        "highlighted text</span></div>"
+    )
+
+
+def test_format_note_content_for_view_scoped_style_spans_multiple_blocks() -> None:
+    content_html = "<div>{first line</div><div>second line}</div>"
+
+    red_rendered = format_note_content_for_view(
+        content_html=content_html,
+        tags="{@red}",
+    )
+    highlighter_rendered = format_note_content_for_view(
+        content_html=content_html,
+        tags="{@highlighter}",
+    )
+
+    assert red_rendered == (
+        '<div><span class="meta-scope meta-red">first line</span></div>'
+        '<div><span class="meta-scope meta-red">second line</span></div>'
+    )
+    assert highlighter_rendered == (
+        '<div><span class="meta-scope meta-box-inline meta-highlighter">'
+        "first line</span></div>"
+        '<div><span class="meta-scope meta-box-inline meta-highlighter">'
+        "second line</span></div>"
+    )
+
+
+def test_format_note_content_for_view_scoped_size_spans_multiple_blocks() -> None:
+    rendered = format_note_content_for_view(
+        content_html="<div>{first line</div><div>second line}</div>",
+        tags="{@size=2}",
+    )
+
+    assert rendered == (
+        '<div><span class="meta-scope meta-box-inline meta-size" '
+        'style="--meta-size-factor:2">first line</span></div>'
+        '<div><span class="meta-scope meta-box-inline meta-size" '
+        'style="--meta-size-factor:2">second line</span></div>'
+    )
+
+
+def test_format_note_content_for_view_unclosed_multi_block_scope_stays_literal() -> None:
+    content_html = "<div>{first line</div><div>second line</div>"
+
+    rendered = format_note_content_for_view(
+        content_html=content_html,
+        tags="{@highlighter}",
+    )
+
+    assert rendered == content_html
+
+
+def test_format_note_content_for_view_global_highlighter_wraps_block_content() -> None:
+    rendered = format_note_content_for_view(
+        content_html="<div>highlighted text</div>",
+        tags="@highlighter",
+    )
+
+    assert rendered == (
+        '<div class="meta-global meta-box-block meta-highlighter">'
+        "<div>highlighted text</div></div>"
+    )
 
 
 def test_format_note_content_for_view_depth_mismatch_does_not_match_subdepth() -> None:

@@ -194,7 +194,7 @@ function handleMenuClick(event) {
         }
         event.preventDefault();
         event.stopPropagation();
-        showSubmenuForButton(button, item.submenu);
+        showSubmenuForButton(button, item.submenu, true);
         return;
     }
     if (typeof item.onSelect !== 'function') {
@@ -360,14 +360,14 @@ function renderMenuItems(menu, items, menuLevel) {
         if (menuLevel === 'root') {
             button.addEventListener('mouseenter', () => {
                 if (Array.isArray(item.submenu) && item.enabled) {
-                    showSubmenuForButton(button, item.submenu);
+                    showSubmenuForButton(button, item.submenu, false);
                     return;
                 }
                 hideSubmenu();
             });
             button.addEventListener('focus', () => {
                 if (Array.isArray(item.submenu) && item.enabled) {
-                    showSubmenuForButton(button, item.submenu);
+                    showSubmenuForButton(button, item.submenu, true);
                     return;
                 }
                 hideSubmenu();
@@ -377,9 +377,12 @@ function renderMenuItems(menu, items, menuLevel) {
     });
 }
 
-function showSubmenuForButton(parentButton, submenuItems) {
+function showSubmenuForButton(parentButton, submenuItems, focusFirstItem) {
     if (!(parentButton instanceof HTMLButtonElement)) {
         throw new Error('showSubmenuForButton requires parent button');
+    }
+    if (typeof focusFirstItem !== 'boolean') {
+        throw new Error('showSubmenuForButton requires focusFirstItem boolean');
     }
     validateMenuItems(submenuItems, 1);
 
@@ -403,9 +406,11 @@ function showSubmenuForButton(parentButton, submenuItems) {
     submenu.style.top = `${resolved.top}px`;
     submenu.style.visibility = 'visible';
     submenu.classList.add('is-visible');
-    const firstEnabledItem = submenu.querySelector('.context-menu-item:not(:disabled)');
-    if (firstEnabledItem instanceof HTMLButtonElement) {
-        firstEnabledItem.focus();
+    if (focusFirstItem) {
+        const firstEnabledItem = submenu.querySelector('.context-menu-item:not(:disabled)');
+        if (firstEnabledItem instanceof HTMLButtonElement) {
+            firstEnabledItem.focus();
+        }
     }
 }
 
