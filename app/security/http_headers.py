@@ -18,7 +18,7 @@ def build_content_security_policy(*, nonce: str) -> str:
         "img-src 'self' data: blob:",
         "media-src 'self' data: blob:",
         "font-src 'self' data:",
-        "connect-src 'self' data: blob: https: http:",
+        "connect-src 'self' data: blob:",
         "object-src 'none'",
         "frame-src 'none'",
         "base-uri 'none'",

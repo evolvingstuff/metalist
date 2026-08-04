@@ -236,6 +236,10 @@ recording decrypted user data:
   counters only. Legacy authentication keys are removed during authentication
   initialization; legacy preferences and command-palette usage are removed after
   successful migration into encrypted server storage.
+- Browser CSP restricts fetch, XHR, WebSocket, and related connection APIs to
+  MetaList's own origin plus local `data:` and `blob:` resources. External image
+  and link-title retrieval therefore crosses the authenticated server boundary;
+  browser JavaScript cannot directly send note data to arbitrary HTTP(S) hosts.
 
 ### Application, Database, and Vault Versions
 

@@ -28,7 +28,13 @@ def test_content_security_policy_blocks_direct_remote_images() -> None:
 
     assert "img-src 'self' data: blob:" in policy
     assert "img-src 'self' data: blob: https: http:" not in policy
-    assert "connect-src 'self' data: blob: https: http:" in policy
+
+
+def test_content_security_policy_blocks_direct_remote_connections() -> None:
+    policy = build_content_security_policy(nonce=NONCE)
+
+    assert "connect-src 'self' data: blob:" in policy
+    assert "connect-src 'self' data: blob: https: http:" not in policy
 
 
 def test_apply_security_headers_sets_browser_defenses() -> None:
