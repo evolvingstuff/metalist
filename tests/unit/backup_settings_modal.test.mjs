@@ -188,21 +188,19 @@ test('BackupSettingsModal selects every available namespace by default', async (
     );
 });
 
-test('BackupSettingsModal coalesces duplicate run submissions', async () => {
+test('BackupSettingsModal returns validated settings without a settings-only request', async () => {
     const { BackupSettingsModal } = await import('../../app/static/js/modules/modals/backup-settings-modal.js');
     const modal = new BackupSettingsModal();
     const state = {
         folderPath: '/tmp/metalist-backups',
         selectedNamespaces: ['default'],
+        retentionCountText: '30',
         saving: false,
         error: '',
     };
     let requestCount = 0;
     let closeCount = 0;
-    let resolveRequest;
-    const requestPromise = new Promise((resolve) => {
-        resolveRequest = resolve;
-    });
+    let closeResult = null;
 
     modal.getModalState = () => state;
     modal.updateModalState = (patch) => Object.assign(state, patch);
@@ -210,22 +208,25 @@ test('BackupSettingsModal coalesces duplicate run submissions', async () => {
     modal._parseRetentionCount = () => 30;
     modal._authRequest = async () => {
         requestCount += 1;
-        return await requestPromise;
+        return { status: 'saved' };
     };
     modal.close = () => {
         closeCount += 1;
+        closeResult = modal._closeResult;
     };
 
-    const firstSubmission = modal.handleRunBackup();
-    const duplicateSubmission = modal.handleRunBackup();
-    await new Promise((resolve) => {
-        setTimeout(resolve, 0);
-    });
+    await modal.handleRunBackup();
 
-    assert.equal(requestCount, 1);
-    resolveRequest({ status: 'saved' });
-    await Promise.all([firstSubmission, duplicateSubmission]);
+    assert.equal(requestCount, 0);
     assert.equal(closeCount, 1);
+    assert.deepEqual(closeResult, {
+        action: 'run_backup',
+        settings: {
+            folder_path: '/tmp/metalist-backups',
+            retention_count: 30,
+            selected_namespaces: ['default'],
+        },
+    });
 });
 
 test('BackupSettingsModal ignores Escape and backdrop dismissal during active operations', async (t) => {

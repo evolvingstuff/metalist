@@ -4,11 +4,12 @@ import { ModeContextInstance as ModeContext } from '../mode-manager/mode-context
 import { ErrorHandler } from '../error-handler.js';
 import { settleResult } from '../async-result.js';
 import {
-    navigateNamespaceInCurrentTab,
+    navigateNamespaceInNewTab,
+    openPendingNamespaceTab,
     rewriteNamespaceUrlPreservingCurrentHost,
 } from '../login-namespace-picker.js';
 import { buildSessionHeaders } from '../session-auth.js';
-import { buildNamespaceLoadingPageHtml } from './namespace-loading-page.js';
+import { renderNamespaceLoadingTab } from './namespace-loading-page.js';
 import { selectNamespacePortsEditorProfile } from './namespace-ports-profile.js';
 import { buildNamespaceRenamePayload } from './namespace-rename-validation.js';
 
@@ -436,6 +437,19 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
             return;
         }
         const payload = payloadResult.value;
+        const pendingTabResult = await settleResult(() => {
+            const tab = openPendingNamespaceTab(window);
+            renderNamespaceLoadingTab(tab, payload.namespace);
+            return tab;
+        });
+        if (!pendingTabResult.ok) {
+            const error = pendingTabResult.error;
+            const message = error instanceof Error ? error.message : 'Failed to open namespace tab';
+            this.updateModalState({ error: message, status: '' });
+            this.renderModalContent();
+            return;
+        }
+        const pendingTab = pendingTabResult.value;
         this.updateModalState({
             submitting: true,
             error: '',
@@ -451,10 +465,13 @@ export class SwitchNamespaceModal extends NamespaceModalBase {
             if (typeof response.url !== 'string' || response.url.length === 0) {
                 throw new Error('Namespace open response missing url');
             }
-            navigateNamespaceInCurrentTab(response.url, window);
+            navigateNamespaceInNewTab(response.url, window, pendingTab);
             this.close();
         });
         if (!switchResult.ok) {
+            if (!pendingTab.closed) {
+                pendingTab.close();
+            }
             const error = switchResult.error;
             const message = error instanceof Error ? error.message : 'Failed to switch namespace';
             this.updateModalState({
@@ -1089,15 +1106,4 @@ export class ManageNamespacePortsModal extends NamespaceModalBase {
         });
         this.renderModalContent();
     }
-}
-
-
-function renderNamespaceLoadingTab(pendingTab, namespace) {
-    if (!pendingTab || pendingTab.closed) {
-        return;
-    }
-    const loadingHtml = buildNamespaceLoadingPageHtml(namespace);
-    pendingTab.document.open();
-    pendingTab.document.write(loadingHtml);
-    pendingTab.document.close();
 }

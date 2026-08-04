@@ -39,7 +39,7 @@
 ## Completed
 
 * encryption at rest (AES-GCM) + password protection
-* token-based authentication (single active session)
+* token-based authentication (one active session per namespace)
 * tag persistence: `notes.tags` round-trips via the tag bar
 * search suggestions (tag-only, co-occurrence-ranked)
 

@@ -28,4 +28,9 @@ test('createBackup configures a longer CommandGate watchdog timeout', () => {
         /if \(backupResult === null\) \{\s*throw new Error\(/,
         'createBackup must not silently discard a dropped command',
     );
+    assert.match(
+        source.slice(runIndex, source.indexOf('async logout()', runIndex)),
+        /_authRequest\(CONFIG\.API\.BACKUP\.RUN, 'POST', backupSettings\)/,
+        'createBackup must submit the validated settings in the backup-creation request',
+    );
 });

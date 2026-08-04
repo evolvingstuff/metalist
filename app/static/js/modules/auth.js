@@ -10,9 +10,11 @@ import { consumeBooleanQueryFlag } from './location-flags.js';
 import {
     buildLoginNamespaceOpeningCopy,
     buildLoginTitle,
+    navigateNamespaceInNewTab,
+    openPendingNamespaceTab,
     parseLoginNamespaceCatalog,
-    rewriteNamespaceUrlPreservingCurrentHost,
 } from './login-namespace-picker.js';
+import { renderNamespaceLoadingTab } from './modals/namespace-loading-page.js';
 
 export const Auth = {
     hasPassword: null,
@@ -570,17 +572,21 @@ export const Auth = {
         }
 
         const openingCopy = buildLoginNamespaceOpeningCopy(namespace);
-        select.disabled = true;
-        document.body.classList.add('loading');
-        this._showLoginLoadingPanel(
-            openingCopy.subtitle,
-            openingCopy.loadingTitle,
-            openingCopy.loadingMessage,
-            35,
-        );
-        this._setLoginNamespaceStatus(openingCopy.statusText);
+        let pendingTab = null;
 
         try {
+            pendingTab = openPendingNamespaceTab(window);
+            renderNamespaceLoadingTab(pendingTab, namespace);
+            select.disabled = true;
+            document.body.classList.add('loading');
+            this._showLoginLoadingPanel(
+                openingCopy.subtitle,
+                openingCopy.loadingTitle,
+                openingCopy.loadingMessage,
+                35,
+            );
+            this._setLoginNamespaceStatus(openingCopy.statusText);
+
             const response = await fetch(CONFIG.API.AUTH.LOGIN_NAMESPACES.OPEN, {
                 method: 'POST',
                 headers: {
@@ -601,12 +607,13 @@ export const Auth = {
                 throw new Error('Namespace open response missing url');
             }
 
-            const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(
-                payload.url,
-                window.location,
-            );
-            window.location.assign(navigationUrl);
+            navigateNamespaceInNewTab(payload.url, window, pendingTab);
+            document.body.classList.remove('loading');
+            this.showLoginModal();
         } catch (error) {
+            if (pendingTab !== null && !pendingTab.closed) {
+                pendingTab.close();
+            }
             document.body.classList.remove('loading');
             this.showLoginModal();
             const restoredSelect = this._requireElement('login-namespace-select');

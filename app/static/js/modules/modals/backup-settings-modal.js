@@ -504,7 +504,6 @@ export class BackupSettingsModal extends BaseModal {
         const state = this.getModalState();
         const folderPath = typeof state.folderPath === 'string' ? state.folderPath.trim() : '';
         const selectedNamespaces = Array.isArray(state.selectedNamespaces) ? state.selectedNamespaces : [];
-        let retentionCount = 0;
         if (folderPath.length === 0) {
             this.updateModalState({
                 error: 'Choose a backup folder before running a backup.',
@@ -519,6 +518,11 @@ export class BackupSettingsModal extends BaseModal {
             this.renderModalContent();
             return;
         }
+        this.updateModalState({
+            saving: true,
+            error: '',
+        });
+        this.renderModalContent();
         const retentionResult = await Promise.resolve()
             .then(() => this._parseRetentionCount())
             .then(
@@ -527,37 +531,22 @@ export class BackupSettingsModal extends BaseModal {
             );
         if (!retentionResult.ok) {
             this.updateModalState({
+                saving: false,
                 error: this._errorMessage(retentionResult.error),
             });
             this.renderModalContent();
             return;
         }
-        retentionCount = retentionResult.value;
+        const retentionCount = retentionResult.value;
 
-        this.updateModalState({
-            saving: true,
-            error: '',
-        });
-        this.renderModalContent();
-
-        const settled = await this._authRequest(CONFIG.API.BACKUP.SETTINGS, 'PUT', {
-            folder_path: folderPath,
-            selected_namespaces: selectedNamespaces,
-            retention_count: retentionCount,
-        }).then(
-            () => ({ ok: true }),
-            (error) => ({ ok: false, error }),
-        );
-        if (!settled.ok) {
-            this.updateModalState({
-                saving: false,
-                error: this._errorMessage(settled.error),
-            });
-            this.renderModalContent();
-            return;
-        }
-
-        this._closeResult = { action: 'run_backup' };
+        this._closeResult = {
+            action: 'run_backup',
+            settings: {
+                folder_path: folderPath,
+                selected_namespaces: selectedNamespaces,
+                retention_count: retentionCount,
+            },
+        };
         this.close();
     }
 }

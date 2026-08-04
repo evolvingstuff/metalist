@@ -60,8 +60,8 @@ sequenceDiagram
         TokenSvc-->>AuthSvc: Plain token string
         
         AuthSvc-->>API: {token, message, hydration_required}
-        API-->>Browser: 200 OK + Set-Cookie: metalist_auth=<token> + hydration_required
-        Browser->>Browser: Store HttpOnly auth cookie
+        API-->>Browser: 200 OK + Set-Cookie: metalist_auth_namespace=<token> + hydration_required
+        Browser->>Browser: Store namespace-scoped HttpOnly auth cookie
         Browser->>API: POST /api2/auth/hydrate
         API-->>Browser: 200 {status, phase: database_check}
         loop Poll until ready

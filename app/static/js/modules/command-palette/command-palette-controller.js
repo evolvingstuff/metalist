@@ -1809,6 +1809,10 @@ class CommandPaletteController {
         if (modalResult.action !== 'run_backup') {
             return;
         }
+        const backupSettings = modalResult.settings;
+        if (!backupSettings || typeof backupSettings !== 'object') {
+            throw new Error('Backup settings modal result missing settings');
+        }
 
         await waitForCommandAvailability({
             isBusy: () => CommandGate.isBusy(),
@@ -1817,7 +1821,7 @@ class CommandPaletteController {
             pollIntervalMs: BACKUP_COMMAND_AVAILABILITY_POLL_INTERVAL_MS,
         });
         const backupResult = await CommandGate.run('commandPalette.createBackup', async () => {
-            const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', {});
+            const payload = await this._authRequest(CONFIG.API.BACKUP.RUN, 'POST', backupSettings);
             if (!payload || typeof payload !== 'object') {
                 throw new Error('Backup run response missing body');
             }

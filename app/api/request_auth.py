@@ -2,8 +2,19 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request, Response
 
+from app.config import ACTIVE_NAMESPACE
+from app.server_runtime import validate_namespace
 
-AUTH_COOKIE_NAME = "metalist_auth"
+
+AUTH_COOKIE_PREFIX = "metalist_auth"
+
+
+def auth_cookie_name_for_namespace(namespace: str) -> str:
+    normalized_namespace = validate_namespace(namespace=namespace)
+    return f"{AUTH_COOKIE_PREFIX}_{normalized_namespace}"
+
+
+AUTH_COOKIE_NAME = auth_cookie_name_for_namespace(ACTIVE_NAMESPACE)
 
 
 def read_request_auth_token(request: Request) -> tuple[str | None, str | None]:

@@ -6,6 +6,7 @@ from fastapi import HTTPException
 import pytest
 from starlette.requests import Request
 
+from app.api.request_auth import AUTH_COOKIE_NAME
 from app.api.routes import remote_images as remote_images_route
 from app.services.remote_image_proxy import (
     RemoteImageFetchError,
@@ -23,7 +24,7 @@ def _token_factory() -> str:
 def _request(*, auth_cookie: str | None) -> Request:
     headers: list[tuple[bytes, bytes]] = []
     if auth_cookie is not None:
-        headers.append((b"cookie", f"metalist_auth={auth_cookie}".encode("ascii")))
+        headers.append((b"cookie", f"{AUTH_COOKIE_NAME}={auth_cookie}".encode("ascii")))
     return Request(
         {
             "type": "http",

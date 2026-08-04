@@ -6,7 +6,7 @@ Production deployment structure showing processes, storage, and security compone
 graph TB
     subgraph "Client Browser"
         WebApp[Web Application]
-        CookieJar[HttpOnly Cookie<br/>metalist_auth]
+        CookieJar[Namespace-scoped HttpOnly Cookies<br/>metalist_auth_namespace]
         SessionStorage[Session State<br/>Tabs, Search]
     end
     

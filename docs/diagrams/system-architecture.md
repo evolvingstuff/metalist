@@ -26,7 +26,7 @@ graph TB
 
     subgraph "Services"
         AuthSvc[AuthService]
-        TokenSvc[TokenService<br/>single active session]
+        TokenSvc[TokenService<br/>one active session per namespace]
         Store[NoteStore<br/>in-memory graph]
         Cache[Content Cache<br/>decrypted content]
         Undo[Undo State]

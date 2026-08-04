@@ -122,3 +122,17 @@ export function buildNamespaceLoadingPageHtml(namespace) {
 </body>
 </html>`;
 }
+
+
+export function renderNamespaceLoadingTab(pendingTab, namespace) {
+    if (!pendingTab || typeof pendingTab !== 'object' || pendingTab.closed) {
+        throw new Error('renderNamespaceLoadingTab requires an open pending tab');
+    }
+    if (!pendingTab.document || typeof pendingTab.document.open !== 'function') {
+        throw new Error('renderNamespaceLoadingTab requires pending tab document');
+    }
+    const loadingHtml = buildNamespaceLoadingPageHtml(namespace);
+    pendingTab.document.open();
+    pendingTab.document.write(loadingHtml);
+    pendingTab.document.close();
+}

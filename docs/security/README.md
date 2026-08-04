@@ -251,7 +251,7 @@ recording decrypted user data:
 
 ### Application, Database, and Vault Versions
 
-- Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.11`.
+- Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.12`.
 - Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `2`.
 - Vault format: `VAULT_VERSION` remains an independent crypto compatibility number; current version is `3`.
 
@@ -387,8 +387,9 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 - Legacy `mcp_port` values may remain in schema-v1 namespace launch-profile rows and backup metadata for compatibility, but no runtime listener or route consumes them.
 
 ### Multi-Client Support
-- Token issuance clears any previous tokens (single active session enforced)
+- Token issuance clears any previous tokens for that namespace process (one active browser tab/session per namespace)
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
+- Browser auth cookies use namespace-scoped names (`metalist_auth_<namespace>`), so sessions on different namespace ports do not overwrite each other in the browser's host-wide cookie jar.
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
 - Logout and session expiry fail closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, search history, attachment metadata, undo/sync state, and ontology state before serving the locked session.
 
@@ -447,7 +448,7 @@ For fresh imports using `convert-from-legacy.py`:
 ## API Endpoints
 
 When password protection is enabled, browser requests use:
-- HttpOnly `metalist_auth` cookie
+- HttpOnly `metalist_auth_<namespace>` cookie
 - `X-Metalist-Tab-Id: <uuid>` (required by auth/token verification)
 
 Non-browser/manual clients may still send:
@@ -471,7 +472,7 @@ Backup:
 - `GET /api2/backup/settings` - Read backup destination settings
 - `PUT /api2/backup/settings` - Update the configured backup folder, selected namespaces, and per-namespace retention count
 - `GET /api2/backup/list` - List available configured-folder backup snapshots
-- `POST /api2/backup/run` - Create one versioned workspace archive snapshot and write it to the enabled destination(s)
+- `POST /api2/backup/run` - Atomically accept and persist the required folder/namespace/retention settings, create one versioned archive per selected namespace, apply retention, and return concrete result rows; the UI does not report success before this response
 - `POST /api2/backup/restore` - Restore the selected folder archive snapshot and trigger the usual post-restore runtime reset/restart flow
   - Backup scope follows the active DB path, so namespaced runs use `~/MetaList/namespaces/<namespace>/backups/` and write one versioned archive per snapshot, for example `cla-<timestamp>.metalist-backup.tar.gz`. Legacy `.bak` snapshots remain restorable.
   - Restoring `cla` into `cla` is allowed even when that namespace already exists. Importing `cla` under another target name requires that target namespace to be new and rejects saved launch-port conflicts.

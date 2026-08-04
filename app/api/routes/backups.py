@@ -870,19 +870,21 @@ def list_backups(token: Annotated[str, Depends(_require_auth)]):
 
 @router.post("/run", response_model=BackupRunResponse)
 @transactional_route
-def run_backup(token: Annotated[str, Depends(_require_auth)]):
-    settings = load_backup_settings(token=token)
-    folder_path = settings["folder_path"]
-    selected_namespaces = settings["selected_namespaces"]
-    retention_count = settings["retention_count"]
-    if not isinstance(folder_path, str):
-        raise RuntimeError("backup settings folder_path must be a string")
-    if not isinstance(selected_namespaces, list):
-        raise RuntimeError("backup settings selected_namespaces must be a list")
-    if not isinstance(retention_count, int) or retention_count <= 0:
-        raise RuntimeError("backup settings retention_count must be a positive integer")
+def run_backup(
+    payload: BackupSettingsUpdateRequest,
+    token: Annotated[str, Depends(_require_auth)],
+):
+    folder_path = _prepare_folder_backup_directory_for_settings(
+        folder_path=payload.folder_path,
+    )
     normalized_selected_namespaces = _filter_deleted_selected_namespaces(
-        selected_namespaces=selected_namespaces,
+        selected_namespaces=payload.selected_namespaces,
+    )
+    update_backup_settings(
+        token=token,
+        folder_path=folder_path,
+        selected_namespaces=normalized_selected_namespaces,
+        retention_count=payload.retention_count,
     )
 
     folder_directory = _normalize_folder_backup_path(folder_path=folder_path)
@@ -895,7 +897,7 @@ def run_backup(token: Annotated[str, Depends(_require_auth)]):
         database_path = resolve_namespaced_database_path(namespace=namespace)
         backup_info = create_timestamped_backup_for_paths(database_path, folder_directory)
         current_folder_backups = list_backups_in_directory(folder_directory, database_path=database_path)
-        folder_delete_count = len(current_folder_backups) - retention_count
+        folder_delete_count = len(current_folder_backups) - payload.retention_count
         deleted_folder_count = 0
         if folder_delete_count > 0:
             deleted_folder_count = len(

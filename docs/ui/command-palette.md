@@ -36,7 +36,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - On first launch after this change, the browser imports any legacy command-palette `localStorage` values into the namespace DB and then clears those legacy keys.
 
 ## Utility Actions
-- `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, sets the retention count, and then runs the backup. Typing `backups` in the palette also matches this action, and the completion modal shows the created archive size per namespace.
+- `Create backup now`: opens Backup Settings, where the user chooses one backup folder, picks which namespaces to include, and sets the retention count. `Back Up Now` submits those settings directly to the backend operation that persists them and creates the archives; the completion modal appears only after concrete archive results return and shows the created size per namespace. Typing `backups` in the palette also matches this action.
   - Each backup snapshot is one versioned `.tar.gz` archive containing the notes DB plus sibling files DB when present.
   - The completion modal shows one result row per namespace.
 - `Restore from backup…`: opens a restore picker for configured-folder snapshots, applies the selected archive, then shows a success confirmation with `OK` before reload.
@@ -49,7 +49,7 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 - `Keyboard Shortcuts / Cheatsheet…`: opens the keyboard shortcuts cheatsheet from the command palette; `cheatsheet` is a searchable keyword.
 - `Version info…`: opens a read-only runtime/version modal with app version, SQLite `user_version`, namespace, auth, encryption, vault, KDF, and cache readiness fields.
 - `Note Layout & Appearance…`: previews and saves the note hierarchy presets. Search terms include `layout`, `appearance`, `font`, `size`, `spacing`, `indentation`, and `hierarchy`.
-- `Switch namespace…`: opens a simple namespace picker and opens the selected non-current namespace. A running namespace with an unchanged launch profile keeps its process and warm cache; stopped namespaces launch, and changed port profiles restart the target.
+- `Switch namespace…`: opens a simple namespace picker, leaves the current namespace tab open, and opens the selected non-current namespace in a new browser tab. A running namespace with an unchanged launch profile keeps its process and warm cache; stopped namespaces launch, and changed port profiles restart the target. Each namespace still permits only one active browser tab/session.
 - `Create namespace…`: opens a namespace creation modal with defaulted HTTP / HTTPS ports, saves the profile, launches the namespace, and opens it.
 - `Manage namespace ports…`: opens a table of saved launch profiles from each namespace's main DB; saving this table only updates future launch profiles and does not switch tabs, launch namespaces, or restart the current process. Current-namespace port edits apply on the next MetaList launch.
 - `Delete namespace…`: asks which namespace to delete, then opens a destructive confirmation view for that target. The confirm button is red, the user must type the namespace name, and when that namespace is password-protected they must also re-enter its password. Deleting the active namespace moves the tab to a dedicated namespace-removal status page; deleting an inactive namespace stays in the current tab and reports completion in the modal.

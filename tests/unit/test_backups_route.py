@@ -188,14 +188,11 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
         size_bytes=256,
     )
 
+    captured_settings: dict[str, object] = {}
     monkeypatch.setattr(
         backups_route,
-        "load_backup_settings",
-        lambda *, token: {
-            "folder_path": str(folder_directory),
-            "selected_namespaces": ["default", "work"],
-            "retention_count": 30,
-        },
+        "update_backup_settings",
+        lambda **settings: captured_settings.update(settings) or settings,
     )
     monkeypatch.setattr(
         backups_route,
@@ -218,9 +215,22 @@ def test_run_backup_writes_each_selected_namespace_to_configured_folder(
         ),
     )
 
-    response = backups_route.run_backup(token="token")
+    response = backups_route.run_backup(
+        payload=backups_route.BackupSettingsUpdateRequest(
+            folder_path=str(folder_directory),
+            selected_namespaces=["default", "work"],
+            retention_count=30,
+        ),
+        token="token",
+    )
 
     assert folder_directory.is_dir() is True
+    assert captured_settings == {
+        "folder_path": str(folder_directory),
+        "retention_count": 30,
+        "selected_namespaces": ["default", "work"],
+        "token": "token",
+    }
     assert len(response.results) == 2
     assert response.results[0].namespace == "default"
     assert response.results[0].destination == "folder"
@@ -244,15 +254,7 @@ def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
         created_at="2026-08-01T19:48:25+00:00",
         size_bytes=128,
     )
-    monkeypatch.setattr(
-        backups_route,
-        "load_backup_settings",
-        lambda *, token: {
-            "folder_path": str(folder_directory),
-            "selected_namespaces": ["default", "cla", "recovered"],
-            "retention_count": 5,
-        },
-    )
+    monkeypatch.setattr(backups_route, "update_backup_settings", lambda **settings: settings)
     monkeypatch.setattr(
         backups_route,
         "resolve_namespaced_database_path",
@@ -269,7 +271,14 @@ def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
         lambda backup_directory, *, database_path=None: [backup],
     )
 
-    response = backups_route.run_backup(token="token")
+    response = backups_route.run_backup(
+        payload=backups_route.BackupSettingsUpdateRequest(
+            folder_path=str(folder_directory),
+            selected_namespaces=["default", "cla", "recovered"],
+            retention_count=5,
+        ),
+        token="token",
+    )
 
     assert [result.namespace for result in response.results] == ["cla"]
 
@@ -277,18 +286,15 @@ def test_run_backup_ignores_deleted_namespaces_in_saved_settings(
 def test_run_backup_rejects_when_no_namespaces_are_selected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        backups_route,
-        "load_backup_settings",
-        lambda *, token: {
-            "folder_path": "/tmp/backups",
-            "selected_namespaces": [],
-            "retention_count": 30,
-        },
-    )
-
     with pytest.raises(backups_route.HTTPException) as excinfo:
-        backups_route.run_backup(token="token")
+        backups_route.run_backup(
+            payload=backups_route.BackupSettingsUpdateRequest.model_construct(
+                folder_path="/tmp/backups",
+                selected_namespaces=[],
+                retention_count=30,
+            ),
+            token="token",
+        )
 
     assert excinfo.value.status_code == 400
     assert excinfo.value.detail == "Select at least one namespace to back up"

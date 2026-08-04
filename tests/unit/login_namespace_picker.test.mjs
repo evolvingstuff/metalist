@@ -4,7 +4,8 @@ import test from 'node:test';
 import {
     buildLoginNamespaceOpeningCopy,
     buildLoginTitle,
-    navigateNamespaceInCurrentTab,
+    navigateNamespaceInNewTab,
+    openPendingNamespaceTab,
     parseLoginNamespaceCatalog,
     rewriteNamespaceUrlPreservingCurrentHost,
 } from '../../app/static/js/modules/login-namespace-picker.js';
@@ -55,24 +56,47 @@ test('rewriteNamespaceUrlPreservingCurrentHost swaps only the browser host', () 
 });
 
 
-test('navigateNamespaceInCurrentTab replaces the active tab without opening another tab', () => {
-    const replacedUrls = [];
+test('namespace switching opens and navigates another tab without replacing the active tab', () => {
+    const pendingTabUrls = [];
+    const openedTabs = [];
+    const pendingTab = {
+        closed: false,
+        location: {
+            replace(url) {
+                pendingTabUrls.push(url);
+            },
+        },
+        opener: {},
+    };
     const browserWindow = {
         location: {
             hostname: '10.0.0.31',
-            replace(url) {
-                replacedUrls.push(url);
+            replace() {
+                throw new Error('namespace switching must leave the active tab open');
             },
         },
-        open() {
-            throw new Error('namespace switching must not open a new tab');
+        open(url, target) {
+            openedTabs.push({ target, url });
+            return pendingTab;
         },
     };
 
-    navigateNamespaceInCurrentTab(
+    const openedTab = openPendingNamespaceTab(browserWindow);
+    navigateNamespaceInNewTab(
         'http://127.0.0.1:8001/?namespace=cla',
         browserWindow,
+        openedTab,
     );
 
-    assert.deepEqual(replacedUrls, ['http://10.0.0.31:8001/?namespace=cla']);
+    assert.deepEqual(openedTabs, [{ target: '_blank', url: 'about:blank' }]);
+    assert.equal(pendingTab.opener, null);
+    assert.deepEqual(pendingTabUrls, ['http://10.0.0.31:8001/?namespace=cla']);
+});
+
+
+test('openPendingNamespaceTab fails loudly when the browser blocks the tab', () => {
+    assert.throws(
+        () => openPendingNamespaceTab({ open: () => null }),
+        /Browser blocked the namespace tab/,
+    );
 });

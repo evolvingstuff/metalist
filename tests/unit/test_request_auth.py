@@ -6,11 +6,18 @@ import pytest
 from starlette.requests import Request
 
 from app.api.request_auth import AUTH_COOKIE_NAME
+from app.api.request_auth import auth_cookie_name_for_namespace
 from app.api.request_auth import clear_auth_cookie
 from app.api.request_auth import get_request_auth_token
 from app.api.request_auth import read_request_auth_token
 from app.api.request_auth import require_request_auth_token
 from app.api.request_auth import set_auth_cookie
+
+
+def test_auth_cookie_names_are_scoped_to_namespace() -> None:
+    assert auth_cookie_name_for_namespace("default") == "metalist_auth_default"
+    assert auth_cookie_name_for_namespace("cla") == "metalist_auth_cla"
+    assert auth_cookie_name_for_namespace("default") != auth_cookie_name_for_namespace("cla")
 
 
 def _build_request(

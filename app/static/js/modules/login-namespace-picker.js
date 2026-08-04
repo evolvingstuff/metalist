@@ -88,14 +88,32 @@ export function rewriteNamespaceUrlPreservingCurrentHost(rawUrl, currentLocation
 }
 
 
-export function navigateNamespaceInCurrentTab(rawUrl, browserWindow) {
+export function openPendingNamespaceTab(browserWindow) {
     if (!browserWindow || typeof browserWindow !== 'object') {
-        throw new Error('navigateNamespaceInCurrentTab requires browserWindow object');
+        throw new Error('openPendingNamespaceTab requires browserWindow object');
     }
-    const currentLocation = browserWindow.location;
-    if (!currentLocation || typeof currentLocation.replace !== 'function') {
-        throw new Error('navigateNamespaceInCurrentTab requires location.replace');
+    if (typeof browserWindow.open !== 'function') {
+        throw new Error('openPendingNamespaceTab requires window.open');
     }
-    const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(rawUrl, currentLocation);
-    currentLocation.replace(navigationUrl);
+    const pendingTab = browserWindow.open('about:blank', '_blank');
+    if (!pendingTab || typeof pendingTab !== 'object') {
+        throw new Error('Browser blocked the namespace tab');
+    }
+    pendingTab.opener = null;
+    return pendingTab;
+}
+
+
+export function navigateNamespaceInNewTab(rawUrl, browserWindow, pendingTab) {
+    if (!browserWindow || typeof browserWindow !== 'object') {
+        throw new Error('navigateNamespaceInNewTab requires browserWindow object');
+    }
+    if (!pendingTab || typeof pendingTab !== 'object' || pendingTab.closed) {
+        throw new Error('Namespace tab was closed before it could open');
+    }
+    if (!pendingTab.location || typeof pendingTab.location.replace !== 'function') {
+        throw new Error('navigateNamespaceInNewTab requires pending tab location.replace');
+    }
+    const navigationUrl = rewriteNamespaceUrlPreservingCurrentHost(rawUrl, browserWindow.location);
+    pendingTab.location.replace(navigationUrl);
 }
