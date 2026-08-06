@@ -3398,6 +3398,10 @@ body[data-note-vertical-spacing] .note {
     transition: opacity 0.15s ease;
 }
 
+.controls .tab-ui-folder-icon-front {
+    fill: #000000;
+}
+
 body.pref-show-tab-ui .controls .tab-ui-folder-icon {
     opacity: 0.78;
 }
