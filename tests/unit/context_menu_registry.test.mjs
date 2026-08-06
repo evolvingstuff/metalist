@@ -15,6 +15,7 @@ function buildNoteHandlers(calls) {
         onPasteNoteChild: (noteId) => calls.push(['pasteNoteChild', noteId]),
         onPasteReference: (noteId) => calls.push(['pasteReference', noteId]),
         onPasteReferenceChild: (noteId) => calls.push(['pasteReferenceChild', noteId]),
+        onOpenReferenceSource: (referenceNoteId) => calls.push(['openReferenceSource', referenceNoteId]),
         onMakeImageBigger: (context) => calls.push(['makeImageBigger', context]),
         onMakeImageSmaller: (context) => calls.push(['makeImageSmaller', context]),
         onResetImageSize: (context) => calls.push(['resetImageSize', context]),
@@ -27,6 +28,37 @@ function buildNoteHandlers(calls) {
         onMoveNoteToTop: (noteId) => calls.push(['moveToTop', noteId]),
     };
 }
+
+test('buildContextMenuItems prepends source action for a reference context', () => {
+    const calls = [];
+    const items = buildContextMenuItems(
+        {
+            kind: 'note',
+            noteId: 'host-note-123',
+            referenceNoteId: 'source-note-456',
+        },
+        buildNoteHandlers(calls),
+    );
+
+    assert.deepEqual(
+        {
+            id: items[0].id,
+            label: items[0].label,
+            icon: items[0].icon,
+            enabled: items[0].enabled,
+        },
+        {
+            id: 'open-reference-source',
+            label: 'Go to Source',
+            icon: 'external',
+            enabled: true,
+        },
+    );
+    assert.equal(items[1].separated, true);
+
+    items[0].onSelect();
+    assert.deepEqual(calls, [['openReferenceSource', 'source-note-456']]);
+});
 
 test('buildContextMenuItems returns note actions for note context', () => {
     const calls = [];
@@ -394,6 +426,32 @@ test('buildContextMenuItems returns only link actions for link context', () => {
         ['copyLink', linkContext],
         ['openLink', linkContext],
     ]);
+});
+
+test('buildContextMenuItems includes source action for a link inside a reference', () => {
+    const calls = [];
+    const linkContext = { href: 'https://example.com/docs' };
+    const items = buildContextMenuItems(
+        {
+            kind: 'link',
+            linkContext,
+            referenceNoteId: 'source-note-456',
+        },
+        {
+            onOpenReferenceSource: (referenceNoteId) => calls.push(['source', referenceNoteId]),
+            onCopyLink: (context) => calls.push(['copyLink', context]),
+            onOpenLinkInNewTab: (context) => calls.push(['openLink', context]),
+        },
+    );
+
+    assert.deepEqual(items.map((item) => item.id), [
+        'open-reference-source',
+        'copy-link',
+        'open-link-new-tab',
+    ]);
+    assert.equal(items[1].separated, true);
+    items[0].onSelect();
+    assert.deepEqual(calls, [['source', 'source-note-456']]);
 });
 
 test('buildContextMenuItems preserves tag menu behavior', () => {

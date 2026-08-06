@@ -36,12 +36,13 @@
                 Loading encrypted data…
             </div>
             <div id="login-loading-first" class="login-loading-first" style="display: none;">
-                First-time load after a server restart. This only happens once per restart.
+                Hydrating the encrypted note store into memory.
             </div>
             <div id="login-loading-message" class="login-loading-message"></div>
             <div class="login-progress-track">
                 <div id="login-progress-bar" class="login-progress-bar"></div>
             </div>
+            <div id="login-loading-elapsed" class="login-loading-elapsed"></div>
         </div>
         <div id="login-namespace-switcher" class="login-namespace-switcher" hidden>
             <label class="login-namespace-label" for="login-namespace-select">Namespace</label>
@@ -89,7 +90,17 @@
                             id="tab-hover-zone"
                             class="tab-hover-zone"
                             aria-hidden="true"
-                        ></div>
+                        >
+                            <svg
+                                class="tab-ui-folder-icon"
+                                viewBox="0 0 40 30"
+                                focusable="false"
+                                aria-hidden="true"
+                            >
+                                <path d="M4 9.5h9l3-3h11.5a2.5 2.5 0 0 1 2.5 2.5v14.5a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 4 23.5z" />
+                                <path d="M9.5 6h8l3-3H32a2.5 2.5 0 0 1 2.5 2.5V20" />
+                            </svg>
+                        </div>
                         <button
                             id="reference-back-button"
                             class="reference-back-button interactive"

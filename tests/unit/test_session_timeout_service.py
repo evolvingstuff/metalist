@@ -39,6 +39,7 @@ def test_get_session_timeout_minutes_returns_default_when_settings_row_missing(
 ) -> None:
     del memory_settings_db
 
+    assert DEFAULT_TOKEN_EXPIRY_MINUTES == 0
     assert get_session_timeout_minutes() == DEFAULT_TOKEN_EXPIRY_MINUTES
 
 

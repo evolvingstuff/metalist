@@ -79,6 +79,7 @@ const META_HINT_PATTERN = /\b(?:op|edited|top\s+\d+%?\s+commenter)\b/i;
 const SCORE_HINT_PATTERN = /^\d+(?:\.\d+)?k?$/i;
 const LINE_BREAK_PATTERN = /\r\n|\r|\n/;
 const STRUCTURED_LINE_PATTERN = /^\s*(?:[-*+\u2022]\s+|\d+[.)]\s+|\(?\d{1,2}:\d{2}(?::\d{2})?\)?\s*(?:[-\u2013\u2014:]|\s)|[A-Za-z][A-Za-z0-9 /_-]{0,48}:\s*)/;
+const UNMARKED_LIST_LINE_START_PATTERN = /^\s*[A-Z0-9]/;
 const TIMESTAMP_ONLY_PATTERN = /^\s*\(?\d{1,2}:\d{2}(?::\d{2})?\)?\s*$/;
 const TIMESTAMP_SECTION_LABEL_PATTERN = /(?:^|\s)(?:time\s*stamps?|timestamps?|chapters?)\s*:\s*$/i;
 const INVISIBLE_TEXT_CHARS_PATTERN = /[\u200b-\u200f\ufeff]/g;
@@ -1135,6 +1136,7 @@ function hasStructuredLineBreaks(lines) {
 
     let nonEmptyLineCount = 0;
     let structuredLineCount = 0;
+    let unmarkedListLineCount = 0;
     let emptyInteriorLineCount = 0;
 
     let i = 0;
@@ -1156,6 +1158,9 @@ function hasStructuredLineBreaks(lines) {
         if (STRUCTURED_LINE_PATTERN.test(line)) {
             structuredLineCount += 1;
         }
+        if (UNMARKED_LIST_LINE_START_PATTERN.test(line)) {
+            unmarkedListLineCount += 1;
+        }
         i += 1;
     }
 
@@ -1166,6 +1171,12 @@ function hasStructuredLineBreaks(lines) {
         return true;
     }
     if (structuredLineCount === 1 && nonEmptyLineCount <= 2) {
+        return true;
+    }
+    if (
+        nonEmptyLineCount >= 3
+        && unmarkedListLineCount >= Math.ceil(nonEmptyLineCount * 0.8)
+    ) {
         return true;
     }
     return false;

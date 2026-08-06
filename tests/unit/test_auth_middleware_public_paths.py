@@ -78,13 +78,15 @@ def test_routes_outside_the_exact_allowlist_are_not_public(path: str) -> None:
     assert AuthMiddleware.is_public_path(path=path) is False
 
 
-def test_request_after_session_expiry_purges_decrypted_runtime_state(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(auth_middleware.token_service, "has_active_tokens", lambda: False)
+def test_public_status_request_after_session_expiry_preserves_warm_runtime_state(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
-        auth_middleware,
-        "purge_decrypted_runtime_state",
-        lambda: calls.append("purge") or True,
+        auth_middleware.token_service,
+        "has_active_tokens",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("session expiry must not tear down the hydrated runtime")
+        ),
     )
     middleware = AuthMiddleware(lambda scope, receive, send: None)
     request = Request(
@@ -107,4 +109,3 @@ def test_request_after_session_expiry_purges_decrypted_runtime_state(monkeypatch
     response = asyncio.run(middleware.dispatch(request, _call_next))
 
     assert response.status_code == 200
-    assert calls == ["purge"]

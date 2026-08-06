@@ -40,7 +40,10 @@ import {
     openLinkInNewTabFromContext,
     resolveLinkContextFromElement,
 } from '../services/link-context-menu-action-service.js';
-import { resolvePriorityContextMenuTarget } from '../services/context-menu-target-service.js';
+import {
+    resolvePriorityContextMenuTarget,
+    resolveReferenceContextFromElement,
+} from '../services/context-menu-target-service.js';
 import { OntologyModal } from '../../modals/ontology-modal.js';
 import { findTagAtIndexInTagBar } from '../services/tag-syntax-service.js';
 import { findSearchTagAtIndex } from '../services/search-syntax-service.js';
@@ -56,6 +59,7 @@ import {
     buildStyleApplicationPlan,
 } from '../services/add-style-service.js';
 import { getTagBarValue, setTagBarValue } from '../services/tag-bar-service.js';
+import { openReferenceInNewTab } from './keyboard-events.js';
 
 const ontologyModal = new OntologyModal();
 
@@ -641,7 +645,7 @@ async function addNoteAtTopFromContextMenu() {
     await createNoteAtTop();
 }
 
-function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
+function showNoteContextMenu(event, noteId, imageContext, selectedTextRange, referenceContext) {
     if (typeof noteId !== 'string' || noteId.trim() === '') {
         return;
     }
@@ -672,6 +676,12 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         canRemoveFormatting: ModeContext.isEditing && ModeContext.currentNoteId === noteId,
         canAddNoteAtTop: !ModeContext.isEditing,
     };
+    if (referenceContext !== null) {
+        if (typeof referenceContext !== 'object') {
+            throw new Error('Reference context must be an object or null');
+        }
+        context.referenceNoteId = referenceContext.referenceNoteId;
+    }
     if (context.canAddStyle) {
         context.styleOptions = ADD_STYLE_OPTIONS;
     }
@@ -727,6 +737,11 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
         onPasteReferenceChild: (targetNoteId) => {
             void CommandGate.run('contextMenu.note.paste_reference_child', async () => {
                 await pasteReferenceAsChildFromContextMenu(targetNoteId);
+            });
+        },
+        onOpenReferenceSource: (referenceNoteId) => {
+            void CommandGate.run('contextMenu.reference.open_source', async () => {
+                await openReferenceInNewTab(referenceNoteId);
             });
         },
         onCopyImage: (targetImageContext) => {
@@ -840,7 +855,7 @@ function showNoteContextMenu(event, noteId, imageContext, selectedTextRange) {
     });
 }
 
-function showLinkContextMenu(event, linkContext) {
+function showLinkContextMenu(event, linkContext, referenceContext) {
     if (!event) {
         throw new Error('showLinkContextMenu called without event');
     }
@@ -852,7 +867,18 @@ function showLinkContextMenu(event, linkContext) {
     }
 
     const context = { kind: 'link', linkContext };
+    if (referenceContext !== null) {
+        if (typeof referenceContext !== 'object') {
+            throw new Error('Reference context must be an object or null');
+        }
+        context.referenceNoteId = referenceContext.referenceNoteId;
+    }
     const items = buildContextMenuItems(context, {
+        onOpenReferenceSource: (referenceNoteId) => {
+            void CommandGate.run('contextMenu.reference.open_source', async () => {
+                await openReferenceInNewTab(referenceNoteId);
+            });
+        },
         onCopyLink: (targetLinkContext) => {
             void CommandGate.run('contextMenu.link.copy', async () => {
                 await copyLinkToClipboard(targetLinkContext);
@@ -986,24 +1012,37 @@ function handleContextMenu(event) {
     }
 
     const noteElement = resolveContextNoteElement(element);
+    const referenceContext = resolveReferenceContextFromElement(element);
     if (noteElement) {
         const selectedTextRange = resolveSelectedTextRangeForNote(noteElement);
         if (selectedTextRange) {
             const imageContext = resolveImageContextFromElement(element);
-            showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, selectedTextRange);
+            showNoteContextMenu(
+                event,
+                noteElement.dataset.noteId,
+                imageContext,
+                selectedTextRange,
+                referenceContext,
+            );
             return;
         }
     }
 
     const linkContext = resolveLinkContextFromElement(element);
     if (linkContext) {
-        showLinkContextMenu(event, linkContext);
+        showLinkContextMenu(event, linkContext, referenceContext);
         return;
     }
 
     if (noteElement) {
         const imageContext = resolveImageContextFromElement(element);
-        showNoteContextMenu(event, noteElement.dataset.noteId, imageContext, null);
+        showNoteContextMenu(
+            event,
+            noteElement.dataset.noteId,
+            imageContext,
+            null,
+            referenceContext,
+        );
         return;
     }
 

@@ -49,7 +49,6 @@ html[data-theme="dark"] .html-export-body .note:not(.editing):not(.locked):hover
     user-select: text !important;
 }
 
-.html-export-body .note-reference-toggle,
 .html-export-body .note-collapse-toggle,
 .html-export-body .note-tags,
 .html-export-body .lock-icon,

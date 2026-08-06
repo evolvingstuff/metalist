@@ -29,6 +29,18 @@ test('encrypted login always shows and completes the database progress flow', as
         source,
         /Hydration failed during \$\{failedPhase\}: \$\{failedMessage\}/,
     );
+    assert.match(source, /_startLoadingElapsedTimer\(\)/);
+    assert.match(source, /_stopLoadingElapsedTimer\(\)/);
+    assert.match(source, /formatElapsedDuration/);
+});
+
+
+test('login template exposes elapsed startup time without claiming every hydration is a restart', async () => {
+    const templateUrl = new URL('../../app/templates/index.html', import.meta.url);
+    const templateSource = await readFile(templateUrl, 'utf8');
+
+    assert.match(templateSource, /id="login-loading-elapsed"/);
+    assert.doesNotMatch(templateSource, /First-time load after a server restart/);
 });
 
 

@@ -17,6 +17,8 @@
   - It always renders as a block on its own visual line, even when written inline (for example `blah ![[UUID]] yada`).
   - The referenced note's full child subtree is rendered inside the embed.
   - Embedded rendering ignores the referenced note's collapsed/expanded state.
+  - A collapsed host shows the embed as a compact source-note link instead of rendering its contents.
+  - An expanded embed ends with a `↗ title` link to the source note; compact references use the same visual language, and the arrow tooltip reads `Link to reference source`.
   - Missing UUIDs render a "missing reference" marker.
   - Circular reference chains render a "circular reference" marker and stop at that point.
 - In **edit mode**, the token remains literal text (`![[UUID]]`).

@@ -1,6 +1,6 @@
 import { ModeContextInstance as ModeContext } from '../mode-context.js';
 import * as Logger from '../mode-logger.js';
-import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, toggleTodoDone, runShellNote, toggleReferenceModeForNote } from '../actions/note-actions.js';
+import { createNote, deleteNote, collapseNote, expandNote, getShellRun, moveNoteToSiblingPosition, indentNote, outdentNote, toggleTodoDone, runShellNote } from '../actions/note-actions.js';
 import { actionSelectNote, actionDeselectNote, actionSwitchNotes } from '../actions/selection-actions.js';
 import { actionEnterSearchMode, actionExitSearchMode } from '../actions/search-actions.js';
 import { DOMUtils } from '../../dom-utils.js'; 
@@ -158,8 +158,6 @@ function isMouseDownOutsideEditExclusion(target) {
             '#trash-can',
             '.note-collapse-toggle',
             COLLAPSED_CHILDREN_INDICATOR_SELECTOR,
-            '.note-embed-collapse-toggle',
-            '.note-reference-toggle',
             '.note-reference-link',
             '.note-file-reference-link',
             '.note-file-image-download-link',
@@ -868,14 +866,6 @@ function handleClick(event) {
         return;
     }
 
-    if (handleReferenceToggleClick(event)) {
-        return;
-    }
-
-    if (handleEmbeddedReferenceCollapseClick(event)) {
-        return;
-    }
-
     if (handleReferenceBackButtonClick(event)) {
         return;
     }
@@ -1000,10 +990,9 @@ function handleClick(event) {
         const createButton = event.target.closest('.add-note');
         const collapseToggle = event.target.closest('.note-collapse-toggle');
         const collapsedChildrenIndicator = event.target.closest(COLLAPSED_CHILDREN_INDICATOR_SELECTOR);
-        const embedCollapseToggle = event.target.closest('.note-embed-collapse-toggle');
         
         // Only allow certain actions when disconnected
-        if (noteContent || createButton || collapseToggle || collapsedChildrenIndicator || embedCollapseToggle) {
+        if (noteContent || createButton || collapseToggle || collapsedChildrenIndicator) {
             Logger.logNoop('Click event ignored while disconnected from server', {
                 eventType: event.type,
                 targetElement: event.target.tagName,
@@ -1319,14 +1308,6 @@ function handleClick(event) {
     }
 }
 
-function parseReferenceOccurrenceIndex(rawValue) {
-    const parsed = Number.parseInt(rawValue, 10);
-    if (!Number.isInteger(parsed) || parsed < 0) {
-        throw new Error(`Invalid reference occurrence index: ${rawValue}`);
-    }
-    return parsed;
-}
-
 function getReferenceContainerFromEvent(event, selector) {
     if (!event.target) {
         throw new Error('Reference interaction missing target element');
@@ -1340,98 +1321,6 @@ function getReferenceContainerFromEvent(event, selector) {
         throw new Error('Reference interaction missing .note-reference-block container');
     }
     return container;
-}
-
-function handleReferenceToggleClick(event) {
-    const container = getReferenceContainerFromEvent(event, '.note-reference-toggle');
-    if (!container) {
-        return false;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (ModeContext.isEditing) {
-        return true;
-    }
-    if (!ModeContext.isConnected) {
-        Logger.logNoop('Reference toggle click ignored while disconnected', {
-            isConnected: false,
-        });
-        return true;
-    }
-
-    const hostNoteId = container.dataset.refHostNoteId;
-    const referenceNoteId = container.dataset.refNoteId;
-    const mode = container.dataset.refTargetMode;
-    const occurrenceRaw = container.dataset.refOccurrence;
-    if (typeof hostNoteId !== 'string' || hostNoteId.length === 0) {
-        throw new Error('Reference toggle missing host note id');
-    }
-    if (typeof referenceNoteId !== 'string' || referenceNoteId.length === 0) {
-        throw new Error('Reference toggle missing reference note id');
-    }
-    if (mode !== 'embed' && mode !== 'link') {
-        throw new Error(`Reference toggle has invalid target mode: ${mode}`);
-    }
-    const occurrenceIndex = parseReferenceOccurrenceIndex(occurrenceRaw);
-
-    void CommandGate.run('mouse.toggle_reference_mode', async () => {
-        await toggleReferenceModeForNote(hostNoteId, referenceNoteId, occurrenceIndex, mode);
-    });
-    return true;
-}
-
-function handleEmbeddedReferenceCollapseClick(event) {
-    if (!event.target) {
-        throw new Error('Embedded reference collapse click missing target element');
-    }
-
-    const collapseToggle = event.target.closest('.note-embed-collapse-toggle');
-    if (!collapseToggle) {
-        return false;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!ModeContext.isConnected) {
-        Logger.logNoop('Embedded reference collapse click ignored while disconnected', {
-            isConnected: false,
-        });
-        return true;
-    }
-
-    const embedNode = collapseToggle.closest('.note-embed-node');
-    if (!embedNode) {
-        throw new Error('Embedded reference collapse toggle missing .note-embed-node container');
-    }
-
-    const noteId = embedNode.dataset.embedNoteId;
-    if (typeof noteId !== 'string' || noteId.length === 0) {
-        throw new Error('Embedded reference collapse toggle missing embedded note id');
-    }
-
-    const canCollapse = embedNode.dataset.canCollapse !== 'false';
-    if (!canCollapse) {
-        Logger.logNoop('Embedded reference collapse toggle ignored: note cannot collapse', {
-            noteId,
-        });
-        return true;
-    }
-
-    const isCurrentlyCollapsed = embedNode.dataset.isCollapsed === 'true';
-    if (isCurrentlyCollapsed) {
-        void CommandGate.run('mouse.expand_embedded_reference_note', async () => {
-            await expandNote(noteId);
-        });
-        return true;
-    }
-
-    void CommandGate.run('mouse.collapse_embedded_reference_note', async () => {
-        await collapseNote(noteId);
-    });
-    return true;
 }
 
 function handleReferenceLinkClick(event) {

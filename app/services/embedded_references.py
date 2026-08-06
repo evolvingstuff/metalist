@@ -155,6 +155,27 @@ def render_note_content_with_embeds(
     static_export: bool,
     redact_passwords: bool,
 ) -> str:
+    return _render_note_content_with_embeds(
+        note_id=note_id,
+        content_html=content_html,
+        tags=tags,
+        context=context,
+        static_export=static_export,
+        redact_passwords=redact_passwords,
+        render_note_embeds_as_links=False,
+    )
+
+
+def _render_note_content_with_embeds(
+    *,
+    note_id: str,
+    content_html: str,
+    tags: str,
+    context: EmbedRenderContext,
+    static_export: bool,
+    redact_passwords: bool,
+    render_note_embeds_as_links: bool,
+) -> str:
     if not isinstance(note_id, str) or note_id == "":
         raise TypeError("note_id must be a non-empty string")
     if not isinstance(content_html, str):
@@ -165,6 +186,8 @@ def render_note_content_with_embeds(
         raise TypeError("static_export must be a bool")
     if not isinstance(redact_passwords, bool):
         raise TypeError("redact_passwords must be a bool")
+    if not isinstance(render_note_embeds_as_links, bool):
+        raise TypeError("render_note_embeds_as_links must be a bool")
 
     annotated_content = content_html
     if not static_export:
@@ -177,6 +200,7 @@ def render_note_content_with_embeds(
         ancestry=(note_id,),
         static_export=static_export,
         redact_passwords=redact_passwords,
+        render_note_embeds_as_links=render_note_embeds_as_links,
     )
     rendered_content = format_note_content_for_view(
         content_html=content_with_embeds,
@@ -201,13 +225,14 @@ def render_collapsed_note_content_with_embeds(
     redact_passwords: bool,
 ) -> str:
     preview_source_html = extract_collapsed_preview_source_html(content_html)
-    return render_note_content_with_embeds(
+    return _render_note_content_with_embeds(
         note_id=note_id,
         content_html=preview_source_html,
         tags=tags,
         context=context,
         static_export=static_export,
         redact_passwords=redact_passwords,
+        render_note_embeds_as_links=True,
     )
 
 
@@ -287,6 +312,18 @@ def collapsed_preview_source_has_image_file_embed(
     return False
 
 
+def collapsed_preview_source_has_note_embed(
+    *,
+    content_html: str,
+    context: EmbedRenderContext,
+) -> bool:
+    preview_source_html = extract_collapsed_preview_source_html(content_html)
+    if preview_source_html == "":
+        return False
+    tokens = collect_reference_tokens_from_html(preview_source_html)
+    return any(token.is_embed and context.has_note(token.note_id) for token in tokens)
+
+
 def _replace_reference_tokens_in_html(
     *,
     host_note_id: str,
@@ -296,6 +333,7 @@ def _replace_reference_tokens_in_html(
     ancestry: Tuple[str, ...],
     static_export: bool,
     redact_passwords: bool,
+    render_note_embeds_as_links: bool,
 ) -> str:
     parts = _HTML_TOKEN_SPLIT_RE.split(content_html)
     output: List[str] = []
@@ -314,6 +352,7 @@ def _replace_reference_tokens_in_html(
             ignored_link_wrapper_keys=ignored_link_wrapper_keys,
             static_export=static_export,
             redact_passwords=redact_passwords,
+            render_note_embeds_as_links=render_note_embeds_as_links,
         )
         output.append(replaced_text)
         occurrence_index = next_occurrence_index
@@ -330,6 +369,7 @@ def _replace_reference_tokens_in_text(
     ignored_link_wrapper_keys: FrozenSet[Tuple[str, int]],
     static_export: bool,
     redact_passwords: bool,
+    render_note_embeds_as_links: bool,
 ) -> tuple[str, int]:
     if text == "":
         return "", occurrence_start
@@ -378,6 +418,7 @@ def _replace_reference_tokens_in_text(
                 ancestry=ancestry,
                 static_export=static_export,
                 redact_passwords=redact_passwords,
+                render_note_embeds_as_links=render_note_embeds_as_links,
             )
         )
         occurrence_index += 1
@@ -448,16 +489,11 @@ def _render_reference_block(
     ancestry: Tuple[str, ...],
     static_export: bool,
     redact_passwords: bool,
+    render_note_embeds_as_links: bool,
 ) -> str:
     mode = "link"
-    target_mode = "embed"
-    toggle_symbol = "+"
-    toggle_label = "Switch to embedded view"
     if is_embed:
         mode = "embed"
-        target_mode = "link"
-        toggle_symbol = "-"
-        toggle_label = "Switch to link view"
     escaped_reference_note_id = html.escape(reference_note_id, quote=True)
     escaped_host_note_id = html.escape(host_note_id, quote=True)
     note_exists = context.has_note(reference_note_id)
@@ -466,15 +502,17 @@ def _render_reference_block(
     if note_exists and file_exists:
         raise RuntimeError(f"Reference UUID {reference_note_id} resolves to both a note and a file")
 
+    display_note_embed_as_link = render_note_embeds_as_links and is_embed and note_exists
+    display_as_embed = is_embed and not display_note_embed_as_link
     wrapper_classes = "note-reference-block"
-    if is_embed:
+    if display_as_embed:
         wrapper_classes = f"{wrapper_classes} note-reference-embed note-embed-block"
     else:
         wrapper_classes = f"{wrapper_classes} note-reference-link-mode"
 
     if note_exists:
         wrapper_classes = f"{wrapper_classes} note-reference-note"
-        if is_embed:
+        if display_as_embed:
             body_html = _render_embed_body(
                 reference_note_id=reference_note_id,
                 context=context,
@@ -495,9 +533,9 @@ def _render_reference_block(
         thumbnail_kind = getattr(record, "thumbnail_kind")
         if not isinstance(thumbnail_kind, str) or thumbnail_kind == "":
             raise TypeError("file thumbnail_kind must be a non-empty string")
-        if is_embed and thumbnail_kind == "image":
+        if display_as_embed and thumbnail_kind == "image":
             wrapper_classes = f"{wrapper_classes} note-reference-file-image"
-        if is_embed:
+        if display_as_embed:
             body_html = _render_file_embed_body(
                 record=record,
                 reference_note_id=reference_note_id,
@@ -512,21 +550,13 @@ def _render_reference_block(
     else:
         body_html = _render_missing_reference_body(reference_note_id)
 
-    toggle_button_html = ""
-    if (note_exists or file_exists) and not static_export:
-        toggle_button_html = (
-            f'<button type="button" class="note-reference-toggle" aria-label="{toggle_label}" title="{toggle_label}">{toggle_symbol}</button>'
-        )
-
     return (
         f'<div class="{wrapper_classes}" '
         f'data-ref-host-note-id="{escaped_host_note_id}" '
         f'data-ref-note-id="{escaped_reference_note_id}" '
         f'data-ref-occurrence="{occurrence_index}" '
         f'data-ref-mode="{mode}" '
-        f'data-ref-target-mode="{target_mode}" '
         f'data-embed-ref-id="{escaped_reference_note_id}">'
-        f"{toggle_button_html}"
         f'<div class="note-reference-content">{body_html}</div>'
         "</div>"
     )
@@ -543,22 +573,35 @@ def _render_embed_body(
     escaped_note_id = html.escape(reference_note_id, quote=True)
 
     if reference_note_id in ancestry:
-        return (
+        embedded_content = (
             '<div class="note-reference-marker note-embed-cycle">'
             '<span class="note-embed-marker-icon" aria-hidden="true">&#8635;</span>'
             f'<span class="note-embed-marker-text">Circular reference: {escaped_note_id}</span>'
             "</div>"
         )
-
-    root_html = _render_embedded_note_node(
-        note_id=reference_note_id,
+    else:
+        embedded_content = _render_embedded_note_node(
+            note_id=reference_note_id,
+            context=context,
+            ancestry=ancestry + (reference_note_id,),
+            is_root=True,
+            static_export=static_export,
+            redact_passwords=redact_passwords,
+        )
+    if static_export:
+        return embedded_content
+    source_link = _render_link_body(
+        reference_note_id=reference_note_id,
         context=context,
-        ancestry=ancestry + (reference_note_id,),
-        is_root=True,
-        static_export=static_export,
+        static_export=False,
         redact_passwords=redact_passwords,
     )
-    return root_html
+    return (
+        f"{embedded_content}"
+        '<div class="note-embed-source-link">'
+        f"{source_link}"
+        "</div>"
+    )
 
 
 def _render_link_body(
@@ -600,7 +643,8 @@ def _render_link_body(
         )
     return (
         f'<a href="#" class="note-reference-link" data-ref-note-id="{escaped_note_id}">'
-        f"{escaped_preview}"
+        '<span class="note-reference-link-icon" aria-hidden="true" title="Link to reference source">&#8599;</span>'
+        f'<span class="note-reference-link-title">{escaped_preview}</span>'
         "</a>"
     )
 
@@ -758,22 +802,18 @@ def _render_embedded_note_node(
     if not isinstance(record_tags, str):
         raise TypeError("embedded note tags must be a string")
 
-    is_collapsed = bool(record.is_collapsed) and not static_export
     annotated_content = record_content
     if not static_export:
         annotated_content = annotate_inline_image_occurrences(record_content)
-    source_content = annotated_content
-    if is_collapsed:
-        source_content = extract_collapsed_preview_source_html(annotated_content)
-
     rendered_content = _replace_reference_tokens_in_html(
         host_note_id=note_id,
-        content_html=source_content,
+        content_html=annotated_content,
         tags=record_tags,
         context=context,
         ancestry=ancestry,
         static_export=static_export,
         redact_passwords=redact_passwords,
+        render_note_embeds_as_links=False,
     )
     rendered_content = format_note_content_for_view(
         content_html=rendered_content,
@@ -785,12 +825,9 @@ def _render_embedded_note_node(
     classes = "note-embed-node"
     if is_root:
         classes = f"{classes} note-embed-root"
-    if is_collapsed:
-        classes = f"{classes} collapsed"
-
     children_html = ""
     child_ids = context.get_children(note_id)
-    if child_ids and not is_collapsed:
+    if child_ids:
         child_parts: List[str] = []
         for child_id in child_ids:
             child_parts.append(
@@ -805,59 +842,14 @@ def _render_embedded_note_node(
             )
         children_html = f'<div class="note-embed-children">{"".join(child_parts)}</div>'
 
-    can_collapse = _embedded_note_is_collapsible(
-        content_html=record_content,
-        context=context,
-        child_ids=child_ids,
-    )
-    show_collapse_toggle = can_collapse and not static_export
-    collapse_toggle_html = ""
-    if show_collapse_toggle:
-        if is_collapsed:
-            collapse_label = "Expand referenced note"
-            collapse_symbol = "▸"
-        else:
-            collapse_label = "Collapse referenced note"
-            collapse_symbol = "▾"
-        collapse_toggle_html = (
-            '<button type="button" class="note-embed-collapse-toggle" '
-            f'aria-label="{collapse_label}" title="{collapse_label}">'
-            f"{collapse_symbol}"
-            "</button>"
-        )
-
     return (
-        f'<div class="{classes}" data-embed-note-id="{escaped_note_id}" '
-        f'data-is-collapsed="{str(is_collapsed).lower()}" '
-        f'data-can-collapse="{str(show_collapse_toggle).lower()}">'
-        f"{collapse_toggle_html}"
+        f'<div class="{classes}" data-embed-note-id="{escaped_note_id}">'
         '<div class="note-embed-body">'
         f'<div class="note-embed-content">{rendered_content}</div>'
         f"{children_html}"
         "</div>"
         "</div>"
     )
-
-
-def _embedded_note_is_collapsible(
-    *,
-    content_html: str,
-    context: EmbedRenderContext,
-    child_ids: List[str],
-) -> bool:
-    if child_ids:
-        return True
-    collapsed_preview_source = extract_collapsed_preview_source_html(content_html)
-    if collapsed_preview_source == "":
-        return False
-    if collapsed_preview_source_has_media(content_html):
-        return True
-    if collapsed_preview_source_has_image_file_embed(
-        content_html=content_html,
-        context=context,
-    ):
-        return True
-    return collapsed_preview_source_has_hidden_content(content_html)
 
 
 def _ignored_link_wrapper_keys_for_tags(tags: str) -> FrozenSet[Tuple[str, int]]:

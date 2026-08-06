@@ -391,7 +391,7 @@ and vacuum/checkpoint procedures when physical remanence is in scope.
 - Token verification is bound to an `X-Metalist-Tab-Id` owner (tab-scoped sessions)
 - Browser auth cookies use namespace-scoped names (`metalist_auth_<namespace>`), so sessions on different namespace ports do not overwrite each other in the browser's host-wide cookie jar.
 - DEK is stored in memory alongside the active token; no DEK is persisted to disk
-- Logout and session expiry fail closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, search history, attachment metadata, undo/sync state, and ontology state before serving the locked session.
+- Explicit logout fails closed for password-protected namespaces: the server purges the DEK, decrypted notes, caches, tab state, reminders, search history, attachment metadata, undo/sync state, and ontology state before serving the locked session. Idle expiry is disabled by default; when explicitly enabled, it invalidates browser authentication but keeps the hydrated server cache warm so re-login does not rebuild the namespace.
 
 ### Authentication Route Boundary
 

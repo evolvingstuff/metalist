@@ -26,6 +26,22 @@ function buildTagContextItems(context, handlers) {
     ];
 }
 
+function buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource) {
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.trim() === '') {
+        throw new Error('Reference context requires non-empty referenceNoteId');
+    }
+    if (typeof onOpenReferenceSource !== 'function') {
+        throw new Error('Reference context missing onOpenReferenceSource handler');
+    }
+    return {
+        id: 'open-reference-source',
+        label: 'Go to Source',
+        icon: 'external',
+        enabled: true,
+        onSelect: () => onOpenReferenceSource(referenceNoteId),
+    };
+}
+
 function buildNoteContextItems(context, handlers) {
     if (!context || typeof context !== 'object') {
         throw new Error('buildNoteContextItems requires context object');
@@ -53,6 +69,7 @@ function buildNoteContextItems(context, handlers) {
     const onPasteNoteChild = handlers.onPasteNoteChild;
     const onPasteReference = handlers.onPasteReference;
     const onPasteReferenceChild = handlers.onPasteReferenceChild;
+    const onOpenReferenceSource = handlers.onOpenReferenceSource;
     const onCopyImage = handlers.onCopyImage;
     const onMakeImageBigger = handlers.onMakeImageBigger;
     const onMakeImageSmaller = handlers.onMakeImageSmaller;
@@ -103,6 +120,10 @@ function buildNoteContextItems(context, handlers) {
     }
 
     const items = [];
+    const referenceNoteId = context.referenceNoteId;
+    if (referenceNoteId !== undefined) {
+        items.push(buildReferenceSourceItem(referenceNoteId, onOpenReferenceSource));
+    }
     const imageContext = context.imageContext;
     if (imageContext !== null && typeof imageContext === 'object') {
         const canResizeImage = context.canResizeImage;
@@ -398,14 +419,25 @@ function buildLinkContextItems(context, handlers) {
         throw new Error('Link context missing onOpenLinkInNewTab handler');
     }
 
-    return [
-        {
-            id: 'copy-link',
-            label: 'Copy Link',
-            icon: 'copy',
-            enabled: true,
-            onSelect: () => onCopyLink(linkContext),
-        },
+    const items = [];
+    if (context.referenceNoteId !== undefined) {
+        items.push(buildReferenceSourceItem(
+            context.referenceNoteId,
+            handlers.onOpenReferenceSource,
+        ));
+    }
+    const copyLinkItem = {
+        id: 'copy-link',
+        label: 'Copy Link',
+        icon: 'copy',
+        enabled: true,
+        onSelect: () => onCopyLink(linkContext),
+    };
+    if (items.length > 0) {
+        copyLinkItem.separated = true;
+    }
+    items.push(
+        copyLinkItem,
         {
             id: 'open-link-new-tab',
             label: 'Open Link in New Tab',
@@ -413,7 +445,8 @@ function buildLinkContextItems(context, handlers) {
             enabled: true,
             onSelect: () => onOpenLinkInNewTab(linkContext),
         },
-    ];
+    );
+    return items;
 }
 
 function buildViewContextItems(context, handlers) {

@@ -22,6 +22,22 @@ function resolveSuggestionTarget(element, selector, source) {
     };
 }
 
+export function resolveReferenceContextFromElement(element) {
+    if (!(element instanceof HTMLElement)) {
+        return null;
+    }
+
+    const reference = element.closest('.note-reference-note[data-ref-note-id]');
+    if (!(reference instanceof HTMLElement)) {
+        return null;
+    }
+    const referenceNoteId = reference.dataset.refNoteId;
+    if (typeof referenceNoteId !== 'string' || referenceNoteId.trim() === '') {
+        throw new Error('Reference context-menu target missing data-ref-note-id');
+    }
+    return { referenceNoteId };
+}
+
 export function resolvePriorityContextMenuTarget(element, options) {
     if (!(element instanceof HTMLElement)) {
         throw new Error('resolvePriorityContextMenuTarget requires HTMLElement');
