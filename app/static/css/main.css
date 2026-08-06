@@ -2990,9 +2990,48 @@ body[data-note-vertical-spacing] .note {
         transform 140ms ease,
         margin-top 140ms ease,
         margin-bottom 140ms ease,
+        border-color 140ms ease,
+        box-shadow 140ms ease,
         border-width 140ms ease,
         padding-top 140ms ease,
         padding-bottom 140ms ease;
+}
+
+.note-tag-bar::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 12px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.note-tag-bar:focus-within {
+    border-color: rgba(54, 116, 208, 0.58);
+    box-shadow:
+        0 4px 10px rgba(0, 0, 0, 0.12),
+        0 0 0 2px rgba(54, 116, 208, 0.16);
+}
+
+body.pref-animated-transitions .note-tag-bar:focus-within::after {
+    animation: note-tag-bar-focus-halo 520ms cubic-bezier(0.2, 0.72, 0.25, 1);
+}
+
+@keyframes note-tag-bar-focus-halo {
+    0% {
+        opacity: 0;
+        box-shadow: 0 0 0 0 rgba(75, 139, 231, 0.34);
+    }
+
+    32% {
+        opacity: 0.72;
+        box-shadow: 0 0 0 2px rgba(75, 139, 231, 0.24);
+    }
+
+    100% {
+        opacity: 0;
+        box-shadow: 0 0 0 7px rgba(75, 139, 231, 0);
+    }
 }
 
 .note-tag-bar.is-entering,
@@ -3012,6 +3051,10 @@ body[data-note-vertical-spacing] .note {
     .note-tag-bar.is-entering,
     .note-tag-bar.is-exiting {
         transition-duration: 1ms;
+    }
+
+    body.pref-animated-transitions .note-tag-bar:focus-within::after {
+        animation: none;
     }
 }
 
@@ -5078,6 +5121,13 @@ html[data-theme="dark"] .note-tag-bar {
     border-color: var(--app-border-soft);
     background: rgba(10, 13, 18, 0.94);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+}
+
+html[data-theme="dark"] .note-tag-bar:focus-within {
+    border-color: rgba(138, 180, 255, 0.68);
+    box-shadow:
+        0 12px 30px rgba(0, 0, 0, 0.36),
+        0 0 0 2px rgba(138, 180, 255, 0.18);
 }
 
 html[data-theme="dark"] .note-tag-bar-input {
