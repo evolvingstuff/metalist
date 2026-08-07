@@ -19,9 +19,10 @@ After you open it, subsequent undo/redo should not traverse operations that occu
 
 ## Sort Order
 - `Sort order` is a per-tab, server-owned view setting. Duplicating a tab inherits its current sort mode.
-- Modes are exposed as distinct actions: `Sort order: Normal`, `Sort order: Datetime created`, `Sort order: Datetime last updated`, and `Sort order: Alphabetical`.
+- Modes are exposed as distinct actions: `Sort order: Normal`, `Sort order: Datetime created`, `Sort order: Datetime last updated`, `Sort order: Alphabetical`, and `Sort order: Content volume (largest first)`.
 - In the datetime modes, root notes are ordered by the newest matching timestamp anywhere in that root subtree, not just on the root note itself.
 - In alphabetical mode, root notes are ordered by root-note content without rewriting the stored manual order.
+- In content-volume mode, roots are ordered largest-first by the total plain-text character count of every note in each root subtree. HTML markup does not count, and equal totals preserve manual root order. Search phrases include `character count`, `content volume`, `length`, and `longest`.
 - The server returns the ordered root window plus `sortMode`/`rootSortBuckets`; the client inserts day-separator rows between visible roots.
 - When a non-normal sort mode is active, the UI shows a floating dismissible pill above the sticky top bar so the view override is visually obvious and can be cleared in one click.
 - Changing sort mode is treated as a global view-context switch: the tab scroll state resets and undo/redo history is blanked for that tab context.

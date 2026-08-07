@@ -11,7 +11,16 @@ SORT_MODE_NORMAL = "normal"
 SORT_MODE_CREATED = "created"
 SORT_MODE_UPDATED = "updated"
 SORT_MODE_ALPHABETICAL = "alphabetical"
-SORT_MODES = frozenset({SORT_MODE_NORMAL, SORT_MODE_CREATED, SORT_MODE_UPDATED, SORT_MODE_ALPHABETICAL})
+SORT_MODE_CONTENT_VOLUME = "content-volume"
+SORT_MODES = frozenset(
+    {
+        SORT_MODE_NORMAL,
+        SORT_MODE_CREATED,
+        SORT_MODE_UPDATED,
+        SORT_MODE_ALPHABETICAL,
+        SORT_MODE_CONTENT_VOLUME,
+    }
+)
 TIMESTAMP_SORT_MODES = frozenset({SORT_MODE_CREATED, SORT_MODE_UPDATED})
 
 
@@ -76,6 +85,25 @@ def _get_root_content_sort_key(note_id: str) -> tuple[str, str, int]:
     return text_content.casefold(), text_content, len(text_content)
 
 
+def _get_note_plain_text_length(note_id: str) -> int:
+    record = note_store.get_note(note_id)
+    if not isinstance(record.content, str):
+        raise RuntimeError(f"Note {note_id} is missing string content for content-volume sort")
+    return len(strip_html(record.content))
+
+
+def _get_root_subtree_content_volume(root_id: str) -> int:
+    stack = [root_id]
+    character_count = 0
+    while stack:
+        note_id = stack.pop()
+        character_count += _get_note_plain_text_length(note_id)
+        children = note_store.get_children(note_id)
+        if children:
+            stack.extend(children)
+    return character_count
+
+
 def get_root_sort_timestamps(sort_mode: object) -> Dict[str, datetime]:
     normalized = normalize_sort_mode(sort_mode)
     canonical_root_ids = note_store.get_children(None)
@@ -104,6 +132,13 @@ def get_root_ids_for_sort_mode(
             decorated_alpha.append((root_id, content_key, canonical_index))
         decorated_alpha.sort(key=lambda item: (item[1], item[2]))
         return [root_id for root_id, _, _ in decorated_alpha]
+    if normalized == SORT_MODE_CONTENT_VOLUME:
+        decorated_volume = []
+        for canonical_index, root_id in enumerate(canonical_root_ids):
+            character_count = _get_root_subtree_content_volume(root_id)
+            decorated_volume.append((root_id, character_count, canonical_index))
+        decorated_volume.sort(key=lambda item: (-item[1], item[2]))
+        return [root_id for root_id, _, _ in decorated_volume]
 
     decorated = []
     for canonical_index, root_id in enumerate(canonical_root_ids):

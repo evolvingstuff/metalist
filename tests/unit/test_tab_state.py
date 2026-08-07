@@ -98,6 +98,17 @@ def test_set_sort_mode_accepts_alphabetical() -> None:
     assert result["tabs"][tab_id]["sortMode"] == "alphabetical"
 
 
+def test_set_sort_mode_accepts_content_volume() -> None:
+    store = TabStateStore()
+    snapshot = store.snapshot()
+    tab_id = snapshot["activeTabId"]
+
+    result = store.set_sort_mode(tab_id=tab_id, sort_mode="content-volume")
+
+    assert result["changed"] is True
+    assert result["tabs"][tab_id]["sortMode"] == "content-volume"
+
+
 def test_set_date_filter_resets_scroll_state_and_marks_change() -> None:
     store = TabStateStore()
     snapshot = store.snapshot()

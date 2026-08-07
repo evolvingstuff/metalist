@@ -191,6 +191,14 @@ export function buildCommandPaletteEndpoints(deps) {
             execute: async () => setSortMode('alphabetical'),
         },
         {
+            id: 'view.sort_mode.content_volume',
+            kind: 'action',
+            label: 'Sort order: Content volume (largest first)',
+            getValue: () => sortModeActionValue('content-volume'),
+            closeOnExecute: true,
+            execute: async () => setSortMode('content-volume'),
+        },
+        {
             id: 'pref.theme',
             kind: 'select',
             label: 'Theme',

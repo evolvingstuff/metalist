@@ -65,3 +65,16 @@ test('note layout action matches appearance and hierarchy queries', () => {
     assert.equal(noteLayout.tags.includes('appearance'), true);
     assert.equal(noteLayout.tags.includes('hierarchy'), true);
 });
+
+
+test('content volume sort matches character count query', () => {
+    const source = readFileSync(TAG_CONFIG_PATH, 'utf8');
+    const payload = JSON.parse(source);
+    const contentVolume = payload.endpoints.find(
+        (endpoint) => endpoint.id === 'view.sort_mode.content_volume',
+    );
+
+    assert.ok(contentVolume, 'expected content-volume sort endpoint in command palette tag config');
+    assert.equal(contentVolume.tags.includes('character'), true);
+    assert.equal(contentVolume.tags.includes('count'), true);
+});
