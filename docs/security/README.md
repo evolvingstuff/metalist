@@ -251,7 +251,7 @@ recording decrypted user data:
 
 ### Application, Database, and Vault Versions
 
-- Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.12`.
+- Application release: `app/version.py` is the single source for the installed package and runtime UI; current release is `0.3.13`.
 - Database schema/data: `PRAGMA user_version` is a monotonic integer managed by `app/db/migrations.py`; current version is `2`.
 - Vault format: `VAULT_VERSION` remains an independent crypto compatibility number; current version is `3`.
 
